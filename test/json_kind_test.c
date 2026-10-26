@@ -70,7 +70,7 @@ static void splits_an_envelope(void) {
     CHECK(spisor_environment(&call, "hub") == NULL);
     CHECK(spisor_environment(&call, "ABSENT") == NULL);
     CHECK(spisor_context_string(&call, "arguments") == NULL);
-    CHECK(cJSON_GetArraySize(spisor_last_member(call.context, "arguments")) == 2);
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(call.context, "arguments")) == 2);
     spisor_discard_call(&call);
     CHECK(call.argument == NULL && call.context == NULL);
 }
@@ -179,6 +179,93 @@ static void writes_a_result(void) {
     spisor_release(out);
 }
 
+static char *printed_argument(const char *text) {
+    spisor_call call = {NULL, NULL};
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    char *printed = NULL;
+    if (parse_text(text, 0, &call, &out, &out_len) == SPISOR_STATUS_SUCCESS) {
+        printed = cJSON_PrintUnformatted(call.argument);
+    }
+    spisor_release(out);
+    spisor_discard_call(&call);
+    return printed;
+}
+
+static void check_printed(const char *text, const char *expected) {
+    char *printed = printed_argument(text);
+    check_text(printed, expected, text);
+    free(printed);
+}
+
+static void refuses_a_nul_in_any_string(void) {
+    refuses_text("\"a\\u0000b\"", 0, "NUL");
+    refuses_text("{\"a\\u0000\":1}", 0, "NUL");
+    refuses_text("[{\"deep\":[\"C:\\\\x\\u0000y\"]}]", 0, "NUL");
+    refuses_text("{\"argument\":1,\"context\":{\"home\":\"/h\\u0000\"}}", 1, "NUL");
+    static const uint8_t raw_nul[] = {'"', 'a', 0x00, 'b', '"'};
+    parsed_failure failure = refuse(raw_nul, sizeof(raw_nul), 0);
+    CHECK(failure.status == SPISOR_STATUS_FAILURE);
+    CHECK(is_failure_object(failure.object));
+    cJSON_Delete(failure.object);
+    check_printed("\"\\\\u0000\"", "\"\\\\u0000\"");
+}
+
+static void keeps_the_last_of_a_duplicated_key_everywhere(void) {
+    check_printed("{\"id\":\"a\",\"id\":\"b\"}", "{\"id\":\"b\"}");
+    check_printed("{\"x\":1,\"y\":2,\"x\":3}", "{\"x\":3,\"y\":2}");
+    check_printed("{\"x\":1,\"y\":2,\"x\":3,\"x\":4}", "{\"x\":4,\"y\":2}");
+    check_printed("[{\"o\":{\"k\":1,\"k\":{\"m\":1,\"m\":2}}}]", "[{\"o\":{\"k\":{\"m\":2}}}]");
+    check_printed("{\"K\":1,\"k\":2}", "{\"K\":1,\"k\":2}");
+
+    spisor_call call = {NULL, NULL};
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    const char *envelope = "{\"argument\":1,\"argument\":{\"id\":\"b\"},"
+                           "\"context\":{\"environment\":{\"A\":1,\"A\":\"x\"},\"home\":2,\"home\":\"/h\"}}";
+    CHECK(parse_text(envelope, 1, &call, &out, &out_len) == SPISOR_STATUS_SUCCESS);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(call.argument, "id")), "b", "last argument");
+    check_text(spisor_environment(&call, "A"), "x", "last environment entry over a malformed first");
+    check_text(spisor_context_string(&call, "home"), "/h", "last home over a malformed first");
+    spisor_release(out);
+    spisor_discard_call(&call);
+}
+
+static void decodes_an_unpaired_surrogate_as_a_replacement_character(void) {
+    check_printed("\"\\ud800\"", "\"\xef\xbf\xbd\"");
+    check_printed("\"a\\uDC00b\"", "\"a\xef\xbf\xbd" "b\"");
+    check_printed("\"\\ud800\\ud800\\udc00\"", "\"\xef\xbf\xbd\xf0\x90\x80\x80\"");
+    check_printed("\"\\ud83d\\ude00\"", "\"\xf0\x9f\x98\x80\"");
+    check_printed("\"\\ud800x\"", "\"\xef\xbf\xbdx\"");
+    check_printed("{\"\\udfff\":\"\\ud800\\\\ud800\"}", "{\"\xef\xbf\xbd\":\"\xef\xbf\xbd\\\\ud800\"}");
+}
+
+static cJSON *parse_json_text(const char *text) {
+    return spisor_parse_json((const uint8_t *)text, strlen(text));
+}
+
+static void parses_a_whole_document_as_json_parse_does(void) {
+    static const uint8_t invalid_utf8[] = {'"', 0xFF, '"'};
+    cJSON *document = parse_json_text(" {\"k\":1,\"k\":\"\\ud800\"} ");
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(document, "k")), "\xef\xbf\xbd", "parse_json");
+    cJSON_Delete(document);
+    CHECK(spisor_parse_json(invalid_utf8, sizeof(invalid_utf8)) == NULL);
+    CHECK(parse_json_text("1 2") == NULL);
+    CHECK(parse_json_text("\"a\\u0000\"") == NULL);
+    CHECK(parse_json_text("") == NULL);
+}
+
+static void refuses_to_succeed_without_a_result(void) {
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    CHECK(spisor_succeed(NULL, &out, &out_len) == SPISOR_STATUS_FAILURE);
+    cJSON *object = out == NULL ? NULL : cJSON_ParseWithLength((const char *)out, out_len);
+    CHECK(is_failure_object(object));
+    CHECK(failure_names(object, "no result"));
+    cJSON_Delete(object);
+    spisor_release(out);
+}
+
 int main(void) {
     splits_an_envelope();
     accepts_a_context_without_facts();
@@ -190,5 +277,10 @@ int main(void) {
     refuses_a_malformed_envelope();
     escapes_a_failure();
     writes_a_result();
+    refuses_a_nul_in_any_string();
+    keeps_the_last_of_a_duplicated_key_everywhere();
+    decodes_an_unpaired_surrogate_as_a_replacement_character();
+    refuses_to_succeed_without_a_result();
+    parses_a_whole_document_as_json_parse_does();
     return check_summary("json_kind_test");
 }

@@ -61,6 +61,10 @@ static int32_t emit_printed(char *printed, int32_t status, uint8_t **out, size_t
 }
 
 int32_t spisor_succeed(const cJSON *result, uint8_t **out, size_t *out_len) {
+    if (result == NULL) {
+        return spisor_fail("the library produced no result", "report this as a defect in the library", out,
+                           out_len);
+    }
     return emit_printed(cJSON_PrintUnformatted(result), SPISOR_STATUS_SUCCESS, out, out_len);
 }
 
@@ -147,29 +151,166 @@ static int only_whitespace_after(const char *end, const char *limit) {
     return end == limit;
 }
 
-static cJSON *parse_whole(const uint8_t *in, size_t in_len) {
-    const char *text = (const char *)in;
-    const char *end = NULL;
-    cJSON *root = cJSON_ParseWithLengthOpts(text, in_len, &end, 0);
-    if (root != NULL && !only_whitespace_after(end, text + in_len)) {
-        cJSON_Delete(root);
-        return NULL;
+typedef enum document_refusal {
+    DOCUMENT_ACCEPTED,
+    DOCUMENT_NOT_UTF8,
+    DOCUMENT_CARRIES_NUL,
+    DOCUMENT_NOT_JSON,
+    DOCUMENT_OUT_OF_MEMORY
+} document_refusal;
+
+#define NOT_AN_ESCAPED_UNIT (-1L)
+#define ESCAPE_WIDTH 6
+
+static int hex_value(char character) {
+    if (character >= '0' && character <= '9') {
+        return character - '0';
     }
+    if (character >= 'a' && character <= 'f') {
+        return character - 'a' + 10;
+    }
+    if (character >= 'A' && character <= 'F') {
+        return character - 'A' + 10;
+    }
+    return -1;
+}
+
+static long escaped_unit_at(const char *text, size_t length, size_t at) {
+    if (at + ESCAPE_WIDTH > length || text[at] != '\\' || text[at + 1] != 'u') {
+        return NOT_AN_ESCAPED_UNIT;
+    }
+    long unit = 0;
+    for (size_t offset = 2; offset < ESCAPE_WIDTH; offset++) {
+        int digit = hex_value(text[at + offset]);
+        if (digit < 0) {
+            return NOT_AN_ESCAPED_UNIT;
+        }
+        unit = unit * 16 + digit;
+    }
+    return unit;
+}
+
+static int is_high_surrogate(long unit) {
+    return unit >= 0xD800 && unit <= 0xDBFF;
+}
+
+static int is_low_surrogate(long unit) {
+    return unit >= 0xDC00 && unit <= 0xDFFF;
+}
+
+/** Answers how many bytes past the backslash the escape at `at` covers, rewriting it in place if unpaired. */
+static size_t rewrite_escape(char *text, size_t length, size_t at, document_refusal *refusal) {
+    long unit = escaped_unit_at(text, length, at);
+    if (unit == NOT_AN_ESCAPED_UNIT) {
+        return 1;
+    }
+    if (unit == 0) {
+        *refusal = DOCUMENT_CARRIES_NUL;
+        return 0;
+    }
+    if (is_high_surrogate(unit) && is_low_surrogate(escaped_unit_at(text, length, at + ESCAPE_WIDTH))) {
+        return 2 * ESCAPE_WIDTH - 1;
+    }
+    if (is_high_surrogate(unit) || is_low_surrogate(unit)) {
+        memcpy(text + at, "\\uFFFD", ESCAPE_WIDTH);
+    }
+    return ESCAPE_WIDTH - 1;
+}
+
+static document_refusal rewrite_escapes(char *text, size_t length) {
+    document_refusal refusal = DOCUMENT_ACCEPTED;
+    int in_string = 0;
+    for (size_t index = 0; index < length && refusal == DOCUMENT_ACCEPTED; index++) {
+        char character = text[index];
+        if (character == '\0') {
+            return DOCUMENT_NOT_JSON;
+        }
+        if (character == '"') {
+            in_string = !in_string;
+        } else if (in_string && character == '\\') {
+            index += rewrite_escape(text, length, index, &refusal);
+        }
+    }
+    return refusal;
+}
+
+static cJSON *detach_later_duplicates(cJSON *object, cJSON *member) {
+    cJSON *last = NULL;
+    cJSON *later = member->next;
+    while (later != NULL) {
+        cJSON *next = later->next;
+        if (later->string != NULL && strcmp(later->string, member->string) == 0) {
+            cJSON_Delete(last);
+            last = cJSON_DetachItemViaPointer(object, later);
+        }
+        later = next;
+    }
+    return last;
+}
+
+static void keep_last_of_each_key(cJSON *item) {
+    cJSON *child = item->child;
+    while (child != NULL) {
+        if (cJSON_IsObject(item) && child->string != NULL) {
+            cJSON *last = detach_later_duplicates(item, child);
+            if (last != NULL) {
+                cJSON_ReplaceItemViaPointer(item, child, last);
+                child = last;
+            }
+        }
+        keep_last_of_each_key(child);
+        child = child->next;
+    }
+}
+
+static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSON **root) {
+    *root = NULL;
+    if (!is_valid_utf8(bytes, length)) {
+        return DOCUMENT_NOT_UTF8;
+    }
+    char *text = malloc(length + 1);
+    if (text == NULL) {
+        return DOCUMENT_OUT_OF_MEMORY;
+    }
+    if (length > 0) {
+        memcpy(text, bytes, length);
+    }
+    text[length] = '\0';
+    document_refusal refusal = rewrite_escapes(text, length);
+    if (refusal == DOCUMENT_ACCEPTED) {
+        const char *end = NULL;
+        *root = cJSON_ParseWithLengthOpts(text, length, &end, 0);
+        if (*root != NULL && !only_whitespace_after(end, text + length)) {
+            cJSON_Delete(*root);
+            *root = NULL;
+        }
+        refusal = *root == NULL ? DOCUMENT_NOT_JSON : DOCUMENT_ACCEPTED;
+    }
+    free(text);
+    if (*root != NULL) {
+        keep_last_of_each_key(*root);
+    }
+    return refusal;
+}
+
+cJSON *spisor_parse_json(const uint8_t *bytes, size_t length) {
+    cJSON *root = NULL;
+    parse_document(bytes, length, &root);
     return root;
 }
 
-cJSON *spisor_last_member(const cJSON *object, const char *key) {
-    cJSON *found = NULL;
-    cJSON *member = NULL;
-    if (!cJSON_IsObject(object)) {
-        return NULL;
+static int32_t refuse_document(document_refusal refusal, uint8_t **out, size_t *out_len) {
+    switch (refusal) {
+    case DOCUMENT_NOT_UTF8:
+        return spisor_fail("the input is not valid UTF-8", "send the argument as UTF-8 JSON", out, out_len);
+    case DOCUMENT_CARRIES_NUL:
+        return spisor_fail("the input carries a NUL character in a string",
+                           "remove the NUL character; no path or name can hold one", out, out_len);
+    case DOCUMENT_OUT_OF_MEMORY:
+        return out_of_memory(out, out_len);
+    default:
+        return spisor_fail("the input is not valid JSON", "send exactly one JSON value", out, out_len);
     }
-    cJSON_ArrayForEach(member, object) {
-        if (member->string != NULL && strcmp(member->string, key) == 0) {
-            found = member;
-        }
-    }
-    return found;
 }
 
 static const fact_rule *find_fact_rule(const char *name) {
@@ -206,7 +347,7 @@ static int32_t check_facts(const cJSON *context, uint8_t **out, size_t *out_len)
             return fail_naming("the context carries an unknown fact ", fact->string, "",
                                "send only environment, home and arguments", out, out_len);
         }
-        if (spisor_last_member(context, rule->name) == fact && !rule->is_well_formed(fact)) {
+        if (!rule->is_well_formed(fact)) {
             return fail_naming("the context fact ", rule->name, " is malformed", rule->fix, out, out_len);
         }
     }
@@ -218,8 +359,8 @@ static int32_t split_envelope(cJSON *envelope, spisor_call *call, uint8_t **out,
     if (!cJSON_IsObject(envelope)) {
         return spisor_fail("the envelope is not an object", envelope_fix, out, out_len);
     }
-    cJSON *argument = spisor_last_member(envelope, "argument");
-    cJSON *context = spisor_last_member(envelope, "context");
+    cJSON *argument = cJSON_GetObjectItemCaseSensitive(envelope, "argument");
+    cJSON *context = cJSON_GetObjectItemCaseSensitive(envelope, "context");
     if (argument == NULL) {
         return spisor_fail("the envelope has no argument", envelope_fix, out, out_len);
     }
@@ -241,12 +382,10 @@ int32_t spisor_parse_call(const uint8_t *in, size_t in_len, int contextual, spis
     call->context = NULL;
     *out = NULL;
     *out_len = 0;
-    if (!is_valid_utf8(in, in_len)) {
-        return spisor_fail("the input is not valid UTF-8", "send the argument as UTF-8 JSON", out, out_len);
-    }
-    cJSON *root = parse_whole(in, in_len);
-    if (root == NULL) {
-        return spisor_fail("the input is not valid JSON", "send exactly one JSON value", out, out_len);
+    cJSON *root = NULL;
+    document_refusal refusal = parse_document(in, in_len, &root);
+    if (refusal != DOCUMENT_ACCEPTED) {
+        return refuse_document(refusal, out, out_len);
     }
     if (!contextual) {
         call->argument = root;
@@ -265,10 +404,10 @@ void spisor_discard_call(spisor_call *call) {
 }
 
 const char *spisor_context_string(const spisor_call *call, const char *fact) {
-    return cJSON_GetStringValue(spisor_last_member(call->context, fact));
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(call->context, fact));
 }
 
 const char *spisor_environment(const spisor_call *call, const char *name) {
-    const cJSON *environment = spisor_last_member(call->context, "environment");
-    return cJSON_GetStringValue(spisor_last_member(environment, name));
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->context, "environment");
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(environment, name));
 }
