@@ -1,0 +1,839 @@
+{
+  "generator": "node v26.3.1",
+  "join": [
+    {
+      "segments": [],
+      "posix": ".",
+      "win32": "."
+    },
+    {
+      "segments": [
+        ""
+      ],
+      "posix": ".",
+      "win32": "."
+    },
+    {
+      "segments": [
+        "",
+        ""
+      ],
+      "posix": ".",
+      "win32": "."
+    },
+    {
+      "segments": [
+        "a"
+      ],
+      "posix": "a",
+      "win32": "a"
+    },
+    {
+      "segments": [
+        "a",
+        "b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a",
+        "",
+        "b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        ".",
+        "a"
+      ],
+      "posix": "a",
+      "win32": "a"
+    },
+    {
+      "segments": [
+        "a",
+        "."
+      ],
+      "posix": "a",
+      "win32": "a"
+    },
+    {
+      "segments": [
+        "./a",
+        "./b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a/./b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a",
+        ".."
+      ],
+      "posix": ".",
+      "win32": "."
+    },
+    {
+      "segments": [
+        "a",
+        "..",
+        ".."
+      ],
+      "posix": "..",
+      "win32": ".."
+    },
+    {
+      "segments": [
+        "a/b",
+        "../../.."
+      ],
+      "posix": "..",
+      "win32": ".."
+    },
+    {
+      "segments": [
+        "..",
+        "a"
+      ],
+      "posix": "../a",
+      "win32": "..\\a"
+    },
+    {
+      "segments": [
+        "../..",
+        "a"
+      ],
+      "posix": "../../a",
+      "win32": "..\\..\\a"
+    },
+    {
+      "segments": [
+        "/",
+        ".."
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "/a",
+        "../.."
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "/a/b",
+        "../../../c"
+      ],
+      "posix": "/c",
+      "win32": "\\c"
+    },
+    {
+      "segments": [
+        "C:\\",
+        ".."
+      ],
+      "posix": ".",
+      "win32": "C:\\"
+    },
+    {
+      "segments": [
+        "C:\\a",
+        "..\\..\\b"
+      ],
+      "posix": "C:\\a/..\\..\\b",
+      "win32": "C:\\b"
+    },
+    {
+      "segments": [
+        "C:",
+        "..",
+        "a"
+      ],
+      "posix": "a",
+      "win32": "C:\\a"
+    },
+    {
+      "segments": [
+        "a//b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a///b//"
+      ],
+      "posix": "a/b/",
+      "win32": "a\\b\\"
+    },
+    {
+      "segments": [
+        "a/",
+        "b/"
+      ],
+      "posix": "a/b/",
+      "win32": "a\\b\\"
+    },
+    {
+      "segments": [
+        "a/",
+        "/b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a",
+        "/"
+      ],
+      "posix": "a/",
+      "win32": "a\\"
+    },
+    {
+      "segments": [
+        "/"
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "//"
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "///"
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "/",
+        "/"
+      ],
+      "posix": "/",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "\\"
+      ],
+      "posix": "\\",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "\\\\"
+      ],
+      "posix": "\\\\",
+      "win32": "\\"
+    },
+    {
+      "segments": [
+        "a",
+        "\\"
+      ],
+      "posix": "a/\\",
+      "win32": "a\\"
+    },
+    {
+      "segments": [
+        "/a",
+        "b"
+      ],
+      "posix": "/a/b",
+      "win32": "\\a\\b"
+    },
+    {
+      "segments": [
+        "/a/",
+        "b/"
+      ],
+      "posix": "/a/b/",
+      "win32": "\\a\\b\\"
+    },
+    {
+      "segments": [
+        "a\\b"
+      ],
+      "posix": "a\\b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "a\\b",
+        "c/d"
+      ],
+      "posix": "a\\b/c/d",
+      "win32": "a\\b\\c\\d"
+    },
+    {
+      "segments": [
+        "a/b\\c",
+        "..\\d"
+      ],
+      "posix": "a/b\\c/..\\d",
+      "win32": "a\\b\\d"
+    },
+    {
+      "segments": [
+        "\\a\\",
+        "\\b\\"
+      ],
+      "posix": "\\a\\/\\b\\",
+      "win32": "\\a\\b\\"
+    },
+    {
+      "segments": [
+        "C:"
+      ],
+      "posix": "C:",
+      "win32": "C:."
+    },
+    {
+      "segments": [
+        "C:",
+        "a"
+      ],
+      "posix": "C:/a",
+      "win32": "C:\\a"
+    },
+    {
+      "segments": [
+        "C:\\"
+      ],
+      "posix": "C:\\",
+      "win32": "C:\\"
+    },
+    {
+      "segments": [
+        "C:\\",
+        "a",
+        "b"
+      ],
+      "posix": "C:\\/a/b",
+      "win32": "C:\\a\\b"
+    },
+    {
+      "segments": [
+        "C:/a",
+        "b"
+      ],
+      "posix": "C:/a/b",
+      "win32": "C:\\a\\b"
+    },
+    {
+      "segments": [
+        "c:\\Users",
+        "me"
+      ],
+      "posix": "c:\\Users/me",
+      "win32": "c:\\Users\\me"
+    },
+    {
+      "segments": [
+        "C:x",
+        "y"
+      ],
+      "posix": "C:x/y",
+      "win32": "C:x\\y"
+    },
+    {
+      "segments": [
+        "C:\\a\\",
+        "..\\..\\"
+      ],
+      "posix": "C:\\a\\/..\\..\\",
+      "win32": "C:\\"
+    },
+    {
+      "segments": [
+        "D:\\",
+        "\\x"
+      ],
+      "posix": "D:\\/\\x",
+      "win32": "D:\\x"
+    },
+    {
+      "segments": [
+        "\\\\server",
+        "share"
+      ],
+      "posix": "\\\\server/share",
+      "win32": "\\\\server\\share\\"
+    },
+    {
+      "segments": [
+        "\\\\server\\share"
+      ],
+      "posix": "\\\\server\\share",
+      "win32": "\\\\server\\share\\"
+    },
+    {
+      "segments": [
+        "\\\\server\\share",
+        "a"
+      ],
+      "posix": "\\\\server\\share/a",
+      "win32": "\\\\server\\share\\a"
+    },
+    {
+      "segments": [
+        "\\\\server\\share\\",
+        "..\\.."
+      ],
+      "posix": "\\\\server\\share\\/..\\..",
+      "win32": "\\\\server\\share\\"
+    },
+    {
+      "segments": [
+        "//server",
+        "share",
+        "a"
+      ],
+      "posix": "/server/share/a",
+      "win32": "\\\\server\\share\\a"
+    },
+    {
+      "segments": [
+        "//server/share/a",
+        ".."
+      ],
+      "posix": "/server/share",
+      "win32": "\\\\server\\share\\"
+    },
+    {
+      "segments": [
+        "\\\\",
+        "server",
+        "share"
+      ],
+      "posix": "\\\\/server/share",
+      "win32": "\\server\\share"
+    },
+    {
+      "segments": [
+        "///server",
+        "share"
+      ],
+      "posix": "/server/share",
+      "win32": "\\server\\share"
+    },
+    {
+      "segments": [
+        "\\\\?\\C:\\a",
+        "b"
+      ],
+      "posix": "\\\\?\\C:\\a/b",
+      "win32": "\\\\?\\C:\\a\\b"
+    },
+    {
+      "segments": [
+        "\\\\.\\pipe",
+        "x"
+      ],
+      "posix": "\\\\.\\pipe/x",
+      "win32": "\\\\.\\pipe\\x"
+    },
+    {
+      "segments": [
+        "//./COM1:x",
+        ".."
+      ],
+      "posix": "/",
+      "win32": "\\\\?\\COM1:\\"
+    },
+    {
+      "segments": [
+        "\\\\?\\COM1:\\a",
+        "b"
+      ],
+      "posix": "\\\\?\\COM1:\\a/b",
+      "win32": "\\\\?\\COM1:\\a\\b"
+    },
+    {
+      "segments": [
+        "\\\\.\\NUL:"
+      ],
+      "posix": "\\\\.\\NUL:",
+      "win32": "\\\\.\\NUL:"
+    },
+    {
+      "segments": [
+        "//?/c:/a/../b"
+      ],
+      "posix": "/?/c:/b",
+      "win32": "\\\\?\\c:\\b"
+    },
+    {
+      "segments": [
+        "//.//x"
+      ],
+      "posix": "/x",
+      "win32": "\\\\.\\x"
+    },
+    {
+      "segments": [
+        "\\\\?"
+      ],
+      "posix": "\\\\?",
+      "win32": "\\?"
+    },
+    {
+      "segments": [
+        "\\\\server"
+      ],
+      "posix": "\\\\server",
+      "win32": "\\server"
+    },
+    {
+      "segments": [
+        "\\\\server\\"
+      ],
+      "posix": "\\\\server\\",
+      "win32": "\\server\\"
+    },
+    {
+      "segments": [
+        "a",
+        "",
+        "",
+        "b",
+        ""
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        ".",
+        "."
+      ],
+      "posix": ".",
+      "win32": "."
+    },
+    {
+      "segments": [
+        "./",
+        "./"
+      ],
+      "posix": "./",
+      "win32": ".\\"
+    },
+    {
+      "segments": [
+        "..",
+        ".."
+      ],
+      "posix": "../..",
+      "win32": "..\\.."
+    },
+    {
+      "segments": [
+        "...",
+        "a"
+      ],
+      "posix": ".../a",
+      "win32": "...\\a"
+    },
+    {
+      "segments": [
+        "a",
+        "..."
+      ],
+      "posix": "a/...",
+      "win32": "a\\..."
+    },
+    {
+      "segments": [
+        ".a",
+        "b."
+      ],
+      "posix": ".a/b.",
+      "win32": ".a\\b."
+    },
+    {
+      "segments": [
+        "a/.",
+        "./b"
+      ],
+      "posix": "a/b",
+      "win32": "a\\b"
+    },
+    {
+      "segments": [
+        "home",
+        ".config",
+        "forebay",
+        "apps.json"
+      ],
+      "posix": "home/.config/forebay/apps.json",
+      "win32": "home\\.config\\forebay\\apps.json"
+    },
+    {
+      "segments": [
+        "/home/me",
+        ".config",
+        "forebay",
+        "apps.json"
+      ],
+      "posix": "/home/me/.config/forebay/apps.json",
+      "win32": "\\home\\me\\.config\\forebay\\apps.json"
+    },
+    {
+      "segments": [
+        "C:\\Users\\me",
+        ".config",
+        "forebay",
+        "apps.json"
+      ],
+      "posix": "C:\\Users\\me/.config/forebay/apps.json",
+      "win32": "C:\\Users\\me\\.config\\forebay\\apps.json"
+    },
+    {
+      "segments": [
+        "C:\\Users\\me\\",
+        "relative/xdg"
+      ],
+      "posix": "C:\\Users\\me\\/relative/xdg",
+      "win32": "C:\\Users\\me\\relative\\xdg"
+    },
+    {
+      "segments": [
+        "/home/me",
+        "a\\b"
+      ],
+      "posix": "/home/me/a\\b",
+      "win32": "\\home\\me\\a\\b"
+    },
+    {
+      "segments": [
+        "café",
+        "日本"
+      ],
+      "posix": "café/日本",
+      "win32": "café\\日本"
+    },
+    {
+      "segments": [
+        "/home/ü",
+        "..",
+        "é"
+      ],
+      "posix": "/home/é",
+      "win32": "\\home\\é"
+    },
+    {
+      "segments": [
+        "a:b"
+      ],
+      "posix": "a:b",
+      "win32": "a:b"
+    },
+    {
+      "segments": [
+        "a",
+        "b:"
+      ],
+      "posix": "a/b:",
+      "win32": ".\\a\\b:"
+    },
+    {
+      "segments": [
+        "CON"
+      ],
+      "posix": "CON",
+      "win32": "CON"
+    },
+    {
+      "segments": [
+        "CONx"
+      ],
+      "posix": "CONx",
+      "win32": ".\\CONx"
+    },
+    {
+      "segments": [
+        "a",
+        "CON:"
+      ],
+      "posix": "a/CON:",
+      "win32": "a\\CON:"
+    },
+    {
+      "segments": [
+        "COM1:x"
+      ],
+      "posix": "COM1:x",
+      "win32": "COM1:x"
+    },
+    {
+      "segments": [
+        "x",
+        "AUX:",
+        "y"
+      ],
+      "posix": "x/AUX:/y",
+      "win32": "x\\AUX:\\y"
+    },
+    {
+      "segments": [
+        "a",
+        "..",
+        "C:x"
+      ],
+      "posix": "C:x",
+      "win32": ".\\C:x"
+    },
+    {
+      "segments": [
+        "a",
+        "..",
+        "b:",
+        "c"
+      ],
+      "posix": "b:/c",
+      "win32": ".\\b:\\c"
+    },
+    {
+      "segments": [
+        "com¹x"
+      ],
+      "posix": "com¹x",
+      "win32": ".\\com¹x"
+    },
+    {
+      "segments": [
+        "LPT9:",
+        "a"
+      ],
+      "posix": "LPT9:/a",
+      "win32": "LPT9:\\a"
+    },
+    {
+      "segments": [
+        "nul.txt"
+      ],
+      "posix": "nul.txt",
+      "win32": "nul.txt"
+    },
+    {
+      "segments": [
+        "a/CON"
+      ],
+      "posix": "a/CON",
+      "win32": "a\\CON"
+    }
+  ],
+  "absolute": [
+    {
+      "path": "",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "a",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "/",
+      "posix": true,
+      "win32": true
+    },
+    {
+      "path": "/a",
+      "posix": true,
+      "win32": true
+    },
+    {
+      "path": "\\",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "\\a",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "//server",
+      "posix": true,
+      "win32": true
+    },
+    {
+      "path": "\\\\server\\share",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "C:",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "C:a",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "C:\\",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "C:/",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "c:\\a",
+      "posix": false,
+      "win32": true
+    },
+    {
+      "path": "1:\\a",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "~",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "~/a",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "./a",
+      "posix": false,
+      "win32": false
+    },
+    {
+      "path": "..",
+      "posix": false,
+      "win32": false
+    }
+  ]
+}
