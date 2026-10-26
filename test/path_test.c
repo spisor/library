@@ -31,9 +31,12 @@ static size_t collect_segments(const cJSON *array, const char **segments) {
     size_t count = 0;
     const cJSON *segment = NULL;
     cJSON_ArrayForEach(segment, array) {
-        if (count < MAX_SEGMENTS) {
-            segments[count++] = segment->valuestring;
+        if (count == MAX_SEGMENTS) {
+            fprintf(stderr, "a vector has more than %d segments; raise MAX_SEGMENTS\n", MAX_SEGMENTS);
+            check_failures++;
+            return count;
         }
+        segments[count++] = segment->valuestring;
     }
     return count;
 }

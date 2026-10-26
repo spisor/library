@@ -27,13 +27,24 @@ typedef struct spisor_call {
 } spisor_call;
 
 /**
- * Parses a json kind input. A contextual call must be the envelope
- * {"argument": A, "context": {"environment": {..}, "home": "..", "arguments": [..]}} carrying
- * only the facts the function declared.
+ * Reads one whole JSON document exactly as JSON.parse would, or answers NULL. Refuses invalid
+ * UTF-8, anything after the value, and a string (key or value, at any depth) holding a NUL.
  *
- * @implNote cJSON accepts invalid UTF-8 and finds the FIRST of a duplicated key, so the input is
- * validated as UTF-8 first and every key here resolves to its LAST occurrence, as JSON.parse does.
- * On any refusal the failure object is written to out and the status returned is non-zero.
+ * @implNote cJSON departs from JSON.parse three ways, each closed here without touching the
+ * vendored file: it accepts invalid UTF-8, so the bytes are validated first; it truncates a string
+ * at an escaped NUL, so such a document is refused rather than read short; and it refuses an
+ * unpaired surrogate escape, which JSON.stringify emits for an unpaired UTF-16 value, so each one
+ * is rewritten to � (what Node's UTF-8 encoding of that string holds) before cJSON reads it.
+ * A duplicated key keeps its FIRST position and its LAST value, as JSON.parse does, so every cJSON
+ * lookup and iteration over the tree sees what JavaScript sees.
+ */
+cJSON *spisor_parse_json(const uint8_t *bytes, size_t length);
+
+/**
+ * Parses a json kind input with spisor_parse_json. A contextual call must be the envelope
+ * {"argument": A, "context": {...}} whose context carries only facts this library knows:
+ * environment, home and arguments. Which of them the function declared is the host's
+ * business and is not checked here. On any refusal the failure object is written to out.
  */
 int32_t spisor_parse_call(const uint8_t *in, size_t in_len, int contextual, spisor_call *call,
                           uint8_t **out, size_t *out_len);
@@ -57,9 +68,6 @@ const char *spisor_context_string(const spisor_call *call, const char *fact);
  * Windows, because the host hands the environment over as a copied object.
  */
 const char *spisor_environment(const spisor_call *call, const char *name);
-
-/** The member of object under key, taking the last of duplicated keys as JSON.parse does. */
-cJSON *spisor_last_member(const cJSON *object, const char *key);
 
 #ifdef __cplusplus
 }

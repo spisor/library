@@ -34,9 +34,19 @@ built only when this repository is the top-level project.
 
 ## What a call may rely on
 
-- **The input is validated as UTF-8 before it is parsed**, because cJSON accepts invalid UTF-8.
-- **A duplicated key resolves to its LAST occurrence**, as `JSON.parse` does, through
-  `spisor_last_member`; cJSON's own lookup finds the first.
+Every document is read through `spisor_parse_json`, which a library also uses for any JSON it
+reads itself (a registry file, say) instead of calling cJSON directly. It reads a document as
+`JSON.parse` does:
+
+- **Invalid UTF-8 is refused**, because cJSON accepts it.
+- **A string holding a NUL, key or value at any depth, is refused**, because cJSON would silently
+  cut it short at the NUL.
+- **An unpaired surrogate escape such as `\ud800` reads as U+FFFD**, which is what Node's UTF-8
+  encoding of such a string holds; `JSON.stringify` emits one for an unpaired UTF-16 value, which a
+  Windows environment variable or argument can carry. cJSON refuses it, so the escape is rewritten
+  before cJSON reads the text.
+- **A duplicated key keeps its first position and its last value**, so every cJSON lookup and
+  iteration over the tree sees what JavaScript sees.
 - **An envelope missing `argument` or `context`, or carrying a malformed or unknown fact, is a
   failure object naming what is wrong.** The facts are `environment` (an object of strings), `home`
   (a string) and `arguments` (an array of strings).
