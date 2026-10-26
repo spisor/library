@@ -34,7 +34,8 @@ typedef struct spisor_call {
  * vendored file: it accepts invalid UTF-8, so the bytes are validated first; it truncates a string
  * at an escaped NUL, so such a document is refused rather than read short; and it refuses an
  * unpaired surrogate escape, which JSON.stringify emits for an unpaired UTF-16 value, so each one
- * is rewritten to � (what Node's UTF-8 encoding of that string holds) before cJSON reads it.
+ * is rewritten to the escape of U+FFFD (what Node's UTF-8 encoding of that string holds) before
+ * cJSON reads it.
  * A duplicated key keeps its FIRST position and its LAST value, as JSON.parse does, so every cJSON
  * lookup and iteration over the tree sees what JavaScript sees.
  */
