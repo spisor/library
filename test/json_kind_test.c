@@ -67,12 +67,45 @@ static void splits_an_envelope(void) {
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(call.argument, "id")), "alpha", "argument id");
     check_text(spisor_context_string(&call, "home"), "/home/me", "home fact");
     check_text(spisor_environment(&call, "HUB"), "two", "last duplicated environment entry");
-    CHECK(spisor_environment(&call, "hub") == NULL);
     CHECK(spisor_environment(&call, "ABSENT") == NULL);
     CHECK(spisor_context_string(&call, "arguments") == NULL);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(call.context, "arguments")) == 2);
     spisor_discard_call(&call);
     CHECK(call.argument == NULL && call.context == NULL);
+}
+
+static const char *environment_entry(const char *environment, const char *name, char *value, size_t size) {
+    spisor_call call = {NULL, NULL};
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    char envelope[256];
+    snprintf(envelope, sizeof envelope, "{\"argument\":null,\"context\":{\"environment\":%s}}", environment);
+    CHECK(parse_text(envelope, 1, &call, &out, &out_len) == SPISOR_STATUS_SUCCESS);
+    const char *found = spisor_environment(&call, name);
+    if (found != NULL) {
+        snprintf(value, size, "%s", found);
+    }
+    spisor_discard_call(&call);
+    return found == NULL ? NULL : value;
+}
+
+static void matches_environment_names_as_the_platform_does(void) {
+    char value[64];
+    const char *differing_in_case = "{\"Claude_Config_Dir\":\"first\",\"Other\":\"x\",\"CLAUDE_CONFIG_DIR\":\"later\"}";
+    check_text(environment_entry("{\"HUB\":\"one\"}", "HUB", value, sizeof value), "one", "exact environment name");
+    CHECK(environment_entry("{\"\xc3\x84\":\"one\"}", "\xc3\xa4", value, sizeof value) == NULL);
+    CHECK(environment_entry("{\"HUB\":\"one\"}", "HUBS", value, sizeof value) == NULL);
+    CHECK(environment_entry("{\"HUBS\":\"one\"}", "HUB", value, sizeof value) == NULL);
+#ifdef _WIN32
+    check_text(environment_entry("{\"Claude_Config_Dir\":\"one\"}", "CLAUDE_CONFIG_DIR", value, sizeof value), "one",
+               "a name differing only in ASCII case, on Windows");
+    check_text(environment_entry(differing_in_case, "claude_config_dir", value, sizeof value), "later",
+               "the later of two names differing only in case, on Windows");
+#else
+    CHECK(environment_entry("{\"Claude_Config_Dir\":\"one\"}", "CLAUDE_CONFIG_DIR", value, sizeof value) == NULL);
+    check_text(environment_entry(differing_in_case, "Claude_Config_Dir", value, sizeof value), "first",
+               "the exactly named entry, off Windows");
+#endif
 }
 
 static void accepts_a_context_without_facts(void) {
@@ -300,6 +333,7 @@ static void refuses_to_succeed_without_a_result(void) {
 
 int main(void) {
     splits_an_envelope();
+    matches_environment_names_as_the_platform_does();
     accepts_a_context_without_facts();
     keeps_a_plain_input_as_the_argument();
     reads_only_the_given_length();

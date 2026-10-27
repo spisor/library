@@ -67,8 +67,10 @@ const char *spisor_context_string(const spisor_call *call, const char *fact);
 /**
  * The environment entry named, or NULL when absent.
  *
- * @implNote Matched case-sensitively, as a lookup in a plain JavaScript object is, even on
- * Windows, because the host hands the environment over as a copied object.
+ * @implNote Matched as the host's process.env matches it, since that is what a JavaScript caller
+ * reads: case-sensitively, except on Windows, where names are matched ignoring ASCII case. Of two
+ * names differing only in case, which Windows itself cannot hold, the later entry answers, as the
+ * later of two duplicated keys does in JSON.parse.
  */
 const char *spisor_environment(const spisor_call *call, const char *name);
 

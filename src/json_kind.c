@@ -394,7 +394,39 @@ const char *spisor_context_string(const spisor_call *call, const char *fact) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(call->context, fact));
 }
 
+#ifdef _WIN32
+static char ascii_lowercase(char letter) {
+    return letter >= 'A' && letter <= 'Z' ? (char) (letter - 'A' + 'a') : letter;
+}
+
+static int is_same_name_ignoring_ascii_case(const char *left, const char *right) {
+    while (*left != '\0' && ascii_lowercase(*left) == ascii_lowercase(*right)) {
+        left++;
+        right++;
+    }
+    return *left == *right;
+}
+
+static const cJSON *environment_entry(const cJSON *environment, const char *name) {
+    const cJSON *found = NULL;
+    const cJSON *entry = NULL;
+    cJSON_ArrayForEach(entry, environment) {
+        if (entry->string != NULL && is_same_name_ignoring_ascii_case(entry->string, name)) {
+            found = entry;
+        }
+    }
+    return found;
+}
+#else
+static const cJSON *environment_entry(const cJSON *environment, const char *name) {
+    return cJSON_GetObjectItemCaseSensitive(environment, name);
+}
+#endif
+
 const char *spisor_environment(const spisor_call *call, const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->context, "environment");
-    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(environment, name));
+    return cJSON_GetStringValue(environment_entry(cJSON_IsObject(environment) ? environment : NULL, name));
 }
