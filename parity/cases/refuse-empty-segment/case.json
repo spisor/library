@@ -1,0 +1,31 @@
+{
+  "manifest": {
+    "id": "p",
+    "config": {
+      "defaults": {
+        "a": 1
+      }
+    }
+  },
+  "calls": [
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "a."
+      }
+    },
+    {
+      "function": "config.get",
+      "argument": {
+        "key": ""
+      }
+    },
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "a..b",
+        "value": 1
+      }
+    }
+  ]
+}

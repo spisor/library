@@ -1,0 +1,19 @@
+{
+  "home": [
+    "config/p.json"
+  ],
+  "manifest": {
+    "id": "p",
+    "config": {
+      "name": ""
+    }
+  },
+  "calls": [
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "x"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "manifest": {
+    "id": "p"
+  },
+  "names": {
+    "plugin": "../x",
+    "cache": 5
+  },
+  "calls": [
+    {
+      "function": "paths.resolve",
+      "argument": {}
+    }
+  ]
+}

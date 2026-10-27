@@ -1,0 +1,21 @@
+{
+  "manifest": {
+    "id": "p"
+  },
+  "names": {
+    "config": "settings"
+  },
+  "calls": [
+    {
+      "function": "paths.resolve",
+      "argument": {}
+    },
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "k",
+        "value": 1
+      }
+    }
+  ]
+}

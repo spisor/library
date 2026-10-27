@@ -1,0 +1,234 @@
+{
+  "divergences": [
+    {
+      "case": "deep-merge",
+      "call": 1,
+      "answer": {
+        "value": {
+          "b": 5,
+          "c": 2
+        }
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: get and all read one merged tree, objects merging key by key, so get(\"a\") carries the default a.c beside the file's a.b, where basekit answered the file's a alone"
+    },
+    {
+      "case": "deep-merge",
+      "call": 2,
+      "answer": {
+        "values": {
+          "a": {
+            "b": 5,
+            "c": 2
+          }
+        }
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: all is the same merged tree get reads, so all().a.c is get(\"a.c\"), where basekit's all merged shallowly and dropped the default a.c"
+    },
+    {
+      "case": "file-null-wins",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a file value of null replaces the default whole, so a.b is absent under a null a, where basekit's get fell through to the default a.b"
+    },
+    {
+      "case": "array-replaced",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: an array from the file replaces the default array whole, so list.1 is absent under the file's [9], where basekit's get fell through to the default list.1"
+    },
+    {
+      "case": "previous-with-default",
+      "call": 0,
+      "answer": {
+        "previous": 1
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: set's previous is the merged value the plugin saw before the write, the default included, where basekit's set reported the file's value alone and so an absent from"
+    },
+    {
+      "case": "refuse-malformed",
+      "call": 0,
+      "answer": {
+        "failure": {
+          "message": "the settings file is not a readable JSON object, so setting would discard its content",
+          "fix": "repair {home}/config/p.json so it holds one JSON object, or remove it, then set again; it was left unchanged"
+        }
+      },
+      "files": {
+        "config/p.json": "{\"a\":"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2 and rev 141: a set into a malformed settings file is refused and writes nothing, where basekit rewrote it as the one key and wiped the file's content"
+    },
+    {
+      "case": "refuse-non-object-path",
+      "call": 0,
+      "answer": {
+        "failure": {
+          "message": "the key crosses a value in the settings file that is not an object",
+          "fix": "{home}/config/p.json holds a value that is not an object on the way to \"a.b\"; edit that file by hand"
+        }
+      },
+      "files": {
+        "config/p.json": "{\"a\":5}"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a set whose path crosses a value in the file that is not an object is refused, where basekit replaced that value with an object"
+    },
+    {
+      "case": "refuse-empty-segment",
+      "call": 2,
+      "answer": {
+        "failure": {
+          "message": "the argument carries no usable key",
+          "fix": "send {\"key\": \"a.b\"} with one or more dot separated, non-empty segments"
+        }
+      },
+      "files": {
+        "config/p.json": null
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a set key with an empty segment is refused, where basekit wrote a member named by the empty string"
+    },
+    {
+      "case": "renamed-config-directory",
+      "files": {
+        "config/p.json": null,
+        "settings/p.json": "{\n  \"k\": 1\n}\n"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: the settings file lives in the config directory paths.resolve answers, so a home that renamed it to settings writes settings/p.json, where basekit hard-coded config/ and left ctx.paths.config and ctx.config apart"
+    },
+    {
+      "case": "no-top-level-fallback",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2 and rev 141: there is no top-level <name>.json fallback, so a file beside the config directory is not read, where basekit read it when config/<name>.json was absent"
+    },
+    {
+      "case": "config-name-unchecked",
+      "call": 0,
+      "answer": {
+        "failure": {
+          "message": "the plugin's config name is not a usable file name",
+          "fix": "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\""
+        }
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3 and rev 146: a config.name of ../x is not one portable path segment and is refused, where basekit joined it unchecked and read outside the config directory"
+    },
+    {
+      "case": "no-cache",
+      "call": 2,
+      "answer": {
+        "value": 2
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3 and rev 146: every call reads the file, so a hand edit is seen at the next get, where basekit cached the file for the life of the process"
+    },
+    {
+      "case": "log-levels",
+      "files": {
+        "logs/2026-10-28/p-2026-10-27T19-34-53.log": "[2026-10-28T00:00:01.500Z] [DEBUG] m\n[2026-10-28T00:00:02.250Z] [INFO] m\n[2026-10-28T00:00:03.000Z] [WARN] m\n[2026-10-28T00:00:04.750Z] [ERROR] m\n"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.3: each level carries its own tag in the log file, where basekit wrote [INFO] DEBUG and [INFO] WARN"
+    },
+    {
+      "case": "logging-gate-merged",
+      "files": {
+        "logs/2026-10-28/p-2026-10-27T19-34-53.log": null
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.3: the logging gate reads the merged setting, so a manifest defaulting logging to false writes no log file, where basekit read only the settings file"
+    },
+    {
+      "case": "core-log-console-ignored",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.3 and rev 146: CORE_LOG_CONSOLE is not carried, the settings file decides, where basekit printed every line while the variable was set"
+    },
+    {
+      "case": "paths-portable-segment",
+      "call": 0,
+      "answer": {
+        "home": "{home}",
+        "repos": "{home}/repos",
+        "plugin": "{home}/plugin",
+        "cache": "{home}/cache",
+        "config": "{home}/config"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3 and rev 146: a directory name holding : is not a portable path segment on every OS, so the default config is used, where basekit accepted any name free of / and \\"
+    },
+    {
+      "case": "log-append-fails",
+      "call": 1,
+      "answer": {
+        "failure": {
+          "message": "the log line could not be appended",
+          "fix": "check that the home's logs directory can be created and written"
+        }
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.3 and 6: a failed log write with no console line due answers a failure, which the host swallows, where basekit swallowed it itself; an error's console line is still answered, as call 0 shows"
+    }
+  ]
+}
