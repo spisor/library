@@ -1,4 +1,4 @@
-foreach(name paths_test config_test)
+foreach(name paths_test config_test log_test)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE runtime_objects)
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
