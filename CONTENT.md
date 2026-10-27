@@ -9,6 +9,10 @@ The C conventions every spisor and forebay library shares, as one static CMake t
   function a library's own `<library>_release` calls.
 - **Paths** (`spisor/path.h`): Node's `path.join` and `path.isAbsolute` for both platform rules,
   chosen by an argument rather than by the OS the code runs on, and basekit's `expandHome`.
+- **JavaScript semantics** (`spisor/javascript.h`): Node's lossy UTF-8 decoding, as
+  `readFileSync(file, "utf8")` reads a file; JavaScript's whitespace and `String.prototype.trim`;
+  and `String(value)` for a parsed JSON value, which is also what a value used as a property key
+  becomes. A library porting JavaScript takes these rather than writing its own.
 - **Files** (`spisor/file.h`): Node's `existsSync` and reading a whole file, with UTF-8 paths on
   every OS.
 
@@ -38,7 +42,13 @@ Every document is read through `spisor_parse_json`, which a library also uses fo
 reads itself (a registry file, say) instead of calling cJSON directly. It reads a document as
 `JSON.parse` does:
 
-- **Invalid UTF-8 is refused**, because cJSON accepts it.
+- **Invalid UTF-8 is refused**, because cJSON accepts it. A library reading a file the way Node
+  does decodes it with `spisor_decode_utf8_lossy` first, so the replacement happens where Node's
+  does and the parse never sees invalid bytes.
+- **The grammar is `JSON.parse`'s, checked before cJSON reads the text**, because cJSON is laxer:
+  it skips a UTF-8 BOM, takes any byte up to 0x20 as whitespace, accepts raw control characters in
+  a string, and reads `01` and `1.`. So a document starting with a BOM is refused, as `JSON.parse`
+  refuses it; whitespace is SP, TAB, LF and CR only; only whitespace may follow the value.
 - **A string holding a NUL, key or value at any depth, is refused**, because cJSON would silently
   cut it short at the NUL.
 - **An unpaired surrogate escape such as `\ud800` reads as U+FFFD**, which is what Node's UTF-8

@@ -255,6 +255,38 @@ static void parses_a_whole_document_as_json_parse_does(void) {
     CHECK(parse_json_text("") == NULL);
 }
 
+static const char *const refused_by_json_parse[] = {
+    "\xEF\xBB\xBF{}", "\v{}", "{\f}", "{\x01}", "[\xC2\xA0" "1]", "\"a\tb\"", "\"a\x1f" "b\"",
+    "01", "-01", "1.", "-", "1e", "1e+", ".5", "+1", "[1,]", "{\"a\":1,}", "\"\\'\"",
+    "\"\\u12\"", "\"\\x41\"", "tru", "nul", "[1 2]", "{\"a\" 1}", "{a:1}", "\"open",
+};
+
+static const char *const accepted_by_json_parse[] = {
+    " \t\r\n{} \t\r\n", "-0", "0.25", "1.5E+3", "1e-2", "-12.5e10", "\"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9\"",
+    "\"a\xE2\x80\xA8z\"", "[true,false,null,[],{}]", "{\"\":0}",
+};
+
+static void parses_only_what_json_parse_accepts(void) {
+    for (size_t index = 0; index < sizeof(refused_by_json_parse) / sizeof(refused_by_json_parse[0]); index++) {
+        cJSON *document = parse_json_text(refused_by_json_parse[index]);
+        if (document != NULL) {
+            fprintf(stderr, "spisor_parse_json accepted %s\n", refused_by_json_parse[index]);
+            check_failures++;
+        }
+        cJSON_Delete(document);
+        refuses_text(refused_by_json_parse[index], 0, "JSON");
+    }
+    for (size_t index = 0; index < sizeof(accepted_by_json_parse) / sizeof(accepted_by_json_parse[0]); index++) {
+        cJSON *document = parse_json_text(accepted_by_json_parse[index]);
+        if (document == NULL) {
+            fprintf(stderr, "spisor_parse_json refused %s\n", accepted_by_json_parse[index]);
+            check_failures++;
+        }
+        cJSON_Delete(document);
+    }
+    refuses_text("\xEF\xBB\xBF{\"argument\":{},\"context\":{}}", 1, "JSON");
+}
+
 static void refuses_to_succeed_without_a_result(void) {
     uint8_t *out = NULL;
     size_t out_len = 0;
@@ -282,5 +314,6 @@ int main(void) {
     decodes_an_unpaired_surrogate_as_a_replacement_character();
     refuses_to_succeed_without_a_result();
     parses_a_whole_document_as_json_parse_does();
+    parses_only_what_json_parse_accepts();
     return check_summary("json_kind_test");
 }
