@@ -26,12 +26,21 @@ static int has_reserved_device_stem(const char *segment) {
     return is_reserved_device_stem(segment, strcspn(segment, "."));
 }
 
+static int has_control_character(const char *segment) {
+    for (const unsigned char *cursor = (const unsigned char *)segment; *cursor != '\0'; cursor++) {
+        if (*cursor < 0x20) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int is_portable(const char *segment) {
     size_t length = strlen(segment);
     if (length == 0 || strcmp(segment, ".") == 0 || strcmp(segment, "..") == 0) {
         return 0;
     }
-    if (strpbrk(segment, "/\\:") != NULL) {
+    if (strpbrk(segment, "/\\:<>\"|?*") != NULL || has_control_character(segment)) {
         return 0;
     }
     if (segment[length - 1] == '.' || segment[length - 1] == ' ') {

@@ -153,6 +153,11 @@ static void name_rules(void) {
     free(name);
     CHECK(runtime_config_name("plugin-id", escaping) == NULL);
     CHECK(runtime_config_name("../plugin", NULL) == NULL);
+    cJSON *padded = cJSON_Parse("{\"name\":\" p \"}");
+    name = runtime_config_name("plugin-id", padded);
+    check_text(name, "p", "declared name trimmed");
+    free(name);
+    cJSON_Delete(padded);
     cJSON_Delete(named);
     cJSON_Delete(empty);
     cJSON_Delete(escaping);
@@ -363,6 +368,68 @@ static void refuses_missing_arguments(void) {
     spisor_release(out);
 }
 
+static void crlf_file(void) {
+    scratch_home home;
+    fresh_home(&home, "crlf");
+    write_settings_file(&home, "p", "{\r\n  \"a\": 1\r\n}\r\n");
+    expect_value(&home, "p", NULL, "a", "1", "crlf file");
+    write_settings_file(&home, "p", "{\r\n  // note\r\n  \"a\": 2\r\n}\r\n");
+    expect_value(&home, "p", NULL, "a", "2", "crlf file with a comment line");
+    answer result = set_key(&home, "p", NULL, NULL, "b", "3");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_file(&home, "p", "{\n  \"a\": 2,\n  \"b\": 3\n}\n", "crlf file rewritten by set");
+}
+
+static void lone_surrogate_reads_as_replacement(void) {
+    scratch_home home;
+    fresh_home(&home, "surrogate");
+    write_settings_file(&home, "p", "{\"s\":\"\\ud800\"}");
+    expect_value(&home, "p", NULL, "s", "\"\xEF\xBF\xBD\"", "lone surrogate");
+    answer result = set_key(&home, "p", NULL, NULL, "t", "1");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_file(&home, "p", "{\n  \"s\": \"\xEF\xBF\xBD\",\n  \"t\": 1\n}\n", "set writes the replacement raw");
+}
+
+static void non_object_defaults_read_as_empty(void) {
+    scratch_home home;
+    fresh_home(&home, "defaults");
+    const char *configs[] = {"{\"defaults\":\"ab\"}", "{\"defaults\":[1,2]}"};
+    for (int index = 0; index < 2; index++) {
+        answer all = call_with(runtime_config_all, request_for(&home, "p", configs[index], NULL));
+        expect_member(&all, "values", "{}", configs[index]);
+        finish(&all);
+        expect_value(&home, "p", configs[index], "0", NULL, configs[index]);
+    }
+}
+
+static void empty_key_is_absent_even_when_stored(void) {
+    scratch_home home;
+    fresh_home(&home, "empty-key");
+    write_settings_file(&home, "p", "{\"\":1}");
+    expect_value(&home, "p", "{\"defaults\":{\"\":2}}", "", NULL, "empty key");
+}
+
+static void refuses_unusable_home(void) {
+    const char *homes[] = {"", "config-test-relative-home"};
+    for (int index = 0; index < 2; index++) {
+        scratch_home home;
+        snprintf(home.path, sizeof home.path, "%s", homes[index]);
+        answer all = call_with(runtime_config_all, request_for(&home, "p", NULL, NULL));
+        expect_refused(&all, "all");
+        finish(&all);
+        answer get = get_key(&home, "p", NULL, "a");
+        expect_refused(&get, "get");
+        finish(&get);
+        answer set = set_key(&home, "p", NULL, NULL, "a", "1");
+        expect_refused(&set, "set");
+        finish(&set);
+    }
+    CHECK(spisor_file_exists("config-test-relative-home") == 0);
+    CHECK(spisor_file_exists("config") == 0);
+}
+
 int main(void) {
     name_rules();
     deep_merge_agrees();
@@ -382,5 +449,10 @@ int main(void) {
     hand_edit_seen();
     merge_and_walk_units();
     refuses_missing_arguments();
+    crlf_file();
+    lone_surrogate_reads_as_replacement();
+    non_object_defaults_read_as_empty();
+    empty_key_is_absent_even_when_stored();
+    refuses_unusable_home();
     return check_summary("config_test");
 }

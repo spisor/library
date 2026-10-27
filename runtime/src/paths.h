@@ -33,6 +33,15 @@ int runtime_resolve_paths(const char *home, const cJSON *names, runtime_paths *p
 
 void runtime_free_paths(runtime_paths *paths);
 
+/**
+ * Whether home can anchor the paths every service writes: not empty, and absolute by the host OS's
+ * rule, so nothing ever lands under the host's current directory (rev 146).
+ */
+int runtime_is_usable_home(const char *home);
+
+/** The failure object every service answers for a home runtime_is_usable_home refuses. */
+int32_t runtime_refuse_home(uint8_t **out, size_t *out_len);
+
 RUNTIME_EXPORT int32_t runtime_paths_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

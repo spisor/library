@@ -1,0 +1,23 @@
+{
+  "manifest": {
+    "id": "q",
+    "config": {
+      "name": " p "
+    }
+  },
+  "calls": [
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "k",
+        "value": 1
+      }
+    },
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "k"
+      }
+    }
+  ]
+}

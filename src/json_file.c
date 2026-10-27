@@ -7,6 +7,8 @@
 #include "spisor/javascript.h"
 #include "spisor/json_kind.h"
 
+#include "file_presence.h"
+
 /** True when the code point ending just before index is a JavaScript LineTerminator, which is where a multiline ^ holds. */
 static int follows_line_terminator(const unsigned char *text, size_t index) {
     if (index == 0) {
@@ -82,8 +84,9 @@ static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_fi
 }
 
 cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state) {
-    if (!spisor_file_exists(path)) {
-        *state = SPISOR_JSON_FILE_ABSENT;
+    spisor_file_presence presence = spisor_probe_file(path);
+    if (presence != SPISOR_FILE_PRESENT) {
+        *state = presence == SPISOR_FILE_MISSING ? SPISOR_JSON_FILE_ABSENT : SPISOR_JSON_FILE_UNREADABLE;
         return NULL;
     }
     size_t length = 0;

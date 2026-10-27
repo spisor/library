@@ -288,6 +288,9 @@ static int32_t log_call(const spisor_call *call, uint8_t **out, size_t *out_len)
     if (!fill_entry(call->argument, &entry)) {
         return refuse_argument(out, out_len);
     }
+    if (!runtime_is_usable_home(entry.home)) {
+        return runtime_refuse_home(out, out_len);
+    }
     char *name = runtime_config_name(entry.plugin, entry.config);
     if (name == NULL) {
         return refuse_name(out, out_len);

@@ -6,8 +6,10 @@
  * Freed with free.
  *
  * @implNote Portable means usable on every OS the host runs on: not empty, ".", ".." or ending in "."
- * or a space, free of "/", "\" and ":", and with a stem (the part before the first ".") that is not a
- * Windows reserved device name, compared ignoring case.
+ * or a space, free of "/", "\", ":", "<", ">", the double quote, "|", "?", "*" and the control
+ * characters U+0000 to U+001F, and with a stem (the part before the first ".") that is not a Windows
+ * reserved device name, compared ignoring case. U+0000 never arrives, since spisor_parse_json refuses
+ * a document that escapes it.
  */
 char *runtime_portable_segment(const char *name);
 

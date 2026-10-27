@@ -95,12 +95,29 @@ static locate_status locate_target(const config_request *request, config_target 
     return status;
 }
 
+typedef struct settings_file {
+    spisor_json_file_state state;
+    cJSON *tree;
+} settings_file;
+
+static settings_file read_settings_file(const char *file_path) {
+    settings_file file = {SPISOR_JSON_FILE_UNREADABLE, NULL};
+    file.tree = spisor_read_json_file(file_path, &file.state);
+    return file;
+}
+
+static int is_object_file(const settings_file *file) {
+    return file->state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file->tree);
+}
+
+static cJSON *merged_over_defaults(const config_request *request, const settings_file *file) {
+    return runtime_merge(optional_object(request->config, "defaults"), is_object_file(file) ? file->tree : NULL);
+}
+
 static cJSON *merged_with_file(const config_request *request, const char *file_path) {
-    spisor_json_file_state state = SPISOR_JSON_FILE_UNREADABLE;
-    cJSON *file = spisor_read_json_file(file_path, &state);
-    int usable = state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file);
-    cJSON *merged = runtime_merge(optional_object(request->config, "defaults"), usable ? file : NULL);
-    cJSON_Delete(file);
+    settings_file file = read_settings_file(file_path);
+    cJSON *merged = merged_over_defaults(request, &file);
+    cJSON_Delete(file.tree);
     return merged;
 }
 
@@ -174,7 +191,14 @@ static int32_t config_all(const config_request *request, uint8_t **out, size_t *
     return merged == NULL ? out_of_memory(out, out_len) : answer_member("values", merged, out, out_len);
 }
 
-/** A copy of the merged value at key, NULL when absent; *failed is set when memory ran out. */
+/** A copy of the value at key in merged, NULL when absent; *failed is set when memory ran out. */
+static cJSON *copy_at(const cJSON *merged, const char *key, int *failed) {
+    const cJSON *found = runtime_walk(merged, key);
+    cJSON *copy = found == NULL ? NULL : cJSON_Duplicate(found, 1);
+    *failed = found != NULL && copy == NULL;
+    return copy;
+}
+
 static cJSON *value_at(const config_request *request, const config_target *target, const char *key, int *failed) {
     *failed = 0;
     if (has_empty_segment(key)) {
@@ -185,9 +209,7 @@ static cJSON *value_at(const config_request *request, const config_target *targe
         *failed = 1;
         return NULL;
     }
-    const cJSON *found = runtime_walk(merged, key);
-    cJSON *copy = found == NULL ? NULL : cJSON_Duplicate(found, 1);
-    *failed = found != NULL && copy == NULL;
+    cJSON *copy = copy_at(merged, key, failed);
     cJSON_Delete(merged);
     return copy;
 }
@@ -284,17 +306,18 @@ static int write_settings(const config_target *target, const cJSON *root) {
     return written;
 }
 
-static cJSON *writable_root(const char *file_path, int *refused) {
-    spisor_json_file_state state = SPISOR_JSON_FILE_UNREADABLE;
-    cJSON *file = spisor_read_json_file(file_path, &state);
+/** The tree a set writes into, taking file's tree; NULL with *refused set when the file must not be replaced. */
+static cJSON *writable_root(settings_file *file, int *refused) {
+    cJSON *tree = file->tree;
+    file->tree = NULL;
     *refused = 0;
-    if (state == SPISOR_JSON_FILE_ABSENT) {
+    if (file->state == SPISOR_JSON_FILE_ABSENT) {
         return cJSON_CreateObject();
     }
-    if (state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file)) {
-        return file;
+    if (file->state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(tree)) {
+        return tree;
     }
-    cJSON_Delete(file);
+    cJSON_Delete(tree);
     *refused = 1;
     return NULL;
 }
@@ -305,10 +328,10 @@ static int32_t refuse_write(const char *file_path, uint8_t **out, size_t *out_le
     return spisor_fail("the settings file could not be written", fix, out, out_len);
 }
 
-static int32_t store_value(const config_target *target, const char *key, const cJSON *value, uint8_t **out,
-                           size_t *out_len) {
+static int32_t store_value(const config_target *target, settings_file *file, const char *key, const cJSON *value,
+                           uint8_t **out, size_t *out_len) {
     int refused;
-    cJSON *root = writable_root(target->file, &refused);
+    cJSON *root = writable_root(file, &refused);
     if (root == NULL) {
         return refused ? refuse_file(target->file, out, out_len) : out_of_memory(out, out_len);
     }
@@ -329,11 +352,25 @@ static int32_t refuse_missing_value(uint8_t **out, size_t *out_len) {
     return spisor_fail("the argument carries no value", "send {\"key\": \"a.b\", \"value\": <any JSON>}", out, out_len);
 }
 
+/** The merged value at key before the write, from the same read the write starts from. */
+static cJSON *previous_value(const config_request *request, const settings_file *file, const char *key, int *failed) {
+    cJSON *merged = merged_over_defaults(request, file);
+    if (merged == NULL) {
+        *failed = 1;
+        return NULL;
+    }
+    cJSON *previous = copy_at(merged, key, failed);
+    cJSON_Delete(merged);
+    return previous;
+}
+
 static int32_t store_after_previous(const config_request *request, const config_target *target, const char *key,
                                     const cJSON *value, uint8_t **out, size_t *out_len) {
+    settings_file file = read_settings_file(target->file);
     int failed;
-    cJSON *previous = value_at(request, target, key, &failed);
-    int32_t status = failed ? out_of_memory(out, out_len) : store_value(target, key, value, out, out_len);
+    cJSON *previous = previous_value(request, &file, key, &failed);
+    int32_t status = failed ? out_of_memory(out, out_len) : store_value(target, &file, key, value, out, out_len);
+    cJSON_Delete(file.tree);
     if (status != SPISOR_STATUS_SUCCESS) {
         cJSON_Delete(previous);
         return status;
@@ -371,6 +408,8 @@ static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation opera
     if (!cJSON_IsString(home) || !cJSON_IsString(plugin)) {
         status = spisor_fail("the argument carries no string home and plugin",
                              "send {\"home\": \"<directory>\", \"plugin\": \"<manifest id>\"}", out, out_len);
+    } else if (!runtime_is_usable_home(home->valuestring)) {
+        status = runtime_refuse_home(out, out_len);
     } else {
         config_request request = {home->valuestring, plugin->valuestring, optional_object(call.argument, "names"),
                                   optional_object(call.argument, "config"), call.argument};

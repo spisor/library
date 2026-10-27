@@ -308,6 +308,23 @@ static void failed_append_keeps_due_console_line(void) {
     finish(&info);
 }
 
+static void refuses_unusable_home(void) {
+    const char *homes[] = {"", "log-test-relative-home"};
+    const char *levels[] = {"info", "error"};
+    for (int home_index = 0; home_index < 2; home_index++) {
+        for (int level_index = 0; level_index < 2; level_index++) {
+            scratch_home home;
+            snprintf(home.path, sizeof home.path, "%s", homes[home_index]);
+            answer result = write_log(request_for(&home, levels[level_index], NULL, NULL, 0));
+            expect_refused(&result, homes[home_index]);
+            CHECK(cJSON_GetObjectItemCaseSensitive(result.tree, "fix") != NULL);
+            finish(&result);
+        }
+    }
+    CHECK(spisor_file_exists("log-test-relative-home") == 0);
+    CHECK(spisor_file_exists("logs") == 0);
+}
+
 int main(void) {
     writes_tagged_line();
     appends_each_level_tag();
@@ -322,5 +339,6 @@ int main(void) {
     refuses_malformed_arguments();
     refuses_failed_append_without_console_line();
     failed_append_keeps_due_console_line();
+    refuses_unusable_home();
     return check_summary("log_test");
 }

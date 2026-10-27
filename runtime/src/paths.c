@@ -51,6 +51,17 @@ int runtime_resolve_paths(const char *home, const cJSON *names, runtime_paths *p
     return 1;
 }
 
+int runtime_is_usable_home(const char *home) {
+    return home[0] != '\0' && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home);
+}
+
+int32_t runtime_refuse_home(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the home is empty or not an absolute path",
+                       "send the application's home as an absolute directory path; a relative one would resolve "
+                       "against the host's current directory",
+                       out, out_len);
+}
+
 static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
     *out = NULL;
     *out_len = 0;
@@ -97,6 +108,8 @@ RUNTIME_EXPORT int32_t runtime_paths_resolve(const uint8_t *in, size_t in_len, u
     const cJSON *home = cJSON_GetObjectItemCaseSensitive(call.argument, "home");
     if (!cJSON_IsString(home)) {
         status = spisor_fail("the argument carries no string home", "send {\"home\": \"<directory>\"}", out, out_len);
+    } else if (!runtime_is_usable_home(home->valuestring)) {
+        status = runtime_refuse_home(out, out_len);
     } else {
         status = answer_paths(home->valuestring, cJSON_GetObjectItemCaseSensitive(call.argument, "names"), out, out_len);
     }

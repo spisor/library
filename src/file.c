@@ -4,6 +4,8 @@
 
 #include "spisor/file.h"
 
+#include "file_presence.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +14,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #else
+#include <errno.h>
 #include <sys/stat.h>
 #endif
 
@@ -38,6 +41,20 @@ int spisor_file_exists(const char *path) {
     DWORD attributes = GetFileAttributesW(wide);
     free(wide);
     return attributes != INVALID_FILE_ATTRIBUTES;
+}
+
+spisor_file_presence spisor_probe_file(const char *path) {
+    wchar_t *wide = to_wide(path);
+    if (wide == NULL) {
+        return SPISOR_FILE_UNKNOWN;
+    }
+    DWORD attributes = GetFileAttributesW(wide);
+    DWORD error = GetLastError();
+    free(wide);
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        return SPISOR_FILE_PRESENT;
+    }
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? SPISOR_FILE_MISSING : SPISOR_FILE_UNKNOWN;
 }
 
 static FILE *open_for_reading(const char *path) {
@@ -108,6 +125,14 @@ static int move_over(const char *from, const char *to) {
 int spisor_file_exists(const char *path) {
     struct stat status;
     return path[0] != '\0' && stat(path, &status) == 0;
+}
+
+spisor_file_presence spisor_probe_file(const char *path) {
+    struct stat status;
+    if (stat(path, &status) == 0) {
+        return SPISOR_FILE_PRESENT;
+    }
+    return errno == ENOENT || errno == ENOTDIR ? SPISOR_FILE_MISSING : SPISOR_FILE_UNKNOWN;
 }
 
 static FILE *open_for_reading(const char *path) {
@@ -191,6 +216,9 @@ static int is_separator(char character) {
 }
 
 int spisor_make_directories(const char *path) {
+    if (is_directory(path)) {
+        return 1;
+    }
     size_t path_length = strlen(path);
     char *prefix = malloc(path_length + 1);
     if (prefix == NULL) {
@@ -206,7 +234,7 @@ int spisor_make_directories(const char *path) {
         }
     }
     free(prefix);
-    return is_directory(path) || (create_directory(path) && is_directory(path));
+    return create_directory(path) && is_directory(path);
 }
 
 int spisor_append_file(const char *path, const uint8_t *bytes, size_t length) {
