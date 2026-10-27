@@ -60,6 +60,20 @@ static void segment_rules(void) {
     expect_segment("COM1.txt", NULL);
     expect_segment("lpt9", NULL);
     expect_segment("console", "console");
+    expect_segment("COM0", "COM0");
+    expect_segment("COM10", "COM10");
+    expect_segment("nul.txt", NULL);
+    expect_segment("Aux", NULL);
+    expect_segment("con.a.b", NULL);
+}
+
+static void segment_refuses_windows_forbidden_characters(void) {
+    const char *forbidden[] = {"a<b", "a>b", "a\"b", "a|b", "a?b", "a*b", "a\x01" "b", "a\x1f" "b", "\x7f" "ok"};
+    for (size_t index = 0; index < 8; index++) {
+        expect_segment(forbidden[index], NULL);
+    }
+    expect_segment(forbidden[8], forbidden[8]);
+    expect_segment("a\tb", NULL);
 }
 
 static void resolve_from(const char *names_json, runtime_paths *paths) {
@@ -141,13 +155,29 @@ static void exported_call_refuses_missing_home(void) {
     spisor_release(out);
 }
 
+static void exported_call_refuses_unusable_home(void) {
+    const char *requests[] = {"{\"home\":\"\"}", "{\"home\":\"relative/home\"}", "{\"home\":\"C:relative\"}"};
+    for (size_t index = 0; index < 3; index++) {
+        uint8_t *out = NULL;
+        size_t out_len = 0;
+        int32_t status = runtime_paths_resolve((const uint8_t *)requests[index], strlen(requests[index]), &out, &out_len);
+        CHECK(status == SPISOR_STATUS_FAILURE);
+        cJSON *failure = out == NULL ? NULL : spisor_parse_json(out, out_len);
+        CHECK(cJSON_IsString(cJSON_GetObjectItemCaseSensitive(failure, "fix")));
+        cJSON_Delete(failure);
+        spisor_release(out);
+    }
+}
+
 int main(void) {
     segment_rules();
+    segment_refuses_windows_forbidden_characters();
     defaults_when_absent();
     declared_names_used();
     unusable_name_falls_back();
     duplicates_not_deduplicated();
     exported_call_round_trip();
     exported_call_refuses_missing_home();
+    exported_call_refuses_unusable_home();
     return check_summary("paths_test");
 }
