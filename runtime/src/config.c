@@ -96,7 +96,7 @@ static locate_status locate_target(const config_request *request, config_target 
 }
 
 static cJSON *merged_with_file(const config_request *request, const char *file_path) {
-    spisor_json_file_state state;
+    spisor_json_file_state state = SPISOR_JSON_FILE_UNREADABLE;
     cJSON *file = spisor_read_json_file(file_path, &state);
     int usable = state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file);
     cJSON *merged = runtime_merge(optional_object(request->config, "defaults"), usable ? file : NULL);
@@ -285,7 +285,7 @@ static int write_settings(const config_target *target, const cJSON *root) {
 }
 
 static cJSON *writable_root(const char *file_path, int *refused) {
-    spisor_json_file_state state;
+    spisor_json_file_state state = SPISOR_JSON_FILE_UNREADABLE;
     cJSON *file = spisor_read_json_file(file_path, &state);
     *refused = 0;
     if (state == SPISOR_JSON_FILE_ABSENT) {
