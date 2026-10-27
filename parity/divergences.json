@@ -229,6 +229,28 @@
         "java"
       ],
       "because": "spec 4.3 and 6: a failed log write with no console line due answers a failure, which the host swallows, where basekit swallowed it itself; an error's console line is still answered, as call 0 shows"
+    },
+    {
+      "case": "array-length",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a dot path indexes an array only by a canonical non-negative integer below its length and never emulates length, so list.length is absent, where basekit's get answered the array's length"
+    },
+    {
+      "case": "renamed-config-settings",
+      "call": 0,
+      "answer": {
+        "console": "\u001b[33m[p]\u001b[0m m"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: the settings file lives in the config directory paths.resolve answers, so log.write reads logConsole from settings/settings.json under a renamed config directory and answers the console line, where basekit hard-coded config/settings.json, found none and answered none"
     }
   ]
 }

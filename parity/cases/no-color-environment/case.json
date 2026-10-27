@@ -1,9 +1,9 @@
 {
+  "home": [
+    "config/settings.json"
+  ],
   "manifest": {
     "id": "p"
-  },
-  "settings": {
-    "logConsole": true
   },
   "environment": {
     "NO_COLOR": "1"

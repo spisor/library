@@ -1,7 +1,5 @@
 package com.spisor.library;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -31,7 +29,6 @@ import java.util.TreeMap;
 final class ParityCases {
 
     private static final String DEFAULT_START = "2026-10-27T19:34:53.123Z";
-    private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private final Path parityDirectory;
 
@@ -85,7 +82,29 @@ final class ParityCases {
     }
 
     JsonArray divergences() throws IOException {
-        return parse(parityDirectory.resolve("divergences.json")).getAsJsonObject().getAsJsonArray("divergences");
+        JsonArray divergences = parse(parityDirectory.resolve("divergences.json")).getAsJsonObject().getAsJsonArray("divergences");
+        Set<String> repeated = repeatedCalls(divergences);
+        if (!repeated.isEmpty()) {
+            throw new IllegalStateException("divergences.json records a call more than once: " + repeated);
+        }
+        return divergences;
+    }
+
+    /** The {@code case/call} pairs named more than once, since a driver could hold only one of them. */
+    private static Set<String> repeatedCalls(JsonArray divergences) {
+        Set<String> seen = new LinkedHashSet<String>();
+        Set<String> repeated = new LinkedHashSet<String>();
+        for (JsonElement element : divergences) {
+            JsonObject entry = element.getAsJsonObject();
+            if (!entry.has("call")) {
+                continue;
+            }
+            String pair = entry.get("case").getAsString() + "/" + entry.get("call").getAsInt();
+            if (!seen.add(pair)) {
+                repeated.add(pair);
+            }
+        }
+        return repeated;
     }
 
     private JsonObject definitionOf(String name) throws IOException {
@@ -93,11 +112,7 @@ final class ParityCases {
     }
 
     /**
-     * Lays one case out afresh: its fixture files copied byte for byte into the home, and
-     * {@code settings} written as {@code config/settings.json}.
-     *
-     * @implNote The settings file is never compared across implementations, since nothing writes
-     * it after staging, so Gson's pretty printing need not match {@code JSON.stringify}'s.
+     * Lays one case out afresh: its fixture files copied byte for byte into the home.
      */
     StagedCase stage(String name, Path workRoot) throws IOException {
         JsonObject definition = definitionOf(name);
@@ -106,10 +121,6 @@ final class ParityCases {
         deleteTree(root);
         Files.createDirectories(home);
         copyFixtures(casesDirectory().resolve(name).resolve("home"), definition, home);
-        if (definition.has("settings")) {
-            Files.createDirectories(home.resolve("config"));
-            write(home.resolve("config").resolve("settings.json"), PRETTY.toJson(definition.get("settings")) + "\n");
-        }
         return new StagedCase(name, root.toString(), home.toString(), definition.getAsJsonObject("manifest"),
                 definition.get("names"), environmentOf(definition), clockOf(definition), callsOf(definition));
     }
