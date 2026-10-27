@@ -34,6 +34,75 @@
           }
         }
       ]
+    },
+    {
+      "id": "config",
+      "functions": [
+        {
+          "name": "all",
+          "symbol": "runtime_config_all",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "names": { "type": "object" },
+              "plugin": { "type": "string" },
+              "config": { "type": "object" }
+            },
+            "required": ["home", "plugin"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "values": { "type": "object" } },
+            "required": ["values"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "get",
+          "symbol": "runtime_config_get",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "names": { "type": "object" },
+              "plugin": { "type": "string" },
+              "config": { "type": "object" },
+              "key": { "type": "string" }
+            },
+            "required": ["home", "plugin", "key"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "value": {} },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set",
+          "symbol": "runtime_config_set",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "names": { "type": "object" },
+              "plugin": { "type": "string" },
+              "config": { "type": "object" },
+              "key": { "type": "string" },
+              "value": {}
+            },
+            "required": ["home", "plugin", "key", "value"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "previous": {} },
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

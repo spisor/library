@@ -7,12 +7,6 @@
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
 
-#if defined(_WIN32)
-#define RUNTIME_HOST_IS_WINDOWS 1
-#else
-#define RUNTIME_HOST_IS_WINDOWS 0
-#endif
-
 static char *declared_segment(const cJSON *names, const char *kind) {
     const cJSON *declared = cJSON_GetObjectItemCaseSensitive(names, kind);
     return cJSON_IsString(declared) ? runtime_portable_segment(declared->valuestring) : NULL;
