@@ -7,6 +7,12 @@
 #include "cJSON.h"
 #include "export.h"
 
+#if defined(_WIN32)
+#define RUNTIME_HOST_IS_WINDOWS 1
+#else
+#define RUNTIME_HOST_IS_WINDOWS 0
+#endif
+
 typedef struct runtime_paths {
     char *home;
     char *repos;
