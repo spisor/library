@@ -103,6 +103,36 @@
           }
         }
       ]
+    },
+    {
+      "id": "log",
+      "functions": [
+        {
+          "name": "write",
+          "symbol": "runtime_log_write",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "names": { "type": "object" },
+              "plugin": { "type": "string" },
+              "config": { "type": "object" },
+              "start": { "type": "string" },
+              "time": { "type": "string" },
+              "level": { "enum": ["debug", "info", "warn", "error"] },
+              "message": { "type": "string" },
+              "noColor": { "type": "boolean" }
+            },
+            "required": ["home", "plugin", "start", "time", "level", "message", "noColor"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "console": { "type": "string" } },
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

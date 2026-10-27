@@ -1,4 +1,4 @@
-add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c)
+add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
