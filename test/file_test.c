@@ -127,6 +127,7 @@ static void make_directories_creates_nested(void) {
 
 static void append_creates_then_appends(void) {
     const char *path = SPISOR_SCRATCH_PATH "/appended.log";
+    remove(path);
     CHECK(spisor_append_file(path, (const uint8_t *)"x\n", 2) == 1);
     CHECK(spisor_append_file(path, (const uint8_t *)"y\n", 2) == 1);
     read_back_equals(path, "x\ny\n");
