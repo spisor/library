@@ -30,8 +30,10 @@ typedef struct spisor_call {
  * Reads one whole JSON document exactly as JSON.parse would, or answers NULL. Refuses invalid
  * UTF-8, anything after the value, and a string (key or value, at any depth) holding a NUL.
  *
- * @implNote cJSON departs from JSON.parse three ways, each closed here without touching the
- * vendored file: it accepts invalid UTF-8, so the bytes are validated first; it truncates a string
+ * @implNote cJSON departs from JSON.parse in these ways, each closed here without touching the
+ * vendored file: it accepts invalid UTF-8, so the bytes are validated first; its grammar is laxer
+ * (a BOM, any byte up to 0x20 as whitespace, raw control characters in a string, numbers such as
+ * 01 and 1.), so JSON.parse's grammar is checked before cJSON reads anything; it truncates a string
  * at an escaped NUL, so such a document is refused rather than read short; and it refuses an
  * unpaired surrogate escape, which JSON.stringify emits for an unpaired UTF-16 value, so each one
  * is rewritten to the escape of U+FFFD (what Node's UTF-8 encoding of that string holds) before

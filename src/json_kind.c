@@ -1,5 +1,7 @@
 #include "spisor/json_kind.h"
 
+#include "json_grammar.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -140,17 +142,6 @@ static int is_valid_utf8(const uint8_t *bytes, size_t length) {
     return 1;
 }
 
-static int is_json_whitespace(char character) {
-    return character == ' ' || character == '\t' || character == '\n' || character == '\r';
-}
-
-static int only_whitespace_after(const char *end, const char *limit) {
-    while (end < limit && is_json_whitespace(*end)) {
-        end++;
-    }
-    return end == limit;
-}
-
 typedef enum document_refusal {
     DOCUMENT_ACCEPTED,
     DOCUMENT_NOT_UTF8,
@@ -276,14 +267,10 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
         memcpy(text, bytes, length);
     }
     text[length] = '\0';
-    document_refusal refusal = rewrite_escapes(text, length);
+    document_refusal refusal = spisor_is_json_parse_grammar(text, length) ? rewrite_escapes(text, length)
+                                                                          : DOCUMENT_NOT_JSON;
     if (refusal == DOCUMENT_ACCEPTED) {
-        const char *end = NULL;
-        *root = cJSON_ParseWithLengthOpts(text, length, &end, 0);
-        if (*root != NULL && !only_whitespace_after(end, text + length)) {
-            cJSON_Delete(*root);
-            *root = NULL;
-        }
+        *root = cJSON_ParseWithLength(text, length);
         refusal = *root == NULL ? DOCUMENT_NOT_JSON : DOCUMENT_ACCEPTED;
     }
     free(text);
