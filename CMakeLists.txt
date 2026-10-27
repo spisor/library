@@ -9,7 +9,7 @@ add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
 set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(spisor_library STATIC src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c)
+add_library(spisor_library STATIC src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/json_write.c)
 target_include_directories(spisor_library PUBLIC include)
 target_link_libraries(spisor_library PUBLIC spisor_cjson)
 set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON)
