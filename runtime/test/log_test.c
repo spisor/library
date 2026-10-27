@@ -280,15 +280,32 @@ static void refuses_malformed_arguments(void) {
     free(content);
 }
 
-static void refuses_failed_append(void) {
+static void block_logs_directory(const scratch_home *home) {
+    char blocker[1200];
+    snprintf(blocker, sizeof blocker, "%s/logs", home->path);
+    write_text(blocker, "a file where the directory belongs");
+}
+
+static void refuses_failed_append_without_console_line(void) {
     scratch_home home;
     fresh_home(&home, "blocked");
-    char blocker[1200];
-    snprintf(blocker, sizeof blocker, "%s/logs", home.path);
-    write_text(blocker, "a file where the directory belongs");
+    block_logs_directory(&home);
     answer result = write_log(request_for(&home, "info", NULL, NULL, 0));
-    expect_refused(&result, "unwritable log");
+    expect_refused(&result, "unwritable log, console off");
     finish(&result);
+}
+
+static void failed_append_keeps_due_console_line(void) {
+    scratch_home home;
+    fresh_home(&home, "blocked-console");
+    block_logs_directory(&home);
+    answer error = write_log(request_for(&home, "error", NULL, NULL, 0));
+    expect_console(&error, "\x1b[33m[p]\x1b[0m \x1b[31mm\x1b[0m", "unwritable log, error");
+    finish(&error);
+    write_settings(&home, "config", "{\"logConsole\":true}");
+    answer info = write_log(request_for(&home, "info", NULL, NULL, 0));
+    expect_console(&info, "\x1b[33m[p]\x1b[0m m", "unwritable log, console on");
+    finish(&info);
 }
 
 int main(void) {
@@ -303,6 +320,7 @@ int main(void) {
     unreadable_settings_mean_console_off_colour_on();
     colour_matches_basekit();
     refuses_malformed_arguments();
-    refuses_failed_append();
+    refuses_failed_append_without_console_line();
+    failed_append_keeps_due_console_line();
     return check_summary("log_test");
 }

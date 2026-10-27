@@ -274,11 +274,12 @@ static int32_t write_entry(const log_entry *entry, const char *name, uint8_t **o
     }
     int skip_file = is_logging_disabled(merged);
     cJSON_Delete(merged);
-    if (!skip_file && !append_line(entry, name)) {
-        return refuse_append(out, out_len);
-    }
+    int append_failed = !skip_file && !append_line(entry, name);
     console_style style = read_console_style(entry);
     char *line = should_print(entry, &style) ? console_line(entry, name, style.colored && !entry->no_color) : NULL;
+    if (append_failed && line == NULL) {
+        return refuse_append(out, out_len);
+    }
     return answer_console(line, out, out_len);
 }
 
