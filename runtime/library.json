@@ -1,0 +1,39 @@
+{
+  "$schema": "https://weivel.github.io/model/library.schema.json",
+  "id": "runtime",
+  "version": "0.1.0",
+  "binary": "runtime",
+  "release": "runtime_release",
+  "services": [
+    {
+      "id": "paths",
+      "functions": [
+        {
+          "name": "resolve",
+          "symbol": "runtime_paths_resolve",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "names": { "type": "object" }
+            },
+            "required": ["home"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "repos": { "type": "string" },
+              "plugin": { "type": "string" },
+              "cache": { "type": "string" },
+              "config": { "type": "string" }
+            },
+            "required": ["home", "repos", "plugin", "cache", "config"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+foreach(name paths_test)
+    add_executable(${name} ${name}.c)
+    target_link_libraries(${name} PRIVATE runtime_objects)
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
+    spisor_strict_warnings(${name})
+    add_test(NAME ${name} COMMAND ${name})
+endforeach()
