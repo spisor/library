@@ -1,0 +1,21 @@
+{
+  "home": [
+    "config/p.json"
+  ],
+  "manifest": {
+    "id": "p"
+  },
+  "calls": [
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "10",
+        "value": 3
+      }
+    },
+    {
+      "function": "config.all",
+      "argument": {}
+    }
+  ]
+}

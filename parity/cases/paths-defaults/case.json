@@ -1,0 +1,11 @@
+{
+  "manifest": {
+    "id": "p"
+  },
+  "calls": [
+    {
+      "function": "paths.resolve",
+      "argument": {}
+    }
+  ]
+}

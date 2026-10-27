@@ -1,0 +1,29 @@
+{
+  "home": [
+    "config/p.json"
+  ],
+  "manifest": {
+    "id": "p"
+  },
+  "calls": [
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "a"
+      }
+    },
+    {
+      "function": "file.write",
+      "argument": {
+        "path": "config/p.json",
+        "text": "{\"a\":2}"
+      }
+    },
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "a"
+      }
+    }
+  ]
+}

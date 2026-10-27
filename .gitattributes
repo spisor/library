@@ -1,1 +1,3 @@
 test/vectors/*.json -text
+parity/cases/** -text
+parity/java/gradlew text eol=lf

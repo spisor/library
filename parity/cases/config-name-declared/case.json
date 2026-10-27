@@ -1,0 +1,53 @@
+{
+  "home": [
+    "config/antigravity.json"
+  ],
+  "manifest": {
+    "id": "p",
+    "config": {
+      "name": "antigravity"
+    }
+  },
+  "clock": {
+    "start": "2026-10-27T19:34:53.123Z",
+    "times": [
+      "2026-10-28T00:00:01.500Z",
+      "2026-10-28T00:00:02.250Z",
+      "2026-10-28T00:00:03.000Z",
+      "2026-10-28T00:00:04.750Z"
+    ]
+  },
+  "calls": [
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "x"
+      }
+    },
+    {
+      "function": "config.all",
+      "argument": {}
+    },
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "y",
+        "value": 2
+      }
+    },
+    {
+      "function": "log.write",
+      "argument": {
+        "level": "info",
+        "message": "m"
+      }
+    },
+    {
+      "function": "log.write",
+      "argument": {
+        "level": "error",
+        "message": "m"
+      }
+    }
+  ]
+}

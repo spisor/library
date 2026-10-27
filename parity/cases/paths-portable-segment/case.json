@@ -1,0 +1,14 @@
+{
+  "manifest": {
+    "id": "p"
+  },
+  "names": {
+    "config": "a:b"
+  },
+  "calls": [
+    {
+      "function": "paths.resolve",
+      "argument": {}
+    }
+  ]
+}

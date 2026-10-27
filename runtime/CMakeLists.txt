@@ -5,6 +5,7 @@ set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_
 spisor_strict_warnings(runtime_objects)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects>)
 target_include_directories(runtime PRIVATE src)

@@ -1,0 +1,23 @@
+name: Parity
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      toolchains: node gradle
+      runners: '["ubuntu-latest","windows-latest"]'
+      extra_repositories: |
+        weivel/model siblings/model 0a2e3321c08afc04848c92ee4fc42dc8d9047a87
+        weivel/typescript siblings/typescript eda7429e41f007188e9a26bdfd5f498025bd861f
+        weivel/java siblings/java f0e1826faaad1b92ba3a5ba0e04c2e72bda6920f
+        forebay/basekit siblings/basekit 71603bef7973936b527fd405c262af485e3e1ac3
+      node_install: npm ci --prefix siblings/typescript && npm ci --prefix parity/typescript
+      node_build: cmake -S . -B build && cmake --build build --config Release && npm run build --prefix siblings/typescript && node parity/oracle.mjs
+      node_test: npm test --prefix parity/typescript
+      gradle_root: parity/java
+      gradle_test: test

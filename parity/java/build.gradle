@@ -1,0 +1,51 @@
+plugins {
+    id "java"
+}
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
+}
+
+def weivel = "0.0.0-dev"
+
+dependencies {
+    testImplementation "io.github.intisy:jvm-seam:${weivel}"
+    testImplementation "com.google.code.gson:gson:2.10.1"
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.1"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+def parityDirectory = file("..")
+def buildOutput = new File(parityDirectory, "../build/bin")
+def binary = System.getProperty("os.name").toLowerCase(Locale.ROOT).startsWith("windows")
+        ? new File(buildOutput, "Release/runtime.dll")
+        : new File(buildOutput, "libruntime.so")
+
+// The cases, divergences, expected answers and the library itself are read off disk at run time,
+// so Gradle is told about them, or a changed expectation or a rebuilt binary would answer UP-TO-DATE.
+tasks.named("test") {
+    useJUnitPlatform()
+    systemProperty "parity.directory", parityDirectory.absolutePath
+    systemProperty "parity.binary", binary.absolutePath
+    inputs.dir new File(parityDirectory, "cases")
+    inputs.file new File(parityDirectory, "divergences.json")
+    inputs.file new File(parityDirectory, "../runtime/library.json")
+    inputs.file binary
+    inputs.property "parityCases", System.getenv("PARITY_CASES") ?: ""
+    inputs.dir(new File(parityDirectory, "expected")).optional()
+    testLogging {
+        events "passed", "failed"
+        showStandardStreams = true
+        exceptionFormat = "full"
+    }
+}

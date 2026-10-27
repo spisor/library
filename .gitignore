@@ -3,3 +3,9 @@ build/
 
 # Generated on the default branch by the readme job.
 README.md
+siblings/
+parity/work/
+parity/expected/
+parity/typescript/node_modules/
+parity/java/build/
+parity/java/.gradle/
