@@ -1,0 +1,20 @@
+{
+  "home": [
+    "settings/settings.json"
+  ],
+  "manifest": {
+    "id": "p"
+  },
+  "names": {
+    "config": "settings"
+  },
+  "calls": [
+    {
+      "function": "log.write",
+      "argument": {
+        "level": "info",
+        "message": "m"
+      }
+    }
+  ]
+}

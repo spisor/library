@@ -41,7 +41,7 @@ export function declaredCallCount(names) {
 
 /**
  * Lays one case out afresh under the driver's work directory: its fixture files copied byte for
- * byte into the home, and `settings` written as `config/settings.json`.
+ * byte into the home.
  */
 export function stageCase(name, workRoot) {
   const caseDirectory = join(CASES_DIRECTORY, name);
@@ -54,10 +54,6 @@ export function stageCase(name, workRoot) {
     const target = join(home, file);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(caseDirectory, "home", file), target);
-  }
-  if (definition.settings !== undefined) {
-    mkdirSync(join(home, "config"), { recursive: true });
-    writeFileSync(join(home, "config", "settings.json"), JSON.stringify(definition.settings, null, 2) + "\n");
   }
   return {
     name,
@@ -169,5 +165,21 @@ export function writeExpected(name, answers, files) {
 }
 
 export function readDivergences() {
-  return JSON.parse(readFileSync(DIVERGENCES_FILE, "utf8")).divergences;
+  const divergences = JSON.parse(readFileSync(DIVERGENCES_FILE, "utf8")).divergences;
+  const repeated = repeatedCalls(divergences);
+  if (repeated.length > 0) throw new Error(`divergences.json records a call more than once: ${repeated.join(", ")}`);
+  return divergences;
+}
+
+/** The `case/call` pairs divergences.json names more than once, since a driver could hold only one of them. */
+export function repeatedCalls(divergences) {
+  const seen = new Set();
+  const repeated = new Set();
+  for (const entry of divergences) {
+    if (entry.call === undefined) continue;
+    const pair = `${entry.case}/${entry.call}`;
+    if (seen.has(pair)) repeated.add(pair);
+    seen.add(pair);
+  }
+  return [...repeated];
 }
