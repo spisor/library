@@ -6,6 +6,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include <dirent.h>
 #endif
 
 #define NON_ASCII_NAME SPISOR_SCRATCH_PATH "/caf\xc3\xa9-\xe6\x97\xa5\xe6\x9c\xac.txt"
@@ -70,11 +72,91 @@ static void an_empty_file_reads_as_empty(void) {
     free(bytes);
 }
 
+static int count_temporary_entries(const char *directory) {
+    int count = 0;
+#if defined(_WIN32)
+    char pattern[1024];
+    wchar_t wide_pattern[1024];
+    snprintf(pattern, sizeof pattern, "%s/*.tmp", directory);
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pattern, -1, wide_pattern, 1024) == 0) {
+        return -1;
+    }
+    WIN32_FIND_DATAW found;
+    HANDLE handle = FindFirstFileW(wide_pattern, &found);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    do {
+        count++;
+    } while (FindNextFileW(handle, &found));
+    FindClose(handle);
+#else
+    DIR *handle = opendir(directory);
+    if (handle == NULL) {
+        return -1;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(handle)) != NULL) {
+        size_t name_length = strlen(entry->d_name);
+        if (name_length >= 4 && strcmp(entry->d_name + name_length - 4, ".tmp") == 0) {
+            count++;
+        }
+    }
+    closedir(handle);
+#endif
+    return count;
+}
+
+static void read_back_equals(const char *path, const char *expected) {
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(path, &length);
+    CHECK(bytes != NULL);
+    if (bytes != NULL) {
+        CHECK(length == strlen(expected));
+        check_text((const char *)bytes, expected, path);
+    }
+    free(bytes);
+}
+
+static void make_directories_creates_nested(void) {
+    const char *nested = SPISOR_SCRATCH_PATH "/a/b/c\xc3\xa9";
+    CHECK(spisor_make_directories(nested) == 1);
+    CHECK(spisor_file_exists(nested) != 0);
+    CHECK(spisor_make_directories(nested) == 1);
+}
+
+static void append_creates_then_appends(void) {
+    const char *path = SPISOR_SCRATCH_PATH "/appended.log";
+    CHECK(spisor_append_file(path, (const uint8_t *)"x\n", 2) == 1);
+    CHECK(spisor_append_file(path, (const uint8_t *)"y\n", 2) == 1);
+    read_back_equals(path, "x\ny\n");
+}
+
+static void replace_overwrites_existing(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/replace";
+    const char *path = SPISOR_SCRATCH_PATH "/replace/settings.json";
+    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"old", 3) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == 1);
+    read_back_equals(path, "new");
+    CHECK(count_temporary_entries(directory) == 0);
+}
+
+static void replace_into_missing_directory_fails(void) {
+    const char *path = SPISOR_SCRATCH_PATH "/no-such-directory/settings.json";
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == 0);
+    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/no-such-directory") == 0);
+}
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
     a_directory_is_not_readable();
     a_non_ascii_name_round_trips();
     an_empty_file_reads_as_empty();
+    make_directories_creates_nested();
+    append_creates_then_appends();
+    replace_overwrites_existing();
+    replace_into_missing_directory_fails();
     return check_summary("file_test");
 }
