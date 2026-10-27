@@ -251,6 +251,85 @@
         "java"
       ],
       "because": "spec 4.2: the settings file lives in the config directory paths.resolve answers, so log.write reads logConsole from settings/settings.json under a renamed config directory and answers the console line, where basekit hard-coded config/settings.json, found none and answered none"
+    },
+    {
+      "case": "lone-surrogate",
+      "call": 0,
+      "answer": {
+        "value": "�"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3: an escaped lone surrogate in a settings file is read as U+FFFD, spisor_parse_json's documented reading, so get answers U+FFFD, where basekit answered the lone surrogate itself"
+    },
+    {
+      "case": "lone-surrogate",
+      "files": {
+        "config/p.json": "{\n  \"s\": \"�\",\n  \"t\": 1\n}\n"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3: a set rewrites a lone surrogate it read as U+FFFD with the raw U+FFFD, where basekit wrote the escape \\ud800 back"
+    },
+    {
+      "case": "defaults-string",
+      "call": 0,
+      "answer": {
+        "values": {}
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a config.defaults that is not an object reads as {}, so all answers {}, where basekit spread the string \"ab\" into {\"0\": \"a\", \"1\": \"b\"}"
+    },
+    {
+      "case": "defaults-array",
+      "call": 0,
+      "answer": {
+        "values": {}
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a config.defaults that is not an object reads as {}, so all answers {}, where basekit spread the array [1, 2] into {\"0\": 1, \"1\": 2}"
+    },
+    {
+      "case": "defaults-array",
+      "call": 1,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a config.defaults that is not an object reads as {}, so get(\"0\") is absent, where basekit's get indexed the array [1, 2] and answered 1"
+    },
+    {
+      "case": "empty-key",
+      "call": 0,
+      "answer": {},
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 4.2: a get with an empty key answers absent, where basekit answered the member the file names by the empty string"
+    },
+    {
+      "case": "config-name-trimmed",
+      "files": {
+        "config/ p .json": null,
+        "config/p.json": "{\n  \"k\": 1\n}\n"
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "spec 3: config.name is trimmed like every other name, so \" p \" names config/p.json, where basekit used the untrimmed name and wrote config/ p .json"
     }
   ]
 }
