@@ -29,9 +29,13 @@ char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripp
  * basekit's readJson without the fallback: the file read as Node reads UTF-8, whole-line comments
  * stripped, then JSON.parse. The tree comes back with PARSED. NULL comes back with ABSENT when
  * nothing exists at path, or UNREADABLE when something does but it cannot be read (a directory,
- * say) or is not JSON. NULL with state untouched means memory ran out.
+ * say) or is not JSON.
  *
- * @implNote A BOM not followed by a comment is refused, as JSON.parse refuses it.
+ * @implNote A BOM not followed by a comment is refused, as JSON.parse refuses it. UNREADABLE also
+ * covers running out of memory while reading or parsing, since spisor_read_file and
+ * spisor_parse_json answer NULL for every failure; that fails safe, as a caller that refuses to
+ * write over an UNREADABLE file never overwrites one. The state is left untouched only when
+ * memory runs out in the decode or strip step.
  */
 cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state);
 
