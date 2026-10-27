@@ -1,6 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include "check.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
@@ -81,6 +86,38 @@ static void read_absent_file(void) {
     CHECK(state == SPISOR_JSON_FILE_ABSENT);
 }
 
+static void read_beneath_a_file(void) {
+    spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
+    CHECK(spisor_replace_file(SCRATCH_FILE, (const uint8_t *)"{}", 2));
+    cJSON *tree = spisor_read_json_file(SCRATCH_FILE "/inner.json", &state);
+    CHECK(tree == NULL);
+    CHECK(state == SPISOR_JSON_FILE_ABSENT);
+}
+
+#if defined(_WIN32)
+static void read_where_the_os_will_not_answer(void) {
+    spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
+    cJSON *tree = spisor_read_json_file(SPISOR_SCRATCH_PATH "/in<valid.json", &state);
+    CHECK(tree == NULL);
+    CHECK(state == SPISOR_JSON_FILE_UNREADABLE);
+}
+#else
+static void read_where_the_os_will_not_answer(void) {
+    const char *sealed = SPISOR_SCRATCH_PATH "/sealed";
+    const char *inside = SPISOR_SCRATCH_PATH "/sealed/settings.json";
+    CHECK(spisor_make_directories(sealed) == 1);
+    CHECK(spisor_replace_file(inside, (const uint8_t *)"{}", 2));
+    CHECK(chmod(sealed, 0600) == 0);
+    spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
+    cJSON *tree = spisor_read_json_file(inside, &state);
+    CHECK(chmod(sealed, 0700) == 0);
+    cJSON_Delete(tree);
+    if (geteuid() != 0) {
+        CHECK(state == SPISOR_JSON_FILE_UNREADABLE);
+    }
+}
+#endif
+
 static void read_directory(void) {
     spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
     cJSON *tree = spisor_read_json_file(SPISOR_SCRATCH_PATH, &state);
@@ -142,6 +179,8 @@ int main(void) {
     strips_a_bom_that_leads_a_comment();
     strips_a_comment_holding_a_nul();
     read_absent_file();
+    read_beneath_a_file();
+    read_where_the_os_will_not_answer();
     read_directory();
     read_malformed_file();
     read_empty_file();
