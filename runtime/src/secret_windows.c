@@ -57,22 +57,45 @@ static int has_logical_root(const char *entry) {
     return strncmp(entry, LOGICAL_ROOT, sizeof LOGICAL_ROOT - 1) == 0;
 }
 
+#ifdef SPISOR_SECRET_TEST_HOOKS
 static long chunk_writes_allowed = -1;
+static long base_reads_allowed = -1;
 
 void runtime_secret_windows_allow_chunk_writes(long count) {
     chunk_writes_allowed = count;
 }
 
-static int chunk_writes_exhausted(void) {
-    if (chunk_writes_allowed < 0) {
+void runtime_secret_windows_allow_base_reads(long count) {
+    base_reads_allowed = count;
+}
+
+static int spend_allowance(long *allowed) {
+    if (*allowed < 0) {
         return 0;
     }
-    if (chunk_writes_allowed == 0) {
+    if (*allowed == 0) {
         return 1;
     }
-    chunk_writes_allowed--;
+    (*allowed)--;
     return 0;
 }
+
+static int chunk_writes_exhausted(void) {
+    return spend_allowance(&chunk_writes_allowed);
+}
+
+static int base_reads_exhausted(void) {
+    return spend_allowance(&base_reads_allowed);
+}
+#else
+static int chunk_writes_exhausted(void) {
+    return 0;
+}
+
+static int base_reads_exhausted(void) {
+    return 0;
+}
+#endif
 
 static wchar_t *chunk_target(const char *entry, unsigned generation, size_t number) {
     const char *below_root = entry + sizeof LOGICAL_ROOT - 1;
@@ -189,20 +212,29 @@ static int parse_chunk_layout(const CREDENTIALW *credential, unsigned *generatio
     return valid;
 }
 
-/** The generation the stored value is chunked under, or the second one when it is not chunked, so the first is next. */
-static unsigned generation_in_use(const char *entry) {
+/**
+ * Answers DONE with the generation the stored value is chunked under, or the second one when there is
+ * none (absent or whole), so the first is next. Any other answer means the live generation is unknown,
+ * and the caller must not touch a chunk.
+ */
+static runtime_secret_answer generation_in_use(const char *entry, unsigned *generation) {
     wchar_t *target = widen(entry);
     PCREDENTIALW base = NULL;
-    unsigned generation = SECOND_GENERATION;
     size_t count = 0;
-    if (target != NULL && read_credential(target, &base) == RUNTIME_SECRET_DONE) {
-        if (!is_chunked(base) || !parse_chunk_layout(base, &generation, &count)) {
-            generation = SECOND_GENERATION;
+    runtime_secret_answer answer = RUNTIME_SECRET_FAILED;
+    *generation = SECOND_GENERATION;
+    if (target == NULL) {
+        return answer;
+    }
+    answer = base_reads_exhausted() ? RUNTIME_SECRET_FAILED : read_credential(target, &base);
+    free(target);
+    if (answer == RUNTIME_SECRET_DONE) {
+        if (!is_chunked(base) || !parse_chunk_layout(base, generation, &count)) {
+            *generation = SECOND_GENERATION;
         }
         CredFree(base);
     }
-    free(target);
-    return generation;
+    return answer == RUNTIME_SECRET_ABSENT ? RUNTIME_SECRET_DONE : answer;
 }
 
 static runtime_secret_answer write_all_chunks(const char *entry, unsigned generation, const char *value,
@@ -235,10 +267,15 @@ static runtime_secret_answer write_all_chunks(const char *entry, unsigned genera
  * only the joined value is text.
  */
 static runtime_secret_answer write_chunked(const char *entry, const char *value, size_t length) {
-    unsigned generation = other_generation(generation_in_use(entry));
+    unsigned generation = SECOND_GENERATION;
     char layout[2 * COUNT_TEXT_CAPACITY];
+    runtime_secret_answer answer = generation_in_use(entry, &generation);
+    if (answer != RUNTIME_SECRET_DONE) {
+        return answer;
+    }
+    generation = other_generation(generation);
     sweep_generation(entry, generation);
-    runtime_secret_answer answer = write_all_chunks(entry, generation, value, length);
+    answer = write_all_chunks(entry, generation, value, length);
     if (answer == RUNTIME_SECRET_DONE) {
         snprintf(layout, sizeof layout, "%u:%zu", generation, chunks_needed(length));
         answer = write_named(entry, layout, strlen(layout), CHUNKED_MARKER);

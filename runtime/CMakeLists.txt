@@ -20,6 +20,13 @@ target_include_directories(runtime_secret_store PUBLIC src)
 set_target_properties(runtime_secret_store PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_secret_store)
 
+if(WIN32)
+    add_library(runtime_secret_store_test_hooks OBJECT ${runtime_secret_store_source})
+    target_include_directories(runtime_secret_store_test_hooks PUBLIC src)
+    target_compile_definitions(runtime_secret_store_test_hooks PRIVATE SPISOR_SECRET_TEST_HOOKS)
+    spisor_strict_warnings(runtime_secret_store_test_hooks)
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 

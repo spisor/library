@@ -190,6 +190,21 @@ static void an_interrupted_chunked_rewrite_keeps_the_old_value(void) {
     free(new_value);
 }
 
+static void an_unreadable_base_leaves_the_old_chunks_untouched(void) {
+    char *old_value = filled_value(6000);
+    char *new_value = filled_value(7000);
+    if (stores("unreadable", old_value)) {
+        int before = chunk_root_entries(0);
+        runtime_secret_windows_allow_base_reads(0);
+        CHECK(runtime_secret_store_set(entry_for("unreadable"), new_value) == RUNTIME_SECRET_FAILED);
+        runtime_secret_windows_allow_base_reads(-1);
+        reads_back("unreadable", old_value);
+        CHECK(chunk_root_entries(0) == before);
+    }
+    free(old_value);
+    free(new_value);
+}
+
 static void an_interrupted_chunked_set_over_a_whole_value_keeps_it(void) {
     char *large = filled_value(6000);
     if (stores("whole", "small") && fails_midway("whole", large, 2)) {
@@ -299,6 +314,7 @@ static void windows_only_checks(void) {
     deleting_a_logical_entry_deletes_its_chunks();
     chunks_never_appear_in_a_listing();
     an_interrupted_chunked_rewrite_keeps_the_old_value();
+    an_unreadable_base_leaves_the_old_chunks_untouched();
     an_interrupted_chunked_set_over_a_whole_value_keeps_it();
     a_rewrite_after_a_failed_sweep_reads_correctly();
     a_value_over_the_cap_is_refused_and_the_old_one_kept();
