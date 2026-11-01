@@ -34,6 +34,11 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
  * @implNote The bytes go to a temporary sibling named after path with a random hex suffix and a
  * .tmp extension, which is renamed over path; it is removed again on any failure. The directory
  * must already exist.
+ *
+ * A path that is a symlink is resolved to its final target first, and the temporary file is
+ * created beside that target, so the link survives and the target changes. This keeps a home
+ * directory managed by stow or chezmoi intact. A dangling link is refused (returns 0). Reads and
+ * spisor_file_exists already follow links.
  */
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length);
 
