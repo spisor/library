@@ -19,6 +19,7 @@ export interface StagedCase {
   home: string;
   manifest: CaseManifest;
   names?: Record<string, unknown>;
+  portable?: string;
   environment: Record<string, string>;
   clock: CaseClock;
   calls: ParityCall[];

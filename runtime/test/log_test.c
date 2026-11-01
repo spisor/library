@@ -22,6 +22,7 @@
 typedef struct scratch_home {
     char path[1024];
     char config_directory[1100];
+    char portable[1100];
 } scratch_home;
 
 typedef struct answer {
@@ -35,6 +36,7 @@ static void fresh_home(scratch_home *home, const char *label) {
     snprintf(home->path, sizeof home->path, RUNTIME_SCRATCH_PATH "/log-%d-%d-%s", (int)CURRENT_PROCESS_ID, sequence++,
              label);
     snprintf(home->config_directory, sizeof home->config_directory, "%s/config", home->path);
+    snprintf(home->portable, sizeof home->portable, "%s/portable", home->path);
     CHECK(spisor_make_directories(home->path) == 1);
 }
 
@@ -48,6 +50,13 @@ static void write_settings(const scratch_home *home, const char *directory_name,
     snprintf(directory, sizeof directory, "%s/%s", home->path, directory_name);
     CHECK(spisor_make_directories(directory) == 1);
     snprintf(path, sizeof path, "%s/settings.json", directory);
+    write_text(path, text);
+}
+
+static void write_settings_file(const scratch_home *home, const char *name, const char *text) {
+    char path[1200];
+    CHECK(spisor_make_directories(home->config_directory) == 1);
+    snprintf(path, sizeof path, "%s/%s.json", home->config_directory, name);
     write_text(path, text);
 }
 
@@ -325,6 +334,92 @@ static void refuses_unusable_home(void) {
     CHECK(spisor_file_exists("logs") == 0);
 }
 
+static cJSON *with_portable(cJSON *request, const scratch_home *home) {
+    cJSON_AddStringToObject(request, "portable", home->portable);
+    return request;
+}
+
+static void write_portable(const scratch_home *home, const char *relative_directory, const char *file_name,
+                           const char *text) {
+    char directory[1300];
+    char path[1400];
+    snprintf(directory, sizeof directory, "%s%s", home->portable, relative_directory);
+    CHECK(spisor_make_directories(directory) == 1);
+    snprintf(path, sizeof path, "%s/%s", directory, file_name);
+    write_text(path, text);
+}
+
+static void console_gate_from_portable_settings(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-console");
+    write_portable(&home, "", "settings.json", "{\"logConsole\":true}");
+    answer shared = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    expect_console(&shared, "\x1b[33m[p]\x1b[0m m", "logConsole from the portable settings");
+    finish(&shared);
+    answer unlayered = write_log(request_for(&home, "info", NULL, NULL, 0));
+    expect_console(&unlayered, NULL, "no portable folder given");
+    finish(&unlayered);
+    write_settings(&home, "config", "{\"logConsole\":false}");
+    answer overridden = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    expect_console(&overridden, NULL, "the application's settings override the portable");
+    finish(&overridden);
+}
+
+static void colour_from_portable_settings(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-colour");
+    write_portable(&home, "", "settings.json", "{\"logConsole\":true,\"logColor\":false}");
+    write_settings(&home, "config", "{\"other\":1}");
+    answer plain = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    expect_console(&plain, "[p] m", "logColor from the portable settings under an unrelated application file");
+    finish(&plain);
+}
+
+static void logging_gate_from_portable_plugin_file(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-gate");
+    write_portable(&home, "/plugins/p", "config.json", "{\"logging\":false}");
+    answer gated = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    finish(&gated);
+    char *content = read_log(&home);
+    CHECK(content == NULL);
+    free(content);
+    write_settings_file(&home, "p", "{\"logging\":true}");
+    answer reopened = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    finish(&reopened);
+    content = read_log(&home);
+    check_text(content, "[" TIME "] [INFO] m\n", "the application file reopens the log");
+    free(content);
+}
+
+static void absent_portable_folder_changes_no_log(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-absent");
+    write_settings(&home, "config", "{\"logConsole\":true}");
+    answer result = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
+    expect_console(&result, "\x1b[33m[p]\x1b[0m m", "absent portable folder");
+    finish(&result);
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void refuses_unusable_portable(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-relative");
+    cJSON *request = request_for(&home, "info", NULL, NULL, 0);
+    cJSON_AddStringToObject(request, "portable", "relative-portable");
+    answer result = write_log(request);
+    expect_refused(&result, "relative portable");
+    finish(&result);
+    cJSON *escaping = with_portable(request_for(&home, "info", "{\"name\":\"p\"}", NULL, 0), &home);
+    cJSON_ReplaceItemInObjectCaseSensitive(escaping, "plugin", cJSON_CreateString("../p"));
+    answer bad_id = write_log(escaping);
+    expect_refused(&bad_id, "an id that is no portable folder name");
+    finish(&bad_id);
+    char *content = read_log(&home);
+    CHECK(content == NULL);
+    free(content);
+}
+
 int main(void) {
     writes_tagged_line();
     appends_each_level_tag();
@@ -340,5 +435,10 @@ int main(void) {
     refuses_failed_append_without_console_line();
     failed_append_keeps_due_console_line();
     refuses_unusable_home();
+    console_gate_from_portable_settings();
+    colour_from_portable_settings();
+    logging_gate_from_portable_plugin_file();
+    absent_portable_folder_changes_no_log();
+    refuses_unusable_portable();
     return check_summary("log_test");
 }

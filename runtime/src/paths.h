@@ -48,6 +48,18 @@ int runtime_is_usable_home(const char *home);
 /** The failure object every service answers for a home runtime_is_usable_home refuses. */
 int32_t runtime_refuse_home(uint8_t **out, size_t *out_len);
 
+/**
+ * The portable folder an argument's "portable" names, into *portable, or NULL when it names none.
+ * Answers 0 when one is present but is not a string usable by runtime_is_usable_home's rule.
+ */
+int runtime_portable_argument(const cJSON *argument, const char **portable);
+
+/** The failure object every service answers for a portable runtime_portable_argument refuses. */
+int32_t runtime_refuse_portable(uint8_t **out, size_t *out_len);
+
+/** A plugin's own folder in a place, place/plugins/folder_name, freed with free; NULL when memory runs out. */
+char *runtime_plugin_folder(const char *place, const char *folder_name);
+
 RUNTIME_EXPORT int32_t runtime_paths_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

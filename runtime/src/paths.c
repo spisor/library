@@ -62,6 +62,31 @@ int32_t runtime_refuse_home(uint8_t **out, size_t *out_len) {
                        out, out_len);
 }
 
+int runtime_portable_argument(const cJSON *argument, const char **portable) {
+    const cJSON *declared = cJSON_GetObjectItemCaseSensitive(argument, "portable");
+    *portable = NULL;
+    if (declared == NULL) {
+        return 1;
+    }
+    if (!cJSON_IsString(declared) || !runtime_is_usable_home(declared->valuestring)) {
+        return 0;
+    }
+    *portable = declared->valuestring;
+    return 1;
+}
+
+int32_t runtime_refuse_portable(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the portable folder is not an absolute path",
+                       "send portable as the portable answer of places.resolve, or leave it out when the host has no "
+                       "portable layer",
+                       out, out_len);
+}
+
+char *runtime_plugin_folder(const char *place, const char *folder_name) {
+    const char *segments[3] = {place, "plugins", folder_name};
+    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
+}
+
 static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
     *out = NULL;
     *out_len = 0;
@@ -84,18 +109,72 @@ static cJSON *paths_to_json(const runtime_paths *paths) {
     return result;
 }
 
-static int32_t answer_paths(const char *home, const cJSON *names, uint8_t **out, size_t *out_len) {
+typedef struct plugin_places {
+    const char *portable;
+    const char *cache;
+    char *folder_name;
+} plugin_places;
+
+static const char *usable_place(const cJSON *places, const char *member) {
+    const cJSON *place = cJSON_GetObjectItemCaseSensitive(places, member);
+    return cJSON_IsString(place) && runtime_is_usable_home(place->valuestring) ? place->valuestring : NULL;
+}
+
+/** Fills plugin from the argument's places and plugin; 0 when either is missing or unusable. */
+static int read_plugin_places(const cJSON *argument, plugin_places *plugin) {
+    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
+    const cJSON *id = cJSON_GetObjectItemCaseSensitive(argument, "plugin");
+    plugin->portable = usable_place(places, "portable");
+    plugin->cache = usable_place(places, "cache");
+    plugin->folder_name = cJSON_IsString(id) ? runtime_portable_segment(id->valuestring) : NULL;
+    return cJSON_IsObject(places) && plugin->portable != NULL && plugin->cache != NULL && plugin->folder_name != NULL;
+}
+
+static int add_plugin_folder(cJSON *result, const char *kind, const char *place, const char *folder_name) {
+    char *folder = runtime_plugin_folder(place, folder_name);
+    int added = folder != NULL && add_path(result, kind, folder);
+    free(folder);
+    return added;
+}
+
+static int add_plugin_places(cJSON *result, const plugin_places *plugin) {
+    return add_plugin_folder(result, "portable", plugin->portable, plugin->folder_name) &&
+           add_plugin_folder(result, "pluginCache", plugin->cache, plugin->folder_name);
+}
+
+static int32_t answer_paths(const char *home, const cJSON *names, const plugin_places *plugin, uint8_t **out,
+                            size_t *out_len) {
     runtime_paths paths;
     if (runtime_resolve_paths(home, names, &paths) != 0) {
         return out_of_memory(out, out_len);
     }
     cJSON *result = paths_to_json(&paths);
     runtime_free_paths(&paths);
-    if (result == NULL) {
+    if (result == NULL || (plugin != NULL && !add_plugin_places(result, plugin))) {
+        cJSON_Delete(result);
         return out_of_memory(out, out_len);
     }
     int32_t status = spisor_succeed(result, out, out_len);
     cJSON_Delete(result);
+    return status;
+}
+
+static int32_t refuse_places(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the argument carries places without usable portable and cache folders and a plugin id",
+                       "send places as places.resolve answers it, with absolute portable and cache, and plugin as the "
+                       "manifest id, one portable path segment such as \"my-plugin\"",
+                       out, out_len);
+}
+
+static int32_t answer_with_places(const cJSON *argument, const char *home, uint8_t **out, size_t *out_len) {
+    const cJSON *names = cJSON_GetObjectItemCaseSensitive(argument, "names");
+    if (cJSON_GetObjectItemCaseSensitive(argument, "places") == NULL) {
+        return answer_paths(home, names, NULL, out, out_len);
+    }
+    plugin_places plugin;
+    int32_t status = read_plugin_places(argument, &plugin) ? answer_paths(home, names, &plugin, out, out_len)
+                                                            : refuse_places(out, out_len);
+    free(plugin.folder_name);
     return status;
 }
 
@@ -111,7 +190,7 @@ RUNTIME_EXPORT int32_t runtime_paths_resolve(const uint8_t *in, size_t in_len, u
     } else if (!runtime_is_usable_home(home->valuestring)) {
         status = runtime_refuse_home(out, out_len);
     } else {
-        status = answer_paths(home->valuestring, cJSON_GetObjectItemCaseSensitive(call.argument, "names"), out, out_len);
+        status = answer_with_places(call.argument, home->valuestring, out, out_len);
     }
     spisor_discard_call(&call);
     return status;

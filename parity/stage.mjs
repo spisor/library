@@ -41,7 +41,9 @@ export function declaredCallCount(names) {
 
 /**
  * Lays one case out afresh under the driver's work directory: its fixture files copied byte for
- * byte into the home.
+ * byte into the home. A case's `portable` names a folder under the root that is handed to the
+ * library as the portable place and never laid out, so it is always absent: basekit has no portable
+ * layer, and parity can only show that an absent one changes nothing.
  */
 export function stageCase(name, workRoot) {
   const caseDirectory = join(CASES_DIRECTORY, name);
@@ -61,6 +63,7 @@ export function stageCase(name, workRoot) {
     home,
     manifest: definition.manifest,
     names: definition.names,
+    portable: definition.portable !== undefined ? join(root, definition.portable) : undefined,
     environment: definition.environment ?? {},
     clock: definition.clock ?? DEFAULT_CLOCK,
     calls: definition.calls,
@@ -91,7 +94,12 @@ export function logTime(staged, logIndex) {
 export function libraryArgument(staged, call, logIndex) {
   const common = { home: staged.home, ...(staged.names !== undefined ? { names: staged.names } : {}) };
   if (call.function === "paths.resolve") return { ...common, ...call.argument };
-  const plugin = { ...common, plugin: staged.manifest.id, ...(staged.manifest.config !== undefined ? { config: staged.manifest.config } : {}) };
+  const plugin = {
+    ...common,
+    ...(staged.portable !== undefined ? { portable: staged.portable } : {}),
+    plugin: staged.manifest.id,
+    ...(staged.manifest.config !== undefined ? { config: staged.manifest.config } : {}),
+  };
   if (call.function !== "log.write") return { ...plugin, ...call.argument };
   return {
     ...plugin,
