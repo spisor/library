@@ -19,6 +19,7 @@
 #endif
 
 #define NON_ASCII_NAME SPISOR_SCRATCH_PATH "/caf\xc3\xa9-\xe6\x97\xa5\xe6\x9c\xac.txt"
+#define SKIPPED_EXIT_CODE 77
 #define CONTENT "round trip"
 
 static int write_fixture(const char *utf8_path, const char *content) {
@@ -41,6 +42,10 @@ static int write_fixture(const char *utf8_path, const char *content) {
 #if defined(_WIN32)
 #define LINK_PRIVILEGE_MISSING 2
 
+static int is_privilege_refusal(DWORD error) {
+    return error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_INVALID_PARAMETER;
+}
+
 static int create_link(const char *link_path, const char *target_path) {
     wchar_t wide_link[1024];
     wchar_t wide_target[1024];
@@ -55,7 +60,7 @@ static int create_link(const char *link_path, const char *target_path) {
     if (CreateSymbolicLinkW(wide_link, wide_target, SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) {
         return 1;
     }
-    return GetLastError() == ERROR_PRIVILEGE_NOT_HELD ? LINK_PRIVILEGE_MISSING : 0;
+    return is_privilege_refusal(GetLastError()) ? LINK_PRIVILEGE_MISSING : 0;
 }
 
 static int is_link(const char *path) {
@@ -80,9 +85,12 @@ static int is_link(const char *path) {
 }
 #endif
 
+static int links_skipped = 0;
+
 static int create_link_or_skip(const char *link_path, const char *target_path) {
     int created = create_link(link_path, target_path);
-    if (created == LINK_PRIVILEGE_MISSING) {
+    if (created == LINK_PRIVILEGE_MISSING && getenv("CI") == NULL) {
+        links_skipped = 1;
         printf("SKIP symlink tests: this platform refuses to create symlinks without privilege\n");
         return 0;
     }
@@ -207,6 +215,28 @@ static void replace_through_a_dangling_link_is_refused(void) {
     CHECK(count_temporary_entries(home_directory) == 0);
 }
 
+#if !defined(_WIN32)
+static int mode_of(const char *path) {
+    struct stat status;
+    return stat(path, &status) == 0 ? (int)(status.st_mode & 07777) : -1;
+}
+
+static void replace_keeps_the_permission_bits(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/modes";
+    const char *target = SPISOR_SCRATCH_PATH "/modes/secrets.json";
+    const char *link = SPISOR_SCRATCH_PATH "/modes/secrets-link.json";
+    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(write_fixture(target, "old"));
+    CHECK(chmod(target, 0600) == 0);
+    CHECK(spisor_replace_file(target, (const uint8_t *)"direct", 6) == 1);
+    CHECK(mode_of(target) == 0600);
+    CHECK(create_link(link, target) == 1);
+    CHECK(spisor_replace_file(link, (const uint8_t *)"linked", 6) == 1);
+    CHECK(mode_of(target) == 0600);
+    read_back_equals(target, "linked");
+}
+#endif
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
@@ -219,5 +249,9 @@ int main(void) {
     replace_into_missing_directory_fails();
     replace_through_a_link_changes_the_target_and_keeps_the_link();
     replace_through_a_dangling_link_is_refused();
-    return check_summary("file_test");
+#if !defined(_WIN32)
+    replace_keeps_the_permission_bits();
+#endif
+    int failed = check_summary("file_test");
+    return failed == 0 && links_skipped ? SKIPPED_EXIT_CODE : failed;
 }

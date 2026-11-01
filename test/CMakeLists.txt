@@ -7,6 +7,7 @@ foreach(name json_kind_test path_test file_test javascript_test json_write_test 
         SPISOR_JSON_WRITE_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/json-write.json"
         SPISOR_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
 
 add_test(NAME public_headers_are_ascii
