@@ -120,6 +120,14 @@ static void windows_without_local_app_data_is_refused(void) {
     CHECK(runtime_resolve_places(1, 0, "C:\\u", NULL, &places) == RUNTIME_PLACES_NO_LOCAL_APP_DATA);
 }
 
+static void windows_overrides_cover_every_derived_place(void) {
+    const expected_places expected = {"C:\\u\\.spisor", "D:\\s", "D:\\c", "D:\\s\\secrets.json"};
+    expect_places(1, 0, "C:\\u", "{\"SPISOR_STATE\":\"D:\\\\s\",\"SPISOR_CACHE\":\"D:\\\\c\"}", &expected, 0);
+    runtime_places places;
+    CHECK(resolve(1, 0, "C:\\u", "{\"SPISOR_STATE\":\"D:\\\\s\"}", &places) == RUNTIME_PLACES_NO_LOCAL_APP_DATA);
+    CHECK(resolve(1, 0, "C:\\u", "{\"SPISOR_CACHE\":\"D:\\\\c\"}", &places) == RUNTIME_PLACES_NO_LOCAL_APP_DATA);
+}
+
 static void call_export(const char *request, int32_t *status, cJSON **result) {
     uint8_t *out = NULL;
     size_t out_len = 0;
@@ -180,6 +188,7 @@ int main(void) {
     xdg_is_honoured_on_linux_only();
     spisor_override_beats_xdg();
     windows_without_local_app_data_is_refused();
+    windows_overrides_cover_every_derived_place();
     exported_call_round_trip();
     exported_call_refuses_a_relative_home();
     return check_summary("places_test");
