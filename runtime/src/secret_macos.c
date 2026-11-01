@@ -113,6 +113,10 @@ static runtime_secret_answer collect_accounts(CFArrayRef items, const char *pref
         CFDictionaryRef item = CFArrayGetValueAtIndex(items, index);
         CFStringRef account = CFDictionaryGetValue(item, kSecAttrAccount);
         char *name = account != NULL ? copy_utf8(account) : NULL;
+        if (account != NULL && name == NULL) {
+            runtime_free_secret_names(names);
+            return RUNTIME_SECRET_FAILED;
+        }
         if (name != NULL && strncmp(name, prefix, strlen(prefix)) == 0) {
             names->names[names->count++] = name;
         } else {
@@ -143,7 +147,10 @@ runtime_secret_answer runtime_secret_store_get(const char *entry, char **value) 
         status = SecItemCopyMatching(query, &found);
         CFRelease(query);
     }
-    if (status == errSecSuccess && found != NULL) {
+    if (status == errSecSuccess) {
+        if (found == NULL) {
+            return RUNTIME_SECRET_FAILED;
+        }
         *value = copy_data_as_text((CFDataRef)found);
         CFRelease(found);
         return *value != NULL ? RUNTIME_SECRET_DONE : RUNTIME_SECRET_FAILED;
