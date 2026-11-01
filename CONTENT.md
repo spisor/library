@@ -49,7 +49,7 @@ Service), and that store may prompt the user.
 | `config.get` | `home`, `names`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
 | `config.set` | `home`, `names`, `plugin`, `config`, `key`, `value` | `{ previous }`, after writing the plugin's file |
 | `log.write` | `home`, `names`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
-| `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the store, else the secrets file, or `{}` |
+| `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the secrets file, else the store, or `{}`; a file copy is always the newer one |
 | `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
 | `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places |
 | `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
