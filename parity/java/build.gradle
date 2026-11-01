@@ -27,9 +27,10 @@ dependencies {
 
 def parityDirectory = file("..")
 def buildOutput = new File(parityDirectory, "../build/bin")
-def binary = System.getProperty("os.name").toLowerCase(Locale.ROOT).startsWith("windows")
+def operatingSystem = System.getProperty("os.name").toLowerCase(Locale.ROOT)
+def binary = operatingSystem.startsWith("windows")
         ? new File(buildOutput, "Release/runtime.dll")
-        : new File(buildOutput, "libruntime.so")
+        : new File(buildOutput, operatingSystem.startsWith("mac") ? "libruntime.dylib" : "libruntime.so")
 
 // The cases, divergences, expected answers and the library itself are read off disk at run time,
 // so Gradle is told about them, or a changed expectation or a rebuilt binary would answer UP-TO-DATE.

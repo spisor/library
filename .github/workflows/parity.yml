@@ -10,7 +10,7 @@ jobs:
     uses: intisy/workflows/.github/workflows/test.yml@main
     with:
       toolchains: node gradle
-      runners: '["ubuntu-latest","windows-latest"]'
+      runners: '["ubuntu-latest","windows-latest","macos-latest"]'
       extra_repositories: |
         weivel/model siblings/model 0a2e3321c08afc04848c92ee4fc42dc8d9047a87
         weivel/typescript siblings/typescript eda7429e41f007188e9a26bdfd5f498025bd861f
