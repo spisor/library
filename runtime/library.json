@@ -16,7 +16,16 @@
             "type": "object",
             "properties": {
               "home": { "type": "string", "minLength": 1 },
-              "names": { "type": "object" }
+              "names": { "type": "object" },
+              "plugin": { "type": "string" },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "portable": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["portable", "cache"]
+              }
             },
             "required": ["home"]
           },
@@ -27,7 +36,9 @@
               "repos": { "type": "string" },
               "plugin": { "type": "string" },
               "cache": { "type": "string" },
-              "config": { "type": "string" }
+              "config": { "type": "string" },
+              "portable": { "type": "string" },
+              "pluginCache": { "type": "string" }
             },
             "required": ["home", "repos", "plugin", "cache", "config"],
             "additionalProperties": false
@@ -77,6 +88,7 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" }
             },
@@ -98,6 +110,7 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
               "key": { "type": "string" }
@@ -119,10 +132,12 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
               "key": { "type": "string" },
-              "value": {}
+              "value": {},
+              "layer": { "enum": ["application", "portable"] }
             },
             "required": ["home", "plugin", "key", "value"]
           },
@@ -146,6 +161,7 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
               "start": { "type": "string" },

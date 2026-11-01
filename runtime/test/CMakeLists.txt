@@ -5,6 +5,7 @@ function(runtime_test name)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
 
 foreach(name paths_test config_test log_test places_test)

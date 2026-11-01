@@ -43,12 +43,12 @@ Service), and that store may prompt the user.
 
 | function | takes | answers |
 |---|---|---|
-| `paths.resolve` | `home`, `names` | `home`, `repos`, `plugin`, `cache`, `config` directories |
+| `paths.resolve` | `home`, `names`, `places`, `plugin` | `home`, `repos`, `plugin`, `cache`, `config` directories, and with `places` the plugin's `portable` and `pluginCache` folders |
 | `places.resolve` | `home`, `environment` | `portable`, `state`, `cache`, `secretsFile`, `forceFileStore` |
-| `config.all` | `home`, `names`, `plugin`, `config` | `{ values }`, the defaults deep merged under the plugin's file |
-| `config.get` | `home`, `names`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
-| `config.set` | `home`, `names`, `plugin`, `config`, `key`, `value` | `{ previous }`, after writing the plugin's file |
-| `log.write` | `home`, `names`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
+| `config.all` | `home`, `names`, `portable`, `plugin`, `config` | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order |
+| `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
+| `config.set` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `value`, `layer` | `{ previous }`, after writing the plugin's file in the `application` (default) or `portable` layer |
+| `log.write` | `home`, `names`, `portable`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
 | `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the secrets file, else the store, or `{}`; a file copy is always the newer one |
 | `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
 | `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places |

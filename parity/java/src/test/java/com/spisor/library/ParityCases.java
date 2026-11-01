@@ -112,7 +112,8 @@ final class ParityCases {
     }
 
     /**
-     * Lays one case out afresh: its fixture files copied byte for byte into the home.
+     * Lays one case out afresh: its fixture files copied byte for byte into the home, and its
+     * {@code portable} folder named under the root but never laid out, as {@code stageCase} does.
      */
     StagedCase stage(String name, Path workRoot) throws IOException {
         JsonObject definition = definitionOf(name);
@@ -121,8 +122,9 @@ final class ParityCases {
         deleteTree(root);
         Files.createDirectories(home);
         copyFixtures(casesDirectory().resolve(name).resolve("home"), definition, home);
+        String portable = definition.has("portable") ? root.resolve(definition.get("portable").getAsString()).toString() : null;
         return new StagedCase(name, root.toString(), home.toString(), definition.getAsJsonObject("manifest"),
-                definition.get("names"), environmentOf(definition), clockOf(definition), callsOf(definition));
+                definition.get("names"), portable, environmentOf(definition), clockOf(definition), callsOf(definition));
     }
 
     private static void copyFixtures(Path fixtures, JsonObject definition, Path home) throws IOException {
@@ -191,6 +193,9 @@ final class ParityCases {
             argument.add("names", staged.names());
         }
         if (!"paths.resolve".equals(function)) {
+            if (staged.portable() != null) {
+                argument.addProperty("portable", staged.portable());
+            }
             argument.add("plugin", staged.manifest().get("id"));
             if (staged.manifest().has("config")) {
                 argument.add("config", staged.manifest().get("config"));

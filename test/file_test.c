@@ -10,6 +10,7 @@
 #include "spisor/file.h"
 #include "../src/file_presence.h"
 #include "../src/file_replacement.h"
+#include "links.h"
 #include "temporary_entries.h"
 
 #if defined(_WIN32)
@@ -20,7 +21,6 @@
 #endif
 
 #define NON_ASCII_NAME SPISOR_SCRATCH_PATH "/caf\xc3\xa9-\xe6\x97\xa5\xe6\x9c\xac.txt"
-#define SKIPPED_EXIT_CODE 77
 #define CONTENT "round trip"
 
 static int write_fixture(const char *utf8_path, const char *content) {
@@ -38,65 +38,6 @@ static int write_fixture(const char *utf8_path, const char *content) {
     }
     size_t written = fwrite(content, 1, strlen(content), file);
     return fclose(file) == 0 && written == strlen(content);
-}
-
-#if defined(_WIN32)
-#define LINK_PRIVILEGE_MISSING 2
-
-static int is_privilege_refusal(DWORD error) {
-    return error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_INVALID_PARAMETER;
-}
-
-static int create_link(const char *link_path, const char *target_path) {
-    wchar_t wide_link[1024];
-    wchar_t wide_target[1024];
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, link_path, -1, wide_link, 1024) == 0
-        || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, target_path, -1, wide_target, 1024) == 0) {
-        return 0;
-    }
-    for (wchar_t *cursor = wide_target; *cursor != 0; cursor++) {
-        *cursor = *cursor == L'/' ? L'\\' : *cursor;
-    }
-    DeleteFileW(wide_link);
-    if (CreateSymbolicLinkW(wide_link, wide_target, SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) {
-        return 1;
-    }
-    return is_privilege_refusal(GetLastError()) ? LINK_PRIVILEGE_MISSING : 0;
-}
-
-static int is_link(const char *path) {
-    wchar_t wide_path[1024];
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide_path, 1024) == 0) {
-        return 0;
-    }
-    DWORD attributes = GetFileAttributesW(wide_path);
-    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-}
-#else
-#define LINK_PRIVILEGE_MISSING 2
-
-static int create_link(const char *link_path, const char *target_path) {
-    remove(link_path);
-    return symlink(target_path, link_path) == 0;
-}
-
-static int is_link(const char *path) {
-    struct stat status;
-    return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
-}
-#endif
-
-static int links_skipped = 0;
-
-static int create_link_or_skip(const char *link_path, const char *target_path) {
-    int created = create_link(link_path, target_path);
-    if (created == LINK_PRIVILEGE_MISSING && getenv("CI") == NULL) {
-        links_skipped = 1;
-        printf("SKIP symlink tests: this platform refuses to create symlinks without privilege\n");
-        return 0;
-    }
-    CHECK(created == 1);
-    return created == 1;
 }
 
 static void a_directory_exists(void) {
@@ -314,6 +255,5 @@ int main(void) {
     a_replacement_carries_its_final_mode_before_any_byte_is_written();
 #endif
     private_replace_writes_the_bytes();
-    int failed = check_summary("file_test");
-    return failed == 0 && links_skipped ? SKIPPED_EXIT_CODE : failed;
+    return summary_with_links("file_test");
 }

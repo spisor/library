@@ -169,6 +169,72 @@ static void exported_call_refuses_unusable_home(void) {
     }
 }
 
+#if defined(_WIN32)
+#define TEST_PORTABLE "C:\\u\\.spisor"
+#define TEST_PORTABLE_JSON "C:\\\\u\\\\.spisor"
+#define TEST_CACHE "C:\\l\\spisor\\cache"
+#define TEST_CACHE_JSON "C:\\\\l\\\\spisor\\\\cache"
+#else
+#define TEST_PORTABLE "/u/.spisor"
+#define TEST_PORTABLE_JSON "/u/.spisor"
+#define TEST_CACHE "/u/.cache/spisor"
+#define TEST_CACHE_JSON "/u/.cache/spisor"
+#endif
+
+#define PLACES_JSON "\"places\":{\"portable\":\"" TEST_PORTABLE_JSON "\",\"cache\":\"" TEST_CACHE_JSON "\"}"
+
+static cJSON *resolve_request(const char *request, int32_t *status) {
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    *status = runtime_paths_resolve((const uint8_t *)request, strlen(request), &out, &out_len);
+    cJSON *result = out == NULL ? NULL : spisor_parse_json(out, out_len);
+    spisor_release(out);
+    return result;
+}
+
+static void expect_place_answer(const cJSON *result, const char *kind, const char *place) {
+    const char *segments[3] = {place, "plugins", "p"};
+    char *expected = spisor_path_join(TEST_WINDOWS, segments, 3);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, kind)), expected, kind);
+    free(expected);
+}
+
+static void places_add_the_plugin_folders(void) {
+    int32_t status;
+    cJSON *result = resolve_request("{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"p\"," PLACES_JSON "}", &status);
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    expect_place_answer(result, "portable", TEST_PORTABLE);
+    expect_place_answer(result, "pluginCache", TEST_CACHE);
+    expect_answer(result, "cache", "cache");
+    cJSON_Delete(result);
+}
+
+static void no_places_adds_nothing(void) {
+    int32_t status;
+    cJSON *result = resolve_request("{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"p\"}", &status);
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    CHECK(cJSON_GetObjectItemCaseSensitive(result, "portable") == NULL);
+    CHECK(cJSON_GetObjectItemCaseSensitive(result, "pluginCache") == NULL);
+    cJSON_Delete(result);
+}
+
+static void places_need_a_usable_plugin_and_places(void) {
+    const char *requests[] = {
+        "{\"home\":\"" TEST_HOME_JSON "\"," PLACES_JSON "}",
+        "{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"../p\"," PLACES_JSON "}",
+        "{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"p\",\"places\":{\"portable\":\"relative\",\"cache\":\"" TEST_CACHE_JSON "\"}}",
+        "{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"p\",\"places\":{\"portable\":\"" TEST_PORTABLE_JSON "\"}}",
+        "{\"home\":\"" TEST_HOME_JSON "\",\"plugin\":\"p\",\"places\":\"" TEST_PORTABLE_JSON "\"}",
+    };
+    for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
+        int32_t status;
+        cJSON *failure = resolve_request(requests[index], &status);
+        CHECK(status == SPISOR_STATUS_FAILURE);
+        CHECK(cJSON_IsString(cJSON_GetObjectItemCaseSensitive(failure, "fix")));
+        cJSON_Delete(failure);
+    }
+}
+
 int main(void) {
     segment_rules();
     segment_refuses_windows_forbidden_characters();
@@ -179,5 +245,8 @@ int main(void) {
     exported_call_round_trip();
     exported_call_refuses_missing_home();
     exported_call_refuses_unusable_home();
+    places_add_the_plugin_folders();
+    no_places_adds_nothing();
+    places_need_a_usable_plugin_and_places();
     return check_summary("paths_test");
 }

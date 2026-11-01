@@ -18,13 +18,21 @@
 char *runtime_config_name(const char *plugin, const cJSON *config);
 
 /**
- * The merged settings tree of one plugin: config.defaults with the file under the home's config
- * directory applied over them, as a new tree freed with cJSON_Delete. A file that is absent,
- * malformed or not an object contributes nothing. Reads the file on every call and creates nothing.
- * NULL with *failed set to 1 when the name is unusable or memory runs out.
+ * The merged settings tree of one plugin, as a new tree freed with cJSON_Delete: config.defaults, then
+ * portable/plugins/<plugin id>/config.json, then the file under the home's config directory, each
+ * applied over the last. portable may be NULL, for a host with no portable layer. A file that is
+ * absent, malformed or not an object contributes nothing. Reads the files on every call and creates
+ * nothing. NULL with *failed set to 1 when a name is unusable or memory runs out.
  */
-cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *plugin, const cJSON *config,
-                             int *failed);
+cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *portable, const char *plugin,
+                             const cJSON *config, int *failed);
+
+/**
+ * The merged ecosystem settings, as runtime_read_settings merges a plugin's: portable/settings.json,
+ * then settings.json under the home's config directory. portable may be NULL. NULL with *failed set
+ * to 1 when memory runs out.
+ */
+cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed);
 
 RUNTIME_EXPORT int32_t runtime_config_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_config_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);

@@ -13,20 +13,31 @@
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
+#define PORTABLE_CONFIG_FILE "config.json"
+#define ECOSYSTEM_SETTINGS_FILE "settings.json"
+
 typedef struct config_target {
     char *directory;
     char *file;
 } config_target;
 
+typedef struct config_targets {
+    config_target application;
+    config_target portable;
+} config_targets;
+
 typedef struct config_request {
     const char *home;
+    const char *portable;
     const char *plugin;
     const cJSON *names;
     const cJSON *config;
     const cJSON *argument;
 } config_request;
 
-typedef enum locate_status { LOCATED, UNUSABLE_NAME, LOCATE_OUT_OF_MEMORY } locate_status;
+typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER, UNKNOWN_LAYER } settings_layer;
+
+typedef enum locate_status { LOCATED, UNUSABLE_NAME, UNUSABLE_ID, LOCATE_OUT_OF_MEMORY } locate_status;
 
 typedef enum place_status { PLACED, CROSSES_NON_OBJECT, PLACE_OUT_OF_MEMORY } place_status;
 
@@ -59,6 +70,11 @@ static void free_target(config_target *target) {
     target->file = NULL;
 }
 
+static void free_targets(config_targets *targets) {
+    free_target(&targets->application);
+    free_target(&targets->portable);
+}
+
 static char *file_name_of(const char *name) {
     size_t size = strlen(name) + sizeof(".json");
     char *file_name = malloc(size);
@@ -68,12 +84,10 @@ static char *file_name_of(const char *name) {
     return file_name;
 }
 
-static locate_status join_target(const char *directory, const char *name, config_target *target) {
-    char *file_name = file_name_of(name);
+static locate_status join_target(const char *directory, const char *file_name, config_target *target) {
     const char *segments[2] = {directory, file_name};
-    target->file = file_name != NULL ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
+    target->file = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     target->directory = copy_text(directory);
-    free(file_name);
     if (target->file != NULL && target->directory != NULL) {
         return LOCATED;
     }
@@ -81,17 +95,58 @@ static locate_status join_target(const char *directory, const char *name, config
     return LOCATE_OUT_OF_MEMORY;
 }
 
-static locate_status locate_target(const config_request *request, config_target *target) {
+static locate_status join_named_target(const char *directory, const char *name, config_target *target) {
+    char *file_name = file_name_of(name);
+    locate_status status = file_name != NULL ? join_target(directory, file_name, target) : LOCATE_OUT_OF_MEMORY;
+    free(file_name);
+    return status;
+}
+
+static locate_status locate_in_config_directory(const config_request *request, const char *name,
+                                                config_target *target) {
+    runtime_paths paths;
+    locate_status status = runtime_resolve_paths(request->home, request->names, &paths) == 0
+                               ? join_named_target(paths.config, name, target)
+                               : LOCATE_OUT_OF_MEMORY;
+    runtime_free_paths(&paths);
+    return status;
+}
+
+static locate_status locate_application(const config_request *request, config_target *target) {
     char *name = runtime_config_name(request->plugin, request->config);
     if (name == NULL) {
         return UNUSABLE_NAME;
     }
-    runtime_paths paths;
-    locate_status status = runtime_resolve_paths(request->home, request->names, &paths) == 0
-                               ? join_target(paths.config, name, target)
-                               : LOCATE_OUT_OF_MEMORY;
-    runtime_free_paths(&paths);
+    locate_status status = locate_in_config_directory(request, name, target);
     free(name);
+    return status;
+}
+
+/** The plugin's file in the portable place, named by the manifest id and never by config.name (spec section 3). */
+static locate_status locate_portable(const config_request *request, config_target *target) {
+    if (request->portable == NULL) {
+        return LOCATED;
+    }
+    char *folder_name = runtime_portable_segment(request->plugin);
+    if (folder_name == NULL) {
+        return UNUSABLE_ID;
+    }
+    char *folder = runtime_plugin_folder(request->portable, folder_name);
+    locate_status status = folder != NULL ? join_target(folder, PORTABLE_CONFIG_FILE, target) : LOCATE_OUT_OF_MEMORY;
+    free(folder);
+    free(folder_name);
+    return status;
+}
+
+static locate_status locate_targets(const config_request *request, config_targets *targets) {
+    memset(targets, 0, sizeof(*targets));
+    locate_status status = locate_application(request, &targets->application);
+    if (status == LOCATED) {
+        status = locate_portable(request, &targets->portable);
+    }
+    if (status != LOCATED) {
+        free_targets(targets);
+    }
     return status;
 }
 
@@ -100,35 +155,93 @@ typedef struct settings_file {
     cJSON *tree;
 } settings_file;
 
+typedef struct layer_files {
+    settings_file portable;
+    settings_file application;
+} layer_files;
+
 static settings_file read_settings_file(const char *file_path) {
-    settings_file file = {SPISOR_JSON_FILE_UNREADABLE, NULL};
-    file.tree = spisor_read_json_file(file_path, &file.state);
+    settings_file file = {SPISOR_JSON_FILE_ABSENT, NULL};
+    if (file_path != NULL) {
+        file.state = SPISOR_JSON_FILE_UNREADABLE;
+        file.tree = spisor_read_json_file(file_path, &file.state);
+    }
     return file;
 }
 
-static int is_object_file(const settings_file *file) {
-    return file->state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file->tree);
+static layer_files read_layers(const config_targets *targets) {
+    layer_files files;
+    files.portable = read_settings_file(targets->portable.file);
+    files.application = read_settings_file(targets->application.file);
+    return files;
 }
 
-static cJSON *merged_over_defaults(const config_request *request, const settings_file *file) {
-    return runtime_merge(optional_object(request->config, "defaults"), is_object_file(file) ? file->tree : NULL);
+static void free_layers(layer_files *files) {
+    cJSON_Delete(files->portable.tree);
+    cJSON_Delete(files->application.tree);
+    files->portable.tree = NULL;
+    files->application.tree = NULL;
 }
 
-static cJSON *merged_with_file(const config_request *request, const char *file_path) {
-    settings_file file = read_settings_file(file_path);
-    cJSON *merged = merged_over_defaults(request, &file);
-    cJSON_Delete(file.tree);
+static const cJSON *object_tree(const settings_file *file) {
+    return file->state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(file->tree) ? file->tree : NULL;
+}
+
+/** defaults, then the portable layer, then the application layer, each merged over the last (spec section 4). */
+static cJSON *merged_layers(const cJSON *defaults, const layer_files *files) {
+    cJSON *under_application = runtime_merge(defaults, object_tree(&files->portable));
+    if (under_application == NULL) {
+        return NULL;
+    }
+    cJSON *merged = runtime_merge(under_application, object_tree(&files->application));
+    cJSON_Delete(under_application);
     return merged;
 }
 
-cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *plugin, const cJSON *config,
-                             int *failed) {
-    config_request request = {home, plugin, names, config, NULL};
-    config_target target;
+static cJSON *merged_from_disk(const cJSON *defaults, const config_targets *targets) {
+    layer_files files = read_layers(targets);
+    cJSON *merged = merged_layers(defaults, &files);
+    free_layers(&files);
+    return merged;
+}
+
+static const cJSON *defaults_of(const config_request *request) {
+    return optional_object(request->config, "defaults");
+}
+
+cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *portable, const char *plugin,
+                             const cJSON *config, int *failed) {
+    config_request request = {home, portable, plugin, names, config, NULL};
+    config_targets targets;
     cJSON *merged = NULL;
-    if (locate_target(&request, &target) == LOCATED) {
-        merged = merged_with_file(&request, target.file);
-        free_target(&target);
+    if (locate_targets(&request, &targets) == LOCATED) {
+        merged = merged_from_disk(defaults_of(&request), &targets);
+        free_targets(&targets);
+    }
+    *failed = merged == NULL;
+    return merged;
+}
+
+static locate_status locate_ecosystem_targets(const char *home, const cJSON *names, const char *portable,
+                                              config_targets *targets) {
+    config_request request = {home, portable, NULL, names, NULL, NULL};
+    memset(targets, 0, sizeof(*targets));
+    locate_status status = locate_in_config_directory(&request, "settings", &targets->application);
+    if (status == LOCATED && portable != NULL) {
+        status = join_target(portable, ECOSYSTEM_SETTINGS_FILE, &targets->portable);
+    }
+    if (status != LOCATED) {
+        free_targets(targets);
+    }
+    return status;
+}
+
+cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed) {
+    config_targets targets;
+    cJSON *merged = NULL;
+    if (locate_ecosystem_targets(home, names, portable, &targets) == LOCATED) {
+        merged = merged_from_disk(NULL, &targets);
+        free_targets(&targets);
     }
     *failed = merged == NULL;
     return merged;
@@ -146,10 +259,21 @@ static int32_t refuse_name(uint8_t **out, size_t *out_len) {
                        out_len);
 }
 
-static int32_t locate_or_fail(const config_request *request, config_target *target, uint8_t **out, size_t *out_len) {
-    locate_status status = locate_target(request, target);
+static int32_t refuse_id(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the plugin id is not a usable folder name in the portable place",
+                       "name the plugin by a manifest id that is one portable path segment such as \"my-plugin\"; "
+                       "config.name does not name the portable folder",
+                       out, out_len);
+}
+
+static int32_t locate_or_fail(const config_request *request, config_targets *targets, uint8_t **out,
+                              size_t *out_len) {
+    locate_status status = locate_targets(request, targets);
     if (status == UNUSABLE_NAME) {
         return refuse_name(out, out_len);
+    }
+    if (status == UNUSABLE_ID) {
+        return refuse_id(out, out_len);
     }
     return status == LOCATED ? SPISOR_STATUS_SUCCESS : out_of_memory(out, out_len);
 }
@@ -181,13 +305,13 @@ static int32_t refuse_key(uint8_t **out, size_t *out_len) {
 }
 
 static int32_t config_all(const config_request *request, uint8_t **out, size_t *out_len) {
-    config_target target;
-    int32_t status = locate_or_fail(request, &target, out, out_len);
+    config_targets targets;
+    int32_t status = locate_or_fail(request, &targets, out, out_len);
     if (status != SPISOR_STATUS_SUCCESS) {
         return status;
     }
-    cJSON *merged = merged_with_file(request, target.file);
-    free_target(&target);
+    cJSON *merged = merged_from_disk(defaults_of(request), &targets);
+    free_targets(&targets);
     return merged == NULL ? out_of_memory(out, out_len) : answer_member("values", merged, out, out_len);
 }
 
@@ -199,12 +323,12 @@ static cJSON *copy_at(const cJSON *merged, const char *key, int *failed) {
     return copy;
 }
 
-static cJSON *value_at(const config_request *request, const config_target *target, const char *key, int *failed) {
+static cJSON *value_at(const config_request *request, const config_targets *targets, const char *key, int *failed) {
     *failed = 0;
     if (has_empty_segment(key)) {
         return NULL;
     }
-    cJSON *merged = merged_with_file(request, target->file);
+    cJSON *merged = merged_from_disk(defaults_of(request), targets);
     if (merged == NULL) {
         *failed = 1;
         return NULL;
@@ -215,19 +339,19 @@ static cJSON *value_at(const config_request *request, const config_target *targe
 }
 
 static int32_t config_get(const config_request *request, uint8_t **out, size_t *out_len) {
-    config_target target;
-    int32_t status = locate_or_fail(request, &target, out, out_len);
+    config_targets targets;
+    int32_t status = locate_or_fail(request, &targets, out, out_len);
     if (status != SPISOR_STATUS_SUCCESS) {
         return status;
     }
     const char *key = key_of(request);
     if (key == NULL) {
-        free_target(&target);
+        free_targets(&targets);
         return refuse_key(out, out_len);
     }
     int failed;
-    cJSON *found = value_at(request, &target, key, &failed);
-    free_target(&target);
+    cJSON *found = value_at(request, &targets, key, &failed);
+    free_targets(&targets);
     return failed ? out_of_memory(out, out_len) : answer_member("value", found, out, out_len);
 }
 
@@ -352,9 +476,9 @@ static int32_t refuse_missing_value(uint8_t **out, size_t *out_len) {
     return spisor_fail("the argument carries no value", "send {\"key\": \"a.b\", \"value\": <any JSON>}", out, out_len);
 }
 
-/** The merged value at key before the write, from the same read the write starts from. */
-static cJSON *previous_value(const config_request *request, const settings_file *file, const char *key, int *failed) {
-    cJSON *merged = merged_over_defaults(request, file);
+/** The merged value at key before the write, from the same reads the write starts from. */
+static cJSON *previous_value(const config_request *request, const layer_files *files, const char *key, int *failed) {
+    cJSON *merged = merged_layers(defaults_of(request), files);
     if (merged == NULL) {
         *failed = 1;
         return NULL;
@@ -364,13 +488,28 @@ static cJSON *previous_value(const config_request *request, const settings_file 
     return previous;
 }
 
-static int32_t store_after_previous(const config_request *request, const config_target *target, const char *key,
-                                    const cJSON *value, uint8_t **out, size_t *out_len) {
-    settings_file file = read_settings_file(target->file);
+typedef struct layer_write {
+    const config_target *target;
+    settings_file *file;
+} layer_write;
+
+static layer_write chosen_layer(settings_layer layer, const config_targets *targets, layer_files *files) {
+    layer_write chosen = {&targets->application, &files->application};
+    if (layer == PORTABLE_LAYER) {
+        chosen.target = &targets->portable;
+        chosen.file = &files->portable;
+    }
+    return chosen;
+}
+
+static int32_t store_after_previous(const config_request *request, const config_targets *targets, settings_layer layer,
+                                    const char *key, const cJSON *value, uint8_t **out, size_t *out_len) {
+    layer_files files = read_layers(targets);
     int failed;
-    cJSON *previous = previous_value(request, &file, key, &failed);
-    int32_t status = failed ? out_of_memory(out, out_len) : store_value(target, &file, key, value, out, out_len);
-    cJSON_Delete(file.tree);
+    cJSON *previous = previous_value(request, &files, key, &failed);
+    layer_write chosen = chosen_layer(layer, targets, &files);
+    int32_t status = failed ? out_of_memory(out, out_len) : store_value(chosen.target, chosen.file, key, value, out, out_len);
+    free_layers(&files);
     if (status != SPISOR_STATUS_SUCCESS) {
         cJSON_Delete(previous);
         return status;
@@ -378,23 +517,83 @@ static int32_t store_after_previous(const config_request *request, const config_
     return answer_member("previous", previous, out, out_len);
 }
 
-static int32_t config_set(const config_request *request, uint8_t **out, size_t *out_len) {
-    config_target target;
-    int32_t status = locate_or_fail(request, &target, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
+static settings_layer layer_of(const config_request *request) {
+    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(request->argument, "layer");
+    if (layer == NULL) {
+        return APPLICATION_LAYER;
     }
+    if (!cJSON_IsString(layer)) {
+        return UNKNOWN_LAYER;
+    }
+    return strcmp(layer->valuestring, "application") == 0 ? APPLICATION_LAYER
+           : strcmp(layer->valuestring, "portable") == 0  ? PORTABLE_LAYER
+                                                          : UNKNOWN_LAYER;
+}
+
+static int32_t refuse_layer(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the argument names no known layer",
+                       "send layer as \"application\" (the default) or \"portable\"", out, out_len);
+}
+
+static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
+    return spisor_fail("this host has no portable layer, so a portable setting has nowhere to go",
+                       "send portable as the portable answer of places.resolve, or set without layer \"portable\" to "
+                       "write the application layer",
+                       out, out_len);
+}
+
+static int32_t set_in_targets(const config_request *request, const config_targets *targets, settings_layer layer,
+                              uint8_t **out, size_t *out_len) {
     const char *key = key_of(request);
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(request->argument, "value");
     if (key == NULL || has_empty_segment(key)) {
-        status = refuse_key(out, out_len);
-    } else if (value == NULL) {
-        status = refuse_missing_value(out, out_len);
-    } else {
-        status = store_after_previous(request, &target, key, value, out, out_len);
+        return refuse_key(out, out_len);
     }
-    free_target(&target);
+    if (value == NULL) {
+        return refuse_missing_value(out, out_len);
+    }
+    return store_after_previous(request, targets, layer, key, value, out, out_len);
+}
+
+static int32_t config_set(const config_request *request, uint8_t **out, size_t *out_len) {
+    settings_layer layer = layer_of(request);
+    if (layer == UNKNOWN_LAYER) {
+        return refuse_layer(out, out_len);
+    }
+    if (layer == PORTABLE_LAYER && request->portable == NULL) {
+        return refuse_missing_portable_layer(out, out_len);
+    }
+    config_targets targets;
+    int32_t status = locate_or_fail(request, &targets, out, out_len);
+    if (status != SPISOR_STATUS_SUCCESS) {
+        return status;
+    }
+    status = set_in_targets(request, &targets, layer, out, out_len);
+    free_targets(&targets);
     return status;
+}
+
+static int32_t refuse_home_and_plugin(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the argument carries no string home and plugin",
+                       "send {\"home\": \"<directory>\", \"plugin\": \"<manifest id>\"}", out, out_len);
+}
+
+static int32_t run_operation(const spisor_call *call, config_operation operation, uint8_t **out, size_t *out_len) {
+    const cJSON *home = cJSON_GetObjectItemCaseSensitive(call->argument, "home");
+    const cJSON *plugin = cJSON_GetObjectItemCaseSensitive(call->argument, "plugin");
+    const char *portable;
+    if (!cJSON_IsString(home) || !cJSON_IsString(plugin)) {
+        return refuse_home_and_plugin(out, out_len);
+    }
+    if (!runtime_is_usable_home(home->valuestring)) {
+        return runtime_refuse_home(out, out_len);
+    }
+    if (!runtime_portable_argument(call->argument, &portable)) {
+        return runtime_refuse_portable(out, out_len);
+    }
+    config_request request = {home->valuestring, portable, plugin->valuestring, optional_object(call->argument, "names"),
+                              optional_object(call->argument, "config"), call->argument};
+    return operation(&request, out, out_len);
 }
 
 static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out, size_t *out_len) {
@@ -403,18 +602,7 @@ static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation opera
     if (status != SPISOR_STATUS_SUCCESS) {
         return status;
     }
-    const cJSON *home = cJSON_GetObjectItemCaseSensitive(call.argument, "home");
-    const cJSON *plugin = cJSON_GetObjectItemCaseSensitive(call.argument, "plugin");
-    if (!cJSON_IsString(home) || !cJSON_IsString(plugin)) {
-        status = spisor_fail("the argument carries no string home and plugin",
-                             "send {\"home\": \"<directory>\", \"plugin\": \"<manifest id>\"}", out, out_len);
-    } else if (!runtime_is_usable_home(home->valuestring)) {
-        status = runtime_refuse_home(out, out_len);
-    } else {
-        config_request request = {home->valuestring, plugin->valuestring, optional_object(call.argument, "names"),
-                                  optional_object(call.argument, "config"), call.argument};
-        status = operation(&request, out, out_len);
-    }
+    status = run_operation(&call, operation, out, out_len);
     spisor_discard_call(&call);
     return status;
 }

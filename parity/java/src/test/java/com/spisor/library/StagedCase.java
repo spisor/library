@@ -14,17 +14,19 @@ final class StagedCase {
     private final String home;
     private final JsonObject manifest;
     private final JsonElement names;
+    private final String portable;
     private final Map<String, String> environment;
     private final JsonObject clock;
     private final List<JsonObject> calls;
 
-    StagedCase(String name, String root, String home, JsonObject manifest, JsonElement names,
+    StagedCase(String name, String root, String home, JsonObject manifest, JsonElement names, String portable,
                Map<String, String> environment, JsonObject clock, List<JsonObject> calls) {
         this.name = name;
         this.root = root;
         this.home = home;
         this.manifest = manifest;
         this.names = names;
+        this.portable = portable;
         this.environment = environment;
         this.clock = clock;
         this.calls = calls;
@@ -49,6 +51,11 @@ final class StagedCase {
     /** @return the case's directory names, or null when it declares none */
     JsonElement names() {
         return names;
+    }
+
+    /** @return the absent portable folder the library is handed, or null when the case names none */
+    String portable() {
+        return portable;
     }
 
     Map<String, String> environment() {

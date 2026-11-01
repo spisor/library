@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "paths.h"
+#include "segment.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -18,6 +19,7 @@ typedef enum log_level { LEVEL_DEBUG, LEVEL_INFO, LEVEL_WARN, LEVEL_ERROR, LEVEL
 
 typedef struct log_entry {
     const char *home;
+    const char *portable;
     const char *plugin;
     const char *start;
     const char *time;
@@ -204,7 +206,7 @@ static int is_logging_disabled(const cJSON *merged) {
 static console_style read_console_style(const log_entry *entry) {
     console_style style = {0, 1};
     int failed;
-    cJSON *settings = runtime_read_settings(entry->home, entry->names, "settings", NULL, &failed);
+    cJSON *settings = runtime_read_ecosystem_settings(entry->home, entry->names, entry->portable, &failed);
     if (settings != NULL) {
         style.enabled = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings, "logConsole"));
         style.colored = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(settings, "logColor"));
@@ -255,6 +257,23 @@ static int32_t refuse_name(uint8_t **out, size_t *out_len) {
                        out_len);
 }
 
+static int32_t refuse_id(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the plugin id is not a usable folder name in the portable place",
+                       "name the plugin by a manifest id that is one portable path segment such as \"my-plugin\"", out,
+                       out_len);
+}
+
+/** Whether the portable layer, when there is one, can name the plugin's folder by its id. */
+static int is_portable_id_usable(const log_entry *entry) {
+    if (entry->portable == NULL) {
+        return 1;
+    }
+    char *folder_name = runtime_portable_segment(entry->plugin);
+    int usable = folder_name != NULL;
+    free(folder_name);
+    return usable;
+}
+
 static int32_t refuse_append(uint8_t **out, size_t *out_len) {
     return spisor_fail("the log line could not be appended",
                        "check that the home's logs directory can be created and written", out, out_len);
@@ -266,7 +285,8 @@ static int should_print(const log_entry *entry, const console_style *style) {
 
 static int32_t write_entry(const log_entry *entry, const char *name, uint8_t **out, size_t *out_len) {
     int failed;
-    cJSON *merged = runtime_read_settings(entry->home, entry->names, entry->plugin, entry->config, &failed);
+    cJSON *merged =
+        runtime_read_settings(entry->home, entry->names, entry->portable, entry->plugin, entry->config, &failed);
     if (failed) {
         *out = NULL;
         *out_len = 0;
@@ -290,6 +310,12 @@ static int32_t log_call(const spisor_call *call, uint8_t **out, size_t *out_len)
     }
     if (!runtime_is_usable_home(entry.home)) {
         return runtime_refuse_home(out, out_len);
+    }
+    if (!runtime_portable_argument(call->argument, &entry.portable)) {
+        return runtime_refuse_portable(out, out_len);
+    }
+    if (!is_portable_id_usable(&entry)) {
+        return refuse_id(out, out_len);
     }
     char *name = runtime_config_name(entry.plugin, entry.config);
     if (name == NULL) {

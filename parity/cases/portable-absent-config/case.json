@@ -1,0 +1,50 @@
+{
+  "home": [
+    "config/p.json"
+  ],
+  "portable": "portable",
+  "manifest": {
+    "id": "p",
+    "config": {
+      "defaults": {
+        "x": 1
+      }
+    }
+  },
+  "calls": [
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "x"
+      }
+    },
+    {
+      "function": "config.get",
+      "argument": {
+        "key": "y"
+      }
+    },
+    {
+      "function": "config.all",
+      "argument": {}
+    },
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "y",
+        "value": 3
+      }
+    },
+    {
+      "function": "config.set",
+      "argument": {
+        "key": "z",
+        "value": true
+      }
+    },
+    {
+      "function": "config.all",
+      "argument": {}
+    }
+  ]
+}

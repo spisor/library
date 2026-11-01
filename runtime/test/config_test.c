@@ -1,3 +1,8 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +20,7 @@
 #include "merge.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
+#include "links.h"
 #include "temporary_entries.h"
 
 #define BOM "\xEF\xBB\xBF"
@@ -22,6 +28,7 @@
 typedef struct scratch_home {
     char path[1024];
     char config_directory[1100];
+    char portable[1100];
 } scratch_home;
 
 typedef struct answer {
@@ -35,6 +42,7 @@ static void fresh_home(scratch_home *home, const char *label) {
     snprintf(home->path, sizeof home->path, RUNTIME_SCRATCH_PATH "/config-%d-%d-%s", (int)CURRENT_PROCESS_ID, sequence++,
              label);
     snprintf(home->config_directory, sizeof home->config_directory, "%s/config", home->path);
+    snprintf(home->portable, sizeof home->portable, "%s/portable", home->path);
     CHECK(spisor_make_directories(home->path) == 1);
 }
 
@@ -430,6 +438,249 @@ static void refuses_unusable_home(void) {
     CHECK(spisor_file_exists("config") == 0);
 }
 
+static void portable_file_path(const scratch_home *home, const char *plugin, char *path, size_t size) {
+    snprintf(path, size, "%s/plugins/%s/config.json", home->portable, plugin);
+}
+
+static void write_portable_file(const scratch_home *home, const char *plugin, const char *text) {
+    char directory[1300];
+    char path[1400];
+    snprintf(directory, sizeof directory, "%s/plugins/%s", home->portable, plugin);
+    CHECK(spisor_make_directories(directory) == 1);
+    portable_file_path(home, plugin, path, sizeof path);
+    write_text(path, text);
+}
+
+static void expect_portable_file(const scratch_home *home, const char *plugin, const char *expected, const char *label) {
+    char path[1400];
+    size_t length = 0;
+    portable_file_path(home, plugin, path, sizeof path);
+    char *actual = (char *)spisor_read_file(path, &length);
+    check_text(actual, expected, label);
+    free(actual);
+}
+
+static cJSON *portable_request(const scratch_home *home, const char *plugin, const char *config_json) {
+    cJSON *request = request_for(home, plugin, config_json, NULL);
+    cJSON_AddStringToObject(request, "portable", home->portable);
+    return request;
+}
+
+static answer portable_get(const scratch_home *home, const char *plugin, const char *config_json, const char *key) {
+    cJSON *request = portable_request(home, plugin, config_json);
+    cJSON_AddStringToObject(request, "key", key);
+    return call_with(runtime_config_get, request);
+}
+
+static void expect_portable_value(const scratch_home *home, const char *plugin, const char *config_json,
+                                  const char *key, const char *expected_json, const char *label) {
+    answer result = portable_get(home, plugin, config_json, key);
+    expect_member(&result, "value", expected_json, label);
+    finish(&result);
+}
+
+static void expect_portable_all(const scratch_home *home, const char *plugin, const char *config_json,
+                                const char *expected_json, const char *label) {
+    answer all = call_with(runtime_config_all, portable_request(home, plugin, config_json));
+    expect_member(&all, "values", expected_json, label);
+    finish(&all);
+}
+
+static answer layered_set(cJSON *request, const char *layer, const char *key, const char *value_json) {
+    cJSON_AddStringToObject(request, "key", key);
+    cJSON_AddItemToObject(request, "value", cJSON_Parse(value_json));
+    if (layer != NULL) {
+        cJSON_AddStringToObject(request, "layer", layer);
+    }
+    return call_with(runtime_config_set, request);
+}
+
+static answer portable_set(const scratch_home *home, const char *plugin, const char *config_json, const char *layer,
+                           const char *key, const char *value_json) {
+    return layered_set(portable_request(home, plugin, config_json), layer, key, value_json);
+}
+
+static void expect_fix_names(const answer *result, const char *path, const char *label) {
+    const cJSON *fix = cJSON_GetObjectItemCaseSensitive(result->tree, "fix");
+    if (!cJSON_IsString(fix) || strstr(fix->valuestring, path) == NULL) {
+        fprintf(stderr, "%s: expected the fix to name %s\n", label, path);
+        check_failures++;
+    }
+}
+
+static void expect_message_names(const answer *result, const char *text, const char *label) {
+    const cJSON *message = cJSON_GetObjectItemCaseSensitive(result->tree, "message");
+    if (!cJSON_IsString(message) || strstr(message->valuestring, text) == NULL) {
+        fprintf(stderr, "%s: expected the message to name %s\n", label, text);
+        check_failures++;
+    }
+}
+
+static void application_leaf_wins_and_portable_siblings_stay(void) {
+    scratch_home home;
+    fresh_home(&home, "layers");
+    const char *config = "{\"defaults\":{\"a\":{\"b\":0,\"d\":0}}}";
+    write_portable_file(&home, "p", "{\"a\":{\"b\":1,\"c\":2}}");
+    write_settings_file(&home, "p", "{\"a\":{\"b\":5}}");
+    expect_portable_value(&home, "p", config, "a.b", "5", "the application's leaf wins");
+    expect_portable_value(&home, "p", config, "a.c", "2", "the portable sibling stays");
+    expect_portable_value(&home, "p", config, "a.d", "0", "the default sibling stays");
+    expect_portable_all(&home, "p", config, "{\"a\":{\"b\":5,\"d\":0,\"c\":2}}", "all is the same merged tree");
+}
+
+static void portable_wins_over_defaults(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-over-defaults");
+    write_portable_file(&home, "p", "{\"a\":{\"c\":2}}");
+    expect_portable_value(&home, "p", "{\"defaults\":{\"a\":{\"c\":9}}}", "a.c", "2", "portable over the default");
+}
+
+static void portable_file_alone(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-alone");
+    write_portable_file(&home, "p", "{\"shared\":{\"x\":1}}");
+    expect_portable_value(&home, "p", NULL, "shared.x", "1", "get from the portable file alone");
+    expect_portable_all(&home, "p", NULL, "{\"shared\":{\"x\":1}}", "all from the portable file alone");
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void absent_portable_folder_changes_nothing(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-absent");
+    write_settings_file(&home, "p", "{\"a\":{\"b\":5}}");
+    const char *config = "{\"defaults\":{\"a\":{\"c\":2}}}";
+    expect_portable_all(&home, "p", config, "{\"a\":{\"c\":2,\"b\":5}}", "absent portable folder");
+    expect_value(&home, "p", config, "a", "{\"c\":2,\"b\":5}", "no portable folder given");
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void set_writes_the_named_layer(void) {
+    scratch_home home;
+    fresh_home(&home, "set-layers");
+    answer defaulted = portable_set(&home, "p", NULL, NULL, "a", "1");
+    CHECK(defaulted.status == SPISOR_STATUS_SUCCESS);
+    finish(&defaulted);
+    CHECK(spisor_file_exists(home.portable) == 0);
+    answer application = portable_set(&home, "p", NULL, "application", "b", "2");
+    CHECK(application.status == SPISOR_STATUS_SUCCESS);
+    finish(&application);
+    expect_file(&home, "p", "{\n  \"a\": 1,\n  \"b\": 2\n}\n", "the application layer is the default");
+    answer portable = portable_set(&home, "p", NULL, "portable", "c", "3");
+    CHECK(portable.status == SPISOR_STATUS_SUCCESS);
+    finish(&portable);
+    expect_portable_file(&home, "p", "{\n  \"c\": 3\n}\n", "the portable layer");
+    expect_file(&home, "p", "{\n  \"a\": 1,\n  \"b\": 2\n}\n", "the application file untouched by a portable set");
+    expect_portable_all(&home, "p", NULL, "{\"c\":3,\"a\":1,\"b\":2}", "both layers read back");
+}
+
+static void portable_set_reports_the_merged_previous(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-previous");
+    write_settings_file(&home, "p", "{\"x\":7}");
+    answer shadowed = portable_set(&home, "p", "{\"defaults\":{\"x\":1}}", "portable", "x", "2");
+    expect_member(&shadowed, "previous", "7", "previous is the merged value");
+    finish(&shadowed);
+    expect_portable_value(&home, "p", NULL, "x", "7", "the application still wins after a portable set");
+}
+
+static void portable_set_without_portable_is_refused(void) {
+    scratch_home home;
+    fresh_home(&home, "no-portable");
+    answer result = layered_set(request_for(&home, "p", NULL, NULL), "portable", "a", "1");
+    expect_refused(&result, "portable set without portable");
+    expect_message_names(&result, "portable layer", "the missing layer is named");
+    finish(&result);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void unknown_layer_and_unusable_portable_are_refused(void) {
+    scratch_home home;
+    fresh_home(&home, "bad-layer");
+    answer machine = portable_set(&home, "p", NULL, "machine", "a", "1");
+    expect_refused(&machine, "unknown layer");
+    finish(&machine);
+    cJSON *request = request_for(&home, "p", NULL, NULL);
+    cJSON_AddStringToObject(request, "portable", "relative-portable");
+    answer relative = layered_set(request, "portable", "a", "1");
+    expect_refused(&relative, "relative portable");
+    finish(&relative);
+    cJSON *read = request_for(&home, "p", NULL, NULL);
+    cJSON_AddNumberToObject(read, "portable", 1);
+    answer numeric = call_with(runtime_config_all, read);
+    expect_refused(&numeric, "non-string portable");
+    finish(&numeric);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_file_exists("relative-portable") == 0);
+}
+
+static void unreadable_portable_file(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-malformed");
+    write_portable_file(&home, "p", "{\"a\":");
+    answer refused = portable_set(&home, "p", NULL, "portable", "b", "1");
+    expect_refused(&refused, "malformed portable file");
+    expect_fix_names(&refused, "config.json", "the fix names the portable file");
+    finish(&refused);
+    expect_portable_file(&home, "p", "{\"a\":", "malformed portable file unchanged");
+    expect_portable_value(&home, "p", "{\"defaults\":{\"a\":3}}", "a", "3", "a malformed portable file reads as empty");
+    answer application = portable_set(&home, "p", NULL, NULL, "b", "1");
+    CHECK(application.status == SPISOR_STATUS_SUCCESS);
+    finish(&application);
+    expect_file(&home, "p", "{\n  \"b\": 1\n}\n", "the application layer keeps its own rules");
+}
+
+static void portable_set_through_a_dotfiles_link(void) {
+    scratch_home home;
+    char dotfiles[1200];
+    char target[1300];
+    char link[1400];
+    fresh_home(&home, "portable-link");
+    snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", home.path);
+    snprintf(target, sizeof target, "%s/config.json", dotfiles);
+    CHECK(spisor_make_directories(dotfiles) == 1);
+    write_text(target, "{\"kept\":true}");
+    write_portable_file(&home, "p", "{}");
+    portable_file_path(&home, "p", link, sizeof link);
+    if (!create_link_or_skip(link, target)) {
+        return;
+    }
+    answer result = portable_set(&home, "p", NULL, "portable", "added", "1");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    CHECK(is_link(link));
+    size_t length = 0;
+    char *content = (char *)spisor_read_file(target, &length);
+    check_text(content, "{\n  \"kept\": true,\n  \"added\": 1\n}\n", "the link's target changed");
+    free(content);
+    CHECK(count_temporary_entries(dotfiles) == 0);
+}
+
+static void portable_folder_is_the_manifest_id(void) {
+    scratch_home home;
+    char renamed[1300];
+    fresh_home(&home, "portable-id");
+    const char *config = "{\"name\":\"other\"}";
+    answer portable = portable_set(&home, "p", config, "portable", "a", "1");
+    CHECK(portable.status == SPISOR_STATUS_SUCCESS);
+    finish(&portable);
+    expect_portable_file(&home, "p", "{\n  \"a\": 1\n}\n", "the portable folder is named by the id");
+    snprintf(renamed, sizeof renamed, "%s/plugins/other", home.portable);
+    CHECK(spisor_file_exists(renamed) == 0);
+    answer application = portable_set(&home, "p", config, NULL, "b", "2");
+    finish(&application);
+    expect_file(&home, "other", "{\n  \"b\": 2\n}\n", "the application file keeps config.name");
+    expect_portable_value(&home, "p", config, "a", "1", "the portable layer is read by the id");
+}
+
+static void portable_layer_refuses_an_unusable_id(void) {
+    scratch_home home;
+    fresh_home(&home, "portable-bad-id");
+    answer result = portable_set(&home, "../p", "{\"name\":\"p\"}", "portable", "a", "1");
+    expect_refused(&result, "an id that is no folder name");
+    finish(&result);
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
 int main(void) {
     name_rules();
     deep_merge_agrees();
@@ -454,5 +705,17 @@ int main(void) {
     non_object_defaults_read_as_empty();
     empty_key_is_absent_even_when_stored();
     refuses_unusable_home();
-    return check_summary("config_test");
+    application_leaf_wins_and_portable_siblings_stay();
+    portable_wins_over_defaults();
+    portable_file_alone();
+    absent_portable_folder_changes_nothing();
+    set_writes_the_named_layer();
+    portable_set_reports_the_merged_previous();
+    portable_set_without_portable_is_refused();
+    unknown_layer_and_unusable_portable_are_refused();
+    unreadable_portable_file();
+    portable_set_through_a_dotfiles_link();
+    portable_folder_is_the_manifest_id();
+    portable_layer_refuses_an_unusable_id();
+    return summary_with_links("config_test");
 }
