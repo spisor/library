@@ -213,6 +213,13 @@ class RuntimeParityTest {
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
         String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
         String platform = os.startsWith("windows") ? "win32" : os.startsWith("mac") ? "darwin" : os;
-        return platform + "-" + ("amd64".equals(arch) || "x86_64".equals(arch) ? "x64" : arch);
+        return platform + "-" + nodeArchitecture(arch);
+    }
+
+    private static String nodeArchitecture(String javaArchitecture) {
+        if ("amd64".equals(javaArchitecture) || "x86_64".equals(javaArchitecture)) {
+            return "x64";
+        }
+        return "aarch64".equals(javaArchitecture) ? "arm64" : javaArchitecture;
     }
 }
