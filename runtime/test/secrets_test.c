@@ -239,20 +239,47 @@ static void a_move_failing_partway_loses_nothing_and_duplicates_nothing(void) {
     CHECK(file_entry_count(&place) == 1);
 }
 
-static void get_prefers_the_store_and_never_writes_to_it(void) {
+static void get_prefers_the_file_and_never_writes_to_the_store(void) {
     scratch place;
     fresh_scratch(&place, "prefers");
     fake_store_behave(FAKE_STORE_DECLINES);
     set_secret(&place, "github", "token", "from-file", "file");
-    set_secret(&place, "github", "only-in-file", "file-only", "file");
     fake_store_behave(FAKE_STORE_ACCEPTS);
     fake_store_seed("spisor/github/token", "from-store");
+    fake_store_seed("spisor/github/only-in-store", "store-only");
     int sets_before = fake_store_set_calls();
-    expect_get(&place, "github", "token", "from-store");
-    expect_get(&place, "github", "only-in-file", "file-only");
+    int calls_before = fake_store_calls();
+    expect_get(&place, "github", "token", "from-file");
+    CHECK(fake_store_calls() == calls_before);
+    expect_get(&place, "github", "only-in-store", "store-only");
     expect_get(&place, "github", "missing", NULL);
     CHECK(fake_store_set_calls() == sets_before);
-    CHECK(file_entry_count(&place) == 2);
+    CHECK(file_entry_count(&place) == 1);
+}
+
+static void a_value_set_while_the_store_declines_is_not_shadowed_by_its_stored_older_value(void) {
+    scratch place;
+    fresh_scratch(&place, "shadow");
+    set_secret(&place, "github", "token", "A", "store");
+    fake_store_behave(FAKE_STORE_DECLINES);
+    set_secret(&place, "github", "token", "B", "file");
+    fake_store_behave(FAKE_STORE_ACCEPTS);
+    expect_get(&place, "github", "token", "B");
+    set_secret(&place, "gitlab", "other", "x", "store");
+    CHECK(store_holds("spisor/github/token", "B"));
+    CHECK(file_entry_count(&place) == 0);
+    expect_get(&place, "github", "token", "B");
+}
+
+static void get_fails_when_neither_place_holds_it_and_the_store_refused(void) {
+    scratch place;
+    fresh_scratch(&place, "get-refused");
+    fake_store_behave(FAKE_STORE_DECLINES);
+    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", "token", NULL)));
+    fake_store_behave(FAKE_STORE_FAILS);
+    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", "token", NULL)));
+    fake_store_behave(FAKE_STORE_UNAVAILABLE);
+    expect_get(&place, "github", "token", NULL);
 }
 
 static void delete_removes_from_both_places(void) {
@@ -409,7 +436,9 @@ int main(void) {
     a_stored_set_moves_every_file_entry_and_empties_the_file();
     a_stored_set_is_not_overwritten_by_its_older_file_copy();
     a_move_failing_partway_loses_nothing_and_duplicates_nothing();
-    get_prefers_the_store_and_never_writes_to_it();
+    get_prefers_the_file_and_never_writes_to_the_store();
+    a_value_set_while_the_store_declines_is_not_shadowed_by_its_stored_older_value();
+    get_fails_when_neither_place_holds_it_and_the_store_refused();
     delete_removes_from_both_places();
     clear_removes_one_plugin_from_both_places_and_keeps_another();
     a_forced_file_store_never_touches_the_store();

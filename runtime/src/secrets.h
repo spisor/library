@@ -11,9 +11,15 @@
  * the private secrets file; spec section 5.1. Every call takes {"places": {"secretsFile",
  * "forceFileStore"}} as places.resolve answers them, and an entry is named
  * "spisor/<plugin id>/<name>" in the store and in the file alike. get answers {"value"} from the
- * store, else from the file, or {} when neither holds it, and never writes to the store.
+ * file, else from the store, or {} when neither holds it; it never writes to the store. When neither
+ * holds it and the store declined or failed, get answers a failure, since the store may hold it.
  *
- * @implNote Unlike every other runtime service, these touch process-wide OS state: the user's
+ * @implNote get reads the file first because a file entry is always the newer copy: one is written
+ * only while the store refuses, and every later successful store write empties the file. Reading the
+ * store first would answer a stale stored value, and a file-held secret never causes a store access.
+ * Spec section 5.1 words the order the other way round.
+ *
+ * Unlike every other runtime service, these touch process-wide OS state: the user's
  * credential store, which may prompt (Keychain asking whether this program may use an item, a locked
  * keyring asking to be unlocked) and whose entries outlive the process. Nothing else is read from
  * the process; the file's location arrives in the argument. forceFileStore (SPISOR_SECRETS) skips

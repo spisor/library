@@ -163,17 +163,20 @@ static move_result move_file_secrets(const char *file_path) {
     return result;
 }
 
-static int32_t get_from_file(const secret_request *request, const char *entry, runtime_secret_answer store,
-                             uint8_t **out, size_t *out_len) {
-    runtime_secret_file_answer file;
-    char *value = runtime_get_file_secret(request->secrets_file, entry, &file);
+static int32_t get_from_store(const secret_request *request, const char *entry, runtime_secret_file_answer file,
+                              uint8_t **out, size_t *out_len) {
+    char *value = NULL;
+    runtime_secret_answer store =
+        request->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_get(entry, &value);
     int32_t status;
-    if (file != RUNTIME_SECRET_FILE_DONE) {
+    if (store == RUNTIME_SECRET_DONE) {
+        status = answer_string("value", value, out, out_len);
+    } else if (file != RUNTIME_SECRET_FILE_DONE) {
         status = refuse_file(request->secrets_file, file, out, out_len);
-    } else if (value == NULL && (store == RUNTIME_SECRET_FAILED || store == RUNTIME_SECRET_DECLINED)) {
+    } else if (store == RUNTIME_SECRET_FAILED || store == RUNTIME_SECRET_DECLINED) {
         status = refuse_store("read", store, out, out_len);
     } else {
-        status = answer_string("value", value, out, out_len);
+        status = answer_string("value", NULL, out, out_len);
     }
     free(value);
     return status;
@@ -185,11 +188,10 @@ static int32_t secrets_get(const secret_request *request, uint8_t **out, size_t 
     if (entry == NULL) {
         return status;
     }
-    char *value = NULL;
-    runtime_secret_answer store =
-        request->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_get(entry, &value);
-    status = store == RUNTIME_SECRET_DONE ? answer_string("value", value, out, out_len)
-                                          : get_from_file(request, entry, store, out, out_len);
+    runtime_secret_file_answer file;
+    char *value = runtime_get_file_secret(request->secrets_file, entry, &file);
+    status = value != NULL ? answer_string("value", value, out, out_len)
+                           : get_from_store(request, entry, file, out, out_len);
     free(value);
     free(entry);
     return status;
