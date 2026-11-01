@@ -163,6 +163,133 @@
           }
         }
       ]
+    },
+    {
+      "id": "secrets",
+      "functions": [
+        {
+          "name": "get",
+          "symbol": "runtime_secrets_get",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
+              "plugin": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "plugin", "name"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "value": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set",
+          "symbol": "runtime_secrets_set",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
+              "plugin": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+              "name": { "type": "string", "minLength": 1 },
+              "value": { "type": "string" }
+            },
+            "required": ["places", "plugin", "name", "value"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "place": { "enum": ["store", "file"] } },
+            "required": ["place"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "delete",
+          "symbol": "runtime_secrets_delete",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
+              "plugin": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "plugin", "name"]
+          },
+          "result": { "type": "object", "additionalProperties": false }
+        },
+        {
+          "name": "clear",
+          "symbol": "runtime_secrets_clear",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
+              "plugin": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" }
+            },
+            "required": ["places", "plugin"]
+          },
+          "result": { "type": "object", "additionalProperties": false }
+        },
+        {
+          "name": "reconcile",
+          "symbol": "runtime_secrets_reconcile",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              }
+            },
+            "required": ["places"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "moved": { "type": "integer", "minimum": 0 } },
+            "required": ["moved"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

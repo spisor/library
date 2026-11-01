@@ -1,13 +1,26 @@
-add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c)
+add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
+    src/secret_file.c src/secrets.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
 
+if(WIN32)
+    set(runtime_secret_store_source src/secret_windows.c)
+elseif(APPLE)
+    set(runtime_secret_store_source src/secret_macos.c)
+else()
+    set(runtime_secret_store_source src/secret_linux.c)
+endif()
+add_library(runtime_secret_store OBJECT ${runtime_secret_store_source})
+target_include_directories(runtime_secret_store PUBLIC src)
+set_target_properties(runtime_secret_store PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_secret_store)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects>)
+add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_secret_store>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library)
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
