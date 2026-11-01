@@ -3,10 +3,14 @@
 
 #include "check.h"
 #include "spisor/file.h"
+#include "../src/file_presence.h"
 #include "temporary_entries.h"
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #define NON_ASCII_NAME SPISOR_SCRATCH_PATH "/caf\xc3\xa9-\xe6\x97\xa5\xe6\x9c\xac.txt"
@@ -27,6 +31,58 @@ static int write_fixture(const char *utf8_path, const char *content) {
     }
     size_t written = fwrite(content, 1, strlen(content), file);
     return fclose(file) == 0 && written == strlen(content);
+}
+
+#if defined(_WIN32)
+#define LINK_PRIVILEGE_MISSING 2
+
+static int create_link(const char *link_path, const char *target_path) {
+    wchar_t wide_link[1024];
+    wchar_t wide_target[1024];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, link_path, -1, wide_link, 1024) == 0
+        || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, target_path, -1, wide_target, 1024) == 0) {
+        return 0;
+    }
+    for (wchar_t *cursor = wide_target; *cursor != 0; cursor++) {
+        *cursor = *cursor == L'/' ? L'\\' : *cursor;
+    }
+    DeleteFileW(wide_link);
+    if (CreateSymbolicLinkW(wide_link, wide_target, SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) {
+        return 1;
+    }
+    return GetLastError() == ERROR_PRIVILEGE_NOT_HELD ? LINK_PRIVILEGE_MISSING : 0;
+}
+
+static int is_link(const char *path) {
+    wchar_t wide_path[1024];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide_path, 1024) == 0) {
+        return 0;
+    }
+    DWORD attributes = GetFileAttributesW(wide_path);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+}
+#else
+#define LINK_PRIVILEGE_MISSING 2
+
+static int create_link(const char *link_path, const char *target_path) {
+    remove(link_path);
+    return symlink(target_path, link_path) == 0;
+}
+
+static int is_link(const char *path) {
+    struct stat status;
+    return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
+}
+#endif
+
+static int create_link_or_skip(const char *link_path, const char *target_path) {
+    int created = create_link(link_path, target_path);
+    if (created == LINK_PRIVILEGE_MISSING) {
+        printf("SKIP symlink tests: this platform refuses to create symlinks without privilege\n");
+        return 0;
+    }
+    CHECK(created == 1);
+    return created == 1;
 }
 
 static void a_directory_exists(void) {
@@ -113,6 +169,39 @@ static void replace_into_missing_directory_fails(void) {
     CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/no-such-directory") == 0);
 }
 
+static void replace_through_a_link_changes_the_target_and_keeps_the_link(void) {
+    const char *real_directory = SPISOR_SCRATCH_PATH "/link-real";
+    const char *home_directory = SPISOR_SCRATCH_PATH "/link-home";
+    const char *target = SPISOR_SCRATCH_PATH "/link-real/settings.json";
+    const char *link = SPISOR_SCRATCH_PATH "/link-home/settings.json";
+    CHECK(spisor_make_directories(real_directory) == 1);
+    CHECK(spisor_make_directories(home_directory) == 1);
+    CHECK(write_fixture(target, "old"));
+    if (!create_link_or_skip(link, target)) {
+        return;
+    }
+    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == 1);
+    CHECK(is_link(link));
+    read_back_equals(target, "new");
+    read_back_equals(link, "new");
+    CHECK(spisor_probe_file(link) == SPISOR_FILE_PRESENT);
+    CHECK(count_temporary_entries(real_directory) == 0);
+    CHECK(count_temporary_entries(home_directory) == 0);
+}
+
+static void replace_through_a_dangling_link_is_refused(void) {
+    const char *home_directory = SPISOR_SCRATCH_PATH "/dangling-home";
+    const char *link = SPISOR_SCRATCH_PATH "/dangling-home/settings.json";
+    CHECK(spisor_make_directories(home_directory) == 1);
+    if (!create_link_or_skip(link, "no-such-target.json")) {
+        return;
+    }
+    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == 0);
+    CHECK(is_link(link));
+    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/dangling-home/no-such-target.json") == 0);
+    CHECK(count_temporary_entries(home_directory) == 0);
+}
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
@@ -123,5 +212,7 @@ int main(void) {
     append_creates_then_appends();
     replace_overwrites_existing();
     replace_into_missing_directory_fails();
+    replace_through_a_link_changes_the_target_and_keeps_the_link();
+    replace_through_a_dangling_link_is_refused();
     return check_summary("file_test");
 }

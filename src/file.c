@@ -121,6 +121,65 @@ static int move_over(const char *from, const char *to) {
     free(wide_to);
     return moved;
 }
+
+static char *to_utf8(const wchar_t *wide) {
+    int length = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    if (length <= 0) {
+        return NULL;
+    }
+    char *narrow = malloc((size_t)length);
+    if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, length, NULL, NULL) <= 0) {
+        free(narrow);
+        return NULL;
+    }
+    return narrow;
+}
+
+/** A drive-letter path loses its extended-length prefix; a UNC path keeps it, which the wide APIs accept. */
+static const wchar_t *without_extended_prefix(const wchar_t *final_path) {
+    int has_drive_prefix = wcsncmp(final_path, L"\\\\?\\", 4) == 0 && final_path[4] != 0 && final_path[5] == L':';
+    return has_drive_prefix ? final_path + 4 : final_path;
+}
+
+static char *final_path_of_link(const wchar_t *wide) {
+    HANDLE handle = CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return NULL;
+    }
+    DWORD needed = GetFinalPathNameByHandleW(handle, NULL, 0, FILE_NAME_NORMALIZED);
+    wchar_t *final_path = needed == 0 ? NULL : malloc((size_t)needed * sizeof(wchar_t));
+    char *resolved = NULL;
+    if (final_path != NULL && GetFinalPathNameByHandleW(handle, final_path, needed, FILE_NAME_NORMALIZED) < needed) {
+        resolved = to_utf8(without_extended_prefix(final_path));
+    }
+    free(final_path);
+    CloseHandle(handle);
+    return resolved;
+}
+
+static char *duplicate_text(const char *text) {
+    size_t size = strlen(text) + 1;
+    char *copy = malloc(size);
+    if (copy != NULL) {
+        memcpy(copy, text, size);
+    }
+    return copy;
+}
+
+/** The path a write must land on: the link's final target, the path itself when it is no link, NULL for a dangling link. */
+static char *write_target_of(const char *path) {
+    wchar_t *wide = to_wide(path);
+    if (wide == NULL) {
+        return NULL;
+    }
+    DWORD attributes = GetFileAttributesW(wide);
+    char *target = (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+        ? final_path_of_link(wide)
+        : duplicate_text(path);
+    free(wide);
+    return target;
+}
 #else
 int spisor_file_exists(const char *path) {
     struct stat status;
@@ -162,6 +221,24 @@ static void remove_file(const char *path) {
 
 static int move_over(const char *from, const char *to) {
     return rename(from, to) == 0;
+}
+
+static char *duplicate_text(const char *text) {
+    size_t size = strlen(text) + 1;
+    char *copy = malloc(size);
+    if (copy != NULL) {
+        memcpy(copy, text, size);
+    }
+    return copy;
+}
+
+/** The path a write must land on: the link's final target, the path itself when it is no link, NULL for a dangling link. */
+static char *write_target_of(const char *path) {
+    struct stat status;
+    if (lstat(path, &status) != 0 || !S_ISLNK(status.st_mode)) {
+        return duplicate_text(path);
+    }
+    return realpath(path, NULL);
 }
 #endif
 
@@ -266,16 +343,26 @@ static char *temporary_path_for(const char *path) {
     return temporary;
 }
 
-int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
-    char *temporary = temporary_path_for(path);
+static int replace_resolved_file(const char *target, const uint8_t *bytes, size_t length) {
+    char *temporary = temporary_path_for(target);
     if (temporary == NULL) {
         return 0;
     }
     FILE *file = open_for_replacing(temporary);
-    int replaced = file != NULL && write_and_close(file, bytes, length) && move_over(temporary, path);
+    int replaced = file != NULL && write_and_close(file, bytes, length) && move_over(temporary, target);
     if (!replaced) {
         remove_file(temporary);
     }
     free(temporary);
+    return replaced;
+}
+
+int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
+    char *target = write_target_of(path);
+    if (target == NULL) {
+        return 0;
+    }
+    int replaced = replace_resolved_file(target, bytes, length);
+    free(target);
     return replaced;
 }
