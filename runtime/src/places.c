@@ -56,11 +56,15 @@ static int resolve_defaults(int windows, int macos, const char *user_home, const
                             runtime_places *places) {
     if (windows) {
         const char *local_app_data = usable_override(environment, "LOCALAPPDATA", 1);
-        if (local_app_data == NULL) {
+        int needs_default = usable_override(environment, "SPISOR_STATE", 1) == NULL ||
+                            usable_override(environment, "SPISOR_CACHE", 1) == NULL;
+        if (local_app_data == NULL && needs_default) {
             return RUNTIME_PLACES_NO_LOCAL_APP_DATA;
         }
-        places->state = join_two(1, local_app_data, "spisor");
-        places->cache = join_three(1, local_app_data, "spisor", "cache");
+        if (local_app_data != NULL) {
+            places->state = join_two(1, local_app_data, "spisor");
+            places->cache = join_three(1, local_app_data, "spisor", "cache");
+        }
     } else if (macos) {
         places->state = join_three(0, user_home, "Library/Application Support", "spisor");
         places->cache = join_three(0, user_home, "Library/Caches", "spisor");
