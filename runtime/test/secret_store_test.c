@@ -51,13 +51,6 @@ static char *filled_value(size_t length) {
     return value;
 }
 
-static char *value_with_character_across_boundary(size_t length) {
-    char *value = filled_value(length);
-    value[BOUNDARY_LIMIT_BYTES - 1] = '\xC3';
-    value[BOUNDARY_LIMIT_BYTES] = '\xA9';
-    return value;
-}
-
 static int stores(const char *name, const char *value) {
     runtime_secret_answer answer = runtime_secret_store_set(entry_for(name), value);
     CHECK(answer == RUNTIME_SECRET_DONE);
@@ -114,6 +107,13 @@ static void remove_everything_written(void) {
 }
 
 #ifdef _WIN32
+static char *value_with_character_across_boundary(size_t length) {
+    char *value = filled_value(length);
+    value[BOUNDARY_LIMIT_BYTES - 1] = '\xC3';
+    value[BOUNDARY_LIMIT_BYTES] = '\xA9';
+    return value;
+}
+
 static int chunk_exists(const char *name, int number) {
     wchar_t target[512];
     PCREDENTIALW credential = NULL;
