@@ -30,22 +30,35 @@ target.
 ## The runtime library
 
 `runtime/` builds `runtime`, a shared library holding the behaviour behind a plugin's `ctx.paths`,
-`ctx.config` and `ctx.log`, so every language binding answers them the same way. It is a **host-only**
+`ctx.config`, `ctx.log` and `ctx.secrets`, so every language binding answers them the same way. It is a **host-only**
 library: the host opens it for its own use, and it is **never passed in a plugin's `libraries`**. It is
 not a plugin service, and it holds no events and no homes. Until publishing resumes it is opened
 from a local build (`cmake -S . -B build && cmake --build build --config Release` leaves it under
 `build/bin`).
 
-Every function takes the home and the plugin's facts in its argument and keeps no state between
-calls, so a settings file edited by hand is read afresh by the next call.
+Every function takes the home, the places and the plugin's facts in its argument and keeps no state
+between calls, so a settings file edited by hand is read afresh by the next call. The one exception is
+`secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
+Service), and that store may prompt the user.
 
-| function | takes (besides `home`, `names`) | answers |
+| function | takes | answers |
 |---|---|---|
-| `paths.resolve` | nothing | `home`, `repos`, `plugin`, `cache`, `config` directories |
-| `config.all` | `plugin`, `config` | `{ values }`, the defaults deep merged under the plugin's file |
-| `config.get` | `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
-| `config.set` | `plugin`, `config`, `key`, `value` | `{ previous }`, after writing the plugin's file |
-| `log.write` | `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
+| `paths.resolve` | `home`, `names` | `home`, `repos`, `plugin`, `cache`, `config` directories |
+| `places.resolve` | `home`, `environment` | `portable`, `state`, `cache`, `secretsFile`, `forceFileStore` |
+| `config.all` | `home`, `names`, `plugin`, `config` | `{ values }`, the defaults deep merged under the plugin's file |
+| `config.get` | `home`, `names`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
+| `config.set` | `home`, `names`, `plugin`, `config`, `key`, `value` | `{ previous }`, after writing the plugin's file |
+| `log.write` | `home`, `names`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
+| `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the store, else the secrets file, or `{}` |
+| `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
+| `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places |
+| `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
+| `secrets.reconcile` | `places` | `{ moved }`, the file-held secrets moved into a store that has appeared (host only, at start) |
+
+`places` is what `places.resolve` answers. A secret is named `spisor/<plugin id>/<name>` in the store
+and in the file. Each time the store takes a value, every secret in the file moves into it, written
+to the store before it leaves the file, so an interruption never loses one. `forceFileStore`
+(`SPISOR_SECRETS`) keeps every secret in the file and never touches the store.
 
 It is held to basekit in its own CI, through the TypeScript and the Java binding, case by case; the
 places it departs from basekit are recorded one by one in `parity/divergences.json`, each with the

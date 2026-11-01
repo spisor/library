@@ -6,6 +6,7 @@
 #include "spisor/file.h"
 
 #include "file_presence.h"
+#include "file_replacement.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,9 @@
 #include <windows.h>
 #else
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 static char *duplicate_text(const char *text) {
@@ -100,8 +103,10 @@ static FILE *open_for_appending(const char *path) {
     return open_for_writing(path, L"ab");
 }
 
-static FILE *open_for_replacing(const char *path) {
-    return open_for_writing(path, L"wb");
+static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
+    (void)target;
+    (void)owner_only;
+    return open_for_writing(temporary, L"wb");
 }
 
 static int create_directory(const char *path) {
@@ -130,11 +135,6 @@ static int move_over(const char *from, const char *to) {
     free(wide_from);
     free(wide_to);
     return moved;
-}
-
-static void keep_permissions(const char *replaced, const char *temporary) {
-    (void)replaced;
-    (void)temporary;
 }
 
 static char *to_utf8(const wchar_t *wide) {
@@ -212,8 +212,29 @@ static FILE *open_for_appending(const char *path) {
     return fopen(path, "ab");
 }
 
-static FILE *open_for_replacing(const char *path) {
-    return fopen(path, "wb");
+static mode_t replacement_mode(const char *target, int owner_only, int *exact) {
+    struct stat status;
+    if (owner_only) {
+        *exact = 1;
+        return 0600;
+    }
+    *exact = stat(target, &status) == 0;
+    return *exact ? status.st_mode & 07777 : 0666;
+}
+
+static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
+    int exact;
+    mode_t mode = replacement_mode(target, owner_only, &exact);
+    int descriptor = open(temporary, O_CREAT | O_EXCL | O_WRONLY, mode);
+    if (descriptor < 0) {
+        return NULL;
+    }
+    FILE *file = (!exact || fchmod(descriptor, mode) == 0) ? fdopen(descriptor, "wb") : NULL;
+    if (file == NULL) {
+        close(descriptor);
+        remove(temporary);
+    }
+    return file;
 }
 
 static int create_directory(const char *path) {
@@ -226,13 +247,6 @@ static void remove_file(const char *path) {
 
 static int move_over(const char *from, const char *to) {
     return rename(from, to) == 0;
-}
-
-static void keep_permissions(const char *replaced, const char *temporary) {
-    struct stat status;
-    if (stat(replaced, &status) == 0) {
-        chmod(temporary, status.st_mode & 07777);
-    }
 }
 
 static char *write_target_of(const char *path) {
@@ -345,17 +359,24 @@ static char *temporary_path_for(const char *path) {
     return temporary;
 }
 
-static int replace_resolved_file(const char *target, const uint8_t *bytes, size_t length) {
+FILE *spisor_open_replacement(const char *target, int owner_only, char **temporary_path) {
     char *temporary = temporary_path_for(target);
-    if (temporary == NULL) {
+    FILE *file = temporary == NULL ? NULL : create_temporary(temporary, target, owner_only);
+    if (file == NULL) {
+        free(temporary);
+        temporary = NULL;
+    }
+    *temporary_path = temporary;
+    return file;
+}
+
+static int replace_resolved_file(const char *target, const uint8_t *bytes, size_t length, int owner_only) {
+    char *temporary;
+    FILE *file = spisor_open_replacement(target, owner_only, &temporary);
+    if (file == NULL) {
         return 0;
     }
-    FILE *file = open_for_replacing(temporary);
-    int written = file != NULL && write_and_close(file, bytes, length);
-    if (written) {
-        keep_permissions(target, temporary);
-    }
-    int replaced = written && move_over(temporary, target);
+    int replaced = write_and_close(file, bytes, length) && move_over(temporary, target);
     if (!replaced) {
         remove_file(temporary);
     }
@@ -363,12 +384,20 @@ static int replace_resolved_file(const char *target, const uint8_t *bytes, size_
     return replaced;
 }
 
-int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
+static int replace_through_links(const char *path, const uint8_t *bytes, size_t length, int owner_only) {
     char *target = write_target_of(path);
     if (target == NULL) {
         return 0;
     }
-    int replaced = replace_resolved_file(target, bytes, length);
+    int replaced = replace_resolved_file(target, bytes, length, owner_only);
     free(target);
     return replaced;
+}
+
+int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
+    return replace_through_links(path, bytes, length, 0);
+}
+
+int spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
+    return replace_through_links(path, bytes, length, 1);
 }

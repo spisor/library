@@ -33,7 +33,8 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
  *
  * @implNote The bytes go to a temporary sibling named after path with a random hex suffix and a
  * .tmp extension, which is renamed over path; it is removed again on any failure. The directory
- * must already exist.
+ * must already exist. On POSIX the temporary file is created already carrying the replaced file's
+ * mode (a new file gets the umask's default), so a rewrite never passes through a wider mode.
  *
  * A path that is a symlink is resolved to its final target first, and the temporary file is
  * created beside that target, so the link survives and the target changes. This keeps a home
@@ -41,6 +42,18 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
  * spisor_file_exists already follow links.
  */
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length);
+
+/**
+ * spisor_replace_file for a file only its owner may read, such as a secrets file. On POSIX the
+ * result is mode 0600 whether the file is new or replaced, and the temporary file carries 0600 from
+ * the moment it is created, so the bytes are never readable by anyone else, not even briefly.
+ *
+ * @implNote Windows has no mode: the file takes the ACL its directory passes on. Under
+ * %LOCALAPPDATA%, where the secrets file lives by default, that ACL already admits only the user,
+ * SYSTEM and administrators, so nothing is narrowed here. A directory named some other way (such as
+ * SPISOR_SECRETS) keeps whatever ACL its owner gave it.
+ */
+int spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length);
 
 #ifdef __cplusplus
 }

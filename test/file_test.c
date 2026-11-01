@@ -9,6 +9,7 @@
 #include "check.h"
 #include "spisor/file.h"
 #include "../src/file_presence.h"
+#include "../src/file_replacement.h"
 #include "temporary_entries.h"
 
 #if defined(_WIN32)
@@ -235,7 +236,65 @@ static void replace_keeps_the_permission_bits(void) {
     CHECK(mode_of(target) == 0600);
     read_back_equals(target, "linked");
 }
+
+static void private_replace_creates_and_keeps_an_owner_only_file(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/private";
+    const char *path = SPISOR_SCRATCH_PATH "/private/secrets.json";
+    CHECK(spisor_make_directories(directory) == 1);
+    remove(path);
+    mode_t previous = umask(0);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"first", 5) == 1);
+    CHECK(mode_of(path) == 0600);
+    CHECK(chmod(path, 0644) == 0);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"second", 6) == 1);
+    CHECK(mode_of(path) == 0600);
+    umask(previous);
+    read_back_equals(path, "second");
+    CHECK(count_temporary_entries(directory) == 0);
+}
+
+static int replacement_mode(const char *target, int owner_only) {
+    char *temporary = NULL;
+    FILE *file = spisor_open_replacement(target, owner_only, &temporary);
+    if (file == NULL) {
+        return -1;
+    }
+    int mode = mode_of(temporary);
+    fclose(file);
+    remove(temporary);
+    free(temporary);
+    return mode;
+}
+
+static void a_replacement_carries_its_final_mode_before_any_byte_is_written(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/replacement-modes";
+    const char *existing = SPISOR_SCRATCH_PATH "/replacement-modes/existing.json";
+    const char *absent = SPISOR_SCRATCH_PATH "/replacement-modes/absent.json";
+    CHECK(spisor_make_directories(directory) == 1);
+    remove(absent);
+    CHECK(write_fixture(existing, "old"));
+    CHECK(chmod(existing, 0640) == 0);
+    mode_t previous = umask(0);
+    CHECK(replacement_mode(existing, 0) == 0640);
+    CHECK(replacement_mode(existing, 1) == 0600);
+    CHECK(replacement_mode(absent, 1) == 0600);
+    CHECK(replacement_mode(absent, 0) == 0666);
+    umask(022);
+    CHECK(replacement_mode(absent, 0) == 0644);
+    umask(previous);
+    CHECK(count_temporary_entries(directory) == 0);
+}
 #endif
+
+static void private_replace_writes_the_bytes(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/private-bytes";
+    const char *path = SPISOR_SCRATCH_PATH "/private-bytes/secrets.json";
+    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"old", 3) == 1);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"new", 3) == 1);
+    read_back_equals(path, "new");
+    CHECK(count_temporary_entries(directory) == 0);
+}
 
 int main(void) {
     a_directory_exists();
@@ -251,7 +310,10 @@ int main(void) {
     replace_through_a_dangling_link_is_refused();
 #if !defined(_WIN32)
     replace_keeps_the_permission_bits();
+    private_replace_creates_and_keeps_an_owner_only_file();
+    a_replacement_carries_its_final_mode_before_any_byte_is_written();
 #endif
+    private_replace_writes_the_bytes();
     int failed = check_summary("file_test");
     return failed == 0 && links_skipped ? SKIPPED_EXIT_CODE : failed;
 }
