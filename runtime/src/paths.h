@@ -13,6 +13,12 @@
 #define RUNTIME_HOST_IS_WINDOWS 0
 #endif
 
+#if defined(__APPLE__)
+#define RUNTIME_HOST_IS_MACOS 1
+#else
+#define RUNTIME_HOST_IS_MACOS 0
+#endif
+
 typedef struct runtime_paths {
     char *home;
     char *repos;
