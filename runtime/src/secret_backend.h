@@ -38,7 +38,11 @@ int runtime_secret_store_available(void);
 /** On DONE, *value holds a copy freed with free; otherwise *value is NULL. */
 runtime_secret_answer runtime_secret_store_get(const char *entry, char **value);
 
-/** Creates or replaces the entry. Answers DONE (stored), DECLINED, UNAVAILABLE or FAILED. */
+/**
+ * Creates or replaces the entry. Answers DONE (stored), DECLINED, UNAVAILABLE or FAILED. A failed set
+ * leaves the previous value readable. The Windows store refuses, with FAILED, a value over 1000 times
+ * CRED_MAX_CREDENTIAL_BLOB_SIZE bytes (about 2.5 MB); the other stores state no cap.
+ */
 runtime_secret_answer runtime_secret_store_set(const char *entry, const char *value);
 
 runtime_secret_answer runtime_secret_store_delete(const char *entry);

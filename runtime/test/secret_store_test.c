@@ -21,6 +21,9 @@
 
 #include "check.h"
 #include "secret_backend.h"
+#ifdef _WIN32
+#include "secret_windows_fault.h"
+#endif
 
 #define SKIPPED_EXIT_CODE 77
 #define FIRST_FILLER 'x'
@@ -87,6 +90,28 @@ static int listing_holds(const char *under, const char *name) {
     return found;
 }
 
+#ifdef _WIN32
+static int chunk_root_entries(int remove) {
+    wchar_t filter[256];
+    DWORD count = 0;
+    PCREDENTIALW *credentials = NULL;
+    swprintf(filter, 256, L"spisor-chunks/%hs/*", plugin_id);
+    if (!CredEnumerateW(filter, 0, &count, &credentials)) {
+        return 0;
+    }
+    for (DWORD index = 0; remove && index < count; index++) {
+        CredDeleteW(credentials[index]->TargetName, CRED_TYPE_GENERIC, 0);
+    }
+    CredFree(credentials);
+    return (int)count;
+}
+#else
+static int chunk_root_entries(int remove) {
+    (void)remove;
+    return 0;
+}
+#endif
+
 static void remove_everything_written(void) {
     runtime_secret_names names = {NULL, 0};
     if (runtime_secret_store_list(prefix, &names) == RUNTIME_SECRET_DONE) {
@@ -95,6 +120,7 @@ static void remove_everything_written(void) {
         }
     }
     runtime_free_secret_names(&names);
+    chunk_root_entries(1);
 }
 
 #ifdef _WIN32
@@ -114,15 +140,98 @@ static char *value_with_character_across_boundary(size_t length) {
     return value;
 }
 
-static int chunk_exists(const char *name, int number) {
+static int chunk_in_generation(const char *name, int generation, int number) {
     wchar_t target[512];
     PCREDENTIALW credential = NULL;
-    swprintf(target, 512, L"spisor-chunks/%hs/%hs#%d", plugin_id, name, number);
+    swprintf(target, 512, L"spisor-chunks/%hs/%hs#%d#%d", plugin_id, name, generation, number);
     int exists = CredReadW(target, CRED_TYPE_GENERIC, 0, &credential) != 0;
     if (exists) {
         CredFree(credential);
     }
     return exists;
+}
+
+static int chunk_exists(const char *name, int number) {
+    return chunk_in_generation(name, 1, number) || chunk_in_generation(name, 2, number);
+}
+
+static void plant_orphan(const char *name, int generation, int number) {
+    wchar_t target[512];
+    CREDENTIALW credential;
+    memset(&credential, 0, sizeof credential);
+    swprintf(target, 512, L"spisor-chunks/%hs/%hs#%d#%d", plugin_id, name, generation, number);
+    credential.Type = CRED_TYPE_GENERIC;
+    credential.TargetName = target;
+    credential.CredentialBlobSize = 5;
+    credential.CredentialBlob = (LPBYTE)"stale";
+    credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    CHECK(CredWriteW(&credential, 0));
+}
+
+static int fails_midway(const char *name, const char *value, long writes_before_failure) {
+    runtime_secret_windows_allow_chunk_writes(writes_before_failure);
+    runtime_secret_answer answer = runtime_secret_store_set(entry_for(name), value);
+    runtime_secret_windows_allow_chunk_writes(-1);
+    return answer == RUNTIME_SECRET_FAILED;
+}
+
+static void an_interrupted_chunked_rewrite_keeps_the_old_value(void) {
+    char *old_value = filled_value(6000);
+    char *new_value = value_with_character_across_boundary(7000);
+    if (stores("fault", old_value)) {
+        int before = chunk_root_entries(0);
+        CHECK(fails_midway("fault", new_value, 1));
+        reads_back("fault", old_value);
+        CHECK(chunk_root_entries(0) == before);
+        CHECK(stores("fault", new_value));
+        reads_back("fault", new_value);
+    }
+    free(old_value);
+    free(new_value);
+}
+
+static void an_interrupted_chunked_set_over_a_whole_value_keeps_it(void) {
+    char *large = filled_value(6000);
+    if (stores("whole", "small") && fails_midway("whole", large, 2)) {
+        reads_back("whole", "small");
+        CHECK(!chunk_exists("whole", 1));
+    }
+    free(large);
+}
+
+static int chunks_of_other_tests = 0;
+
+static void plant_orphans(const char *name) {
+    plant_orphan(name, 1, 1);
+    plant_orphan(name, 1, 2);
+    plant_orphan(name, 1, 3);
+    plant_orphan(name, 1, 4);
+    plant_orphan(name, 2, 1);
+    plant_orphan(name, 2, 2);
+}
+
+static void a_rewrite_after_a_failed_sweep_reads_correctly(void) {
+    char *large = filled_value(6000);
+    chunks_of_other_tests = chunk_root_entries(0);
+    plant_orphans("swept");
+    if (stores("swept", large)) {
+        reads_back("swept", large);
+        CHECK(chunk_root_entries(0) == chunks_of_other_tests + 3);
+    }
+    plant_orphans("swept");
+    CHECK(runtime_secret_store_delete(entry_for("swept")) == RUNTIME_SECRET_DONE);
+    CHECK(chunk_root_entries(0) == chunks_of_other_tests);
+    free(large);
+}
+
+static void a_value_over_the_cap_is_refused_and_the_old_one_kept(void) {
+    size_t too_long = 1000 * (size_t)BOUNDARY_LIMIT_BYTES + 1;
+    char *huge = filled_value(too_long);
+    if (stores("capped", "kept")) {
+        CHECK(runtime_secret_store_set(entry_for("capped"), huge) == RUNTIME_SECRET_FAILED);
+        reads_back("capped", "kept");
+    }
+    free(huge);
 }
 
 static void a_value_over_one_entry_round_trips_whole(void) {
@@ -189,6 +298,10 @@ static void windows_only_checks(void) {
     a_value_of_exactly_one_entry_is_not_chunked();
     deleting_a_logical_entry_deletes_its_chunks();
     chunks_never_appear_in_a_listing();
+    an_interrupted_chunked_rewrite_keeps_the_old_value();
+    an_interrupted_chunked_set_over_a_whole_value_keeps_it();
+    a_rewrite_after_a_failed_sweep_reads_correctly();
+    a_value_over_the_cap_is_refused_and_the_old_one_kept();
 }
 #else
 static void windows_only_checks(void) {}
@@ -268,5 +381,6 @@ int main(void) {
     windows_only_checks();
     remove_everything_written();
     CHECK(listed_count("") == 0);
+    CHECK(chunk_root_entries(0) == 0);
     return check_summary("secret_store_test");
 }

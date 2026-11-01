@@ -7,11 +7,14 @@
 #include <string.h>
 
 #include "secret_backend.h"
+#include "secret_windows_fault.h"
 
 #define LOGICAL_ROOT "spisor/"
 #define CHUNK_ROOT "spisor-chunks/"
 #define CHUNKED_MARKER L"spisor-chunked"
-#define MAX_CHUNK_COUNT 100000UL
+#define MAX_CHUNK_COUNT 1000UL
+#define FIRST_GENERATION 1U
+#define SECOND_GENERATION 2U
 #define COUNT_TEXT_CAPACITY 24
 
 static wchar_t *widen(const char *text) {
@@ -54,13 +57,30 @@ static int has_logical_root(const char *entry) {
     return strncmp(entry, LOGICAL_ROOT, sizeof LOGICAL_ROOT - 1) == 0;
 }
 
-static wchar_t *chunk_target(const char *entry, size_t number) {
+static long chunk_writes_allowed = -1;
+
+void runtime_secret_windows_allow_chunk_writes(long count) {
+    chunk_writes_allowed = count;
+}
+
+static int chunk_writes_exhausted(void) {
+    if (chunk_writes_allowed < 0) {
+        return 0;
+    }
+    if (chunk_writes_allowed == 0) {
+        return 1;
+    }
+    chunk_writes_allowed--;
+    return 0;
+}
+
+static wchar_t *chunk_target(const char *entry, unsigned generation, size_t number) {
     const char *below_root = entry + sizeof LOGICAL_ROOT - 1;
-    size_t size = sizeof CHUNK_ROOT + strlen(below_root) + COUNT_TEXT_CAPACITY;
+    size_t size = sizeof CHUNK_ROOT + strlen(below_root) + 2 * COUNT_TEXT_CAPACITY;
     char *name = malloc(size);
     wchar_t *target = NULL;
     if (name != NULL) {
-        snprintf(name, size, CHUNK_ROOT "%s#%zu", below_root, number);
+        snprintf(name, size, CHUNK_ROOT "%s#%u#%zu", below_root, generation, number);
         target = widen(name);
     }
     free(name);
@@ -98,19 +118,21 @@ static runtime_secret_answer write_named(const char *name, const char *blob, siz
     return answer;
 }
 
-static runtime_secret_answer write_chunk(const char *entry, size_t number, const char *blob, size_t size) {
-    wchar_t *target = chunk_target(entry, number);
+static runtime_secret_answer write_chunk(const char *entry, unsigned generation, size_t number, const char *blob,
+                                         size_t size) {
+    wchar_t *target = chunk_target(entry, generation, number);
     if (target == NULL) {
         return RUNTIME_SECRET_FAILED;
     }
-    runtime_secret_answer answer = write_credential(target, blob, size, NULL);
+    runtime_secret_answer answer = chunk_writes_exhausted() ? RUNTIME_SECRET_FAILED
+                                                           : write_credential(target, blob, size, NULL);
     free(target);
     return answer;
 }
 
-static runtime_secret_answer delete_chunks_from(const char *entry, size_t first) {
-    for (size_t number = first;; number++) {
-        wchar_t *target = chunk_target(entry, number);
+static runtime_secret_answer sweep_generation(const char *entry, unsigned generation) {
+    for (size_t number = 1;; number++) {
+        wchar_t *target = chunk_target(entry, generation, number);
         if (target == NULL) {
             return RUNTIME_SECRET_FAILED;
         }
@@ -125,39 +147,17 @@ static runtime_secret_answer delete_chunks_from(const char *entry, size_t first)
     }
 }
 
+static void sweep_every_generation(const char *entry) {
+    sweep_generation(entry, FIRST_GENERATION);
+    sweep_generation(entry, SECOND_GENERATION);
+}
+
 static size_t chunks_needed(size_t length) {
     return (length + CRED_MAX_CREDENTIAL_BLOB_SIZE - 1) / CRED_MAX_CREDENTIAL_BLOB_SIZE;
 }
 
-/**
- * @implNote A value that fits one credential blob (CRED_MAX_CREDENTIAL_BLOB_SIZE bytes of UTF-8) is
- * the blob of "spisor/<plugin>/<name>" itself. A longer one is cut into blobs of that size stored
- * as "spisor-chunks/<plugin>/<name>#1", "#2", ..., and the base entry then carries the chunk count
- * as decimal text with its comment set to CHUNKED_MARKER, which is what tells it apart from a
- * value that happens to be digits. Chunks live under their own root so that listing "spisor/..."
- * answers logical names only, a logical name containing "#" cannot be mistaken for a chunk, and
- * deleting a logical entry can find its chunks. A chunk may end inside a UTF-8 sequence; only the
- * joined value is text.
- */
-static runtime_secret_answer write_chunks_then_count(const char *entry, const char *value, size_t length) {
-    size_t count = chunks_needed(length);
-    char count_text[COUNT_TEXT_CAPACITY];
-    for (size_t number = 1; number <= count; number++) {
-        size_t offset = (number - 1) * CRED_MAX_CREDENTIAL_BLOB_SIZE;
-        size_t size = length - offset < CRED_MAX_CREDENTIAL_BLOB_SIZE ? length - offset : CRED_MAX_CREDENTIAL_BLOB_SIZE;
-        runtime_secret_answer answer = write_chunk(entry, number, value + offset, size);
-        if (answer != RUNTIME_SECRET_DONE) {
-            return answer;
-        }
-    }
-    snprintf(count_text, sizeof count_text, "%zu", count);
-    runtime_secret_answer answer = write_named(entry, count_text, strlen(count_text), CHUNKED_MARKER);
-    return answer == RUNTIME_SECRET_DONE ? delete_chunks_from(entry, count + 1) : answer;
-}
-
-static runtime_secret_answer write_whole_then_drop_chunks(const char *entry, const char *value, size_t length) {
-    runtime_secret_answer answer = write_named(entry, value, length, NULL);
-    return answer == RUNTIME_SECRET_DONE ? delete_chunks_from(entry, 1) : answer;
+static unsigned other_generation(unsigned generation) {
+    return generation == FIRST_GENERATION ? SECOND_GENERATION : FIRST_GENERATION;
 }
 
 static int is_chunked(const CREDENTIALW *credential) {
@@ -175,18 +175,93 @@ static char *copy_blob_as_text(const CREDENTIALW *credential) {
     return text;
 }
 
-static int parse_chunk_count(const CREDENTIALW *credential, size_t *count) {
+static int parse_chunk_layout(const CREDENTIALW *credential, unsigned *generation, size_t *count) {
     char *text = copy_blob_as_text(credential);
+    char *separator = NULL;
     char *end = NULL;
-    unsigned long parsed = text != NULL ? strtoul(text, &end, 10) : 0;
-    int valid = text != NULL && end != text && *end == '\0' && parsed >= 1 && parsed <= MAX_CHUNK_COUNT;
-    *count = valid ? (size_t)parsed : 0;
+    unsigned long parsed_generation = text != NULL ? strtoul(text, &separator, 10) : 0;
+    unsigned long parsed_count = separator != NULL && *separator == ':' ? strtoul(separator + 1, &end, 10) : 0;
+    int valid = end != NULL && *end == '\0' && parsed_count >= 1 && parsed_count <= MAX_CHUNK_COUNT &&
+                (parsed_generation == FIRST_GENERATION || parsed_generation == SECOND_GENERATION);
+    *generation = valid ? (unsigned)parsed_generation : 0;
+    *count = valid ? (size_t)parsed_count : 0;
     free(text);
     return valid;
 }
 
-static runtime_secret_answer append_chunk(const char *entry, size_t number, char **value, size_t *length) {
-    wchar_t *target = chunk_target(entry, number);
+/** The generation the stored value is chunked under, or the second one when it is not chunked, so the first is next. */
+static unsigned generation_in_use(const char *entry) {
+    wchar_t *target = widen(entry);
+    PCREDENTIALW base = NULL;
+    unsigned generation = SECOND_GENERATION;
+    size_t count = 0;
+    if (target != NULL && read_credential(target, &base) == RUNTIME_SECRET_DONE) {
+        if (!is_chunked(base) || !parse_chunk_layout(base, &generation, &count)) {
+            generation = SECOND_GENERATION;
+        }
+        CredFree(base);
+    }
+    free(target);
+    return generation;
+}
+
+static runtime_secret_answer write_all_chunks(const char *entry, unsigned generation, const char *value,
+                                              size_t length) {
+    size_t count = chunks_needed(length);
+    for (size_t number = 1; number <= count; number++) {
+        size_t offset = (number - 1) * CRED_MAX_CREDENTIAL_BLOB_SIZE;
+        size_t size = length - offset < CRED_MAX_CREDENTIAL_BLOB_SIZE ? length - offset : CRED_MAX_CREDENTIAL_BLOB_SIZE;
+        runtime_secret_answer answer = write_chunk(entry, generation, number, value + offset, size);
+        if (answer != RUNTIME_SECRET_DONE) {
+            return answer;
+        }
+    }
+    return RUNTIME_SECRET_DONE;
+}
+
+/**
+ * @implNote A value that fits one credential blob (CRED_MAX_CREDENTIAL_BLOB_SIZE bytes of UTF-8) is
+ * the blob of "spisor/<plugin>/<name>" itself. A longer one is cut into blobs of that size stored
+ * as "spisor-chunks/<plugin>/<name>#<generation>#<n>", and the base entry then carries
+ * "<generation>:<count>" as text with its comment set to CHUNKED_MARKER, which is what tells it
+ * apart from a value that happens to look like that. Chunks live under their own root so that
+ * listing "spisor/..." answers logical names only, a logical name containing "#" cannot be mistaken
+ * for a chunk, and deleting a logical entry can find its chunks.
+ * The generation alternates between 1 and 2 on every chunked rewrite. All new chunks are written
+ * under the generation NOT in use, the base entry is written last, and only then is the old
+ * generation deleted, so a rewrite that fails at any point leaves the previous value whole and
+ * readable. A failed sweep is ignored: its orphans are always in one of the two generations, and
+ * every later set and delete of that name clears both. A chunk may end inside a UTF-8 sequence;
+ * only the joined value is text.
+ */
+static runtime_secret_answer write_chunked(const char *entry, const char *value, size_t length) {
+    unsigned generation = other_generation(generation_in_use(entry));
+    char layout[2 * COUNT_TEXT_CAPACITY];
+    sweep_generation(entry, generation);
+    runtime_secret_answer answer = write_all_chunks(entry, generation, value, length);
+    if (answer == RUNTIME_SECRET_DONE) {
+        snprintf(layout, sizeof layout, "%u:%zu", generation, chunks_needed(length));
+        answer = write_named(entry, layout, strlen(layout), CHUNKED_MARKER);
+    }
+    if (answer != RUNTIME_SECRET_DONE) {
+        sweep_generation(entry, generation);
+        return answer;
+    }
+    sweep_generation(entry, other_generation(generation));
+    return RUNTIME_SECRET_DONE;
+}
+
+static runtime_secret_answer write_whole(const char *entry, const char *value, size_t length) {
+    runtime_secret_answer answer = write_named(entry, value, length, NULL);
+    if (answer == RUNTIME_SECRET_DONE) {
+        sweep_every_generation(entry);
+    }
+    return answer;
+}
+
+static runtime_secret_answer append_chunk(const char *entry, unsigned generation, size_t number, char **value,
+                                          size_t *length) {
+    wchar_t *target = chunk_target(entry, generation, number);
     PCREDENTIALW chunk = NULL;
     if (target == NULL) {
         return RUNTIME_SECRET_FAILED;
@@ -212,11 +287,11 @@ static runtime_secret_answer append_chunk(const char *entry, size_t number, char
     return RUNTIME_SECRET_DONE;
 }
 
-static runtime_secret_answer join_chunks(const char *entry, size_t count, char **value) {
+static runtime_secret_answer join_chunks(const char *entry, unsigned generation, size_t count, char **value) {
     size_t length = 0;
     *value = calloc(1, 1);
     for (size_t number = 1; *value != NULL && number <= count; number++) {
-        runtime_secret_answer answer = append_chunk(entry, number, value, &length);
+        runtime_secret_answer answer = append_chunk(entry, generation, number, value, &length);
         if (answer != RUNTIME_SECRET_DONE) {
             free(*value);
             *value = NULL;
@@ -227,15 +302,16 @@ static runtime_secret_answer join_chunks(const char *entry, size_t count, char *
 }
 
 static runtime_secret_answer value_of(const char *entry, const CREDENTIALW *base, char **value) {
+    unsigned generation = 0;
     size_t count = 0;
     if (!is_chunked(base)) {
         *value = copy_blob_as_text(base);
         return *value != NULL ? RUNTIME_SECRET_DONE : RUNTIME_SECRET_FAILED;
     }
-    if (!parse_chunk_count(base, &count)) {
+    if (!parse_chunk_layout(base, &generation, &count)) {
         return RUNTIME_SECRET_FAILED;
     }
-    return join_chunks(entry, count, value);
+    return join_chunks(entry, generation, count, value);
 }
 
 int runtime_secret_store_available(void) {
@@ -269,8 +345,11 @@ runtime_secret_answer runtime_secret_store_set(const char *entry, const char *va
     if (!has_logical_root(entry)) {
         return RUNTIME_SECRET_FAILED;
     }
-    return length <= CRED_MAX_CREDENTIAL_BLOB_SIZE ? write_whole_then_drop_chunks(entry, value, length)
-                                                   : write_chunks_then_count(entry, value, length);
+    if (length > MAX_CHUNK_COUNT * CRED_MAX_CREDENTIAL_BLOB_SIZE) {
+        return RUNTIME_SECRET_FAILED;
+    }
+    return length <= CRED_MAX_CREDENTIAL_BLOB_SIZE ? write_whole(entry, value, length)
+                                                   : write_chunked(entry, value, length);
 }
 
 runtime_secret_answer runtime_secret_store_delete(const char *entry) {
@@ -283,8 +362,8 @@ runtime_secret_answer runtime_secret_store_delete(const char *entry) {
     if (base_answer != RUNTIME_SECRET_DONE && base_answer != RUNTIME_SECRET_ABSENT) {
         return base_answer;
     }
-    runtime_secret_answer chunks_answer = delete_chunks_from(entry, 1);
-    return chunks_answer == RUNTIME_SECRET_DONE ? base_answer : chunks_answer;
+    sweep_every_generation(entry);
+    return base_answer;
 }
 
 static runtime_secret_answer collect_names(PCREDENTIALW *credentials, DWORD count, const char *prefix,
@@ -299,7 +378,7 @@ static runtime_secret_answer collect_names(PCREDENTIALW *credentials, DWORD coun
             runtime_free_secret_names(names);
             return RUNTIME_SECRET_FAILED;
         }
-        if (strncmp(name, prefix, strlen(prefix)) == 0) {
+        if (strncmp(name, prefix, strlen(prefix)) == 0 && strncmp(name, CHUNK_ROOT, sizeof CHUNK_ROOT - 1) != 0) {
             names->names[names->count++] = name;
         } else {
             free(name);
