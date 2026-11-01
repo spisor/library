@@ -42,15 +42,6 @@ static char *entry_for(const char *name) {
     return entry;
 }
 
-static char *filled_value(size_t length) {
-    char *value = malloc(length + 1);
-    for (size_t index = 0; index < length; index++) {
-        value[index] = (char)(FIRST_FILLER + (index % 23));
-    }
-    value[length] = '\0';
-    return value;
-}
-
 static int stores(const char *name, const char *value) {
     runtime_secret_answer answer = runtime_secret_store_set(entry_for(name), value);
     CHECK(answer == RUNTIME_SECRET_DONE);
@@ -107,6 +98,15 @@ static void remove_everything_written(void) {
 }
 
 #ifdef _WIN32
+static char *filled_value(size_t length) {
+    char *value = malloc(length + 1);
+    for (size_t index = 0; index < length; index++) {
+        value[index] = (char)(FIRST_FILLER + (index % 23));
+    }
+    value[length] = '\0';
+    return value;
+}
+
 static char *value_with_character_across_boundary(size_t length) {
     char *value = filled_value(length);
     value[BOUNDARY_LIMIT_BYTES - 1] = '\xC3';
