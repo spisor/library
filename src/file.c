@@ -19,6 +19,15 @@
 #include <sys/stat.h>
 #endif
 
+static char *duplicate_text(const char *text) {
+    size_t size = strlen(text) + 1;
+    char *copy = malloc(size);
+    if (copy != NULL) {
+        memcpy(copy, text, size);
+    }
+    return copy;
+}
+
 #if defined(_WIN32)
 static wchar_t *to_wide(const char *path) {
     int wide_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
@@ -123,6 +132,11 @@ static int move_over(const char *from, const char *to) {
     return moved;
 }
 
+static void keep_permissions(const char *replaced, const char *temporary) {
+    (void)replaced;
+    (void)temporary;
+}
+
 static char *to_utf8(const wchar_t *wide) {
     int length = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
     if (length <= 0) {
@@ -159,16 +173,6 @@ static char *final_path_of_link(const wchar_t *wide) {
     return resolved;
 }
 
-static char *duplicate_text(const char *text) {
-    size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
-    if (copy != NULL) {
-        memcpy(copy, text, size);
-    }
-    return copy;
-}
-
-/** The path a write must land on: the link's final target, the path itself when it is no link, NULL for a dangling link. */
 static char *write_target_of(const char *path) {
     wchar_t *wide = to_wide(path);
     if (wide == NULL) {
@@ -224,16 +228,13 @@ static int move_over(const char *from, const char *to) {
     return rename(from, to) == 0;
 }
 
-static char *duplicate_text(const char *text) {
-    size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
-    if (copy != NULL) {
-        memcpy(copy, text, size);
+static void keep_permissions(const char *replaced, const char *temporary) {
+    struct stat status;
+    if (stat(replaced, &status) == 0) {
+        chmod(temporary, status.st_mode & 07777);
     }
-    return copy;
 }
 
-/** The path a write must land on: the link's final target, the path itself when it is no link, NULL for a dangling link. */
 static char *write_target_of(const char *path) {
     struct stat status;
     if (lstat(path, &status) != 0 || !S_ISLNK(status.st_mode)) {
@@ -350,7 +351,11 @@ static int replace_resolved_file(const char *target, const uint8_t *bytes, size_
         return 0;
     }
     FILE *file = open_for_replacing(temporary);
-    int replaced = file != NULL && write_and_close(file, bytes, length) && move_over(temporary, target);
+    int written = file != NULL && write_and_close(file, bytes, length);
+    if (written) {
+        keep_permissions(target, temporary);
+    }
+    int replaced = written && move_over(temporary, target);
     if (!replaced) {
         remove_file(temporary);
     }
