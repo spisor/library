@@ -43,7 +43,11 @@ runtime_secret_answer runtime_secret_store_set(const char *entry, const char *va
 
 runtime_secret_answer runtime_secret_store_delete(const char *entry);
 
-/** On DONE, names holds every entry whose name starts with prefix; free it with runtime_free_secret_names. */
+/**
+ * On DONE, names holds every logical entry whose name starts with prefix; free it with
+ * runtime_free_secret_names. A store that splits a long value into extra entries keeps those under a
+ * separate root, so they are never listed, and deleting a logical entry deletes them.
+ */
 runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secret_names *names);
 
 #endif

@@ -1,6 +1,6 @@
 function(runtime_test name)
     add_executable(${name} ${name}.c ${ARGN})
-    target_link_libraries(${name} PRIVATE runtime_objects)
+    target_link_libraries(${name} PRIVATE runtime_objects ${runtime_secret_store_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
@@ -13,3 +13,7 @@ foreach(name paths_test config_test log_test places_test)
 endforeach()
 
 runtime_test(secrets_test fake_secret_backend.c)
+
+if(WIN32 OR APPLE)
+    runtime_test(secret_store_test $<TARGET_OBJECTS:runtime_secret_store>)
+endif()
