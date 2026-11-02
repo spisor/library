@@ -920,6 +920,24 @@ static void a_link_left_where_a_file_was_is_removed_never_followed(void) {
     free(kept);
 }
 
+static void an_appended_line_is_crlf_only_when_every_line_of_the_profile_is(void) {
+    scratch place;
+    fresh_scratch(&place, "line-endings");
+    register_host(&place, "alpha");
+    write_home_file(&place, ".bashrc", "export A=1\nexport B=2\r\nexport C=3\n");
+    write_home_file(&place, ".zshrc", "export A=1\r\nexport B=2\r\n");
+    char *before = snapshot_of(&place);
+    CHECK(applied_sequence(&place, "alpha", profile_line_change(&place, ".bashrc", path_line)) == 1);
+    CHECK(applied_sequence(&place, "alpha", profile_line_change(&place, ".zshrc", path_line)) == 2);
+    home_file_is(&place, ".bashrc", "export A=1\nexport B=2\r\nexport C=3\nexport PATH=\"/opt/spisor/bin:$PATH\"\n");
+    home_file_is(&place, ".zshrc", "export A=1\r\nexport B=2\r\nexport PATH=\"/opt/spisor/bin:$PATH\"\r\n");
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    char *after = snapshot_of(&place);
+    check_text(after, before, "home after reversing the lines");
+    free(before);
+    free(after);
+}
+
 int main(void) {
     each_kind_reverses_to_the_bytes_before();
     a_key_the_user_changed_is_left_and_reported();
@@ -938,5 +956,6 @@ int main(void) {
     a_file_asked_for_new_content_is_rewritten_under_its_record();
     the_c_entry_point_records_like_the_json_one();
     a_link_left_where_a_file_was_is_removed_never_followed();
+    an_appended_line_is_crlf_only_when_every_line_of_the_profile_is();
     return summary_with_links("changes_test");
 }

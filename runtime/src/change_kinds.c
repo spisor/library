@@ -821,8 +821,26 @@ static runtime_change_step prepare_profile_line(const cJSON *change, const cJSON
     return record_profile_line(change, separated, present && is_holder_flag(holder, "created"), record, note);
 }
 
+/**
+ * @implNote CRLF only when every line ending in the file is CRLF: one stray CRLF in a LF profile would
+ * otherwise give the appended PATH line a carriage return, which POSIX shells keep in the last entry.
+ */
+static int is_every_line_crlf(const text_buffer *text) {
+    size_t endings = 0;
+    for (size_t index = 0; index < text->length; index++) {
+        if (text->bytes[index] != '\n') {
+            continue;
+        }
+        if (index == 0 || text->bytes[index - 1] != '\r') {
+            return 0;
+        }
+        endings++;
+    }
+    return endings > 0;
+}
+
 static const char *line_ending_of(const text_buffer *text) {
-    return strstr(text->bytes, "\r\n") != NULL ? "\r\n" : "\n";
+    return is_every_line_crlf(text) ? "\r\n" : "\n";
 }
 
 static int append_line(const char *path, const text_buffer *text, const char *line, int separated) {
