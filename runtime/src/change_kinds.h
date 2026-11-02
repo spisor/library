@@ -66,6 +66,24 @@ int runtime_change_same_target(const cJSON *left, const cJSON *right);
  */
 int runtime_change_repeats(const cJSON *record, const cJSON *change);
 
+#define RUNTIME_CHANGE_DIGEST_SIZE 32
+
+/**
+ * Whether change asks the file record holds for content other than it was last written with, by the
+ * "digest" the record keeps; a record with no digest counts as asking.
+ */
+int runtime_change_asks_new_content(const cJSON *record, const cJSON *change);
+
+/**
+ * Writes change's content over the host's own file at record's path, creating it again when it is
+ * gone, and stores the new digest in record. REFUSED, with the disk unchanged, when a directory or a
+ * link now stands there.
+ *
+ * @implNote A link is refused rather than followed, so rewriting a shim can never write through to
+ * the program the link points at.
+ */
+runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, runtime_change_note *note);
+
 /**
  * The changes a change is applied as, recorded after it as its children, each an entry of its own with
  * "parent" set to the change's sequence: an array freed with cJSON_Delete, or NULL for a kind that has

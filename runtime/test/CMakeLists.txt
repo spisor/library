@@ -39,3 +39,6 @@ if(NOT WIN32)
 endif()
 
 runtime_test(path_entry_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+
+runtime_test(commands_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+set_tests_properties(path_entry_test commands_test PROPERTIES RESOURCE_LOCK user_path_value)

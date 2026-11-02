@@ -306,8 +306,8 @@ static long sequence_of(const cJSON *entry) {
  * @implNote A host re-applies its changes on every start, so a repeat must answer the record it
  * already has; recording it again as held would grow the registration without bound.
  */
-static const cJSON *own_record_of(const cJSON *registration, const cJSON *change) {
-    const cJSON *entry;
+static cJSON *own_record_of(cJSON *registration, const cJSON *change) {
+    cJSON *entry;
     cJSON_ArrayForEach(entry, changes_of(registration)) {
         if (is_unreversed(entry) && runtime_change_repeats(entry, change)) {
             return entry;
@@ -508,7 +508,7 @@ static void record_new_family(apply_session *session, prepared_children *prepare
  * new since this host's earlier apply joins that apply's parent.
  */
 static void apply_with_children(apply_session *session, const cJSON *children) {
-    const cJSON *own = own_record_of(session->registration, session->change);
+    cJSON *own = own_record_of(session->registration, session->change);
     prepared_children prepared;
     if (!prepare_children(session, children, &prepared)) {
         discard_prepared(&prepared);
@@ -526,8 +526,28 @@ static void apply_with_children(apply_session *session, const cJSON *children) {
     discard_prepared(&prepared);
 }
 
+/**
+ * @implNote The file is written before its new digest is stored, so a crash in between leaves the old
+ * digest, and the next apply with the same content writes the same bytes again.
+ */
+static void rewrite_own_file(apply_session *session, cJSON *own) {
+    runtime_change_note note = {""};
+    runtime_change_step step = runtime_change_rewrite(session->change, own, &note);
+    if (step != RUNTIME_CHANGE_DONE) {
+        conclude_step(session, step, note.detail);
+    } else if (!store(session)) {
+        conclude_unwritable(session);
+    } else {
+        conclude_held_already(session, own);
+    }
+}
+
 static void apply_single(apply_session *session) {
-    const cJSON *own = own_record_of(session->registration, session->change);
+    cJSON *own = own_record_of(session->registration, session->change);
+    if (own != NULL && runtime_change_asks_new_content(own, session->change)) {
+        rewrite_own_file(session, own);
+        return;
+    }
     if (own != NULL) {
         conclude_held_already(session, own);
         return;
@@ -582,8 +602,12 @@ static runtime_changes_outcome apply_locked(const char *state, const char *host,
     return session.outcome;
 }
 
-runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
-    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
+static int is_usable_state(const char *state, const char *host) {
+    return state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) && host != NULL;
+}
+
+runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change) {
+    if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
     const char *defect = runtime_change_defect(change);
@@ -594,13 +618,51 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     if (normal == NULL) {
         return outcome_of(RUNTIME_CHANGES_FAILED, "memory ran out");
     }
+    runtime_changes_outcome outcome = apply_locked(state, host, normal);
+    cJSON_Delete(normal);
+    return outcome;
+}
+
+runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
+    if (!is_usable_state(state, host)) {
+        return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
+    }
     runtime_hosts_guard *guard = runtime_hosts_lock(state);
     runtime_changes_outcome outcome =
         guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
-                      : apply_locked(state, host, normal);
+                      : runtime_changes_apply_held(state, host, change);
     runtime_hosts_unlock(guard);
-    cJSON_Delete(normal);
     return outcome;
+}
+
+static int mark_reversed(cJSON *entry, int drifted) {
+    cJSON *flag = cJSON_CreateTrue();
+    int marked = flag != NULL && (cJSON_GetObjectItemCaseSensitive(entry, "reversed") != NULL
+                                      ? cJSON_ReplaceItemInObjectCaseSensitive(entry, "reversed", flag)
+                                      : cJSON_AddItemToObject(entry, "reversed", flag));
+    if (flag != NULL && !marked) {
+        cJSON_Delete(flag);
+    }
+    return marked && (!drifted || cJSON_AddTrueToObject(entry, "drifted") != NULL);
+}
+
+runtime_change_reversal runtime_changes_reverse_entry(const char *state, const char *host, cJSON *registration,
+                                                      cJSON *entry, runtime_change_note *note, int *failed) {
+    runtime_changes_holders holders = runtime_changes_find_holder(state, host, registration, entry);
+    int held = holders.holder != NULL || holders.unreadable;
+    cJSON_Delete(holders.holder);
+    *failed = holders.failed;
+    if (*failed) {
+        snprintf(note->detail, sizeof note->detail, "memory ran out");
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    runtime_change_reversal reversal = runtime_change_reverse(entry, held, note);
+    if (reversal != RUNTIME_CHANGE_NOT_REVERSED && !mark_reversed(entry, reversal == RUNTIME_CHANGE_DRIFTED)) {
+        *failed = 1;
+        snprintf(note->detail, sizeof note->detail, "memory ran out");
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    return reversal;
 }
 
 static int32_t refuse_places(uint8_t **out, size_t *out_len) {

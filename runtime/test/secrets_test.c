@@ -17,6 +17,7 @@
 #endif
 
 #include "check.h"
+#include "scratch_directory.h"
 #include "fake_secret_backend.h"
 #include "links.h"
 #include "secrets.h"
@@ -45,7 +46,7 @@ static void fresh_scratch(scratch *place, const char *label) {
              (int)CURRENT_PROCESS_ID, sequence++, label);
     snprintf(place->file, sizeof place->file, "%s/state/secrets.json", place->directory);
     place->force_file_store = 0;
-    CHECK(spisor_make_directories(place->directory) == 1);
+    start_empty_directory(place->directory);
     fake_store_reset();
 }
 

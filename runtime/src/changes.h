@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "change_kinds.h"
 #include "export.h"
 
 typedef enum runtime_changes_answer {
@@ -25,7 +26,10 @@ typedef struct runtime_changes_outcome {
  * next sequence and "reversed": false. RECORDED carries that sequence. UNNEEDED when the disk already
  * holds what was asked and no host holds it (a directory or profile line the user made), so nothing
  * is changed or recorded; UNNEEDED with the existing sequence when this host already holds an
- * unreversed record of the same change (runtime_change_repeats), which is then answered, not repeated. REFUSED and FAILED carry the reason, and then nothing is changed or recorded.
+ * unreversed record of the same change (runtime_change_repeats), which is then answered, not repeated;
+ * a file this host already holds that is asked for with new content is rewritten in place under that
+ * record and answered the same way. REFUSED and FAILED carry the reason, and then nothing is changed
+ * or recorded.
  * state must be absolute and host must be registered. Paths are stored in the normal form of
  * runtime_change_normalized. The whole apply holds runtime_hosts_lock, so the caller must not hold it.
  * A path-entry on Windows writes the user's Path value under HKCU\Environment, the one change made
@@ -37,6 +41,19 @@ typedef struct runtime_changes_outcome {
  * one whose effect is there becomes applied, any other is dropped.
  */
 runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change);
+
+/** runtime_changes_apply for a caller that already holds runtime_hosts_lock, which is not taken again. */
+runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change);
+
+/**
+ * Reverses entry, one unreversed record in registration of host, held when another unreversed
+ * record of its target exists (a registration that cannot be read counts as one), and marks it
+ * reversed, and drifted when it drifted, in registration, which the caller stores. The caller holds
+ * runtime_hosts_lock. On NOT_REVERSED note says why and nothing is marked; failed is set when memory
+ * ran out.
+ */
+runtime_change_reversal runtime_changes_reverse_entry(const char *state, const char *host, cJSON *registration,
+                                                      cJSON *entry, runtime_change_note *note, int *failed);
 
 /**
  * Settles every pending record in registration against the disk, under runtime_hosts_lock held by

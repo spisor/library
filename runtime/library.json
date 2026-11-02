@@ -523,6 +523,130 @@
           }
         }
       ]
+    },
+    {
+      "id": "commands",
+      "functions": [
+        {
+          "name": "request",
+          "symbol": "runtime_commands_request",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state"]
+              },
+              "environment": { "type": "object" },
+              "host": { "type": "string", "minLength": 1 },
+              "home": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "target": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "host", "home", "name", "target"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "rename",
+          "symbol": "runtime_commands_rename",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state"]
+              },
+              "environment": { "type": "object" },
+              "host": { "type": "string", "minLength": 1 },
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "host", "from", "to"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" }
+            },
+            "additionalProperties": false,
+            "required": ["name"]
+          }
+        },
+        {
+          "name": "delete",
+          "symbol": "runtime_commands_delete",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state"]
+              },
+              "host": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "host", "name"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "deleted": { "const": true }
+            },
+            "required": ["deleted"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "add",
+          "symbol": "runtime_commands_add",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state"]
+              },
+              "environment": { "type": "object" },
+              "host": { "type": "string", "minLength": 1 },
+              "home": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "target": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "host", "home", "name", "target"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" }
+            },
+            "additionalProperties": false,
+            "required": ["name"]
+          }
+        }
+      ]
     }
   ]
 }
