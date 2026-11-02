@@ -87,6 +87,9 @@ static void no_session_bus_answers_unavailable_without_calling_the_library(void)
     runtime_secret_linux_use_library(NULL);
     expect_every_call_unavailable("no session bus");
     expect_set_lands_in_the_file("nobus");
+    setenv("DBUS_SESSION_BUS_ADDRESS", "autolaunch:scope=*user", 1);
+    expect_every_call_unavailable("autolaunch address");
+    expect_set_lands_in_the_file("autolaunch");
 }
 
 static int the_real_library_is_installed(void) {

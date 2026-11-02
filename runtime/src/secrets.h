@@ -22,7 +22,10 @@
  * Unlike every other runtime service, these touch process-wide OS state: the user's
  * credential store, which may prompt (Keychain asking whether this program may use an item, a locked
  * keyring asking to be unlocked) and whose entries outlive the process. Nothing else is read from
- * the process; the file's location arrives in the argument. forceFileStore (SPISOR_SECRETS) skips
+ * the process, with one exception on Linux: the Secret Service backend reads DBUS_SESSION_BUS_ADDRESS
+ * and XDG_RUNTIME_DIR to find the session bus, and the first use loads libsecret with glib, gobject and
+ * gio into the host process, which starts GDBus's worker thread. The file's location arrives in the
+ * argument. forceFileStore (SPISOR_SECRETS) skips
  * the store entirely, so not one store call is made.
  */
 RUNTIME_EXPORT int32_t runtime_secrets_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
