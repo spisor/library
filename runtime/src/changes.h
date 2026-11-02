@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "change_kinds.h"
 #include "export.h"
 
 typedef enum runtime_changes_answer {
@@ -40,6 +41,19 @@ typedef struct runtime_changes_outcome {
  * one whose effect is there becomes applied, any other is dropped.
  */
 runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change);
+
+/** runtime_changes_apply for a caller that already holds runtime_hosts_lock, which is not taken again. */
+runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change);
+
+/**
+ * Reverses entry, one unreversed record in registration of host, held when another unreversed
+ * record of its target exists (a registration that cannot be read counts as one), and marks it
+ * reversed, and drifted when it drifted, in registration, which the caller stores. The caller holds
+ * runtime_hosts_lock. On NOT_REVERSED note says why and nothing is marked; failed is set when memory
+ * ran out.
+ */
+runtime_change_reversal runtime_changes_reverse_entry(const char *state, const char *host, cJSON *registration,
+                                                      cJSON *entry, runtime_change_note *note, int *failed);
 
 /**
  * Settles every pending record in registration against the disk, under runtime_hosts_lock held by

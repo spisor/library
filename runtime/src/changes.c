@@ -602,8 +602,12 @@ static runtime_changes_outcome apply_locked(const char *state, const char *host,
     return session.outcome;
 }
 
-runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
-    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
+static int is_usable_state(const char *state, const char *host) {
+    return state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) && host != NULL;
+}
+
+runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change) {
+    if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
     const char *defect = runtime_change_defect(change);
@@ -614,13 +618,51 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     if (normal == NULL) {
         return outcome_of(RUNTIME_CHANGES_FAILED, "memory ran out");
     }
+    runtime_changes_outcome outcome = apply_locked(state, host, normal);
+    cJSON_Delete(normal);
+    return outcome;
+}
+
+runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
+    if (!is_usable_state(state, host)) {
+        return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
+    }
     runtime_hosts_guard *guard = runtime_hosts_lock(state);
     runtime_changes_outcome outcome =
         guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
-                      : apply_locked(state, host, normal);
+                      : runtime_changes_apply_held(state, host, change);
     runtime_hosts_unlock(guard);
-    cJSON_Delete(normal);
     return outcome;
+}
+
+static int mark_reversed(cJSON *entry, int drifted) {
+    cJSON *flag = cJSON_CreateTrue();
+    int marked = flag != NULL && (cJSON_GetObjectItemCaseSensitive(entry, "reversed") != NULL
+                                      ? cJSON_ReplaceItemInObjectCaseSensitive(entry, "reversed", flag)
+                                      : cJSON_AddItemToObject(entry, "reversed", flag));
+    if (flag != NULL && !marked) {
+        cJSON_Delete(flag);
+    }
+    return marked && (!drifted || cJSON_AddTrueToObject(entry, "drifted") != NULL);
+}
+
+runtime_change_reversal runtime_changes_reverse_entry(const char *state, const char *host, cJSON *registration,
+                                                      cJSON *entry, runtime_change_note *note, int *failed) {
+    runtime_changes_holders holders = runtime_changes_find_holder(state, host, registration, entry);
+    int held = holders.holder != NULL || holders.unreadable;
+    cJSON_Delete(holders.holder);
+    *failed = holders.failed;
+    if (*failed) {
+        snprintf(note->detail, sizeof note->detail, "memory ran out");
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    runtime_change_reversal reversal = runtime_change_reverse(entry, held, note);
+    if (reversal != RUNTIME_CHANGE_NOT_REVERSED && !mark_reversed(entry, reversal == RUNTIME_CHANGE_DRIFTED)) {
+        *failed = 1;
+        snprintf(note->detail, sizeof note->detail, "memory ran out");
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    return reversal;
 }
 
 static int32_t refuse_places(uint8_t **out, size_t *out_len) {

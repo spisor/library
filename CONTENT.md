@@ -63,6 +63,10 @@ Service), and that store may prompt the user.
 | `registry.forget` | `places` (`state`, `cache`), `id` | `{ forgotten }`, after deleting the record and the host's folders; refused while a change is not reversed |
 | `changes.apply` | `places` (`state`), `host`, `change` | `{ recorded, sequence? }`, after making the change and appending it to the host's `changes` |
 | `changes.reverse` | `places` (`state`), `host` | `{ reversed, drifted }`, after undoing every unreversed change, newest first |
+| `commands.request` | `places` (`state`), `environment`, `host`, `home`, `name`, `target` | `{ name }`, the name given (a fallback when the asked one is held), or `{}` for a command the user deleted |
+| `commands.rename` | `places` (`state`), `environment`, `host`, `from`, `to` | `{ name }`, after moving the shim; a held `to` is refused |
+| `commands.delete` | `places` (`state`), `host`, `name` | `{ deleted: true }`, after removing the shim; refused for a required host's last command |
+| `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target` | `{ name }`, after making the shim; a held name is refused |
 
 `places` is what `places.resolve` answers.
 
@@ -150,7 +154,30 @@ Every read-modify-write of a registration (`registry.register`, `registry.forget
 and each step of `changes.reverse`, from its holder check to its store) holds one OS file lock on
 `<state>/hosts/.lock`, so two hosts racing on a shared line or directory, or a host registering while
 another call records its change, never lose or orphan anything. The OS releases the lock when a
-process exits, so a crash never leaves it held.
+process exits, so a crash never leaves it held. A `commands` call holds it once for the whole call
+and applies its changes under it, so it never takes it twice.
+
+### Commands
+
+A host's commands are shims in `<state>/bin`, each a recorded `file` change of that host:
+`<name>`, an `sh` script that runs `exec '<target>' "$@"`, on POSIX, and `<name>.cmd`, running
+`@"<target>" %*`, on Windows. The first one also records `<state>/bin` as a `directory` and a
+`path-entry` in the user's home, so removing the last host that has one takes the directory off
+PATH. Each command is an entry `{ name, requested, owner: "host" | "user", state: "active" |
+"deleted" }` in the registration's `commands`.
+
+A name is held by an active command of any host, by anything already in `<state>/bin`, and by an
+executable on the `PATH` the call carries, `<state>/bin` left out: on Windows `<directory>/<name>`
+with an extension of `PATHEXT` (`.COM;.EXE;.BAT;.CMD` when it is absent), on POSIX an executable
+`<directory>/<name>`. `request` gives a held name's first free fallback, `<name>2`, `<name>3` and
+so on, so a host asking for `cc` where the C compiler is installed gets `cc2` and never shadows it.
+A host asking again for a name it already has is answered with that entry as it stands, and its
+shim is rewritten when the target moved, but the entry itself is never changed by a host: a name
+the user renamed stays renamed and a command the user deleted stays deleted. `rename`, `delete` and
+`add` are the user's, mark the entry `owner: "user"`, and refuse a held name rather than fall back.
+`delete` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
+A name is a letter or digit followed by letters, digits, `-`, `_` or `.`, at most 64; a target is
+absolute, and on Windows holds no `"` or `%`.
 
 ### The portable layer
 

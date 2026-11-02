@@ -64,17 +64,6 @@ static cJSON *newest_unreversed(const cJSON *registration) {
     return newest;
 }
 
-static int mark_reversed(cJSON *entry, int drifted) {
-    cJSON *flag = cJSON_CreateTrue();
-    int marked = flag != NULL && (cJSON_GetObjectItemCaseSensitive(entry, "reversed") != NULL
-                                      ? cJSON_ReplaceItemInObjectCaseSensitive(entry, "reversed", flag)
-                                      : cJSON_AddItemToObject(entry, "reversed", flag));
-    if (flag != NULL && !marked) {
-        cJSON_Delete(flag);
-    }
-    return marked && (!drifted || cJSON_AddTrueToObject(entry, "drifted") != NULL);
-}
-
 static int add_drift(cJSON *drifted, const cJSON *entry, const char *detail) {
     cJSON *report = cJSON_CreateObject();
     int complete = report != NULL && cJSON_AddNumberToObject(report, "sequence", sequence_of(entry)) != NULL &&
@@ -105,29 +94,19 @@ static int32_t refuse_stuck(const cJSON *entry, const char *detail, uint8_t **ou
                        out, out_len);
 }
 
-static int is_held(const reversal_session *session, const cJSON *entry, int *failed) {
-    runtime_changes_holders holders =
-        runtime_changes_find_holder(session->state, session->host, session->registration, entry);
-    int held = holders.holder != NULL || holders.unreadable;
-    *failed = holders.failed;
-    cJSON_Delete(holders.holder);
-    return held;
-}
-
 /** Reverses one change and stores its mark; answers SUCCESS to go on, anything else to stop with *out filled. */
 static int32_t reverse_one(reversal_session *session, cJSON *entry, uint8_t **out, size_t *out_len) {
     int failed = 0;
-    int held = is_held(session, entry, &failed);
+    runtime_change_note note = {""};
+    runtime_change_reversal reversal =
+        runtime_changes_reverse_entry(session->state, session->host, session->registration, entry, &note, &failed);
     if (failed) {
         return out_of_memory(out, out_len);
     }
-    runtime_change_note note = {""};
-    runtime_change_reversal reversal = runtime_change_reverse(entry, held, &note);
     if (reversal == RUNTIME_CHANGE_NOT_REVERSED) {
         return refuse_stuck(entry, note.detail, out, out_len);
     }
-    int drifted = reversal == RUNTIME_CHANGE_DRIFTED;
-    if ((drifted && !add_drift(session->drifted, entry, note.detail)) || !mark_reversed(entry, drifted)) {
+    if (reversal == RUNTIME_CHANGE_DRIFTED && !add_drift(session->drifted, entry, note.detail)) {
         return out_of_memory(out, out_len);
     }
     if (runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
