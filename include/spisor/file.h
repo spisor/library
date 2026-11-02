@@ -44,9 +44,17 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length);
 
 /**
+ * Whether path itself is a symbolic link, dangling or not; on Windows, any reparse point, which is
+ * what spisor_replace_file follows.
+ */
+int spisor_is_link(const char *path);
+
+/**
  * spisor_replace_file for a file only its owner may read, such as a secrets file. On POSIX the
  * result is mode 0600 whether the file is new or replaced, and the temporary file carries 0600 from
  * the moment it is created, so the bytes are never readable by anyone else, not even briefly.
+ * Unlike spisor_replace_file, a path that is a symbolic link is refused (returns 0) rather than
+ * followed: a link's target may sit somewhere its owner shares, such as a dotfiles repository.
  *
  * @implNote Windows has no mode: the file takes the ACL its directory passes on. Under
  * %LOCALAPPDATA%, where the secrets file lives by default, that ACL already admits only the user,

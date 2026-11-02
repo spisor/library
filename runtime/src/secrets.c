@@ -48,6 +48,14 @@ static int32_t refuse_file(const char *file_path, runtime_secret_file_answer ans
                  file_path);
         return spisor_fail("the secrets file is not a readable JSON object", fix, out, out_len);
     }
+    if (answer == RUNTIME_SECRET_FILE_LINKED) {
+        snprintf(fix, sizeof fix,
+                 "replace the link at %s with a regular file, or set SPISOR_SECRETS to a private directory to keep "
+                 "the secrets file elsewhere; it was left unchanged",
+                 file_path);
+        return spisor_fail("the secrets file is a symbolic link, and a secret is never written through one", fix,
+                           out, out_len);
+    }
     snprintf(fix, sizeof fix, "check that %s and its directory can be written", file_path);
     return spisor_fail("the secrets file could not be written", fix, out, out_len);
 }
@@ -132,9 +140,13 @@ static char *requested_entry(const secret_request *request, int32_t *status, uin
     return entry;
 }
 
-static cJSON *first_string_entry(const cJSON *entries) {
+static int is_over_cap(const char *value) {
+    return strlen(value) > RUNTIME_SECRET_VALUE_CAP_BYTES;
+}
+
+static cJSON *first_movable_entry(const cJSON *entries) {
     for (cJSON *item = entries->child; item != NULL; item = item->next) {
-        if (cJSON_IsString(item)) {
+        if (cJSON_IsString(item) && !is_over_cap(item->valuestring)) {
             return item;
         }
     }
@@ -145,12 +157,16 @@ static cJSON *first_string_entry(const cJSON *entries) {
  * Moves every string entry of the file into the store, one at a time: the store write first, then
  * the file rewritten without that entry, so an interruption leaves an entry in both places at worst
  * and never in neither. Stops at the first entry the store does not take.
+ *
+ * @implNote An entry over the cap is skipped and stays in the file, where get still reads it. Only a
+ * hand edit can put one there, since a set refuses it, and skipping it keeps it from stopping every
+ * entry after it.
  */
 static move_result move_file_secrets(const char *file_path) {
     move_result result = {RUNTIME_SECRET_FILE_DONE, 0};
     cJSON *entries = runtime_read_secret_file(file_path, &result.file);
     cJSON *entry;
-    while (entries != NULL && (entry = first_string_entry(entries)) != NULL &&
+    while (entries != NULL && (entry = first_movable_entry(entries)) != NULL &&
            runtime_secret_store_set(entry->string, entry->valuestring) == RUNTIME_SECRET_DONE) {
         cJSON_Delete(cJSON_DetachItemViaPointer(entries, entry));
         result.file = runtime_write_secret_file(file_path, entries);
@@ -217,6 +233,9 @@ static int32_t settle_after_store(const secret_request *request, const char *ent
     if (file == RUNTIME_SECRET_FILE_UNWRITABLE || file == RUNTIME_SECRET_FILE_OUT_OF_MEMORY) {
         return refuse_stale_copy(request->secrets_file, out, out_len);
     }
+    if (file != RUNTIME_SECRET_FILE_DONE) {
+        return refuse_file(request->secrets_file, file, out, out_len);
+    }
     move_file_secrets(request->secrets_file);
     return answer_string("place", "store", out, out_len);
 }
@@ -236,22 +255,42 @@ static int32_t store_or_file(const secret_request *request, const char *entry, c
     return refuse_store("store", RUNTIME_SECRET_FAILED, out, out_len);
 }
 
+static int32_t refuse_over_cap(uint8_t **out, size_t *out_len) {
+    char message[160];
+    snprintf(message, sizeof message, "the value is longer than the %u bytes a secret may hold",
+             RUNTIME_SECRET_VALUE_CAP_BYTES);
+    return spisor_fail(message, "store a value of at most that many bytes of UTF-8; nothing was written", out,
+                       out_len);
+}
+
+static int32_t store_value(const secret_request *request, const char *entry, uint8_t **out, size_t *out_len) {
+    const char *value = string_member(request->argument, "value");
+    if (value == NULL) {
+        return spisor_fail("the argument carries no string value", "send {\"value\": \"<secret>\"}, a UTF-8 string",
+                           out, out_len);
+    }
+    return is_over_cap(value) ? refuse_over_cap(out, out_len) : store_or_file(request, entry, value, out, out_len);
+}
+
 static int32_t secrets_set(const secret_request *request, uint8_t **out, size_t *out_len) {
     int32_t status;
     char *entry = requested_entry(request, &status, out, out_len);
     if (entry == NULL) {
         return status;
     }
-    const char *value = string_member(request->argument, "value");
-    status = value == NULL ? spisor_fail("the argument carries no string value",
-                                         "send {\"value\": \"<secret>\"}, any UTF-8 string", out, out_len)
-                           : store_or_file(request, entry, value, out, out_len);
+    status = store_value(request, entry, out, out_len);
     free(entry);
     return status;
 }
 
 static int store_kept_it(runtime_secret_answer answer) {
     return answer == RUNTIME_SECRET_DECLINED || answer == RUNTIME_SECRET_FAILED;
+}
+
+static int32_t remove_from_file(const secret_request *request, const char *entry, uint8_t **out, size_t *out_len) {
+    runtime_secret_file_answer file = runtime_remove_file_secret(request->secrets_file, entry);
+    return file == RUNTIME_SECRET_FILE_DONE ? answer_with(cJSON_CreateObject(), out, out_len)
+                                            : refuse_file(request->secrets_file, file, out, out_len);
 }
 
 static int32_t secrets_delete(const secret_request *request, uint8_t **out, size_t *out_len) {
@@ -262,14 +301,8 @@ static int32_t secrets_delete(const secret_request *request, uint8_t **out, size
     }
     runtime_secret_answer store =
         request->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_delete(entry);
-    runtime_secret_file_answer file = runtime_remove_file_secret(request->secrets_file, entry);
-    if (store_kept_it(store)) {
-        status = refuse_store("remove", store, out, out_len);
-    } else if (file != RUNTIME_SECRET_FILE_DONE) {
-        status = refuse_file(request->secrets_file, file, out, out_len);
-    } else {
-        status = answer_with(cJSON_CreateObject(), out, out_len);
-    }
+    status = store_kept_it(store) ? refuse_store("remove", store, out, out_len)
+                                  : remove_from_file(request, entry, out, out_len);
     free(entry);
     return status;
 }

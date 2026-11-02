@@ -16,8 +16,9 @@ The C conventions every spisor and forebay library shares, as one static CMake t
 - **Files** (`spisor/file.h`): Node's `existsSync`, reading a whole file, creating a directory with
   its parents, appending, and replacing a file so a reader sees the old content or the new, never a
   mix. A replace follows a symlink and changes the target, leaving the link in place (a dotfiles
-  manager's), and refuses a dangling one; `spisor_replace_private_file` does the same with the
-  temporary file and the result owner-only (0600) from creation. UTF-8 paths on every OS.
+  manager's), and refuses a dangling one; `spisor_replace_private_file` refuses any symlink instead
+  of following it, and keeps the temporary file and the result owner-only (0600) from creation.
+  `spisor_is_link` tells a link apart. UTF-8 paths on every OS.
 - **JSON out** (`spisor/json_write.h`): `spisor_json_stringify_pretty`, exactly what
   `JSON.stringify(value, null, 2)` returns, down to JavaScript's key order.
 - **JSON files** (`spisor/json_file.h`): `spisor_read_json_file`, basekit's `readJson` without the
@@ -53,7 +54,7 @@ Service), and that store may prompt the user.
 | `log.write` | `home`, `names`, `portable`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
 | `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the secrets file, else the store, or `{}`; a file copy is always the newer one |
 | `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
-| `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places |
+| `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places; a store that declines keeps its copy and the file's |
 | `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
 | `secrets.reconcile` | `places` | `{ moved }`, the file-held secrets moved into a store that has appeared (host only, at start) |
 
@@ -90,17 +91,20 @@ target and leaves the link.
 ### Secrets and their stores
 
 A secret is named `spisor/<plugin id>/<name>` in every store and in the file, and is a UTF-8 string
-of any length. `get` reads the file first, then the store: a file entry exists only when written
+of at most 2,560,000 bytes on every OS (`RUNTIME_SECRET_VALUE_CAP_BYTES`); a longer one is refused
+before either place is touched, and a hand-edited file entry over it is left in the file and skipped
+by the move. `get` reads the file first, then the store: a file entry exists only when written
 while the store refused, and every later successful store write empties the file, so a file value is
 always newer, and a file-held secret causes no store access. Each time the store takes a value,
 every secret in the file moves into it, written to the store before it leaves the file, so an
-interruption never loses one. The file is owner-only. `forceFileStore` keeps every secret in the
-file and never touches the store.
+interruption never loses one. The file is owner-only, and a secrets file that is a symlink is never
+written through: the set is refused and names `SPISOR_SECRETS`, which is how the file moves.
+`forceFileStore` keeps every secret in the file and never touches the store.
 
 - **Windows** (Credential Manager) holds about 2.5 KB per entry, so a longer value is split into
   generation-tagged chunk entries under their own root, `spisor-chunks/<plugin id>/<name>#<generation>#<n>`,
   and the base entry, written last, names the generation and count. A failed rewrite leaves the old
-  value readable. A value over 1000 chunks (about 2.5 MB) is refused (`secret_backend.h`).
+  value readable. 1000 chunks are the cap above.
 - **macOS** keeps generic-password Keychain items under the service `spisor`.
 - **Linux** loads libsecret at run time, so a machine without Secret Service falls back to the file
   instead of failing to load. Items carry the attributes `entry` and `owner` = `spisor`, and `list`

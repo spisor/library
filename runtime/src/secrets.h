@@ -35,13 +35,21 @@ RUNTIME_EXPORT int32_t runtime_secrets_get(const uint8_t *in, size_t in_len, uin
  * is followed by every file-held secret, one entry at a time and each written to the store before it
  * leaves the file, so an interruption never loses one; a store that refuses partway leaves the rest
  * in the file. A declined or absent store sends the value to the file, and the set still succeeds.
+ * A value over RUNTIME_SECRET_VALUE_CAP_BYTES is refused before either place is touched. A secrets
+ * file that is a symbolic link is never written through; SPISOR_SECRETS is how it moves.
  *
  * @implNote The file's own copy of this entry leaves the file before the move starts, as the move
- * would otherwise carry that older value over the one just stored. If it cannot leave, the set is
- * answered as a failure, since a later move would overwrite the stored value with it.
+ * would otherwise carry that older value over the one just stored. If it cannot leave, or the file
+ * cannot be read to tell whether it holds one, the set is answered as a failure, since a later get
+ * would answer that older copy and a later move would overwrite the stored value with it.
  */
 RUNTIME_EXPORT int32_t runtime_secrets_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * Removes {"plugin", "name"} from both places. A store that declines or fails keeps its copy, and
+ * then the file's copy is kept too, since it is the newer one: removing it alone would make the
+ * store's older value readable again.
+ */
 RUNTIME_EXPORT int32_t runtime_secrets_delete(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 /** Host only: removes every secret of {"plugin"} from both places, for uninstall. */
