@@ -103,28 +103,37 @@ registration and the host's two folders, and is refused while a change in `chang
 
 Everything a host changes outside its own folders goes through `changes.apply`, so removing it can
 replay the record and leave the machine as it was, even once the host's binary is gone. Each entry
-in `changes` is `{ sequence, kind, state, reversed, ... }`, and every path in it is absolute:
+in `changes` is `{ sequence, kind, state, reversed, ... }`. Every path in it is absolute and stored
+normalized (one separator form, no trailing separator), and two paths name one target when they are
+equal so, ignoring ASCII case on Windows:
 
 | kind | the change carries | the record keeps | reversal |
 |---|---|---|---|
 | `file` | `path`, `content`, `executable`? | `path` | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
-| `directory` | `path` | `path` | removes it only once empty |
+| `directory` | `path` | `path` | removes it only once empty; one still holding something is left and reported |
 | `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
 | `profile-line` | `file`, `line` | `file`, `line`, `separated` | removes the exact line, and the newline added before it |
 
 A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
 not a readable JSON object, a `profile-line` over a missing file, and a kind runtime does not know
-is refused before anything is written. A `directory` or `profile-line` the user already has is not
-recorded (`recorded: false`). Both are reference-counted across every registration: one held by
+is refused before anything is written. A `directory` or `profile-line` the user already has, or a
+`json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
 another unreversed record, of this host or another, is recorded again and stays until the last
 holder is reversed; a registration that cannot be read counts as a holder.
 
 The entry is stored with `state: "pending"` before the disk is touched and marked `"applied"`
 after; a pending entry found by the next call is completed when its effect is on the disk and
-dropped otherwise. `reverse` stores `"reversed": true` (and `"drifted": true` for a drift) after
+dropped otherwise. A sequence is never handed out twice: the registration keeps a `nextSequence`
+counter, which `registry.register` carries over like `changes`. `reverse` stores `"reversed": true` (and `"drifted": true` for a drift) after
 each change, so an interrupted removal resumes where it stopped and reverses nothing twice.
 `reversed` counts the drifted entries too. A JSON file is rewritten as `JSON.stringify(value, null,
 2)` with its original final newline. `runtime_changes_apply` is the same operation for C callers.
+
+Every read-modify-write of a registration (`registry.register`, `registry.forget`, `changes.apply`,
+and each step of `changes.reverse`, from its holder check to its store) holds one OS file lock on
+`<state>/hosts/.lock`, so two hosts racing on a shared line or directory, or a host registering while
+another call records its change, never lose or orphan anything. The OS releases the lock when a
+process exits, so a crash never leaves it held.
 
 ### The portable layer
 

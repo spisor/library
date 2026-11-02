@@ -25,7 +25,8 @@ typedef struct runtime_changes_outcome {
  * next sequence and "reversed": false. RECORDED carries that sequence. UNNEEDED when the disk already
  * holds what was asked and no host holds it (a directory or profile line the user made), so nothing
  * is changed or recorded. REFUSED and FAILED carry the reason, and then nothing is changed or recorded.
- * state must be absolute and host must be registered.
+ * state must be absolute and host must be registered. Paths are stored in the normal form of
+ * runtime_change_normalized. The whole apply holds runtime_hosts_lock, so the caller must not hold it.
  *
  * @implNote The record is stored with "state": "pending" before the disk is touched and marked
  * "applied" after, so a crash in between leaves a record of a change that may have happened, never a
@@ -34,7 +35,10 @@ typedef struct runtime_changes_outcome {
  */
 runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change);
 
-/** Settles every pending record in registration against the disk. Answers 1 when it changed anything. */
+/**
+ * Settles every pending record in registration against the disk, under runtime_hosts_lock held by
+ * the caller. Answers 1 when it changed anything.
+ */
 int runtime_changes_settle_pending(cJSON *registration);
 
 typedef struct runtime_changes_holders {
@@ -47,6 +51,7 @@ typedef struct runtime_changes_holders {
  * Another unreversed record of record's target, for a shared kind: in registration itself (record
  * excluded) or in any other registration under state/hosts. holder is a copy freed with cJSON_Delete.
  * unreadable is set when some other registration could not be read, failed when memory ran out.
+ * The caller holds runtime_hosts_lock, so no registration changes between this check and the act.
  */
 runtime_changes_holders runtime_changes_find_holder(const char *state, const char *host, const cJSON *registration,
                                                     const cJSON *record);

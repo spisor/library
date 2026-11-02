@@ -31,19 +31,36 @@ typedef struct runtime_change_note {
 const char *runtime_change_defect(const cJSON *change);
 
 /**
+ * A copy of change, freed with cJSON_Delete, whose path or file is in normal form: joined as Node's
+ * path.join does for the host OS (one separator form, "." and ".." resolved, repeats collapsed) and
+ * with no trailing separator except on a root. NULL when memory runs out. Call it only on a change
+ * runtime_change_defect accepted; the record stores what it answers.
+ */
+cJSON *runtime_change_normalized(const cJSON *change);
+
+/**
+ * Whether two paths name one target: equal in normal form, compared ignoring ASCII case on Windows.
+ *
+ * @implNote Only ASCII letters are folded, so two Windows spellings differing in the case of a
+ * non-ASCII letter still count as two targets. Links are not resolved: two paths reaching one file
+ * through a link are two targets.
+ */
+int runtime_change_paths_equal(const char *left, const char *right);
+
+/**
  * Whether reversing a change of this kind must wait for every other unreversed record of the same
  * target, across every registration: a directory and a profile line can be wanted by several hosts.
  */
 int runtime_change_is_shared(const char *kind);
 
-/** Whether two records of a shared kind name one target: the same kind and path, and line. */
+/** Whether two records of a shared kind name one target: the same kind, path by runtime_change_paths_equal, and line. */
 int runtime_change_same_target(const cJSON *left, const cJSON *right);
 
 /**
  * The record to store for change, without sequence, state or reversed, read from the disk before
  * anything is changed. holder is an unreversed record of the same target another change already
  * holds, or NULL. UNNEEDED when the disk already is as asked and no host holds it, so the thing
- * belongs to the user and nothing is recorded.
+ * belongs to the user and nothing is recorded; a json-key already holding its value is UNNEEDED too.
  */
 runtime_change_step runtime_change_prepare(const cJSON *change, const cJSON *holder, cJSON **record,
                                            runtime_change_note *note);
@@ -56,8 +73,8 @@ int runtime_change_is_on_disk(const cJSON *record);
 
 /**
  * Undoes record. held is non-zero while another unreversed record holds the same target, and the
- * shared thing is then left. DRIFTED when the target no longer holds what the host made, which is
- * left; note says what.
+ * shared thing is then left. DRIFTED when the target no longer holds what the host made, or a
+ * directory the host created still holds something, which is left; note says what.
  *
  * @implNote Reversal is idempotent, so a record whose reversal reached the disk but whose
  * "reversed" mark was not stored is reversed again harmlessly: a json-key already holding its

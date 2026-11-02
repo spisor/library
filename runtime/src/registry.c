@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "hosts_lock.h"
 #include "file_presence.h"
 #include "paths.h"
 #include "segment.h"
@@ -279,9 +280,10 @@ static int add_stored_list(cJSON *target, const cJSON *stored, const char *membe
 }
 
 /**
- * The record to store: the given registration's own fields, with commands and changes carried over
- * from stored (empty when stored is NULL). Anything else in the given registration or the stored one
- * is dropped, so the file never holds a member nothing owns.
+ * The record to store: the given registration's own fields, with commands, changes and the
+ * changes service's nextSequence counter carried over from stored (empty when stored is NULL).
+ * Anything else in the given registration or the stored one is dropped, so the file never holds a
+ * member nothing owns.
  *
  * @implNote Commands and changes are owned by the services that record them, never by a host
  * registering itself, so a host's start cannot erase what an install or a command left behind.
@@ -292,7 +294,7 @@ static cJSON *merged_registration(const cJSON *given, const cJSON *stored) {
                    add_copy(merged, given, "version") && add_copy(merged, given, "home") &&
                    add_copy(merged, given, "application") && add_copy(merged, given, "provenance") &&
                    add_copy(merged, given, "requiresCommand") && add_stored_list(merged, stored, "commands") &&
-                   add_stored_list(merged, stored, "changes");
+                   add_stored_list(merged, stored, "changes") && add_copy(merged, stored, "nextSequence");
     if (!complete) {
         cJSON_Delete(merged);
         return NULL;
@@ -318,12 +320,14 @@ static int32_t store_and_answer(const registry_request *request, cJSON *merged, 
     return answer_with(result, out, out_len);
 }
 
-static int32_t register_host(const registry_request *request, uint8_t **out, size_t *out_len) {
-    const cJSON *given = cJSON_GetObjectItemCaseSensitive(request->argument, "registration");
-    const char *defect = registration_defect(given);
-    if (defect != NULL) {
-        return refuse_registration(defect, out, out_len);
-    }
+static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len) {
+    char fix[2048];
+    snprintf(fix, sizeof fix, "check that %s/hosts/.lock can be created, opened and locked", state);
+    return spisor_fail("the registry lock could not be taken; nothing was changed", fix, out, out_len);
+}
+
+static int32_t register_locked(const registry_request *request, const cJSON *given, uint8_t **out,
+                               size_t *out_len) {
     const char *id = string_member(given, "id");
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
@@ -336,6 +340,21 @@ static int32_t register_host(const registry_request *request, uint8_t **out, siz
         return out_of_memory(out, out_len);
     }
     return store_and_answer(request, merged, out, out_len);
+}
+
+static int32_t register_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+    const cJSON *given = cJSON_GetObjectItemCaseSensitive(request->argument, "registration");
+    const char *defect = registration_defect(given);
+    if (defect != NULL) {
+        return refuse_registration(defect, out, out_len);
+    }
+    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+    if (guard == NULL) {
+        return refuse_unlocked(request->state, out, out_len);
+    }
+    int32_t status = register_locked(request, given, out, out_len);
+    runtime_hosts_unlock(guard);
+    return status;
 }
 
 static int32_t get_host(const registry_request *request, uint8_t **out, size_t *out_len) {
@@ -517,11 +536,7 @@ static int32_t answer_forgotten(int forgotten, uint8_t **out, size_t *out_len) {
     return answer_with(result, out, out_len);
 }
 
-static int32_t forget_host(const registry_request *request, uint8_t **out, size_t *out_len) {
-    const char *id = string_member(request->argument, "id");
-    if (id == NULL) {
-        return refuse_id(out, out_len);
-    }
+static int32_t forget_locked(const registry_request *request, const char *id, uint8_t **out, size_t *out_len) {
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
     if (loaded != RUNTIME_REGISTRY_OK && loaded != RUNTIME_REGISTRY_ABSENT) {
@@ -536,6 +551,20 @@ static int32_t forget_host(const registry_request *request, uint8_t **out, size_
                   remove_registration_file(request->state, id);
     return removed ? answer_forgotten(loaded == RUNTIME_REGISTRY_OK, out, out_len)
                    : refuse_incomplete_removal(id, out, out_len);
+}
+
+static int32_t forget_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+    const char *id = string_member(request->argument, "id");
+    if (id == NULL) {
+        return refuse_id(out, out_len);
+    }
+    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+    if (guard == NULL) {
+        return refuse_unlocked(request->state, out, out_len);
+    }
+    int32_t status = forget_locked(request, id, out, out_len);
+    runtime_hosts_unlock(guard);
+    return status;
 }
 
 static int32_t refuse_places(uint8_t **out, size_t *out_len) {

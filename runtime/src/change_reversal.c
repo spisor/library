@@ -3,6 +3,7 @@
 
 #include "change_kinds.h"
 #include "changes.h"
+#include "hosts_lock.h"
 #include "registry.h"
 #include "spisor/json_kind.h"
 
@@ -37,6 +38,7 @@ typedef struct reversal_session {
     cJSON *registration;
     cJSON *drifted;
     int reversed;
+    int finished;
 } reversal_session;
 
 static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
@@ -142,33 +144,13 @@ static int32_t answer_reversed(const reversal_session *session, cJSON *result, u
     return spisor_succeed(result, out, out_len);
 }
 
-static int32_t reverse_all(reversal_session *session, cJSON *result, uint8_t **out, size_t *out_len) {
-    if (runtime_changes_settle_pending(session->registration) &&
-        runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
-        return refuse_unwritable(session, out, out_len);
-    }
-    cJSON *entry = newest_unreversed(session->registration);
-    while (entry != NULL && may_reverse_another()) {
-        int32_t status = reverse_one(session, entry, out, out_len);
-        if (status != SPISOR_STATUS_SUCCESS) {
-            return status;
-        }
-        entry = newest_unreversed(session->registration);
-    }
-    return answer_reversed(session, result, out, out_len);
-}
-
 static int32_t refuse_unreadable(const char *host, uint8_t **out, size_t *out_len) {
     char message[512];
     snprintf(message, sizeof message, "the registration of host %s is not readable", host);
-    return spisor_fail(message, "repair or restore it; nothing was reversed", out, out_len);
+    return spisor_fail(message, "repair or restore it; nothing more was reversed", out, out_len);
 }
 
-static int32_t reverse_host(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                            size_t *out_len) {
-    (void)argument;
-    reversal_session session = {state, host, NULL, NULL, 0};
-    runtime_registry_answer loaded = runtime_registry_load(state, host, &session.registration);
+static int32_t refuse_load(runtime_registry_answer loaded, const char *host, uint8_t **out, size_t *out_len) {
     if (loaded == RUNTIME_REGISTRY_INVALID) {
         return spisor_fail("the host id is not a portable path segment", "send the id the host registered with",
                            out, out_len);
@@ -176,15 +158,70 @@ static int32_t reverse_host(const char *state, const char *host, const cJSON *ar
     if (loaded == RUNTIME_REGISTRY_UNREADABLE) {
         return refuse_unreadable(host, out, out_len);
     }
-    if (loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
-        return out_of_memory(out, out_len);
+    return out_of_memory(out, out_len);
+}
+
+static int32_t finish(reversal_session *session, int settled, uint8_t **out, size_t *out_len) {
+    session->finished = 1;
+    if (settled && runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
+        return refuse_unwritable(session, out, out_len);
     }
+    return SPISOR_STATUS_SUCCESS;
+}
+
+/** One step under the lock: read the registration afresh, settle it, reverse its newest change and store. */
+static int32_t reverse_step(reversal_session *session, uint8_t **out, size_t *out_len) {
+    runtime_registry_answer loaded = runtime_registry_load(session->state, session->host, &session->registration);
+    if (loaded == RUNTIME_REGISTRY_ABSENT) {
+        session->finished = 1;
+        return SPISOR_STATUS_SUCCESS;
+    }
+    if (loaded != RUNTIME_REGISTRY_OK) {
+        return refuse_load(loaded, session->host, out, out_len);
+    }
+    int settled = runtime_changes_settle_pending(session->registration);
+    cJSON *entry = newest_unreversed(session->registration);
+    if (entry == NULL || !may_reverse_another()) {
+        return finish(session, settled, out, out_len);
+    }
+    return reverse_one(session, entry, out, out_len);
+}
+
+static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len) {
+    char fix[2048];
+    snprintf(fix, sizeof fix, "check that %s/hosts/.lock can be created, opened and locked", state);
+    return spisor_fail("the registry lock could not be taken", fix, out, out_len);
+}
+
+/**
+ * @implNote The lock is held per change, not across the removal, so another host can apply or
+ * reverse between two steps; each step reads every registration afresh under the lock, so its
+ * holder check, its act on the disk and its store are one atomic step.
+ */
+static int32_t reverse_all(reversal_session *session, cJSON *result, uint8_t **out, size_t *out_len) {
+    int32_t status = SPISOR_STATUS_SUCCESS;
+    while (status == SPISOR_STATUS_SUCCESS && !session->finished) {
+        runtime_hosts_guard *guard = runtime_hosts_lock(session->state);
+        if (guard == NULL) {
+            return refuse_unlocked(session->state, out, out_len);
+        }
+        status = reverse_step(session, out, out_len);
+        runtime_hosts_unlock(guard);
+        cJSON_Delete(session->registration);
+        session->registration = NULL;
+    }
+    return status == SPISOR_STATUS_SUCCESS ? answer_reversed(session, result, out, out_len) : status;
+}
+
+static int32_t reverse_host(const char *state, const char *host, const cJSON *argument, uint8_t **out,
+                            size_t *out_len) {
+    (void)argument;
+    reversal_session session = {state, host, NULL, NULL, 0, 0};
     cJSON *result = cJSON_CreateObject();
     session.drifted = result == NULL ? NULL : cJSON_AddArrayToObject(result, "drifted");
     int32_t status =
         session.drifted == NULL ? out_of_memory(out, out_len) : reverse_all(&session, result, out, out_len);
     cJSON_Delete(result);
-    cJSON_Delete(session.registration);
     return status;
 }
 

@@ -9,8 +9,10 @@
 
 #ifdef _WIN32
 #include <process.h>
+#include <windows.h>
 #define CURRENT_PROCESS_ID _getpid()
 #else
+#include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #define CURRENT_PROCESS_ID getpid()
@@ -21,6 +23,7 @@
 #include "check.h"
 #include "directory_tree.h"
 #include "links.h"
+#include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -469,7 +472,7 @@ static void an_interrupted_removal_finishes_and_reverses_nothing_twice(void) {
     CHECK(is_change_reversed(&place, "alpha", 2) == 0 && is_change_reversed(&place, "alpha", 1) == 0);
     CHECK(!home_entry_exists(&place, "tools/c") && home_entry_exists(&place, "tools/a"));
     write_home_file(&place, "tools/c", "the user's own c");
-    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(reverse_counts(&place, "alpha", 2, 1));
     home_file_is(&place, "tools/c", "the user's own c");
     CHECK(!home_entry_exists(&place, "tools/a") && home_entry_exists(&place, "tools"));
     CHECK(reverse_counts(&place, "alpha", 0, 0));
@@ -591,10 +594,219 @@ static void what_the_user_already_has_is_not_recorded(void) {
     CHECK(spisor_make_directories(existing) == 1);
     CHECK(apply_unneeded(&place, "alpha", directory_change(&place, "existing")));
     CHECK(apply_unneeded(&place, "alpha", profile_line_change(&place, ".bashrc", "export A=1")));
+    CHECK(apply_unneeded(&place, "alpha", json_key_change(&place, "[\"theme\"]", "\"dark\"")));
     CHECK(change_count(&place, "alpha") == 0);
     CHECK(reverse_counts(&place, "alpha", 0, 0));
     CHECK(home_entry_exists(&place, "existing"));
     home_file_is(&place, ".bashrc", "export A=1\n");
+    home_file_is(&place, ".claude.json", claude_json_before);
+}
+
+static void a_sequence_is_never_handed_out_twice(void) {
+    scratch place;
+    fresh_scratch(&place, "sequence");
+    register_host(&place, "alpha");
+    CHECK(apply_refused(&place, "alpha", file_change(&place, "no-such-directory/file", "x", 0)));
+    CHECK(change_count(&place, "alpha") == 0);
+    register_host(&place, "alpha");
+    CHECK(applied_sequence(&place, "alpha", directory_change(&place, "tools")) == 2);
+}
+
+static void other_spelling(const char *path, char *variant, size_t size) {
+#ifdef _WIN32
+    size_t index = 0;
+    for (; path[index] != '\0' && index + 2 < size; index++) {
+        char character = path[index] == '/' ? '\\' : path[index];
+        variant[index] = character >= 'a' && character <= 'z' ? (char)(character - 'a' + 'A') : character;
+    }
+    variant[index] = '\\';
+    variant[index + 1] = '\0';
+#else
+    snprintf(variant, size, "%s//", path);
+#endif
+}
+
+static const char *stored_path(const cJSON *registration, int index) {
+    const cJSON *entry = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(registration, "changes"), index);
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "path"));
+}
+
+static void two_spellings_of_one_path_are_one_target(void) {
+    scratch place;
+    fresh_scratch(&place, "spelling");
+    register_host(&place, "alpha");
+    register_host(&place, "beta");
+    char path[1400];
+    char variant[1400];
+    in_home(&place, "shared", path, sizeof path);
+    other_spelling(path, variant, sizeof variant);
+    CHECK(applied_sequence(&place, "alpha", directory_change(&place, "shared")) == 1);
+    cJSON *change = cJSON_CreateObject();
+    cJSON_AddStringToObject(change, "kind", "directory");
+    cJSON_AddStringToObject(change, "path", variant);
+    CHECK(applied_sequence(&place, "beta", change) == 1);
+    cJSON *registration = loaded_registration(&place, "beta");
+    const char *stored = stored_path(registration, 0);
+    size_t length = stored == NULL ? 0 : strlen(stored);
+    CHECK(length > 0 && stored[length - 1] != '/' && stored[length - 1] != '\\');
+    CHECK(RUNTIME_HOST_IS_WINDOWS ? strchr(stored, '/') == NULL : strstr(stored, "//") == NULL);
+    cJSON_Delete(registration);
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    CHECK(home_entry_exists(&place, "shared"));
+    CHECK(reverse_counts(&place, "beta", 1, 0));
+    CHECK(!home_entry_exists(&place, "shared"));
+}
+
+typedef enum host_action { APPLY_LINE, REVERSE, REGISTER_REPEATEDLY, APPLY_FILES } host_action;
+
+#define RACING_ROUNDS 30
+
+typedef struct host_work {
+    const scratch *place;
+    const char *host;
+    host_action action;
+    int succeeded;
+} host_work;
+
+static void apply_files(host_work *work) {
+    work->succeeded = 1;
+    for (int round = 0; round < RACING_ROUNDS; round++) {
+        char name[64];
+        snprintf(name, sizeof name, "racing-%d", round);
+        work->succeeded &= applied_sequence(work->place, work->host, file_change(work->place, name, "x", 0)) > 0;
+    }
+}
+
+static void register_repeatedly(host_work *work) {
+    for (int round = 0; round < RACING_ROUNDS; round++) {
+        register_host(work->place, work->host);
+    }
+    work->succeeded = 1;
+}
+
+static void perform_work(host_work *work) {
+    cJSON *reversed = NULL;
+    switch (work->action) {
+    case APPLY_LINE:
+        work->succeeded =
+            applied_sequence(work->place, work->host, profile_line_change(work->place, ".bashrc", path_line)) > 0;
+        break;
+    case REVERSE:
+        reversed = reverse_host(work->place, work->host);
+        work->succeeded = reversed != NULL;
+        cJSON_Delete(reversed);
+        break;
+    case REGISTER_REPEATEDLY:
+        register_repeatedly(work);
+        break;
+    case APPLY_FILES:
+        apply_files(work);
+        break;
+    }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI work_entry(LPVOID argument) {
+    perform_work(argument);
+    return 0;
+}
+
+static void run_together(host_work *first, host_work *second) {
+    HANDLE handles[2];
+    handles[0] = CreateThread(NULL, 0, work_entry, first, 0, NULL);
+    handles[1] = CreateThread(NULL, 0, work_entry, second, 0, NULL);
+    CHECK(handles[0] != NULL && handles[1] != NULL);
+    for (int index = 0; index < 2; index++) {
+        if (handles[index] != NULL) {
+            WaitForSingleObject(handles[index], INFINITE);
+            CloseHandle(handles[index]);
+        }
+    }
+}
+#else
+static void *work_entry(void *argument) {
+    perform_work(argument);
+    return NULL;
+}
+
+static void run_together(host_work *first, host_work *second) {
+    pthread_t threads[2];
+    CHECK(pthread_create(&threads[0], NULL, work_entry, first) == 0);
+    CHECK(pthread_create(&threads[1], NULL, work_entry, second) == 0);
+    pthread_join(threads[0], NULL);
+    pthread_join(threads[1], NULL);
+}
+#endif
+
+static int both_together(const scratch *place, host_action alpha_action, host_action beta_action) {
+    host_work alpha = {place, "alpha", alpha_action, 0};
+    host_work beta = {place, "beta", beta_action, 0};
+    run_together(&alpha, &beta);
+    return alpha.succeeded && beta.succeeded;
+}
+
+static int line_occurrences(const scratch *place) {
+    char path[1400];
+    in_home(place, ".bashrc", path, sizeof path);
+    char *text = read_text(path);
+    int count = 0;
+    for (const char *cursor = text; cursor != NULL && (cursor = strstr(cursor, path_line)) != NULL; cursor++) {
+        count++;
+    }
+    free(text);
+    return count;
+}
+
+static int race_round(const scratch *place) {
+    int held_right = both_together(place, APPLY_LINE, APPLY_LINE) && line_occurrences(place) == 1;
+    held_right &= both_together(place, REVERSE, REVERSE) && line_occurrences(place) == 0;
+    host_work alpha = {place, "alpha", APPLY_LINE, 0};
+    perform_work(&alpha);
+    held_right &= alpha.succeeded && both_together(place, REVERSE, APPLY_LINE) && line_occurrences(place) == 1;
+    host_work beta = {place, "beta", REVERSE, 0};
+    perform_work(&beta);
+    return held_right && beta.succeeded && line_occurrences(place) == 0;
+}
+
+static int listed_host_count(const scratch *place) {
+    cJSON *request = cJSON_CreateObject();
+    cJSON_AddItemToObject(request, "places", places_for(place));
+    answer result = call(runtime_registry_list, request);
+    const cJSON *hosts = cJSON_GetObjectItemCaseSensitive(result.tree, "hosts");
+    const cJSON *unreadable = cJSON_GetObjectItemCaseSensitive(result.tree, "unreadable");
+    int count = cJSON_GetArraySize(unreadable) == 0 ? cJSON_GetArraySize(hosts) : -1;
+    cJSON_Delete(result.tree);
+    return count;
+}
+
+static void hosts_racing_on_a_shared_line_keep_it_exactly_while_held(void) {
+    scratch place;
+    fresh_scratch(&place, "racing-line");
+    register_host(&place, "alpha");
+    register_host(&place, "beta");
+    seed_home(&place);
+    int rounds_right = 0;
+    for (int round = 0; round < RACING_ROUNDS; round++) {
+        rounds_right += race_round(&place);
+    }
+    if (rounds_right != RACING_ROUNDS) {
+        fprintf(stderr, "racing hosts: %d of %d rounds kept the line exactly while held\n", rounds_right,
+                RACING_ROUNDS);
+    }
+    CHECK(rounds_right == RACING_ROUNDS);
+    home_file_is(&place, ".bashrc", "export A=1\n");
+    CHECK(listed_host_count(&place) == 2);
+}
+
+static void registering_while_applying_never_drops_a_record(void) {
+    scratch place;
+    fresh_scratch(&place, "racing-register");
+    register_host(&place, "alpha");
+    host_work registering = {&place, "alpha", REGISTER_REPEATEDLY, 0};
+    host_work applying = {&place, "alpha", APPLY_FILES, 0};
+    run_together(&registering, &applying);
+    CHECK(registering.succeeded && applying.succeeded);
+    CHECK(change_count(&place, "alpha") == RACING_ROUNDS);
 }
 
 static void the_c_entry_point_records_like_the_json_one(void) {
@@ -646,6 +858,10 @@ int main(void) {
     a_pending_record_is_completed_or_dropped_from_the_disk();
     refusals_change_nothing();
     what_the_user_already_has_is_not_recorded();
+    a_sequence_is_never_handed_out_twice();
+    two_spellings_of_one_path_are_one_target();
+    hosts_racing_on_a_shared_line_keep_it_exactly_while_held();
+    registering_while_applying_never_drops_a_record();
     the_c_entry_point_records_like_the_json_one();
     a_link_left_where_a_file_was_is_removed_never_followed();
     return summary_with_links("changes_test");
