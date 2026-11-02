@@ -141,6 +141,21 @@ static int apply_unneeded(const scratch *place, const char *host, const char *di
     return unneeded;
 }
 
+static int answered_existing(const scratch *place, const char *host, const char *directory, long expected) {
+    answer result = apply_entry(place, host, directory);
+    const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(result.tree, "sequence");
+    int answered = result.status == SPISOR_STATUS_SUCCESS &&
+                   cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded")) &&
+                   cJSON_IsNumber(sequence) && (long)sequence->valuedouble == expected;
+    if (!answered) {
+        char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
+        fprintf(stderr, "expected recorded false with sequence %ld, got %s\n", expected, text == NULL ? "" : text);
+        free(text);
+    }
+    cJSON_Delete(result.tree);
+    return answered;
+}
+
 static int apply_refused(const scratch *place, const char *host, const char *directory) {
     answer result = apply_entry(place, host, directory);
     int refused = result.status == SPISOR_STATUS_FAILURE;
@@ -333,6 +348,26 @@ static void only_the_exact_entry_leaves_when_the_user_appended_after_it(void) {
     delete_test_value();
 }
 
+static void a_repeated_apply_records_nothing(void) {
+    scratch place;
+    fresh_scratch(&place, "repeat");
+    register_hosts(&place);
+    const wchar_t *before = L"C:\\Other";
+    set_test_value(REG_EXPAND_SZ, before);
+    wchar_t entry[1400];
+    stored_form(place.shims, entry, 1400);
+    wchar_t with_entry[4096];
+    swprintf(with_entry, 4096, L"%ls;%ls", before, entry);
+    CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
+    CHECK(answered_existing(&place, "alpha", place.shims, 1));
+    CHECK(answered_existing(&place, "alpha", place.shims, 1));
+    CHECK(change_count(&place, "alpha") == 1);
+    CHECK(test_value_is(REG_EXPAND_SZ, with_entry));
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    CHECK(test_value_is(REG_EXPAND_SZ, before));
+    delete_test_value();
+}
+
 static void windows_refusals_record_nothing(void) {
     scratch place;
     fresh_scratch(&place, "refusals");
@@ -349,6 +384,7 @@ int main(void) {
     an_entry_the_user_had_is_never_removed();
     an_absent_value_is_created_expandable_and_removed_again();
     only_the_exact_entry_leaves_when_the_user_appended_after_it();
+    a_repeated_apply_records_nothing();
     windows_refusals_record_nothing();
     delete_test_value();
     registry_text real_after;
@@ -470,6 +506,31 @@ static void a_line_the_user_had_is_never_removed(void) {
     CHECK(home_file_is(&place, ".profile", users));
 }
 
+static void a_repeated_apply_adds_only_a_profile_new_since(void) {
+    scratch place;
+    fresh_scratch(&place, "repeat");
+    register_hosts(&place);
+    write_home_file(&place, ".profile", "# profile\n");
+    char profile_after[2048];
+    with_line("# profile\n", place.shims, profile_after, sizeof profile_after);
+    CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
+    CHECK(answered_existing(&place, "alpha", place.shims, 1));
+    CHECK(change_count(&place, "alpha") == 2);
+
+    write_home_file(&place, ".zshrc", "# zsh\n");
+    char zshrc_after[2048];
+    with_line("# zsh\n", place.shims, zshrc_after, sizeof zshrc_after);
+    CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
+    CHECK(change_count(&place, "alpha") == 3);
+    CHECK(answered_existing(&place, "alpha", place.shims, 1));
+    CHECK(change_count(&place, "alpha") == 3);
+    CHECK(home_file_is(&place, ".profile", profile_after));
+    CHECK(home_file_is(&place, ".zshrc", zshrc_after));
+    CHECK(reverse_counts(&place, "alpha", 3, 0));
+    CHECK(home_file_is(&place, ".profile", "# profile\n"));
+    CHECK(home_file_is(&place, ".zshrc", "# zsh\n"));
+}
+
 static void no_profile_means_refused_and_none_created(void) {
     scratch place;
     fresh_scratch(&place, "no-profile");
@@ -493,6 +554,7 @@ static void posix_refusals_record_nothing(void) {
 int main(void) {
     two_hosts_keep_the_directory_until_the_last_is_reversed();
     a_line_the_user_had_is_never_removed();
+    a_repeated_apply_adds_only_a_profile_new_since();
     no_profile_means_refused_and_none_created();
     posix_refusals_record_nothing();
     return check_summary("path_entry_test");

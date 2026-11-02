@@ -809,6 +809,49 @@ static void registering_while_applying_never_drops_a_record(void) {
     CHECK(change_count(&place, "alpha") == RACING_ROUNDS);
 }
 
+static int answered_existing(const scratch *place, const char *host, cJSON *change, long expected) {
+    answer result = apply_change(place, host, change);
+    const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(result.tree, "sequence");
+    int answered = result.status == SPISOR_STATUS_SUCCESS &&
+                   cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded")) &&
+                   cJSON_IsNumber(sequence) && (long)sequence->valuedouble == expected;
+    if (!answered) {
+        char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
+        fprintf(stderr, "expected recorded false with sequence %ld, got %s\n", expected, text == NULL ? "" : text);
+        free(text);
+    }
+    cJSON_Delete(result.tree);
+    return answered;
+}
+
+static void a_repeated_change_answers_its_record_and_records_nothing(void) {
+    scratch place;
+    fresh_scratch(&place, "repeat");
+    register_host(&place, "alpha");
+    write_home_file(&place, ".claude.json", claude_json_before);
+    write_home_file(&place, ".bashrc", "# bash\n");
+    char *before = snapshot_of(&place);
+    CHECK(applied_sequence(&place, "alpha", directory_change(&place, "tools")) == 1);
+    CHECK(applied_sequence(&place, "alpha", file_change(&place, "tools/c", "#!/bin/sh\n", 1)) == 2);
+    CHECK(applied_sequence(&place, "alpha", json_key_change(&place, "[\"theme\"]", "\"light\"")) == 3);
+    CHECK(applied_sequence(&place, "alpha", profile_line_change(&place, ".bashrc", path_line)) == 4);
+    char *applied = snapshot_of(&place);
+    CHECK(answered_existing(&place, "alpha", directory_change(&place, "tools"), 1));
+    CHECK(answered_existing(&place, "alpha", file_change(&place, "tools/c", "#!/bin/sh\n", 1), 2));
+    CHECK(answered_existing(&place, "alpha", json_key_change(&place, "[\"theme\"]", "\"light\""), 3));
+    CHECK(answered_existing(&place, "alpha", profile_line_change(&place, ".bashrc", path_line), 4));
+    CHECK(change_count(&place, "alpha") == 4);
+    char *repeated = snapshot_of(&place);
+    CHECK(check_text(repeated, applied, "home after the repeats"));
+    CHECK(reverse_counts(&place, "alpha", 4, 0));
+    char *after = snapshot_of(&place);
+    CHECK(check_text(after, before, "home after one reverse"));
+    free(before);
+    free(applied);
+    free(repeated);
+    free(after);
+}
+
 static void the_c_entry_point_records_like_the_json_one(void) {
     scratch place;
     fresh_scratch(&place, "c-entry");
@@ -817,13 +860,13 @@ static void the_c_entry_point_records_like_the_json_one(void) {
     runtime_changes_outcome outcome = runtime_changes_apply(place.state, "alpha", change);
     CHECK(outcome.answer == RUNTIME_CHANGES_RECORDED && outcome.sequence == 1);
     outcome = runtime_changes_apply(place.state, "alpha", change);
-    CHECK(outcome.answer == RUNTIME_CHANGES_RECORDED && outcome.sequence == 2);
+    CHECK(outcome.answer == RUNTIME_CHANGES_UNNEEDED && outcome.sequence == 1);
     cJSON_Delete(change);
     cJSON *taken = file_change(&place, "bin", "x", 0);
     outcome = runtime_changes_apply(place.state, "alpha", taken);
     CHECK(outcome.answer == RUNTIME_CHANGES_REFUSED && outcome.reason[0] != '\0');
     cJSON_Delete(taken);
-    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
     CHECK(!home_entry_exists(&place, "bin"));
 }
 
@@ -862,6 +905,7 @@ int main(void) {
     two_spellings_of_one_path_are_one_target();
     hosts_racing_on_a_shared_line_keep_it_exactly_while_held();
     registering_while_applying_never_drops_a_record();
+    a_repeated_change_answers_its_record_and_records_nothing();
     the_c_entry_point_records_like_the_json_one();
     a_link_left_where_a_file_was_is_removed_never_followed();
     return summary_with_links("changes_test");

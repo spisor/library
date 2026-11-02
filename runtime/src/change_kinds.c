@@ -245,6 +245,23 @@ int runtime_change_same_target(const cJSON *left, const cJSON *right) {
     return 0;
 }
 
+int runtime_change_repeats(const cJSON *record, const cJSON *change) {
+    if (!same_member(record, change, "kind")) {
+        return 0;
+    }
+    if (is_kind(change, "file")) {
+        return same_path_member(record, change, "path");
+    }
+    if (is_kind(change, "json-key")) {
+        return same_path_member(record, change, "file") &&
+               cJSON_Compare(cJSON_GetObjectItemCaseSensitive(record, "key"),
+                             cJSON_GetObjectItemCaseSensitive(change, "key"), 1) &&
+               cJSON_Compare(cJSON_GetObjectItemCaseSensitive(record, "value"),
+                             cJSON_GetObjectItemCaseSensitive(change, "value"), 1);
+    }
+    return runtime_change_same_target(record, change);
+}
+
 static cJSON *record_with(const cJSON *change, const char *const *members, size_t count) {
     cJSON *record = cJSON_CreateObject();
     for (size_t index = 0; record != NULL && index < count; index++) {

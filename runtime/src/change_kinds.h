@@ -61,6 +61,12 @@ int runtime_change_is_shared(const char *kind);
 int runtime_change_same_target(const cJSON *left, const cJSON *right);
 
 /**
+ * Whether record already holds what change asks for: a file at the same path, a json-key setting the
+ * same value at the same key of the same file, or the same target of a shared kind.
+ */
+int runtime_change_repeats(const cJSON *record, const cJSON *change);
+
+/**
  * The changes a change is applied as, recorded after it as its children, each an entry of its own with
  * "parent" set to the change's sequence: an array freed with cJSON_Delete, or NULL for a kind that has
  * none. A POSIX path-entry is one profile-line per profile that exists, so each line keeps its own

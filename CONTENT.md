@@ -120,7 +120,10 @@ not a readable JSON object, a `profile-line` over a missing file, and a kind run
 is refused before anything is written. A `directory` or `profile-line` the user already has, or a
 `json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
 another unreversed record, of this host or another, is recorded again and stays until the last
-holder is reversed; a registration that cannot be read counts as a holder.
+holder is reversed; a registration that cannot be read counts as a holder. A change this host
+already holds unreversed (a `file` at the same path, a `json-key` setting the same value at the same
+key, or the same target of a shared kind) is answered with that record's sequence and `recorded:
+false`, and nothing is recorded, so a host may apply its changes on every start.
 
 A `path-entry` puts `directory` on the user's PATH. On Windows it is one entry of the `Path` value
 under `HKCU\Environment`, read unexpanded and written back with its type (`REG_EXPAND_SZ` when the
@@ -129,7 +132,8 @@ by no host is the user's, is not recorded and is never removed. On POSIX it is r
 `profile-line` child, `export PATH="<directory>:$PATH"`, for each of `<home>/.profile`, `.bashrc`
 and `.zshrc` that exists; none is created, and the change is refused when none exists. Each child is
 an entry of its own with `parent` set to the `path-entry`'s sequence, so it is reference-counted and
-reversed like any other line. A `path-entry` is reference-counted by its directory, and on POSIX its
+reversed like any other line. Applying it again adds children only for profiles without this host's
+line, under the first apply's `path-entry`. A `path-entry` is reference-counted by its directory, and on POSIX its
 home too. A directory holding `;`, `%`, `"` (Windows) or `"`, `\`, `$`, `` ` ``, `:` (POSIX) is refused.
 
 The entry is stored with `state: "pending"` before the disk is touched and marked `"applied"`
