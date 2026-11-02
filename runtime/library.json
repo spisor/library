@@ -467,7 +467,10 @@
                   "value": {},
                   "line": { "type": "string", "minLength": 1 },
                   "directory": { "type": "string", "minLength": 1 },
-                  "home": { "type": "string", "minLength": 1 }
+                  "home": { "type": "string", "minLength": 1 },
+                  "source": { "type": "string", "minLength": 1 },
+                  "create": { "type": "boolean" },
+                  "shell": { "type": "string" }
                 },
                 "required": ["kind"]
               }

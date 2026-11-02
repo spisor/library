@@ -13,10 +13,15 @@
 #include <windows.h>
 #define CURRENT_PROCESS_ID _getpid()
 #define PATH_LIST_SEPARATOR ";"
+#define SHIM_FILE_COUNT 2
+#define PROGRAM_SUFFIX ".exe"
 #else
+#include <sys/wait.h>
 #include <unistd.h>
 #define CURRENT_PROCESS_ID getpid()
 #define PATH_LIST_SEPARATOR ":"
+#define SHIM_FILE_COUNT 1
+#define PROGRAM_SUFFIX ""
 #endif
 
 #include "changes.h"
@@ -124,17 +129,11 @@ static void default_search(const scratch *place, char *search, size_t size) {
 }
 
 static void target_path(const scratch *place, const char *program, char *path, size_t size) {
-#ifdef _WIN32
-    snprintf(path, size, "%s/%s.cmd", place->targets, program);
-#else
-    snprintf(path, size, "%s/%s", place->targets, program);
-#endif
+    snprintf(path, size, "%s/%s" PROGRAM_SUFFIX, place->targets, program);
 }
 
-static cJSON *naming_request(const scratch *place, const char *host, const char *search, const char *name,
-                             const char *program) {
-    char target[1300];
-    target_path(place, program, target, sizeof target);
+static cJSON *targeted_request(const scratch *place, const char *host, const char *search, const char *name,
+                               const char *target) {
     cJSON *request = host_request(place, host);
     add_environment(request, search);
     cJSON_AddStringToObject(request, "home", place->home);
@@ -143,10 +142,15 @@ static cJSON *naming_request(const scratch *place, const char *host, const char 
     return request;
 }
 
-/** The name request answers, "" when it answers none, or NULL when it fails; freed with free. */
-static char *requested_on(const scratch *place, const char *host, const char *search, const char *name,
-                          const char *program) {
-    answer result = call(runtime_commands_request, naming_request(place, host, search, name, program));
+static cJSON *naming_request(const scratch *place, const char *host, const char *search, const char *name,
+                             const char *program) {
+    char target[1300];
+    target_path(place, program, target, sizeof target);
+    return targeted_request(place, host, search, name, target);
+}
+
+/** The name answered, "" when none, or NULL when the call fails; freed with free. */
+static char *answered_name(answer result, const char *what) {
     char *assigned = NULL;
     if (result.status == SPISOR_STATUS_SUCCESS) {
         const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "name"));
@@ -155,10 +159,16 @@ static char *requested_on(const scratch *place, const char *host, const char *se
             memcpy(assigned, text, strlen(text) + 1);
         }
     } else {
-        report("request", &result);
+        report(what, &result);
     }
     cJSON_Delete(result.tree);
     return assigned;
+}
+
+static char *requested_on(const scratch *place, const char *host, const char *search, const char *name,
+                          const char *program) {
+    return answered_name(call(runtime_commands_request, naming_request(place, host, search, name, program)),
+                         "request");
 }
 
 static int requests(const scratch *place, const char *host, const char *name, const char *expected) {
@@ -186,10 +196,14 @@ static answer delete_command(const scratch *place, const char *host, const char 
     return call(runtime_commands_delete, request);
 }
 
-static answer add_command(const scratch *place, const char *host, const char *name) {
+static answer add_program(const scratch *place, const char *host, const char *name, const char *program) {
     char search[2500];
     default_search(place, search, sizeof search);
-    return call(runtime_commands_add, naming_request(place, host, search, name, "tool"));
+    return call(runtime_commands_add, naming_request(place, host, search, name, program));
+}
+
+static answer add_command(const scratch *place, const char *host, const char *name) {
+    return add_program(place, host, name, "tool");
 }
 
 static int succeeds(answer result, const char *what) {
@@ -210,18 +224,56 @@ static int is_refused(answer result, const char *what) {
     return refused;
 }
 
+/** The file a shim is run by: <name>.exe on Windows, beside its <name>.shim, and <name> on POSIX. */
 static void shim_file(const scratch *place, const char *name, char *path, size_t size) {
-#ifdef _WIN32
-    snprintf(path, size, "%s/%s.cmd", place->shims, name);
-#else
-    snprintf(path, size, "%s/%s", place->shims, name);
-#endif
+    snprintf(path, size, "%s/%s" PROGRAM_SUFFIX, place->shims, name);
+}
+
+static void shim_part(const scratch *place, const char *name, size_t index, char *path, size_t size) {
+    if (index == 0) {
+        shim_file(place, name, path, size);
+    } else {
+        snprintf(path, size, "%s/%s.shim", place->shims, name);
+    }
+}
+
+static int shim_parts_present(const scratch *place, const char *name) {
+    int present = 0;
+    for (size_t index = 0; index < SHIM_FILE_COUNT; index++) {
+        char path[1400];
+        shim_part(place, name, index, path, sizeof path);
+        present += runtime_probe_entry(path) == RUNTIME_ENTRY_OTHER;
+    }
+    return present;
 }
 
 static int has_shim(const scratch *place, const char *name) {
-    char path[1400];
-    shim_file(place, name, path, sizeof path);
-    return runtime_probe_entry(path) == RUNTIME_ENTRY_OTHER;
+    return shim_parts_present(place, name) == SHIM_FILE_COUNT;
+}
+
+static int lacks_shim(const scratch *place, const char *name) {
+    return shim_parts_present(place, name) == 0;
+}
+
+/** Every byte of every file of the shim of name, freed with free. */
+static char *shim_bytes(const scratch *place, const char *name) {
+    size_t used = 0;
+    char *all = calloc(1, 1);
+    for (size_t index = 0; index < SHIM_FILE_COUNT && all != NULL; index++) {
+        char path[1400];
+        shim_part(place, name, index, path, sizeof path);
+        size_t length = 0;
+        uint8_t *bytes = spisor_read_file(path, &length);
+        char *grown = bytes == NULL ? NULL : realloc(all, used + length + 1);
+        if (grown != NULL) {
+            memcpy(grown + used, bytes, length);
+            used += length;
+            grown[used] = '\0';
+            all = grown;
+        }
+        free(bytes);
+    }
+    return all;
 }
 
 static cJSON *loaded(const scratch *place, const char *host) {
@@ -256,6 +308,30 @@ static int entry_is(const scratch *place, const char *host, const char *requeste
     }
     cJSON_Delete(registration);
     return count == 1 && matches;
+}
+
+/** Whether host has exactly one entry the user added under name, which no host requested, in state. */
+static int user_entry_is(const scratch *place, const char *host, const char *name, const char *state) {
+    cJSON *registration = loaded(place, host);
+    int count = 0;
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "commands")) {
+        const char *entry_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "name"));
+        const char *entry_state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "state"));
+        const char *owner = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "owner"));
+        count += cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(entry, "requested")) && entry_name != NULL &&
+                 strcmp(entry_name, name) == 0 && owner != NULL && strcmp(owner, "user") == 0 &&
+                 entry_state != NULL && strcmp(entry_state, state) == 0;
+    }
+    if (count != 1) {
+        char *text = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(registration, "commands"));
+        fprintf(stderr, "%s: expected one user-added entry %s %s, got %s\n", host, name, state,
+                text == NULL ? "" : text);
+        free(text);
+        check_failures++;
+    }
+    cJSON_Delete(registration);
+    return count == 1;
 }
 
 static int reverse_host(const scratch *place, const char *host) {
@@ -309,7 +385,7 @@ static void a_program_on_path_is_never_shadowed(void) {
     register_host(&place, "alpha", 1);
     place_program_on_path(&place, "cc", 1);
     CHECK(requests(&place, "alpha", "cc", "cc2"));
-    CHECK(!has_shim(&place, "cc") && has_shim(&place, "cc2"));
+    CHECK(lacks_shim(&place, "cc") && has_shim(&place, "cc2"));
     CHECK(entry_is(&place, "alpha", "cc", "cc2", "host", "active"));
 #ifndef _WIN32
     place_program_on_path(&place, "ld", 0);
@@ -338,12 +414,12 @@ static void a_user_rename_survives_the_next_request(void) {
     register_host(&place, "alpha", 1);
     CHECK(requests(&place, "alpha", "cc", "cc"));
     CHECK(succeeds(rename_command(&place, "alpha", "cc", "claude"), "rename"));
-    CHECK(!has_shim(&place, "cc") && has_shim(&place, "claude"));
+    CHECK(lacks_shim(&place, "cc") && has_shim(&place, "claude"));
     CHECK(requests(&place, "alpha", "cc", "claude"));
     CHECK(entry_is(&place, "alpha", "cc", "claude", "user", "active"));
-    CHECK(!has_shim(&place, "cc") && has_shim(&place, "claude"));
+    CHECK(lacks_shim(&place, "cc") && has_shim(&place, "claude"));
     CHECK(reverse_host(&place, "alpha"));
-    CHECK(!has_shim(&place, "claude"));
+    CHECK(lacks_shim(&place, "claude"));
 }
 
 static void a_user_delete_is_not_undone_by_the_next_request(void) {
@@ -352,10 +428,28 @@ static void a_user_delete_is_not_undone_by_the_next_request(void) {
     register_host(&place, "alpha", 0);
     CHECK(requests(&place, "alpha", "oc", "oc"));
     CHECK(succeeds(delete_command(&place, "alpha", "oc"), "delete"));
-    CHECK(!has_shim(&place, "oc"));
+    CHECK(lacks_shim(&place, "oc"));
     CHECK(requests(&place, "alpha", "oc", ""));
-    CHECK(!has_shim(&place, "oc"));
+    CHECK(lacks_shim(&place, "oc"));
     CHECK(entry_is(&place, "alpha", "oc", "oc", "user", "deleted"));
+    CHECK(reverse_host(&place, "alpha"));
+}
+
+static void a_command_the_user_added_is_never_taken_by_a_host(void) {
+    scratch place;
+    fresh_scratch(&place, "user-added");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "cc", "cc"));
+    CHECK(succeeds(delete_command(&place, "alpha", "cc"), "delete"));
+    CHECK(succeeds(add_program(&place, "alpha", "cc", "mine"), "add the user's own cc"));
+    char *before = shim_bytes(&place, "cc");
+    CHECK(requests(&place, "alpha", "cc", ""));
+    char *after = shim_bytes(&place, "cc");
+    CHECK(before != NULL && before[0] != '\0' && check_text(after, before, "the user's shim after the request"));
+    CHECK(entry_is(&place, "alpha", "cc", "cc", "user", "deleted"));
+    CHECK(user_entry_is(&place, "alpha", "cc", "active"));
+    free(before);
+    free(after);
     CHECK(reverse_host(&place, "alpha"));
 }
 
@@ -369,10 +463,10 @@ static void a_required_host_keeps_its_last_command(void) {
     CHECK(succeeds(rename_command(&place, "alpha", "cc", "cl"), "rename the last command"));
     CHECK(is_refused(delete_command(&place, "alpha", "cl"), "delete the renamed last command"));
     CHECK(succeeds(add_command(&place, "alpha", "extra"), "add"));
-    CHECK(entry_is(&place, "alpha", "extra", "extra", "user", "active"));
+    CHECK(user_entry_is(&place, "alpha", "extra", "active"));
     CHECK(succeeds(delete_command(&place, "alpha", "cl"), "delete one of two"));
     CHECK(is_refused(delete_command(&place, "alpha", "extra"), "delete the last added command"));
-    CHECK(has_shim(&place, "extra") && !has_shim(&place, "cl"));
+    CHECK(has_shim(&place, "extra") && lacks_shim(&place, "cl"));
     CHECK(reverse_host(&place, "alpha"));
 }
 
@@ -391,86 +485,150 @@ static void rename_and_add_refuse_a_held_name(void) {
     CHECK(is_refused(rename_command(&place, "alpha", "nothing", "free"), "rename a command the host lacks"));
     CHECK(is_refused(add_command(&place, "alpha", "../escape"), "add a name that is not a file name"));
     CHECK(entry_is(&place, "alpha", "oc", "oc", "host", "active"));
-    CHECK(has_shim(&place, "oc") && has_shim(&place, "bc") && !has_shim(&place, "cc"));
+    CHECK(has_shim(&place, "oc") && has_shim(&place, "bc") && lacks_shim(&place, "cc"));
     CHECK(reverse_host(&place, "alpha"));
     CHECK(reverse_host(&place, "beta"));
 }
 
-static void program_output(const scratch *place, const char *program, char *path, size_t size) {
-    snprintf(path, size, "%s/%s.out", place->targets, program);
-}
-
 #ifdef _WIN32
-static void write_target(const scratch *place, const char *program) {
-    char path[1300];
-    char output[1300];
-    char content[1500];
-    target_path(place, program, path, sizeof path);
-    program_output(place, program, output, sizeof output);
-    snprintf(content, sizeof content, "@>\"%s\" echo %%*\r\n", output);
-    write_program(path, content, 1);
-}
+static const char *const odd_directory = "J\xc3\xbcrgen's tools";
 
-static void run_shim(const scratch *place, const char *name) {
-    char path[1400];
-    char command[1600];
-    shim_file(place, name, path, sizeof path);
-    for (char *cursor = path; *cursor != '\0'; cursor++) {
-        *cursor = *cursor == '/' ? '\\' : *cursor;
+static size_t append_wide(wchar_t *line, size_t used, size_t size, wchar_t character) {
+    if (used + 1 < size) {
+        line[used++] = character;
+        line[used] = L'\0';
     }
-    snprintf(command, sizeof command, "\"\"%s\" one \"two words\"\"", path);
-    CHECK(system(command) == 0);
+    return used;
 }
 
-static const char *const expected_arguments = "one \"two words\"\r\n";
+/** Appends argument quoted as CommandLineToArgvW reads it back: backslashes doubled before a quote. */
+static size_t append_quoted(wchar_t *line, size_t used, size_t size, const char *argument) {
+    wchar_t wide[2048];
+    MultiByteToWideChar(CP_UTF8, 0, argument, -1, wide, 2048);
+    used = append_wide(line, used, size, L'"');
+    size_t backslashes = 0;
+    for (const wchar_t *cursor = wide; *cursor != L'\0'; cursor++) {
+        if (*cursor == L'\\') {
+            backslashes++;
+            continue;
+        }
+        size_t repeat = *cursor == L'"' ? 2 * backslashes + 1 : backslashes;
+        for (size_t index = 0; index < repeat; index++) {
+            used = append_wide(line, used, size, L'\\');
+        }
+        backslashes = 0;
+        used = append_wide(line, used, size, *cursor);
+    }
+    for (size_t index = 0; index < 2 * backslashes; index++) {
+        used = append_wide(line, used, size, L'\\');
+    }
+    return append_wide(line, used, size, L'"');
+}
+
+/** Runs program with arguments, as a terminal would, and answers its exit code, or -1 when it did not start. */
+static int run_program(const char *program, const char *const *arguments, size_t count) {
+    wchar_t line[8192];
+    line[0] = L'\0';
+    size_t used = append_quoted(line, 0, 8192, program);
+    for (size_t index = 0; index < count; index++) {
+        used = append_wide(line, used, 8192, L' ');
+        used = append_quoted(line, used, 8192, arguments[index]);
+    }
+    STARTUPINFOW startup;
+    PROCESS_INFORMATION process;
+    ZeroMemory(&startup, sizeof startup);
+    startup.cb = sizeof startup;
+    if (!CreateProcessW(NULL, line, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process)) {
+        return -1;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return (int)code;
+}
 #else
-static void write_target(const scratch *place, const char *program) {
-    char path[1300];
-    char output[1300];
-    char content[1500];
-    target_path(place, program, path, sizeof path);
-    program_output(place, program, output, sizeof output);
-    snprintf(content, sizeof content, "#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%s'\n", output);
-    write_program(path, content, 1);
-}
+static const char *const odd_directory = "it's $HOME dir";
 
-static void run_shim(const scratch *place, const char *name) {
-    char path[1400];
-    char command[1600];
-    shim_file(place, name, path, sizeof path);
-    snprintf(command, sizeof command, "'%s' one 'two words'", path);
-    CHECK(system(command) == 0);
+static int run_program(const char *program, const char *const *arguments, size_t count) {
+    char *values[16];
+    values[0] = (char *)program;
+    for (size_t index = 0; index < count && index < 14; index++) {
+        values[index + 1] = (char *)arguments[index];
+    }
+    values[count + 1] = NULL;
+    pid_t child = fork();
+    if (child == 0) {
+        execv(program, values);
+        _exit(126);
+    }
+    int status = 0;
+    if (child < 0 || waitpid(child, &status, 0) != child) {
+        return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
-
-static const char *const expected_arguments = "one\ntwo words\n";
 #endif
 
-static int program_received(const scratch *place, const char *program, const char *expected) {
-    char output[1300];
-    program_output(place, program, output, sizeof output);
+/** Copies the probe program to directory under the scratch targets and fills target with its path. */
+static void place_probe(const scratch *place, const char *directory, char *target, size_t size) {
+    char folder[1300];
+    snprintf(folder, sizeof folder, "%s/%s", place->targets, directory);
+    CHECK(spisor_make_directories(folder) == 1);
+    snprintf(target, size, "%s/probe" PROGRAM_SUFFIX, folder);
     size_t length = 0;
-    char *received = (char *)spisor_read_file(output, &length);
-    int same = check_text(received, expected, program);
-    free(received);
-    return same;
+    uint8_t *bytes = spisor_read_file(RUNTIME_PROBE_PATH, &length);
+    CHECK(bytes != NULL);
+    CHECK(bytes != NULL && runtime_create_new_file(target, bytes, length, 1) == RUNTIME_ENTRY_DONE);
+    free(bytes);
 }
 
-static void the_shim_runs_its_target_with_the_arguments(void) {
+static char *request_target(const scratch *place, const char *host, const char *name, const char *target) {
+    char search[2500];
+    default_search(place, search, sizeof search);
+    return answered_name(call(runtime_commands_request, targeted_request(place, host, search, name, target)),
+                         "request");
+}
+
+static const char *const awkward_arguments = "one\ntwo words\nsay \"hi\"\nit's $x\n";
+
+/** Runs the shim of name with awkward arguments, asking the probe to exit with exit_code. */
+static int shim_passes_through(const scratch *place, const char *name, const char *exit_code) {
+    char shim[1400];
+    char output[1400];
+    shim_file(place, name, shim, sizeof shim);
+    snprintf(output, sizeof output, "%s/%s-%s.out", place->targets, name, exit_code);
+    const char *const arguments[] = {output, exit_code, "one", "two words", "say \"hi\"", "it's $x"};
+    int code = run_program(shim, arguments, 6);
+    size_t length = 0;
+    char *received = (char *)spisor_read_file(output, &length);
+    int passed = code == atoi(exit_code) && check_text(received, awkward_arguments, "arguments the target received");
+    if (code != atoi(exit_code)) {
+        fprintf(stderr, "the shim %s exited %d, expected %s\n", name, code, exit_code);
+    }
+    free(received);
+    return passed;
+}
+
+static void the_shim_runs_its_target_with_the_arguments_and_exit_code(void) {
     scratch place;
     fresh_scratch(&place, "runs");
     register_host(&place, "alpha", 1);
-    write_target(&place, "tool");
-    write_target(&place, "moved");
-    CHECK(requests(&place, "alpha", "cc", "cc"));
-    run_shim(&place, "cc");
-    CHECK(program_received(&place, "tool", expected_arguments));
-    char search[2500];
-    default_search(&place, search, sizeof search);
-    char *assigned = requested_on(&place, "alpha", search, "cc", "moved");
+    char target[1400];
+    char moved[1400];
+    place_probe(&place, odd_directory, target, sizeof target);
+    place_probe(&place, "moved elsewhere", moved, sizeof moved);
+    char *assigned = request_target(&place, "alpha", "cc", target);
+    CHECK(check_text(assigned, "cc", "the first request"));
+    free(assigned);
+    CHECK(shim_passes_through(&place, "cc", "7"));
+    assigned = request_target(&place, "alpha", "cc", moved);
     CHECK(check_text(assigned, "cc", "the request after the target moved"));
     free(assigned);
-    run_shim(&place, "cc");
-    CHECK(program_received(&place, "moved", expected_arguments));
+    CHECK(shim_passes_through(&place, "cc", "0"));
+    CHECK(succeeds(rename_command(&place, "alpha", "cc", "renamed"), "rename"));
+    CHECK(shim_passes_through(&place, "renamed", "3"));
     CHECK(reverse_host(&place, "alpha"));
 }
 
@@ -553,7 +711,7 @@ static void the_first_command_puts_the_shims_on_path_until_the_last_host_goes(vo
     CHECK(path_entry_count(&place, "alpha") == 1);
     CHECK(requests(&place, "beta", "bc", "bc"));
     CHECK(reverse_host(&place, "alpha"));
-    CHECK(!has_shim(&place, "oc") && !has_shim(&place, "od") && has_shim(&place, "bc"));
+    CHECK(lacks_shim(&place, "oc") && lacks_shim(&place, "od") && has_shim(&place, "bc"));
     CHECK(shims_on_path(&place));
     CHECK(reverse_host(&place, "beta"));
     CHECK(!shims_on_path(&place));
@@ -570,9 +728,10 @@ int main(void) {
     a_program_on_path_is_never_shadowed();
     a_user_rename_survives_the_next_request();
     a_user_delete_is_not_undone_by_the_next_request();
+    a_command_the_user_added_is_never_taken_by_a_host();
     a_required_host_keeps_its_last_command();
     rename_and_add_refuse_a_held_name();
-    the_shim_runs_its_target_with_the_arguments();
+    the_shim_runs_its_target_with_the_arguments_and_exit_code();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
 #ifdef _WIN32
     delete_test_value();

@@ -113,14 +113,14 @@ equal so, ignoring ASCII case on Windows:
 
 | kind | the change carries | the record keeps | reversal |
 |---|---|---|---|
-| `file` | `path`, `content`, `executable`? | `path`, `digest` of the content | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
+| `file` | `path`, `content` or `source` (an absolute file whose bytes are copied), `executable`? | `path`, `digest` of the bytes | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
 | `directory` | `path` | `path` | removes it only once empty; one still holding something is left and reported |
 | `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
-| `profile-line` | `file`, `line` | `file`, `line`, `separated` | removes the exact line, and the newline added before it |
-| `path-entry` | `directory`, `home` | Windows: `directory`, `home`, `entry`, `separated`, `created`; POSIX: `directory`, `home`, and a `profile-line` child per profile | Windows: removes the exact entry it added to the user's `Path`, and the value when it created it; POSIX: its children do |
+| `profile-line` | `file`, `line`, `create`? | `file`, `line`, `separated`, `created`? | removes the exact line, and the newline added before it; a file it created is deleted once nothing else is left in it |
+| `path-entry` | `directory`, `home`, `shell`? | Windows: `directory`, `home`, `entry`, `separated`, `created`; POSIX: `directory`, `home`, and a `profile-line` child per profile | Windows: removes the exact entry it added to the user's `Path`, and the value when it created it; POSIX: its children do |
 
 A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
-not a readable JSON object, a `profile-line` over a missing file, and a kind runtime does not know
+not a readable JSON object, a `profile-line` over a missing file unless it asks to `create` it, and a kind runtime does not know
 is refused before anything is written. A `directory` or `profile-line` the user already has, or a
 `json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
 another unreversed record, of this host or another, is recorded again and stays until the last
@@ -135,8 +135,11 @@ A `path-entry` puts `directory` on the user's PATH. On Windows it is one entry o
 under `HKCU\Environment`, read unexpanded and written back with its type (`REG_EXPAND_SZ` when the
 value is created), followed by a `WM_SETTINGCHANGE` broadcast; a directory already on `Path` and held
 by no host is the user's, is not recorded and is never removed. On POSIX it is recorded with one
-`profile-line` child, `export PATH="<directory>:$PATH"`, for each of `<home>/.profile`, `.bashrc`
-and `.zshrc` that exists; none is created, and the change is refused when none exists. Each child is
+`profile-line` child, `export PATH="<directory>:$PATH"`, for each of `<home>/.profile`, `.bashrc`,
+`.zshrc` and `.zprofile` that exists, and for the login shell's profile, which is created when
+missing: `.zprofile` when `shell` (the caller's `SHELL`) ends in `zsh` or the OS is macOS, otherwise
+`.profile`. A created profile is recorded `created` and deleted on reversal only if nothing but the
+line was in it; a record of a line another host holds inherits that host's `created`. Each child is
 an entry of its own with `parent` set to the `path-entry`'s sequence, so it is reference-counted and
 reversed like any other line. Applying it again adds children only for profiles without this host's
 line, under the first apply's `path-entry`. A `path-entry` is reference-counted by its directory, and on POSIX its
@@ -159,25 +162,32 @@ and applies its changes under it, so it never takes it twice.
 
 ### Commands
 
-A host's commands are shims in `<state>/bin`, each a recorded `file` change of that host:
-`<name>`, an `sh` script that runs `exec '<target>' "$@"`, on POSIX, and `<name>.cmd`, running
-`@"<target>" %*`, on Windows. The first one also records `<state>/bin` as a `directory` and a
-`path-entry` in the user's home, so removing the last host that has one takes the directory off
-PATH. Each command is an entry `{ name, requested, owner: "host" | "user", state: "active" |
-"deleted" }` in the registration's `commands`.
+A host's commands are shims in `<state>/bin`, recorded as `file` changes of that host. On POSIX
+the shim is `<name>`, an `sh` script running `exec '<target>' "$@"`. On Windows it is `<name>.exe`, a
+copy of `runtime-launcher.exe`, beside `<name>.shim`, which holds the target's UTF-8 path: the
+launcher reads the `.shim` next to its own path, runs the target with its own arguments exactly as
+given, and exits with the target's exit code. It replaces a `.cmd` shim because `cmd.exe` reads a
+batch file in the console's code page, which garbles a non-ASCII target. The launcher is built with
+the library and found beside the module that holds it, so it ships beside `runtime.dll`. The first
+command also records `<state>/bin` as a `directory` and a `path-entry` in the user's home, with the
+call's `SHELL`, so removing the last host that has one takes the directory off PATH. Each command
+is an entry `{ name, requested, owner: "host" | "user", state: "active" | "deleted" }` in the
+registration's `commands`; `requested` is `null` for a command the user added, which no host asked
+for.
 
 A name is held by an active command of any host, by anything already in `<state>/bin`, and by an
 executable on the `PATH` the call carries, `<state>/bin` left out: on Windows `<directory>/<name>`
 with an extension of `PATHEXT` (`.COM;.EXE;.BAT;.CMD` when it is absent), on POSIX an executable
 `<directory>/<name>`. `request` gives a held name's first free fallback, `<name>2`, `<name>3` and
 so on, so a host asking for `cc` where the C compiler is installed gets `cc2` and never shadows it.
-A host asking again for a name it already has is answered with that entry as it stands, and its
+A host asking again for a name it requested is answered with that entry as it stands, and its
 shim is rewritten when the target moved, but the entry itself is never changed by a host: a name
-the user renamed stays renamed and a command the user deleted stays deleted. `rename`, `delete` and
+the user renamed stays renamed, a command the user deleted stays deleted, and a command the user
+added under the same name is never matched by a host's request. `rename`, `delete` and
 `add` are the user's, mark the entry `owner: "user"`, and refuse a held name rather than fall back.
 `delete` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
 A name is a letter or digit followed by letters, digits, `-`, `_` or `.`, at most 64; a target is
-absolute, and on Windows holds no `"` or `%`.
+an absolute path with no line break.
 
 ### The portable layer
 

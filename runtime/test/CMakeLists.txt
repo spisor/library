@@ -40,5 +40,13 @@ endif()
 
 runtime_test(path_entry_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
 
+add_executable(command_probe command_probe.c)
+spisor_strict_warnings(command_probe)
+
 runtime_test(commands_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+target_compile_definitions(commands_test PRIVATE RUNTIME_PROBE_PATH="$<TARGET_FILE:command_probe>")
+add_dependencies(commands_test command_probe)
+if(WIN32)
+    add_dependencies(commands_test runtime_launcher)
+endif()
 set_tests_properties(path_entry_test commands_test PROPERTIES RESOURCE_LOCK user_path_value)

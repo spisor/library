@@ -22,9 +22,12 @@ int runtime_commands_held_on_path(const cJSON *environment, const char *shims, c
  * held by an active command of any host, by an executable on the PATH of environment, or by
  * something already in state/bin, and then under <name>2, <name>3 and so on. An entry this host
  * already has for that requested name is answered as it stands, whatever the user did to it: a
- * deleted one answers no name. The shim state/bin/<name> (state/bin/<name>.cmd on Windows) is a
- * recorded file change running target with the arguments; its first use also records state/bin as a
- * directory and a path-entry in home. A target that moved rewrites the shim in place.
+ * deleted one answers no name. The shim is recorded as file changes running target with the
+ * arguments and passing its exit code back: on POSIX the sh script state/bin/<name>, on Windows
+ * state/bin/<name>.exe, a copy of runtime-launcher.exe, beside state/bin/<name>.shim holding the
+ * target's UTF-8 path. Its first use also records state/bin as a directory and a path-entry in home,
+ * with environment's SHELL. A target that moved rewrites the shim in place. A host only ever matches
+ * entries it requested itself, so a command the user added is never taken over.
  *
  * @implNote The whole call holds runtime_hosts_lock once, and the changes it records are applied
  * with runtime_changes_apply_held, so a request racing a rename from forebay can lose neither the
@@ -48,7 +51,8 @@ RUNTIME_EXPORT int32_t runtime_commands_delete(const uint8_t *in, size_t in_len,
 
 /**
  * commands.add: { places: { state }, environment, host, home, name, target } answering { name }.
- * Gives the host a command the user chose, "owner": "user"; a held name is refused.
+ * Gives the host a command the user chose, "owner": "user" and "requested": null; a held name is
+ * refused.
  */
 RUNTIME_EXPORT int32_t runtime_commands_add(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
