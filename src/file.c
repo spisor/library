@@ -173,15 +173,22 @@ static char *final_path_of_link(const wchar_t *wide) {
     return resolved;
 }
 
-static char *write_target_of(const char *path) {
+int spisor_is_link(const char *path) {
     wchar_t *wide = to_wide(path);
     if (wide == NULL) {
-        return NULL;
+        return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
-    char *target = (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
-        ? final_path_of_link(wide)
-        : duplicate_text(path);
+    free(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+}
+
+static char *write_target_of(const char *path) {
+    if (!spisor_is_link(path)) {
+        return duplicate_text(path);
+    }
+    wchar_t *wide = to_wide(path);
+    char *target = wide == NULL ? NULL : final_path_of_link(wide);
     free(wide);
     return target;
 }
@@ -249,12 +256,13 @@ static int move_over(const char *from, const char *to) {
     return rename(from, to) == 0;
 }
 
-static char *write_target_of(const char *path) {
+int spisor_is_link(const char *path) {
     struct stat status;
-    if (lstat(path, &status) != 0 || !S_ISLNK(status.st_mode)) {
-        return duplicate_text(path);
-    }
-    return realpath(path, NULL);
+    return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
+}
+
+static char *write_target_of(const char *path) {
+    return spisor_is_link(path) ? realpath(path, NULL) : duplicate_text(path);
 }
 #endif
 
@@ -384,20 +392,20 @@ static int replace_resolved_file(const char *target, const uint8_t *bytes, size_
     return replaced;
 }
 
-static int replace_through_links(const char *path, const uint8_t *bytes, size_t length, int owner_only) {
+static int replace_through_links(const char *path, const uint8_t *bytes, size_t length) {
     char *target = write_target_of(path);
     if (target == NULL) {
         return 0;
     }
-    int replaced = replace_resolved_file(target, bytes, length, owner_only);
+    int replaced = replace_resolved_file(target, bytes, length, 0);
     free(target);
     return replaced;
 }
 
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
-    return replace_through_links(path, bytes, length, 0);
+    return replace_through_links(path, bytes, length);
 }
 
 int spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
-    return replace_through_links(path, bytes, length, 1);
+    return !spisor_is_link(path) && replace_resolved_file(path, bytes, length, 1);
 }

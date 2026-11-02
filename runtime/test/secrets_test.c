@@ -8,6 +8,7 @@
 
 #ifdef _WIN32
 #include <process.h>
+#include <windows.h>
 #define CURRENT_PROCESS_ID _getpid()
 #else
 #include <sys/stat.h>
@@ -17,6 +18,7 @@
 
 #include "check.h"
 #include "fake_secret_backend.h"
+#include "links.h"
 #include "secrets.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
@@ -29,6 +31,8 @@ typedef struct scratch {
     char file[1100];
     int force_file_store;
 } scratch;
+
+#define VALUE_CAP_BYTES 2560000u
 
 typedef struct answer {
     int32_t status;
@@ -93,6 +97,34 @@ static int refuses(secrets_export function, cJSON *request) {
                   cJSON_IsString(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
     cJSON_Delete(result.tree);
     return refused;
+}
+
+static int refuses_naming(secrets_export function, cJSON *request, const char *member, const char *text) {
+    answer result = call(function, request);
+    const char *said = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, member));
+    int refused = result.status == SPISOR_STATUS_FAILURE && said != NULL && strstr(said, text) != NULL;
+    if (!refused) {
+        fprintf(stderr, "expected a refusal whose %s names \"%s\", got status %d and \"%s\"\n", member, text,
+                (int)result.status, said == NULL ? "(none)" : said);
+    }
+    cJSON_Delete(result.tree);
+    return refused;
+}
+
+static void expect_file_bytes(const char *path, const char *expected, const char *label) {
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(path, &length);
+    check_text((const char *)bytes, expected, label);
+    free(bytes);
+}
+
+static char *repeated_value(size_t length) {
+    char *value = malloc(length + 1);
+    if (value != NULL) {
+        memset(value, 'x', length);
+        value[length] = '\0';
+    }
+    return value;
 }
 
 static void set_secret(const scratch *place, const char *plugin, const char *name, const char *value,
@@ -429,6 +461,154 @@ static void the_file_is_owner_only(void) {
 }
 #endif
 
+static void a_stored_set_beside_an_unreadable_file_is_refused_and_leaves_the_file(void) {
+    scratch place;
+    fresh_scratch(&place, "stored-unreadable");
+    write_raw_file(&place, "{ not json");
+    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "v1"), "message",
+                         "not a readable JSON object"));
+    expect_file_bytes(place.file, "{ not json", "the unreadable file is left byte-identical");
+}
+
+#if defined(_WIN32)
+static int make_file_unwritable(const scratch *place, int unwritable) {
+    wchar_t wide[1100];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, place->file, -1, wide, 1100) == 0) {
+        return 0;
+    }
+    return SetFileAttributesW(wide, unwritable ? FILE_ATTRIBUTE_READONLY : FILE_ATTRIBUTE_NORMAL) != 0;
+}
+#else
+/** @implNote A process running as root writes into a read-only directory anyway, so there it answers 0. */
+static int make_file_unwritable(const scratch *place, int unwritable) {
+    char directory[1100];
+    snprintf(directory, sizeof directory, "%s/state", place->directory);
+    if (chmod(directory, unwritable ? 0555 : 0755) != 0) {
+        return 0;
+    }
+    return !unwritable || access(directory, W_OK) != 0;
+}
+#endif
+
+static int unwritable_or_skip(const scratch *place) {
+    if (make_file_unwritable(place, 1)) {
+        return 1;
+    }
+    make_file_unwritable(place, 0);
+    printf("SKIP unwritable secrets file: this process can write a read-only directory\n");
+    return 0;
+}
+
+static void a_stored_set_whose_older_file_copy_cannot_leave_is_refused(void) {
+    scratch place;
+    fresh_scratch(&place, "stale-copy");
+    fake_store_behave(FAKE_STORE_DECLINES);
+    set_secret(&place, "github", "token", "old", "file");
+    fake_store_behave(FAKE_STORE_ACCEPTS);
+    if (!unwritable_or_skip(&place)) {
+        return;
+    }
+    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "new"), "message",
+                         "its older copy in the secrets file could not be removed"));
+    CHECK(make_file_unwritable(&place, 0));
+    CHECK(store_holds("spisor/github/token", "new"));
+    CHECK(file_holds(&place, "spisor/github/token", "old"));
+}
+
+static void a_move_whose_file_rewrite_fails_leaves_the_entry_in_both_places_and_is_refused(void) {
+    scratch place;
+    fresh_scratch(&place, "both-places");
+    fake_store_behave(FAKE_STORE_DECLINES);
+    set_secret(&place, "github", "token", "v1", "file");
+    fake_store_behave(FAKE_STORE_ACCEPTS);
+    if (!unwritable_or_skip(&place)) {
+        return;
+    }
+    CHECK(refuses_naming(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL), "message",
+                         "could not be written"));
+    CHECK(make_file_unwritable(&place, 0));
+    CHECK(store_holds("spisor/github/token", "v1"));
+    CHECK(file_holds(&place, "spisor/github/token", "v1"));
+    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 1);
+    CHECK(file_entry_count(&place) == 0);
+    expect_get(&place, "github", "token", "v1");
+}
+
+static void a_declined_delete_keeps_the_newer_file_copy(void) {
+    scratch place;
+    fresh_scratch(&place, "declined-delete");
+    set_secret(&place, "github", "token", "A", "store");
+    fake_store_behave(FAKE_STORE_DECLINES);
+    set_secret(&place, "github", "token", "B", "file");
+    CHECK(refuses(runtime_secrets_delete, request_for(&place, "github", "token", NULL)));
+    CHECK(file_holds(&place, "spisor/github/token", "B"));
+    fake_store_behave(FAKE_STORE_ACCEPTS);
+    expect_get(&place, "github", "token", "B");
+}
+
+static void an_over_cap_value_is_refused_before_either_place_is_touched(void) {
+    scratch place;
+    fresh_scratch(&place, "over-cap");
+    char *over = repeated_value(VALUE_CAP_BYTES + 1);
+    CHECK(over != NULL);
+    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", over), "message", "2560000"));
+    fake_store_behave(FAKE_STORE_DECLINES);
+    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", over), "message", "2560000"));
+    CHECK(fake_store_calls() == 0);
+    CHECK(fake_store_entry_count() == 0);
+    CHECK(!spisor_file_exists(place.file));
+    free(over);
+    char *at_cap = repeated_value(VALUE_CAP_BYTES);
+    CHECK(at_cap != NULL);
+    set_secret(&place, "github", "token", at_cap, "file");
+    fake_store_behave(FAKE_STORE_ACCEPTS);
+    set_secret(&place, "github", "token", at_cap, "store");
+    CHECK(store_holds("spisor/github/token", at_cap));
+    free(at_cap);
+}
+
+static void a_hand_planted_over_cap_file_entry_never_stops_the_move(void) {
+    scratch place;
+    fresh_scratch(&place, "planted-over-cap");
+    char *over = repeated_value(VALUE_CAP_BYTES + 1);
+    cJSON *entries = cJSON_CreateObject();
+    cJSON_AddStringToObject(entries, "spisor/github/huge", over);
+    cJSON_AddStringToObject(entries, "spisor/github/small", "s");
+    char *text = cJSON_PrintUnformatted(entries);
+    cJSON_Delete(entries);
+    write_raw_file(&place, text);
+    free(text);
+    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 1);
+    CHECK(store_holds("spisor/github/small", "s"));
+    CHECK(fake_store_value("spisor/github/huge") == NULL);
+    CHECK(file_holds(&place, "spisor/github/huge", NULL));
+    CHECK(file_entry_count(&place) == 1);
+    set_secret(&place, "gitlab", "other", "o", "store");
+    CHECK(file_entry_count(&place) == 1);
+    free(over);
+}
+
+static void a_linked_secrets_file_is_never_written_through(void) {
+    scratch place;
+    fresh_scratch(&place, "linked");
+    char dotfiles[1100];
+    char target[1200];
+    char state[1100];
+    snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", place.directory);
+    snprintf(target, sizeof target, "%s/secrets.json", dotfiles);
+    snprintf(state, sizeof state, "%s/state", place.directory);
+    CHECK(spisor_make_directories(dotfiles) == 1);
+    CHECK(spisor_make_directories(state) == 1);
+    CHECK(spisor_replace_file(target, (const uint8_t *)"{}", 2) == 1);
+    if (!create_link_or_skip(place.file, target)) {
+        return;
+    }
+    fake_store_behave(FAKE_STORE_DECLINES);
+    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "v1"), "fix", "SPISOR_SECRETS"));
+    CHECK(is_link(place.file));
+    expect_file_bytes(target, "{}", "the link's target is left unchanged");
+}
+
 int main(void) {
     a_declined_set_lands_in_the_file();
     an_unavailable_store_sends_the_set_to_the_file();
@@ -447,9 +627,16 @@ int main(void) {
     a_long_utf8_value_round_trips_through_the_file_and_the_move();
     a_malformed_file_is_never_overwritten();
     unusable_arguments_are_refused();
+    a_stored_set_beside_an_unreadable_file_is_refused_and_leaves_the_file();
+    a_stored_set_whose_older_file_copy_cannot_leave_is_refused();
+    a_move_whose_file_rewrite_fails_leaves_the_entry_in_both_places_and_is_refused();
+    a_declined_delete_keeps_the_newer_file_copy();
+    an_over_cap_value_is_refused_before_either_place_is_touched();
+    a_hand_planted_over_cap_file_entry_never_stops_the_move();
+    a_linked_secrets_file_is_never_written_through();
 #if !defined(_WIN32)
     the_file_is_owner_only();
 #endif
     fake_store_reset();
-    return check_summary("secrets_test");
+    return summary_with_links("secrets_test");
 }

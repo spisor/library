@@ -588,7 +588,7 @@ static void portable_set_without_portable_is_refused(void) {
     fresh_home(&home, "no-portable");
     answer result = layered_set(request_for(&home, "p", NULL, NULL), "portable", "a", "1");
     expect_refused(&result, "portable set without portable");
-    expect_message_names(&result, "portable layer", "the missing layer is named");
+    expect_message_names(&result, "this host has no portable settings layer", "the contract wording");
     finish(&result);
     CHECK(spisor_file_exists(home.config_directory) == 0);
 }
@@ -655,6 +655,32 @@ static void portable_set_through_a_dotfiles_link(void) {
     CHECK(count_temporary_entries(dotfiles) == 0);
 }
 
+static void portable_set_through_a_link_to_a_malformed_file_is_refused(void) {
+    scratch_home home;
+    char dotfiles[1200];
+    char target[1300];
+    char link[1400];
+    fresh_home(&home, "portable-link-malformed");
+    snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", home.path);
+    snprintf(target, sizeof target, "%s/config.json", dotfiles);
+    CHECK(spisor_make_directories(dotfiles) == 1);
+    write_text(target, "{\"a\":");
+    write_portable_file(&home, "p", "{}");
+    portable_file_path(&home, "p", link, sizeof link);
+    if (!create_link_or_skip(link, target)) {
+        return;
+    }
+    answer refused = portable_set(&home, "p", NULL, "portable", "b", "1");
+    expect_refused(&refused, "portable set through a link to a malformed file");
+    finish(&refused);
+    CHECK(is_link(link));
+    size_t length = 0;
+    char *content = (char *)spisor_read_file(target, &length);
+    check_text(content, "{\"a\":", "the link's malformed target unchanged");
+    free(content);
+    CHECK(count_temporary_entries(dotfiles) == 0);
+}
+
 static void portable_folder_is_the_manifest_id(void) {
     scratch_home home;
     char renamed[1300];
@@ -715,6 +741,7 @@ int main(void) {
     unknown_layer_and_unusable_portable_are_refused();
     unreadable_portable_file();
     portable_set_through_a_dotfiles_link();
+    portable_set_through_a_link_to_a_malformed_file_is_refused();
     portable_folder_is_the_manifest_id();
     portable_layer_refuses_an_unusable_id();
     return summary_with_links("config_test");

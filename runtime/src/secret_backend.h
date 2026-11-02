@@ -22,6 +22,13 @@ typedef struct runtime_secret_names {
     size_t count;
 } runtime_secret_names;
 
+/**
+ * The most bytes of UTF-8 a secret's value may hold, in the store and in the file alike, on every OS:
+ * 1000 Windows credential blobs of CRED_MAX_CREDENTIAL_BLOB_SIZE (2560) bytes. secrets.c refuses a
+ * longer value before either place is touched, so a secret set on one OS can be set on every other.
+ */
+#define RUNTIME_SECRET_VALUE_CAP_BYTES 2560000u
+
 /** Frees every name and the array, leaving names empty. */
 void runtime_free_secret_names(runtime_secret_names *names);
 
@@ -31,7 +38,8 @@ void runtime_free_secret_names(runtime_secret_names *names);
  * @implNote This and the four calls below are the one seam every OS store implements. Exactly one
  * implementation is linked: secret_windows.c, secret_macos.c or secret_linux.c, chosen at build
  * time, or the tests' fake. An entry is the full name "spisor/<plugin id>/<name>" and a value is a
- * NUL terminated UTF-8 string of any length, so a store with a size limit splits and joins it.
+ * NUL terminated UTF-8 string of at most RUNTIME_SECRET_VALUE_CAP_BYTES, which a store with a smaller
+ * size limit splits and joins.
  */
 int runtime_secret_store_available(void);
 
@@ -40,8 +48,8 @@ runtime_secret_answer runtime_secret_store_get(const char *entry, char **value);
 
 /**
  * Creates or replaces the entry. Answers DONE (stored), DECLINED, UNAVAILABLE or FAILED. A failed set
- * leaves the previous value readable. The Windows store refuses, with FAILED, a value over 1000 times
- * CRED_MAX_CREDENTIAL_BLOB_SIZE bytes (about 2.5 MB); the other stores state no cap.
+ * leaves the previous value readable. The Windows store also refuses, with FAILED, a value over
+ * RUNTIME_SECRET_VALUE_CAP_BYTES, which is the most its chunks can carry.
  */
 runtime_secret_answer runtime_secret_store_set(const char *entry, const char *value);
 

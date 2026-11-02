@@ -7,6 +7,7 @@ typedef enum runtime_secret_file_answer {
     RUNTIME_SECRET_FILE_DONE,
     RUNTIME_SECRET_FILE_UNREADABLE,
     RUNTIME_SECRET_FILE_UNWRITABLE,
+    RUNTIME_SECRET_FILE_LINKED,
     RUNTIME_SECRET_FILE_OUT_OF_MEMORY
 } runtime_secret_file_answer;
 
@@ -19,7 +20,8 @@ cJSON *runtime_read_secret_file(const char *path, runtime_secret_file_answer *an
 
 /**
  * Writes entries over the file, creating its directory when absent, readable by its owner alone
- * from the moment it exists.
+ * from the moment it exists. A file that is a symbolic link is never written through (LINKED), since
+ * its target may sit in a dotfiles repository a user pushes; SPISOR_SECRETS is how the file moves.
  *
  * @implNote POSIX gives the file mode 0600 through spisor_replace_private_file. Windows gives it the
  * ACL its directory passes on, which under %LOCALAPPDATA% already admits only the user (with SYSTEM

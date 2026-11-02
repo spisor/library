@@ -17,6 +17,9 @@
 #define SECOND_GENERATION 2U
 #define COUNT_TEXT_CAPACITY 24
 
+_Static_assert(RUNTIME_SECRET_VALUE_CAP_BYTES == MAX_CHUNK_COUNT * CRED_MAX_CREDENTIAL_BLOB_SIZE,
+               "the secret value cap is what the chunks of one Windows credential can carry");
+
 static wchar_t *widen(const char *text) {
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
     wchar_t *wide = length > 0 ? malloc((size_t)length * sizeof(wchar_t)) : NULL;
@@ -382,7 +385,7 @@ runtime_secret_answer runtime_secret_store_set(const char *entry, const char *va
     if (!has_logical_root(entry)) {
         return RUNTIME_SECRET_FAILED;
     }
-    if (length > MAX_CHUNK_COUNT * CRED_MAX_CREDENTIAL_BLOB_SIZE) {
+    if (length > RUNTIME_SECRET_VALUE_CAP_BYTES) {
         return RUNTIME_SECRET_FAILED;
     }
     return length <= CRED_MAX_CREDENTIAL_BLOB_SIZE ? write_whole(entry, value, length)

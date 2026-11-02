@@ -157,6 +157,26 @@ static void replace_through_a_dangling_link_is_refused(void) {
     CHECK(count_temporary_entries(home_directory) == 0);
 }
 
+static void a_private_replace_never_writes_through_a_link(void) {
+    const char *real_directory = SPISOR_SCRATCH_PATH "/private-link-real";
+    const char *home_directory = SPISOR_SCRATCH_PATH "/private-link-home";
+    const char *target = SPISOR_SCRATCH_PATH "/private-link-real/secrets.json";
+    const char *link = SPISOR_SCRATCH_PATH "/private-link-home/secrets.json";
+    CHECK(spisor_make_directories(real_directory) == 1);
+    CHECK(spisor_make_directories(home_directory) == 1);
+    CHECK(write_fixture(target, "old"));
+    CHECK(spisor_is_link(target) == 0);
+    if (!create_link_or_skip(link, target)) {
+        return;
+    }
+    CHECK(spisor_is_link(link) == 1);
+    CHECK(spisor_replace_private_file(link, (const uint8_t *)"new", 3) == 0);
+    CHECK(is_link(link));
+    read_back_equals(target, "old");
+    CHECK(count_temporary_entries(real_directory) == 0);
+    CHECK(count_temporary_entries(home_directory) == 0);
+}
+
 #if !defined(_WIN32)
 static int mode_of(const char *path) {
     struct stat status;
@@ -249,6 +269,7 @@ int main(void) {
     replace_into_missing_directory_fails();
     replace_through_a_link_changes_the_target_and_keeps_the_link();
     replace_through_a_dangling_link_is_refused();
+    a_private_replace_never_writes_through_a_link();
 #if !defined(_WIN32)
     replace_keeps_the_permission_bits();
     private_replace_creates_and_keeps_an_owner_only_file();

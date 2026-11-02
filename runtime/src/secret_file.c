@@ -76,7 +76,10 @@ runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJS
     }
     int written = make_parent_directory(path) && spisor_replace_private_file(path, (const uint8_t *)text, length);
     free(text);
-    return written ? RUNTIME_SECRET_FILE_DONE : RUNTIME_SECRET_FILE_UNWRITABLE;
+    if (written) {
+        return RUNTIME_SECRET_FILE_DONE;
+    }
+    return spisor_is_link(path) ? RUNTIME_SECRET_FILE_LINKED : RUNTIME_SECRET_FILE_UNWRITABLE;
 }
 
 static char *copy_text(const char *text) {
