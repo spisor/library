@@ -306,6 +306,130 @@
           }
         }
       ]
+    },
+    {
+      "id": "registry",
+      "functions": [
+        {
+          "name": "register",
+          "symbol": "runtime_registry_register",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "registration": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "kind": { "const": "host" },
+                  "version": { "type": "string", "minLength": 1 },
+                  "home": { "type": "string" },
+                  "application": { "type": "object" },
+                  "provenance": { "type": "object" },
+                  "requiresCommand": { "type": "boolean" }
+                },
+                "required": ["id", "kind", "version", "provenance", "requiresCommand"]
+              }
+            },
+            "required": ["places", "registration"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "registration": { "type": "object" } },
+            "required": ["registration"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "get",
+          "symbol": "runtime_registry_get",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "id": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "id"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "registration": { "type": "object" } },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "list",
+          "symbol": "runtime_registry_list",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              }
+            },
+            "required": ["places"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "hosts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "registration": { "type": "object" },
+                    "orphan": { "type": "boolean" }
+                  },
+                  "required": ["registration", "orphan"],
+                  "additionalProperties": false
+                }
+              },
+              "unreadable": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["hosts", "unreadable"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "forget",
+          "symbol": "runtime_registry_forget",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "id": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "id"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "forgotten": { "type": "boolean" } },
+            "required": ["forgotten"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

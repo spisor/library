@@ -57,6 +57,10 @@ Service), and that store may prompt the user.
 | `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places; a store that declines keeps its copy and the file's |
 | `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
 | `secrets.reconcile` | `places` | `{ moved }`, the file-held secrets moved into a store that has appeared (host only, at start) |
+| `registry.register` | `places` (`state`), `registration` | `{ registration }`, after writing the host's record and keeping its stored commands and changes |
+| `registry.get` | `places` (`state`), `id` | `{ registration }`, or `{}` for an unknown host |
+| `registry.list` | `places` (`state`) | `{ hosts: [{ registration, orphan }], unreadable }`, sorted by id |
+| `registry.forget` | `places` (`state`, `cache`), `id` | `{ forgotten }`, after deleting the record and the host's folders; refused while a change is not reversed |
 
 `places` is what `places.resolve` answers.
 
@@ -76,6 +80,22 @@ and is ignored otherwise.
 Windows has no guessed default: without a usable `LOCALAPPDATA` the machine state and cache cannot
 be placed, so it is refused unless overrides cover the places that need it. `SPISOR_SECRETS` also
 forces the file store (`forceFileStore`).
+
+### The host registry
+
+`registry` keeps one record per installed host in the machine state place, `<state>/hosts/<id>.json`,
+written with the atomic replacement, so two hosts registering at once never contend for one file. The
+host's own files live in `<state>/hosts/<id>/` and `<cache>/hosts/<id>/`. A host id is a portable path
+segment, trimmed as it is, else the call is refused.
+
+A registration is `{ id, kind: "host", version, home?, application?, provenance, requiresCommand,
+commands, changes }`. `register` replaces `version`, `home`, `application`, `provenance` and
+`requiresCommand` and keeps the stored `commands` and `changes`, which the services that record them
+own, so a host may call it on every start. `get` answers `{ registration }`, or `{}` for an unknown
+host. `list` answers every host sorted by id with an `orphan` flag, true when `provenance.location` no
+longer exists, plus the ids of registrations it could not read in `unreadable`. `forget` deletes the
+registration and the host's two folders, and is refused while a change in `changes` is not marked
+`"reversed": true`. A registration that exists but cannot be read is reported and never overwritten.
 
 ### The portable layer
 

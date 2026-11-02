@@ -335,7 +335,8 @@ int spisor_make_directories(const char *path) {
         }
     }
     free(prefix);
-    return create_directory(path) && is_directory(path);
+    create_directory(path);
+    return is_directory(path);
 }
 
 int spisor_append_file(const char *path, const uint8_t *bytes, size_t length) {
