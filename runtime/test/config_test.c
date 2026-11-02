@@ -16,6 +16,7 @@
 #endif
 
 #include "check.h"
+#include "scratch_directory.h"
 #include "config.h"
 #include "merge.h"
 #include "spisor/file.h"
@@ -43,7 +44,7 @@ static void fresh_home(scratch_home *home, const char *label) {
              label);
     snprintf(home->config_directory, sizeof home->config_directory, "%s/config", home->path);
     snprintf(home->portable, sizeof home->portable, "%s/portable", home->path);
-    CHECK(spisor_make_directories(home->path) == 1);
+    start_empty_directory(home->path);
 }
 
 static void write_text(const char *path, const char *text) {

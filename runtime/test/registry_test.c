@@ -18,6 +18,7 @@
 #endif
 
 #include "check.h"
+#include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
 #include "registry.h"
@@ -43,7 +44,7 @@ static void fresh_scratch(scratch *place, const char *label) {
              (int)CURRENT_PROCESS_ID, sequence++, label);
     snprintf(place->state, sizeof place->state, "%s/state", place->directory);
     snprintf(place->cache, sizeof place->cache, "%s/cache", place->directory);
-    CHECK(spisor_make_directories(place->directory) == 1);
+    start_empty_directory(place->directory);
 }
 
 static cJSON *places_for(const scratch *place) {

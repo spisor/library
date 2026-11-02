@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "scratch_directory.h"
 #include "secret_backend.h"
 #include "secret_linux_hooks.h"
 #include "secrets.h"
@@ -58,8 +59,11 @@ static cJSON *call_secrets(int32_t (*function)(const uint8_t *, size_t, uint8_t 
 }
 
 static void expect_set_lands_in_the_file(const char *label) {
+    char directory[1024];
     char file[1100];
-    snprintf(file, sizeof file, RUNTIME_SCRATCH_PATH "/secret-linux-%d-%s/state/secrets.json", (int)getpid(), label);
+    snprintf(directory, sizeof directory, RUNTIME_SCRATCH_PATH "/secret-linux-%d-%s", (int)getpid(), label);
+    start_empty_directory(directory);
+    snprintf(file, sizeof file, "%s/state/secrets.json", directory);
     cJSON *set = call_secrets(runtime_secrets_set, secret_request(file, "hunter2"));
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(set, "place")), "file", label);
     cJSON_Delete(set);

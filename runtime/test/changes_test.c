@@ -21,6 +21,7 @@
 #include "change_reversal_hooks.h"
 #include "changes.h"
 #include "check.h"
+#include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
 #include "paths.h"
@@ -60,6 +61,7 @@ static void fresh_scratch(scratch *place, const char *label) {
     snprintf(place->home, sizeof place->home, "%s/home", place->directory);
     snprintf(place->state, sizeof place->state, "%s/state", place->directory);
     snprintf(place->cache, sizeof place->cache, "%s/cache", place->directory);
+    start_empty_directory(place->directory);
     CHECK(spisor_make_directories(place->home) == 1);
     CHECK(spisor_make_directories(place->state) == 1);
 }
