@@ -129,7 +129,17 @@ static wchar_t *child_command_line(const wchar_t *target, const wchar_t *argumen
     return line;
 }
 
-/** @implNote The launcher ignores Ctrl+C itself, so the program it runs decides what an interrupt does. */
+static BOOL WINAPI outlive_interrupt(DWORD event) {
+    (void)event;
+    return TRUE;
+}
+
+/**
+ * @implNote Ctrl+C reaches every process on the console, so the launcher survives it with a handler
+ * of its own while the program it runs decides what an interrupt does. A handler routine is not
+ * inherited; SetConsoleCtrlHandler(NULL, TRUE) would be, and would leave the program unable to be
+ * interrupted.
+ */
 static int run(wchar_t *line) {
     STARTUPINFOW startup;
     PROCESS_INFORMATION process;
@@ -139,7 +149,7 @@ static int run(wchar_t *line) {
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    SetConsoleCtrlHandler(NULL, TRUE);
+    SetConsoleCtrlHandler(outlive_interrupt, TRUE);
     if (!CreateProcessW(NULL, line, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process)) {
         complain("spisor: the program this command runs could not be started\n");
         return LAUNCH_FAILED;
