@@ -163,23 +163,41 @@ static char *utf8_of(const wchar_t *wide) {
  * would make every host carry the location of a build artefact. This reads the module's own location,
  * never the user's environment.
  */
+static wchar_t *module_path(HMODULE module, size_t *capacity) {
+    for (*capacity = MAX_PATH; *capacity <= 32768; *capacity *= 2) {
+        wchar_t *path = malloc(*capacity * sizeof(wchar_t));
+        DWORD length = path == NULL ? 0 : GetModuleFileNameW(module, path, (DWORD)*capacity);
+        if (length > 0 && length < *capacity) {
+            return path;
+        }
+        free(path);
+        if (length == 0) {
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
 static char *launcher_path(void) {
     HMODULE module = NULL;
-    wchar_t path[MAX_PATH + 32];
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             (LPCWSTR)(void *)launcher_path, &module)) {
         return NULL;
     }
-    DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) {
+    size_t capacity = 0;
+    wchar_t *path = module_path(module, &capacity);
+    wchar_t *slash = path == NULL ? NULL : wcsrchr(path, L'\\');
+    size_t name_offset = slash == NULL ? 0 : (size_t)(slash + 1 - path);
+    size_t needed = name_offset + wcslen(LAUNCHER_FILE_NAME) + 1;
+    wchar_t *launcher = slash == NULL ? NULL : realloc(path, (needed > capacity ? needed : capacity) * sizeof(wchar_t));
+    if (launcher == NULL) {
+        free(path);
         return NULL;
     }
-    wchar_t *slash = wcsrchr(path, L'\\');
-    if (slash == NULL) {
-        return NULL;
-    }
-    wcscpy_s(slash + 1, MAX_PATH + 32 - (size_t)(slash + 1 - path), LAUNCHER_FILE_NAME);
-    return utf8_of(path);
+    wcscpy_s(launcher + name_offset, needed - name_offset, LAUNCHER_FILE_NAME);
+    char *text = utf8_of(launcher);
+    free(launcher);
+    return text;
 }
 
 static char *backslashed(const char *path) {
