@@ -132,9 +132,11 @@ equal so, ignoring ASCII case on Windows:
 A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
 not a readable JSON object, a `profile-line` over a missing file unless it asks to `create` it, and a kind runtime does not know
 is refused before anything is written. A `directory` or `profile-line` the user already has, or a
-`json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
-another unreversed record, of this host or another, is recorded again and stays until the last
-holder is reversed; a registration that cannot be read counts as a holder. A change this host
+`json-key` already holding its value, is not recorded (`recorded: false`). Exactly three kinds are
+reference-counted across every registration: `profile-line`, `directory` and `path-entry`. One held
+by another unreversed record, of this host or another, is recorded again and stays until the last
+holder is reversed; a registration that cannot be read counts as a holder. A `json-key` and a `file`
+are not: each record is undone on its own. A change this host
 already holds unreversed (a `file` at the same path, a `json-key` setting the same value at the same
 key, or the same target of a shared kind) is answered with that record's sequence and `recorded:
 false`, and nothing is recorded, so a host may apply its changes on every start. A `file` asked
