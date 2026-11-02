@@ -31,3 +31,5 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     runtime_test(secret_linux_test $<TARGET_OBJECTS:runtime_secret_store_test_hooks>)
 endif()
+
+runtime_test(changes_test $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)

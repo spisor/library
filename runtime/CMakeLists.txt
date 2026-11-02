@@ -1,10 +1,20 @@
 add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
-    src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c)
+    src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
+
+add_library(runtime_change_reversal OBJECT src/change_reversal.c)
+target_link_libraries(runtime_change_reversal PUBLIC runtime_objects)
+set_target_properties(runtime_change_reversal PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_change_reversal)
+
+add_library(runtime_change_reversal_test_hooks OBJECT src/change_reversal.c)
+target_link_libraries(runtime_change_reversal_test_hooks PUBLIC runtime_objects)
+target_compile_definitions(runtime_change_reversal_test_hooks PRIVATE SPISOR_CHANGES_TEST_HOOKS)
+spisor_strict_warnings(runtime_change_reversal_test_hooks)
 
 if(WIN32)
     set(runtime_secret_store_source src/secret_windows.c)
@@ -32,7 +42,8 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_secret_store>)
+add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
+    $<TARGET_OBJECTS:runtime_secret_store>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries})
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
