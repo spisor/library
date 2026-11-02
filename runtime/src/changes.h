@@ -25,7 +25,10 @@ typedef struct runtime_changes_outcome {
  * next sequence and "reversed": false. RECORDED carries that sequence. UNNEEDED when the disk already
  * holds what was asked and no host holds it (a directory or profile line the user made), so nothing
  * is changed or recorded; UNNEEDED with the existing sequence when this host already holds an
- * unreversed record of the same change (runtime_change_repeats), which is then answered, not repeated. REFUSED and FAILED carry the reason, and then nothing is changed or recorded.
+ * unreversed record of the same change (runtime_change_repeats), which is then answered, not repeated;
+ * a file this host already holds that is asked for with new content is rewritten in place under that
+ * record and answered the same way. REFUSED and FAILED carry the reason, and then nothing is changed
+ * or recorded.
  * state must be absolute and host must be registered. Paths are stored in the normal form of
  * runtime_change_normalized. The whole apply holds runtime_hosts_lock, so the caller must not hold it.
  * A path-entry on Windows writes the user's Path value under HKCU\Environment, the one change made

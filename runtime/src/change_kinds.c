@@ -1,6 +1,7 @@
 #include "change_kinds.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -278,6 +279,33 @@ static runtime_change_step out_of_memory(runtime_change_note *note) {
     return RUNTIME_CHANGE_FAILED;
 }
 
+/**
+ * The digest a file record keeps of the content it was asked to hold, as "fnv1a64:" and 16 hex digits.
+ *
+ * @implNote It only tells one host's earlier content from its new content, which nobody chooses to
+ * collide, so a 64-bit FNV-1a is enough and keeps the library free of a cryptographic hash.
+ */
+static void content_digest(const char *content, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
+    uint64_t hash = 14695981039346656037ull;
+    for (const unsigned char *cursor = (const unsigned char *)content; *cursor != '\0'; cursor++) {
+        hash = (hash ^ *cursor) * 1099511628211ull;
+    }
+    snprintf(digest, RUNTIME_CHANGE_DIGEST_SIZE, "fnv1a64:%016llx", (unsigned long long)hash);
+}
+
+static int set_digest(cJSON *record, const char *content) {
+    char digest[RUNTIME_CHANGE_DIGEST_SIZE];
+    content_digest(content, digest);
+    cJSON *value = cJSON_CreateString(digest);
+    int set = value != NULL && (cJSON_GetObjectItemCaseSensitive(record, "digest") != NULL
+                                    ? cJSON_ReplaceItemInObjectCaseSensitive(record, "digest", value)
+                                    : cJSON_AddItemToObject(record, "digest", value));
+    if (value != NULL && !set) {
+        cJSON_Delete(value);
+    }
+    return set;
+}
+
 static runtime_change_step prepare_file(const cJSON *change, cJSON **record, runtime_change_note *note) {
     const char *path = text_of(change, "path");
     if (runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING) {
@@ -285,7 +313,47 @@ static runtime_change_step prepare_file(const cJSON *change, cJSON **record, run
     }
     static const char *const members[] = {"path"};
     *record = record_with(change, members, 1);
+    if (*record != NULL && !set_digest(*record, text_of(change, "content"))) {
+        cJSON_Delete(*record);
+        *record = NULL;
+    }
     return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+}
+
+int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
+    if (!is_kind(record, "file") || !is_kind(change, "file")) {
+        return 0;
+    }
+    char digest[RUNTIME_CHANGE_DIGEST_SIZE];
+    content_digest(text_of(change, "content"), digest);
+    const char *recorded = text_of(record, "digest");
+    return recorded == NULL || strcmp(recorded, digest) != 0;
+}
+
+static runtime_entry_outcome write_content(const char *path, const char *content, int executable) {
+    runtime_entry_kind found = runtime_probe_entry(path);
+    if (found == RUNTIME_ENTRY_MISSING) {
+        return runtime_create_new_file(path, (const uint8_t *)content, strlen(content), executable);
+    }
+    if (found != RUNTIME_ENTRY_OTHER || spisor_is_link(path)) {
+        return RUNTIME_ENTRY_KEPT;
+    }
+    return spisor_replace_file(path, (const uint8_t *)content, strlen(content)) ? RUNTIME_ENTRY_DONE
+                                                                                : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, runtime_change_note *note) {
+    const char *path = text_of(change, "path");
+    const char *content = text_of(change, "content");
+    runtime_entry_outcome written =
+        write_content(path, content, cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable")));
+    if (written == RUNTIME_ENTRY_KEPT || written == RUNTIME_ENTRY_EXISTS) {
+        return refuse(note, "a directory or link now stands where the host's file was; it was left unchanged", path);
+    }
+    if (written != RUNTIME_ENTRY_DONE) {
+        return fail(note, "the host's file could not be rewritten", path);
+    }
+    return set_digest(record, content) ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
 static runtime_change_step perform_file(const cJSON *change, runtime_change_note *note) {

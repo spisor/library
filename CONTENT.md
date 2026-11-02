@@ -109,7 +109,7 @@ equal so, ignoring ASCII case on Windows:
 
 | kind | the change carries | the record keeps | reversal |
 |---|---|---|---|
-| `file` | `path`, `content`, `executable`? | `path` | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
+| `file` | `path`, `content`, `executable`? | `path`, `digest` of the content | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
 | `directory` | `path` | `path` | removes it only once empty; one still holding something is left and reported |
 | `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
 | `profile-line` | `file`, `line` | `file`, `line`, `separated` | removes the exact line, and the newline added before it |
@@ -123,7 +123,9 @@ another unreversed record, of this host or another, is recorded again and stays 
 holder is reversed; a registration that cannot be read counts as a holder. A change this host
 already holds unreversed (a `file` at the same path, a `json-key` setting the same value at the same
 key, or the same target of a shared kind) is answered with that record's sequence and `recorded:
-false`, and nothing is recorded, so a host may apply its changes on every start.
+false`, and nothing is recorded, so a host may apply its changes on every start. A `file` asked
+for again with different content is rewritten in place under the same record (created again if it
+is gone, refused if a directory or link stands there) and answered the same way.
 
 A `path-entry` puts `directory` on the user's PATH. On Windows it is one entry of the `Path` value
 under `HKCU\Environment`, read unexpanded and written back with its type (`REG_EXPAND_SZ` when the

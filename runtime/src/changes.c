@@ -306,8 +306,8 @@ static long sequence_of(const cJSON *entry) {
  * @implNote A host re-applies its changes on every start, so a repeat must answer the record it
  * already has; recording it again as held would grow the registration without bound.
  */
-static const cJSON *own_record_of(const cJSON *registration, const cJSON *change) {
-    const cJSON *entry;
+static cJSON *own_record_of(cJSON *registration, const cJSON *change) {
+    cJSON *entry;
     cJSON_ArrayForEach(entry, changes_of(registration)) {
         if (is_unreversed(entry) && runtime_change_repeats(entry, change)) {
             return entry;
@@ -508,7 +508,7 @@ static void record_new_family(apply_session *session, prepared_children *prepare
  * new since this host's earlier apply joins that apply's parent.
  */
 static void apply_with_children(apply_session *session, const cJSON *children) {
-    const cJSON *own = own_record_of(session->registration, session->change);
+    cJSON *own = own_record_of(session->registration, session->change);
     prepared_children prepared;
     if (!prepare_children(session, children, &prepared)) {
         discard_prepared(&prepared);
@@ -526,8 +526,28 @@ static void apply_with_children(apply_session *session, const cJSON *children) {
     discard_prepared(&prepared);
 }
 
+/**
+ * @implNote The file is written before its new digest is stored, so a crash in between leaves the old
+ * digest, and the next apply with the same content writes the same bytes again.
+ */
+static void rewrite_own_file(apply_session *session, cJSON *own) {
+    runtime_change_note note = {""};
+    runtime_change_step step = runtime_change_rewrite(session->change, own, &note);
+    if (step != RUNTIME_CHANGE_DONE) {
+        conclude_step(session, step, note.detail);
+    } else if (!store(session)) {
+        conclude_unwritable(session);
+    } else {
+        conclude_held_already(session, own);
+    }
+}
+
 static void apply_single(apply_session *session) {
-    const cJSON *own = own_record_of(session->registration, session->change);
+    cJSON *own = own_record_of(session->registration, session->change);
+    if (own != NULL && runtime_change_asks_new_content(own, session->change)) {
+        rewrite_own_file(session, own);
+        return;
+    }
     if (own != NULL) {
         conclude_held_already(session, own);
         return;

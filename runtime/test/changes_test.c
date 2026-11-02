@@ -854,6 +854,33 @@ static void a_repeated_change_answers_its_record_and_records_nothing(void) {
     free(after);
 }
 
+static void a_file_asked_for_new_content_is_rewritten_under_its_record(void) {
+    scratch place;
+    fresh_scratch(&place, "new-content");
+    register_host(&place, "alpha");
+    register_host(&place, "beta");
+    char *before = snapshot_of(&place);
+    CHECK(applied_sequence(&place, "alpha", file_change(&place, "shim", "run one\n", 1)) == 1);
+    CHECK(answered_existing(&place, "alpha", file_change(&place, "shim", "run two\n", 1), 1));
+    CHECK(home_file_is(&place, "shim", "run two\n"));
+    CHECK(is_owner_executable(&place, "shim"));
+    CHECK(answered_existing(&place, "alpha", file_change(&place, "shim", "run two\n", 1), 1));
+    CHECK(home_file_is(&place, "shim", "run two\n"));
+    CHECK(change_count(&place, "alpha") == 1);
+    CHECK(apply_refused(&place, "beta", file_change(&place, "shim", "run three\n", 1)));
+    CHECK(home_file_is(&place, "shim", "run two\n"));
+    char path[1400];
+    in_home(&place, "shim", path, sizeof path);
+    CHECK(remove(path) == 0);
+    CHECK(answered_existing(&place, "alpha", file_change(&place, "shim", "run four\n", 1), 1));
+    CHECK(home_file_is(&place, "shim", "run four\n"));
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    char *after = snapshot_of(&place);
+    CHECK(check_text(after, before, "home after reversing the rewritten file"));
+    free(before);
+    free(after);
+}
+
 static void the_c_entry_point_records_like_the_json_one(void) {
     scratch place;
     fresh_scratch(&place, "c-entry");
@@ -908,6 +935,7 @@ int main(void) {
     hosts_racing_on_a_shared_line_keep_it_exactly_while_held();
     registering_while_applying_never_drops_a_record();
     a_repeated_change_answers_its_record_and_records_nothing();
+    a_file_asked_for_new_content_is_rewritten_under_its_record();
     the_c_entry_point_records_like_the_json_one();
     a_link_left_where_a_file_was_is_removed_never_followed();
     return summary_with_links("changes_test");
