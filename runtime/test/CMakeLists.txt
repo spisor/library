@@ -21,3 +21,7 @@ if(WIN32 OR APPLE)
         runtime_test(secret_store_test $<TARGET_OBJECTS:runtime_secret_store>)
     endif()
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    runtime_test(secret_linux_test $<TARGET_OBJECTS:runtime_secret_store_test_hooks>)
+endif()
