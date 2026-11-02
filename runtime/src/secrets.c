@@ -240,8 +240,23 @@ static int32_t settle_after_store(const secret_request *request, const char *ent
     return answer_string("place", "store", out, out_len);
 }
 
+static runtime_secret_file_answer read_file_answer(const char *file_path) {
+    runtime_secret_file_answer answer;
+    cJSON_Delete(runtime_read_secret_file(file_path, &answer));
+    return answer;
+}
+
+/**
+ * @implNote The file is read before the store is written, so a file that cannot be read refuses the
+ * set before either place holds the new value; refusing after the store write would leave a value
+ * the answer calls unchanged, and the file's older copy would later overwrite it.
+ */
 static int32_t store_or_file(const secret_request *request, const char *entry, const char *value, uint8_t **out,
                              size_t *out_len) {
+    runtime_secret_file_answer file = read_file_answer(request->secrets_file);
+    if (file != RUNTIME_SECRET_FILE_DONE) {
+        return refuse_file(request->secrets_file, file, out, out_len);
+    }
     if (request->force_file_store) {
         return put_in_file(request, entry, value, out, out_len);
     }
