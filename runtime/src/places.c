@@ -170,13 +170,16 @@ RUNTIME_EXPORT int32_t runtime_places_resolve(const uint8_t *in, size_t in_len, 
         return status;
     }
     const cJSON *home = cJSON_GetObjectItemCaseSensitive(call.argument, "home");
-    if (!cJSON_IsString(home)) {
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call.argument, "environment");
+    if (environment != NULL && !cJSON_IsObject(environment)) {
+        status = spisor_fail("the argument's environment is not an object",
+                             "send {\"environment\": {\"<name>\": \"<value>\"}}, or leave it out", out, out_len);
+    } else if (!cJSON_IsString(home)) {
         status = spisor_fail("the argument carries no string home", "send {\"home\": \"<directory>\"}", out, out_len);
     } else if (!runtime_is_usable_home(home->valuestring)) {
         status = runtime_refuse_home(out, out_len);
     } else {
-        status = answer_places(home->valuestring, cJSON_GetObjectItemCaseSensitive(call.argument, "environment"), out,
-                               out_len);
+        status = answer_places(home->valuestring, environment, out, out_len);
     }
     spisor_discard_call(&call);
     return status;

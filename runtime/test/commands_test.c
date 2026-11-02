@@ -222,6 +222,12 @@ static int is_refused(answer result, const char *what) {
     return refused;
 }
 
+static int is_refused_saying(answer result, const char *text, const char *what) {
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
+    int said = message != NULL && strstr(message, text) != NULL;
+    return is_refused(result, what) && said;
+}
+
 /** The file a shim is run by: <name>.exe on Windows, beside its <name>.shim, and <name> on POSIX. */
 static void shim_file(const scratch *place, const char *name, char *path, size_t size) {
     snprintf(path, size, "%s/%s" PROGRAM_SUFFIX, place->shims, name);
@@ -488,9 +494,16 @@ static void rename_and_add_refuse_a_held_name(void) {
     CHECK(reverse_host(&place, "beta"));
 }
 
+#define NOT_AN_OBJECT "an environment that is an array"
+
 static cJSON *without_path(cJSON *request, const char *shape) {
     cJSON_DeleteItemFromObjectCaseSensitive(request, "environment");
     if (strcmp(shape, "no environment") == 0) {
+        return request;
+    }
+    if (strcmp(shape, NOT_AN_OBJECT) == 0) {
+        cJSON *entries = cJSON_AddArrayToObject(request, "environment");
+        cJSON_AddItemToArray(entries, cJSON_CreateString("PATH=/usr/bin"));
         return request;
     }
     cJSON *environment = cJSON_AddObjectToObject(request, "environment");
@@ -524,6 +537,27 @@ static void a_call_without_a_path_is_refused_and_changes_nothing(void) {
     CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "ad") && lacks_shim(&place, "rn"));
     CHECK(has_shim(&place, "oc"));
     CHECK(entry_is(&place, "alpha", "oc", "oc", "host", "active"));
+    CHECK(reverse_host(&place, "alpha"));
+}
+
+static void an_environment_that_is_not_an_object_is_refused_by_every_export(void) {
+    scratch place;
+    fresh_scratch(&place, "environment-array");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char search[2500];
+    default_search(&place, search, sizeof search);
+    CHECK(is_refused_saying(call(runtime_commands_request,
+                                 without_path(naming_request(&place, "alpha", search, "cc", "tool"), NOT_AN_OBJECT)),
+                            "not an object", "request"));
+    CHECK(is_refused_saying(call(runtime_commands_add,
+                                 without_path(naming_request(&place, "alpha", search, "ad", "tool"), NOT_AN_OBJECT)),
+                            "not an object", "add"));
+    cJSON *rename = host_request(&place, "alpha");
+    cJSON_AddStringToObject(rename, "from", "oc");
+    cJSON_AddStringToObject(rename, "to", "rn");
+    CHECK(is_refused_saying(call(runtime_commands_rename, without_path(rename, NOT_AN_OBJECT)), "not an object",
+                            "rename"));
     CHECK(reverse_host(&place, "alpha"));
 }
 
@@ -769,6 +803,7 @@ int main(void) {
     a_required_host_keeps_its_last_command();
     rename_and_add_refuse_a_held_name();
     a_call_without_a_path_is_refused_and_changes_nothing();
+    an_environment_that_is_not_an_object_is_refused_by_every_export();
     the_shim_runs_its_target_with_the_arguments_and_exit_code();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
 #ifdef _WIN32
