@@ -179,9 +179,24 @@ static DWORD attributes_of(const char *path) {
     return attributes;
 }
 
+static int delete_link_at(const char *path, int is_directory) {
+    wchar_t *wide = to_wide(path);
+    int deleted = wide != NULL && (is_directory ? RemoveDirectoryW(wide) : DeleteFileW(wide)) != 0;
+    free(wide);
+    return deleted;
+}
+
+/**
+ * @implNote Attributes are reset only after an access-denied failure, and never on a link, because
+ * SetFileAttributesW follows a link and would change the attributes of its target.
+ */
 static int delete_file_at(const char *path) {
     wchar_t *wide = to_wide(path);
-    int deleted = wide != NULL && (SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL), DeleteFileW(wide) != 0);
+    int deleted = wide != NULL && DeleteFileW(wide) != 0;
+    if (!deleted && wide != NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+        SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
+        deleted = DeleteFileW(wide) != 0;
+    }
     free(wide);
     return deleted;
 }
@@ -199,7 +214,7 @@ int runtime_remove_tree(const char *path) {
         return !spisor_file_exists(path);
     }
     if (is_reparse_point(attributes)) {
-        return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ? delete_directory_at(path) : delete_file_at(path);
+        return delete_link_at(path, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
     }
     if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
         return delete_file_at(path);
