@@ -175,6 +175,22 @@ static void exported_call_refuses_a_relative_home(void) {
     cJSON_Delete(result);
 }
 
+static void exported_call_refuses_an_environment_that_is_not_an_object(void) {
+    static const char *const requests[] = {
+        "{\"home\":\"/u\",\"environment\":[\"SPISOR_HOME=/p\"]}",
+        "{\"home\":\"/u\",\"environment\":\"SPISOR_HOME=/p\"}",
+    };
+    for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
+        int32_t status;
+        cJSON *result;
+        call_export(requests[index], &status, &result);
+        const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "message"));
+        CHECK(status == SPISOR_STATUS_FAILURE);
+        CHECK(message != NULL && strstr(message, "not an object") != NULL);
+        cJSON_Delete(result);
+    }
+}
+
 int main(void) {
     linux_defaults();
     macos_defaults();
@@ -191,5 +207,6 @@ int main(void) {
     windows_overrides_cover_every_derived_place();
     exported_call_round_trip();
     exported_call_refuses_a_relative_home();
+    exported_call_refuses_an_environment_that_is_not_an_object();
     return check_summary("places_test");
 }

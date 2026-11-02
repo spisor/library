@@ -469,6 +469,8 @@ static void a_stored_set_beside_an_unreadable_file_is_refused_and_leaves_the_fil
     CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "v1"), "message",
                          "not a readable JSON object"));
     expect_file_bytes(place.file, "{ not json", "the unreadable file is left byte-identical");
+    CHECK(fake_store_set_calls() == 0);
+    CHECK(fake_store_entry_count() == 0);
 }
 
 #if defined(_WIN32)

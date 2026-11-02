@@ -647,6 +647,10 @@ static int validated_name(command_call *call, const char *member) {
  */
 static int validated_environment(command_call *call) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
+    if (environment != NULL && !cJSON_IsObject(environment)) {
+        return refuse(call, "send the user's environment as an object of names to strings", "%s",
+                      "the call's environment is not an object");
+    }
     if (environment_value(environment, "PATH") != NULL) {
         return 1;
     }
