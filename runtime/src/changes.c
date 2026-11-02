@@ -6,6 +6,7 @@
 
 #include "change_kinds.h"
 #include "directory_tree.h"
+#include "hosts_lock.h"
 #include "paths.h"
 #include "registry.h"
 #include "spisor/json_kind.h"
@@ -172,8 +173,14 @@ static runtime_changes_outcome refusal_of_load(runtime_registry_answer loaded, c
     }
 }
 
+/**
+ * @implNote The registration's nextSequence counter outlives the entries, so the number of a
+ * withdrawn or dropped record is never handed out again; the highest stored sequence still counts
+ * for a registration written before the counter existed.
+ */
 static long next_sequence(const cJSON *registration) {
-    long highest = 0;
+    const cJSON *counter = cJSON_GetObjectItemCaseSensitive(registration, "nextSequence");
+    long highest = cJSON_IsNumber(counter) ? (long)counter->valuedouble - 1 : 0;
     const cJSON *entry;
     cJSON_ArrayForEach(entry, changes_of(registration)) {
         const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
@@ -243,9 +250,20 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
 }
 
+static int set_counter(cJSON *registration, long next) {
+    cJSON *counter = cJSON_GetObjectItemCaseSensitive(registration, "nextSequence");
+    if (counter != NULL) {
+        cJSON_SetNumberValue(counter, (double)next);
+        return 1;
+    }
+    return cJSON_AddNumberToObject(registration, "nextSequence", (double)next) != NULL;
+}
+
 static void record_and_perform(apply_session *session, cJSON *record) {
-    cJSON *entry = pending_entry(next_sequence(session->registration), text_of(session->change, "kind"), record);
-    if (entry == NULL || !cJSON_AddItemToArray(changes_of(session->registration), entry)) {
+    long sequence = next_sequence(session->registration);
+    cJSON *entry = pending_entry(sequence, text_of(session->change, "kind"), record);
+    if (entry == NULL || !set_counter(session->registration, sequence + 1) ||
+        !cJSON_AddItemToArray(changes_of(session->registration), entry)) {
         cJSON_Delete(entry);
         conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
         return;
@@ -282,14 +300,7 @@ static void prepare_and_apply(apply_session *session) {
     }
 }
 
-runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
-    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
-        return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
-    }
-    const char *defect = runtime_change_defect(change);
-    if (defect != NULL) {
-        return outcome_of(RUNTIME_CHANGES_REFUSED, defect);
-    }
+static runtime_changes_outcome apply_locked(const char *state, const char *host, const cJSON *change) {
     apply_session session = {state, host, change, NULL, {RUNTIME_CHANGES_FAILED, 0, ""}};
     runtime_registry_answer loaded = runtime_registry_load(state, host, &session.registration);
     if (loaded != RUNTIME_REGISTRY_OK) {
@@ -304,6 +315,27 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     }
     cJSON_Delete(session.registration);
     return session.outcome;
+}
+
+runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {
+    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
+        return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
+    }
+    const char *defect = runtime_change_defect(change);
+    if (defect != NULL) {
+        return outcome_of(RUNTIME_CHANGES_REFUSED, defect);
+    }
+    cJSON *normal = runtime_change_normalized(change);
+    if (normal == NULL) {
+        return outcome_of(RUNTIME_CHANGES_FAILED, "memory ran out");
+    }
+    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    runtime_changes_outcome outcome =
+        guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
+                      : apply_locked(state, host, normal);
+    runtime_hosts_unlock(guard);
+    cJSON_Delete(normal);
+    return outcome;
 }
 
 static int32_t refuse_places(uint8_t **out, size_t *out_len) {

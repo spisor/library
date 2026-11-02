@@ -138,15 +138,88 @@ static int same_member(const cJSON *left, const cJSON *right, const char *member
     return left_text != NULL && right_text != NULL && strcmp(left_text, right_text) == 0;
 }
 
+static int is_separator(char character) {
+    return character == '/' || (RUNTIME_HOST_IS_WINDOWS && character == '\\');
+}
+
+static int is_root(const char *path, size_t length) {
+    if (RUNTIME_HOST_IS_WINDOWS && length == 3 && path[1] == ':') {
+        return 1;
+    }
+    return length == 1;
+}
+
+static char *normal_path(const char *path) {
+    const char *segments[1] = {path};
+    char *joined = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 1);
+    if (joined == NULL) {
+        return NULL;
+    }
+    size_t length = strlen(joined);
+    while (length > 1 && is_separator(joined[length - 1]) && !is_root(joined, length)) {
+        joined[--length] = '\0';
+    }
+    return joined;
+}
+
+static char folded(char character) {
+    return RUNTIME_HOST_IS_WINDOWS && character >= 'A' && character <= 'Z' ? (char)(character - 'A' + 'a') : character;
+}
+
+static int same_folded(const char *left, const char *right) {
+    while (*left != '\0' && folded(*left) == folded(*right)) {
+        left++;
+        right++;
+    }
+    return folded(*left) == folded(*right);
+}
+
+int runtime_change_paths_equal(const char *left, const char *right) {
+    char *left_normal = left == NULL ? NULL : normal_path(left);
+    char *right_normal = right == NULL ? NULL : normal_path(right);
+    int equal = left_normal != NULL && right_normal != NULL && same_folded(left_normal, right_normal);
+    free(left_normal);
+    free(right_normal);
+    return equal;
+}
+
+static int same_path_member(const cJSON *left, const cJSON *right, const char *member) {
+    return runtime_change_paths_equal(text_of(left, member), text_of(right, member));
+}
+
+static int normalize_member(cJSON *change, const char *member) {
+    const char *path = text_of(change, member);
+    if (path == NULL) {
+        return 1;
+    }
+    char *normal = normal_path(path);
+    cJSON *value = normal == NULL ? NULL : cJSON_CreateString(normal);
+    free(normal);
+    int replaced = value != NULL && cJSON_ReplaceItemInObjectCaseSensitive(change, member, value);
+    if (value != NULL && !replaced) {
+        cJSON_Delete(value);
+    }
+    return replaced;
+}
+
+cJSON *runtime_change_normalized(const cJSON *change) {
+    cJSON *copy = cJSON_Duplicate(change, 1);
+    if (copy != NULL && (!normalize_member(copy, "path") || !normalize_member(copy, "file"))) {
+        cJSON_Delete(copy);
+        copy = NULL;
+    }
+    return copy;
+}
+
 int runtime_change_same_target(const cJSON *left, const cJSON *right) {
     if (!same_member(left, right, "kind")) {
         return 0;
     }
     if (is_kind(left, "directory")) {
-        return same_member(left, right, "path");
+        return same_path_member(left, right, "path");
     }
     if (is_kind(left, "profile-line")) {
-        return same_member(left, right, "file") && same_member(left, right, "line");
+        return same_path_member(left, right, "file") && same_member(left, right, "line");
     }
     return 0;
 }
@@ -230,11 +303,17 @@ static runtime_change_step perform_directory(const cJSON *change, runtime_change
 
 static runtime_change_reversal reverse_directory(const cJSON *record, int held, runtime_change_note *note) {
     const char *path = text_of(record, "path");
-    if (held || runtime_remove_empty_directory(path) != RUNTIME_ENTRY_FAILED) {
-        return RUNTIME_CHANGE_REVERSED;
+    runtime_entry_outcome removed = held ? RUNTIME_ENTRY_DONE : runtime_remove_empty_directory(path);
+    if (removed == RUNTIME_ENTRY_KEPT) {
+        write_note(note, "the directory the host created holds something it did not create, or is no longer a "
+                         "directory; it was left: %s", path);
+        return RUNTIME_CHANGE_DRIFTED;
     }
-    write_note(note, "the directory the host created could not be removed: %s", path);
-    return RUNTIME_CHANGE_NOT_REVERSED;
+    if (removed != RUNTIME_ENTRY_DONE) {
+        write_note(note, "the directory the host created could not be removed: %s", path);
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    return RUNTIME_CHANGE_REVERSED;
 }
 
 static cJSON *child_object(cJSON *object, const cJSON *segment) {
@@ -341,6 +420,11 @@ static runtime_change_step record_json_key(const cJSON *change, cJSON *root, int
     return RUNTIME_CHANGE_DONE;
 }
 
+static int holds_value_already(cJSON *root, const cJSON *change) {
+    const cJSON *current = value_at(root, cJSON_GetObjectItemCaseSensitive(change, "key"));
+    return current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(change, "value"), 1);
+}
+
 static runtime_change_step prepare_json_key(const cJSON *change, cJSON **record, runtime_change_note *note) {
     const char *path = text_of(change, "file");
     runtime_change_step step = RUNTIME_CHANGE_DONE;
@@ -349,7 +433,13 @@ static runtime_change_step prepare_json_key(const cJSON *change, cJSON **record,
         return step;
     }
     int missing_from = first_missing_depth(root, cJSON_GetObjectItemCaseSensitive(change, "key"), note, path);
-    step = missing_from == -2 ? RUNTIME_CHANGE_REFUSED : record_json_key(change, root, missing_from, record, note);
+    if (missing_from == -2) {
+        step = RUNTIME_CHANGE_REFUSED;
+    } else if (missing_from == -1 && holds_value_already(root, change)) {
+        step = RUNTIME_CHANGE_UNNEEDED;
+    } else {
+        step = record_json_key(change, root, missing_from, record, note);
+    }
     cJSON_Delete(root);
     return step;
 }
@@ -416,19 +506,19 @@ static void remove_created_objects(cJSON *root, const cJSON *key, int created_fr
     }
 }
 
-static void restore_previous(cJSON *root, const cJSON *record) {
+static int restore_previous(cJSON *root, const cJSON *record) {
     const cJSON *key = cJSON_GetObjectItemCaseSensitive(record, "key");
     int last = cJSON_GetArraySize(key) - 1;
     cJSON *parent = object_at(root, key, last);
     const char *leaf = cJSON_GetArrayItem(key, last)->valuestring;
     const cJSON *previous = cJSON_GetObjectItemCaseSensitive(record, "previous");
     if (previous != NULL) {
-        set_member(parent, leaf, previous);
-        return;
+        return set_member(parent, leaf, previous);
     }
     cJSON_DeleteItemFromObjectCaseSensitive(parent, leaf);
     const cJSON *created_from = cJSON_GetObjectItemCaseSensitive(record, "createdFrom");
     remove_created_objects(root, key, cJSON_IsNumber(created_from) ? created_from->valueint : last);
+    return 1;
 }
 
 static int is_already_restored(const cJSON *current, const cJSON *record) {
@@ -458,8 +548,7 @@ static runtime_change_reversal drifted_key(const cJSON *record, const char *why,
 
 static runtime_change_reversal restore_key(cJSON *root, const cJSON *record, const char *ending,
                                            runtime_change_note *note) {
-    restore_previous(root, record);
-    if (write_json(text_of(record, "file"), root, ending)) {
+    if (restore_previous(root, record) && write_json(text_of(record, "file"), root, ending)) {
         return RUNTIME_CHANGE_REVERSED;
     }
     write_note(note, "the key's previous value could not be written back to %s", text_of(record, "file"));

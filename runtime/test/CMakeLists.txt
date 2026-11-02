@@ -33,3 +33,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 runtime_test(changes_test $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+if(NOT WIN32)
+    target_link_libraries(changes_test PRIVATE Threads::Threads)
+endif()
