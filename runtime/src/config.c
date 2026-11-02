@@ -138,12 +138,30 @@ static locate_status locate_portable(const config_request *request, config_targe
     return status;
 }
 
-static locate_status locate_targets(const config_request *request, config_targets *targets) {
-    memset(targets, 0, sizeof(*targets));
+static locate_status locate_plugin_targets(const config_request *request, config_targets *targets) {
     locate_status status = locate_application(request, &targets->application);
     if (status == LOCATED) {
         status = locate_portable(request, &targets->portable);
     }
+    return status;
+}
+
+static locate_status locate_ecosystem_targets(const config_request *request, config_targets *targets) {
+    locate_status status = locate_in_config_directory(request, "settings", &targets->application);
+    if (status == LOCATED && request->portable != NULL) {
+        status = join_target(request->portable, ECOSYSTEM_SETTINGS_FILE, &targets->portable);
+    }
+    return status;
+}
+
+static int is_ecosystem_request(const config_request *request) {
+    return request->plugin == NULL;
+}
+
+static locate_status locate_targets(const config_request *request, config_targets *targets) {
+    memset(targets, 0, sizeof(*targets));
+    locate_status status = is_ecosystem_request(request) ? locate_ecosystem_targets(request, targets)
+                                                         : locate_plugin_targets(request, targets);
     if (status != LOCATED) {
         free_targets(targets);
     }
@@ -222,24 +240,11 @@ cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *p
     return merged;
 }
 
-static locate_status locate_ecosystem_targets(const char *home, const cJSON *names, const char *portable,
-                                              config_targets *targets) {
-    config_request request = {home, portable, NULL, names, NULL, NULL};
-    memset(targets, 0, sizeof(*targets));
-    locate_status status = locate_in_config_directory(&request, "settings", &targets->application);
-    if (status == LOCATED && portable != NULL) {
-        status = join_target(portable, ECOSYSTEM_SETTINGS_FILE, &targets->portable);
-    }
-    if (status != LOCATED) {
-        free_targets(targets);
-    }
-    return status;
-}
-
 cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed) {
+    config_request request = {home, portable, NULL, names, NULL, NULL};
     config_targets targets;
     cJSON *merged = NULL;
-    if (locate_ecosystem_targets(home, names, portable, &targets) == LOCATED) {
+    if (locate_targets(&request, &targets) == LOCATED) {
         merged = merged_from_disk(NULL, &targets);
         free_targets(&targets);
     }
@@ -578,6 +583,28 @@ static int32_t refuse_home_and_plugin(uint8_t **out, size_t *out_len) {
                        "send {\"home\": \"<directory>\", \"plugin\": \"<manifest id>\"}", out, out_len);
 }
 
+static int32_t refuse_home(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the argument carries no string home", "send {\"home\": \"<directory>\"}", out, out_len);
+}
+
+static int32_t run_ecosystem_operation(const spisor_call *call, config_operation operation, uint8_t **out,
+                                       size_t *out_len) {
+    const cJSON *home = cJSON_GetObjectItemCaseSensitive(call->argument, "home");
+    const char *portable;
+    if (!cJSON_IsString(home)) {
+        return refuse_home(out, out_len);
+    }
+    if (!runtime_is_usable_home(home->valuestring)) {
+        return runtime_refuse_home(out, out_len);
+    }
+    if (!runtime_portable_argument(call->argument, &portable)) {
+        return runtime_refuse_portable(out, out_len);
+    }
+    config_request request = {home->valuestring, portable, NULL, optional_object(call->argument, "names"), NULL,
+                              call->argument};
+    return operation(&request, out, out_len);
+}
+
 static int32_t run_operation(const spisor_call *call, config_operation operation, uint8_t **out, size_t *out_len) {
     const cJSON *home = cJSON_GetObjectItemCaseSensitive(call->argument, "home");
     const cJSON *plugin = cJSON_GetObjectItemCaseSensitive(call->argument, "plugin");
@@ -596,15 +623,27 @@ static int32_t run_operation(const spisor_call *call, config_operation operation
     return operation(&request, out, out_len);
 }
 
-static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out, size_t *out_len) {
+typedef int32_t (*call_runner)(const spisor_call *call, config_operation operation, uint8_t **out, size_t *out_len);
+
+static int32_t dispatch_with(call_runner runner, const uint8_t *in, size_t in_len, config_operation operation,
+                             uint8_t **out, size_t *out_len) {
     spisor_call call;
     int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
     if (status != SPISOR_STATUS_SUCCESS) {
         return status;
     }
-    status = run_operation(&call, operation, out, out_len);
+    status = runner(&call, operation, out, out_len);
     spisor_discard_call(&call);
     return status;
+}
+
+static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out, size_t *out_len) {
+    return dispatch_with(run_operation, in, in_len, operation, out, out_len);
+}
+
+static int32_t dispatch_ecosystem(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out,
+                                  size_t *out_len) {
+    return dispatch_with(run_ecosystem_operation, in, in_len, operation, out, out_len);
 }
 
 RUNTIME_EXPORT int32_t runtime_config_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
@@ -617,4 +656,12 @@ RUNTIME_EXPORT int32_t runtime_config_get(const uint8_t *in, size_t in_len, uint
 
 RUNTIME_EXPORT int32_t runtime_config_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return dispatch(in, in_len, config_set, out, out_len);
+}
+
+RUNTIME_EXPORT int32_t runtime_settings_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return dispatch_ecosystem(in, in_len, config_all, out, out_len);
+}
+
+RUNTIME_EXPORT int32_t runtime_settings_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return dispatch_ecosystem(in, in_len, config_set, out, out_len);
 }

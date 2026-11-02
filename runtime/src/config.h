@@ -38,4 +38,16 @@ RUNTIME_EXPORT int32_t runtime_config_all(const uint8_t *in, size_t in_len, uint
 RUNTIME_EXPORT int32_t runtime_config_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_config_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * The ecosystem settings as the config functions answer them: all is the merge
+ * runtime_read_ecosystem_settings computes, set writes one key into the application layer or, with
+ * layer "portable", the portable layer. Both take {home, names?, portable?}, and set adds
+ * {key, value, layer?}.
+ *
+ * @implNote These share config_all, config_set and their write path, so a refusal, a link and a
+ * dotted key behave exactly as they do for a plugin's settings.
+ */
+RUNTIME_EXPORT int32_t runtime_settings_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+RUNTIME_EXPORT int32_t runtime_settings_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 #endif

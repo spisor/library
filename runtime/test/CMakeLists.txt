@@ -9,7 +9,7 @@ function(runtime_test name)
     set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
 
-foreach(name paths_test config_test log_test places_test install_test)
+foreach(name paths_test config_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
 

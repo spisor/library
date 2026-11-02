@@ -150,6 +150,53 @@
       ]
     },
     {
+      "id": "settings",
+      "functions": [
+        {
+          "name": "all",
+          "symbol": "runtime_settings_all",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string", "minLength": 1 },
+              "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 }
+            },
+            "required": ["home"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "values": { "type": "object" } },
+            "required": ["values"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set",
+          "symbol": "runtime_settings_set",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string", "minLength": 1 },
+              "names": { "type": "object" },
+              "portable": { "type": "string", "minLength": 1 },
+              "key": { "type": "string" },
+              "value": {},
+              "layer": { "enum": ["application", "portable"] }
+            },
+            "required": ["home", "key", "value"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "previous": {} },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
       "id": "log",
       "functions": [
         {
