@@ -6,17 +6,24 @@
 
 /**
  * Why directory cannot be put on PATH on this OS, or NULL when it can. A path-entry change is
- * { kind: "path-entry", directory, home }: path_entry_windows.c keeps it as one entry of the user's
- * Path value, path_entry_posix.c applies it as profile-line children, one per profile that exists.
+ * { kind: "path-entry", directory, home, shell? }: path_entry_windows.c keeps it as one entry of the
+ * user's Path value, path_entry_posix.c applies it as profile-line children.
  */
 const char *runtime_path_entry_defect(const char *directory);
 
 /**
  * The changes a path-entry is applied as, recorded as its children: on POSIX an array of profile-line
- * changes adding export PATH="<directory>:$PATH" to each of home's .profile, .bashrc and .zshrc that
- * exists, and REFUSED when none does; on Windows NULL, as the entry needs none. Freed with cJSON_Delete.
+ * changes adding export PATH="<directory>:$PATH" to each of home's .profile, .bashrc, .zshrc and
+ * .zprofile that exists, and to the login shell's profile (runtime_path_entry_login_profile), which is
+ * created when missing; on Windows NULL, as the entry needs none. Freed with cJSON_Delete.
  */
 runtime_change_step runtime_path_entry_children(const cJSON *change, cJSON **children, runtime_change_note *note);
+
+/**
+ * POSIX only: the profile the login shell reads, ".zprofile" when shell (the SHELL a caller passes,
+ * or NULL) ends in zsh or macos is set, as macOS defaults to zsh, otherwise ".profile".
+ */
+const char *runtime_path_entry_login_profile(const char *shell, int macos);
 
 /** As runtime_change_prepare, for a path-entry. */
 runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON *holder, cJSON **record,

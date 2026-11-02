@@ -70,4 +70,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 spisor_strict_warnings(runtime)
 
+if(WIN32)
+    add_executable(runtime_launcher src/launcher_windows.c)
+    set_target_properties(runtime_launcher PROPERTIES OUTPUT_NAME runtime-launcher)
+    spisor_strict_warnings(runtime_launcher)
+    add_dependencies(runtime runtime_launcher)
+endif()
+
 add_subdirectory(test)

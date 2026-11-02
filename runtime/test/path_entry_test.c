@@ -22,6 +22,8 @@
 #include "check.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
+#include "path_entry.h"
+#include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -104,18 +106,25 @@ static cJSON *host_request(const scratch *place, const char *host) {
     return request;
 }
 
-static cJSON *path_entry_change(const scratch *place, const char *directory) {
+static cJSON *path_entry_change(const scratch *place, const char *directory, const char *shell) {
     cJSON *change = cJSON_CreateObject();
     cJSON_AddStringToObject(change, "kind", "path-entry");
     cJSON_AddStringToObject(change, "directory", directory);
     cJSON_AddStringToObject(change, "home", place->home);
+    if (shell != NULL) {
+        cJSON_AddStringToObject(change, "shell", shell);
+    }
     return change;
 }
 
-static answer apply_entry(const scratch *place, const char *host, const char *directory) {
+static answer apply_entry_in(const scratch *place, const char *host, const char *directory, const char *shell) {
     cJSON *request = host_request(place, host);
-    cJSON_AddItemToObject(request, "change", path_entry_change(place, directory));
+    cJSON_AddItemToObject(request, "change", path_entry_change(place, directory, shell));
     return call(runtime_changes_apply_json, request);
+}
+
+static answer apply_entry(const scratch *place, const char *host, const char *directory) {
+    return apply_entry_in(place, host, directory, "/bin/bash");
 }
 
 static long applied_sequence(const scratch *place, const char *host, const char *directory) {
@@ -398,6 +407,9 @@ int main(void) {
 
 #else
 
+/** 1 on macOS, where the login profile .zprofile is created beside the profiles a test writes. */
+#define LOGIN_CREATED RUNTIME_HOST_IS_MACOS
+
 static void in_home(const scratch *place, const char *relative, char *path, size_t size) {
     snprintf(path, size, "%s/%s", place->home, relative);
 }
@@ -472,20 +484,21 @@ static void two_hosts_keep_the_directory_until_the_last_is_reversed(void) {
     snprintf(variant, sizeof variant, "%s/", place.shims);
 
     CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
-    CHECK(children_point_at_their_parent(&place, "alpha", 2));
+    CHECK(children_point_at_their_parent(&place, "alpha", 2 + LOGIN_CREATED));
     CHECK(home_file_is(&place, ".profile", profile_after));
     CHECK(home_file_is(&place, ".bashrc", bashrc_after));
     CHECK(!home_entry_exists(&place, ".zshrc"));
     CHECK(applied_sequence(&place, "beta", variant) == 1);
     CHECK(home_file_is(&place, ".profile", profile_after));
     CHECK(home_file_is(&place, ".bashrc", bashrc_after));
-    CHECK(reverse_counts(&place, "alpha", 3, 0));
+    CHECK(reverse_counts(&place, "alpha", 3 + LOGIN_CREATED, 0));
     CHECK(home_file_is(&place, ".profile", profile_after));
     CHECK(home_file_is(&place, ".bashrc", bashrc_after));
-    CHECK(reverse_counts(&place, "beta", 3, 0));
+    CHECK(reverse_counts(&place, "beta", 3 + LOGIN_CREATED, 0));
     CHECK(home_file_is(&place, ".profile", profile_before));
     CHECK(home_file_is(&place, ".bashrc", bashrc_before));
     CHECK(!home_entry_exists(&place, ".zshrc"));
+    CHECK(!home_entry_exists(&place, ".zprofile"));
 }
 
 static void a_line_the_user_had_is_never_removed(void) {
@@ -497,12 +510,15 @@ static void a_line_the_user_had_is_never_removed(void) {
     write_home_file(&place, ".bashrc", users);
     write_home_file(&place, ".profile", "# profile\n");
     CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
-    CHECK(children_point_at_their_parent(&place, "alpha", 1));
-    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(children_point_at_their_parent(&place, "alpha", 1 + LOGIN_CREATED));
+    CHECK(reverse_counts(&place, "alpha", 2 + LOGIN_CREATED, 0));
     CHECK(home_file_is(&place, ".bashrc", users));
     CHECK(home_file_is(&place, ".profile", "# profile\n"));
 
     write_home_file(&place, ".profile", users);
+    if (LOGIN_CREATED) {
+        write_home_file(&place, ".zprofile", users);
+    }
     CHECK(apply_unneeded(&place, "beta", place.shims));
     CHECK(change_count(&place, "beta") == 0);
     CHECK(home_file_is(&place, ".profile", users));
@@ -517,31 +533,106 @@ static void a_repeated_apply_adds_only_a_profile_new_since(void) {
     with_line("# profile\n", place.shims, profile_after, sizeof profile_after);
     CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
     CHECK(answered_existing(&place, "alpha", place.shims, 1));
-    CHECK(change_count(&place, "alpha") == 2);
+    CHECK(change_count(&place, "alpha") == 2 + LOGIN_CREATED);
 
     write_home_file(&place, ".zshrc", "# zsh\n");
     char zshrc_after[2048];
     with_line("# zsh\n", place.shims, zshrc_after, sizeof zshrc_after);
     CHECK(applied_sequence(&place, "alpha", place.shims) == 1);
-    CHECK(change_count(&place, "alpha") == 3);
+    CHECK(change_count(&place, "alpha") == 3 + LOGIN_CREATED);
     CHECK(answered_existing(&place, "alpha", place.shims, 1));
-    CHECK(change_count(&place, "alpha") == 3);
+    CHECK(change_count(&place, "alpha") == 3 + LOGIN_CREATED);
     CHECK(home_file_is(&place, ".profile", profile_after));
     CHECK(home_file_is(&place, ".zshrc", zshrc_after));
-    CHECK(reverse_counts(&place, "alpha", 3, 0));
+    CHECK(reverse_counts(&place, "alpha", 3 + LOGIN_CREATED, 0));
     CHECK(home_file_is(&place, ".profile", "# profile\n"));
     CHECK(home_file_is(&place, ".zshrc", "# zsh\n"));
 }
 
-static void no_profile_means_refused_and_none_created(void) {
+static void the_login_profile_follows_the_shell_and_the_os(void) {
+    CHECK(check_text(runtime_path_entry_login_profile(NULL, 1), ".zprofile", "no shell on macOS"));
+    CHECK(check_text(runtime_path_entry_login_profile("/bin/bash", 1), ".zprofile", "bash on macOS"));
+    CHECK(check_text(runtime_path_entry_login_profile("/bin/zsh", 0), ".zprofile", "zsh on Linux"));
+    CHECK(check_text(runtime_path_entry_login_profile("/usr/local/bin/zsh", 0), ".zprofile", "a zsh elsewhere"));
+    CHECK(check_text(runtime_path_entry_login_profile("/bin/bash", 0), ".profile", "bash on Linux"));
+    CHECK(check_text(runtime_path_entry_login_profile(NULL, 0), ".profile", "no shell on Linux"));
+}
+
+static int applied_in(const scratch *place, const char *host, const char *shell) {
+    answer result = apply_entry_in(place, host, place->shims, shell);
+    int recorded = result.status == SPISOR_STATUS_SUCCESS &&
+                   cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded"));
+    if (!recorded) {
+        char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
+        fprintf(stderr, "apply with shell %s did not record: %s\n", shell == NULL ? "(none)" : shell,
+                text == NULL ? "" : text);
+        free(text);
+    }
+    cJSON_Delete(result.tree);
+    return recorded;
+}
+
+static void only_line(const scratch *place, char *text, size_t size) {
+    with_line("", place->shims, text, size);
+}
+
+/** zsh as the passed shell takes the macOS rule on every OS, so every runner checks it. */
+static void an_empty_home_on_macos_rules_gets_a_zprofile_and_loses_it(void) {
     scratch place;
-    fresh_scratch(&place, "no-profile");
+    fresh_scratch(&place, "zprofile");
     register_hosts(&place);
-    CHECK(apply_refused(&place, "alpha", place.shims));
-    CHECK(change_count(&place, "alpha") == 0);
+    char expected[2048];
+    only_line(&place, expected, sizeof expected);
+    CHECK(applied_in(&place, "alpha", "/bin/zsh"));
+    CHECK(home_file_is(&place, ".zprofile", expected));
     CHECK(!home_entry_exists(&place, ".profile"));
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(!home_entry_exists(&place, ".zprofile"));
+}
+
+static void an_empty_home_with_bash_gets_the_login_profile(void) {
+    scratch place;
+    fresh_scratch(&place, "bash-login");
+    register_hosts(&place);
+    const char *login = RUNTIME_HOST_IS_MACOS ? ".zprofile" : ".profile";
+    const char *other = RUNTIME_HOST_IS_MACOS ? ".profile" : ".zprofile";
+    char expected[2048];
+    only_line(&place, expected, sizeof expected);
+    CHECK(applied_in(&place, "alpha", "/bin/bash"));
+    CHECK(home_file_is(&place, login, expected));
+    CHECK(!home_entry_exists(&place, other));
     CHECK(!home_entry_exists(&place, ".bashrc"));
-    CHECK(!home_entry_exists(&place, ".zshrc"));
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(!home_entry_exists(&place, login));
+}
+
+static void a_created_profile_the_user_added_to_survives_reversal(void) {
+    scratch place;
+    fresh_scratch(&place, "user-added-to");
+    register_hosts(&place);
+    char line_only[2048];
+    char with_user[2200];
+    only_line(&place, line_only, sizeof line_only);
+    snprintf(with_user, sizeof with_user, "%salias ll='ls -l'\n", line_only);
+    CHECK(applied_in(&place, "alpha", "/bin/zsh"));
+    write_home_file(&place, ".zprofile", with_user);
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(home_file_is(&place, ".zprofile", "alias ll='ls -l'\n"));
+}
+
+static void a_created_zprofile_stays_until_the_last_host_goes(void) {
+    scratch place;
+    fresh_scratch(&place, "zprofile-shared");
+    register_hosts(&place);
+    char expected[2048];
+    only_line(&place, expected, sizeof expected);
+    CHECK(applied_in(&place, "alpha", "/bin/zsh"));
+    CHECK(applied_in(&place, "beta", "/bin/zsh"));
+    CHECK(home_file_is(&place, ".zprofile", expected));
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    CHECK(home_file_is(&place, ".zprofile", expected));
+    CHECK(reverse_counts(&place, "beta", 2, 0));
+    CHECK(!home_entry_exists(&place, ".zprofile"));
 }
 
 static void posix_refusals_record_nothing(void) {
@@ -557,7 +648,11 @@ int main(void) {
     two_hosts_keep_the_directory_until_the_last_is_reversed();
     a_line_the_user_had_is_never_removed();
     a_repeated_apply_adds_only_a_profile_new_since();
-    no_profile_means_refused_and_none_created();
+    the_login_profile_follows_the_shell_and_the_os();
+    an_empty_home_on_macos_rules_gets_a_zprofile_and_loses_it();
+    an_empty_home_with_bash_gets_the_login_profile();
+    a_created_profile_the_user_added_to_survives_reversal();
+    a_created_zprofile_stays_until_the_last_host_goes();
     posix_refusals_record_nothing();
     return check_summary("path_entry_test");
 }

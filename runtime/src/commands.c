@@ -8,7 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #endif
 
@@ -30,8 +32,11 @@
 
 #if defined(_WIN32)
 #define PATH_LIST_SEPARATOR ';'
+#define SHIM_FILE_COUNT 2
+#define LAUNCHER_FILE_NAME L"runtime-launcher.exe"
 #else
 #define PATH_LIST_SEPARATOR ':'
+#define SHIM_FILE_COUNT 1
 #endif
 
 typedef struct command_call {
@@ -106,9 +111,6 @@ static const char *target_defect(const char *target) {
     if (strpbrk(target, "\r\n") != NULL) {
         return "the command's target holds a line break";
     }
-    if (RUNTIME_HOST_IS_WINDOWS && strpbrk(target, "\"%") != NULL) {
-        return "the command's target holds \" or %, which a .cmd shim cannot pass on unchanged";
-    }
     return NULL;
 }
 
@@ -117,25 +119,95 @@ static char *joined(const char *directory, const char *name) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
 }
 
-static char *shim_path(const char *shims, const char *name) {
+static cJSON *change_of(const char *kind, const char *member, const char *value) {
+    cJSON *change = cJSON_CreateObject();
+    if (change == NULL || cJSON_AddStringToObject(change, "kind", kind) == NULL ||
+        cJSON_AddStringToObject(change, member, value) == NULL) {
+        cJSON_Delete(change);
+        return NULL;
+    }
+    return change;
+}
+
+/**
+ * The index-th file of the shim of name: on Windows <name>.exe, the launcher, then <name>.shim, the
+ * target it runs; on POSIX the one script <name>.
+ */
+static char *shim_file(const char *shims, const char *name, size_t index) {
     char file_name[NAME_BUFFER_SIZE + 8];
-    snprintf(file_name, sizeof file_name, RUNTIME_HOST_IS_WINDOWS ? "%s.cmd" : "%s", name);
+    if (RUNTIME_HOST_IS_WINDOWS) {
+        snprintf(file_name, sizeof file_name, index == 0 ? "%s.exe" : "%s.shim", name);
+    } else {
+        snprintf(file_name, sizeof file_name, "%s", name);
+    }
     return joined(shims, file_name);
 }
 
 #if defined(_WIN32)
-/** A .cmd running target with every argument; @ keeps the line from being echoed. */
-static char *shim_content(const char *target) {
-    size_t length = strlen(target);
-    char *content = malloc(length + 16);
-    if (content == NULL) {
+static char *utf8_of(const wchar_t *wide) {
+    int size = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    char *text = size > 0 ? malloc((size_t)size) : NULL;
+    if (text != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, text, size, NULL, NULL) != size) {
+        free(text);
+        text = NULL;
+    }
+    return text;
+}
+
+/**
+ * The launcher every Windows shim is a copy of, runtime-launcher.exe in the directory of the module
+ * holding this code: runtime.dll, or a test executable that links the runtime objects.
+ *
+ * @implNote Found beside the library rather than passed by the caller because the launcher is built
+ * and shipped with the library, so the library is the one thing that knows where it is; a passed path
+ * would make every host carry the location of a build artefact. This reads the module's own location,
+ * never the user's environment.
+ */
+static char *launcher_path(void) {
+    HMODULE module = NULL;
+    wchar_t path[MAX_PATH + 32];
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (LPCWSTR)(void *)launcher_path, &module)) {
         return NULL;
     }
-    snprintf(content, length + 16, "@\"%s\" %%*\r\n", target);
-    for (char *cursor = content; *cursor != '\0'; cursor++) {
-        *cursor = *cursor == '/' ? '\\' : *cursor;
+    DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return NULL;
     }
-    return content;
+    wchar_t *slash = wcsrchr(path, L'\\');
+    if (slash == NULL) {
+        return NULL;
+    }
+    wcscpy_s(slash + 1, MAX_PATH + 32 - (size_t)(slash + 1 - path), LAUNCHER_FILE_NAME);
+    return utf8_of(path);
+}
+
+static char *backslashed(const char *path) {
+    size_t length = strlen(path);
+    char *copy = malloc(length + 1);
+    if (copy != NULL) {
+        for (size_t index = 0; index <= length; index++) {
+            copy[index] = path[index] == '/' ? '\\' : path[index];
+        }
+    }
+    return copy;
+}
+
+static cJSON *shim_change(const char *path, size_t index, const char *target) {
+    cJSON *change = path == NULL ? NULL : change_of("file", "path", path);
+    char *launcher = index == 0 ? launcher_path() : NULL;
+    char *content = index == 0 ? NULL : backslashed(target);
+    int complete = change != NULL &&
+                   (index == 0 ? launcher != NULL && cJSON_AddStringToObject(change, "source", launcher) != NULL
+                               : content != NULL && cJSON_AddStringToObject(change, "content", content) != NULL) &&
+                   cJSON_AddTrueToObject(change, "executable") != NULL;
+    free(launcher);
+    free(content);
+    if (!complete) {
+        cJSON_Delete(change);
+        return NULL;
+    }
+    return change;
 }
 #else
 /** An sh script that execs target, single-quoted, with "$@"; a ' in target is written as '\''. */
@@ -160,6 +232,21 @@ static char *shim_content(const char *target) {
     }
     snprintf(content + used, size - used, "' \"$@\"\n");
     return content;
+}
+
+static cJSON *shim_change(const char *path, size_t index, const char *target) {
+    (void)index;
+    cJSON *change = path == NULL ? NULL : change_of("file", "path", path);
+    char *content = shim_content(target);
+    int complete = change != NULL && content != NULL &&
+                   cJSON_AddStringToObject(change, "content", content) != NULL &&
+                   cJSON_AddTrueToObject(change, "executable") != NULL;
+    free(content);
+    if (!complete) {
+        cJSON_Delete(change);
+        return NULL;
+    }
+    return change;
 }
 #endif
 
@@ -358,9 +445,12 @@ static int is_held_by_a_command(const char *state, const char *name) {
 }
 
 static int is_shim_taken(const command_call *call, const char *name) {
-    char *path = shim_path(call->shims, name);
-    int taken = path == NULL || runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
-    free(path);
+    int taken = 0;
+    for (size_t index = 0; index < SHIM_FILE_COUNT && !taken; index++) {
+        char *path = shim_file(call->shims, name, index);
+        taken = path == NULL || runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
+        free(path);
+    }
     return taken;
 }
 
@@ -398,39 +488,24 @@ static int apply_change(command_call *call, cJSON *change) {
     return refuse(call, "fix the cause and ask for the command again", "%s", outcome.reason);
 }
 
-static cJSON *change_of(const char *kind, const char *member, const char *value) {
-    cJSON *change = cJSON_CreateObject();
-    if (change == NULL || cJSON_AddStringToObject(change, "kind", kind) == NULL ||
-        cJSON_AddStringToObject(change, member, value) == NULL) {
+static cJSON *path_entry_change(const command_call *call, const char *home) {
+    cJSON *change = change_of("path-entry", "directory", call->shims);
+    const char *shell = environment_value(cJSON_GetObjectItemCaseSensitive(call->argument, "environment"), "SHELL");
+    if (change != NULL && (cJSON_AddStringToObject(change, "home", home) == NULL ||
+                           (shell != NULL && cJSON_AddStringToObject(change, "shell", shell) == NULL))) {
         cJSON_Delete(change);
         return NULL;
     }
     return change;
 }
 
-static cJSON *path_entry_change(const char *shims, const char *home) {
-    cJSON *change = change_of("path-entry", "directory", shims);
-    if (change != NULL && cJSON_AddStringToObject(change, "home", home) == NULL) {
-        cJSON_Delete(change);
-        return NULL;
+static int write_shim(command_call *call, const char *name, const char *target) {
+    int written = 1;
+    for (size_t index = 0; index < SHIM_FILE_COUNT && written; index++) {
+        char *path = shim_file(call->shims, name, index);
+        written = apply_change(call, shim_change(path, index, target));
+        free(path);
     }
-    return change;
-}
-
-static cJSON *shim_change(const char *path, const char *content) {
-    cJSON *change = path == NULL || content == NULL ? NULL : change_of("file", "path", path);
-    if (change != NULL &&
-        (cJSON_AddStringToObject(change, "content", content) == NULL || cJSON_AddTrueToObject(change, "executable") == NULL)) {
-        cJSON_Delete(change);
-        return NULL;
-    }
-    return change;
-}
-
-static int write_shim(command_call *call, const char *name, const char *content) {
-    char *path = shim_path(call->shims, name);
-    int written = apply_change(call, shim_change(path, content));
-    free(path);
     return written;
 }
 
@@ -440,14 +515,8 @@ static int make_shim(command_call *call, const char *name, const char *target) {
     if (home == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home)) {
         return refuse(call, "send the user's home as an absolute path", "%s", "the call carries no usable home");
     }
-    char *content = shim_content(target);
-    int made = content != NULL && apply_change(call, change_of("directory", "path", call->shims)) &&
-               apply_change(call, path_entry_change(call->shims, home)) && write_shim(call, name, content);
-    if (content == NULL) {
-        out_of_memory(call);
-    }
-    free(content);
-    return made;
+    return apply_change(call, change_of("directory", "path", call->shims)) &&
+           apply_change(call, path_entry_change(call, home)) && write_shim(call, name, target);
 }
 
 static int load_registration(command_call *call) {
@@ -475,10 +544,12 @@ static int store_registration(command_call *call) {
                   call->host);
 }
 
+/** Appends an active entry; requested is NULL for a command the user added, which no host asked for. */
 static int append_entry(command_call *call, const char *requested, const char *owner) {
     cJSON *entry = cJSON_CreateObject();
     int complete = entry != NULL && cJSON_AddStringToObject(entry, "name", call->name) != NULL &&
-                   cJSON_AddStringToObject(entry, "requested", requested) != NULL &&
+                   (requested == NULL ? cJSON_AddNullToObject(entry, "requested") != NULL
+                                      : cJSON_AddStringToObject(entry, "requested", requested) != NULL) &&
                    cJSON_AddStringToObject(entry, "owner", owner) != NULL &&
                    cJSON_AddStringToObject(entry, "state", "active") != NULL &&
                    cJSON_AddItemToArray(commands_of(call->registration), entry);
@@ -500,8 +571,8 @@ static int set_text(cJSON *object, const char *member, const char *text) {
     return set;
 }
 
-static cJSON *shim_record(const command_call *call, const char *name) {
-    char *path = shim_path(call->shims, name);
+static cJSON *shim_record(const command_call *call, const char *name, size_t index) {
+    char *path = shim_file(call->shims, name, index);
     cJSON *found = NULL;
     cJSON *entry;
     cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(call->registration, "changes")) {
@@ -516,9 +587,7 @@ static cJSON *shim_record(const command_call *call, const char *name) {
     return found;
 }
 
-/** Reverses the recorded shim of name in the loaded registration; a shim with no record is left. */
-static int remove_shim(command_call *call, const char *name) {
-    cJSON *record = shim_record(call, name);
+static int remove_shim_file(command_call *call, cJSON *record) {
     if (record == NULL) {
         return 1;
     }
@@ -531,6 +600,16 @@ static int remove_shim(command_call *call, const char *name) {
     }
     if (reversal == RUNTIME_CHANGE_NOT_REVERSED) {
         return refuse(call, "fix the cause and try again", "the shim could not be removed: %s", note.detail);
+    }
+    return 1;
+}
+
+/** Reverses the recorded shim files of name in the loaded registration; a file with no record is left. */
+static int remove_shim(command_call *call, const char *name) {
+    for (size_t index = 0; index < SHIM_FILE_COUNT; index++) {
+        if (!remove_shim_file(call, shim_record(call, name, index))) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -589,30 +668,45 @@ static int add_step(command_call *call) {
         return refuse(call, "choose another name, or rename what holds it", "the command name %s is held", name);
     }
     snprintf(call->name, sizeof call->name, "%s", name);
-    return give_new_command(call, name, "user");
+    return give_new_command(call, NULL, "user");
 }
 
 static int refuse_unknown_command(command_call *call, const char *name) {
     return refuse(call, "name one of the host's active commands", "the host has no active command named %s", name);
 }
 
-/** The bytes of the shim of from, which rename moves unchanged, since a shim does not name itself. */
-static char *shim_bytes(command_call *call, const char *name) {
-    char *path = shim_path(call->shims, name);
-    size_t length = 0;
-    char *bytes = path == NULL ? NULL : (char *)spisor_read_file(path, &length);
-    free(path);
-    if (bytes == NULL) {
-        refuse(call, "let the host ask for the command again, which writes its shim", "the shim of %s is missing",
-               name);
+static cJSON *copy_change(const char *path, const char *source) {
+    cJSON *change = path == NULL || source == NULL ? NULL : change_of("file", "path", path);
+    if (change != NULL && (cJSON_AddStringToObject(change, "source", source) == NULL ||
+                           cJSON_AddTrueToObject(change, "executable") == NULL)) {
+        cJSON_Delete(change);
+        return NULL;
     }
-    return bytes;
+    return change;
+}
+
+/** Copies one shim file of from to the name to, unchanged, since no shim file names itself. */
+static int copy_shim_file(command_call *call, const char *from, const char *to, size_t index) {
+    char *source = shim_file(call->shims, from, index);
+    char *path = shim_file(call->shims, to, index);
+    int copied = 0;
+    if (source != NULL && runtime_probe_entry(source) == RUNTIME_ENTRY_MISSING) {
+        refuse(call, "let the host ask for the command again, which writes its shim", "the shim of %s is missing",
+               from);
+    } else {
+        copied = apply_change(call, copy_change(path, source));
+    }
+    free(source);
+    free(path);
+    return copied;
 }
 
 static int move_command(command_call *call, const char *from, const char *to) {
-    char *content = shim_bytes(call, from);
-    int moved = content != NULL && write_shim(call, to, content) && load_registration(call);
-    free(content);
+    int moved = 1;
+    for (size_t index = 0; index < SHIM_FILE_COUNT && moved; index++) {
+        moved = copy_shim_file(call, from, to, index);
+    }
+    moved = moved && load_registration(call);
     cJSON *entry = moved ? active_named(call->registration, from) : NULL;
     if (moved && entry == NULL) {
         return refuse_unknown_command(call, from);

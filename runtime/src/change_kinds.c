@@ -85,11 +85,13 @@ static int is_single_line(const char *line) {
 
 static const char *file_defect(const cJSON *change) {
     const cJSON *executable = cJSON_GetObjectItemCaseSensitive(change, "executable");
+    int has_content = cJSON_IsString(cJSON_GetObjectItemCaseSensitive(change, "content"));
+    int has_source = cJSON_GetObjectItemCaseSensitive(change, "source") != NULL;
     if (!is_absolute_member(change, "path")) {
         return "a file change needs an absolute path";
     }
-    if (!cJSON_IsString(cJSON_GetObjectItemCaseSensitive(change, "content"))) {
-        return "a file change needs its content as a string";
+    if (has_content == has_source || (has_source && !is_absolute_member(change, "source"))) {
+        return "a file change needs either its content as a string or an absolute source file to copy";
     }
     return executable == NULL || cJSON_IsBool(executable) ? NULL : "a file change's executable is not a boolean";
 }
@@ -105,8 +107,12 @@ static const char *json_key_defect(const cJSON *change) {
 }
 
 static const char *profile_line_defect(const cJSON *change) {
+    const cJSON *create = cJSON_GetObjectItemCaseSensitive(change, "create");
     if (!is_absolute_member(change, "file")) {
         return "a profile-line change needs an absolute file";
+    }
+    if (create != NULL && !cJSON_IsBool(create)) {
+        return "a profile-line change's create is not a boolean";
     }
     return is_single_line(text_of(change, "line")) ? NULL : "a profile-line change needs one non-empty line";
 }
@@ -117,6 +123,10 @@ static const char *path_entry_defect(const cJSON *change) {
     }
     if (!is_absolute_member(change, "home")) {
         return "a path-entry change needs the user's home as an absolute path";
+    }
+    const cJSON *shell = cJSON_GetObjectItemCaseSensitive(change, "shell");
+    if (shell != NULL && !cJSON_IsString(shell)) {
+        return "a path-entry change's shell is not a string";
     }
     return runtime_path_entry_defect(text_of(change, "directory"));
 }
@@ -221,7 +231,8 @@ static int normalize_member(cJSON *change, const char *member) {
 cJSON *runtime_change_normalized(const cJSON *change) {
     cJSON *copy = cJSON_Duplicate(change, 1);
     int normal = copy != NULL && normalize_member(copy, "path") && normalize_member(copy, "file") &&
-                 normalize_member(copy, "directory") && normalize_member(copy, "home");
+                 normalize_member(copy, "directory") && normalize_member(copy, "home") &&
+                 normalize_member(copy, "source");
     if (copy != NULL && !normal) {
         cJSON_Delete(copy);
         copy = NULL;
@@ -285,17 +296,38 @@ static runtime_change_step out_of_memory(runtime_change_note *note) {
  * @implNote It only tells one host's earlier content from its new content, which nobody chooses to
  * collide, so a 64-bit FNV-1a is enough and keeps the library free of a cryptographic hash.
  */
-static void content_digest(const char *content, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
+static void content_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
     uint64_t hash = 14695981039346656037ull;
-    for (const unsigned char *cursor = (const unsigned char *)content; *cursor != '\0'; cursor++) {
-        hash = (hash ^ *cursor) * 1099511628211ull;
+    for (size_t index = 0; index < length; index++) {
+        hash = (hash ^ bytes[index]) * 1099511628211ull;
     }
     snprintf(digest, RUNTIME_CHANGE_DIGEST_SIZE, "fnv1a64:%016llx", (unsigned long long)hash);
 }
 
-static int set_digest(cJSON *record, const char *content) {
+typedef struct file_bytes {
+    uint8_t *bytes;
+    size_t length;
+} file_bytes;
+
+/** The bytes a file change asks for: its content, or what its source file holds; bytes is NULL when unreadable. */
+static file_bytes bytes_asked_for(const cJSON *change) {
+    file_bytes asked = {NULL, 0};
+    const char *content = text_of(change, "content");
+    if (content == NULL) {
+        asked.bytes = spisor_read_file(text_of(change, "source"), &asked.length);
+        return asked;
+    }
+    asked.length = strlen(content);
+    asked.bytes = malloc(asked.length + 1);
+    if (asked.bytes != NULL) {
+        memcpy(asked.bytes, content, asked.length + 1);
+    }
+    return asked;
+}
+
+static int set_digest(cJSON *record, const file_bytes *asked) {
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    content_digest(content, digest);
+    content_digest(asked->bytes, asked->length, digest);
     cJSON *value = cJSON_CreateString(digest);
     int set = value != NULL && (cJSON_GetObjectItemCaseSensitive(record, "digest") != NULL
                                     ? cJSON_ReplaceItemInObjectCaseSensitive(record, "digest", value)
@@ -311,12 +343,17 @@ static runtime_change_step prepare_file(const cJSON *change, cJSON **record, run
     if (runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING) {
         return refuse(note, "something already exists where the file would be created; it was left unchanged", path);
     }
+    file_bytes asked = bytes_asked_for(change);
+    if (asked.bytes == NULL) {
+        return refuse(note, "the file to copy cannot be read", text_of(change, "source"));
+    }
     static const char *const members[] = {"path"};
     *record = record_with(change, members, 1);
-    if (*record != NULL && !set_digest(*record, text_of(change, "content"))) {
+    if (*record != NULL && !set_digest(*record, &asked)) {
         cJSON_Delete(*record);
         *record = NULL;
     }
+    free(asked.bytes);
     return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
@@ -324,44 +361,57 @@ int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
     if (!is_kind(record, "file") || !is_kind(change, "file")) {
         return 0;
     }
+    file_bytes asked = bytes_asked_for(change);
+    if (asked.bytes == NULL) {
+        return 1;
+    }
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    content_digest(text_of(change, "content"), digest);
+    content_digest(asked.bytes, asked.length, digest);
+    free(asked.bytes);
     const char *recorded = text_of(record, "digest");
     return recorded == NULL || strcmp(recorded, digest) != 0;
 }
 
-static runtime_entry_outcome write_content(const char *path, const char *content, int executable) {
+static runtime_entry_outcome write_content(const char *path, const file_bytes *asked, int executable) {
     runtime_entry_kind found = runtime_probe_entry(path);
     if (found == RUNTIME_ENTRY_MISSING) {
-        return runtime_create_new_file(path, (const uint8_t *)content, strlen(content), executable);
+        return runtime_create_new_file(path, asked->bytes, asked->length, executable);
     }
     if (found != RUNTIME_ENTRY_OTHER || spisor_is_link(path)) {
         return RUNTIME_ENTRY_KEPT;
     }
-    return spisor_replace_file(path, (const uint8_t *)content, strlen(content)) ? RUNTIME_ENTRY_DONE
-                                                                                : RUNTIME_ENTRY_FAILED;
+    return spisor_replace_file(path, asked->bytes, asked->length) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
 runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, runtime_change_note *note) {
     const char *path = text_of(change, "path");
-    const char *content = text_of(change, "content");
+    file_bytes asked = bytes_asked_for(change);
+    if (asked.bytes == NULL) {
+        return refuse(note, "the file to copy cannot be read", text_of(change, "source"));
+    }
     runtime_entry_outcome written =
-        write_content(path, content, cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable")));
+        write_content(path, &asked, cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable")));
+    runtime_change_step step = RUNTIME_CHANGE_DONE;
     if (written == RUNTIME_ENTRY_KEPT || written == RUNTIME_ENTRY_EXISTS) {
-        return refuse(note, "a directory or link now stands where the host's file was; it was left unchanged", path);
+        step = refuse(note, "a directory or link now stands where the host's file was; it was left unchanged", path);
+    } else if (written != RUNTIME_ENTRY_DONE) {
+        step = fail(note, "the host's file could not be rewritten", path);
+    } else if (!set_digest(record, &asked)) {
+        step = out_of_memory(note);
     }
-    if (written != RUNTIME_ENTRY_DONE) {
-        return fail(note, "the host's file could not be rewritten", path);
-    }
-    return set_digest(record, content) ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+    free(asked.bytes);
+    return step;
 }
 
 static runtime_change_step perform_file(const cJSON *change, runtime_change_note *note) {
     const char *path = text_of(change, "path");
-    const char *content = text_of(change, "content");
     int executable = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable"));
-    runtime_entry_outcome created =
-        runtime_create_new_file(path, (const uint8_t *)content, strlen(content), executable);
+    file_bytes asked = bytes_asked_for(change);
+    if (asked.bytes == NULL) {
+        return fail(note, "the file to copy could not be read", text_of(change, "source"));
+    }
+    runtime_entry_outcome created = runtime_create_new_file(path, asked.bytes, asked.length, executable);
+    free(asked.bytes);
     if (created == RUNTIME_ENTRY_EXISTS) {
         return refuse(note, "something already exists where the file would be created; it was left unchanged", path);
     }
@@ -728,27 +778,47 @@ static int add_separated(cJSON *record, int separated) {
     return cJSON_AddBoolToObject(record, "separated", separated) != NULL;
 }
 
+static int is_holder_flag(const cJSON *holder, const char *member) {
+    return holder != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(holder, member));
+}
+
+static int may_create(const cJSON *change, const char *path) {
+    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "create")) &&
+           runtime_probe_entry(path) == RUNTIME_ENTRY_MISSING;
+}
+
+static runtime_change_step record_profile_line(const cJSON *change, int separated, int created, cJSON **record,
+                                               runtime_change_note *note) {
+    static const char *const members[] = {"file", "line"};
+    *record = record_with(change, members, 2);
+    if (*record != NULL && (!add_separated(*record, separated) ||
+                            (created && cJSON_AddTrueToObject(*record, "created") == NULL))) {
+        cJSON_Delete(*record);
+        *record = NULL;
+    }
+    return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+}
+
+/**
+ * @implNote A record of a line another host already holds inherits that host's separated and created,
+ * so whichever record is reversed last undoes exactly what the first one did, the file it created
+ * included.
+ */
 static runtime_change_step prepare_profile_line(const cJSON *change, const cJSON *holder, cJSON **record,
                                                 runtime_change_note *note) {
     const char *path = text_of(change, "file");
     text_buffer text;
     if (!read_text(path, &text)) {
-        return refuse(note, "the profile file does not exist or cannot be read", path);
+        return may_create(change, path) ? record_profile_line(change, 0, 1, record, note)
+                                        : refuse(note, "the profile file does not exist or cannot be read", path);
     }
     int present = find_last_line(&text, text_of(change, "line")).found;
-    int separated = present ? holder != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(holder, "separated"))
-                            : is_unterminated(&text);
+    int separated = present ? is_holder_flag(holder, "separated") : is_unterminated(&text);
     free(text.bytes);
     if (present && holder == NULL) {
         return RUNTIME_CHANGE_UNNEEDED;
     }
-    static const char *const members[] = {"file", "line"};
-    *record = record_with(change, members, 2);
-    if (*record != NULL && !add_separated(*record, separated)) {
-        cJSON_Delete(*record);
-        *record = NULL;
-    }
-    return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+    return record_profile_line(change, separated, present && is_holder_flag(holder, "created"), record, note);
 }
 
 static const char *line_ending_of(const text_buffer *text) {
@@ -769,11 +839,26 @@ static int append_line(const char *path, const text_buffer *text, const char *li
     return written;
 }
 
+static runtime_change_step create_profile(const char *path, const char *line, runtime_change_note *note) {
+    size_t size = strlen(line) + 2;
+    char *bytes = malloc(size);
+    if (bytes == NULL) {
+        return out_of_memory(note);
+    }
+    snprintf(bytes, size, "%s\n", line);
+    runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)bytes, size - 1, 0);
+    free(bytes);
+    return created == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_DONE : fail(note, "the profile could not be created", path);
+}
+
 static runtime_change_step perform_profile_line(const cJSON *change, cJSON *record, runtime_change_note *note) {
     const char *path = text_of(change, "file");
     const char *line = text_of(change, "line");
     text_buffer text;
-    if (!read_text(path, &text)) {
+    if (!read_text(path, &text) && is_holder_flag(record, "created")) {
+        return create_profile(path, line, note);
+    }
+    if (text.bytes == NULL) {
         return fail(note, "the profile file could not be read", path);
     }
     int written = 1;
@@ -808,6 +893,21 @@ static int remove_line(const char *path, const text_buffer *text, line_span span
     return written;
 }
 
+static int is_empty_file(const char *path) {
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(path, &length);
+    free(bytes);
+    return bytes != NULL && length == 0;
+}
+
+/** Deletes a profile the host created once the line is all it held; anything the user added keeps it. */
+static int remove_emptied_profile(const cJSON *record, const char *path) {
+    if (!is_holder_flag(record, "created") || !is_empty_file(path)) {
+        return 1;
+    }
+    return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
+}
+
 static runtime_change_reversal reverse_profile_line(const cJSON *record, int held, runtime_change_note *note) {
     const char *path = text_of(record, "file");
     text_buffer text;
@@ -820,6 +920,10 @@ static runtime_change_reversal reverse_profile_line(const cJSON *record, int hel
     free(text.bytes);
     if (!removed) {
         write_note(note, "the line could not be removed from %s", path);
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    if (!remove_emptied_profile(record, path)) {
+        write_note(note, "the profile the host created could not be deleted: %s", path);
         return RUNTIME_CHANGE_NOT_REVERSED;
     }
     return RUNTIME_CHANGE_REVERSED;
