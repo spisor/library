@@ -641,6 +641,19 @@ static int validated_name(command_call *call, const char *member) {
     return 1;
 }
 
+/**
+ * @implNote Refused rather than read as an empty PATH: with no PATH every name looks free, so a host
+ * asking for cc would shadow the compiler.
+ */
+static int validated_environment(command_call *call) {
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
+    if (environment_value(environment, "PATH") != NULL) {
+        return 1;
+    }
+    return refuse(call, "send the user's environment with its PATH as a string", "%s",
+                  "the call carries no PATH, so it cannot tell which names are taken");
+}
+
 static int validated_target(command_call *call) {
     const char *defect = target_defect(text_of(call->argument, "target"));
     return defect == NULL || refuse(call, "send the absolute path of the program the command runs", "%s", defect);
@@ -666,7 +679,8 @@ static int give_new_command(command_call *call, const char *requested, const cha
 }
 
 static int request_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !load_registration(call)) {
+    if (!validated_name(call, "name") || !validated_target(call) || !validated_environment(call) ||
+        !load_registration(call)) {
         return 0;
     }
     const char *requested = text_of(call->argument, "name");
@@ -678,7 +692,8 @@ static int request_step(command_call *call) {
 }
 
 static int add_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !load_registration(call)) {
+    if (!validated_name(call, "name") || !validated_target(call) || !validated_environment(call) ||
+        !load_registration(call)) {
         return 0;
     }
     const char *name = text_of(call->argument, "name");
@@ -734,7 +749,8 @@ static int move_command(command_call *call, const char *from, const char *to) {
 }
 
 static int rename_step(command_call *call) {
-    if (!validated_name(call, "from") || !validated_name(call, "to") || !load_registration(call)) {
+    if (!validated_name(call, "from") || !validated_name(call, "to") || !validated_environment(call) ||
+        !load_registration(call)) {
         return 0;
     }
     const char *from = text_of(call->argument, "from");

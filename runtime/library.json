@@ -550,7 +550,7 @@
               "name": { "type": "string", "minLength": 1 },
               "target": { "type": "string", "minLength": 1 }
             },
-            "required": ["places", "host", "home", "name", "target"]
+            "required": ["places", "environment", "host", "home", "name", "target"]
           },
           "result": {
             "type": "object",
@@ -579,7 +579,7 @@
               "from": { "type": "string", "minLength": 1 },
               "to": { "type": "string", "minLength": 1 }
             },
-            "required": ["places", "host", "from", "to"]
+            "required": ["places", "environment", "host", "from", "to"]
           },
           "result": {
             "type": "object",
@@ -638,7 +638,7 @@
               "name": { "type": "string", "minLength": 1 },
               "target": { "type": "string", "minLength": 1 }
             },
-            "required": ["places", "host", "home", "name", "target"]
+            "required": ["places", "environment", "host", "home", "name", "target"]
           },
           "result": {
             "type": "object",

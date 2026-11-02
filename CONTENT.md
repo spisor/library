@@ -182,6 +182,8 @@ executable on the `PATH` the call carries, `<state>/bin` left out: on Windows `<
 with an extension of `PATHEXT` (`.COM;.EXE;.BAT;.CMD` when it is absent), on POSIX an executable
 `<directory>/<name>`. `request` gives a held name's first free fallback, `<name>2`, `<name>3` and
 so on, so a host asking for `cc` where the C compiler is installed gets `cc2` and never shadows it.
+`request`, `rename` and `add` refuse a call whose `environment` carries no `PATH` string (`Path` on
+Windows matches too), since without one every name would look free.
 A host asking again for a name it requested is answered with that entry as it stands, and its
 shim is rewritten when the target moved, but the entry itself is never changed by a host: a name
 the user renamed stays renamed, a command the user deleted stays deleted, and a command the user
