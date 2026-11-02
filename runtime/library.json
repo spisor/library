@@ -650,6 +650,71 @@
           }
         }
       ]
+    },
+    {
+      "id": "install",
+      "functions": [
+        {
+          "name": "packages",
+          "symbol": "runtime_install_packages",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "portable": { "type": "string", "minLength": 1 }
+                },
+                "required": ["portable"]
+              },
+              "item": { "type": "string", "minLength": 1 },
+              "manifestPackages": { "type": "object" }
+            },
+            "required": ["places", "item"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "packages": { "type": "object" }
+            },
+            "required": ["packages"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "plan",
+          "symbol": "runtime_install_plan",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "portable": { "type": "string", "minLength": 1 }
+                },
+                "required": ["portable"]
+              },
+              "item": { "type": "string", "minLength": 1 },
+              "manifestPackages": { "type": "object" },
+              "methods": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "chosen": { "type": "string", "minLength": 1 },
+              "installedProviders": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "catalog": { "type": "array", "items": { "type": "object" } }
+            },
+            "required": ["places", "item", "methods", "chosen"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "steps": { "type": "array", "items": { "type": "object" } }
+            },
+            "required": ["steps"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

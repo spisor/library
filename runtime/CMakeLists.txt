@@ -1,6 +1,6 @@
 add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
-    src/hosts_lock.c src/commands.c)
+    src/hosts_lock.c src/commands.c src/install.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
