@@ -14,6 +14,12 @@ endforeach()
 
 runtime_test(secrets_test fake_secret_backend.c)
 
+runtime_test(registry_test $<TARGET_OBJECTS:runtime_secret_store>)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(registry_test PRIVATE Threads::Threads)
+endif()
+
 if(WIN32 OR APPLE)
     if(WIN32)
         runtime_test(secret_store_test $<TARGET_OBJECTS:runtime_secret_store_test_hooks>)
