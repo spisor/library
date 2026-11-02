@@ -15,7 +15,9 @@ The C conventions every spisor and forebay library shares, as one static CMake t
   becomes. A library porting JavaScript takes these rather than writing its own.
 - **Files** (`spisor/file.h`): Node's `existsSync`, reading a whole file, creating a directory with
   its parents, appending, and replacing a file so a reader sees the old content or the new, never a
-  mix. UTF-8 paths on every OS.
+  mix. A replace follows a symlink and changes the target, leaving the link in place (a dotfiles
+  manager's), and refuses a dangling one; `spisor_replace_private_file` does the same with the
+  temporary file and the result owner-only (0600) from creation. UTF-8 paths on every OS.
 - **JSON out** (`spisor/json_write.h`): `spisor_json_stringify_pretty`, exactly what
   `JSON.stringify(value, null, 2)` returns, down to JavaScript's key order.
 - **JSON files** (`spisor/json_file.h`): `spisor_read_json_file`, basekit's `readJson` without the
@@ -55,10 +57,54 @@ Service), and that store may prompt the user.
 | `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
 | `secrets.reconcile` | `places` | `{ moved }`, the file-held secrets moved into a store that has appeared (host only, at start) |
 
-`places` is what `places.resolve` answers. A secret is named `spisor/<plugin id>/<name>` in the store
-and in the file. Each time the store takes a value, every secret in the file moves into it, written
-to the store before it leaves the file, so an interruption never loses one. `forceFileStore`
-(`SPISOR_SECRETS`) keeps every secret in the file and never touches the store.
+`places` is what `places.resolve` answers.
+
+### The places
+
+`places.resolve` answers four places for the OS, from the user's home and an `environment` the host
+passes (it reads no process state). An override is used only when it is a non-empty absolute path
+and is ignored otherwise.
+
+| place | Windows | macOS | Linux |
+|---|---|---|---|
+| portable (`SPISOR_HOME`) | `%USERPROFILE%\.spisor` | `~/.spisor` | `~/.spisor` |
+| machine state (`SPISOR_STATE`) | `%LOCALAPPDATA%\spisor` | `~/Library/Application Support/spisor` | `$XDG_STATE_HOME/spisor`, else `~/.local/state/spisor` |
+| cache (`SPISOR_CACHE`) | `%LOCALAPPDATA%\spisor\cache` | `~/Library/Caches/spisor` | `$XDG_CACHE_HOME/spisor`, else `~/.cache/spisor` |
+| secrets file (`SPISOR_SECRETS`, a directory) | `<machine state>/secrets.json` | same | same |
+
+Windows has no guessed default: without a usable `LOCALAPPDATA` the machine state and cache cannot
+be placed, so it is refused unless overrides cover the places that need it. `SPISOR_SECRETS` also
+forces the file store (`forceFileStore`).
+
+### The portable layer
+
+The portable place holds `settings.json` (the ecosystem settings, which `log.write` reads) and
+`plugins/<manifest id>/config.json` per plugin, named by the manifest `id`, never `config.name`;
+that folder is the plugin's `portable` path from `paths.resolve`, beside its `pluginCache` folder in
+the cache place. `config` reads defaults, then the portable file, then the application file, later
+winning and objects merging key by key. `config.set` writes the application file unless `layer` is
+`"portable"`. A host with no portable layer omits `portable` and a portable write is refused. An
+unreadable file is never overwritten, and a write through a symlinked portable file changes the
+target and leaves the link.
+
+### Secrets and their stores
+
+A secret is named `spisor/<plugin id>/<name>` in every store and in the file, and is a UTF-8 string
+of any length. `get` reads the file first, then the store: a file entry exists only when written
+while the store refused, and every later successful store write empties the file, so a file value is
+always newer, and a file-held secret causes no store access. Each time the store takes a value,
+every secret in the file moves into it, written to the store before it leaves the file, so an
+interruption never loses one. The file is owner-only. `forceFileStore` keeps every secret in the
+file and never touches the store.
+
+- **Windows** (Credential Manager) holds about 2.5 KB per entry, so a longer value is split into
+  generation-tagged chunk entries under their own root, `spisor-chunks/<plugin id>/<name>#<generation>#<n>`,
+  and the base entry, written last, names the generation and count. A failed rewrite leaves the old
+  value readable. A value over 1000 chunks (about 2.5 MB) is refused (`secret_backend.h`).
+- **macOS** keeps generic-password Keychain items under the service `spisor`.
+- **Linux** loads libsecret at run time, so a machine without Secret Service falls back to the file
+  instead of failing to load. Items carry the attributes `entry` and `owner` = `spisor`, and `list`
+  searches by `owner`. A session bus of `autolaunch:` counts as no bus.
 
 It is held to basekit in its own CI, through the TypeScript and the Java binding, case by case; the
 places it departs from basekit are recorded one by one in `parity/divergences.json`, each with the
