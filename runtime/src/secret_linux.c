@@ -48,7 +48,7 @@ typedef int (*equal_function)(const void *first, const void *second);
 typedef void (*destroy_function)(void *data);
 
 enum { SECRET_SCHEMA_ATTRIBUTE_STRING = 0, SECRET_SEARCH_ALL = 2, IO_ERROR_CANCELLED = 19 };
-enum { SECRET_ERROR_PROTECTED = 1, SECRET_ERROR_IS_LOCKED = 2 };
+enum { SECRET_ERROR_IS_LOCKED = 2 };
 
 typedef struct secret_api {
     void *handle;
@@ -74,9 +74,11 @@ typedef struct secret_api {
 
 #define DEFAULT_LIBRARY_NAME "libsecret-1.so.0"
 static const char *const entry_attribute = "entry";
+static const char *const owner_attribute = "owner";
+static const char *const owner_value = "spisor";
 static const char *const probe_entry = "spisor-availability-probe";
 
-static const secret_schema spisor_schema = {"spisor", 0, {{"entry", SECRET_SCHEMA_ATTRIBUTE_STRING}, {NULL, 0}}, 0,
+static const secret_schema spisor_schema = {"spisor", 0, {{"entry", SECRET_SCHEMA_ATTRIBUTE_STRING}, {"owner", SECRET_SCHEMA_ATTRIBUTE_STRING}, {NULL, 0}}, 0,
                                             {NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
 
 /**
@@ -158,22 +160,18 @@ int runtime_secret_linux_library_is_loaded(void) {
 }
 #endif
 
-static int environment_has(const char *name) {
-    const char *value = getenv(name);
-    return value != NULL && value[0] != '\0';
-}
-
 /**
  * Whether a session bus can be reached without starting one.
  *
  * @implNote Without this check, a machine that has libsecret but no session bus (a headless runner, a
  * container) sends GIO down its D-Bus autolaunch path, which runs dbus-launch and can stall or start a
- * stray daemon. The bus address variable, or the per-user socket systemd places at
+ * stray daemon, so an "autolaunch:" address counts as no bus. The bus address variable, or the per-user socket systemd places at
  * $XDG_RUNTIME_DIR/bus, is what a real desktop session provides.
  */
 static int session_bus_is_reachable(void) {
-    if (environment_has("DBUS_SESSION_BUS_ADDRESS")) {
-        return 1;
+    const char *address = getenv("DBUS_SESSION_BUS_ADDRESS");
+    if (address != NULL && address[0] != '\0') {
+        return strncmp(address, "autolaunch:", strlen("autolaunch:")) != 0;
     }
     const char *runtime_directory = getenv("XDG_RUNTIME_DIR");
     char socket_path[4096];
@@ -194,17 +192,16 @@ static const secret_api *reachable_api(void) {
  * Maps a libsecret error to what the seam reports, and frees it.
  *
  * @implNote A dismissed unlock prompt is reported by libsecret as G_IO_ERROR_CANCELLED, and a collection
- * that stays locked as SECRET_ERROR_IS_LOCKED; both are the user saying no, so DECLINED. Any other GIO
+ * that stays locked as SECRET_ERROR_IS_LOCKED; both are the user saying no, so DECLINED. Any other libsecret
+ * error, SECRET_ERROR_PROTOCOL (a malformed reply) among them, is FAILED. Any other GIO
  * or D-Bus error means the service could not be reached or does not exist (no owner for the bus name, no
- * bus), which is UNAVAILABLE so the secrets file takes over. Only an error inside the service itself is
- * FAILED.
+ * bus), which is UNAVAILABLE so the secrets file takes over.
  */
 static runtime_secret_answer answer_for_error(const secret_api *api, glib_error *error) {
     runtime_secret_answer answer = RUNTIME_SECRET_FAILED;
     if (error->domain == api->io_error_quark() && error->code == IO_ERROR_CANCELLED) {
         answer = RUNTIME_SECRET_DECLINED;
-    } else if (error->domain == api->secret_error_quark() &&
-               (error->code == SECRET_ERROR_IS_LOCKED || error->code == SECRET_ERROR_PROTECTED)) {
+    } else if (error->domain == api->secret_error_quark() && error->code == SECRET_ERROR_IS_LOCKED) {
         answer = RUNTIME_SECRET_DECLINED;
     } else if (error->domain == api->io_error_quark() || error->domain == api->dbus_error_quark()) {
         answer = RUNTIME_SECRET_UNAVAILABLE;
@@ -213,10 +210,17 @@ static runtime_secret_answer answer_for_error(const secret_api *api, glib_error 
     return answer;
 }
 
+/**
+ * @implNote The table always holds owner=spisor; entry is added when non-NULL. Every stored item carries
+ * both attributes, so lookup and clear match on both and list matches on the owner alone.
+ */
 static void *attributes_for(const secret_api *api, const char *entry) {
     void *table = api->table_new(api->string_hash, api->string_equal, NULL, NULL);
     if (table != NULL) {
-        api->table_insert(table, (void *)entry_attribute, (void *)entry);
+        api->table_insert(table, (void *)owner_attribute, (void *)owner_value);
+        if (entry != NULL) {
+            api->table_insert(table, (void *)entry_attribute, (void *)entry);
+        }
     }
     return table;
 }
@@ -334,8 +338,8 @@ static int collect_matching_names(const secret_api *api, glib_list *items, const
 
 /**
  * @implNote Items are searched with SECRET_SEARCH_ALL only: no unlock and no secret loading, so listing
- * never prompts. The attribute table is empty so every item of the "spisor" schema comes back, and the
- * prefix is applied here.
+ * never prompts. Every item carries owner=spisor, and the search is by that one attribute because libsecret
+ * 0.21 and later refuse an empty attribute table; the prefix is applied here.
  */
 runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secret_names *names) {
     names->names = NULL;
@@ -344,7 +348,7 @@ runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secr
     if (api == NULL) {
         return RUNTIME_SECRET_UNAVAILABLE;
     }
-    void *attributes = api->table_new(api->string_hash, api->string_equal, NULL, NULL);
+    void *attributes = attributes_for(api, NULL);
     if (attributes == NULL) {
         return RUNTIME_SECRET_FAILED;
     }
