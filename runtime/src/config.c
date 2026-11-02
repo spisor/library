@@ -536,7 +536,7 @@ static int32_t refuse_layer(uint8_t **out, size_t *out_len) {
 }
 
 static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
-    return spisor_fail("this host has no portable layer, so a portable setting has nowhere to go",
+    return spisor_fail("this host has no portable settings layer",
                        "send portable as the portable answer of places.resolve, or set without layer \"portable\" to "
                        "write the application layer",
                        out, out_len);
