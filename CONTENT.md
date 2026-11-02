@@ -33,7 +33,7 @@ target.
 ## The runtime library
 
 `runtime/` builds `runtime`, a shared library holding the behaviour behind a plugin's `ctx.paths`,
-`ctx.config`, `ctx.log` and `ctx.secrets`, so every language binding answers them the same way. It is a **host-only**
+`ctx.config`, `ctx.log` and `ctx.secrets`, so every language binding answers them the same way, and the registry of installed hosts with its change record, commands and install planning, which every host shares. It is a **host-only**
 library: the host opens it for its own use, and it is **never passed in a plugin's `libraries`**. It is
 not a plugin service, and it holds no events and no homes. Until publishing resumes it is opened
 from a local build (`cmake -S . -B build && cmake --build build --config Release` leaves it under
@@ -67,6 +67,8 @@ Service), and that store may prompt the user.
 | `commands.rename` | `places` (`state`), `environment`, `host`, `from`, `to` | `{ name }`, after moving the shim; a held `to` is refused |
 | `commands.delete` | `places` (`state`), `host`, `name` | `{ deleted: true }`, after removing the shim; refused for a required host's last command |
 | `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target` | `{ name }`, after making the shim; a held name is refused |
+| `install.packages` | `places` (`portable`), `item`, `manifestPackages` | `{ packages }`, the item's package under each method, as `{ name, options? }`; pure |
+| `install.plan` | `places` (`portable`), `item`, `manifestPackages`, `methods`, `chosen`, `installedProviders`, `catalog` | `{ steps }`, each `{ "install-provider": <catalog entry> }` or `{ "install": { method, package? } }`; pure |
 
 `places` is what `places.resolve` answers.
 
@@ -188,6 +190,22 @@ added under the same name is never matched by a host's request. `rename`, `delet
 `delete` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
 A name is a letter or digit followed by letters, digits, `-`, `_` or `.`, at most 64; a target is
 an absolute path with no line break.
+
+### Install
+
+`install` decides; it runs nothing, and a host executes the steps it answers. `install.packages`
+merges an item's package for each install method: the manifest's mappings first, then the item's
+entry in `<portable>/packages.json`, whose mapping for a method replaces the manifest's for that
+method only. A mapping is a package name or `{ name, options? }` and is answered in the object form;
+an absent file adds nothing, and a file that is unreadable, not an object, or holding a mapping of
+another shape is refused with a fix naming it.
+
+`install.plan` turns the method the user chose into steps. `chosen` must be one of `methods`.
+`marketplace`, fetching straight from a marketplace source, is built into every host: it is always
+plannable and needs no package or provider. Any other method needs a package mapping and a provider:
+when `chosen` is not in `installedProviders`, the first `catalog` entry whose `installMethod` is
+`chosen` is installed first as an `install-provider` step, and none is a refusal naming the method.
+The caller orders `catalog`, so earlier marketplaces take precedence.
 
 ### The portable layer
 
