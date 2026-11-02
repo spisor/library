@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "path_entry.h"
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
@@ -109,6 +110,16 @@ static const char *profile_line_defect(const cJSON *change) {
     return is_single_line(text_of(change, "line")) ? NULL : "a profile-line change needs one non-empty line";
 }
 
+static const char *path_entry_defect(const cJSON *change) {
+    if (!is_absolute_member(change, "directory")) {
+        return "a path-entry change needs an absolute directory";
+    }
+    if (!is_absolute_member(change, "home")) {
+        return "a path-entry change needs the user's home as an absolute path";
+    }
+    return runtime_path_entry_defect(text_of(change, "directory"));
+}
+
 const char *runtime_change_defect(const cJSON *change) {
     if (!cJSON_IsObject(change)) {
         return "the change is not an object";
@@ -125,11 +136,15 @@ const char *runtime_change_defect(const cJSON *change) {
     if (is_kind(change, "profile-line")) {
         return profile_line_defect(change);
     }
-    return "the change's kind is not one runtime can record (file, directory, json-key, profile-line)";
+    if (is_kind(change, "path-entry")) {
+        return path_entry_defect(change);
+    }
+    return "the change's kind is not one runtime can record (file, directory, json-key, profile-line, path-entry)";
 }
 
 int runtime_change_is_shared(const char *kind) {
-    return kind != NULL && (strcmp(kind, "directory") == 0 || strcmp(kind, "profile-line") == 0);
+    return kind != NULL &&
+           (strcmp(kind, "directory") == 0 || strcmp(kind, "profile-line") == 0 || strcmp(kind, "path-entry") == 0);
 }
 
 static int same_member(const cJSON *left, const cJSON *right, const char *member) {
@@ -204,7 +219,9 @@ static int normalize_member(cJSON *change, const char *member) {
 
 cJSON *runtime_change_normalized(const cJSON *change) {
     cJSON *copy = cJSON_Duplicate(change, 1);
-    if (copy != NULL && (!normalize_member(copy, "path") || !normalize_member(copy, "file"))) {
+    int normal = copy != NULL && normalize_member(copy, "path") && normalize_member(copy, "file") &&
+                 normalize_member(copy, "directory") && normalize_member(copy, "home");
+    if (copy != NULL && !normal) {
         cJSON_Delete(copy);
         copy = NULL;
     }
@@ -220,6 +237,10 @@ int runtime_change_same_target(const cJSON *left, const cJSON *right) {
     }
     if (is_kind(left, "profile-line")) {
         return same_path_member(left, right, "file") && same_member(left, right, "line");
+    }
+    if (is_kind(left, "path-entry")) {
+        return same_path_member(left, right, "directory") &&
+               (RUNTIME_HOST_IS_WINDOWS || same_path_member(left, right, "home"));
     }
     return 0;
 }
@@ -719,6 +740,11 @@ static runtime_change_reversal reverse_profile_line(const cJSON *record, int hel
     return RUNTIME_CHANGE_REVERSED;
 }
 
+runtime_change_step runtime_change_children(const cJSON *change, cJSON **children, runtime_change_note *note) {
+    *children = NULL;
+    return is_kind(change, "path-entry") ? runtime_path_entry_children(change, children, note) : RUNTIME_CHANGE_DONE;
+}
+
 runtime_change_step runtime_change_prepare(const cJSON *change, const cJSON *holder, cJSON **record,
                                            runtime_change_note *note) {
     *record = NULL;
@@ -730,6 +756,9 @@ runtime_change_step runtime_change_prepare(const cJSON *change, const cJSON *hol
     }
     if (is_kind(change, "json-key")) {
         return prepare_json_key(change, record, note);
+    }
+    if (is_kind(change, "path-entry")) {
+        return runtime_path_entry_prepare(change, holder, record, note);
     }
     return prepare_profile_line(change, holder, record, note);
 }
@@ -744,6 +773,9 @@ runtime_change_step runtime_change_perform(const cJSON *change, cJSON *record, r
     if (is_kind(change, "json-key")) {
         return perform_json_key(change, note);
     }
+    if (is_kind(change, "path-entry")) {
+        return runtime_path_entry_perform(change, record, note);
+    }
     return perform_profile_line(change, record, note);
 }
 
@@ -756,6 +788,9 @@ int runtime_change_is_on_disk(const cJSON *record) {
     }
     if (is_kind(record, "json-key")) {
         return json_key_is_on_disk(record);
+    }
+    if (is_kind(record, "path-entry")) {
+        return runtime_path_entry_is_on_disk(record);
     }
     return is_kind(record, "profile-line") && has_line(text_of(record, "file"), text_of(record, "line"));
 }
@@ -773,6 +808,9 @@ runtime_change_reversal runtime_change_reverse(const cJSON *record, int held, ru
     }
     if (is_kind(record, "profile-line")) {
         return reverse_profile_line(record, held, note);
+    }
+    if (is_kind(record, "path-entry")) {
+        return runtime_path_entry_reverse(record, held, note);
     }
     write_note(note, "the record's kind is not one this runtime can reverse");
     return RUNTIME_CHANGE_NOT_REVERSED;

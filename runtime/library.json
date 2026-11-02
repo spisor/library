@@ -458,14 +458,16 @@
               "change": {
                 "type": "object",
                 "properties": {
-                  "kind": { "enum": ["file", "directory", "json-key", "profile-line"] },
+                  "kind": { "enum": ["file", "directory", "json-key", "profile-line", "path-entry"] },
                   "path": { "type": "string", "minLength": 1 },
                   "content": { "type": "string" },
                   "executable": { "type": "boolean" },
                   "file": { "type": "string", "minLength": 1 },
                   "key": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
                   "value": {},
-                  "line": { "type": "string", "minLength": 1 }
+                  "line": { "type": "string", "minLength": 1 },
+                  "directory": { "type": "string", "minLength": 1 },
+                  "home": { "type": "string", "minLength": 1 }
                 },
                 "required": ["kind"]
               }

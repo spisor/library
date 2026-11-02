@@ -1,6 +1,7 @@
 function(runtime_test name)
-    add_executable(${name} ${name}.c ${ARGN})
-    target_link_libraries(${name} PRIVATE runtime_objects ${runtime_secret_store_libraries})
+    add_executable(${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
+    target_link_libraries(${name} PRIVATE runtime_objects ${runtime_secret_store_libraries}
+        ${runtime_path_entry_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
@@ -36,3 +37,5 @@ runtime_test(changes_test $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $
 if(NOT WIN32)
     target_link_libraries(changes_test PRIVATE Threads::Threads)
 endif()
+
+runtime_test(path_entry_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
