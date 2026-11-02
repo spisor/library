@@ -61,6 +61,8 @@ Service), and that store may prompt the user.
 | `registry.get` | `places` (`state`), `id` | `{ registration }`, or `{}` for an unknown host |
 | `registry.list` | `places` (`state`) | `{ hosts: [{ registration, orphan }], unreadable }`, sorted by id |
 | `registry.forget` | `places` (`state`, `cache`), `id` | `{ forgotten }`, after deleting the record and the host's folders; refused while a change is not reversed |
+| `changes.apply` | `places` (`state`), `host`, `change` | `{ recorded, sequence? }`, after making the change and appending it to the host's `changes` |
+| `changes.reverse` | `places` (`state`), `host` | `{ reversed, drifted }`, after undoing every unreversed change, newest first |
 
 `places` is what `places.resolve` answers.
 
@@ -96,6 +98,33 @@ host. `list` answers every host sorted by id with an `orphan` flag, true when `p
 longer exists, plus the ids of registrations it could not read in `unreadable`. `forget` deletes the
 registration and the host's two folders, and is refused while a change in `changes` is not marked
 `"reversed": true`. A registration that exists but cannot be read is reported and never overwritten.
+
+### The change record
+
+Everything a host changes outside its own folders goes through `changes.apply`, so removing it can
+replay the record and leave the machine as it was, even once the host's binary is gone. Each entry
+in `changes` is `{ sequence, kind, state, reversed, ... }`, and every path in it is absolute:
+
+| kind | the change carries | the record keeps | reversal |
+|---|---|---|---|
+| `file` | `path`, `content`, `executable`? | `path` | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
+| `directory` | `path` | `path` | removes it only once empty |
+| `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
+| `profile-line` | `file`, `line` | `file`, `line`, `separated` | removes the exact line, and the newline added before it |
+
+A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
+not a readable JSON object, a `profile-line` over a missing file, and a kind runtime does not know
+is refused before anything is written. A `directory` or `profile-line` the user already has is not
+recorded (`recorded: false`). Both are reference-counted across every registration: one held by
+another unreversed record, of this host or another, is recorded again and stays until the last
+holder is reversed; a registration that cannot be read counts as a holder.
+
+The entry is stored with `state: "pending"` before the disk is touched and marked `"applied"`
+after; a pending entry found by the next call is completed when its effect is on the disk and
+dropped otherwise. `reverse` stores `"reversed": true` (and `"drifted": true` for a drift) after
+each change, so an interrupted removal resumes where it stopped and reverses nothing twice.
+`reversed` counts the drifted entries too. A JSON file is rewritten as `JSON.stringify(value, null,
+2)` with its original final newline. `runtime_changes_apply` is the same operation for C callers.
 
 ### The portable layer
 

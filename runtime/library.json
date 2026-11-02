@@ -438,6 +438,89 @@
           }
         }
       ]
+    },
+    {
+      "id": "changes",
+      "functions": [
+        {
+          "name": "apply",
+          "symbol": "runtime_changes_apply_json",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "host": { "type": "string", "minLength": 1 },
+              "change": {
+                "type": "object",
+                "properties": {
+                  "kind": { "enum": ["file", "directory", "json-key", "profile-line"] },
+                  "path": { "type": "string", "minLength": 1 },
+                  "content": { "type": "string" },
+                  "executable": { "type": "boolean" },
+                  "file": { "type": "string", "minLength": 1 },
+                  "key": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                  "value": {},
+                  "line": { "type": "string", "minLength": 1 }
+                },
+                "required": ["kind"]
+              }
+            },
+            "required": ["places", "host", "change"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "recorded": { "type": "boolean" },
+              "sequence": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["recorded"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reverse",
+          "symbol": "runtime_changes_reverse_json",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "host": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "host"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "reversed": { "type": "integer", "minimum": 0 },
+              "drifted": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sequence": { "type": "integer", "minimum": 1 },
+                    "kind": { "type": "string" },
+                    "detail": { "type": "string" }
+                  },
+                  "required": ["sequence", "kind", "detail"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["reversed", "drifted"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

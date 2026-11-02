@@ -16,6 +16,7 @@
 #else
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -222,6 +223,89 @@ int runtime_remove_tree(const char *path) {
     return remove_children(path) && delete_directory_at(path);
 }
 
+static int is_missing_error(DWORD error) {
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+}
+
+runtime_entry_kind runtime_probe_entry(const char *path) {
+    DWORD attributes = attributes_of(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_MISSING : RUNTIME_ENTRY_UNKNOWN;
+    }
+    return is_real_directory(attributes) ? RUNTIME_ENTRY_DIRECTORY : RUNTIME_ENTRY_OTHER;
+}
+
+static int write_all(HANDLE handle, const uint8_t *bytes, size_t length) {
+    size_t written = 0;
+    while (written < length) {
+        DWORD chunk = length - written > 0x40000000 ? 0x40000000 : (DWORD)(length - written);
+        DWORD wrote = 0;
+        if (!WriteFile(handle, bytes + written, chunk, &wrote, NULL) || wrote == 0) {
+            return 0;
+        }
+        written += wrote;
+    }
+    return 1;
+}
+
+runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
+    (void)executable;
+    wchar_t *wide = to_wide(path);
+    if (wide == NULL) {
+        return RUNTIME_ENTRY_FAILED;
+    }
+    HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        DWORD error = GetLastError();
+        free(wide);
+        int exists = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
+        return exists ? RUNTIME_ENTRY_EXISTS : RUNTIME_ENTRY_FAILED;
+    }
+    int written = write_all(handle, bytes, length);
+    int closed = CloseHandle(handle) != 0;
+    if (!written || !closed) {
+        DeleteFileW(wide);
+    }
+    free(wide);
+    return written && closed ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_create_directory(const char *path) {
+    wchar_t *wide = to_wide(path);
+    int created = wide != NULL && CreateDirectoryW(wide, NULL) != 0;
+    free(wide);
+    return created || runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_remove_file_entry(const char *path) {
+    DWORD attributes = attributes_of(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    }
+    if (is_reparse_point(attributes)) {
+        return delete_link_at(path, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) ? RUNTIME_ENTRY_DONE
+                                                                                   : RUNTIME_ENTRY_FAILED;
+    }
+    if (is_real_directory(attributes)) {
+        return RUNTIME_ENTRY_KEPT;
+    }
+    return delete_file_at(path) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
+    DWORD attributes = attributes_of(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    }
+    if (!is_real_directory(attributes)) {
+        return RUNTIME_ENTRY_KEPT;
+    }
+    if (delete_directory_at(path)) {
+        return RUNTIME_ENTRY_DONE;
+    }
+    return GetLastError() == ERROR_DIR_NOT_EMPTY ? RUNTIME_ENTRY_KEPT : RUNTIME_ENTRY_FAILED;
+}
+
 #else
 
 static int append_directory_entry(entry_buffer *buffer, const char *parent, const char *name) {
@@ -257,6 +341,76 @@ int runtime_remove_tree(const char *path) {
         return unlink(path) == 0;
     }
     return remove_children(path) && rmdir(path) == 0;
+}
+
+static int is_missing_errno(int error) {
+    return error == ENOENT || error == ENOTDIR;
+}
+
+runtime_entry_kind runtime_probe_entry(const char *path) {
+    struct stat status;
+    if (lstat(path, &status) != 0) {
+        return is_missing_errno(errno) ? RUNTIME_ENTRY_MISSING : RUNTIME_ENTRY_UNKNOWN;
+    }
+    return S_ISDIR(status.st_mode) ? RUNTIME_ENTRY_DIRECTORY : RUNTIME_ENTRY_OTHER;
+}
+
+static int write_all(int descriptor, const uint8_t *bytes, size_t length) {
+    size_t written = 0;
+    while (written < length) {
+        ssize_t wrote = write(descriptor, bytes + written, length - written);
+        if (wrote < 0 && errno == EINTR) {
+            continue;
+        }
+        if (wrote <= 0) {
+            return 0;
+        }
+        written += (size_t)wrote;
+    }
+    return 1;
+}
+
+runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
+    int descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, executable ? 0777 : 0666);
+    if (descriptor < 0) {
+        return errno == EEXIST ? RUNTIME_ENTRY_EXISTS : RUNTIME_ENTRY_FAILED;
+    }
+    int written = write_all(descriptor, bytes, length);
+    int closed = close(descriptor) == 0;
+    if (!written || !closed) {
+        unlink(path);
+    }
+    return written && closed ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_create_directory(const char *path) {
+    int created = mkdir(path, 0777) == 0;
+    return created || runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_remove_file_entry(const char *path) {
+    struct stat status;
+    if (lstat(path, &status) != 0) {
+        return is_missing_errno(errno) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    }
+    if (S_ISDIR(status.st_mode)) {
+        return RUNTIME_ENTRY_KEPT;
+    }
+    return unlink(path) == 0 ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
+    struct stat status;
+    if (lstat(path, &status) != 0) {
+        return is_missing_errno(errno) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    }
+    if (!S_ISDIR(status.st_mode)) {
+        return RUNTIME_ENTRY_KEPT;
+    }
+    if (rmdir(path) == 0) {
+        return RUNTIME_ENTRY_DONE;
+    }
+    return errno == ENOTEMPTY || errno == EEXIST ? RUNTIME_ENTRY_KEPT : RUNTIME_ENTRY_FAILED;
 }
 
 #endif
