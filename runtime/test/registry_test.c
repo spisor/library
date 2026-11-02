@@ -18,6 +18,7 @@
 #endif
 
 #include "check.h"
+#include "host_provenance.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
@@ -72,13 +73,7 @@ static cJSON *registration_for(const char *id, const char *version, const char *
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", version);
     cJSON_AddStringToObject(registration, "home", "/home/claude");
-    cJSON *provenance = cJSON_AddObjectToObject(registration, "provenance");
-    cJSON_AddStringToObject(provenance, "method", method);
-    cJSON_AddStringToObject(provenance, "version", version);
-    cJSON_AddStringToObject(provenance, "location", location);
-    cJSON_AddStringToObject(provenance, "os", "linux");
-    cJSON_AddStringToObject(provenance, "architecture", "x64");
-    cJSON_AddStringToObject(provenance, "installedAt", "2026-11-02T10:00:00Z");
+    add_host_provenance(registration, method, version, location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 1);
     return registration;
 }
@@ -441,6 +436,52 @@ static void an_unusable_registration_is_refused(void) {
     CHECK(!host_file_exists(&place, "h"));
 }
 
+static int refusal_message_names(cJSON *request, const char *text) {
+    answer result = call(runtime_registry_register, request);
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
+    int names = is_refusal(&result) && message != NULL && strstr(message, text) != NULL;
+    if (!names) {
+        fprintf(stderr, "expected a refusal message naming \"%s\", got status %d %s\n", text, (int)result.status,
+                message == NULL ? "" : message);
+    }
+    cJSON_Delete(result.tree);
+    return names;
+}
+
+static cJSON *with_provenance_member(const char *member, cJSON *value) {
+    cJSON *registration = registration_for("h", "1", "npm", "/x");
+    cJSON *provenance = cJSON_GetObjectItemCaseSensitive(registration, "provenance");
+    cJSON_DeleteItemFromObjectCaseSensitive(provenance, member);
+    if (value != NULL) {
+        cJSON_AddItemToObject(provenance, member, value);
+    }
+    return registration;
+}
+
+static void a_provenance_without_its_platform_or_time_is_refused(void) {
+    static const char *const members[] = {"os", "architecture", "installedAt"};
+    static const char *const bad_times[] = {"2026-11-02", "2026-11-02T10:00:00", "2026-11-02T10:00:00+01:00",
+                                            "2026-11-02 10:00:00Z", "yesterday"};
+    scratch place;
+    fresh_scratch(&place, "provenance");
+    for (size_t index = 0; index < sizeof members / sizeof members[0]; index++) {
+        CHECK(refusal_message_names(register_request(&place, with_provenance_member(members[index], NULL)),
+                                    members[index]));
+        CHECK(refuses(runtime_registry_register,
+                      register_request(&place, with_provenance_member(members[index], cJSON_CreateString("")))));
+        CHECK(refuses(runtime_registry_register,
+                      register_request(&place, with_provenance_member(members[index], cJSON_CreateNumber(1)))));
+    }
+    for (size_t index = 0; index < sizeof bad_times / sizeof bad_times[0]; index++) {
+        cJSON *time = cJSON_CreateString(bad_times[index]);
+        CHECK(refusal_message_names(register_request(&place, with_provenance_member("installedAt", time)),
+                                    "installedAt"));
+    }
+    CHECK(register_host(&place, with_provenance_member("installedAt",
+                                                       cJSON_CreateString("2026-11-02T10:00:00.123Z"))));
+    CHECK(host_file_exists(&place, "h"));
+}
+
 static void unusable_places_are_refused(void) {
     scratch place;
     fresh_scratch(&place, "places");
@@ -600,6 +641,7 @@ int main(void) {
     forgetting_an_unknown_host_succeeds_and_says_nothing_was_there();
     a_bad_id_is_refused_everywhere();
     an_unusable_registration_is_refused();
+    a_provenance_without_its_platform_or_time_is_refused();
     unusable_places_are_refused();
     an_unreadable_registration_is_reported_and_never_overwritten();
     forget_deletes_links_and_never_follows_them();

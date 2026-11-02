@@ -105,6 +105,14 @@ longer exists, plus the ids of registrations it could not read in `unreadable`. 
 registration and the host's two folders, and is refused while a change in `changes` is not marked
 `"reversed": true`. A registration that exists but cannot be read is reported and never overwritten.
 
+A provenance is `{ method, version, location, os, architecture, installedAt, ... }`, every named
+member a non-empty string and kept whole with any further members the host adds: `method` is how
+the host was installed (`npm`, `winget`, `forebay-installer`), `version` the version that method
+installed, `location` the absolute path it lives at, `os` and `architecture` the platform it was
+installed for, and `installedAt` when, as an ISO 8601 UTC timestamp, `YYYY-MM-DDTHH:MM:SS` with an
+optional fraction and a closing `Z`, which is what JavaScript's `toISOString` writes. Only that
+shape is checked, not the calendar.
+
 ### The change record
 
 Everything a host changes outside its own folders goes through `changes.apply`, so removing it can

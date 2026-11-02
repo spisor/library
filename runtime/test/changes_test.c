@@ -21,6 +21,7 @@
 #include "change_reversal_hooks.h"
 #include "changes.h"
 #include "check.h"
+#include "host_provenance.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
@@ -183,10 +184,7 @@ static void register_host_at(const scratch *place, const char *id, const char *l
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
-    cJSON *provenance = cJSON_AddObjectToObject(registration, "provenance");
-    cJSON_AddStringToObject(provenance, "method", "npm");
-    cJSON_AddStringToObject(provenance, "version", "1.0.0");
-    cJSON_AddStringToObject(provenance, "location", location);
+    add_host_provenance(registration, "npm", "1.0.0", location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 0);
     answer result = call(runtime_registry_register, request);
     CHECK(result.status == SPISOR_STATUS_SUCCESS);

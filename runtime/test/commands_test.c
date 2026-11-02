@@ -29,6 +29,7 @@
 #include "commands.h"
 #include "directory_tree.h"
 #include "registry.h"
+#include "host_provenance.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -106,10 +107,7 @@ static void register_host(const scratch *place, const char *id, int requires_com
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
-    cJSON *provenance = cJSON_AddObjectToObject(registration, "provenance");
-    cJSON_AddStringToObject(provenance, "method", "npm");
-    cJSON_AddStringToObject(provenance, "version", "1.0.0");
-    cJSON_AddStringToObject(provenance, "location", place->directory);
+    add_host_provenance(registration, "npm", "1.0.0", place->directory);
     cJSON_AddBoolToObject(registration, "requiresCommand", requires_command);
     answer result = call(runtime_registry_register, request);
     CHECK(result.status == SPISOR_STATUS_SUCCESS);
