@@ -19,6 +19,7 @@
 
 #include "check.h"
 #include "directory_tree.h"
+#include "links.h"
 #include "registry.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -432,6 +433,10 @@ static void an_unusable_registration_is_refused(void) {
     cJSON_DeleteItemFromObjectCaseSensitive(no_requirement, "requiresCommand");
     CHECK(refuses(runtime_registry_register, register_request(&place, no_requirement)));
     CHECK(refuses(runtime_registry_register, request_for(&place)));
+    CHECK(refusal_names(runtime_registry_register, register_request(&place, registration_for("h", "1", "npm", "relative/binary")), "absolute"));
+    cJSON *no_method = registration_for("h", "1", "npm", "/x");
+    cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(no_method, "provenance"), "method");
+    CHECK(refuses(runtime_registry_register, register_request(&place, no_method)));
     CHECK(!host_file_exists(&place, "h"));
 }
 
@@ -482,6 +487,107 @@ static void an_unreadable_registration_is_reported_and_never_overwritten(void) {
     CHECK(refuses(runtime_registry_get, id_request(&place, "broken")));
 }
 
+#ifdef _WIN32
+static int create_directory_link(const char *link_path, const char *target_path) {
+    wchar_t wide_link[1024];
+    wchar_t wide_target[1024];
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, link_path, -1, wide_link, 1024) == 0 ||
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, target_path, -1, wide_target, 1024) == 0) {
+        return 0;
+    }
+    for (wchar_t *cursor = wide_target; *cursor != 0; cursor++) {
+        *cursor = *cursor == L'/' ? L'\\' : *cursor;
+    }
+    if (CreateSymbolicLinkW(wide_link, wide_target,
+                            SYMBOLIC_LINK_FLAG_DIRECTORY | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) {
+        return 1;
+    }
+    return is_privilege_refusal(GetLastError()) ? LINK_PRIVILEGE_MISSING : 0;
+}
+
+static int create_directory_link_or_skip(const char *link_path, const char *target_path) {
+    int created = create_directory_link(link_path, target_path);
+    if (created == LINK_PRIVILEGE_MISSING && getenv("CI") == NULL) {
+        links_skipped = 1;
+        printf("SKIP symlink tests: this platform refuses to create symlinks without privilege\n");
+        return 0;
+    }
+    CHECK(created == 1);
+    return created == 1;
+}
+
+static DWORD attributes_of_file(const char *path) {
+    wchar_t wide[1024];
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, 1024);
+    return GetFileAttributesW(wide);
+}
+
+static void set_read_only(const char *path) {
+    wchar_t wide[1024];
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, 1024);
+    SetFileAttributesW(wide, FILE_ATTRIBUTE_READONLY);
+}
+
+static void clear_read_only(const char *path) {
+    wchar_t wide[1024];
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, 1024);
+    SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
+}
+#else
+static int create_directory_link_or_skip(const char *link_path, const char *target_path) {
+    return create_link_or_skip(link_path, target_path);
+}
+
+static unsigned long attributes_of_file(const char *path) {
+    (void)path;
+    return 0;
+}
+
+static void set_read_only(const char *path) {
+    (void)path;
+}
+
+static void clear_read_only(const char *path) {
+    (void)path;
+}
+#endif
+
+static void forget_deletes_links_and_never_follows_them(void) {
+    scratch place;
+    fresh_scratch(&place, "links");
+    char outside_directory[1300];
+    char outside_file[1300];
+    char outside_content[1400];
+    snprintf(outside_directory, sizeof outside_directory, "%s/outside", place.directory);
+    snprintf(outside_file, sizeof outside_file, "%s/outside-file.txt", place.directory);
+    snprintf(outside_content, sizeof outside_content, "%s/keep.txt", outside_directory);
+    CHECK(spisor_make_directories(outside_directory) == 1);
+    write_raw_file(outside_content, "kept");
+    write_raw_file(outside_file, "kept");
+    set_read_only(outside_file);
+    unsigned long attributes_before = (unsigned long)attributes_of_file(outside_file);
+
+    CHECK(register_host(&place, registration_for("linked", "1.0.0", "npm", place.directory)));
+    make_host_file(&place, "linked", "own.txt", 0);
+    char directory_link[1500];
+    char file_link[1500];
+    snprintf(directory_link, sizeof directory_link, "%s/hosts/linked/directory-link", place.state);
+    snprintf(file_link, sizeof file_link, "%s/hosts/linked/file-link", place.state);
+    int linked = create_directory_link_or_skip(directory_link, outside_directory) &&
+                 create_link_or_skip(file_link, outside_file);
+    if (linked) {
+        answer forgotten = call(runtime_registry_forget, id_request(&place, "linked"));
+        CHECK(forgotten.status == SPISOR_STATUS_SUCCESS);
+        cJSON_Delete(forgotten.tree);
+        CHECK(!host_directory_exists(place.state, "linked"));
+        CHECK(!is_link(directory_link) && !is_link(file_link));
+        expect_file_bytes(outside_content, "kept", "directory link target contents");
+        expect_file_bytes(outside_file, "kept", "file link target contents");
+        CHECK((unsigned long)attributes_of_file(outside_file) == attributes_before);
+    }
+    clear_read_only(outside_file);
+}
+
 int main(void) {
     register_then_get();
     re_registration_keeps_commands_and_changes_and_replaces_the_rest();
@@ -495,5 +601,6 @@ int main(void) {
     an_unusable_registration_is_refused();
     unusable_places_are_refused();
     an_unreadable_registration_is_reported_and_never_overwritten();
-    return check_summary("registry_test");
+    forget_deletes_links_and_never_follows_them();
+    return summary_with_links("registry_test");
 }

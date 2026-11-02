@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "file_presence.h"
 #include "paths.h"
 #include "segment.h"
 #include "spisor/file.h"
@@ -194,6 +195,25 @@ static int32_t refuse_answer(runtime_registry_answer answer, const registry_requ
     }
 }
 
+static int has_text(const cJSON *object, const char *member) {
+    const char *text = string_member(object, member);
+    return text != NULL && text[0] != 0;
+}
+
+static const char *provenance_defect_of(const cJSON *provenance) {
+    if (!cJSON_IsObject(provenance)) {
+        return "the registration carries no provenance object";
+    }
+    if (!has_text(provenance, "method") || !has_text(provenance, "version")) {
+        return "the registration provenance needs a method and a version, both strings";
+    }
+    if (!has_text(provenance, "location") ||
+        !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, string_member(provenance, "location"))) {
+        return "the registration provenance location is not an absolute path";
+    }
+    return NULL;
+}
+
 static const char *registration_defect(const cJSON *registration) {
     const char *id = string_member(registration, "id");
     const cJSON *home = cJSON_GetObjectItemCaseSensitive(registration, "home");
@@ -216,8 +236,9 @@ static const char *registration_defect(const cJSON *registration) {
     if (application != NULL && !cJSON_IsObject(application)) {
         return "the registration's application is not an object";
     }
-    if (!cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(registration, "provenance"))) {
-        return "the registration carries no provenance object";
+    const char *provenance_defect = provenance_defect_of(cJSON_GetObjectItemCaseSensitive(registration, "provenance"));
+    if (provenance_defect != NULL) {
+        return provenance_defect;
     }
     if (!cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(registration, "requiresCommand"))) {
         return "the registration's requiresCommand is not a boolean";
@@ -228,7 +249,8 @@ static const char *registration_defect(const cJSON *registration) {
 static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *out_len) {
     return spisor_fail(defect,
                        "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\"?, \"application\"?, "
-                       "\"provenance\", \"requiresCommand\"}}",
+                       "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, ...}, "
+                       "\"requiresCommand\"}}",
                        out, out_len);
 }
 
@@ -340,7 +362,8 @@ static int32_t get_host(const registry_request *request, uint8_t **out, size_t *
 static int is_orphan(const cJSON *registration) {
     const cJSON *provenance = cJSON_GetObjectItemCaseSensitive(registration, "provenance");
     const char *location = string_member(provenance, "location");
-    return location == NULL || !spisor_file_exists(location);
+    return location == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, location) ||
+           spisor_probe_file(location) == SPISOR_FILE_MISSING;
 }
 
 static cJSON *listed_host(cJSON *registration) {

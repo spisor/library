@@ -330,7 +330,15 @@
                   "version": { "type": "string", "minLength": 1 },
                   "home": { "type": "string" },
                   "application": { "type": "object" },
-                  "provenance": { "type": "object" },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "method": { "type": "string", "minLength": 1 },
+                      "version": { "type": "string", "minLength": 1 },
+                      "location": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["method", "version", "location"]
+                  },
                   "requiresCommand": { "type": "boolean" }
                 },
                 "required": ["id", "kind", "version", "provenance", "requiresCommand"]
