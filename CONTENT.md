@@ -105,6 +105,14 @@ longer exists, plus the ids of registrations it could not read in `unreadable`. 
 registration and the host's two folders, and is refused while a change in `changes` is not marked
 `"reversed": true`. A registration that exists but cannot be read is reported and never overwritten.
 
+A provenance is `{ method, version, location, os, architecture, installedAt, ... }`, every named
+member a non-empty string and kept whole with any further members the host adds: `method` is how
+the host was installed (`npm`, `winget`, `forebay-installer`), `version` the version that method
+installed, `location` the absolute path it lives at, `os` and `architecture` the platform it was
+installed for, and `installedAt` when, as an ISO 8601 UTC timestamp, `YYYY-MM-DDTHH:MM:SS` with an
+optional fraction and a closing `Z`, which is what JavaScript's `toISOString` writes. Only that
+shape is checked, not the calendar.
+
 ### The change record
 
 Everything a host changes outside its own folders goes through `changes.apply`, so removing it can
@@ -124,9 +132,11 @@ equal so, ignoring ASCII case on Windows:
 A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
 not a readable JSON object, a `profile-line` over a missing file unless it asks to `create` it, and a kind runtime does not know
 is refused before anything is written. A `directory` or `profile-line` the user already has, or a
-`json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
-another unreversed record, of this host or another, is recorded again and stays until the last
-holder is reversed; a registration that cannot be read counts as a holder. A change this host
+`json-key` already holding its value, is not recorded (`recorded: false`). Exactly three kinds are
+reference-counted across every registration: `profile-line`, `directory` and `path-entry`. One held
+by another unreversed record, of this host or another, is recorded again and stays until the last
+holder is reversed; a registration that cannot be read counts as a holder. A `json-key` and a `file`
+are not: each record is undone on its own. A change this host
 already holds unreversed (a `file` at the same path, a `json-key` setting the same value at the same
 key, or the same target of a shared kind) is answered with that record's sequence and `recorded:
 false`, and nothing is recorded, so a host may apply its changes on every start. A `file` asked
@@ -182,6 +192,8 @@ executable on the `PATH` the call carries, `<state>/bin` left out: on Windows `<
 with an extension of `PATHEXT` (`.COM;.EXE;.BAT;.CMD` when it is absent), on POSIX an executable
 `<directory>/<name>`. `request` gives a held name's first free fallback, `<name>2`, `<name>3` and
 so on, so a host asking for `cc` where the C compiler is installed gets `cc2` and never shadows it.
+`request`, `rename` and `add` refuse a call whose `environment` carries no `PATH` string (`Path` on
+Windows matches too), since without one every name would look free.
 A host asking again for a name it requested is answered with that entry as it stands, and its
 shim is rewritten when the target moved, but the entry itself is never changed by a host: a name
 the user renamed stays renamed, a command the user deleted stays deleted, and a command the user

@@ -21,6 +21,7 @@
 #include "change_reversal_hooks.h"
 #include "changes.h"
 #include "check.h"
+#include "host_provenance.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
@@ -28,6 +29,7 @@
 #include "registry.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
+#include "tree_snapshot.h"
 
 typedef int32_t (*changes_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
@@ -101,59 +103,9 @@ static int home_entry_exists(const scratch *place, const char *relative) {
     return runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
 }
 
-static void append_snapshot(const char *directory, const char *relative, char **snapshot, size_t *length);
-
-static void append_text(char **snapshot, size_t *length, const char *text, size_t text_length) {
-    char *grown = realloc(*snapshot, *length + text_length + 1);
-    CHECK(grown != NULL);
-    if (grown == NULL) {
-        return;
-    }
-    memcpy(grown + *length, text, text_length);
-    *length += text_length;
-    grown[*length] = '\0';
-    *snapshot = grown;
-}
-
-static void append_entry(const char *directory, const char *relative, const runtime_directory_entry *entry,
-                         char **snapshot, size_t *length) {
-    char path[2048];
-    char name[2048];
-    snprintf(path, sizeof path, "%s/%s", directory, entry->name);
-    snprintf(name, sizeof name, "%s/%s", relative, entry->name);
-    char header[2200];
-    if (entry->is_directory) {
-        snprintf(header, sizeof header, "directory %s\n", name);
-        append_text(snapshot, length, header, strlen(header));
-        append_snapshot(path, name, snapshot, length);
-        return;
-    }
-    size_t content_length = 0;
-    uint8_t *content = spisor_read_file(path, &content_length);
-    snprintf(header, sizeof header, "file %s %zu\n", name, content_length);
-    append_text(snapshot, length, header, strlen(header));
-    if (content != NULL) {
-        append_text(snapshot, length, (const char *)content, content_length);
-    }
-    free(content);
-}
-
-static void append_snapshot(const char *directory, const char *relative, char **snapshot, size_t *length) {
-    runtime_directory_listing listing;
-    CHECK(runtime_list_directory(directory, &listing) == 1);
-    for (size_t index = 0; index < listing.count; index++) {
-        append_entry(directory, relative, &listing.entries[index], snapshot, length);
-    }
-    runtime_free_directory_listing(&listing);
-}
-
 /** Every name, kind and byte under the scratch home, freed with free. */
 static char *snapshot_of(const scratch *place) {
-    char *snapshot = NULL;
-    size_t length = 0;
-    append_text(&snapshot, &length, "", 0);
-    append_snapshot(place->home, "", &snapshot, &length);
-    return snapshot;
+    return tree_snapshot(place->home, NULL);
 }
 
 static cJSON *places_for(const scratch *place) {
@@ -183,10 +135,7 @@ static void register_host_at(const scratch *place, const char *id, const char *l
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
-    cJSON *provenance = cJSON_AddObjectToObject(registration, "provenance");
-    cJSON_AddStringToObject(provenance, "method", "npm");
-    cJSON_AddStringToObject(provenance, "version", "1.0.0");
-    cJSON_AddStringToObject(provenance, "location", location);
+    add_host_provenance(registration, "npm", "1.0.0", location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 0);
     answer result = call(runtime_registry_register, request);
     CHECK(result.status == SPISOR_STATUS_SUCCESS);
@@ -920,6 +869,24 @@ static void a_link_left_where_a_file_was_is_removed_never_followed(void) {
     free(kept);
 }
 
+static void an_appended_line_is_crlf_only_when_every_line_of_the_profile_is(void) {
+    scratch place;
+    fresh_scratch(&place, "line-endings");
+    register_host(&place, "alpha");
+    write_home_file(&place, ".bashrc", "export A=1\nexport B=2\r\nexport C=3\n");
+    write_home_file(&place, ".zshrc", "export A=1\r\nexport B=2\r\n");
+    char *before = snapshot_of(&place);
+    CHECK(applied_sequence(&place, "alpha", profile_line_change(&place, ".bashrc", path_line)) == 1);
+    CHECK(applied_sequence(&place, "alpha", profile_line_change(&place, ".zshrc", path_line)) == 2);
+    home_file_is(&place, ".bashrc", "export A=1\nexport B=2\r\nexport C=3\nexport PATH=\"/opt/spisor/bin:$PATH\"\n");
+    home_file_is(&place, ".zshrc", "export A=1\r\nexport B=2\r\nexport PATH=\"/opt/spisor/bin:$PATH\"\r\n");
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    char *after = snapshot_of(&place);
+    check_text(after, before, "home after reversing the lines");
+    free(before);
+    free(after);
+}
+
 int main(void) {
     each_kind_reverses_to_the_bytes_before();
     a_key_the_user_changed_is_left_and_reported();
@@ -938,5 +905,6 @@ int main(void) {
     a_file_asked_for_new_content_is_rewritten_under_its_record();
     the_c_entry_point_records_like_the_json_one();
     a_link_left_where_a_file_was_is_removed_never_followed();
+    an_appended_line_is_crlf_only_when_every_line_of_the_profile_is();
     return summary_with_links("changes_test");
 }

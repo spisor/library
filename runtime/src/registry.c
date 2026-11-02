@@ -201,6 +201,45 @@ static int has_text(const cJSON *object, const char *member) {
     return text != NULL && text[0] != 0;
 }
 
+static int is_digit_run(const char *text, size_t start, size_t count) {
+    for (size_t index = start; index < start + count; index++) {
+        if (text[index] < '0' || text[index] > '9') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int is_fraction_then_zone(const char *text) {
+    if (*text == '.') {
+        text++;
+        if (*text < '0' || *text > '9') {
+            return 0;
+        }
+        while (*text >= '0' && *text <= '9') {
+            text++;
+        }
+    }
+    return strcmp(text, "Z") == 0;
+}
+
+/**
+ * Whether text has the shape of an ISO 8601 UTC timestamp, YYYY-MM-DDTHH:MM:SS with an optional
+ * fraction and a closing Z, as JavaScript's toISOString writes it.
+ *
+ * @implNote Only the shape is checked, never the calendar: the stamp is a record of when, read by
+ * people and by an update, and nothing computes with it.
+ */
+static int is_utc_timestamp(const char *text) {
+    if (text == NULL || strlen(text) < 20) {
+        return 0;
+    }
+    return is_digit_run(text, 0, 4) && text[4] == '-' && is_digit_run(text, 5, 2) && text[7] == '-' &&
+           is_digit_run(text, 8, 2) && text[10] == 'T' && is_digit_run(text, 11, 2) && text[13] == ':' &&
+           is_digit_run(text, 14, 2) && text[16] == ':' && is_digit_run(text, 17, 2) &&
+           is_fraction_then_zone(text + 19);
+}
+
 static const char *provenance_defect_of(const cJSON *provenance) {
     if (!cJSON_IsObject(provenance)) {
         return "the registration carries no provenance object";
@@ -211,6 +250,12 @@ static const char *provenance_defect_of(const cJSON *provenance) {
     if (!has_text(provenance, "location") ||
         !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, string_member(provenance, "location"))) {
         return "the registration provenance location is not an absolute path";
+    }
+    if (!has_text(provenance, "os") || !has_text(provenance, "architecture")) {
+        return "the registration provenance needs an os and an architecture, both non-empty strings";
+    }
+    if (!is_utc_timestamp(string_member(provenance, "installedAt"))) {
+        return "the registration provenance installedAt is not an ISO 8601 UTC timestamp like 2026-11-02T10:00:00Z";
     }
     return NULL;
 }
@@ -250,7 +295,8 @@ static const char *registration_defect(const cJSON *registration) {
 static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *out_len) {
     return spisor_fail(defect,
                        "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\"?, \"application\"?, "
-                       "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, ...}, "
+                       "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, \"os\", \"architecture\", "
+                       "\"installedAt\": <ISO 8601 UTC>, ...}, "
                        "\"requiresCommand\"}}",
                        out, out_len);
 }

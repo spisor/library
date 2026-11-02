@@ -29,6 +29,7 @@
 #include "commands.h"
 #include "directory_tree.h"
 #include "registry.h"
+#include "host_provenance.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -106,10 +107,7 @@ static void register_host(const scratch *place, const char *id, int requires_com
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
-    cJSON *provenance = cJSON_AddObjectToObject(registration, "provenance");
-    cJSON_AddStringToObject(provenance, "method", "npm");
-    cJSON_AddStringToObject(provenance, "version", "1.0.0");
-    cJSON_AddStringToObject(provenance, "location", place->directory);
+    add_host_provenance(registration, "npm", "1.0.0", place->directory);
     cJSON_AddBoolToObject(registration, "requiresCommand", requires_command);
     answer result = call(runtime_registry_register, request);
     CHECK(result.status == SPISOR_STATUS_SUCCESS);
@@ -490,6 +488,45 @@ static void rename_and_add_refuse_a_held_name(void) {
     CHECK(reverse_host(&place, "beta"));
 }
 
+static cJSON *without_path(cJSON *request, const char *shape) {
+    cJSON_DeleteItemFromObjectCaseSensitive(request, "environment");
+    if (strcmp(shape, "no environment") == 0) {
+        return request;
+    }
+    cJSON *environment = cJSON_AddObjectToObject(request, "environment");
+    if (strcmp(shape, "a PATH that is not text") == 0) {
+        cJSON_AddNumberToObject(environment, "PATH", 1);
+    }
+    cJSON_AddStringToObject(environment, "SHELL", "/bin/sh");
+    return request;
+}
+
+static void a_call_without_a_path_is_refused_and_changes_nothing(void) {
+    static const char *const shapes[] = {"no environment", "no PATH", "a PATH that is not text"};
+    scratch place;
+    fresh_scratch(&place, "no-path");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    for (size_t index = 0; index < sizeof shapes / sizeof shapes[0]; index++) {
+        char search[2500];
+        default_search(&place, search, sizeof search);
+        CHECK(is_refused(call(runtime_commands_request,
+                              without_path(naming_request(&place, "alpha", search, "cc", "tool"), shapes[index])),
+                         shapes[index]));
+        CHECK(is_refused(call(runtime_commands_add,
+                              without_path(naming_request(&place, "alpha", search, "ad", "tool"), shapes[index])),
+                         shapes[index]));
+        cJSON *rename = host_request(&place, "alpha");
+        cJSON_AddStringToObject(rename, "from", "oc");
+        cJSON_AddStringToObject(rename, "to", "rn");
+        CHECK(is_refused(call(runtime_commands_rename, without_path(rename, shapes[index])), shapes[index]));
+    }
+    CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "ad") && lacks_shim(&place, "rn"));
+    CHECK(has_shim(&place, "oc"));
+    CHECK(entry_is(&place, "alpha", "oc", "oc", "host", "active"));
+    CHECK(reverse_host(&place, "alpha"));
+}
+
 #ifdef _WIN32
 static const char *const odd_directory = "J\xc3\xbcrgen's tools";
 
@@ -731,6 +768,7 @@ int main(void) {
     a_command_the_user_added_is_never_taken_by_a_host();
     a_required_host_keeps_its_last_command();
     rename_and_add_refuse_a_held_name();
+    a_call_without_a_path_is_refused_and_changes_nothing();
     the_shim_runs_its_target_with_the_arguments_and_exit_code();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
 #ifdef _WIN32

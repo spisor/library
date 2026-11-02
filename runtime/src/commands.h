@@ -27,7 +27,8 @@ int runtime_commands_held_on_path(const cJSON *environment, const char *shims, c
  * state/bin/<name>.exe, a copy of runtime-launcher.exe, beside state/bin/<name>.shim holding the
  * target's UTF-8 path. Its first use also records state/bin as a directory and a path-entry in home,
  * with environment's SHELL. A target that moved rewrites the shim in place. A host only ever matches
- * entries it requested itself, so a command the user added is never taken over.
+ * entries it requested itself, so a command the user added is never taken over. Refused, like
+ * rename and add, when environment carries no PATH string.
  *
  * @implNote The whole call holds runtime_hosts_lock once, and the changes it records are applied
  * with runtime_changes_apply_held, so a request racing a rename from forebay can lose neither the
