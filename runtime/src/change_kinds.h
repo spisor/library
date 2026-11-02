@@ -49,12 +49,24 @@ int runtime_change_paths_equal(const char *left, const char *right);
 
 /**
  * Whether reversing a change of this kind must wait for every other unreversed record of the same
- * target, across every registration: a directory and a profile line can be wanted by several hosts.
+ * target, across every registration: a directory, a profile line and a PATH entry can be wanted by
+ * several hosts.
  */
 int runtime_change_is_shared(const char *kind);
 
-/** Whether two records of a shared kind name one target: the same kind, path by runtime_change_paths_equal, and line. */
+/**
+ * Whether two records of a shared kind name one target: the same kind, path by
+ * runtime_change_paths_equal, and line; a path-entry's directory, and on POSIX also its home.
+ */
 int runtime_change_same_target(const cJSON *left, const cJSON *right);
+
+/**
+ * The changes a change is applied as, recorded after it as its children, each an entry of its own with
+ * "parent" set to the change's sequence: an array freed with cJSON_Delete, or NULL for a kind that has
+ * none. A POSIX path-entry is one profile-line per profile that exists, so each line keeps its own
+ * reference count and reversal.
+ */
+runtime_change_step runtime_change_children(const cJSON *change, cJSON **children, runtime_change_note *note);
 
 /**
  * The record to store for change, without sequence, state or reversed, read from the disk before

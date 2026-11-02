@@ -113,6 +113,7 @@ equal so, ignoring ASCII case on Windows:
 | `directory` | `path` | `path` | removes it only once empty; one still holding something is left and reported |
 | `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
 | `profile-line` | `file`, `line` | `file`, `line`, `separated` | removes the exact line, and the newline added before it |
+| `path-entry` | `directory`, `home` | Windows: `directory`, `home`, `entry`, `separated`, `created`; POSIX: `directory`, `home`, and a `profile-line` child per profile | Windows: removes the exact entry it added to the user's `Path`, and the value when it created it; POSIX: its children do |
 
 A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
 not a readable JSON object, a `profile-line` over a missing file, and a kind runtime does not know
@@ -120,6 +121,16 @@ is refused before anything is written. A `directory` or `profile-line` the user 
 `json-key` already holding its value, is not recorded (`recorded: false`). Both are reference-counted across every registration: one held by
 another unreversed record, of this host or another, is recorded again and stays until the last
 holder is reversed; a registration that cannot be read counts as a holder.
+
+A `path-entry` puts `directory` on the user's PATH. On Windows it is one entry of the `Path` value
+under `HKCU\Environment`, read unexpanded and written back with its type (`REG_EXPAND_SZ` when the
+value is created), followed by a `WM_SETTINGCHANGE` broadcast; a directory already on `Path` and held
+by no host is the user's, is not recorded and is never removed. On POSIX it is recorded with one
+`profile-line` child, `export PATH="<directory>:$PATH"`, for each of `<home>/.profile`, `.bashrc`
+and `.zshrc` that exists; none is created, and the change is refused when none exists. Each child is
+an entry of its own with `parent` set to the `path-entry`'s sequence, so it is reference-counted and
+reversed like any other line. A `path-entry` is reference-counted by its directory, and on POSIX its
+home too. A directory holding `;`, `%`, `"` (Windows) or `"`, `\`, `$`, `` ` ``, `:` (POSIX) is refused.
 
 The entry is stored with `state: "pending"` before the disk is touched and marked `"applied"`
 after; a pending entry found by the next call is completed when its effect is on the disk and

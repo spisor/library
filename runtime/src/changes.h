@@ -27,6 +27,8 @@ typedef struct runtime_changes_outcome {
  * is changed or recorded. REFUSED and FAILED carry the reason, and then nothing is changed or recorded.
  * state must be absolute and host must be registered. Paths are stored in the normal form of
  * runtime_change_normalized. The whole apply holds runtime_hosts_lock, so the caller must not hold it.
+ * A path-entry on Windows writes the user's Path value under HKCU\Environment, the one change made
+ * outside the files a change names (see path_entry_windows.c).
  *
  * @implNote The record is stored with "state": "pending" before the disk is touched and marked
  * "applied" after, so a crash in between leaves a record of a change that may have happened, never a

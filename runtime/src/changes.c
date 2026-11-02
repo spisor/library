@@ -15,6 +15,18 @@
 #define REGISTRATION_SUFFIX ".json"
 #define REGISTRATION_SUFFIX_LENGTH 5
 
+typedef struct prepared_child {
+    const cJSON *change;
+    cJSON *record;
+    cJSON *entry;
+    int held;
+} prepared_child;
+
+typedef struct prepared_children {
+    prepared_child *items;
+    size_t count;
+} prepared_children;
+
 typedef struct apply_session {
     const char *state;
     const char *host;
@@ -279,7 +291,173 @@ static int ensure_changes_list(cJSON *registration) {
     return cJSON_IsArray(changes_of(registration)) || cJSON_AddArrayToObject(registration, "changes") != NULL;
 }
 
-static void prepare_and_apply(apply_session *session) {
+static void conclude_step(apply_session *session, runtime_change_step step, const char *reason) {
+    conclude(session, step == RUNTIME_CHANGE_REFUSED ? RUNTIME_CHANGES_REFUSED : RUNTIME_CHANGES_FAILED, reason);
+}
+
+static void discard_prepared(prepared_children *prepared) {
+    for (size_t index = 0; index < prepared->count; index++) {
+        cJSON_Delete(prepared->items[index].record);
+    }
+    free(prepared->items);
+}
+
+static runtime_change_step prepare_child(apply_session *session, const cJSON *child, prepared_children *prepared,
+                                         runtime_change_note *note) {
+    runtime_changes_holders holders =
+        runtime_changes_find_holder(session->state, session->host, session->registration, child);
+    if (holders.failed) {
+        snprintf(note->detail, sizeof note->detail, "memory ran out");
+        return RUNTIME_CHANGE_FAILED;
+    }
+    cJSON *record = NULL;
+    runtime_change_step step = runtime_change_prepare(child, holders.holder, &record, note);
+    if (step == RUNTIME_CHANGE_DONE) {
+        prepared_child *item = &prepared->items[prepared->count++];
+        item->change = child;
+        item->record = record;
+        item->entry = NULL;
+        item->held = holders.holder != NULL;
+    }
+    cJSON_Delete(holders.holder);
+    return step;
+}
+
+/** Prepares every child; answers 1 when none refused or failed, else concludes the session and answers 0. */
+static int prepare_children(apply_session *session, const cJSON *children, prepared_children *prepared) {
+    prepared->count = 0;
+    prepared->items = calloc((size_t)cJSON_GetArraySize(children) + 1, sizeof *prepared->items);
+    if (prepared->items == NULL) {
+        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        return 0;
+    }
+    const cJSON *child;
+    cJSON_ArrayForEach(child, children) {
+        runtime_change_note note = {""};
+        runtime_change_step step = prepare_child(session, child, prepared, &note);
+        if (step == RUNTIME_CHANGE_REFUSED || step == RUNTIME_CHANGE_FAILED) {
+            conclude_step(session, step, note.detail);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int add_child_entries(apply_session *session, long parent_sequence, prepared_children *prepared) {
+    cJSON *changes = changes_of(session->registration);
+    for (size_t index = 0; index < prepared->count; index++) {
+        prepared_child *item = &prepared->items[index];
+        item->entry = pending_entry(parent_sequence + 1 + (long)index, text_of(item->change, "kind"), item->record);
+        item->record = NULL;
+        if (item->entry == NULL || cJSON_AddNumberToObject(item->entry, "parent", (double)parent_sequence) == NULL ||
+            !cJSON_AddItemToArray(changes, item->entry)) {
+            cJSON_Delete(item->entry);
+            item->entry = NULL;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void withdraw_family(apply_session *session, cJSON *parent, prepared_children *prepared) {
+    cJSON *changes = changes_of(session->registration);
+    for (size_t index = 0; index < prepared->count; index++) {
+        if (prepared->items[index].entry != NULL) {
+            cJSON_Delete(cJSON_DetachItemViaPointer(changes, prepared->items[index].entry));
+            prepared->items[index].entry = NULL;
+        }
+    }
+    cJSON_Delete(cJSON_DetachItemViaPointer(changes, parent));
+    store(session);
+}
+
+/**
+ * @implNote A child that cannot be performed undoes the children performed before it, under the same
+ * lock and with the holders found when they were prepared, so a failed apply leaves neither a line
+ * nor a record behind.
+ */
+static void undo_performed(const prepared_children *prepared, size_t performed) {
+    for (size_t index = performed; index > 0; index--) {
+        runtime_change_note ignored = {""};
+        runtime_change_reverse(prepared->items[index - 1].entry, prepared->items[index - 1].held, &ignored);
+    }
+}
+
+static void mark_family_applied(cJSON *parent, prepared_children *prepared) {
+    set_text(parent, "state", "applied");
+    for (size_t index = 0; index < prepared->count; index++) {
+        set_text(prepared->items[index].entry, "state", "applied");
+    }
+}
+
+static void perform_family(apply_session *session, cJSON *parent, prepared_children *prepared) {
+    runtime_change_note note = {""};
+    runtime_change_step step = RUNTIME_CHANGE_DONE;
+    size_t performed = 0;
+    while (step == RUNTIME_CHANGE_DONE && performed < prepared->count) {
+        step = runtime_change_perform(prepared->items[performed].change, prepared->items[performed].entry, &note);
+        performed += step == RUNTIME_CHANGE_DONE;
+    }
+    step = step == RUNTIME_CHANGE_DONE ? runtime_change_perform(session->change, parent, &note) : step;
+    if (step != RUNTIME_CHANGE_DONE) {
+        undo_performed(prepared, performed);
+        withdraw_family(session, parent, prepared);
+        conclude_step(session, step, note.detail);
+        return;
+    }
+    mark_family_applied(parent, prepared);
+    store(session);
+    conclude(session, RUNTIME_CHANGES_RECORDED, "");
+    session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(parent, "sequence")->valuedouble;
+}
+
+static void record_family(apply_session *session, cJSON *parent_record, prepared_children *prepared) {
+    long sequence = next_sequence(session->registration);
+    cJSON *parent = pending_entry(sequence, text_of(session->change, "kind"), parent_record);
+    if (parent == NULL || !cJSON_AddItemToArray(changes_of(session->registration), parent)) {
+        cJSON_Delete(parent);
+        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        return;
+    }
+    if (!add_child_entries(session, sequence, prepared) ||
+        !set_counter(session->registration, sequence + 1 + (long)prepared->count)) {
+        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        return;
+    }
+    if (!store(session)) {
+        conclude_unwritable(session);
+        return;
+    }
+    perform_family(session, parent, prepared);
+}
+
+/**
+ * @implNote The change and its children are stored pending together before any is performed, and
+ * marked applied together after, so settling pending records treats each of them as it treats a
+ * single change. Nothing is recorded when every child is already the user's.
+ */
+static void apply_with_children(apply_session *session, const cJSON *children) {
+    prepared_children prepared;
+    if (!prepare_children(session, children, &prepared)) {
+        discard_prepared(&prepared);
+        return;
+    }
+    cJSON *parent_record = NULL;
+    runtime_change_note note = {""};
+    runtime_change_step step = prepared.count == 0
+                                   ? RUNTIME_CHANGE_UNNEEDED
+                                   : runtime_change_prepare(session->change, NULL, &parent_record, &note);
+    if (step == RUNTIME_CHANGE_DONE) {
+        record_family(session, parent_record, &prepared);
+    } else if (step == RUNTIME_CHANGE_UNNEEDED) {
+        conclude(session, RUNTIME_CHANGES_UNNEEDED, "");
+    } else {
+        conclude_step(session, step, note.detail);
+    }
+    discard_prepared(&prepared);
+}
+
+static void apply_single(apply_session *session) {
     runtime_changes_holders holders =
         runtime_changes_find_holder(session->state, session->host, session->registration, session->change);
     if (holders.failed) {
@@ -295,9 +473,22 @@ static void prepare_and_apply(apply_session *session) {
     } else if (step == RUNTIME_CHANGE_UNNEEDED) {
         conclude(session, RUNTIME_CHANGES_UNNEEDED, "");
     } else {
-        conclude(session, step == RUNTIME_CHANGE_REFUSED ? RUNTIME_CHANGES_REFUSED : RUNTIME_CHANGES_FAILED,
-                 note.detail);
+        conclude_step(session, step, note.detail);
     }
+}
+
+static void prepare_and_apply(apply_session *session) {
+    cJSON *children = NULL;
+    runtime_change_note note = {""};
+    runtime_change_step step = runtime_change_children(session->change, &children, &note);
+    if (step != RUNTIME_CHANGE_DONE) {
+        conclude_step(session, step, note.detail);
+    } else if (children != NULL) {
+        apply_with_children(session, children);
+    } else {
+        apply_single(session);
+    }
+    cJSON_Delete(children);
 }
 
 static runtime_changes_outcome apply_locked(const char *state, const char *host, const cJSON *change) {
