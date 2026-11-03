@@ -63,10 +63,10 @@ Service), and that store may prompt the user.
 | `registry.forget` | `places` (`state`, `cache`), `id` | `{ forgotten }`, after deleting the record and the host's folders; refused while a change is not reversed |
 | `changes.apply` | `places` (`state`), `host`, `change` | `{ recorded, sequence? }`, after making the change and appending it to the host's `changes` |
 | `changes.reverse` | `places` (`state`), `host` | `{ reversed, drifted }`, after undoing every unreversed change, newest first |
-| `commands.request` | `places` (`state`), `environment`, `host`, `home`, `name`, `target` | `{ name }`, the name given (a fallback when the asked one is held), or `{}` for a command the user deleted |
+| `commands.request` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, the name given (a fallback when the asked one is held), or `{}` for a command the user deleted |
 | `commands.rename` | `places` (`state`), `environment`, `host`, `from`, `to` | `{ name }`, after moving the shim; a held `to` is refused |
 | `commands.delete` | `places` (`state`), `host`, `name` | `{ deleted: true }`, after removing the shim; refused for a required host's last command |
-| `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target` | `{ name }`, after making the shim; a held name is refused |
+| `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, after making the shim; a held name is refused |
 | `install.packages` | `places` (`portable`), `item`, `manifestPackages` | `{ packages }`, the item's package under each method, as `{ name, options? }`; pure |
 | `install.plan` | `places` (`portable`), `item`, `manifestPackages`, `methods`, `chosen`, `installedProviders`, `catalog` | `{ steps }`, each `{ "install-provider": <catalog entry> }` or `{ "install": { method, package? } }`; pure |
 
@@ -175,10 +175,13 @@ and applies its changes under it, so it never takes it twice.
 ### Commands
 
 A host's commands are shims in `<state>/bin`, recorded as `file` changes of that host. On POSIX
-the shim is `<name>`, an `sh` script running `exec '<target>' "$@"`. On Windows it is `<name>.exe`, a
-copy of `runtime-launcher.exe`, beside `<name>.shim`, which holds the target's UTF-8 path: the
-launcher reads the `.shim` next to its own path, runs the target with its own arguments exactly as
-given, and exits with the target's exit code. It replaces a `.cmd` shim because `cmd.exe` reads a
+the shim is `<name>`, an `sh` script running `exec '<target>' '<argument>'... "$@"`, every word
+single-quoted. On Windows it is `<name>.exe`, a copy of `runtime-launcher.exe`, beside `<name>.shim`,
+UTF-8 lines: `spisor-shim 1`, the target's path, then each fixed argument. The launcher reads the
+`.shim` next to its own path, refuses one without that first line, runs the target with the fixed
+arguments quoted as `CommandLineToArgvW` reads them back and then its own arguments exactly as given,
+and exits with the target's exit code. `arguments`, absent meaning none, are the fixed arguments a
+command always passes before the caller's, so a target can be an interpreter and its script. It replaces a `.cmd` shim because `cmd.exe` reads a
 batch file in the console's code page, which garbles a non-ASCII target. The launcher is built with
 the library and found beside the module that holds it, so it ships beside `runtime.dll`. The first
 command also records `<state>/bin` as a `directory` and a `path-entry` in the user's home, with the
@@ -195,13 +198,14 @@ so on, so a host asking for `cc` where the C compiler is installed gets `cc2` an
 `request`, `rename` and `add` refuse a call whose `environment` carries no `PATH` string (`Path` on
 Windows matches too), since without one every name would look free.
 A host asking again for a name it requested is answered with that entry as it stands, and its
-shim is rewritten when the target moved, but the entry itself is never changed by a host: a name
+shim is rewritten in place, under the record it already has, when the target or the arguments
+changed, but the entry itself is never changed by a host: a name
 the user renamed stays renamed, a command the user deleted stays deleted, and a command the user
 added under the same name is never matched by a host's request. `rename`, `delete` and
 `add` are the user's, mark the entry `owner: "user"`, and refuse a held name rather than fall back.
 `delete` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
 A name is a letter or digit followed by letters, digits, `-`, `_` or `.`, at most 64; a target is
-an absolute path with no line break.
+an absolute path with no line break, and `arguments` an array of strings with none.
 
 ### Install
 

@@ -17,16 +17,18 @@
 int runtime_commands_held_on_path(const cJSON *environment, const char *shims, const char *name);
 
 /**
- * commands.request: { places: { state }, environment, host, home, name, target } answering
- * { name? }. The host gets the command it asks for, under the name it asks for unless that name is
+ * commands.request: { places: { state }, environment, host, home, name, target, arguments? }
+ * answering { name? }. The host gets the command it asks for, under the name it asks for unless that name is
  * held by an active command of any host, by an executable on the PATH of environment, or by
  * something already in state/bin, and then under <name>2, <name>3 and so on. An entry this host
  * already has for that requested name is answered as it stands, whatever the user did to it: a
- * deleted one answers no name. The shim is recorded as file changes running target with the
- * arguments and passing its exit code back: on POSIX the sh script state/bin/<name>, on Windows
- * state/bin/<name>.exe, a copy of runtime-launcher.exe, beside state/bin/<name>.shim holding the
- * target's UTF-8 path. Its first use also records state/bin as a directory and a path-entry in home,
- * with environment's SHELL. A target that moved rewrites the shim in place. A host only ever matches
+ * deleted one answers no name. The shim is recorded as file changes running target with the fixed
+ * arguments, an array of strings with no line break (absent is none), then the caller's, and
+ * passing its exit code back: on POSIX the sh script state/bin/<name>, on Windows
+ * state/bin/<name>.exe, a copy of runtime-launcher.exe, beside state/bin/<name>.shim in the format
+ * shim_format.h names. Its first use also records state/bin as a directory and a path-entry in home,
+ * with environment's SHELL. A target or arguments that changed rewrite the shim in place under the
+ * records it already has, so a rename keeps them and reversal still restores the machine. A host only ever matches
  * entries it requested itself, so a command the user added is never taken over. Refused, like
  * rename and add, when environment is not an object or carries no PATH string.
  *
@@ -51,7 +53,7 @@ RUNTIME_EXPORT int32_t runtime_commands_rename(const uint8_t *in, size_t in_len,
 RUNTIME_EXPORT int32_t runtime_commands_delete(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 /**
- * commands.add: { places: { state }, environment, host, home, name, target } answering { name }.
+ * commands.add: { places: { state }, environment, host, home, name, target, arguments? } answering { name }.
  * Gives the host a command the user chose, "owner": "user" and "requested": null; a held name is
  * refused.
  */

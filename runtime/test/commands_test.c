@@ -32,6 +32,7 @@
 #include "host_provenance.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
+#include "tree_snapshot.h"
 #include "spisor/json_kind.h"
 
 #ifdef _WIN32
@@ -703,6 +704,221 @@ static void the_shim_runs_its_target_with_the_arguments_and_exit_code(void) {
     CHECK(reverse_host(&place, "alpha"));
 }
 
+static cJSON *with_arguments(cJSON *request, const char *const *arguments, size_t count) {
+    cJSON *list = cJSON_AddArrayToObject(request, "arguments");
+    for (size_t index = 0; index < count; index++) {
+        cJSON_AddItemToArray(list, cJSON_CreateString(arguments[index]));
+    }
+    return request;
+}
+
+static cJSON *argued_request(const scratch *place, const char *host, const char *name, const char *target,
+                             const char *const *arguments, size_t count) {
+    char search[2500];
+    default_search(place, search, sizeof search);
+    return with_arguments(targeted_request(place, host, search, name, target), arguments, count);
+}
+
+static char *request_argued(const scratch *place, const char *host, const char *name, const char *target,
+                            const char *const *arguments, size_t count) {
+    return answered_name(call(runtime_commands_request, argued_request(place, host, name, target, arguments, count)),
+                         "request with arguments");
+}
+
+static void output_path(const scratch *place, const char *label, char *output, size_t size) {
+    snprintf(output, size, "%s/%s.out", place->targets, label);
+}
+
+/** Runs the shim of name with the caller's arguments and checks what the probe wrote and its exit code. */
+static int shim_delivers(const scratch *place, const char *name, const char *output, const char *const *callers,
+                         size_t count, int exit_code, const char *expected) {
+    char shim[1400];
+    shim_file(place, name, shim, sizeof shim);
+    int code = run_program(shim, callers, count);
+    size_t length = 0;
+    char *received = (char *)spisor_read_file(output, &length);
+    int delivered = code == exit_code && check_text(received, expected, "the arguments the target received");
+    if (code != exit_code) {
+        fprintf(stderr, "the shim %s exited %d, expected %d\n", name, code, exit_code);
+    }
+    free(received);
+    return delivered;
+}
+
+static const char *const caller_arguments[] = {"caller words", "end\\", "q\\\"uote"};
+#define CALLER_ARGUMENT_COUNT 3
+#define CALLER_LINES "caller words\nend\\\nq\\\"uote\n"
+
+static void fixed_arguments_reach_the_target_exactly_through_the_shim(void) {
+    scratch place;
+    fresh_scratch(&place, "fixed-arguments");
+    register_host(&place, "alpha", 1);
+    char target[1400];
+    char output[1400];
+    place_probe(&place, odd_directory, target, sizeof target);
+    output_path(&place, "fixed", output, sizeof output);
+    const char *const fixed[] = {output,         "4",  "two words", "say \"hi\"", "back\\slash", "trailing\\",
+                                 "two\\\\\"both", "",   "it's $HOME `x`", "J\xc3\xbcrgen"};
+    const char *const expected = "two words\nsay \"hi\"\nback\\slash\ntrailing\\\ntwo\\\\\"both\n\nit's $HOME `x`\n"
+                                 "J\xc3\xbcrgen\n" CALLER_LINES;
+    char *assigned = request_argued(&place, "alpha", "cc", target, fixed, 10);
+    CHECK(check_text(assigned, "cc", "the request with fixed arguments"));
+    free(assigned);
+    CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
+    CHECK(succeeds(rename_command(&place, "alpha", "cc", "renamed"), "rename"));
+    CHECK(shim_delivers(&place, "renamed", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
+    CHECK(succeeds(call(runtime_commands_add, argued_request(&place, "alpha", "mine", target, fixed, 10)), "add"));
+    CHECK(shim_delivers(&place, "mine", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
+    CHECK(reverse_host(&place, "alpha"));
+}
+
+#ifdef _WIN32
+static void a_shim_file_without_the_format_line_is_refused_by_the_launcher(void) {
+    scratch place;
+    fresh_scratch(&place, "old-shim");
+    register_host(&place, "alpha", 1);
+    char target[1400];
+    char output[1400];
+    place_probe(&place, "probe", target, sizeof target);
+    output_path(&place, "old", output, sizeof output);
+    const char *const fixed[] = {output, "0"};
+    char *assigned = request_argued(&place, "alpha", "cc", target, fixed, 2);
+    CHECK(check_text(assigned, "cc", "the request"));
+    free(assigned);
+    char shim[1400];
+    char line[1500];
+    snprintf(shim, sizeof shim, "%s/cc.shim", place.shims);
+    snprintf(line, sizeof line, "%s\n", target);
+    CHECK(spisor_replace_file(shim, (const uint8_t *)line, strlen(line)) == 1);
+    char program[1400];
+    shim_file(&place, "cc", program, sizeof program);
+    CHECK(run_program(program, caller_arguments, CALLER_ARGUMENT_COUNT) == 127);
+    CHECK(runtime_probe_entry(output) == RUNTIME_ENTRY_MISSING);
+    CHECK(reverse_host(&place, "alpha"));
+}
+#endif
+
+static answer raw_call(runtime_export function, const char *text) {
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    answer result;
+    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
+    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
+    free(out);
+    return result;
+}
+
+/** request with its arguments replaced by the JSON text arguments, sent as written so it can carry \u0000. */
+static answer call_with_raw_arguments(runtime_export function, cJSON *request, const char *arguments) {
+    cJSON_DeleteItemFromObjectCaseSensitive(request, "arguments");
+    char *text = cJSON_PrintUnformatted(request);
+    cJSON_Delete(request);
+    size_t size = strlen(text) + strlen(arguments) + 32;
+    char *sent = malloc(size);
+    snprintf(sent, size, "%.*s,\"arguments\":%s}", (int)(strlen(text) - 1), text, arguments);
+    answer result = raw_call(function, sent);
+    free(sent);
+    free(text);
+    return result;
+}
+
+static void a_defective_argument_is_refused_and_changes_nothing(void) {
+    static const char *const defective[] = {"[\"one\\ntwo\"]", "[\"one\\rtwo\"]", "\"one\"", "[\"one\", 2]"};
+    static const char *const said[] = {"line break", "line break", "array of strings", "array of strings"};
+    scratch place;
+    fresh_scratch(&place, "defective-arguments");
+    register_host(&place, "alpha", 0);
+    char target[1400];
+    target_path(&place, "tool", target, sizeof target);
+    for (size_t index = 0; index < sizeof defective / sizeof defective[0]; index++) {
+        CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_request,
+                                                        argued_request(&place, "alpha", "cc", target, NULL, 0),
+                                                        defective[index]),
+                                said[index], defective[index]));
+        CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_add,
+                                                        argued_request(&place, "alpha", "ad", target, NULL, 0),
+                                                        defective[index]),
+                                said[index], defective[index]));
+    }
+    CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_request,
+                                                    argued_request(&place, "alpha", "cc", target, NULL, 0),
+                                                    "[\"one\\u0000two\"]"),
+                            "NUL", "an argument holding a NUL"));
+    CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "ad"));
+    CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
+    CHECK(reverse_host(&place, "alpha"));
+}
+
+static int file_record_count(const scratch *place, const char *host) {
+    cJSON *registration = loaded(place, host);
+    int count = 0;
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const char *kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind"));
+        count += kind != NULL && strcmp(kind, "file") == 0;
+    }
+    cJSON_Delete(registration);
+    return count;
+}
+
+/** state, the registry left out, and home: everything a host's commands may touch. */
+static char *machine_snapshot(const scratch *place) {
+    char *state = tree_snapshot(place->state, "/hosts");
+    char *home = tree_snapshot(place->home, NULL);
+    size_t size = strlen(state) + strlen(home) + 16;
+    char *both = malloc(size);
+    snprintf(both, size, "%s\n--\n%s", state, home);
+    free(state);
+    free(home);
+    return both;
+}
+
+static void a_rerequest_rewrites_the_held_command_and_reversal_restores_the_machine(void) {
+    scratch place;
+    fresh_scratch(&place, "rerequest");
+    register_host(&place, "alpha", 1);
+    char first[1400];
+    char second[1400];
+    char output[1400];
+    place_probe(&place, "first version", first, sizeof first);
+    place_probe(&place, "second version", second, sizeof second);
+    char *before = machine_snapshot(&place);
+    output_path(&place, "first", output, sizeof output);
+    const char *const first_arguments[] = {output, "1", "first"};
+    char *assigned = request_argued(&place, "alpha", "cc", first, first_arguments, 3);
+    CHECK(check_text(assigned, "cc", "the first request"));
+    free(assigned);
+    CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 1, "first\n" CALLER_LINES));
+    int records = file_record_count(&place, "alpha");
+    output_path(&place, "second", output, sizeof output);
+    const char *const second_arguments[] = {output, "2", "second", "and more"};
+    assigned = request_argued(&place, "alpha", "cc", second, second_arguments, 4);
+    CHECK(check_text(assigned, "cc", "the request for the next version"));
+    free(assigned);
+    CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 2,
+                        "second\nand more\n" CALLER_LINES));
+    CHECK(file_record_count(&place, "alpha") == records);
+    CHECK(succeeds(rename_command(&place, "alpha", "cc", "claude"), "rename"));
+    output_path(&place, "third", output, sizeof output);
+    const char *const third_arguments[] = {output, "3"};
+    assigned = request_argued(&place, "alpha", "cc", first, third_arguments, 2);
+    CHECK(check_text(assigned, "claude", "the request after the user renamed it"));
+    free(assigned);
+    CHECK(lacks_shim(&place, "cc"));
+    CHECK(shim_delivers(&place, "claude", output, caller_arguments, CALLER_ARGUMENT_COUNT, 3, CALLER_LINES));
+    CHECK(succeeds(add_command(&place, "alpha", "extra"), "add"));
+    CHECK(succeeds(delete_command(&place, "alpha", "claude"), "delete"));
+    assigned = request_argued(&place, "alpha", "cc", second, second_arguments, 4);
+    CHECK(check_text(assigned, "", "the request after the user deleted it"));
+    free(assigned);
+    CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "claude"));
+    CHECK(reverse_host(&place, "alpha"));
+    char *after = machine_snapshot(&place);
+    CHECK(check_text(after, before, "the machine after the host's changes are reversed"));
+    free(before);
+    free(after);
+}
+
 static int path_entry_count(const scratch *place, const char *host) {
     cJSON *registration = loaded(place, host);
     int count = 0;
@@ -805,6 +1021,12 @@ int main(void) {
     a_call_without_a_path_is_refused_and_changes_nothing();
     an_environment_that_is_not_an_object_is_refused_by_every_export();
     the_shim_runs_its_target_with_the_arguments_and_exit_code();
+    fixed_arguments_reach_the_target_exactly_through_the_shim();
+#ifdef _WIN32
+    a_shim_file_without_the_format_line_is_refused_by_the_launcher();
+#endif
+    a_defective_argument_is_refused_and_changes_nothing();
+    a_rerequest_rewrites_the_held_command_and_reversal_restores_the_machine();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
 #ifdef _WIN32
     delete_test_value();

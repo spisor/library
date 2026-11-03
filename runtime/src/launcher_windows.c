@@ -1,15 +1,26 @@
 /**
  * The Windows command shim: <state>/bin/<name>.exe is a copy of this program, and <name>.shim beside
- * it holds the UTF-8 path of the program it runs. It runs that program with its own arguments, passed
- * on exactly as they were given, and exits with the program's exit code.
+ * it holds, in the format shim_format.h names, the program it runs and the fixed arguments it always
+ * passes. It runs that program with the fixed arguments and then its own, passed on exactly as they
+ * were given, and exits with the program's exit code.
  *
  * @implNote A .cmd shim cannot do this: cmd.exe decodes a batch file in the console's OEM code page,
  * so a target under a user folder with a non-ASCII letter is garbled at run time. Everything here is UTF-16 from the
- * command line to CreateProcessW, and the target file is UTF-8 by construction.
+ * command line to CreateProcessW, and the .shim file is UTF-8 by construction.
  */
 #include <windows.h>
 
+#include "shim_format.h"
+
 #define LAUNCH_FAILED 127
+#define FIRST_ARGUMENT_LINE 2
+
+typedef struct shim_lines {
+    wchar_t **items;
+    int count;
+} shim_lines;
+
+typedef enum shim_reading { SHIM_READ, SHIM_UNREADABLE, SHIM_UNKNOWN_FORMAT } shim_reading;
 
 static void complain(const char *message) {
     DWORD written = 0;
@@ -19,10 +30,14 @@ static void complain(const char *message) {
     }
 }
 
+static void *allocate(SIZE_T size) {
+    return HeapAlloc(GetProcessHeap(), 0, size);
+}
+
 static wchar_t *own_path(void) {
     DWORD capacity = MAX_PATH;
     for (int attempt = 0; attempt < 8; attempt++) {
-        wchar_t *path = HeapAlloc(GetProcessHeap(), 0, capacity * sizeof(wchar_t));
+        wchar_t *path = allocate(capacity * sizeof(wchar_t));
         if (path == NULL) {
             return NULL;
         }
@@ -39,7 +54,7 @@ static wchar_t *own_path(void) {
 /** own with the extension of its file name replaced by .shim, freed by the process exiting. */
 static wchar_t *shim_path_of(const wchar_t *own) {
     size_t length = (size_t)lstrlenW(own);
-    wchar_t *path = HeapAlloc(GetProcessHeap(), 0, (length + 6) * sizeof(wchar_t));
+    wchar_t *path = allocate((length + 6) * sizeof(wchar_t));
     if (path == NULL) {
         return NULL;
     }
@@ -60,7 +75,7 @@ static char *read_bytes(const wchar_t *path, DWORD *length) {
     LARGE_INTEGER size;
     char *bytes = NULL;
     if (GetFileSizeEx(file, &size) && size.QuadPart > 0 && size.QuadPart < 65536) {
-        bytes = HeapAlloc(GetProcessHeap(), 0, (SIZE_T)size.QuadPart);
+        bytes = allocate((SIZE_T)size.QuadPart);
     }
     if (bytes != NULL && (!ReadFile(file, bytes, (DWORD)size.QuadPart, length, NULL) || *length == 0)) {
         HeapFree(GetProcessHeap(), 0, bytes);
@@ -70,24 +85,62 @@ static char *read_bytes(const wchar_t *path, DWORD *length) {
     return bytes;
 }
 
-static wchar_t *read_target(const wchar_t *shim) {
+/** The UTF-8 bytes of shim as UTF-16, NUL-terminated, with their length in units; NULL when unreadable. */
+static wchar_t *read_text(const wchar_t *shim, int *units) {
     DWORD length = 0;
     char *bytes = read_bytes(shim, &length);
-    while (bytes != NULL && length > 0 && (bytes[length - 1] == '\r' || bytes[length - 1] == '\n')) {
-        length--;
-    }
-    int units = bytes == NULL || length == 0
-                    ? 0
-                    : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes, (int)length, NULL, 0);
-    wchar_t *target = units > 0 ? HeapAlloc(GetProcessHeap(), 0, ((SIZE_T)units + 1) * sizeof(wchar_t)) : NULL;
-    if (target != NULL) {
-        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes, (int)length, target, units);
-        target[units] = L'\0';
+    *units = bytes == NULL ? 0 : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes, (int)length, NULL, 0);
+    wchar_t *text = *units > 0 ? allocate(((SIZE_T)*units + 1) * sizeof(wchar_t)) : NULL;
+    if (text != NULL) {
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes, (int)length, text, *units);
+        text[*units] = L'\0';
     }
     if (bytes != NULL) {
         HeapFree(GetProcessHeap(), 0, bytes);
     }
-    return target;
+    return text;
+}
+
+/** Cuts text into its lines in place, a \r before each \n dropped; 0 when it does not end in \n. */
+static int split_lines(wchar_t *text, int units, shim_lines *lines) {
+    if (text[units - 1] != L'\n') {
+        return 0;
+    }
+    lines->count = 0;
+    for (int index = 0; index < units; index++) {
+        lines->count += text[index] == L'\n';
+    }
+    lines->items = allocate((SIZE_T)lines->count * sizeof(wchar_t *));
+    if (lines->items == NULL) {
+        return 0;
+    }
+    wchar_t *start = text;
+    int line = 0;
+    for (int index = 0; index < units; index++) {
+        if (text[index] == L'\n') {
+            text[index] = L'\0';
+            if (index > 0 && text[index - 1] == L'\r') {
+                text[index - 1] = L'\0';
+            }
+            lines->items[line++] = start;
+            start = text + index + 1;
+        }
+    }
+    return 1;
+}
+
+static int is_known_format(const shim_lines *lines) {
+    return lines->count >= FIRST_ARGUMENT_LINE && lstrcmpW(lines->items[0], L"" RUNTIME_SHIM_FORMAT) == 0 &&
+           lines->items[1][0] != L'\0';
+}
+
+static shim_reading read_shim(const wchar_t *shim, shim_lines *lines) {
+    int units = 0;
+    wchar_t *text = read_text(shim, &units);
+    if (text == NULL) {
+        return SHIM_UNREADABLE;
+    }
+    return split_lines(text, units, lines) && is_known_format(lines) ? SHIM_READ : SHIM_UNKNOWN_FORMAT;
 }
 
 /**
@@ -113,18 +166,57 @@ static const wchar_t *arguments_after_program(const wchar_t *line) {
     return cursor;
 }
 
-static wchar_t *child_command_line(const wchar_t *target, const wchar_t *arguments) {
-    size_t size = (size_t)lstrlenW(target) + (size_t)lstrlenW(arguments) + 4;
-    wchar_t *line = HeapAlloc(GetProcessHeap(), 0, size * sizeof(wchar_t));
+static size_t append_backslashes(wchar_t *line, size_t used, size_t count) {
+    for (size_t index = 0; index < count; index++) {
+        line[used++] = L'\\';
+    }
+    return used;
+}
+
+/**
+ * Appends a space and argument quoted so CommandLineToArgvW reads it back unchanged: a run of
+ * backslashes is doubled before a quote, which is escaped, and before the closing quote.
+ */
+static size_t append_quoted(wchar_t *line, size_t used, const wchar_t *argument) {
+    line[used++] = L' ';
+    line[used++] = L'"';
+    size_t backslashes = 0;
+    for (const wchar_t *cursor = argument; *cursor != L'\0'; cursor++) {
+        if (*cursor == L'\\') {
+            backslashes++;
+            continue;
+        }
+        used = append_backslashes(line, used, *cursor == L'"' ? 2 * backslashes + 1 : backslashes);
+        backslashes = 0;
+        line[used++] = *cursor;
+    }
+    used = append_backslashes(line, used, 2 * backslashes);
+    line[used++] = L'"';
+    return used;
+}
+
+/** The target as the program, each fixed argument quoted, then the caller's arguments as they were given. */
+static wchar_t *child_command_line(const shim_lines *lines, const wchar_t *callers) {
+    const wchar_t *target = lines->items[1];
+    size_t size = (size_t)lstrlenW(target) + (size_t)lstrlenW(callers) + 4;
+    for (int index = FIRST_ARGUMENT_LINE; index < lines->count; index++) {
+        size += 2 * (size_t)lstrlenW(lines->items[index]) + 3;
+    }
+    wchar_t *line = allocate(size * sizeof(wchar_t));
     if (line == NULL) {
         return NULL;
     }
     lstrcpyW(line, L"\"");
     lstrcatW(line, target);
     lstrcatW(line, L"\"");
-    if (*arguments != L'\0') {
+    size_t used = (size_t)lstrlenW(line);
+    for (int index = FIRST_ARGUMENT_LINE; index < lines->count; index++) {
+        used = append_quoted(line, used, lines->items[index]);
+    }
+    line[used] = L'\0';
+    if (*callers != L'\0') {
         lstrcatW(line, L" ");
-        lstrcatW(line, arguments);
+        lstrcatW(line, callers);
     }
     return line;
 }
@@ -165,11 +257,17 @@ static int run(wchar_t *line) {
 int wmain(void) {
     wchar_t *own = own_path();
     wchar_t *shim = own == NULL ? NULL : shim_path_of(own);
-    wchar_t *target = shim == NULL ? NULL : read_target(shim);
-    if (target == NULL) {
+    shim_lines lines = {NULL, 0};
+    shim_reading reading = shim == NULL ? SHIM_UNREADABLE : read_shim(shim, &lines);
+    if (reading == SHIM_UNREADABLE) {
         complain("spisor: this command's .shim file is missing or unreadable\n");
         return LAUNCH_FAILED;
     }
-    wchar_t *line = child_command_line(target, arguments_after_program(GetCommandLineW()));
+    if (reading == SHIM_UNKNOWN_FORMAT) {
+        complain("spisor: this command's .shim file is not in the format this launcher reads; let its host ask "
+                 "for the command again\n");
+        return LAUNCH_FAILED;
+    }
+    wchar_t *line = child_command_line(&lines, arguments_after_program(GetCommandLineW()));
     return line == NULL ? LAUNCH_FAILED : run(line);
 }
