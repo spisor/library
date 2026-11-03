@@ -19,6 +19,7 @@
 #include "hosts_lock.h"
 #include "paths.h"
 #include "registry.h"
+#include "shim_format.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -110,6 +111,26 @@ static const char *target_defect(const char *target) {
     }
     if (strpbrk(target, "\r\n") != NULL) {
         return "the command's target holds a line break";
+    }
+    return NULL;
+}
+
+/** NULL when arguments is absent or an array of strings with no line break, else what is wrong with it. */
+static const char *arguments_defect(const cJSON *arguments) {
+    if (arguments == NULL) {
+        return NULL;
+    }
+    if (!cJSON_IsArray(arguments)) {
+        return "the command's arguments must be an array of strings";
+    }
+    const cJSON *argument;
+    cJSON_ArrayForEach(argument, arguments) {
+        if (!cJSON_IsString(argument)) {
+            return "the command's arguments must be an array of strings";
+        }
+        if (strpbrk(argument->valuestring, "\r\n") != NULL) {
+            return "an argument of the command holds a line break";
+        }
     }
     return NULL;
 }
@@ -211,10 +232,41 @@ static char *backslashed(const char *path) {
     return copy;
 }
 
-static cJSON *shim_change(const char *path, size_t index, const char *target) {
+static size_t append_line(char *content, size_t used, const char *line) {
+    size_t length = strlen(line);
+    memcpy(content + used, line, length);
+    content[used + length] = '\n';
+    return used + length + 1;
+}
+
+/** The .shim file: the format line, the target with backslashes, then each fixed argument, one per line. */
+static char *shim_text(const char *target, const cJSON *arguments) {
+    size_t size = strlen(RUNTIME_SHIM_FORMAT) + strlen(target) + 3;
+    const cJSON *argument;
+    cJSON_ArrayForEach(argument, arguments) {
+        size += strlen(argument->valuestring) + 1;
+    }
+    char *content = malloc(size);
+    char *windows_target = backslashed(target);
+    if (content == NULL || windows_target == NULL) {
+        free(content);
+        free(windows_target);
+        return NULL;
+    }
+    size_t used = append_line(content, 0, RUNTIME_SHIM_FORMAT);
+    used = append_line(content, used, windows_target);
+    cJSON_ArrayForEach(argument, arguments) {
+        used = append_line(content, used, argument->valuestring);
+    }
+    content[used] = '\0';
+    free(windows_target);
+    return content;
+}
+
+static cJSON *shim_change(const char *path, size_t index, const char *target, const cJSON *arguments) {
     cJSON *change = path == NULL ? NULL : change_of("file", "path", path);
     char *launcher = index == 0 ? launcher_path() : NULL;
-    char *content = index == 0 ? NULL : backslashed(target);
+    char *content = index == 0 ? NULL : shim_text(target, arguments);
     int complete = change != NULL &&
                    (index == 0 ? launcher != NULL && cJSON_AddStringToObject(change, "source", launcher) != NULL
                                : content != NULL && cJSON_AddStringToObject(change, "content", content) != NULL) &&
@@ -228,19 +280,19 @@ static cJSON *shim_change(const char *path, size_t index, const char *target) {
     return change;
 }
 #else
-/** An sh script that execs target, single-quoted, with "$@"; a ' in target is written as '\''. */
-static char *shim_content(const char *target) {
-    size_t quotes = 0;
-    for (const char *cursor = target; *cursor != '\0'; cursor++) {
-        quotes += *cursor == '\'';
+static size_t quoted_size(const char *word) {
+    size_t size = strlen(word) + 3;
+    for (const char *cursor = word; *cursor != '\0'; cursor++) {
+        size += *cursor == '\'' ? 3 : 0;
     }
-    size_t size = strlen(target) + 3 * quotes + 32;
-    char *content = malloc(size);
-    if (content == NULL) {
-        return NULL;
-    }
-    size_t used = (size_t)snprintf(content, size, "#!/bin/sh\nexec '");
-    for (const char *cursor = target; *cursor != '\0'; cursor++) {
+    return size;
+}
+
+/** Appends word single-quoted and preceded by a space; a ' in it is written as '\''. */
+static size_t append_quoted(char *content, size_t used, const char *word) {
+    content[used++] = ' ';
+    content[used++] = '\'';
+    for (const char *cursor = word; *cursor != '\0'; cursor++) {
         if (*cursor == '\'') {
             memcpy(content + used, "'\\''", 4);
             used += 4;
@@ -248,14 +300,36 @@ static char *shim_content(const char *target) {
             content[used++] = *cursor;
         }
     }
-    snprintf(content + used, size - used, "' \"$@\"\n");
+    content[used++] = '\'';
+    return used;
+}
+
+/** An sh script that execs target and each fixed argument, every one single-quoted, then "$@". */
+static char *shim_content(const char *target, const cJSON *arguments) {
+    static const char opening[] = "#!/bin/sh\nexec";
+    static const char closing[] = " \"$@\"\n";
+    size_t size = sizeof opening + sizeof closing + quoted_size(target);
+    const cJSON *argument;
+    cJSON_ArrayForEach(argument, arguments) {
+        size += quoted_size(argument->valuestring);
+    }
+    char *content = malloc(size);
+    if (content == NULL) {
+        return NULL;
+    }
+    memcpy(content, opening, sizeof opening - 1);
+    size_t used = append_quoted(content, sizeof opening - 1, target);
+    cJSON_ArrayForEach(argument, arguments) {
+        used = append_quoted(content, used, argument->valuestring);
+    }
+    memcpy(content + used, closing, sizeof closing);
     return content;
 }
 
-static cJSON *shim_change(const char *path, size_t index, const char *target) {
+static cJSON *shim_change(const char *path, size_t index, const char *target, const cJSON *arguments) {
     (void)index;
     cJSON *change = path == NULL ? NULL : change_of("file", "path", path);
-    char *content = shim_content(target);
+    char *content = shim_content(target, arguments);
     int complete = change != NULL && content != NULL &&
                    cJSON_AddStringToObject(change, "content", content) != NULL &&
                    cJSON_AddTrueToObject(change, "executable") != NULL;
@@ -517,24 +591,26 @@ static cJSON *path_entry_change(const command_call *call, const char *home) {
     return change;
 }
 
-static int write_shim(command_call *call, const char *name, const char *target) {
+static int write_shim(command_call *call, const char *name) {
+    const char *target = text_of(call->argument, "target");
+    const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(call->argument, "arguments");
     int written = 1;
     for (size_t index = 0; index < SHIM_FILE_COUNT && written; index++) {
         char *path = shim_file(call->shims, name, index);
-        written = apply_change(call, shim_change(path, index, target));
+        written = apply_change(call, shim_change(path, index, target, arguments));
         free(path);
     }
     return written;
 }
 
 /** Records state/bin, its PATH entry and the shim itself, each a no-op when this host already has it. */
-static int make_shim(command_call *call, const char *name, const char *target) {
+static int make_shim(command_call *call, const char *name) {
     const char *home = text_of(call->argument, "home");
     if (home == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home)) {
         return refuse(call, "send the user's home as an absolute path", "%s", "the call carries no usable home");
     }
     return apply_change(call, change_of("directory", "path", call->shims)) &&
-           apply_change(call, path_entry_change(call, home)) && write_shim(call, name, target);
+           apply_change(call, path_entry_change(call, home)) && write_shim(call, name);
 }
 
 static int load_registration(command_call *call) {
@@ -663,6 +739,13 @@ static int validated_target(command_call *call) {
     return defect == NULL || refuse(call, "send the absolute path of the program the command runs", "%s", defect);
 }
 
+static int validated_arguments(command_call *call) {
+    const char *defect = arguments_defect(cJSON_GetObjectItemCaseSensitive(call->argument, "arguments"));
+    return defect == NULL ||
+           refuse(call, "send the arguments the command always passes as strings, each without a line break", "%s",
+                  defect);
+}
+
 static int answer_existing(command_call *call, cJSON *entry) {
     if (!is_active(entry)) {
         call->answers_name = 0;
@@ -670,11 +753,11 @@ static int answer_existing(command_call *call, cJSON *entry) {
     }
     snprintf(call->name, sizeof call->name, "%s", text_of(entry, "name"));
     call->answers_name = 1;
-    return make_shim(call, call->name, text_of(call->argument, "target"));
+    return make_shim(call, call->name);
 }
 
 static int give_new_command(command_call *call, const char *requested, const char *owner) {
-    if (!make_shim(call, call->name, text_of(call->argument, "target")) || !load_registration(call) ||
+    if (!make_shim(call, call->name) || !load_registration(call) ||
         !append_entry(call, requested, owner) || !store_registration(call)) {
         return 0;
     }
@@ -683,8 +766,8 @@ static int give_new_command(command_call *call, const char *requested, const cha
 }
 
 static int request_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !validated_environment(call) ||
-        !load_registration(call)) {
+    if (!validated_name(call, "name") || !validated_target(call) || !validated_arguments(call) ||
+        !validated_environment(call) || !load_registration(call)) {
         return 0;
     }
     const char *requested = text_of(call->argument, "name");
@@ -696,8 +779,8 @@ static int request_step(command_call *call) {
 }
 
 static int add_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !validated_environment(call) ||
-        !load_registration(call)) {
+    if (!validated_name(call, "name") || !validated_target(call) || !validated_arguments(call) ||
+        !validated_environment(call) || !load_registration(call)) {
         return 0;
     }
     const char *name = text_of(call->argument, "name");
