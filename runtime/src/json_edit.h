@@ -6,10 +6,18 @@
 #include "cJSON.h"
 #include "json_span.h"
 
-/** Bytes an edit produced, freed with free; NUL terminated one past length. */
+/** Where an edit changed the text: replaced_length bytes at at became written_length bytes. */
+typedef struct json_edit_splice {
+    size_t at;
+    size_t replaced_length;
+    size_t written_length;
+} json_edit_splice;
+
+/** Bytes an edit produced, freed with free; NUL terminated one past length, splice being the last edit made. */
 typedef struct json_edit_text {
     char *bytes;
     size_t length;
+    json_edit_splice splice;
 } json_edit_text;
 
 /**
@@ -23,8 +31,9 @@ typedef struct json_edit_text {
 int json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON *value, json_edit_text *edited);
 
 /**
- * text without the member at key, then without each object from key's depth created_from on that the
- * removal left empty, every other byte kept. 1 with edited untouched-equal when the member is absent.
+ * text without the member at key, then without each object from key's depth created_from on that is
+ * left empty, whether or not the member was still there, every other byte kept. A removed only member
+ * takes the blanks before it, and the braces are emptied when nothing but blanks would stay.
  */
 int json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from, json_edit_text *edited);
 
@@ -37,6 +46,10 @@ int json_edit_find_value(const char *text, size_t length, const cJSON *key, json
 
 /** Whether text is an object with no member. */
 int json_edit_is_empty_object(const char *text, size_t length);
+
+/** text with removed_length bytes at at replaced by inserted; 0 when that is past the end or memory runs out. */
+int json_edit_splice_text(const char *text, size_t length, size_t at, size_t removed_length, const char *inserted,
+                          size_t inserted_length, json_edit_text *edited);
 
 /** A new file's bytes holding only key set to value: JSON.stringify(document, null, 2) and a LF. */
 int json_edit_new_document(const cJSON *key, const cJSON *value, json_edit_text *created);

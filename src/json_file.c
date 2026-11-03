@@ -99,3 +99,9 @@ cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state) {
     free(bytes);
     return parsed;
 }
+
+cJSON *spisor_parse_json_text(const uint8_t *bytes, size_t length) {
+    spisor_json_file_state state = SPISOR_JSON_FILE_UNREADABLE;
+    cJSON *parsed = parse_stripped(bytes, length, &state);
+    return state == SPISOR_JSON_FILE_PARSED ? parsed : NULL;
+}

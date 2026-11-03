@@ -16,6 +16,7 @@ endforeach()
 runtime_test(secrets_test fake_secret_backend.c)
 
 runtime_test(json_edit_test $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(json_key_change_test $<TARGET_OBJECTS:runtime_secret_store>)
 
 runtime_test(registry_test $<TARGET_OBJECTS:runtime_secret_store>)
 if(NOT WIN32)
