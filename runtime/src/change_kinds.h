@@ -1,6 +1,9 @@
 #ifndef RUNTIME_CHANGE_KINDS_H
 #define RUNTIME_CHANGE_KINDS_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "cJSON.h"
 
 typedef enum runtime_change_step {
@@ -67,6 +70,17 @@ int runtime_change_same_target(const cJSON *left, const cJSON *right);
 int runtime_change_repeats(const cJSON *record, const cJSON *change);
 
 #define RUNTIME_CHANGE_DIGEST_SIZE 32
+
+/**
+ * The digest a record keeps of bytes it wrote, as "fnv1a64:" and 16 hex digits.
+ *
+ * @implNote It only tells the bytes a host wrote from bytes written since, which nobody chooses to
+ * collide, so a 64-bit FNV-1a is enough and keeps the library free of a cryptographic hash.
+ */
+void runtime_change_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]);
+
+/** A new record holding a copy of each of change's members, freed with cJSON_Delete; NULL when one is missing. */
+cJSON *runtime_change_record_with(const cJSON *change, const char *const *members, size_t count);
 
 /**
  * Whether change asks the file record holds for content other than it was last written with, by the

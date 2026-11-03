@@ -7,11 +7,10 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "json_key_change.h"
 #include "path_entry.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_file.h"
-#include "spisor/json_write.h"
 #include "spisor/path.h"
 
 typedef struct text_buffer {
@@ -66,19 +65,6 @@ static int add_copy(cJSON *target, const cJSON *source, const char *member) {
     return copy != NULL;
 }
 
-static int is_string_list(const cJSON *key) {
-    if (!cJSON_IsArray(key) || cJSON_GetArraySize(key) == 0) {
-        return 0;
-    }
-    const cJSON *segment;
-    cJSON_ArrayForEach(segment, key) {
-        if (!cJSON_IsString(segment)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static int is_single_line(const char *line) {
     return line != NULL && line[0] != '\0' && strchr(line, '\n') == NULL && strchr(line, '\r') == NULL;
 }
@@ -94,16 +80,6 @@ static const char *file_defect(const cJSON *change) {
         return "a file change needs either its content as a string or an absolute source file to copy";
     }
     return executable == NULL || cJSON_IsBool(executable) ? NULL : "a file change's executable is not a boolean";
-}
-
-static const char *json_key_defect(const cJSON *change) {
-    if (!is_absolute_member(change, "file")) {
-        return "a json-key change needs an absolute file";
-    }
-    if (!is_string_list(cJSON_GetObjectItemCaseSensitive(change, "key"))) {
-        return "a json-key change needs its key as a non-empty array of strings";
-    }
-    return cJSON_GetObjectItemCaseSensitive(change, "value") != NULL ? NULL : "a json-key change needs a value";
 }
 
 static const char *profile_line_defect(const cJSON *change) {
@@ -142,7 +118,7 @@ const char *runtime_change_defect(const cJSON *change) {
         return is_absolute_member(change, "path") ? NULL : "a directory change needs an absolute path";
     }
     if (is_kind(change, "json-key")) {
-        return json_key_defect(change);
+        return runtime_json_key_defect(change);
     }
     if (is_kind(change, "profile-line")) {
         return profile_line_defect(change);
@@ -274,7 +250,7 @@ int runtime_change_repeats(const cJSON *record, const cJSON *change) {
     return runtime_change_same_target(record, change);
 }
 
-static cJSON *record_with(const cJSON *change, const char *const *members, size_t count) {
+cJSON *runtime_change_record_with(const cJSON *change, const char *const *members, size_t count) {
     cJSON *record = cJSON_CreateObject();
     for (size_t index = 0; record != NULL && index < count; index++) {
         if (!add_copy(record, change, members[index])) {
@@ -290,13 +266,7 @@ static runtime_change_step out_of_memory(runtime_change_note *note) {
     return RUNTIME_CHANGE_FAILED;
 }
 
-/**
- * The digest a file record keeps of the content it was asked to hold, as "fnv1a64:" and 16 hex digits.
- *
- * @implNote It only tells one host's earlier content from its new content, which nobody chooses to
- * collide, so a 64-bit FNV-1a is enough and keeps the library free of a cryptographic hash.
- */
-static void content_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
+void runtime_change_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
     uint64_t hash = 14695981039346656037ull;
     for (size_t index = 0; index < length; index++) {
         hash = (hash ^ bytes[index]) * 1099511628211ull;
@@ -327,7 +297,7 @@ static file_bytes bytes_asked_for(const cJSON *change) {
 
 static int set_digest(cJSON *record, const file_bytes *asked) {
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    content_digest(asked->bytes, asked->length, digest);
+    runtime_change_digest(asked->bytes, asked->length, digest);
     cJSON *value = cJSON_CreateString(digest);
     int set = value != NULL && (cJSON_GetObjectItemCaseSensitive(record, "digest") != NULL
                                     ? cJSON_ReplaceItemInObjectCaseSensitive(record, "digest", value)
@@ -348,7 +318,7 @@ static runtime_change_step prepare_file(const cJSON *change, cJSON **record, run
         return refuse(note, "the file to copy cannot be read", text_of(change, "source"));
     }
     static const char *const members[] = {"path"};
-    *record = record_with(change, members, 1);
+    *record = runtime_change_record_with(change, members, 1);
     if (*record != NULL && !set_digest(*record, &asked)) {
         cJSON_Delete(*record);
         *record = NULL;
@@ -366,7 +336,7 @@ int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
         return 1;
     }
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    content_digest(asked.bytes, asked.length, digest);
+    runtime_change_digest(asked.bytes, asked.length, digest);
     free(asked.bytes);
     const char *recorded = text_of(record, "digest");
     return recorded == NULL || strcmp(recorded, digest) != 0;
@@ -446,7 +416,7 @@ static runtime_change_step prepare_directory(const cJSON *change, const cJSON *h
         return RUNTIME_CHANGE_UNNEEDED;
     }
     static const char *const members[] = {"path"};
-    *record = record_with(change, members, 1);
+    *record = runtime_change_record_with(change, members, 1);
     return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
@@ -470,269 +440,6 @@ static runtime_change_reversal reverse_directory(const cJSON *record, int held, 
         return RUNTIME_CHANGE_NOT_REVERSED;
     }
     return RUNTIME_CHANGE_REVERSED;
-}
-
-static cJSON *child_object(cJSON *object, const cJSON *segment) {
-    return cJSON_GetObjectItemCaseSensitive(object, segment->valuestring);
-}
-
-/** The object reached by walking the first depth segments of key, or NULL when one is missing or no object. */
-static cJSON *object_at(cJSON *root, const cJSON *key, int depth) {
-    cJSON *node = root;
-    for (int index = 0; node != NULL && index < depth; index++) {
-        node = child_object(node, cJSON_GetArrayItem(key, index));
-        node = cJSON_IsObject(node) ? node : NULL;
-    }
-    return node;
-}
-
-static cJSON *value_at(cJSON *root, const cJSON *key) {
-    int last = cJSON_GetArraySize(key) - 1;
-    cJSON *parent = object_at(root, key, last);
-    return parent == NULL ? NULL : child_object(parent, cJSON_GetArrayItem(key, last));
-}
-
-static const char *trailing_ending(const char *path) {
-    size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
-    const char *ending = "";
-    if (bytes != NULL && length >= 2 && bytes[length - 2] == '\r' && bytes[length - 1] == '\n') {
-        ending = "\r\n";
-    } else if (bytes != NULL && length >= 1 && bytes[length - 1] == '\n') {
-        ending = "\n";
-    }
-    free(bytes);
-    return ending;
-}
-
-/**
- * @implNote The file is written as JSON.stringify(value, null, 2) followed by the ending it had, the
- * form a Node application such as Claude Code writes, so a file in that form comes back byte-equal
- * after a reversal. Whole-line comments, which the reader tolerates, are not written back.
- */
-static int write_json(const char *path, const cJSON *root, const char *ending) {
-    char *text = spisor_json_stringify_pretty(root);
-    size_t text_length = text == NULL ? 0 : strlen(text);
-    char *bytes = text == NULL ? NULL : realloc(text, text_length + strlen(ending) + 1);
-    if (bytes == NULL) {
-        free(text);
-        return 0;
-    }
-    memcpy(bytes + text_length, ending, strlen(ending) + 1);
-    int written = spisor_replace_file(path, (const uint8_t *)bytes, strlen(bytes));
-    free(bytes);
-    return written;
-}
-
-static cJSON *read_json_object(const char *path, runtime_change_note *note, runtime_change_step *step) {
-    spisor_json_file_state state;
-    cJSON *root = spisor_read_json_file(path, &state);
-    if (state == SPISOR_JSON_FILE_ABSENT) {
-        *step = refuse(note, "the JSON file does not exist", path);
-    } else if (state != SPISOR_JSON_FILE_PARSED || !cJSON_IsObject(root)) {
-        *step = refuse(note, "the file is not a readable JSON object; it was left unchanged", path);
-        cJSON_Delete(root);
-        root = NULL;
-    }
-    return root;
-}
-
-static int first_missing_depth(cJSON *root, const cJSON *key, runtime_change_note *note, const char *path) {
-    int last = cJSON_GetArraySize(key) - 1;
-    cJSON *node = root;
-    for (int index = 0; index < last; index++) {
-        cJSON *child = child_object(node, cJSON_GetArrayItem(key, index));
-        if (child == NULL) {
-            return index;
-        }
-        if (!cJSON_IsObject(child)) {
-            write_note(note, "a key on the path is not an object, so the key cannot be set: %s", path);
-            return -2;
-        }
-        node = child;
-    }
-    return child_object(node, cJSON_GetArrayItem(key, last)) == NULL ? last : -1;
-}
-
-static runtime_change_step record_json_key(const cJSON *change, cJSON *root, int missing_from, cJSON **record,
-                                           runtime_change_note *note) {
-    static const char *const members[] = {"file", "key", "value"};
-    *record = record_with(change, members, 3);
-    int complete = *record != NULL;
-    if (complete && missing_from >= 0) {
-        complete = cJSON_AddNumberToObject(*record, "createdFrom", missing_from) != NULL;
-    } else if (complete) {
-        cJSON *previous = cJSON_Duplicate(value_at(root, cJSON_GetObjectItemCaseSensitive(change, "key")), 1);
-        complete = previous != NULL && cJSON_AddItemToObject(*record, "previous", previous);
-        if (previous != NULL && !complete) {
-            cJSON_Delete(previous);
-        }
-    }
-    if (!complete) {
-        cJSON_Delete(*record);
-        *record = NULL;
-        return out_of_memory(note);
-    }
-    return RUNTIME_CHANGE_DONE;
-}
-
-static int holds_value_already(cJSON *root, const cJSON *change) {
-    const cJSON *current = value_at(root, cJSON_GetObjectItemCaseSensitive(change, "key"));
-    return current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(change, "value"), 1);
-}
-
-static runtime_change_step prepare_json_key(const cJSON *change, cJSON **record, runtime_change_note *note) {
-    const char *path = text_of(change, "file");
-    runtime_change_step step = RUNTIME_CHANGE_DONE;
-    cJSON *root = read_json_object(path, note, &step);
-    if (root == NULL) {
-        return step;
-    }
-    int missing_from = first_missing_depth(root, cJSON_GetObjectItemCaseSensitive(change, "key"), note, path);
-    if (missing_from == -2) {
-        step = RUNTIME_CHANGE_REFUSED;
-    } else if (missing_from == -1 && holds_value_already(root, change)) {
-        step = RUNTIME_CHANGE_UNNEEDED;
-    } else {
-        step = record_json_key(change, root, missing_from, record, note);
-    }
-    cJSON_Delete(root);
-    return step;
-}
-
-static cJSON *object_creating(cJSON *root, const cJSON *key) {
-    int last = cJSON_GetArraySize(key) - 1;
-    cJSON *node = root;
-    for (int index = 0; node != NULL && index < last; index++) {
-        const char *name = cJSON_GetArrayItem(key, index)->valuestring;
-        cJSON *child = cJSON_GetObjectItemCaseSensitive(node, name);
-        node = child == NULL ? cJSON_AddObjectToObject(node, name) : (cJSON_IsObject(child) ? child : NULL);
-    }
-    return node;
-}
-
-static int set_member(cJSON *parent, const char *name, const cJSON *value) {
-    cJSON *copy = cJSON_Duplicate(value, 1);
-    if (copy == NULL) {
-        return 0;
-    }
-    int set = cJSON_GetObjectItemCaseSensitive(parent, name) != NULL
-                  ? cJSON_ReplaceItemInObjectCaseSensitive(parent, name, copy)
-                  : cJSON_AddItemToObject(parent, name, copy);
-    if (!set) {
-        cJSON_Delete(copy);
-    }
-    return set;
-}
-
-static runtime_change_step perform_json_key(const cJSON *change, runtime_change_note *note) {
-    const char *path = text_of(change, "file");
-    const cJSON *key = cJSON_GetObjectItemCaseSensitive(change, "key");
-    runtime_change_step step = RUNTIME_CHANGE_DONE;
-    const char *ending = trailing_ending(path);
-    cJSON *root = read_json_object(path, note, &step);
-    if (root == NULL) {
-        return step;
-    }
-    cJSON *parent = object_creating(root, key);
-    const char *leaf = cJSON_GetArrayItem(key, cJSON_GetArraySize(key) - 1)->valuestring;
-    int written = parent != NULL && set_member(parent, leaf, cJSON_GetObjectItemCaseSensitive(change, "value")) &&
-                  write_json(path, root, ending);
-    cJSON_Delete(root);
-    return written ? RUNTIME_CHANGE_DONE : fail(note, "the key could not be written", path);
-}
-
-static int json_key_is_on_disk(const cJSON *record) {
-    spisor_json_file_state state;
-    cJSON *root = spisor_read_json_file(text_of(record, "file"), &state);
-    const cJSON *current = root == NULL ? NULL : value_at(root, cJSON_GetObjectItemCaseSensitive(record, "key"));
-    int on_disk = current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(record, "value"), 1);
-    cJSON_Delete(root);
-    return on_disk;
-}
-
-static void remove_created_objects(cJSON *root, const cJSON *key, int created_from) {
-    for (int depth = cJSON_GetArraySize(key) - 1; depth > created_from; depth--) {
-        cJSON *object = object_at(root, key, depth);
-        if (object == NULL || object->child != NULL) {
-            return;
-        }
-        cJSON_DeleteItemFromObjectCaseSensitive(object_at(root, key, depth - 1),
-                                                cJSON_GetArrayItem(key, depth - 1)->valuestring);
-    }
-}
-
-static int restore_previous(cJSON *root, const cJSON *record) {
-    const cJSON *key = cJSON_GetObjectItemCaseSensitive(record, "key");
-    int last = cJSON_GetArraySize(key) - 1;
-    cJSON *parent = object_at(root, key, last);
-    const char *leaf = cJSON_GetArrayItem(key, last)->valuestring;
-    const cJSON *previous = cJSON_GetObjectItemCaseSensitive(record, "previous");
-    if (previous != NULL) {
-        return set_member(parent, leaf, previous);
-    }
-    cJSON_DeleteItemFromObjectCaseSensitive(parent, leaf);
-    const cJSON *created_from = cJSON_GetObjectItemCaseSensitive(record, "createdFrom");
-    remove_created_objects(root, key, cJSON_IsNumber(created_from) ? created_from->valueint : last);
-    return 1;
-}
-
-static int is_already_restored(const cJSON *current, const cJSON *record) {
-    const cJSON *previous = cJSON_GetObjectItemCaseSensitive(record, "previous");
-    return previous == NULL ? current == NULL : current != NULL && cJSON_Compare(current, previous, 1);
-}
-
-static void key_text(const cJSON *key, char *text, size_t size) {
-    size_t used = 0;
-    text[0] = '\0';
-    const cJSON *segment;
-    cJSON_ArrayForEach(segment, key) {
-        int wrote = snprintf(text + used, size - used, "%s%s", used == 0 ? "" : ".", segment->valuestring);
-        if (wrote < 0 || (size_t)wrote >= size - used) {
-            return;
-        }
-        used += (size_t)wrote;
-    }
-}
-
-static runtime_change_reversal drifted_key(const cJSON *record, const char *why, runtime_change_note *note) {
-    char key[512];
-    key_text(cJSON_GetObjectItemCaseSensitive(record, "key"), key, sizeof key);
-    write_note(note, "the key %s in %s %s; it was left", key, text_of(record, "file"), why);
-    return RUNTIME_CHANGE_DRIFTED;
-}
-
-static runtime_change_reversal restore_key(cJSON *root, const cJSON *record, const char *ending,
-                                           runtime_change_note *note) {
-    if (restore_previous(root, record) && write_json(text_of(record, "file"), root, ending)) {
-        return RUNTIME_CHANGE_REVERSED;
-    }
-    write_note(note, "the key's previous value could not be written back to %s", text_of(record, "file"));
-    return RUNTIME_CHANGE_NOT_REVERSED;
-}
-
-static runtime_change_reversal reverse_json_key(const cJSON *record, runtime_change_note *note) {
-    const char *path = text_of(record, "file");
-    const char *ending = trailing_ending(path);
-    spisor_json_file_state state;
-    cJSON *root = spisor_read_json_file(path, &state);
-    if (state != SPISOR_JSON_FILE_PARSED || !cJSON_IsObject(root)) {
-        cJSON_Delete(root);
-        const char *why = state == SPISOR_JSON_FILE_ABSENT ? "is gone with its file"
-                                                           : "is in a file that is no longer readable JSON";
-        return drifted_key(record, why, note);
-    }
-    const cJSON *current = value_at(root, cJSON_GetObjectItemCaseSensitive(record, "key"));
-    runtime_change_reversal reversal;
-    if (current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(record, "value"), 1)) {
-        reversal = restore_key(root, record, ending, note);
-    } else if (is_already_restored(current, record)) {
-        reversal = RUNTIME_CHANGE_REVERSED;
-    } else {
-        reversal = drifted_key(record, "no longer holds the value the host set", note);
-    }
-    cJSON_Delete(root);
-    return reversal;
 }
 
 static int read_text(const char *path, text_buffer *text) {
@@ -790,7 +497,7 @@ static int may_create(const cJSON *change, const char *path) {
 static runtime_change_step record_profile_line(const cJSON *change, int separated, int created, cJSON **record,
                                                runtime_change_note *note) {
     static const char *const members[] = {"file", "line"};
-    *record = record_with(change, members, 2);
+    *record = runtime_change_record_with(change, members, 2);
     if (*record != NULL && (!add_separated(*record, separated) ||
                             (created && cJSON_AddTrueToObject(*record, "created") == NULL))) {
         cJSON_Delete(*record);
@@ -962,7 +669,7 @@ runtime_change_step runtime_change_prepare(const cJSON *change, const cJSON *hol
         return prepare_directory(change, holder, record, note);
     }
     if (is_kind(change, "json-key")) {
-        return prepare_json_key(change, record, note);
+        return runtime_json_key_prepare(change, record, note);
     }
     if (is_kind(change, "path-entry")) {
         return runtime_path_entry_prepare(change, holder, record, note);
@@ -978,7 +685,7 @@ runtime_change_step runtime_change_perform(const cJSON *change, cJSON *record, r
         return perform_directory(change, note);
     }
     if (is_kind(change, "json-key")) {
-        return perform_json_key(change, note);
+        return runtime_json_key_perform(change, record, note);
     }
     if (is_kind(change, "path-entry")) {
         return runtime_path_entry_perform(change, record, note);
@@ -994,7 +701,7 @@ int runtime_change_is_on_disk(const cJSON *record) {
         return runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_DIRECTORY;
     }
     if (is_kind(record, "json-key")) {
-        return json_key_is_on_disk(record);
+        return runtime_json_key_is_on_disk(record);
     }
     if (is_kind(record, "path-entry")) {
         return runtime_path_entry_is_on_disk(record);
@@ -1011,7 +718,7 @@ runtime_change_reversal runtime_change_reverse(const cJSON *record, int held, ru
         return reverse_directory(record, held, note);
     }
     if (is_kind(record, "json-key")) {
-        return reverse_json_key(record, note);
+        return runtime_json_key_reverse(record, note);
     }
     if (is_kind(record, "profile-line")) {
         return reverse_profile_line(record, held, note);

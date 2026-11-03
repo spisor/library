@@ -125,12 +125,16 @@ equal so, ignoring ASCII case on Windows:
 |---|---|---|---|
 | `file` | `path`, `content` or `source` (an absolute file whose bytes are copied), `executable`? | `path`, `digest` of the bytes | deletes what stands at `path`, a link itself and never its target; a directory there is left and reported |
 | `directory` | `path` | `path` | removes it only once empty; one still holding something is left and reported |
-| `json-key` | `file`, `key` (array of strings), `value` | `file`, `key`, `value`, `previous` or `createdFrom` | restores `previous` or deletes the key and the objects it created, only while the key still holds `value`; otherwise it is left and reported in `drifted` |
+| `json-key` | `file`, `key` (array of strings), `value`, `create`? | `file`, `key`, `value`, `previous` or `createdFrom`, `before` (the file's bytes), `after` (digest of the bytes written), `created`? | a file still exactly as written gets its `before` bytes back, or is deleted when it was created; otherwise, while the key still holds `value`, only its own bytes are undone in place: `previous` is put back as the file held it, or the key goes with each object it created that is left empty; a key no longer holding `value` is left and reported in `drifted` |
 | `profile-line` | `file`, `line`, `create`? | `file`, `line`, `separated`, `created`? | removes the exact line, and the newline added before it; a file it created is deleted once nothing else is left in it |
 | `path-entry` | `directory`, `home`, `shell`? | Windows: `directory`, `home`, `entry`, `separated`, `created`; POSIX: `directory`, `home`, and a `profile-line` child per profile | Windows: removes the exact entry it added to the user's `Path`, and the value when it created it; POSIX: its children do |
 
-A `file` is refused over anything that already exists, a `json-key` over a file that is missing or
-not a readable JSON object, a `profile-line` over a missing file unless it asks to `create` it, and a kind runtime does not know
+A `json-key` edits its file in place: every byte it does not own is kept, a present key has only
+its value's bytes replaced, and a missing one is added as the last member of its object (inside any
+objects it has to create) in that object's own indentation, line ending and spacing, or compact on
+one line when the object is on one line or nothing in the file shows a style. A `file` is refused
+over anything that already exists, a `json-key` over a file that is not a readable JSON object or
+is missing unless it asks to `create` it (made as `JSON.stringify(document, null, 2)` and a newline), a `profile-line` over a missing file unless it asks to `create` it, and a kind runtime does not know
 is refused before anything is written. A `directory` or `profile-line` the user already has, or a
 `json-key` already holding its value, is not recorded (`recorded: false`). Exactly three kinds are
 reference-counted across every registration: `profile-line`, `directory` and `path-entry`. One held

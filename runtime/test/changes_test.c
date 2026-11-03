@@ -887,7 +887,192 @@ static void an_appended_line_is_crlf_only_when_every_line_of_the_profile_is(void
     free(after);
 }
 
+static cJSON *settings_key_change(const scratch *place, const char *key_json, const char *value_json) {
+    cJSON *change = file_named_change("json-key", place, "settings.json");
+    cJSON_AddItemToObject(change, "key", cJSON_Parse(key_json));
+    cJSON_AddItemToObject(change, "value", cJSON_Parse(value_json));
+    return change;
+}
+
+static void apply_the_plugin_keys(const scratch *place) {
+    CHECK(applied_sequence(place, "alpha",
+                           settings_key_change(place, "[\"extraKnownMarketplaces\",\"spisor\"]",
+                                               "{\"source\":{\"source\":\"directory\",\"path\":\"/x\"}}")) > 0);
+    CHECK(applied_sequence(place, "alpha", settings_key_change(place, "[\"enabledPlugins\",\"spisor@spisor\"]",
+                                                               "true")) > 0);
+}
+
+/** The probe's hand-formatted settings.json, with ending as its line ending and trailer after the last brace. */
+static void odd_settings(char *text, size_t size, const char *ending, const char *trailer) {
+    snprintf(text, size,
+             "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]},%s"
+             "    \"enabledPlugins\": { \"other@market\": true },  \"n\": 1.50, \"u\": \"\\u00e9\" }%s",
+             ending, trailer);
+}
+
+static void a_hand_formatted_file_keeps_its_bytes_and_comes_back_exactly(const char *ending, const char *trailer,
+                                                                         const char *label) {
+    scratch place;
+    fresh_scratch(&place, "hand-formatted");
+    register_host(&place, "alpha");
+    char original[512];
+    odd_settings(original, sizeof original, ending, trailer);
+    write_home_file(&place, "settings.json", original);
+    char *before = snapshot_of(&place);
+    apply_the_plugin_keys(&place);
+    char installed[1024];
+    snprintf(installed, sizeof installed,
+             "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo hi\"}]}]},%s"
+             "    \"enabledPlugins\": { \"other@market\": true, \"spisor@spisor\": true },  \"n\": 1.50, "
+             "\"u\": \"\\u00e9\",\"extraKnownMarketplaces\":{\"spisor\":{\"source\":{\"source\":\"directory\","
+             "\"path\":\"/x\"}}} }%s",
+             ending, trailer);
+    home_file_is(&place, "settings.json", installed);
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    char *after = snapshot_of(&place);
+    check_text(after, before, label);
+    free(before);
+    free(after);
+}
+
+static void hand_formatted_files_come_back_byte_identical(void) {
+    a_hand_formatted_file_keeps_its_bytes_and_comes_back_exactly("\n", "\n", "LF with a trailing newline");
+    a_hand_formatted_file_keeps_its_bytes_and_comes_back_exactly("\r\n", "\r\n", "CRLF with a trailing newline");
+    a_hand_formatted_file_keeps_its_bytes_and_comes_back_exactly("\n", "", "LF without a trailing newline");
+}
+
+static const char *const pretty_settings = "{\r\n"
+                                           "    \"theme\": \"dark\",\r\n"
+                                           "    \"n\": 1.50,\r\n"
+                                           "    \"enabledPlugins\": {\r\n"
+                                           "        \"other@market\": true\r\n"
+                                           "    }\r\n"
+                                           "}";
+
+static void a_pretty_file_takes_the_member_in_its_own_style(void) {
+    scratch place;
+    fresh_scratch(&place, "pretty-style");
+    register_host(&place, "alpha");
+    write_home_file(&place, "settings.json", pretty_settings);
+    apply_the_plugin_keys(&place);
+    home_file_is(&place, "settings.json",
+                 "{\r\n    \"theme\": \"dark\",\r\n    \"n\": 1.50,\r\n    \"enabledPlugins\": {\r\n"
+                 "        \"other@market\": true,\r\n        \"spisor@spisor\": true\r\n    },\r\n"
+                 "    \"extraKnownMarketplaces\": {\r\n        \"spisor\": {\r\n            \"source\": {\r\n"
+                 "                \"source\": \"directory\",\r\n                \"path\": \"/x\"\r\n"
+                 "            }\r\n        }\r\n    }\r\n}");
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    home_file_is(&place, "settings.json", pretty_settings);
+}
+
+static void an_untouched_file_gets_its_exact_bytes_back(void) {
+    scratch place;
+    fresh_scratch(&place, "exact-bytes");
+    register_host(&place, "alpha");
+    const char *original = "{\n  \"enabledPlugins\": {  },\n  \"theme\": \"dark\"\n}\n";
+    write_home_file(&place, "settings.json", original);
+    CHECK(applied_sequence(&place, "alpha", settings_key_change(&place, "[\"enabledPlugins\",\"spisor@spisor\"]",
+                                                                "true")) == 1);
+    home_file_is(&place, "settings.json",
+                 "{\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  },\n  \"theme\": \"dark\"\n}\n");
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    home_file_is(&place, "settings.json", original);
+}
+
+static void a_member_the_user_added_after_ours_survives_the_reverse(void) {
+    scratch place;
+    fresh_scratch(&place, "user-added");
+    register_host(&place, "alpha");
+    write_home_file(&place, "settings.json", "{\n  \"n\": 1.50,\n  \"theme\": \"dark\"\n}\n");
+    CHECK(applied_sequence(&place, "alpha", settings_key_change(&place, "[\"enabledPlugins\",\"spisor@spisor\"]",
+                                                                "true")) == 1);
+    CHECK(applied_sequence(&place, "alpha", settings_key_change(&place, "[\"n\"]", "2")) == 2);
+    write_home_file(&place, "settings.json",
+                    "{\n  \"n\": 2,\n  \"theme\": \"dark\",\n  \"enabledPlugins\": {\n"
+                    "    \"spisor@spisor\": true,\n    \"theirs@market\": true\n  },\n  \"u\": \"\\u00e9\"\n}\n");
+    CHECK(reverse_counts(&place, "alpha", 2, 0));
+    home_file_is(&place, "settings.json",
+                 "{\n  \"n\": 1.50,\n  \"theme\": \"dark\",\n  \"enabledPlugins\": {\n"
+                 "    \"theirs@market\": true\n  },\n  \"u\": \"\\u00e9\"\n}\n");
+}
+
+static void an_emptied_object_the_host_created_goes_with_its_member(void) {
+    scratch place;
+    fresh_scratch(&place, "emptied");
+    register_host(&place, "alpha");
+    write_home_file(&place, "settings.json", "{\n  \"n\": 1.50\n}\n");
+    CHECK(applied_sequence(&place, "alpha", settings_key_change(&place, "[\"enabledPlugins\",\"spisor@spisor\"]",
+                                                                "true")) == 1);
+    write_home_file(&place, "settings.json",
+                    "{\n  \"mine\": 1,\n  \"n\": 1.50,\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  }\n}\n");
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    home_file_is(&place, "settings.json", "{\n  \"mine\": 1,\n  \"n\": 1.50\n}\n");
+}
+
+static void a_value_the_user_changed_is_reported_and_the_file_left(void) {
+    scratch place;
+    fresh_scratch(&place, "user-changed");
+    register_host(&place, "alpha");
+    char original[512];
+    odd_settings(original, sizeof original, "\n", "\n");
+    write_home_file(&place, "settings.json", original);
+    apply_the_plugin_keys(&place);
+    const char *edited = "{\"enabledPlugins\": { \"spisor@spisor\": false }, \"n\": 1.50}";
+    write_home_file(&place, "settings.json", edited);
+    cJSON *result = reverse_host(&place, "alpha");
+    CHECK(reversed_count(result) == 2 && drift_count(result) == 1);
+    cJSON_Delete(result);
+    home_file_is(&place, "settings.json", edited);
+}
+
+static cJSON *created_settings_key_change(const scratch *place, int create) {
+    cJSON *change = settings_key_change(place, "[\"enabledPlugins\",\"spisor@spisor\"]", "true");
+    cJSON_AddBoolToObject(change, "create", create);
+    return change;
+}
+
+static void an_absent_file_is_created_only_when_asked_and_removed_on_reverse(void) {
+    scratch place;
+    fresh_scratch(&place, "created-json");
+    register_host(&place, "alpha");
+    char *before = snapshot_of(&place);
+    CHECK(apply_refused(&place, "alpha", created_settings_key_change(&place, 0)));
+    CHECK(!home_entry_exists(&place, "settings.json"));
+    CHECK(applied_sequence(&place, "alpha", created_settings_key_change(&place, 1)) == 1);
+    home_file_is(&place, "settings.json", "{\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  }\n}\n");
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    char *after = snapshot_of(&place);
+    check_text(after, before, "home after reversing a created json file");
+    CHECK(applied_sequence(&place, "alpha", created_settings_key_change(&place, 1)) == 2);
+    write_home_file(&place, "settings.json",
+                    "{\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  },\n  \"mine\": 1\n}\n");
+    CHECK(reverse_counts(&place, "alpha", 1, 0));
+    home_file_is(&place, "settings.json", "{\n  \"mine\": 1\n}\n");
+    free(before);
+    free(after);
+}
+
+static void a_malformed_settings_file_is_refused_and_untouched(void) {
+    scratch place;
+    fresh_scratch(&place, "malformed-settings");
+    register_host(&place, "alpha");
+    const char *broken = "{\n  \"n\": 1.50,\n  \"enabledPlugins\": {\n}\n";
+    write_home_file(&place, "settings.json", broken);
+    CHECK(apply_refused(&place, "alpha", settings_key_change(&place, "[\"enabledPlugins\",\"spisor@spisor\"]",
+                                                             "true")));
+    home_file_is(&place, "settings.json", broken);
+    CHECK(change_count(&place, "alpha") == 0);
+}
+
 int main(void) {
+    hand_formatted_files_come_back_byte_identical();
+    a_pretty_file_takes_the_member_in_its_own_style();
+    an_untouched_file_gets_its_exact_bytes_back();
+    a_member_the_user_added_after_ours_survives_the_reverse();
+    an_emptied_object_the_host_created_goes_with_its_member();
+    a_value_the_user_changed_is_reported_and_the_file_left();
+    an_absent_file_is_created_only_when_asked_and_removed_on_reverse();
+    a_malformed_settings_file_is_refused_and_untouched();
     each_kind_reverses_to_the_bytes_before();
     a_key_the_user_changed_is_left_and_reported();
     an_interrupted_removal_finishes_and_reverses_nothing_twice();
