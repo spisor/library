@@ -243,22 +243,22 @@ static void append_key(growing_text *out, const char *name) {
     free(quoted);
 }
 
-char *json_style_member_text(const json_style *style, int into_empty, const char *name, const cJSON *value,
-                             size_t *length) {
+char *json_style_member_text(const json_style *style, json_placement placement, const char *name,
+                             const cJSON *value, size_t *length) {
     growing_text out = {NULL, 0, 0, 0};
     append(&out, "", 0);
-    if (!into_empty) {
+    if (placement == JSON_PLACED_AFTER_MEMBER) {
         append(&out, ",", 1);
     }
     if (style->multiline) {
         append_line_break(&out, style);
-    } else if (!into_empty) {
+    } else if (placement == JSON_PLACED_AFTER_MEMBER) {
         append_text(&out, style->gap);
     }
     append_key(&out, name);
     append_text(&out, style->separator);
     append_value(&out, style, value);
-    if (style->multiline && into_empty) {
+    if (style->multiline && placement == JSON_PLACED_ALONE) {
         append(&out, style->newline, strlen(style->newline));
         append_text(&out, style->closing);
     }

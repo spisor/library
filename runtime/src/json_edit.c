@@ -97,6 +97,9 @@ static int splice(const char *text, size_t length, json_span replaced, const cha
     bytes[total] = '\0';
     edited->bytes = bytes;
     edited->length = total;
+    edited->splice.at = replaced.start;
+    edited->splice.replaced_length = replaced.end - replaced.start;
+    edited->splice.written_length = inserted_length;
     return 1;
 }
 
@@ -140,16 +143,45 @@ static int after_last_member(const char *text, json_span object, json_span *poin
     return stepped == 0 && any;
 }
 
+static json_span empty_span_at(size_t at) {
+    json_span point = {at, at};
+    return point;
+}
+
+/**
+ * Where a member goes into an object with none, every byte inside its braces kept: before the line
+ * break that ends what is inside when there is one, so a comment line stays above the member and the
+ * closing brace keeps its line; before the closing brace otherwise, or just after the opening one
+ * when the member is written compact.
+ */
+static json_placement empty_object_point(const char *text, json_span object, const json_style *style,
+                                         json_span *point) {
+    json_span interior = interior_of(object);
+    if (!style->multiline) {
+        *point = empty_span_at(interior.start);
+        return JSON_PLACED_ALONE;
+    }
+    for (size_t index = interior.end; index > interior.start; index--) {
+        if (text[index - 1] == '\n') {
+            size_t at = index - 1 > interior.start && text[index - 2] == '\r' ? index - 2 : index - 1;
+            *point = empty_span_at(at);
+            return JSON_PLACED_ABOVE_CLOSING_LINE;
+        }
+    }
+    *point = empty_span_at(interior.end);
+    return JSON_PLACED_ALONE;
+}
+
 static int insert_member(const char *text, size_t length, json_span root, json_span object, const char *name,
                          const cJSON *value, json_edit_text *edited) {
     json_span point;
-    int into_empty = !after_last_member(text, object, &point);
-    if (into_empty) {
-        point = interior_of(object);
-    }
     json_style style = json_style_of(text, root, object);
+    json_placement placement = JSON_PLACED_AFTER_MEMBER;
+    if (!after_last_member(text, object, &point)) {
+        placement = empty_object_point(text, object, &style, &point);
+    }
     size_t member_length = 0;
-    char *member = json_style_member_text(&style, into_empty, name, value, &member_length);
+    char *member = json_style_member_text(&style, placement, name, value, &member_length);
     int done = member != NULL && splice(text, length, point, member, member_length, edited);
     free(member);
     return done;
@@ -195,8 +227,30 @@ int json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON
     return 0;
 }
 
-/** The bytes a removed member takes with it: the comma before it, or after it, or the whole interior. */
-static json_span removed_span(json_span object, const member_place *place) {
+static int is_blank(const char *text, size_t start, size_t end) {
+    for (size_t index = start; index < end; index++) {
+        if (text[index] != ' ' && text[index] != '\t' && text[index] != '\n' && text[index] != '\r') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/** An only member with the blank run before it, or the whole interior when nothing but blanks would stay. */
+static json_span removed_only_member(const char *text, json_span object, const json_member *member) {
+    json_span interior = interior_of(object);
+    json_span removed = {member->key.start, member->value.end};
+    while (removed.start > interior.start && is_blank(text, removed.start - 1, removed.start)) {
+        removed.start--;
+    }
+    if (is_blank(text, interior.start, removed.start) && is_blank(text, removed.end, interior.end)) {
+        removed = interior;
+    }
+    return removed;
+}
+
+/** The bytes a removed member takes with it: the comma before it, or after it, or the blanks around it. */
+static json_span removed_span(const char *text, json_span object, const member_place *place) {
     json_span removed;
     if (place->has_previous) {
         removed.start = place->previous.value.end;
@@ -205,48 +259,57 @@ static json_span removed_span(json_span object, const member_place *place) {
         removed.start = place->found.key.start;
         removed.end = place->next.key.start;
     } else {
-        removed = interior_of(object);
+        removed = removed_only_member(text, object, &place->found);
     }
     return removed;
 }
 
-/** 1 with edited when the member at depth was removed, 0 when nothing more is to go, -1 on failure. */
-static int remove_one(const json_edit_text *current, const cJSON *key, int depth, int only_if_empty,
-                      json_edit_text *edited) {
+typedef enum removal { REMOVAL_FAILED, REMOVAL_DONE, REMOVAL_KEPT, REMOVAL_ABSENT } removal;
+
+/** Removes the member at depth, an object one only when it is empty; KEPT when it is not, ABSENT when missing. */
+static removal remove_one(const json_edit_text *current, const cJSON *key, int depth, int only_if_empty,
+                          json_edit_text *edited) {
     json_span root;
     json_span object;
     if (!document_root(current->bytes, current->length, &root)) {
-        return -1;
+        return REMOVAL_FAILED;
     }
     place_answer reached = locate_object(current->bytes, root, key, depth, &object);
     member_place place = {0};
     place_answer answer =
         reached == PLACE_FOUND ? locate_member(current->bytes, object, segment_at(key, depth), &place) : reached;
     if (answer == PLACE_MALFORMED) {
-        return -1;
+        return REMOVAL_FAILED;
     }
-    if (answer == PLACE_ABSENT ||
-        (only_if_empty && !json_edit_is_empty_object(current->bytes + place.found.value.start,
-                                                     place.found.value.end - place.found.value.start))) {
-        return 0;
+    if (answer == PLACE_ABSENT) {
+        return REMOVAL_ABSENT;
     }
-    return splice(current->bytes, current->length, removed_span(object, &place), "", 0, edited) ? 1 : -1;
+    if (only_if_empty && !json_edit_is_empty_object(current->bytes + place.found.value.start,
+                                                    place.found.value.end - place.found.value.start)) {
+        return REMOVAL_KEPT;
+    }
+    return splice(current->bytes, current->length, removed_span(current->bytes, object, &place), "", 0, edited)
+               ? REMOVAL_DONE
+               : REMOVAL_FAILED;
 }
 
 int json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from, json_edit_text *edited) {
-    json_edit_text current = {NULL, 0};
+    json_edit_text current = {NULL, 0, {0, 0, 0}};
     if (!copy_of(text, length, &current)) {
         return 0;
     }
     for (int depth = last_depth(key); depth >= created_from && depth >= 0; depth--) {
-        json_edit_text next = {NULL, 0};
-        int removed = remove_one(&current, key, depth, depth != last_depth(key), &next);
-        if (removed < 0) {
+        json_edit_text next = {NULL, 0, {0, 0, 0}};
+        removal removed = remove_one(&current, key, depth, depth != last_depth(key), &next);
+        if (removed == REMOVAL_FAILED) {
             free(current.bytes);
             return 0;
         }
-        if (removed == 0) {
+        if (removed == REMOVAL_KEPT) {
             break;
+        }
+        if (removed == REMOVAL_ABSENT) {
+            continue;
         }
         free(current.bytes);
         current = next;
@@ -284,6 +347,15 @@ int json_edit_is_empty_object(const char *text, size_t length) {
     }
     json_members_start(&walk, text, length, root);
     return json_members_next(&walk, &first) == 0;
+}
+
+int json_edit_splice_text(const char *text, size_t length, size_t at, size_t removed_length, const char *inserted,
+                          size_t inserted_length, json_edit_text *edited) {
+    if (at > length || removed_length > length - at) {
+        return 0;
+    }
+    json_span removed = {at, at + removed_length};
+    return splice(text, length, removed, inserted, inserted_length, edited);
 }
 
 int json_edit_new_document(const cJSON *key, const cJSON *value, json_edit_text *created) {

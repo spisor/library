@@ -974,7 +974,7 @@ static void an_untouched_file_gets_its_exact_bytes_back(void) {
     CHECK(applied_sequence(&place, "alpha", settings_key_change(&place, "[\"enabledPlugins\",\"spisor@spisor\"]",
                                                                 "true")) == 1);
     home_file_is(&place, "settings.json",
-                 "{\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  },\n  \"theme\": \"dark\"\n}\n");
+                 "{\n  \"enabledPlugins\": {  \n    \"spisor@spisor\": true\n  },\n  \"theme\": \"dark\"\n}\n");
     CHECK(reverse_counts(&place, "alpha", 1, 0));
     home_file_is(&place, "settings.json", original);
 }

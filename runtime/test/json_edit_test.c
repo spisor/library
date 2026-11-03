@@ -3,6 +3,7 @@
 
 #include "check.h"
 #include "json_edit.h"
+#include "spisor/json_kind.h"
 
 static cJSON *parsed(const char *json) {
     cJSON *tree = cJSON_Parse(json);
@@ -15,7 +16,7 @@ static void expect_set(const char *text, const char *key_json, const char *value
                        const char *label) {
     cJSON *key = parsed(key_json);
     cJSON *value = parsed(value_json);
-    json_edit_text edited = {NULL, 0};
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
     int done = json_edit_set(text, strlen(text), key, value, &edited);
     if (expected == NULL) {
         CHECK(!done);
@@ -33,7 +34,7 @@ static void expect_set(const char *text, const char *key_json, const char *value
 static void expect_remove(const char *text, const char *key_json, int created_from, const char *expected,
                           const char *label) {
     cJSON *key = parsed(key_json);
-    json_edit_text edited = {NULL, 0};
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
     int done = json_edit_remove(text, strlen(text), key, created_from, &edited);
     check_text(done ? edited.bytes : "(refused)", expected, label);
     free(edited.bytes);
@@ -45,8 +46,8 @@ static void expect_round_trip(const char *text, const char *key_json, const char
                               const char *label) {
     cJSON *key = parsed(key_json);
     cJSON *value = parsed(value_json);
-    json_edit_text set = {NULL, 0};
-    json_edit_text removed = {NULL, 0};
+    json_edit_text set = {NULL, 0, {0, 0, 0}};
+    json_edit_text removed = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_set(text, strlen(text), key, value, &set));
     CHECK(set.bytes != NULL && json_edit_remove(set.bytes, set.length, key, created_from, &removed));
     check_text(removed.bytes, text, label);
@@ -91,8 +92,13 @@ static void missing_objects_are_created_on_the_way(void) {
 
 static void an_empty_object_takes_the_files_style(void) {
     expect_set("{\n  \"a\": {}\n}\n", "[\"a\",\"k\"]", "1", "{\n  \"a\": {\n    \"k\": 1\n  }\n}\n", "nested empty");
-    expect_set("{\r\n    \"a\": { }\r\n}", "[\"a\",\"k\"]", "1", "{\r\n    \"a\": {\r\n        \"k\": 1\r\n    }\r\n}",
-               "nested empty CRLF");
+    expect_set("{\r\n    \"a\": { }\r\n}", "[\"a\",\"k\"]", "1", "{\r\n    \"a\": { \r\n        \"k\": 1\r\n    }\r\n}",
+               "nested empty CRLF keeps the space inside");
+    expect_set("{\n  \"a\": {\n    // x\n  }\n}\n", "[\"a\",\"k\"]", "1",
+               "{\n  \"a\": {\n    // x\n    \"k\": 1\n  }\n}\n", "a comment inside an empty object is kept");
+    expect_set("{\r\n  \"a\": {\r\n  }\r\n}", "[\"a\",\"k\"]", "1", "{\r\n  \"a\": {\r\n    \"k\": 1\r\n  }\r\n}",
+               "an empty object over two CRLF lines");
+    expect_set("{ }", "[\"k\"]", "1", "{\"k\":1 }", "a compact empty object keeps its space");
     expect_set("{}", "[\"k\"]", "{\"x\":1}", "{\"k\":{\"x\":1}}", "a bare empty file is compact");
     expect_set("{}\n", "[\"k\",\"j\"]", "1", "{\"k\":{\"j\":1}}\n", "compact missing objects");
 }
@@ -111,6 +117,27 @@ static void a_string_escapes_only_what_json_requires(void) {
 static void comments_and_strings_do_not_confuse_the_scanner(void) {
     expect_set("{\n  // a note\n  \"a\": \"} , {\"\n}\n", "[\"b\"]", "1",
                "{\n  // a note\n  \"a\": \"} , {\",\n  \"b\": 1\n}\n", "comment and braces in a string");
+}
+
+static void the_scanner_reads_every_shape_of_token(void) {
+    expect_set("\xEF\xBB\xBF{\"a\": 1}", "[\"b\"]", "2", "\xEF\xBB\xBF{\"a\": 1,\"b\": 2}", "a BOM");
+    expect_set("{\"n\": 1E+5, \"m\": -1e-3}", "[\"m\"]", "0", "{\"n\": 1E+5, \"m\": 0}", "exponent numbers");
+    expect_set("{\"n\": -1e-3}", "[\"x\"]", "1", "{\"n\": -1e-3,\"x\": 1}", "an exponent last");
+    expect_set("{\"list\": [{\"t\": \"}{][\"}, {\"u\": \"\\\\\\\"}\"}], \"z\": 1}", "[\"z\"]", "2",
+               "{\"list\": [{\"t\": \"}{][\"}, {\"u\": \"\\\\\\\"}\"}], \"z\": 2}", "objects in an array, braces in strings");
+    expect_set("{\"list\": [{\"t\": \"}\"}]}", "[\"list\",\"t\"]", "1", NULL, "an array is no object on the way");
+}
+
+static void a_duplicated_key_resolves_as_json_parse_does(void) {
+    const char *text = "{\"a\":1,\"a\":2}";
+    cJSON *key = parsed("[\"a\"]");
+    json_span value = {0, 0};
+    CHECK(json_edit_find_value(text, strlen(text), key, &value) && value.start == 11 && value.end == 12);
+    cJSON *read = spisor_parse_json((const uint8_t *)text, strlen(text));
+    CHECK(cJSON_GetObjectItemCaseSensitive(read, "a")->valueint == 2);
+    cJSON_Delete(read);
+    cJSON_Delete(key);
+    expect_set(text, "[\"a\"]", "3", "{\"a\":1,\"a\":3}", "the last duplicate is set");
 }
 
 static void a_malformed_file_or_path_is_refused(void) {
@@ -143,7 +170,7 @@ static void a_value_is_found_and_replaced_by_its_bytes(void) {
     cJSON *key = parsed("[\"a\",\"b\"]");
     json_span value = {0, 0};
     CHECK(json_edit_find_value(text, strlen(text), key, &value) && value.start == 12 && value.end == 16);
-    json_edit_text edited = {NULL, 0};
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_replace_value(text, strlen(text), key, "\"x\"", 3, &edited));
     check_text(edited.bytes, "{\"a\": {\"b\": \"x\"}}", "replace by bytes");
     free(edited.bytes);
@@ -154,7 +181,7 @@ static void a_value_is_found_and_replaced_by_its_bytes(void) {
 static void a_new_document_is_stringify_form(void) {
     cJSON *key = parsed("[\"a\",\"b\"]");
     cJSON *value = parsed("true");
-    json_edit_text created = {NULL, 0};
+    json_edit_text created = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_new_document(key, value, &created));
     check_text(created.bytes, "{\n  \"a\": {\n    \"b\": true\n  }\n}\n", "new document");
     free(created.bytes);
@@ -170,6 +197,8 @@ int main(void) {
     a_key_is_matched_by_what_it_decodes_to();
     a_string_escapes_only_what_json_requires();
     comments_and_strings_do_not_confuse_the_scanner();
+    the_scanner_reads_every_shape_of_token();
+    a_duplicated_key_resolves_as_json_parse_does();
     a_malformed_file_or_path_is_refused();
     removal_undoes_an_add_exactly();
     removal_keeps_what_the_user_added_beside_it();

@@ -14,6 +14,8 @@
 #include "spisor/json_file.h"
 #include "spisor/path.h"
 
+static const char *const unreadable_object = "the file is not a readable JSON object; it was left unchanged";
+
 static void write_note(runtime_change_note *note, const char *format, ...) {
     va_list arguments;
     va_start(arguments, format);
@@ -44,6 +46,10 @@ static const cJSON *key_of(const cJSON *change) {
     return cJSON_GetObjectItemCaseSensitive(change, "key");
 }
 
+static const cJSON *value_of(const cJSON *change) {
+    return cJSON_GetObjectItemCaseSensitive(change, "value");
+}
+
 static int is_string_list(const cJSON *key) {
     if (!cJSON_IsArray(key) || cJSON_GetArraySize(key) == 0) {
         return 0;
@@ -69,7 +75,7 @@ const char *runtime_json_key_defect(const cJSON *change) {
     if (create != NULL && !cJSON_IsBool(create)) {
         return "a json-key change's create is not a boolean";
     }
-    return cJSON_GetObjectItemCaseSensitive(change, "value") != NULL ? NULL : "a json-key change needs a value";
+    return value_of(change) != NULL ? NULL : "a json-key change needs a value";
 }
 
 static cJSON *child_object(cJSON *object, const cJSON *segment) {
@@ -92,21 +98,8 @@ static cJSON *value_at(cJSON *root, const cJSON *key) {
     return parent == NULL ? NULL : child_object(parent, cJSON_GetArrayItem(key, last));
 }
 
-static cJSON *read_json_object(const char *path, runtime_change_note *note, runtime_change_step *step) {
-    spisor_json_file_state state;
-    cJSON *root = spisor_read_json_file(path, &state);
-    if (state == SPISOR_JSON_FILE_ABSENT) {
-        *step = refuse(note, "the JSON file does not exist", path);
-    } else if (state != SPISOR_JSON_FILE_PARSED || !cJSON_IsObject(root)) {
-        *step = refuse(note, "the file is not a readable JSON object; it was left unchanged", path);
-        cJSON_Delete(root);
-        root = NULL;
-    }
-    return root;
-}
-
 /** The depth of the first segment missing on the way to key, -1 when key is present, -2 when blocked. */
-static int first_missing_depth(cJSON *root, const cJSON *key, runtime_change_note *note, const char *path) {
+static int first_missing_depth(cJSON *root, const cJSON *key) {
     int last = cJSON_GetArraySize(key) - 1;
     cJSON *node = root;
     for (int index = 0; index < last; index++) {
@@ -115,17 +108,11 @@ static int first_missing_depth(cJSON *root, const cJSON *key, runtime_change_not
             return index;
         }
         if (!cJSON_IsObject(child)) {
-            write_note(note, "a key on the path is not an object, so the key cannot be set: %s", path);
             return -2;
         }
         node = child;
     }
     return child_object(node, cJSON_GetArrayItem(key, last)) == NULL ? last : -1;
-}
-
-static int holds_value_already(cJSON *root, const cJSON *change) {
-    const cJSON *current = value_at(root, key_of(change));
-    return current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(change, "value"), 1);
 }
 
 typedef struct file_bytes {
@@ -139,6 +126,16 @@ static file_bytes read_bytes(const char *path) {
     return read;
 }
 
+/** The JSON object the bytes hold, read as spisor_read_json_file reads a file; NULL when they hold none. */
+static cJSON *object_in(const file_bytes *bytes) {
+    cJSON *root = spisor_parse_json_text((const uint8_t *)bytes->bytes, bytes->length);
+    if (!cJSON_IsObject(root)) {
+        cJSON_Delete(root);
+        return NULL;
+    }
+    return root;
+}
+
 static int add_or_replace(cJSON *record, const char *member, cJSON *value) {
     int set = value != NULL && (cJSON_GetObjectItemCaseSensitive(record, member) != NULL
                                     ? cJSON_ReplaceItemInObjectCaseSensitive(record, member, value)
@@ -149,62 +146,93 @@ static int add_or_replace(cJSON *record, const char *member, cJSON *value) {
     return set;
 }
 
-static int set_after(cJSON *record, const json_edit_text *written) {
+static int set_digest(cJSON *record, const char *member, const char *bytes, size_t length) {
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    runtime_change_digest((const uint8_t *)written->bytes, written->length, digest);
-    return add_or_replace(record, "after", cJSON_CreateString(digest));
+    runtime_change_digest((const uint8_t *)bytes, length, digest);
+    return add_or_replace(record, member, cJSON_CreateString(digest));
+}
+
+static int digest_is(const cJSON *record, const char *member, const char *bytes, size_t length) {
+    char digest[RUNTIME_CHANGE_DIGEST_SIZE];
+    runtime_change_digest((const uint8_t *)bytes, length, digest);
+    const char *recorded = text_of(record, member);
+    return recorded != NULL && strcmp(recorded, digest) == 0;
 }
 
 /**
- * @implNote A registration is JSON, so the bytes go in as a string only when they are UTF-8 without a
- * NUL; any other file is reversed member by member, which is exact for every byte but a value's.
+ * @implNote A registration is JSON, so bytes go in as a string only when they are UTF-8 without a NUL;
+ * a replaced value that is not is undone through the drift path, which writes it in the file's style.
  */
-static int is_storable_text(const file_bytes *bytes) {
-    if (memchr(bytes->bytes, '\0', bytes->length) != NULL) {
+static int is_storable_text(const char *bytes, size_t length) {
+    if (memchr(bytes, '\0', length) != NULL) {
         return 0;
     }
     size_t decoded_length = 0;
-    uint8_t *decoded = spisor_decode_utf8_lossy((const uint8_t *)bytes->bytes, bytes->length, &decoded_length);
-    int same = decoded != NULL && decoded_length == bytes->length && memcmp(decoded, bytes->bytes, decoded_length) == 0;
+    uint8_t *decoded = spisor_decode_utf8_lossy((const uint8_t *)bytes, length, &decoded_length);
+    int same = decoded != NULL && decoded_length == length && memcmp(decoded, bytes, length) == 0;
     free(decoded);
     return same;
 }
 
-static int add_before(cJSON *record, const file_bytes *before) {
-    return !is_storable_text(before) || add_or_replace(record, "before", cJSON_CreateString(before->bytes));
+static int set_replaced(cJSON *record, const file_bytes *before, const json_edit_splice *splice) {
+    const char *replaced = before->bytes + splice->at;
+    cJSON_DeleteItemFromObjectCaseSensitive(record, "replaced");
+    if (!is_storable_text(replaced, splice->replaced_length)) {
+        return 1;
+    }
+    char *copy = malloc(splice->replaced_length + 1);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, replaced, splice->replaced_length);
+    copy[splice->replaced_length] = '\0';
+    int set = add_or_replace(record, "replaced", cJSON_CreateString(copy));
+    free(copy);
+    return set;
 }
 
-static int add_what_was_there(cJSON *record, cJSON *root, const cJSON *change, int missing_from) {
+static int set_number(cJSON *record, const char *member, double number) {
+    return add_or_replace(record, member, cJSON_CreateNumber(number));
+}
+
+/** The inverse of the edit: where it was, the bytes it replaced, how many it wrote, and both digests. */
+static int set_inverse(cJSON *record, const file_bytes *before, const json_edit_text *edited) {
+    return set_number(record, "spliceAt", (double)edited->splice.at) &&
+           set_number(record, "writtenLength", (double)edited->splice.written_length) &&
+           set_replaced(record, before, &edited->splice) &&
+           set_digest(record, "beforeDigest", before->bytes, before->length) &&
+           set_digest(record, "after", edited->bytes, edited->length);
+}
+
+static int set_what_was_there(cJSON *record, cJSON *root, const cJSON *change, int missing_from) {
+    cJSON_DeleteItemFromObjectCaseSensitive(record, "createdFrom");
+    cJSON_DeleteItemFromObjectCaseSensitive(record, "previous");
     if (missing_from >= 0) {
-        return cJSON_AddNumberToObject(record, "createdFrom", missing_from) != NULL;
+        return set_number(record, "createdFrom", missing_from);
     }
     return add_or_replace(record, "previous", cJSON_Duplicate(value_at(root, key_of(change)), 1));
 }
 
-static runtime_change_step finish_record(cJSON **record, int complete, runtime_change_note *note) {
-    if (complete) {
-        return RUNTIME_CHANGE_DONE;
+/**
+ * Edits the bytes and makes record describe exactly that edit, so a reversal undoes what was written
+ * whatever the file held when the change was prepared. edited is freed by the caller.
+ */
+static runtime_change_step describe_edit(const cJSON *change, cJSON *root, const file_bytes *before, cJSON *record,
+                                         json_edit_text *edited, runtime_change_note *note) {
+    const char *path = text_of(change, "file");
+    int missing_from = first_missing_depth(root, key_of(change));
+    if (missing_from == -2) {
+        return refuse(note, "a key on the path is not an object, so the key cannot be set", path);
     }
-    cJSON_Delete(*record);
-    *record = NULL;
-    return out_of_memory(note);
+    if (!json_edit_set(before->bytes, before->length, key_of(change), value_of(change), edited)) {
+        return refuse(note, unreadable_object, path);
+    }
+    return set_what_was_there(record, root, change, missing_from) && set_inverse(record, before, edited)
+               ? RUNTIME_CHANGE_DONE
+               : out_of_memory(note);
 }
 
 static const char *const recorded_members[] = {"file", "key", "value"};
-
-static runtime_change_step record_edit(const cJSON *change, cJSON *root, int missing_from, const file_bytes *before,
-                                       cJSON **record, runtime_change_note *note) {
-    json_edit_text edited = {NULL, 0};
-    if (!json_edit_set(before->bytes, before->length, key_of(change), cJSON_GetObjectItemCaseSensitive(change, "value"),
-                       &edited)) {
-        return refuse(note, "the file is not a readable JSON object; it was left unchanged", text_of(change, "file"));
-    }
-    *record = runtime_change_record_with(change, recorded_members, 3);
-    int complete = *record != NULL && add_what_was_there(*record, root, change, missing_from) &&
-                   add_before(*record, before) && set_after(*record, &edited);
-    free(edited.bytes);
-    return finish_record(record, complete, note);
-}
 
 static int may_create(const cJSON *change, const char *path) {
     return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "create")) &&
@@ -212,33 +240,49 @@ static int may_create(const cJSON *change, const char *path) {
 }
 
 static runtime_change_step record_created(const cJSON *change, cJSON **record, runtime_change_note *note) {
-    json_edit_text created = {NULL, 0};
-    if (!json_edit_new_document(key_of(change), cJSON_GetObjectItemCaseSensitive(change, "value"), &created)) {
+    json_edit_text created = {NULL, 0, {0, 0, 0}};
+    if (!json_edit_new_document(key_of(change), value_of(change), &created)) {
         return out_of_memory(note);
     }
     *record = runtime_change_record_with(change, recorded_members, 3);
-    int complete = *record != NULL && cJSON_AddNumberToObject(*record, "createdFrom", 0) != NULL &&
-                   cJSON_AddTrueToObject(*record, "created") != NULL && set_after(*record, &created);
+    int complete = *record != NULL && set_number(*record, "createdFrom", 0) &&
+                   cJSON_AddTrueToObject(*record, "created") != NULL &&
+                   set_digest(*record, "after", created.bytes, created.length);
     free(created.bytes);
-    return finish_record(record, complete, note);
+    if (!complete) {
+        cJSON_Delete(*record);
+        *record = NULL;
+        return out_of_memory(note);
+    }
+    return RUNTIME_CHANGE_DONE;
+}
+
+static runtime_change_step record_edit(const cJSON *change, cJSON *root, const file_bytes *before, cJSON **record,
+                                       runtime_change_note *note) {
+    *record = runtime_change_record_with(change, recorded_members, 3);
+    if (*record == NULL) {
+        return out_of_memory(note);
+    }
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
+    runtime_change_step step = describe_edit(change, root, before, *record, &edited, note);
+    free(edited.bytes);
+    if (step != RUNTIME_CHANGE_DONE) {
+        cJSON_Delete(*record);
+        *record = NULL;
+    }
+    return step;
 }
 
 static runtime_change_step prepare_existing(const cJSON *change, const file_bytes *before, cJSON **record,
                                             runtime_change_note *note) {
-    const char *path = text_of(change, "file");
-    runtime_change_step step = RUNTIME_CHANGE_DONE;
-    cJSON *root = read_json_object(path, note, &step);
+    cJSON *root = object_in(before);
     if (root == NULL) {
-        return step;
+        return refuse(note, unreadable_object, text_of(change, "file"));
     }
-    int missing_from = first_missing_depth(root, key_of(change), note, path);
-    if (missing_from == -2) {
-        step = RUNTIME_CHANGE_REFUSED;
-    } else if (missing_from == -1 && holds_value_already(root, change)) {
-        step = RUNTIME_CHANGE_UNNEEDED;
-    } else {
-        step = record_edit(change, root, missing_from, before, record, note);
-    }
+    const cJSON *current = value_at(root, key_of(change));
+    runtime_change_step step = current != NULL && cJSON_Compare(current, value_of(change), 1)
+                                   ? RUNTIME_CHANGE_UNNEEDED
+                                   : record_edit(change, root, before, record, note);
     cJSON_Delete(root);
     return step;
 }
@@ -250,9 +294,8 @@ runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record
         return record_created(change, record, note);
     }
     if (before.bytes == NULL) {
-        return runtime_probe_entry(path) == RUNTIME_ENTRY_MISSING
-                   ? refuse(note, "the JSON file does not exist", path)
-                   : refuse(note, "the file is not a readable JSON object; it was left unchanged", path);
+        return runtime_probe_entry(path) == RUNTIME_ENTRY_MISSING ? refuse(note, "the JSON file does not exist", path)
+                                                                  : refuse(note, unreadable_object, path);
     }
     runtime_change_step step = prepare_existing(change, &before, record, note);
     free(before.bytes);
@@ -261,12 +304,12 @@ runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record
 
 static runtime_change_step perform_created(const cJSON *change, cJSON *record, runtime_change_note *note) {
     const char *path = text_of(change, "file");
-    json_edit_text created = {NULL, 0};
-    if (!json_edit_new_document(key_of(change), cJSON_GetObjectItemCaseSensitive(change, "value"), &created)) {
+    json_edit_text created = {NULL, 0, {0, 0, 0}};
+    if (!json_edit_new_document(key_of(change), value_of(change), &created)) {
         return out_of_memory(note);
     }
     runtime_entry_outcome made = runtime_create_new_file(path, (const uint8_t *)created.bytes, created.length, 0);
-    int recorded = made == RUNTIME_ENTRY_DONE && set_after(record, &created);
+    int recorded = made == RUNTIME_ENTRY_DONE && set_digest(record, "after", created.bytes, created.length);
     free(created.bytes);
     if (made == RUNTIME_ENTRY_EXISTS) {
         return refuse(note, "something already exists where the JSON file would be created; it was left unchanged",
@@ -278,27 +321,22 @@ static runtime_change_step perform_created(const cJSON *change, cJSON *record, r
     return recorded ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
+/** Validates, edits and writes the one buffer read, and records the edit made to it. */
 static runtime_change_step perform_edit(const cJSON *change, cJSON *record, const file_bytes *current,
                                         runtime_change_note *note) {
     const char *path = text_of(change, "file");
-    runtime_change_step step = RUNTIME_CHANGE_DONE;
-    cJSON *root = read_json_object(path, note, &step);
-    cJSON_Delete(root);
+    cJSON *root = object_in(current);
     if (root == NULL) {
-        return step;
+        return refuse(note, unreadable_object, path);
     }
-    json_edit_text edited = {NULL, 0};
-    if (!json_edit_set(current->bytes, current->length, key_of(change),
-                       cJSON_GetObjectItemCaseSensitive(change, "value"), &edited)) {
-        return refuse(note, "the file is not a readable JSON object; it was left unchanged", path);
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
+    runtime_change_step step = describe_edit(change, root, current, record, &edited, note);
+    cJSON_Delete(root);
+    if (step == RUNTIME_CHANGE_DONE && !spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length)) {
+        step = fail(note, "the key could not be written", path);
     }
-    int written = spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length);
-    int recorded = written && set_after(record, &edited);
     free(edited.bytes);
-    if (!written) {
-        return fail(note, "the key could not be written", path);
-    }
-    return recorded ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+    return step;
 }
 
 runtime_change_step runtime_json_key_perform(const cJSON *change, cJSON *record, runtime_change_note *note) {
@@ -318,7 +356,7 @@ int runtime_json_key_is_on_disk(const cJSON *record) {
     spisor_json_file_state state;
     cJSON *root = spisor_read_json_file(text_of(record, "file"), &state);
     const cJSON *current = root == NULL ? NULL : value_at(root, key_of(record));
-    int on_disk = current != NULL && cJSON_Compare(current, cJSON_GetObjectItemCaseSensitive(record, "value"), 1);
+    int on_disk = current != NULL && cJSON_Compare(current, value_of(record), 1);
     cJSON_Delete(root);
     return on_disk;
 }
@@ -352,31 +390,50 @@ static int is_created(const cJSON *record) {
     return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(record, "created"));
 }
 
-static int holds_what_was_written(const cJSON *record, const file_bytes *current) {
-    char digest[RUNTIME_CHANGE_DIGEST_SIZE];
-    runtime_change_digest((const uint8_t *)current->bytes, current->length, digest);
-    const char *after = text_of(record, "after");
-    return after != NULL && strcmp(after, digest) == 0;
-}
-
 static runtime_change_reversal remove_created_file(const cJSON *record, runtime_change_note *note) {
     return runtime_remove_file_entry(text_of(record, "file")) == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_REVERSED
                                                                                      : not_reversed(record, note);
 }
 
-static runtime_change_reversal write_back(const cJSON *record, const char *bytes, size_t length,
+static runtime_change_reversal write_back(const cJSON *record, const json_edit_text *restored,
                                           runtime_change_note *note) {
-    return spisor_replace_file(text_of(record, "file"), (const uint8_t *)bytes, length) ? RUNTIME_CHANGE_REVERSED
-                                                                                        : not_reversed(record, note);
+    return spisor_replace_file(text_of(record, "file"), (const uint8_t *)restored->bytes, restored->length)
+               ? RUNTIME_CHANGE_REVERSED
+               : not_reversed(record, note);
+}
+
+static int number_of(const cJSON *record, const char *member, size_t *number) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(record, member);
+    if (!cJSON_IsNumber(item) || item->valuedouble < 0) {
+        return 0;
+    }
+    *number = (size_t)item->valuedouble;
+    return 1;
+}
+
+/** The file before the change, by undoing the recorded splice; 0 unless that lands exactly on the pre-image. */
+static int undo_splice(const cJSON *record, const file_bytes *current, json_edit_text *restored) {
+    const char *replaced = text_of(record, "replaced");
+    size_t at = 0;
+    size_t written = 0;
+    if (replaced == NULL || !number_of(record, "spliceAt", &at) || !number_of(record, "writtenLength", &written) ||
+        !json_edit_splice_text(current->bytes, current->length, at, written, replaced, strlen(replaced), restored)) {
+        return 0;
+    }
+    if (digest_is(record, "beforeDigest", restored->bytes, restored->length)) {
+        return 1;
+    }
+    free(restored->bytes);
+    restored->bytes = NULL;
+    return 0;
 }
 
 /** The previous value's own bytes as the file held them, or failing that the value written in place. */
 static int restore_previous(const cJSON *record, const file_bytes *current, json_edit_text *edited) {
-    const char *before = text_of(record, "before");
-    json_span previous;
-    if (before != NULL && json_edit_find_value(before, strlen(before), key_of(record), &previous)) {
-        return json_edit_replace_value(current->bytes, current->length, key_of(record), before + previous.start,
-                                       previous.end - previous.start, edited);
+    const char *replaced = text_of(record, "replaced");
+    if (replaced != NULL) {
+        return json_edit_replace_value(current->bytes, current->length, key_of(record), replaced, strlen(replaced),
+                                       edited);
     }
     return json_edit_set(current->bytes, current->length, key_of(record),
                          cJSON_GetObjectItemCaseSensitive(record, "previous"), edited);
@@ -387,39 +444,42 @@ static int created_from(const cJSON *record) {
     return cJSON_IsNumber(depth) ? depth->valueint : cJSON_GetArraySize(key_of(record)) - 1;
 }
 
+static runtime_change_reversal write_undone(const cJSON *record, const file_bytes *current,
+                                            const json_edit_text *edited, runtime_change_note *note) {
+    if (is_created(record) && json_edit_is_empty_object(edited->bytes, edited->length)) {
+        return remove_created_file(record, note);
+    }
+    if (edited->length == current->length && memcmp(edited->bytes, current->bytes, current->length) == 0) {
+        return RUNTIME_CHANGE_REVERSED;
+    }
+    return write_back(record, edited, note);
+}
+
+/** Undoes only the change's own member in the bytes as they now are: the value put back, or the member removed. */
 static runtime_change_reversal undo_member(const cJSON *record, const file_bytes *current, runtime_change_note *note) {
-    json_edit_text edited = {NULL, 0};
+    json_edit_text edited = {NULL, 0, {0, 0, 0}};
     int done = cJSON_GetObjectItemCaseSensitive(record, "previous") != NULL
                    ? restore_previous(record, current, &edited)
                    : json_edit_remove(current->bytes, current->length, key_of(record), created_from(record), &edited);
-    if (!done) {
-        return not_reversed(record, note);
-    }
-    runtime_change_reversal reversal = is_created(record) && json_edit_is_empty_object(edited.bytes, edited.length)
-                                           ? remove_created_file(record, note)
-                                           : write_back(record, edited.bytes, edited.length, note);
+    runtime_change_reversal reversal = done ? write_undone(record, current, &edited, note) : not_reversed(record, note);
     free(edited.bytes);
     return reversal;
 }
 
-static int is_already_restored(const cJSON *current, const cJSON *record) {
-    const cJSON *previous = cJSON_GetObjectItemCaseSensitive(record, "previous");
-    return previous == NULL ? current == NULL : current != NULL && cJSON_Compare(current, previous, 1);
-}
-
 static runtime_change_reversal reverse_drifted_file(const cJSON *record, const file_bytes *current,
                                                     runtime_change_note *note) {
-    spisor_json_file_state state;
-    cJSON *root = spisor_read_json_file(text_of(record, "file"), &state);
-    if (state != SPISOR_JSON_FILE_PARSED || !cJSON_IsObject(root)) {
-        cJSON_Delete(root);
+    cJSON *root = object_in(current);
+    if (root == NULL) {
         return drifted_key(record, "is in a file that is no longer readable JSON", note);
     }
     const cJSON *now = value_at(root, key_of(record));
+    const cJSON *previous = cJSON_GetObjectItemCaseSensitive(record, "previous");
     runtime_change_reversal reversal;
-    if (now != NULL && cJSON_Compare(now, cJSON_GetObjectItemCaseSensitive(record, "value"), 1)) {
+    if (now != NULL && cJSON_Compare(now, value_of(record), 1)) {
         reversal = undo_member(record, current, note);
-    } else if (is_already_restored(now, record)) {
+    } else if (now == NULL && previous == NULL) {
+        reversal = undo_member(record, current, note);
+    } else if (now != NULL && previous != NULL && cJSON_Compare(now, previous, 1)) {
         reversal = RUNTIME_CHANGE_REVERSED;
     } else {
         reversal = drifted_key(record, "no longer holds the value the host set", note);
@@ -435,20 +495,32 @@ static runtime_change_reversal reverse_missing_file(const cJSON *record, runtime
     return is_created(record) ? RUNTIME_CHANGE_REVERSED : drifted_key(record, "is gone with its file", note);
 }
 
+/**
+ * @implNote The exact path rewrites the file only when its bytes are the ones the change wrote and
+ * undoing the splice lands on the pre-image's digest, so it can never put back anything else.
+ */
+static runtime_change_reversal reverse_present_file(const cJSON *record, const file_bytes *current,
+                                                    runtime_change_note *note) {
+    if (!digest_is(record, "after", current->bytes, current->length)) {
+        return reverse_drifted_file(record, current, note);
+    }
+    if (is_created(record)) {
+        return remove_created_file(record, note);
+    }
+    json_edit_text restored = {NULL, 0, {0, 0, 0}};
+    runtime_change_reversal reversal = undo_splice(record, current, &restored) ? write_back(record, &restored, note)
+                                                                                : reverse_drifted_file(record, current,
+                                                                                                       note);
+    free(restored.bytes);
+    return reversal;
+}
+
 runtime_change_reversal runtime_json_key_reverse(const cJSON *record, runtime_change_note *note) {
     file_bytes current = read_bytes(text_of(record, "file"));
     if (current.bytes == NULL) {
         return reverse_missing_file(record, note);
     }
-    const char *before = text_of(record, "before");
-    runtime_change_reversal reversal;
-    if (holds_what_was_written(record, &current) && is_created(record)) {
-        reversal = remove_created_file(record, note);
-    } else if (holds_what_was_written(record, &current) && before != NULL) {
-        reversal = write_back(record, before, strlen(before), note);
-    } else {
-        reversal = reverse_drifted_file(record, &current, note);
-    }
+    runtime_change_reversal reversal = reverse_present_file(record, &current, note);
     free(current.bytes);
     return reversal;
 }

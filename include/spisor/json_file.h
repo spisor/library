@@ -2,6 +2,7 @@
 #define SPISOR_JSON_FILE_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "cJSON.h"
 
@@ -39,6 +40,12 @@ char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripp
  * memory runs out in the decode or strip step.
  */
 cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state);
+
+/**
+ * spisor_read_json_file over bytes already read: decoded as Node decodes UTF-8, whole-line comments
+ * stripped, then JSON.parse. NULL when they are not JSON or memory runs out.
+ */
+cJSON *spisor_parse_json_text(const uint8_t *bytes, size_t length);
 
 #ifdef __cplusplus
 }
