@@ -86,8 +86,9 @@ cJSON *runtime_change_record_with(const cJSON *change, const char *const *member
  * Whether change asks the file record holds for content other than it was last written with, by the
  * "digest" the record keeps; a record with no digest counts as asking.
  *
- * @implNote A source that cannot be read now counts as asking nothing new: the file stands as it was last
- * written, and rewriting it from a source no one can read only fails a request that was already held.
+ * @implNote A source that is there but cannot be read now, held by another process, counts as asking
+ * nothing new: the file stands as it was last written. A source that is gone counts as asking, so the
+ * rewrite reports it in the request's answer.
  */
 int runtime_change_asks_new_content(const cJSON *record, const cJSON *change);
 

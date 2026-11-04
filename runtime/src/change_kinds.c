@@ -327,13 +327,19 @@ static runtime_change_step prepare_file(const cJSON *change, cJSON **record, run
     return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
+/** Whether the file change copies from is there, held by another process when it still cannot be read. */
+static int source_is_present(const cJSON *change) {
+    const char *source = text_of(change, "source");
+    return source != NULL && runtime_probe_entry(source) == RUNTIME_ENTRY_OTHER;
+}
+
 int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
     if (!is_kind(record, "file") || !is_kind(change, "file")) {
         return 0;
     }
     file_bytes asked = bytes_asked_for(change);
     if (asked.bytes == NULL) {
-        return 0;
+        return !source_is_present(change);
     }
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
     runtime_change_digest(asked.bytes, asked.length, digest);
@@ -401,6 +407,9 @@ static runtime_change_reversal reverse_file(const cJSON *record, runtime_change_
     if (removed != RUNTIME_ENTRY_DONE) {
         write_note(note, "the file the host created could not be deleted: %s", path);
         return RUNTIME_CHANGE_NOT_REVERSED;
+    }
+    if (spisor_remove_set_aside(path) > 0) {
+        write_note(note, "an earlier copy of %s still runs and was left beside it", path);
     }
     return RUNTIME_CHANGE_REVERSED;
 }
