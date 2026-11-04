@@ -134,3 +134,17 @@ add_dependencies(processes_test background_fixture)
 if(NOT WIN32)
     target_link_libraries(processes_test PRIVATE Threads::Threads)
 endif()
+
+set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
+    ${runtime_hosts_test_objects})
+foreach(name install_methods_test install_entries_test install_runtime_test install_ecosystem_test
+        install_applications_test)
+    runtime_test(${name} ${runtime_install_test_objects})
+    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    if(WIN32)
+        add_dependencies(${name} runtime_launcher)
+    endif()
+endforeach()
+set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
+    RESOURCE_LOCK user_path_value)

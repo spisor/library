@@ -142,6 +142,21 @@ target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_ui)
 
+set(runtime_install_sources src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
+    src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
+    src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c src/process_run.c)
+add_library(runtime_install OBJECT ${runtime_install_sources})
+target_link_libraries(runtime_install PUBLIC runtime_objects)
+target_include_directories(runtime_install PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_install PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_install)
+
+add_library(runtime_install_test_hooks OBJECT ${runtime_install_sources} src/install_method_fake.c)
+target_link_libraries(runtime_install_test_hooks PUBLIC runtime_objects)
+target_include_directories(runtime_install_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(runtime_install_test_hooks PRIVATE SPISOR_INSTALL_TEST_HOOKS)
+spisor_strict_warnings(runtime_install_test_hooks)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -149,7 +164,7 @@ add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TAR
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
-    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui>)
+    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})
