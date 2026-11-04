@@ -48,10 +48,16 @@ static int store_one(const runtime_cache_placement *placement, const char *id, c
            cJSON_AddStringToObject(record->hashes, placement->key, sha256->valuestring) != NULL;
 }
 
-/** @implNote Written only after every file is stored and verified, so a refusal midway leaves no runnable version. */
+/**
+ * @implNote Written only after every file is stored and verified, so a refusal midway leaves no runnable
+ * version. The version directory is made here only for a version of no files: storing a file made it
+ * already, so a directory gone by now was swept away under the install, and remaking it would write a
+ * marker naming files that are no longer there.
+ */
 static int mark_complete(const runtime_cache_plan *plan, const char *id, const char *version,
                          const install_record *record, cJSON **refusal) {
-    if (spisor_make_directories(plan->directory) && runtime_cache_write_marker(plan->directory, record->hashes)) {
+    int has_directory = plan->count > 0 || spisor_make_directories(plan->directory);
+    if (has_directory && runtime_cache_write_marker(plan->directory, record->hashes)) {
         return 1;
     }
     const char *parts[7] = {"file " RUNTIME_INSTALL_MARKER " of ", id, "@", version, ": the completion marker in ",

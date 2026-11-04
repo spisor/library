@@ -9,6 +9,7 @@
 #include "cache_refusal.h"
 #include "directory_tree.h"
 #include "fetch.h"
+#include "service_call.h"
 #include "sha256.h"
 #include "spisor/json_kind.h"
 
@@ -51,17 +52,8 @@ static cJSON *fetch_order(const char *destination, const file_reference *referen
 /** fetch.get's answer, parsed, with its status in *status; NULL when memory runs out. */
 static cJSON *fetched(const char *destination, const file_reference *reference, int32_t *status) {
     cJSON *order = fetch_order(destination, reference);
-    char *text = order == NULL ? NULL : cJSON_PrintUnformatted(order);
+    cJSON *answer = runtime_call_service(runtime_fetch_get, order, status);
     cJSON_Delete(order);
-    if (text == NULL) {
-        return NULL;
-    }
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    *status = runtime_fetch_get((const uint8_t *)text, strlen(text), &out, &out_len);
-    cJSON_free(text);
-    cJSON *answer = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    spisor_release(out);
     return answer;
 }
 

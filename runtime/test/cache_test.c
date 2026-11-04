@@ -531,6 +531,16 @@ static void it_refuses_a_file_that_would_take_the_completion_marker_s_name(void)
     finish_cache();
 }
 
+static void it_marks_a_version_of_no_files_complete_making_its_directory(void) {
+    start_cache("no-files");
+    catalog_answer answer = install("a", item_of("plugin", "1.0.0", version_with_files(cJSON_CreateObject())), "1.0.0",
+                                    "linux-x64");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(answer.tree);
+    expect_file_text(cache, "bundles/a/1.0.0/.installed.json", "{\n  \"files\": {}\n}\n", "no files marker");
+    finish_cache();
+}
+
 static void it_answers_cached_for_every_file_on_a_second_install(void) {
     start_cache("second-install");
     catalog_answer first = install("a", plugin_item(), "1.0.0", "linux-x64");
@@ -1330,6 +1340,7 @@ int main(void) {
     it_stores_files_in_the_order_javascript_enumerates_their_keys();
     it_refuses_as_ambiguous_a_file_listed_both_for_every_platform_and_for_this_one();
     it_refuses_a_file_that_would_take_the_completion_marker_s_name();
+    it_marks_a_version_of_no_files_complete_making_its_directory();
     it_answers_cached_for_every_file_on_a_second_install();
     it_installs_a_library_s_files_for_the_platform_into_its_library_directory();
     it_refuses_an_item_not_built_for_this_platform_with_the_fix();

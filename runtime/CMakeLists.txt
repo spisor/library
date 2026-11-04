@@ -1,7 +1,7 @@
 add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256.c src/file_stream.c)
+    src/sha256.c src/file_stream.c src/service_call.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
@@ -98,12 +98,20 @@ spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
 set(runtime_cache_sources src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
     src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
-    src/file_times.c src/node_json_file.c src/platform_key.c src/process_alive.c)
+    src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
 target_link_libraries(runtime_cache PUBLIC runtime_objects)
 target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_cache PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_cache)
+
+set(runtime_updates_sources src/boot.c src/boot_hint.c src/boot_resolve.c src/plugin_choices.c src/updates.c
+    src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_rollback.c src/version_map.c)
+add_library(runtime_updates OBJECT ${runtime_updates_sources})
+target_link_libraries(runtime_updates PUBLIC runtime_objects)
+target_include_directories(runtime_updates PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_updates PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_updates)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -111,7 +119,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
-    $<TARGET_OBJECTS:runtime_cache>)
+    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})

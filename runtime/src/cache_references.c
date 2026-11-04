@@ -8,6 +8,7 @@
 #include "cache_folders.h"
 #include "cache_refusal.h"
 #include "directory_tree.h"
+#include "host_references.h"
 #include "node_json_file.h"
 #include "process_alive.h"
 #include "spisor/file.h"
@@ -100,13 +101,13 @@ static int add_hints(cJSON *referenced, const char *cache) {
 
 static int add_host_references(cJSON *referenced, const char *folder, const char *name) {
     cJSON *recorded = read_entry(folder, name);
-    const cJSON *run = cJSON_GetObjectItemCaseSensitive(recorded, "run");
-    const cJSON *next = cJSON_GetObjectItemCaseSensitive(recorded, "next");
-    const cJSON *rollback = cJSON_GetObjectItemCaseSensitive(recorded, "rollback");
+    const cJSON *run = NULL;
+    const cJSON *next = NULL;
+    const cJSON *rollback = NULL;
     int added = 1;
-    if (cJSON_IsObject(recorded) && runtime_is_version_map(run) && runtime_is_version_map(next)) {
+    if (runtime_host_references_of(recorded, &run, &next, &rollback)) {
         added = add_version_map(referenced, run) && add_version_map(referenced, next) &&
-                (!runtime_is_version_map(rollback) || add_version_map(referenced, rollback));
+                add_version_map(referenced, rollback);
     }
     cJSON_Delete(recorded);
     return added;
