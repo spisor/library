@@ -76,26 +76,43 @@ static int is_executable_name(const wchar_t *destination) {
     return length > 4 && _wcsicmp(destination + length - 4, L".exe") == 0;
 }
 
-static wchar_t *set_aside_name(const wchar_t *destination) {
-    size_t length = wcslen(destination);
-    wchar_t *aside = malloc((length + 5) * sizeof *aside);
-    if (aside != NULL) {
-        wcscpy(aside, destination);
-        wcscpy(aside + length, L".old");
+#define MOST_SET_ASIDE 64
+
+/** destination.old for number 0, else destination.old-<number>, freed with free. */
+static wchar_t *set_aside_name(const wchar_t *destination, int number) {
+    size_t length = wcslen(destination) + 24;
+    wchar_t *aside = malloc(length * sizeof *aside);
+    if (aside != NULL && number == 0) {
+        swprintf(aside, length, L"%ls.old", destination);
+    } else if (aside != NULL) {
+        swprintf(aside, length, L"%ls.old-%d", destination, number);
     }
     return aside;
 }
 
+/** Renames destination to the first set-aside name it can take, one still running from an earlier update kept. */
+static int set_aside(const wchar_t *destination, wchar_t **aside) {
+    for (int number = 0; number < MOST_SET_ASIDE; number++) {
+        *aside = set_aside_name(destination, number);
+        if (*aside != NULL && MoveFileExW(destination, *aside, MOVEFILE_REPLACE_EXISTING)) {
+            return 1;
+        }
+        free(*aside);
+        *aside = NULL;
+    }
+    return 0;
+}
+
 /**
- * Renames the running image destination to destination.old, which Windows allows where it refuses to
- * replace it, then moves from into its place, putting the image back when that fails; 1 on success.
+ * Renames the running image destination aside, which Windows allows where it refuses to replace it, then
+ * moves from into its place, putting the image back when that fails; 1 on success, 0 having changed nothing.
  */
 static int replace_running_image(const char *from, const char *to) {
     wchar_t *wide_from = spisor_wide_path(from);
     wchar_t *wide_to = spisor_wide_path(to);
-    wchar_t *aside = wide_to == NULL ? NULL : set_aside_name(wide_to);
+    wchar_t *aside = NULL;
     int moved = 0;
-    if (wide_from != NULL && aside != NULL && MoveFileExW(wide_to, aside, MOVEFILE_REPLACE_EXISTING)) {
+    if (wide_from != NULL && wide_to != NULL && set_aside(wide_to, &aside)) {
         moved = MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
         if (!moved) {
             MoveFileExW(aside, wide_to, 0);
@@ -105,6 +122,25 @@ static int replace_running_image(const char *from, const char *to) {
     free(wide_to);
     free(wide_from);
     return moved;
+}
+
+int spisor_windows_remove_set_aside(const char *path) {
+    wchar_t *wide = spisor_wide_path(path);
+    if (wide == NULL || !is_executable_name(wide)) {
+        free(wide);
+        return 0;
+    }
+    int left = 0;
+    for (int number = 0; number < MOST_SET_ASIDE; number++) {
+        wchar_t *aside = set_aside_name(wide, number);
+        DWORD attributes = aside == NULL ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(aside);
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && !DeleteFileW(aside)) {
+            left++;
+        }
+        free(aside);
+    }
+    free(wide);
+    return left;
 }
 
 static int is_running_image_refusal(DWORD error, const char *to) {
@@ -126,8 +162,8 @@ int spisor_windows_move_over(const char *from, const char *to) {
     if (moved) {
         return 1;
     }
-    if (is_running_image_refusal(error, to)) {
-        return replace_running_image(from, to);
+    if (is_running_image_refusal(error, to) && replace_running_image(from, to)) {
+        return 1;
     }
     return move_retrying(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH, is_worth_retrying);
 }

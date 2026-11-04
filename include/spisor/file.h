@@ -44,6 +44,12 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length);
 
 /**
+ * Deletes what spisor_replace_file set aside to replace the running Windows executable at path, answering
+ * how many such files are left because they still run. Always 0 elsewhere, where nothing is ever set aside.
+ */
+int spisor_remove_set_aside(const char *path);
+
+/**
  * Whether path itself is a symbolic link, dangling or not; on Windows, any reparse point, which is
  * what spisor_replace_file follows.
  */

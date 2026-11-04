@@ -388,3 +388,12 @@ int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
 int spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
     return !spisor_is_link(path) && replace_resolved_file(path, bytes, length, 1);
 }
+
+int spisor_remove_set_aside(const char *path) {
+#if defined(_WIN32)
+    return spisor_windows_remove_set_aside(path);
+#else
+    (void)path;
+    return 0;
+#endif
+}
