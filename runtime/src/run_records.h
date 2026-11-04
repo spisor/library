@@ -19,7 +19,39 @@
  */
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds);
 
+/**
+ * Whether record is the path of one run record of host_id, a .json file named directly inside its
+ * folder under state/bundles/runs/, as runtime_record_run answers it.
+ */
+int runtime_is_run_record_of(const char *state, const char *host_id, const char *record);
+
+typedef enum runtime_run_stamp {
+    RUNTIME_RUN_STAMPED,
+    RUNTIME_RUN_NOT_A_RECORD,
+    RUNTIME_RUN_UNWRITABLE
+} runtime_run_stamp;
+
+/**
+ * Stamps the run record at record alive again, now, as runtime_record_run wrote it, making its folder
+ * again when a removal took it. NOT_A_RECORD, writing nothing, when record is no run record of host_id.
+ */
+runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
+                                    double check_milliseconds);
+
+/**
+ * What every live start of any host runs, as an array of id-to-version objects in host and file name
+ * order, deleting each run record whose process is gone, which stopped being stamped for three of its
+ * intervals, or which is not the shape of one. NULL when memory runs out.
+ *
+ * @implNote The format is plan three's, read as forebay/host's liveRuns read it, and this is its one
+ * reader: the cache sweep keeps what it answers.
+ */
+cJSON *runtime_live_runs(const char *state, double now);
+
 /** Deletes every run record of host_id; a host with none counts as removed. */
 int runtime_remove_run_records(const char *state, const char *host_id);
+
+/** Deletes the run record at record; 0 when it is no run record of host_id or could not be deleted. */
+int runtime_remove_run_record(const char *state, const char *host_id, const char *record);
 
 #endif

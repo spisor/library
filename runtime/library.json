@@ -1354,6 +1354,156 @@
           }
         }
       ]
+    },
+    {
+      "id": "processes",
+      "functions": [
+        {
+          "name": "hold",
+          "symbol": "runtime_processes_hold",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "holder": { "type": "integer", "minimum": 1 },
+              "start": {
+                "type": "object",
+                "description": "How to start the host, as its registration records it: the absolute executable, its arguments, the environment that replaces the caller's, and the folder it runs in (state by default).",
+                "properties": {
+                  "executable": { "type": "string", "minLength": 1 },
+                  "arguments": { "type": "array", "items": { "type": "string" } },
+                  "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "directory": { "type": "string", "minLength": 1 }
+                },
+                "required": ["executable"]
+              }
+            },
+            "required": ["state", "hostId", "holder", "start"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "pid": { "type": "integer", "minimum": 1 },
+              "started": { "type": "boolean" },
+              "outsideJob": { "type": "boolean" }
+            },
+            "required": ["pid", "started"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "release",
+          "symbol": "runtime_processes_release",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "holder": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["state", "hostId", "holder"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "holders": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+            },
+            "required": ["holders"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "prune",
+          "symbol": "runtime_processes_prune",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "self": { "type": "integer", "minimum": 1 },
+              "now": { "type": "number", "exclusiveMinimum": 0 },
+              "checkMilliseconds": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["state", "hostId", "self"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "exit": { "type": "boolean" }
+            },
+            "required": ["exit"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "recordRun",
+          "symbol": "runtime_processes_record_run",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "run": { "type": "object", "additionalProperties": { "type": "string" } },
+              "checkMilliseconds": { "type": "number", "exclusiveMinimum": 0 },
+              "record": { "type": "string", "minLength": 1 }
+            },
+            "required": ["state", "hostId", "run"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "record": { "type": "string" }
+            },
+            "required": ["record"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "liveRuns",
+          "symbol": "runtime_processes_live_runs",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "now": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["state"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "runs": { "type": "array", "items": { "type": "object", "additionalProperties": { "type": "string" } } }
+            },
+            "required": ["runs"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "removeRuns",
+          "symbol": "runtime_processes_remove_runs",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "record": { "type": "string", "minLength": 1 }
+            },
+            "required": ["state", "hostId"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

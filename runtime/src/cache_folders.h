@@ -9,6 +9,14 @@
  */
 cJSON *runtime_cache_folder_names(const char *const *segments, size_t count);
 
+#define RUNTIME_JSON_EXTENSION ".json"
+
+/**
+ * The names of the entries directly inside the path joined from segments that end in .json, sorted, as
+ * an array of strings; empty when it cannot be read, NULL when memory runs out.
+ */
+cJSON *runtime_cache_json_names(const char *const *segments, size_t count);
+
 /** The path segments joined for this platform, freed with free; NULL when memory runs out. */
 char *runtime_cache_joined(const char *const *segments, size_t count);
 

@@ -98,7 +98,8 @@ spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
     src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
-    src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c)
+    src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
+    src/alive_stamp.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
 target_link_libraries(runtime_cache PUBLIC runtime_objects)
 target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -113,13 +114,24 @@ target_include_directories(runtime_updates PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_updates PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_updates)
 
+set(runtime_processes_sources src/holders.c src/holders_lock.c src/process_start.c src/processes.c src/processes_hold.c
+    src/processes_runs.c)
+if(WIN32)
+    list(APPEND runtime_processes_sources src/command_line_windows.c)
+endif()
+add_library(runtime_processes OBJECT ${runtime_processes_sources})
+target_link_libraries(runtime_processes PUBLIC runtime_objects)
+target_include_directories(runtime_processes PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_processes PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_processes)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
-    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates>)
+    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})
@@ -130,7 +142,7 @@ endif()
 spisor_strict_warnings(runtime)
 
 if(WIN32)
-    add_executable(runtime_launcher src/launcher_windows.c)
+    add_executable(runtime_launcher src/launcher_windows.c src/command_line_windows.c)
     set_target_properties(runtime_launcher PROPERTIES OUTPUT_NAME runtime-launcher)
     spisor_strict_warnings(runtime_launcher)
     add_dependencies(runtime runtime_launcher)
