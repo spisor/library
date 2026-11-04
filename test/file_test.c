@@ -257,6 +257,47 @@ static void private_replace_writes_the_bytes(void) {
     CHECK(count_temporary_entries(directory) == 0);
 }
 
+#if defined(_WIN32)
+/** Copies System32's ping.exe to path and starts it waiting about four seconds, so path runs as an image. */
+static int run_image_at(const char *path, PROCESS_INFORMATION *information) {
+    wchar_t system[MAX_PATH];
+    wchar_t source[MAX_PATH + 16];
+    wchar_t wide[1024];
+    UINT length = GetSystemDirectoryW(system, MAX_PATH);
+    if (length == 0 || MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 1024) == 0) {
+        return 0;
+    }
+    swprintf(source, MAX_PATH + 16, L"%ls\\ping.exe", system);
+    if (!CopyFileW(source, wide, FALSE)) {
+        return 0;
+    }
+    wchar_t line[1200];
+    swprintf(line, 1200, L"\"%ls\" -n 5 127.0.0.1", wide);
+    STARTUPINFOW startup;
+    memset(&startup, 0, sizeof startup);
+    startup.cb = sizeof startup;
+    return CreateProcessW(wide, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &startup, information) != 0;
+}
+
+static void replace_sets_a_running_image_aside_and_takes_its_place(void) {
+    const char *directory = SPISOR_SCRATCH_PATH "/running-image";
+    const char *path = SPISOR_SCRATCH_PATH "/running-image/shim.exe";
+    const char *aside = SPISOR_SCRATCH_PATH "/running-image/shim.exe.old";
+    CHECK(spisor_make_directories(directory) == 1);
+    PROCESS_INFORMATION information;
+    CHECK(run_image_at(path, &information));
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new shim", 8) == 1);
+    read_back_equals(path, "new shim");
+    CHECK(spisor_file_exists(aside));
+    CHECK(WaitForSingleObject(information.hProcess, 0) == WAIT_TIMEOUT);
+    TerminateProcess(information.hProcess, 0);
+    WaitForSingleObject(information.hProcess, 10000);
+    CloseHandle(information.hThread);
+    CloseHandle(information.hProcess);
+    CHECK(count_temporary_entries(directory) == 0);
+}
+#endif
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
@@ -276,5 +317,8 @@ int main(void) {
     a_replacement_carries_its_final_mode_before_any_byte_is_written();
 #endif
     private_replace_writes_the_bytes();
+#if defined(_WIN32)
+    replace_sets_a_running_image_aside_and_takes_its_place();
+#endif
     return summary_with_links("file_test");
 }

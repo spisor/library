@@ -21,7 +21,9 @@ FILE *spisor_windows_open(const char *path, int writing);
  * @implNote Retried a bounded number of times on a sharing violation or access denied, which is what a
  * replace meets while another process (a virus scanner, the search indexer, or a reader opened by
  * older code) briefly holds the destination. Access denied on a directory or a read-only file can never
- * clear, so it is answered at once, as is any other failure.
+ * clear, so it is answered at once, as is any other failure. An .exe that runs as an image (a command shim
+ * in use) is renamed aside to <to>.old instead, which Windows allows, and from takes its place; the image
+ * keeps running from .old, which whoever writes the file next removes once the image has exited.
  */
 int spisor_windows_move_over(const char *from, const char *to);
 
