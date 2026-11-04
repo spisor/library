@@ -51,6 +51,8 @@ Service), and that store may prompt the user.
 | `config.all` | `home`, `names`, `portable`, `plugin`, `config` | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order |
 | `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
 | `config.set` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `value`, `layer` | `{ previous }`, after writing the plugin's file in the `application` (default) or `portable` layer |
+| `settings.all` | `home`, `names`, `portable` | `{ values }`, the ecosystem settings merged as `config.all` merges a plugin's |
+| `settings.set` | `home`, `names`, `portable`, `key`, `value`, `layer` | `{ previous }`, after writing one key into the `application` (default) or `portable` layer, under a lock so two writers lose no update |
 | `log.write` | `home`, `names`, `portable`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
 | `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the secrets file, else the store, or `{}`; a file copy is always the newer one |
 | `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
@@ -69,6 +71,36 @@ Service), and that store may prompt the user.
 | `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, after making the shim; a held name is refused |
 | `install.packages` | `places` (`portable`), `item`, `manifestPackages` | `{ packages }`, the item's package under each method, as `{ name, options? }`; pure |
 | `install.plan` | `places` (`portable`), `item`, `manifestPackages`, `methods`, `chosen`, `installedProviders`, `catalog` | `{ steps }`, each `{ "install-provider": <catalog entry> }` or `{ "install": { method, package? } }`; pure |
+| `install.detect` | `places` (`portable`, `cache`), `item`, `manifestPackages` | `{ detections }`, one per built-in method the item's package mapping names, read from each package manager's own records; launches nothing |
+| `install.entry` | `places`, `loader` | `{ written: true, sequences }` after writing the entry that starts the loader's host inside its application, every write through `changes.apply`, or `{ written: false, message, fix }` for an application it writes none for |
+| `install.runtime` | `cache`, `platform`, `environment` | `{ name, version, executable, fetched, source }`, a Node on PATH of major 20 or later (`path`), else the pinned one fetched by hash into `<cache>/runtimes` (`acquired`), recorded in `<cache>/runtimes/javascript.json` |
+| `install.ecosystem` | `places`, `sources`, `environment`, `choices`, `defaults`, `requested`, `platform` | `{ installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }`, after installing `forebay-host`, `runtime`, the plugins and every loader whose application is present or chosen; an item that cannot be installed is reported and the rest still install |
+| `install.application` | `places`, `loader`, `operation` | `{ operation, version? }`, after updating or removing the loader's application through the method that installed it; refused for one found on PATH or installed by no recorded method |
+| `install.registerLoader` | `places`, `environment`, `id`, `version` | what `hosts.register` answers, after registering the installed loader version as install does, with no catalog read |
+| `fetch.get` | `url`, `destination`, `sha256`, `etag`, `lastModified`, `maxBytes`, `timeoutSeconds` | `{ outcome: "stored", sha256, bytes, etag?, lastModified? }`, or `{ outcome: "not-modified" }` on a 304; the bytes reach `destination` only complete and verified, through the OS's own HTTPS stack |
+| `catalog.read` | `text`, `origin` | `{ catalog }`, the index checked against `catalog.schema.json` with every file url resolved against `origin` |
+| `catalog.sources` | `settings` | `{ sources, skipped }`, the sources the settings name under `catalog.sources` |
+| `catalog.merge` | `catalogs` | `{ catalog, shadowed }`, an earlier source winning an id |
+| `catalog.check` | `source`, `cache`, `now`, `intervalHours` | `{ kind, catalog?, detail? }`, `skipped`, `unchanged`, `changed` or `failed`; an https source is asked at most once per interval, conditionally |
+| `catalog.current` | `sources`, `cache` | `{ catalog }`, every source's current index merged, with no request |
+| `catalog.resolve` | `catalog`, `enabled`, `installed`, `kind` | `{ run, fetch }`, the installed version each enabled item runs this start and the versions to fetch for the next |
+| `cache.install` | `cache`, `id`, `item`, `version`, `platform` | `{ id, version, directory, fetched, cached }`, after storing every file of the version by hash and writing `.installed.json` last |
+| `cache.installed` | `cache`, `platform` | `{ bundles, libraries }`, each id's versions whose install completed and whose files are present |
+| `cache.check` | `directory` | `{ kind }`, `absent`, `intact`, or `damaged` with `detail`, `fix` and `file?`; local and network-free |
+| `cache.platform` | nothing | `{ platform }`, this build's key as Node spells it, for example `linux-x64` |
+| `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
+| `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed |
+| `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback |
+| `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback |
+| `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
+| `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
+| `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
+| `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
+| `processes.release` | `state`, `hostId`, `holder` | `{ holders }`, the holders left; the host stops itself at its next prune |
+| `processes.prune` | `state`, `hostId`, `self`, `now`, `checkMilliseconds` | `{ exit }`, true when no holder is alive or another process is the host |
+| `processes.recordRun` | `state`, `hostId`, `run`, `checkMilliseconds`, `record` | `{ record }`, the run record of the versions this process runs, stamped alive, which the sweep keeps |
+| `processes.liveRuns` | `state`, `now` | `{ runs }`, what every live start runs, after deleting the records of starts that are gone |
+| `processes.removeRuns` | `state`, `hostId`, `record` | `{}`, after deleting `record`, or every run record of `hostId` |
 | `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
 | `hosts.list` | `places` (`state`) | what `registry.list` answers |
 | `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes, deleting its references, run records and holders, then forgetting it |
@@ -79,6 +111,11 @@ Service), and that store may prompt the user.
 | `detect.onPath` | `binary`, `environment` | `{ path }` of the executable on PATH, or `{}`; reads directories only and launches nothing |
 | `lists.plugins` | `installed`, `detected`, `available` | `{ items }`, one row per id in its strongest state |
 | `lists.applications` | `catalog`, `places` (`state`), `environment`, `detections` | `{ items }`, each catalog application installed, detected or available |
+| `ui.navigation` | `descriptions`, `ui` | `{ entries, preferences }`, every plugin's views, settings screen and actions with the user's customisation, in one order for every host |
+| `ui.settingsView` | `description` | `{ title, nodes }`, the form that edits one plugin's settings |
+| `ui.plan` | `descriptions`, `screen`, `answers` | `{ calls }` still to answer for the screen, or `{ done: true }` |
+| `ui.render` | `descriptions`, `screen`, `answers` | `{ plugin, kind, view?, title, nodes }`, the headless screen, a failed answer marking only its own node |
+| `ui.pluginList` | `installed`, `detected`, `available` | `{ kind: "host", title, nodes }`, the host's own Plugins screen |
 
 `places` is what `places.resolve` answers.
 
@@ -320,6 +357,25 @@ reads itself (a registry file, say) instead of calling cJSON directly. It reads 
   (a string) and `arguments` (an array of strings).
 - **Environment lookups are case-sensitive, except on Windows**, where names match ignoring ASCII
   case, as the host's `process.env` matches them.
+
+## The one command
+
+`install/install.sh` (macOS and Linux) and `install/install.ps1` (Windows) are what the one command
+runs. Each reads the catalog it is given, fetches the latest `forebay-host` build for this platform
+(the `forebay-host` executable, `forebay-boot`, and on Windows `runtime-launcher.exe`) into
+`<cache>/bundles/forebay-host/<version>/`, every file checked against its size and SHA-256, and runs
+that `forebay-host install --catalog=<catalog>` with the rest of its arguments, which installs
+everything else. A file already there with its hash is not fetched again. They need only what each
+OS ships: curl, `sha256sum` or `shasum`, and awk on macOS and Linux (a Linux without curl is told to
+install it), PowerShell on Windows.
+
+No catalog is published yet, so a run without one is refused. Pass a local one built by
+`forebay-host catalog build`:
+
+```
+sh install/install.sh <path to catalog.json> [install options]
+powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
+```
 
 ## Path vectors
 

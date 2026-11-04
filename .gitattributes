@@ -2,3 +2,4 @@ test/vectors/*.json -text
 parity/cases/** -text
 parity/java/gradlew text eol=lf
 runtime/test/fixtures/** -text
+install/* text eol=lf
