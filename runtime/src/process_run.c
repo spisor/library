@@ -1,4 +1,6 @@
-#if !defined(_WIN32)
+#if defined(__linux__)
+#define _GNU_SOURCE
+#elif !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L
 #endif
 
@@ -9,6 +11,9 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+
+#define POLL_MILLISECONDS 10
+#define RUN_OUTPUT_GRACE_MILLISECONDS 250
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -192,32 +197,57 @@ static int create(const wchar_t *application, wchar_t *line, windows_run *run, P
                           NULL, &startup.StartupInfo, information) != 0;
 }
 
-/** Reads the pipe until the child's end closes, keeping what fits; the child cannot outlive the wait that follows. */
-static void read_output(windows_run *run, run_output *collected) {
-    char buffer[512];
-    DWORD read = 0;
-    while (run->output_read != NULL && ReadFile(run->output_read, buffer, sizeof buffer, &read, NULL) && read > 0) {
-        keep(collected, buffer, read);
-    }
-}
-
-/** 1 with the exit code once process exits within timeout; 0 after terminating one that did not. */
-static int await_exit(HANDLE process, unsigned timeout_milliseconds, int *exit_code) {
-    DWORD code = 0;
-    if (WaitForSingleObject(process, timeout_milliseconds) != WAIT_OBJECT_0) {
-        TerminateProcess(process, 1);
-        WaitForSingleObject(process, 5000);
+/** Reads whatever the pipe holds now, keeping what fits; 0 once its write end is closed everywhere. */
+static int drain(HANDLE pipe, run_output *collected) {
+    DWORD available = 0;
+    if (!PeekNamedPipe(pipe, NULL, 0, NULL, &available, NULL)) {
         return 0;
     }
+    char buffer[512];
+    while (available > 0) {
+        DWORD read = 0;
+        if (!ReadFile(pipe, buffer, available < sizeof buffer ? available : sizeof buffer, &read, NULL) || read == 0) {
+            return 0;
+        }
+        keep(collected, buffer, read);
+        available -= read;
+    }
+    return 1;
+}
+
+/**
+ * 1 with the exit code once process exits within timeout, its output drained meanwhile; 0 after
+ * terminating one that did not.
+ *
+ * @implNote The pipe is drained while the child runs, so a child writing more than the pipe holds never
+ * blocks, and for at most RUN_OUTPUT_GRACE_MILLISECONDS after it exits, so a grandchild that inherited
+ * the write end, as a node shim's node does, never holds the run open.
+ */
+static int await_exit(windows_run *run, HANDLE process, unsigned timeout_milliseconds, int *exit_code,
+                      run_output *collected) {
+    ULONGLONG deadline = GetTickCount64() + timeout_milliseconds;
+    ULONGLONG exited_at = 0;
+    int open = run->output_read != NULL;
+    for (;;) {
+        open = open && drain(run->output_read, collected);
+        int exited = WaitForSingleObject(process, POLL_MILLISECONDS) == WAIT_OBJECT_0;
+        ULONGLONG now = GetTickCount64();
+        exited_at = exited && exited_at == 0 ? now : exited_at;
+        if (exited && (!open || now - exited_at >= RUN_OUTPUT_GRACE_MILLISECONDS || now >= deadline)) {
+            break;
+        }
+        if (!exited && now >= deadline) {
+            TerminateProcess(process, 1);
+            WaitForSingleObject(process, 5000);
+            return 0;
+        }
+    }
+    DWORD code = 0;
     int read = GetExitCodeProcess(process, &code) != 0;
     *exit_code = (int)code;
     return read;
 }
 
-/**
- * @implNote The output is read only after the exit, so a child writing more than the pipe holds blocks,
- * outlives the timeout and is terminated; what is read here is a version line, far below that.
- */
 int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
                         char **output, char **problem) {
     *problem = NULL;
@@ -233,8 +263,7 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
     int exited = 0;
     if (started) {
         close_handle(&run.output_write);
-        exited = await_exit(information.hProcess, timeout_milliseconds, exit_code);
-        read_output(&run, &collected);
+        exited = await_exit(&run, information.hProcess, timeout_milliseconds, exit_code, &collected);
         CloseHandle(information.hThread);
         CloseHandle(information.hProcess);
     }
@@ -283,6 +312,9 @@ static int spawn_silenced(const char *executable, char **list, const int *output
     } else {
         error = error != 0 ? error : posix_spawn_file_actions_adddup2(&actions, output_pipe[1], 1);
         error = error != 0 ? error : posix_spawn_file_actions_addclose(&actions, output_pipe[0]);
+        if (output_pipe[1] != 1) {
+            error = error != 0 ? error : posix_spawn_file_actions_addclose(&actions, output_pipe[1]);
+        }
     }
     error = error != 0 ? error : posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
     error = error != 0 ? error : posix_spawn(child, executable, &actions, NULL, list, environ);
@@ -290,43 +322,62 @@ static int spawn_silenced(const char *executable, char **list, const int *output
     return error;
 }
 
-/** Reads the pipe until its end or the deadline, keeping what fits. */
-static void read_output(int descriptor, double deadline, run_output *collected) {
-    char buffer[512];
+/** Reads whatever descriptor holds within one poll interval, keeping what fits; 0 once it reached its end. */
+static int drain(int descriptor, run_output *collected) {
     struct pollfd waiting = {descriptor, POLLIN, 0};
-    for (;;) {
-        double left = deadline - now_milliseconds();
-        int ready = left <= 0 ? 0 : poll(&waiting, 1, (int)left + 1);
-        if (ready < 0 && errno == EINTR) {
-            continue;
-        }
-        ssize_t read_now = ready > 0 ? read(descriptor, buffer, sizeof buffer) : 0;
-        if (read_now < 0 && errno == EINTR) {
-            continue;
-        }
-        if (read_now <= 0) {
-            return;
-        }
+    char buffer[512];
+    int ready = poll(&waiting, 1, POLL_MILLISECONDS);
+    if (ready <= 0) {
+        return ready == 0 || errno == EINTR;
+    }
+    ssize_t read_now = read(descriptor, buffer, sizeof buffer);
+    if (read_now > 0) {
         keep(collected, buffer, (size_t)read_now);
+    }
+    return read_now > 0 || (read_now < 0 && errno == EINTR);
+}
+
+static void stop(pid_t child) {
+    int status = 0;
+    kill(child, SIGKILL);
+    while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
     }
 }
 
-/** 1 with the exit code once child exits by the deadline; 0 after killing one that did not. */
-static int await_exit(pid_t child, double deadline, int *exit_code) {
-    int status = 0;
+static int exit_code_of(int status) {
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+}
+
+/**
+ * 1 with the exit code once child exits by the deadline, its output drained meanwhile; 0 after killing
+ * one that did not.
+ *
+ * @implNote The output is drained for at most RUN_OUTPUT_GRACE_MILLISECONDS after the child exits, so a
+ * grandchild that inherited the write end, as a node shim's node does, never holds the run open.
+ */
+static int await_exit(pid_t child, int descriptor, double deadline, int *exit_code, run_output *collected) {
+    int open = descriptor >= 0;
+    double exited_at = 0;
     for (;;) {
-        pid_t waited = waitpid(child, &status, WNOHANG);
-        if (waited == child) {
-            *exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+        if (open) {
+            open = drain(descriptor, collected);
+        } else if (exited_at == 0) {
+            pause_briefly();
+        }
+        int status = 0;
+        pid_t waited = exited_at == 0 ? waitpid(child, &status, WNOHANG) : child;
+        double now = now_milliseconds();
+        if (waited == child && exited_at == 0) {
+            *exit_code = exit_code_of(status);
+            exited_at = now;
+        }
+        if (exited_at != 0 && (!open || now - exited_at >= RUN_OUTPUT_GRACE_MILLISECONDS || now >= deadline)) {
             return 1;
         }
-        if ((waited < 0 && errno != EINTR) || now_milliseconds() > deadline) {
-            kill(child, SIGKILL);
-            while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
-            }
+        if (exited_at == 0 && ((waited < 0 && errno != EINTR) || now > deadline)) {
+            stop(child);
             return 0;
         }
-        pause_briefly();
     }
 }
 
@@ -343,16 +394,24 @@ static char **argument_list(const char *executable, const cJSON *arguments) {
     return list;
 }
 
+/**
+ * @implNote Both ends close on exec, at once through pipe2 where it exists, so no process another thread
+ * starts meanwhile carries either away; the child gets the write end only as its standard output.
+ */
 static int open_output_pipe(int ends[2]) {
+#if defined(__linux__)
+    return pipe2(ends, O_CLOEXEC) == 0;
+#else
     if (pipe(ends) != 0) {
         return 0;
     }
-    if (fcntl(ends[0], F_SETFD, FD_CLOEXEC) != 0) {
+    if (fcntl(ends[0], F_SETFD, FD_CLOEXEC) != 0 || fcntl(ends[1], F_SETFD, FD_CLOEXEC) != 0) {
         close(ends[0]);
         close(ends[1]);
         return 0;
     }
     return 1;
+#endif
 }
 
 int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
@@ -372,13 +431,10 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
     if (ends[1] >= 0) {
         close(ends[1]);
     }
-    if (error == 0 && ends[0] >= 0) {
-        read_output(ends[0], deadline, &collected);
-    }
+    int exited = error == 0 && await_exit(child, ends[0], deadline, exit_code, &collected);
     if (ends[0] >= 0) {
         close(ends[0]);
     }
-    int exited = error == 0 && await_exit(child, deadline, exit_code);
     if (error != 0) {
         *problem = problem_of(executable, strerror(error));
     } else if (!exited) {

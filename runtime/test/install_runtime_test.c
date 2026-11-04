@@ -1,7 +1,9 @@
 #include "install_fixture.h"
 
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #endif
 
 #include "install_hooks.h"
@@ -331,6 +333,114 @@ static void stops_a_run_that_does_not_exit_in_time_and_refuses_it(void) {
     cJSON_Delete(arguments);
 }
 
+#if defined(_WIN32)
+static HANDLE held_executable = INVALID_HANDLE_VALUE;
+
+static DWORD WINAPI release_later(LPVOID unused) {
+    (void)unused;
+    Sleep(400);
+    CloseHandle(held_executable);
+    held_executable = INVALID_HANDLE_VALUE;
+    return 0;
+}
+
+/** Opens the staged executable sharing no delete, as a virus scanner reading it does, and closes it shortly after. */
+static void hold_staged_executable(const char *staging) {
+    char *executable = joined(staging, STEM "/" EXECUTABLE_MEMBER);
+    wchar_t wide[2048];
+    CHECK(MultiByteToWideChar(CP_UTF8, 0, executable, -1, wide, 2048) > 0);
+    held_executable = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    CHECK(held_executable != INVALID_HANDLE_VALUE);
+    HANDLE thread = CreateThread(NULL, 0, release_later, NULL, 0, NULL);
+    CHECK(thread != NULL);
+    CloseHandle(thread);
+    free(executable);
+}
+
+static void moves_the_runtime_into_place_once_a_scanner_lets_go_of_it(void) {
+    runtime_fixture fixture;
+    start_runtime(&fixture, "scanned", NULL);
+    runtime_install_before_publish(hold_staged_executable);
+    catalog_answer answer = acquire(&fixture);
+    runtime_install_before_publish(NULL);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    char *executable = executable_path(&fixture);
+    CHECK(spisor_file_exists(executable));
+    free(executable);
+    cJSON_Delete(answer.tree);
+    while (held_executable != INVALID_HANDLE_VALUE) {
+        Sleep(20);
+    }
+    finish_runtime(&fixture);
+}
+#endif
+
+/** A program that exits at once leaving a grandchild that holds its output pipe open for half a minute. */
+static void returns_when_the_child_exits_though_a_grandchild_holds_its_output(void) {
+    cJSON *arguments = cJSON_CreateArray();
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("--leave-grandchild"));
+    char *program = joined(RUNTIME_NODE_PROBE_PATH, "");
+    double started = runtime_now_milliseconds();
+    int exit_code = -1;
+    char *output = NULL;
+    char *problem = NULL;
+    CHECK(runtime_run_to_exit(program, arguments, 20000, &exit_code, &output, &problem));
+    CHECK(runtime_now_milliseconds() - started < 5000);
+    if (exit_code != 0 || problem != NULL) {
+        fprintf(stderr, "grandchild run: exit %d, %s\n", exit_code, problem == NULL ? "(no problem)" : problem);
+        check_failures++;
+    }
+    free(problem);
+    free(output);
+    free(program);
+    cJSON_Delete(arguments);
+}
+
+static void set_modified(const char *path, double milliseconds) {
+#if defined(_WIN32)
+    wchar_t wide[2048];
+    CHECK(MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 2048) > 0);
+    HANDLE handle = CreateFileW(wide, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    CHECK(handle != INVALID_HANDLE_VALUE);
+    ULONGLONG ticks = (ULONGLONG)(milliseconds * 10000.0) + 116444736000000000ULL;
+    FILETIME time = {(DWORD)ticks, (DWORD)(ticks >> 32)};
+    CHECK(SetFileTime(handle, NULL, &time, &time) != 0);
+    CloseHandle(handle);
+#else
+    struct timespec times[2];
+    times[0].tv_sec = (time_t)(milliseconds / 1000.0);
+    times[0].tv_nsec = 0;
+    times[1] = times[0];
+    CHECK(utimensat(AT_FDCWD, path, times, 0) == 0);
+#endif
+}
+
+static void sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one(void) {
+    runtime_fixture fixture;
+    start_runtime(&fixture, "staging-sweep", NULL);
+    char old_rest[256];
+    char fresh_rest[256];
+    snprintf(old_rest, sizeof old_rest, "runtimes/node/" TEST_VERSION "/.%s-staging-1-1", runtime_platform_key());
+    snprintf(fresh_rest, sizeof fresh_rest, "runtimes/node/" TEST_VERSION "/.%s-staging-2-1", runtime_platform_key());
+    char *old = joined(fixture.base.cache, old_rest);
+    char *fresh = joined(fixture.base.cache, fresh_rest);
+    write_in(old, "partial", "left by a crash");
+    write_in(fresh, "partial", "another install's");
+    char *old_file = joined(old, "partial");
+    double two_days_ago = runtime_now_milliseconds() - 2 * 24 * 3600000.0;
+    set_modified(old_file, two_days_ago);
+    set_modified(old, two_days_ago);
+    catalog_answer answer = acquire(&fixture);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(answer.tree);
+    CHECK(!spisor_file_exists(old) && spisor_file_exists(fresh));
+    free(old_file);
+    free(fresh);
+    free(old);
+    finish_runtime(&fixture);
+}
+
 int main(void) {
     acquires_the_pinned_runtime_and_answers_its_executable();
     fetches_nothing_on_a_second_run();
@@ -340,6 +450,11 @@ int main(void) {
     refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_executable();
     refuses_a_platform_with_no_pinned_build();
     stops_a_run_that_does_not_exit_in_time_and_refuses_it();
+    returns_when_the_child_exits_though_a_grandchild_holds_its_output();
+    sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one();
+#if defined(_WIN32)
+    moves_the_runtime_into_place_once_a_scanner_lets_go_of_it();
+#endif
     reuses_a_node_on_the_path_whose_major_is_twenty_or_more();
     ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin();
     return check_summary("install_runtime_test");

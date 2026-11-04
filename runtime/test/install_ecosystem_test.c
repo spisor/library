@@ -524,6 +524,42 @@ static int runtime_is_intact(const install_base *base) {
     return intact;
 }
 
+/** No acquisition left a staging folder behind in the runtime's version folder. */
+static void expect_no_staging_left(const install_base *base) {
+    char *versions = joined(base->cache, "runtimes/node/1.2.3");
+    char prefix[64];
+    snprintf(prefix, sizeof prefix, ".%s-staging-", runtime_platform_key());
+    runtime_directory_listing listing;
+    CHECK(runtime_list_directory(versions, &listing) == 1);
+    for (size_t index = 0; index < listing.count; index++) {
+        if (strncmp(listing.entries[index].name, prefix, strlen(prefix)) == 0) {
+            fprintf(stderr, "a staging folder was left: %s\n", listing.entries[index].name);
+            check_failures++;
+        }
+    }
+    runtime_free_directory_listing(&listing);
+    free(versions);
+}
+
+/** What runtimes/javascript.json records: the acquired pin at its final executable. */
+static void expect_recorded_runtime(const install_base *base) {
+    cJSON *record = json_in(base->cache, "runtimes/javascript.json");
+    char rest[256];
+#if defined(_WIN32)
+    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/node-v1.2.3-fixture/node.exe", runtime_platform_key());
+#else
+    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/node-v1.2.3-fixture/bin/node", runtime_platform_key());
+#endif
+    char *executable = joined(base->cache, rest);
+    check_text(text_at(record, "name"), "node", "recorded name");
+    check_text(text_at(record, "version"), "1.2.3", "recorded version");
+    check_text(text_at(record, "source"), "acquired", "recorded source");
+    check_text(text_at(record, "executable"), executable, "recorded executable");
+    CHECK(cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(record, "fetched")));
+    free(executable);
+    cJSON_Delete(record);
+}
+
 /**
  * Two installs at once over one base, asking for different plugins and both acquiring the JavaScript
  * runtime, end with one consistent registry and cache, neither failing and neither losing the other's
@@ -570,6 +606,8 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
         expect_intact(&base, versions[index]);
     }
     CHECK(runtime_is_intact(&base));
+    expect_no_staging_left(&base);
+    expect_recorded_runtime(&base);
     cJSON *settings = ecosystem_settings(&base, 1, 1);
     const char *enabled[13] = {"announcer", "viewer", "scripted", "first-1", "first-2", "first-3", "first-4",
                                "first-5", "second-1", "second-2", "second-3", "second-4", "second-5"};

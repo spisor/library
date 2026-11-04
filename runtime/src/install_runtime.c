@@ -12,6 +12,7 @@
 #include "catalog_text.h"
 #include "directory_tree.h"
 #include "fetch.h"
+#include "file_times.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "on_path.h"
@@ -27,7 +28,7 @@
 #include <process.h>
 #include <windows.h>
 
-#include "wide_path.h"
+#include "windows_file.h"
 #define current_process_id() _getpid()
 #else
 #include <unistd.h>
@@ -49,6 +50,7 @@
 #define RUNTIME_FIX "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or put Node 20 or newer on the PATH"
 #define AGAIN_FIX "run install again; if it repeats, report the pinned archive"
 #define CACHE_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
+#define STALE_STAGING_MILLISECONDS (24.0 * 3600000.0)
 #define ZIP_ENDING ".zip"
 #define TAR_GZ_ENDING ".tar.gz"
 
@@ -107,6 +109,24 @@ void runtime_install_use_runtime_build(const char *version, const char *url, con
     test_build.sha256 = test_sha256;
 }
 #endif
+
+#ifdef SPISOR_INSTALL_TEST_HOOKS
+static void (*publish_hook)(const char *staging) = NULL;
+
+void runtime_install_before_publish(void (*hook)(const char *staging)) {
+    publish_hook = hook;
+}
+#endif
+
+static void before_publish(const acquisition *runtime) {
+#ifdef SPISOR_INSTALL_TEST_HOOKS
+    if (publish_hook != NULL) {
+        publish_hook(runtime->staged.directory);
+    }
+#else
+    (void)runtime;
+#endif
+}
 
 static int build_for(const char *platform, runtime_build *build, const char **version) {
 #ifdef SPISOR_INSTALL_TEST_HOOKS
@@ -169,11 +189,20 @@ static int lay_out_in(const acquisition *runtime, char *directory, runtime_layou
     return layout->archive != NULL && layout->marker != NULL && layout->executable != NULL;
 }
 
+static unsigned long next_acquisition_number(void) {
+#if defined(_WIN32)
+    static volatile LONG acquisitions = 0;
+    return (unsigned long)InterlockedIncrement(&acquisitions);
+#else
+    static unsigned long acquisitions = 0;
+    return __atomic_add_fetch(&acquisitions, 1, __ATOMIC_RELAXED);
+#endif
+}
+
 /** @implNote Named by process and a number no other acquisition of this process takes, so two installs never build in one folder. */
 static char *staging_folder(const char *cache, const char *version, const char *platform) {
-    static unsigned long acquisitions = 0;
     char name[128];
-    snprintf(name, sizeof name, ".%s-staging-%d-%lu", platform, (int)current_process_id(), ++acquisitions);
+    snprintf(name, sizeof name, ".%s-staging-%d-%lu", platform, (int)current_process_id(), next_acquisition_number());
     const char *segments[5] = {cache, "runtimes", RUNTIME_NAME, version, name};
     return joined(segments, 5);
 }
@@ -316,12 +345,7 @@ static cJSON *build_staged(const acquisition *runtime) {
 
 static int rename_directory(const char *from, const char *to) {
 #if defined(_WIN32)
-    wchar_t *wide_from = spisor_wide_path(from);
-    wchar_t *wide_to = spisor_wide_path(to);
-    int renamed = wide_from != NULL && wide_to != NULL && MoveFileExW(wide_from, wide_to, 0) != 0;
-    free(wide_to);
-    free(wide_from);
-    return renamed;
+    return spisor_windows_move_directory(from, to);
 #else
     return rename(from, to) == 0;
 #endif
@@ -344,6 +368,35 @@ static cJSON *publish(const acquisition *runtime) {
     }
     return refused("the runtime could not be moved into place at ", runtime->final.directory,
                    "close whatever runs the JavaScript runtime from the cache, then run install again");
+}
+
+/**
+ * Removes every staging folder of platform under the version folder untouched for a day, which a crashed
+ * acquisition left; a younger one may be another install's, still building.
+ */
+static void sweep_stale_staging(const acquisition *runtime, const char *platform) {
+    const char *segments[2] = {runtime->versions, runtime->version};
+    char *version_folder = joined(segments, 2);
+    char prefix[96];
+    snprintf(prefix, sizeof prefix, ".%s-staging-", platform);
+    runtime_directory_listing listing;
+    if (version_folder == NULL || !runtime_list_directory(version_folder, &listing)) {
+        free(version_folder);
+        return;
+    }
+    double now = runtime_now_milliseconds();
+    for (size_t index = 0; index < listing.count; index++) {
+        const char *name = listing.entries[index].name;
+        const char *entry_segments[2] = {version_folder, name};
+        char *path = strncmp(name, prefix, strlen(prefix)) == 0 ? joined(entry_segments, 2) : NULL;
+        double newest = 0;
+        if (path != NULL && runtime_newest_change(path, &newest) && now - newest > STALE_STAGING_MILLISECONDS) {
+            runtime_remove_tree(path);
+        }
+        free(path);
+    }
+    runtime_free_directory_listing(&listing);
+    free(version_folder);
 }
 
 /** @implNote A version still running holds its files, so one that cannot be removed waits for the next acquisition. */
@@ -389,9 +442,13 @@ static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **re
     }
     cJSON *answer = NULL;
     if (lay_out(&runtime, cache, platform)) {
+        sweep_stale_staging(&runtime, platform);
         int unpacked = is_unpacked(&runtime, &runtime.final);
         *refusal = unpacked ? NULL : build_staged(&runtime);
-        *refusal = unpacked || *refusal != NULL ? *refusal : publish(&runtime);
+        if (!unpacked && *refusal == NULL) {
+            before_publish(&runtime);
+            *refusal = publish(&runtime);
+        }
         runtime_remove_tree(runtime.staged.directory);
         answer = *refusal == NULL ? answer_of(runtime.version, runtime.final.executable, !unpacked, "acquired") : NULL;
         if (answer != NULL) {

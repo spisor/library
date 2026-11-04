@@ -153,3 +153,15 @@ target_compile_definitions(install_runtime_test PRIVATE RUNTIME_NODE_PROBE_PATH=
 add_dependencies(install_runtime_test node_probe)
 set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
     RESOURCE_LOCK user_path_value)
+
+add_executable(settings_lock_test settings_lock_test.c $<TARGET_OBJECTS:runtime_secret_store>
+    $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
+target_link_libraries(settings_lock_test PRIVATE runtime_objects_config_test_hooks ${runtime_secret_store_libraries}
+    ${runtime_path_entry_libraries})
+if(NOT WIN32)
+    target_link_libraries(settings_lock_test PRIVATE Threads::Threads)
+endif()
+target_include_directories(settings_lock_test PRIVATE ${PROJECT_SOURCE_DIR}/test)
+spisor_strict_warnings(settings_lock_test)
+target_compile_definitions(settings_lock_test PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
+add_test(NAME settings_lock_test COMMAND settings_lock_test)

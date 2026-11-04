@@ -20,4 +20,10 @@ extern const runtime_install_method runtime_install_fake_method;
  */
 void runtime_install_use_runtime_build(const char *version, const char *url, const char *sha256);
 
+/**
+ * Calls hook with the staging folder of each runtime acquisition once it is built and before it is moved
+ * into place, so a test can hold a file in it open as a virus scanner would; NULL stops it.
+ */
+void runtime_install_before_publish(void (*hook)(const char *staging));
+
 #endif
