@@ -152,7 +152,8 @@ spisor_strict_warnings(runtime_ui)
 
 set(runtime_install_sources src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
     src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
-    src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c src/process_run.c)
+    src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
+    src/process_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})
 target_link_libraries(runtime_install PUBLIC runtime_objects)
 target_include_directories(runtime_install PRIVATE ${PROJECT_SOURCE_DIR}/src)

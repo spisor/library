@@ -45,4 +45,13 @@ RUNTIME_EXPORT int32_t runtime_install_ecosystem(const uint8_t *in, size_t in_le
  */
 RUNTIME_EXPORT int32_t runtime_install_application(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * install.registerLoader: { places: { portable, state, cache }, environment, id, version } registers the
+ * loader id at the installed version as install registers it, and answers what hosts.register answers:
+ * its application read from that version's host.json, the provenance its registration records kept, and
+ * its commands, which run forebay-boot, requested again. What every start of a loader does, a launch or
+ * an application's own hook, with no catalog read.
+ */
+RUNTIME_EXPORT int32_t runtime_install_register_loader(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 #endif
