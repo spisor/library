@@ -1911,6 +1911,365 @@
           }
         }
       ]
+    },
+    {
+      "id": "ui",
+      "functions": [
+        {
+          "name": "navigation",
+          "symbol": "runtime_ui_navigation",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "descriptions": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              },
+              "ui": { "type": "object" }
+            },
+            "required": ["descriptions", "ui"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": { "type": "string" },
+                    "kind": { "enum": ["view", "settings", "action"] },
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "pinned": { "type": "boolean" }
+                  },
+                  "required": ["plugin", "kind", "id", "pinned"],
+                  "additionalProperties": false
+                }
+              },
+              "preferences": { "type": "object" }
+            },
+            "required": ["entries", "preferences"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "settingsView",
+          "symbol": "runtime_ui_settings_view",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+            },
+            "required": ["description"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "parent": { "type": "string" },
+                    "component": { "enum": ["form", "field"] },
+                    "field": { "type": "string" },
+                    "label": { "type": "string" }
+                  },
+                  "required": ["id", "component"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["title", "nodes"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "plan",
+          "symbol": "runtime_ui_plan",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "descriptions": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              },
+              "screen": {
+                "type": "object",
+                "properties": {
+                  "plugin": { "type": "string" },
+                  "kind": { "enum": ["view", "settings", "action"] },
+                  "id": { "type": "string" }
+                },
+                "required": ["plugin", "kind"]
+              },
+              "answers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": { "type": "string" },
+                    "binding": {
+                      "type": "object",
+                      "properties": { "service": { "type": "string" }, "method": { "type": "string" } },
+                      "required": ["service", "method"]
+                    },
+                    "arguments": { "type": "object" },
+                    "answer": {},
+                    "checked": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "against": { "type": "string" },
+                          "members": { "type": "array", "items": { "type": "string" } },
+                          "issues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "message": { "type": "string" },
+                                "fix": { "type": "string" },
+                                "path": { "type": "string" }
+                              },
+                              "required": ["message", "fix"]
+                            }
+                          }
+                        },
+                        "required": ["against", "issues"]
+                      }
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": { "detail": { "type": "string" }, "fix": { "type": "string" } },
+                      "required": ["detail", "fix"]
+                    },
+                    "unavailable": { "const": true }
+                  },
+                  "required": ["plugin", "binding", "arguments"]
+                }
+              }
+            },
+            "required": ["descriptions", "screen"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": { "type": "string" },
+                    "binding": {
+                      "type": "object",
+                      "properties": { "service": { "type": "string" }, "method": { "type": "string" } },
+                      "required": ["service", "method"],
+                      "additionalProperties": false
+                    },
+                    "arguments": { "type": "object" },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "against": { "type": "string" },
+                          "members": { "type": "array", "items": { "type": "string" } }
+                        },
+                        "required": ["against"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["plugin", "binding", "arguments", "checks"],
+                  "additionalProperties": false
+                }
+              },
+              "done": { "const": true }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "render",
+          "symbol": "runtime_ui_render",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "descriptions": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              },
+              "screen": {
+                "type": "object",
+                "properties": {
+                  "plugin": { "type": "string" },
+                  "kind": { "enum": ["view", "settings", "action"] },
+                  "id": { "type": "string" }
+                },
+                "required": ["plugin", "kind"]
+              },
+              "answers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": { "type": "string" },
+                    "binding": {
+                      "type": "object",
+                      "properties": { "service": { "type": "string" }, "method": { "type": "string" } },
+                      "required": ["service", "method"]
+                    },
+                    "arguments": { "type": "object" },
+                    "answer": {},
+                    "checked": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "against": { "type": "string" },
+                          "members": { "type": "array", "items": { "type": "string" } },
+                          "issues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "message": { "type": "string" },
+                                "fix": { "type": "string" },
+                                "path": { "type": "string" }
+                              },
+                              "required": ["message", "fix"]
+                            }
+                          }
+                        },
+                        "required": ["against", "issues"]
+                      }
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": { "detail": { "type": "string" }, "fix": { "type": "string" } },
+                      "required": ["detail", "fix"]
+                    },
+                    "unavailable": { "const": true }
+                  },
+                  "required": ["plugin", "binding", "arguments"]
+                }
+              }
+            },
+            "required": ["descriptions", "screen", "answers"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "plugin": { "type": "string" },
+              "kind": { "enum": ["view", "settings"] },
+              "view": { "type": "string" },
+              "title": { "type": "string" },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "component": { "type": "string" },
+                    "parent": { "type": "string" },
+                    "state": { "enum": ["ready", "error", "unavailable"] },
+                    "data": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "detail": { "type": "string" },
+                        "fix": { "type": "string" },
+                        "path": { "type": "string" }
+                      },
+                      "required": ["detail", "fix"],
+                      "additionalProperties": false
+                    },
+                    "props": { "type": "object" }
+                  },
+                  "required": ["id", "component", "state", "props"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["plugin", "kind", "nodes"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "pluginList",
+          "symbol": "runtime_ui_plugin_list",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "installed": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              },
+              "detected": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              },
+              "available": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+              }
+            },
+            "required": ["installed", "detected", "available"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "kind": { "const": "host" },
+              "title": { "type": "string" },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "component": { "const": "table" },
+                    "state": { "const": "ready" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": { "type": "string" },
+                              "state": { "enum": ["installed", "detected", "available"] },
+                              "unavailable": { "const": true },
+                              "install": { "const": true }
+                            },
+                            "required": ["id", "state"]
+                          }
+                        }
+                      },
+                      "required": ["items"],
+                      "additionalProperties": false
+                    },
+                    "props": { "type": "object" }
+                  },
+                  "required": ["id", "component", "state", "data", "props"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["kind", "title", "nodes"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

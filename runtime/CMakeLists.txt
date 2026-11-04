@@ -134,6 +134,14 @@ target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_hosts PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts)
 
+set(runtime_ui_sources src/ui_binding.c src/ui_items.c src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c
+    src/ui_settings_view.c)
+add_library(runtime_ui OBJECT ${runtime_ui_sources})
+target_link_libraries(runtime_ui PUBLIC runtime_objects)
+target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_ui)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -141,7 +149,7 @@ add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TAR
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
-    $<TARGET_OBJECTS:runtime_hosts>)
+    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})

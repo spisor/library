@@ -1,0 +1,198 @@
+{
+  "id": "viewer",
+  "api": 1,
+  "version": "1.0.0",
+  "entry": "index.js",
+  "services": {
+    "provides": [
+      "viewer:status"
+    ],
+    "consumes": [
+      {
+        "id": "demo:greeting",
+        "optional": true
+      }
+    ]
+  },
+  "settings": {
+    "theme": {
+      "type": "choice",
+      "label": "Theme",
+      "choices": [
+        "light",
+        "dark"
+      ]
+    },
+    "depth": {
+      "type": "number",
+      "label": "Depth"
+    }
+  },
+  "actions": {
+    "restart": {
+      "label": "Restart",
+      "call": {
+        "service": "viewer:status",
+        "method": "echo",
+        "argument": {
+          "force": true,
+          "item": "declared"
+        }
+      }
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "nodes": [
+        {
+          "id": "main",
+          "component": "stack"
+        },
+        {
+          "id": "rows",
+          "parent": "main",
+          "component": "table",
+          "tone": "accent",
+          "span": 6,
+          "action": "restart",
+          "color": "#f00",
+          "bind": {
+            "service": "viewer:status",
+            "method": "rows"
+          }
+        },
+        {
+          "id": "greeting",
+          "parent": "main",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "greeting"
+          }
+        }
+      ]
+    },
+    "families": {
+      "title": "Families",
+      "nodes": [
+        { "id": "asList", "component": "list", "bind": { "service": "viewer:status", "method": "rows" } },
+        { "id": "asTable", "component": "table", "bind": { "service": "viewer:status", "method": "rows" } },
+        { "id": "asTree", "component": "tree", "bind": { "service": "viewer:status", "method": "rows" } }
+      ]
+    },
+    "wrongShape": {
+      "title": "Wrong shape",
+      "nodes": [
+        {
+          "id": "rows",
+          "component": "table",
+          "bind": {
+            "service": "viewer:status",
+            "method": "wrongShape"
+          }
+        },
+        {
+          "id": "greeting",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "greeting"
+          }
+        }
+      ]
+    },
+    "bare": {
+      "title": "Bare",
+      "nodes": [
+        {
+          "id": "rows",
+          "component": "table",
+          "bind": {
+            "service": "viewer:status",
+            "method": "bare"
+          }
+        }
+      ]
+    },
+    "failing": {
+      "title": "Failing",
+      "nodes": [
+        {
+          "id": "broken",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "fails"
+          }
+        },
+        {
+          "id": "greeting",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "greeting"
+          }
+        }
+      ]
+    },
+    "hanging": {
+      "title": "Hanging",
+      "nodes": [
+        {
+          "id": "slow",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "hangs"
+          }
+        }
+      ]
+    },
+    "charts": {
+      "title": "Charts",
+      "nodes": [
+        {
+          "id": "gauge",
+          "component": "chart",
+          "chart": "meter",
+          "bind": {
+            "service": "viewer:status",
+            "method": "series"
+          }
+        },
+        {
+          "id": "trend",
+          "component": "chart",
+          "chart": "line",
+          "bind": {
+            "service": "viewer:status",
+            "method": "seriesAndMeasure"
+          }
+        },
+        {
+          "id": "usage",
+          "component": "chart",
+          "chart": "meter",
+          "bind": {
+            "service": "viewer:status",
+            "method": "seriesAndMeasure"
+          }
+        },
+        { "id": "badMeter", "component": "chart", "chart": "meter", "bind": { "service": "viewer:status", "method": "seriesAndBadMeasure" } },
+        { "id": "badTrend", "component": "chart", "chart": "line", "bind": { "service": "viewer:status", "method": "measureAndBadSeries" } },
+        { "id": "measureTrend", "component": "chart", "chart": "line", "bind": { "service": "viewer:status", "method": "measure" } }
+      ]
+    },
+    "settings": {
+      "title": "Declared settings",
+      "nodes": [
+        {
+          "id": "note",
+          "component": "text",
+          "text": "a view that happens to be called settings"
+        }
+      ]
+    }
+  }
+}
