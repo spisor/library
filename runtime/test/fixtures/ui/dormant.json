@@ -1,0 +1,19 @@
+{
+  "id": "dormant",
+  "api": 1,
+  "version": "1.0.0",
+  "entry": "index.js",
+  "services": {
+    "provides": ["dormant:status"],
+    "consumes": [{ "id": "demo:greeting", "optional": false }]
+  },
+  "views": {
+    "status": {
+      "title": "Status",
+      "nodes": [
+        { "id": "summary", "component": "text", "bind": { "service": "dormant:status", "method": "read" } },
+        { "id": "heading", "component": "text", "text": "Dormant" }
+      ]
+    }
+  }
+}

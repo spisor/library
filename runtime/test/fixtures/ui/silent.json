@@ -1,0 +1,26 @@
+{
+  "id": "silent",
+  "api": 1,
+  "version": "1.0.0",
+  "entry": "index.js",
+  "services": {
+    "provides": [
+      "demo:greeting"
+    ]
+  },
+  "views": {
+    "hello": {
+      "title": "Hello",
+      "nodes": [
+        {
+          "id": "message",
+          "component": "text",
+          "bind": {
+            "service": "demo:greeting",
+            "method": "greet"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -120,6 +120,13 @@ if(WIN32)
 endif()
 set_tests_properties(hosts_test PROPERTIES RESOURCE_LOCK user_path_value)
 
+foreach(name ui_navigation_test ui_settings_view_test ui_render_test)
+    runtime_test(${name} $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
+    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_compile_definitions(${name} PRIVATE RUNTIME_UI_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/ui")
+endforeach()
+
 runtime_test(processes_test ${runtime_processes_test_objects})
 target_link_libraries(processes_test PRIVATE ${runtime_fetch_libraries})
 target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
