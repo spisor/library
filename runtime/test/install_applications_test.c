@@ -517,7 +517,12 @@ static void registers_an_installed_loader_again_keeping_its_provenance_and_reque
     cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
     cJSON *installed = recorded_provenance(&base);
     catalog_answer registered = register_loader(&base, "1.0.0", base.path);
-    CHECK(registered.status == SPISOR_STATUS_SUCCESS);
+    if (registered.status != SPISOR_STATUS_SUCCESS) {
+        char *printed = registered.tree == NULL ? NULL : cJSON_PrintUnformatted(registered.tree);
+        fprintf(stderr, "install.registerLoader answered %d: %s\n", (int)registered.status, printed == NULL ? "(nothing)" : printed);
+        cJSON_free(printed);
+        check_failures++;
+    }
     expect_json(cJSON_GetObjectItemCaseSensitive(registered.tree, "commands"), "[\"cc\"]", "commands requested again");
     cJSON *kept = recorded_provenance(&base);
     CHECK(installed != NULL && kept != NULL && cJSON_Compare(installed, kept, 1));
