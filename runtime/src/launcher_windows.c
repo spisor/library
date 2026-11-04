@@ -10,6 +10,7 @@
  */
 #include <windows.h>
 
+#include "command_line_windows.h"
 #include "shim_format.h"
 
 #define LAUNCH_FAILED 127
@@ -166,35 +167,6 @@ static const wchar_t *arguments_after_program(const wchar_t *line) {
     return cursor;
 }
 
-static size_t append_backslashes(wchar_t *line, size_t used, size_t count) {
-    for (size_t index = 0; index < count; index++) {
-        line[used++] = L'\\';
-    }
-    return used;
-}
-
-/**
- * Appends a space and argument quoted so CommandLineToArgvW reads it back unchanged: a run of
- * backslashes is doubled before a quote, which is escaped, and before the closing quote.
- */
-static size_t append_quoted(wchar_t *line, size_t used, const wchar_t *argument) {
-    line[used++] = L' ';
-    line[used++] = L'"';
-    size_t backslashes = 0;
-    for (const wchar_t *cursor = argument; *cursor != L'\0'; cursor++) {
-        if (*cursor == L'\\') {
-            backslashes++;
-            continue;
-        }
-        used = append_backslashes(line, used, *cursor == L'"' ? 2 * backslashes + 1 : backslashes);
-        backslashes = 0;
-        line[used++] = *cursor;
-    }
-    used = append_backslashes(line, used, 2 * backslashes);
-    line[used++] = L'"';
-    return used;
-}
-
 /** The target as the program, each fixed argument quoted, then the caller's arguments as they were given. */
 static wchar_t *child_command_line(const shim_lines *lines, const wchar_t *callers) {
     const wchar_t *target = lines->items[1];
@@ -211,7 +183,7 @@ static wchar_t *child_command_line(const shim_lines *lines, const wchar_t *calle
     lstrcatW(line, L"\"");
     size_t used = (size_t)lstrlenW(line);
     for (int index = FIRST_ARGUMENT_LINE; index < lines->count; index++) {
-        used = append_quoted(line, used, lines->items[index]);
+        used = runtime_append_quoted_argument(line, used, lines->items[index]);
     }
     line[used] = L'\0';
     if (*callers != L'\0') {

@@ -97,3 +97,21 @@ foreach(name updates_test boot_hint_test)
         $<TARGET_OBJECTS:runtime_secret_store>)
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()
+
+set(runtime_processes_test_objects $<TARGET_OBJECTS:runtime_processes> $<TARGET_OBJECTS:runtime_cache>
+    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+add_executable(background_fixture background_fixture.c ${runtime_processes_test_objects}
+    $<TARGET_OBJECTS:runtime_path_entry>)
+target_link_libraries(background_fixture PRIVATE runtime_objects ${runtime_secret_store_libraries}
+    ${runtime_path_entry_libraries} ${runtime_fetch_libraries})
+target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
+spisor_strict_warnings(background_fixture)
+
+runtime_test(processes_test ${runtime_processes_test_objects})
+target_link_libraries(processes_test PRIVATE ${runtime_fetch_libraries})
+target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
+add_dependencies(processes_test background_fixture)
+if(NOT WIN32)
+    target_link_libraries(processes_test PRIVATE Threads::Threads)
+endif()
