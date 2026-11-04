@@ -90,7 +90,7 @@ function Receive-Verified([string]$Url, [string]$Path, [string]$Sha256, $Size) {
     try {
         Receive-File $Url $part
         if ((Get-Item -LiteralPath $part).Length -ne [long]$Size -or -not (Test-Sha256 $part $Sha256)) {
-            Stop-Install "$Url does not have the SHA-256 $Sha256 it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
+            Stop-Install "$Url does not have the $Size bytes and SHA-256 $Sha256 it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
         }
         Move-Item -LiteralPath $part -Destination $Path -Force
     } finally {

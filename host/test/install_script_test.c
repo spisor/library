@@ -474,6 +474,13 @@ static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     free(bytes);
 }
 
+static void with_a_size_its_bytes_do_not_have(host_world *world, cJSON *files) {
+    (void)world;
+    cJSON *file = file_named(files, HOST_EXECUTABLE);
+    double size = cJSON_GetObjectItemCaseSensitive(file, "size")->valuedouble;
+    set_member(file, "size", cJSON_CreateNumber(size + 1));
+}
+
 static void with_a_key_ending_in_a_dot(host_world *world, cJSON *files) {
     (void)world;
     copy_manifest_as(files, "host.json.");
@@ -503,9 +510,10 @@ static const hostile_catalog HOSTILE_CATALOGS[] = {
     {"a forebay-host with no build for this platform", without_this_platform, "lists no forebay-host " HOST_VERSION " build for %s"},
     {"a file key that climbs out of the version", with_a_key_that_climbs_out, "file \"../escape\" with a name, url"},
     {"a file url outside the catalog's directory", with_a_url_outside_the_catalog_directory, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
-    {"a file whose bytes do not have the listed hash", with_a_hash_the_bytes_do_not_have, "does not have the SHA-256 0000"},
+    {"a file whose bytes do not have the listed hash", with_a_hash_the_bytes_do_not_have, "bytes and SHA-256 0000"},
+    {"a file whose bytes do not have the listed size", with_a_size_its_bytes_do_not_have, "does not have the "},
     {"a file that cannot be fetched", with_a_file_that_cannot_be_fetched, "could not fetch "},
-    {"a file served cut short", with_a_file_served_cut_short, "cut-short/" HOST_EXECUTABLE " does not have the SHA-256"},
+    {"a file served cut short", with_a_file_served_cut_short, "cut-short/" HOST_EXECUTABLE " does not have the "},
     {"a file key the schema refuses for ending in a dot", with_a_key_ending_in_a_dot, "file \"host.json.\" with a name, url"},
     {"two file keys that differ only by case", with_two_keys_that_differ_only_by_case, "host.json and HOST.json, which differ only by case"},
     {"a file key naming the cache's completion marker", with_a_key_naming_the_completion_marker, "file \".installed.json\" with a name, url"},

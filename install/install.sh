@@ -384,7 +384,7 @@ fetch_verified() {
   TEMPORARY=$(mktemp "$2.XXXXXX")
   receive "$1" 2>/dev/null || refuse "could not fetch $1" 'check the network connection, then run this again'
   if [ "$(file_size "$TEMPORARY")" != "$4" ] || ! has_sha256 "$TEMPORARY" "$3"; then
-    refuse "$1 does not have the SHA-256 $3 it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
+    refuse "$1 does not have the $4 bytes and SHA-256 $3 it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
   fi
   mv -f "$TEMPORARY" "$2"
   TEMPORARY=''
