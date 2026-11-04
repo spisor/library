@@ -260,6 +260,39 @@ static const char *provenance_defect_of(const cJSON *provenance) {
     return NULL;
 }
 
+static int is_start_runtime(const char *runtime) {
+    return runtime != NULL &&
+           (strcmp(runtime, "javascript") == 0 || strcmp(runtime, "jvm") == 0 || strcmp(runtime, "native") == 0);
+}
+
+static int climbs_out(const char *entry) {
+    const char *segment = entry;
+    while (*segment != '\0') {
+        size_t length = strcspn(segment, "/\\");
+        if (length == 2 && segment[0] == '.' && segment[1] == '.') {
+            return 1;
+        }
+        segment += length;
+        segment += *segment != '\0';
+    }
+    return 0;
+}
+
+static const char *start_defect_of(const cJSON *start) {
+    if (start == NULL) {
+        return NULL;
+    }
+    if (!cJSON_IsObject(start) || !is_start_runtime(string_member(start, "runtime"))) {
+        return "the registration's start needs a runtime of \"javascript\", \"jvm\" or \"native\"";
+    }
+    const char *entry = string_member(start, "entry");
+    if (entry == NULL || entry[0] == '\0' || spisor_path_is_absolute(1, entry) || spisor_path_is_absolute(0, entry) ||
+        climbs_out(entry)) {
+        return "the registration's start entry is not a relative path inside the host's bundle";
+    }
+    return NULL;
+}
+
 static const char *registration_defect(const cJSON *registration) {
     const char *id = string_member(registration, "id");
     const cJSON *home = cJSON_GetObjectItemCaseSensitive(registration, "home");
@@ -289,7 +322,7 @@ static const char *registration_defect(const cJSON *registration) {
     if (!cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(registration, "requiresCommand"))) {
         return "the registration's requiresCommand is not a boolean";
     }
-    return NULL;
+    return start_defect_of(cJSON_GetObjectItemCaseSensitive(registration, "start"));
 }
 
 static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *out_len) {
@@ -297,7 +330,8 @@ static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *ou
                        "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\"?, \"application\"?, "
                        "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, \"os\", \"architecture\", "
                        "\"installedAt\": <ISO 8601 UTC>, ...}, "
-                       "\"requiresCommand\"}}",
+                       "\"requiresCommand\", \"start\"?: {\"runtime\": \"javascript\" | \"jvm\" | \"native\", "
+                       "\"entry\": <relative path inside the bundle>}}}",
                        out, out_len);
 }
 
@@ -325,21 +359,29 @@ static int add_stored_list(cJSON *target, const cJSON *stored, const char *membe
     return list != NULL;
 }
 
+static const cJSON *provenance_source(const cJSON *given, const cJSON *stored, int keep_stored_provenance) {
+    int keeps = keep_stored_provenance && cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(stored, "provenance"));
+    return keeps ? stored : given;
+}
+
 /**
  * The record to store: the given registration's own fields, with commands, changes and the
- * changes service's nextSequence counter carried over from stored (empty when stored is NULL).
- * Anything else in the given registration or the stored one is dropped, so the file never holds a
- * member nothing owns.
+ * changes service's nextSequence counter carried over from stored (empty when stored is NULL), and
+ * the stored provenance in place of the given one when keep_stored_provenance asks for it and stored
+ * has one. Anything else in the given registration or the stored one is dropped, so the file never
+ * holds a member nothing owns.
  *
  * @implNote Commands and changes are owned by the services that record them, never by a host
  * registering itself, so a host's start cannot erase what an install or a command left behind.
  */
-static cJSON *merged_registration(const cJSON *given, const cJSON *stored) {
+static cJSON *merged_registration(const cJSON *given, const cJSON *stored, int keep_stored_provenance) {
     cJSON *merged = cJSON_CreateObject();
+    const cJSON *provenance = provenance_source(given, stored, keep_stored_provenance);
     int complete = merged != NULL && add_copy(merged, given, "id") && add_copy(merged, given, "kind") &&
                    add_copy(merged, given, "version") && add_copy(merged, given, "home") &&
-                   add_copy(merged, given, "application") && add_copy(merged, given, "provenance") &&
-                   add_copy(merged, given, "requiresCommand") && add_stored_list(merged, stored, "commands") &&
+                   add_copy(merged, given, "application") && add_copy(merged, provenance, "provenance") &&
+                   add_copy(merged, given, "requiresCommand") && add_copy(merged, given, "start") &&
+                   add_stored_list(merged, stored, "commands") &&
                    add_stored_list(merged, stored, "changes") && add_copy(merged, stored, "nextSequence");
     if (!complete) {
         cJSON_Delete(merged);
@@ -372,15 +414,15 @@ static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len
     return spisor_fail("the registry lock could not be taken; nothing was changed", fix, out, out_len);
 }
 
-static int32_t register_locked(const registry_request *request, const cJSON *given, uint8_t **out,
-                               size_t *out_len) {
+static int32_t register_locked(const registry_request *request, const cJSON *given, int keep_stored_provenance,
+                               uint8_t **out, size_t *out_len) {
     const char *id = string_member(given, "id");
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
     if (loaded != RUNTIME_REGISTRY_OK && loaded != RUNTIME_REGISTRY_ABSENT) {
         return refuse_answer(loaded, request, id, out, out_len);
     }
-    cJSON *merged = merged_registration(given, stored);
+    cJSON *merged = merged_registration(given, stored, keep_stored_provenance);
     cJSON_Delete(stored);
     if (merged == NULL) {
         return out_of_memory(out, out_len);
@@ -388,7 +430,8 @@ static int32_t register_locked(const registry_request *request, const cJSON *giv
     return store_and_answer(request, merged, out, out_len);
 }
 
-static int32_t register_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+static int32_t register_with(const registry_request *request, int keep_stored_provenance, uint8_t **out,
+                             size_t *out_len) {
     const cJSON *given = cJSON_GetObjectItemCaseSensitive(request->argument, "registration");
     const char *defect = registration_defect(given);
     if (defect != NULL) {
@@ -398,9 +441,17 @@ static int32_t register_host(const registry_request *request, uint8_t **out, siz
     if (guard == NULL) {
         return refuse_unlocked(request->state, out, out_len);
     }
-    int32_t status = register_locked(request, given, out, out_len);
+    int32_t status = register_locked(request, given, keep_stored_provenance, out, out_len);
     runtime_hosts_unlock(guard);
     return status;
+}
+
+static int32_t register_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+    return register_with(request, 0, out, out_len);
+}
+
+static int32_t register_host_keeping_provenance(const registry_request *request, uint8_t **out, size_t *out_len) {
+    return register_with(request, 1, out, out_len);
 }
 
 static int32_t get_host(const registry_request *request, uint8_t **out, size_t *out_len) {
@@ -645,6 +696,11 @@ static int32_t serve(const uint8_t *in, size_t in_len, int needs_cache, registry
 
 RUNTIME_EXPORT int32_t runtime_registry_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return serve(in, in_len, 0, register_host, out, out_len);
+}
+
+int32_t runtime_registry_register_first_provenance(const uint8_t *in, size_t in_len, uint8_t **out,
+                                                   size_t *out_len) {
+    return serve(in, in_len, 0, register_host_keeping_provenance, out, out_len);
 }
 
 RUNTIME_EXPORT int32_t runtime_registry_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

@@ -108,6 +108,18 @@ target_link_libraries(background_fixture PRIVATE runtime_objects ${runtime_secre
 target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
 spisor_strict_warnings(background_fixture)
 
+set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_processes_test_objects}
+    $<TARGET_OBJECTS:runtime_change_reversal>)
+foreach(name hosts_test loader_test detect_test lists_test)
+    runtime_test(${name} ${runtime_hosts_test_objects})
+    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+endforeach()
+if(WIN32)
+    add_dependencies(hosts_test runtime_launcher)
+endif()
+set_tests_properties(hosts_test PROPERTIES RESOURCE_LOCK user_path_value)
+
 runtime_test(processes_test ${runtime_processes_test_objects})
 target_link_libraries(processes_test PRIVATE ${runtime_fetch_libraries})
 target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
