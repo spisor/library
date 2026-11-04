@@ -770,6 +770,40 @@
           }
         }
       ]
+    },
+    {
+      "id": "fetch",
+      "functions": [
+        {
+          "name": "get",
+          "symbol": "runtime_fetch_get",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "url": { "type": "string", "minLength": 1 },
+              "destination": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "etag": { "type": "string" },
+              "lastModified": { "type": "string" },
+              "maxBytes": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["url", "destination"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "outcome": { "enum": ["stored", "not-modified"] },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "bytes": { "type": "integer", "minimum": 0 },
+              "etag": { "type": "string" },
+              "lastModified": { "type": "string" }
+            },
+            "required": ["outcome"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

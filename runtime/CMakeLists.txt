@@ -1,6 +1,7 @@
 add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
-    src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c)
+    src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
+    src/sha256.c src/file_stream.c)
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
@@ -57,13 +58,33 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     spisor_strict_warnings(runtime_secret_store_test_hooks)
 endif()
 
+if(WIN32)
+    set(runtime_fetch_transport_source src/fetch_windows.c)
+    set(runtime_fetch_libraries Winhttp Shlwapi)
+else()
+    set(runtime_fetch_transport_source src/fetch_curl.c)
+    find_package(Threads REQUIRED)
+    set(runtime_fetch_libraries ${CMAKE_DL_LIBS} Threads::Threads)
+endif()
+set(runtime_fetch_sources src/fetch.c src/fetch_sink.c src/fetch_file.c ${runtime_fetch_transport_source})
+add_library(runtime_fetch OBJECT ${runtime_fetch_sources})
+target_link_libraries(runtime_fetch PUBLIC runtime_objects)
+set_target_properties(runtime_fetch PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_fetch)
+
+add_library(runtime_fetch_test_hooks OBJECT ${runtime_fetch_sources})
+target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
+target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
+spisor_strict_warnings(runtime_fetch_test_hooks)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
-    $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store>)
+    $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>)
 target_include_directories(runtime PRIVATE src)
-target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries})
+target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
+    ${runtime_fetch_libraries})
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(runtime PRIVATE -Wl,--exclude-libs,ALL)
