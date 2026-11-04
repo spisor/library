@@ -57,3 +57,15 @@ if(WIN32)
     add_dependencies(lifecycle_test runtime_launcher)
 endif()
 set_tests_properties(path_entry_test commands_test lifecycle_test PROPERTIES RESOURCE_LOCK user_path_value)
+
+runtime_test(sha256_test $<TARGET_OBJECTS:runtime_secret_store>)
+
+runtime_test(fetch_test http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(fetch_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(fetch_test PRIVATE Ws2_32)
+endif()
+
+runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})
+set_tests_properties(fetch_network_test PROPERTIES LABELS network)
