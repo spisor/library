@@ -492,6 +492,18 @@ static void expect_intact(const install_base *base, const char *rest) {
     cJSON_Delete(answer.tree);
 }
 
+/** Five plugins for each of two installs, so their settings writes interleave many times. */
+static void list_many_plugins(install_base *base) {
+    for (int index = 1; index <= 5; index++) {
+        char first[32];
+        char second[32];
+        snprintf(first, sizeof first, "first-%d", index);
+        snprintf(second, sizeof second, "second-%d", index);
+        list_plugin(base, first, "1.0.0", "native");
+        list_plugin(base, second, "1.0.0", "native");
+    }
+}
+
 /** Whether the JavaScript runtime the installs acquired is unpacked intact: its marker names the executable's bytes. */
 static int runtime_is_intact(const install_base *base) {
     char rest[256];
@@ -522,6 +534,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     start_install_base(&base, "ecosystem", "concurrent");
     list_ecosystem(&base);
     list_plugin(&base, "scripted", "1.0.0", NULL);
+    list_many_plugins(&base);
     list_library(&base, "koffi", "2.16.3");
     list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     cJSON *application = application_json("claude", "claude", "{}");
@@ -537,8 +550,8 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(chmod(binary, 0755) == 0);
     free(binary);
 #endif
-    const char *first_arguments[5] = {"--child", base.root, "announcer,scripted", served.url, served.sha256};
-    const char *second_arguments[5] = {"--child", base.root, "viewer,scripted", served.url, served.sha256};
+    const char *first_arguments[5] = {"--child", base.root, "announcer,first-1,first-2,first-3,first-4,first-5,scripted", served.url, served.sha256};
+    const char *second_arguments[5] = {"--child", base.root, "viewer,second-1,second-2,second-3,second-4,second-5,scripted", served.url, served.sha256};
     child_process first = start_child(self, first_arguments, 5, 0, NULL);
     child_process second = start_child(self, second_arguments, 5, 0, NULL);
     CHECK(first.pid != 0 && second.pid != 0);
@@ -558,9 +571,16 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     }
     CHECK(runtime_is_intact(&base));
     cJSON *settings = ecosystem_settings(&base, 1, 1);
-    expect_member(settings, "plugins",
-                  "{\"announcer\":{\"enabled\":true},\"scripted\":{\"enabled\":true},\"viewer\":{\"enabled\":true}}",
-                  "both installs' plugins enabled");
+    const char *enabled[13] = {"announcer", "viewer", "scripted", "first-1", "first-2", "first-3", "first-4",
+                               "first-5", "second-1", "second-2", "second-3", "second-4", "second-5"};
+    for (size_t index = 0; index < 13; index++) {
+        char slashed[64];
+        snprintf(slashed, sizeof slashed, "plugins/%s/enabled", enabled[index]);
+        if (!cJSON_IsTrue(value_at(settings, slashed))) {
+            fprintf(stderr, "both installs' plugins enabled: %s is not\n", enabled[index]);
+            check_failures++;
+        }
+    }
     CHECK(cJSON_GetArraySize(value_at(settings, "catalog/sources")) == 1);
     cJSON *references = json_in(base.state, "bundles/forebay-host.json");
     const cJSON *run = cJSON_GetObjectItemCaseSensitive(references, "run");
