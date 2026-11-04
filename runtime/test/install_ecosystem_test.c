@@ -183,6 +183,20 @@ static void keeps_the_versions_the_host_scheduled_for_its_next_start(void) {
     finish_install_base(&base);
 }
 
+static void records_as_run_only_what_this_install_installed(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "run-replaced");
+    list_ecosystem(&base);
+    cJSON_Delete(install_defaults(&base, ""));
+    set_portable(&base, "plugins.viewer.enabled", cJSON_CreateFalse());
+    cJSON_Delete(install_defaults(&base, ""));
+    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
+    expect_member(references, "run", "{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\"}",
+                  "a disabled plugin leaves run");
+    cJSON_Delete(references);
+    finish_install_base(&base);
+}
+
 static void records_a_local_source_in_the_application_layer_never_the_portable_one(void) {
     install_base base;
     start_install_base(&base, "ecosystem", "local-layer");
@@ -461,6 +475,7 @@ int main(int argc, char **argv) {
     installs_and_enables_a_plugin_asked_for_by_name();
     enables_a_plugin_asked_for_by_name_even_when_the_user_turned_it_off();
     keeps_the_versions_the_host_scheduled_for_its_next_start();
+    records_as_run_only_what_this_install_installed();
     records_a_local_source_in_the_application_layer_never_the_portable_one();
     appends_a_source_not_yet_listed_and_never_replaces_the_ones_that_are();
     registers_the_host_at_install_keeping_its_provenance_on_a_later_install();
