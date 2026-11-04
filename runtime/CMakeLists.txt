@@ -191,3 +191,6 @@ if(WIN32)
 endif()
 
 add_subdirectory(test)
+
+set(runtime_executable_libraries ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} ${runtime_fetch_libraries}
+    PARENT_SCOPE)
