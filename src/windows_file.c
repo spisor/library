@@ -51,13 +51,15 @@ static int is_worth_retrying(DWORD error, const wchar_t *destination) {
     return error == ERROR_ACCESS_DENIED && !is_unreplaceable(destination);
 }
 
-int spisor_windows_move_over(const char *from, const char *to) {
+typedef int (*retry_test)(DWORD error, const wchar_t *destination);
+
+static int move_retrying(const char *from, const char *to, DWORD flags, retry_test worth_retrying) {
     wchar_t *wide_from = spisor_wide_path(from);
     wchar_t *wide_to = spisor_wide_path(to);
     int moved = 0;
     for (int attempt = 1; wide_from != NULL && wide_to != NULL && !moved; attempt++) {
-        moved = MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-        if (moved || attempt == MOVE_ATTEMPTS || !is_worth_retrying(GetLastError(), wide_to)) {
+        moved = MoveFileExW(wide_from, wide_to, flags) != 0;
+        if (moved || attempt == MOVE_ATTEMPTS || !worth_retrying(GetLastError(), wide_to)) {
             break;
         }
         Sleep(MOVE_PAUSE_MILLISECONDS);
@@ -65,6 +67,20 @@ int spisor_windows_move_over(const char *from, const char *to) {
     free(wide_from);
     free(wide_to);
     return moved;
+}
+
+int spisor_windows_move_over(const char *from, const char *to) {
+    return move_retrying(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH, is_worth_retrying);
+}
+
+/** Whether a failed directory move is worth trying again: a file inside the folder is held open for a moment. */
+static int is_worth_retrying_directory(DWORD error, const wchar_t *destination) {
+    (void)destination;
+    return error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION || error == ERROR_ACCESS_DENIED;
+}
+
+int spisor_windows_move_directory(const char *from, const char *to) {
+    return move_retrying(from, to, 0, is_worth_retrying_directory);
 }
 #else
 typedef int spisor_windows_file_is_windows_only;

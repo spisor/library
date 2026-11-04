@@ -24,6 +24,15 @@ FILE *spisor_windows_open(const char *path, int writing);
  * clear, so it is answered at once, as is any other failure.
  */
 int spisor_windows_move_over(const char *from, const char *to);
+
+/**
+ * Renames the directory from to to, which must not exist. 1 on success; 0 at once when to exists
+ * (ERROR_ALREADY_EXISTS), which the caller judges.
+ *
+ * @implNote Retried as spisor_windows_move_over retries, on a sharing violation or access denied, which
+ * is what a move meets while a virus scanner reads a fresh file inside the folder.
+ */
+int spisor_windows_move_directory(const char *from, const char *to);
 #endif
 
 #endif
