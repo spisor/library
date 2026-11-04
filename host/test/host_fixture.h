@@ -3,6 +3,7 @@
 
 #include "install_fixture.h"
 
+#include "cache.h"
 #include "child_process.h"
 #include "file_times.h"
 #include "process_alive.h"
@@ -437,12 +438,16 @@ static inline void list_native_background(install_base *base, const char *id, in
                           served_copy(base, id, "1.0.0", "background-host" EXECUTABLE_ENDING, LAYER_FIXTURE_PATH));
 }
 
-/** The launch ecosystem: forebay-host, the runtime, the fixture loader naming commands and the background host. */
-static inline void list_launch_catalog(host_world *world, const char *commands_json, int javascript_plugin) {
+/**
+ * The launch ecosystem: forebay-host, the runtime, the fixture loader for application, served by the fake
+ * application's binary, naming commands and the background host.
+ */
+static inline void list_launch_catalog_for(host_world *world, const char *application, const char *commands_json,
+                                           int javascript_plugin) {
     install_base *base = &world->base;
     list_native_forebay_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
-    list_loader(base, LOADER_ID, "1.0.0", application_json(APPLICATION_ID, APPLICATION_ID, "{\"fake\": \"fixture-pkg\"}"),
+    list_loader(base, LOADER_ID, "1.0.0", application_json(application, APPLICATION_ID, "{\"fake\": \"fixture-pkg\"}"),
                 commands_json, 0, "[\"" BACKGROUND_ID "\"]");
     list_native_background(base, BACKGROUND_ID, 1);
     if (javascript_plugin) {
@@ -455,6 +460,10 @@ static inline void list_launch_catalog(host_world *world, const char *commands_j
         cJSON_AddItemToObject(files, "host.js", served_reference(base, "javascript-host", "1.0.0", "host.js", "export {};\n"));
     }
     write_catalog(base);
+}
+
+static inline void list_launch_catalog(host_world *world, const char *commands_json, int javascript_plugin) {
+    list_launch_catalog_for(world, APPLICATION_ID, commands_json, javascript_plugin);
 }
 
 /** A node on its own folder, the layer fixture, which answers a version install reuses and runs a layer when asked. */
@@ -566,6 +575,94 @@ static inline void stop_if_alive(long pid) {
     if (pid > 0 && runtime_process_is_alive((double)pid)) {
         kill_pid(pid);
     }
+}
+
+static inline cJSON *references_of(const host_world *world, const char *id) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "bundles/%s.json", id);
+    return json_in(world->base.state, rest);
+}
+
+static inline void copy_tree(const char *source, const char *destination) {
+    runtime_directory_listing listing;
+    CHECK(runtime_list_directory(source, &listing) == 1);
+    CHECK(spisor_make_directories(destination) == 1);
+    for (size_t index = 0; index < listing.count; index++) {
+        char *from = joined(source, listing.entries[index].name);
+        char *to = joined(destination, listing.entries[index].name);
+        if (listing.entries[index].is_directory) {
+            copy_tree(from, to);
+        } else {
+            copy_file(from, to);
+        }
+        free(to);
+        free(from);
+    }
+    runtime_free_directory_listing(&listing);
+}
+
+static inline void sweep(const host_world *world) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "cache", world->base.cache);
+    cJSON_AddStringToObject(argument, "state", world->base.state);
+    catalog_answer swept = call_catalog(runtime_cache_sweep, argument);
+    CHECK(swept.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(swept.tree);
+}
+
+/** Puts version 2.0.0 of the loader in the cache and schedules it, as an update check would. */
+static inline void schedule_second_loader(host_world *world) {
+    char *bundles = joined(world->base.cache, "bundles/" LOADER_ID);
+    char *first = joined(bundles, "1.0.0");
+    char *second = joined(bundles, "2.0.0");
+    copy_tree(first, second);
+    set_portable(&world->base, "plugins." LOADER_ID ".pin", cJSON_CreateString("2.0.0"));
+    write_in(world->base.state, "bundles/" LOADER_ID ".json",
+             "{\"run\": {\"" LOADER_ID "\": \"1.0.0\"}, \"next\": {\"" LOADER_ID "\": \"2.0.0\"}}");
+    free(second);
+    free(first);
+    free(bundles);
+}
+
+#if defined(_WIN32)
+#define PATH_SEPARATOR ";"
+#else
+#define PATH_SEPARATOR ":"
+#endif
+
+static inline void install_launch_world(host_world *world, const char *suite, const char *label, int javascript) {
+    start_world_at(world, suite, label);
+    install_fake_application(world);
+    list_launch_catalog(world, "[]", javascript);
+    char *node = install_fake_node(world);
+    char path[4096];
+    snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
+    const char *plugin[] = {"--plugin", SESSION_PLUGIN, NULL};
+    CHECK(world_install(world, javascript ? plugin : NULL, javascript ? path : world->bin) == 0);
+    free(node);
+}
+
+static inline void launch(host_world *world, program *launcher, const char *const *application_arguments, const char *path) {
+    const char *arguments[16] = {"launch", LOADER_ID};
+    size_t count = 2;
+    for (; *application_arguments != NULL && count < 15; application_arguments++) {
+        arguments[count++] = *application_arguments;
+    }
+    arguments[count] = NULL;
+    world_start(world, launcher, FOREBAY_HOST_PATH, arguments, path, 0);
+}
+
+static inline long started_pid(const cJSON *start) {
+    const cJSON *pid = cJSON_GetObjectItemCaseSensitive(start, "pid");
+    return cJSON_IsNumber(pid) ? (long)pid->valuedouble : 0;
+}
+
+static inline void expect_holders(const host_world *world, const char *id, long first, long second, const char *label) {
+    cJSON *holders = holders_of(world, id);
+    char expected[128];
+    snprintf(expected, sizeof expected, second == 0 ? "[%ld]" : "[%ld,%ld]", first, second);
+    expect_json(cJSON_GetObjectItemCaseSensitive(holders, "holders"), expected, label);
+    cJSON_Delete(holders);
 }
 
 #endif

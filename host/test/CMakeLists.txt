@@ -34,3 +34,8 @@ function(host_test name)
 endfunction()
 
 host_test(launch_test)
+host_test(hook_test)
+host_test(install_command_test)
+host_test(boot_stub_test)
+host_test(lifecycle_command_test)
+host_test(profile_test)
