@@ -125,7 +125,7 @@ spisor_strict_warnings(runtime_updates)
 set(runtime_processes_sources src/holders.c src/holders_lock.c src/process_start.c src/processes.c src/processes_hold.c
     src/processes_runs.c)
 if(WIN32)
-    list(APPEND runtime_processes_sources src/command_line_windows.c)
+    list(APPEND runtime_processes_sources src/command_line_windows.c src/windows_process.c)
 endif()
 add_library(runtime_processes OBJECT ${runtime_processes_sources})
 target_link_libraries(runtime_processes PUBLIC runtime_objects)
@@ -152,7 +152,8 @@ spisor_strict_warnings(runtime_ui)
 
 set(runtime_install_sources src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
     src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
-    src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c src/process_run.c)
+    src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
+    src/process_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})
 target_link_libraries(runtime_install PUBLIC runtime_objects)
 target_include_directories(runtime_install PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -190,3 +191,6 @@ if(WIN32)
 endif()
 
 add_subdirectory(test)
+
+set(runtime_executable_libraries ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} ${runtime_fetch_libraries}
+    PARENT_SCOPE)

@@ -441,6 +441,38 @@ static void sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one(void) {
     finish_runtime(&fixture);
 }
 
+/** A cache folder deeper than the 260 characters of a Windows MAX_PATH, in segments of 60. */
+#define DEEP_CACHE_FOLDER                                                                                     \
+    "deep-cache-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/deep-cache-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    "bbbbbbbbbbbbbbbb/deep-cache-cccccccccccccccccccccccccccccccccccccccccccccccccccc/deep-cache-dddddddddddddddddddd" \
+    "dddddddddddddddddddddddddddddddddddddddddd/cache"
+
+/** Acquires the runtime into a cache at cache_folder under the fixture's root, the archive served from a plain path. */
+static void acquires_into_a_cache_at(const char *label, const char *cache_folder) {
+    runtime_fixture fixture;
+    start_runtime(&fixture, label, NULL);
+    install_base elsewhere = fixture.base;
+    elsewhere.cache = joined(fixture.base.root, cache_folder);
+    catalog_answer answer = acquire_on(&elsewhere, elsewhere.path);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    const char *executable = text_at(answer.tree, "executable");
+    if (executable == NULL || !spisor_file_exists(executable)) {
+        fprintf(stderr, "%s: no runtime executable under %s\n", label, elsewhere.cache);
+        check_failures++;
+    }
+    cJSON_Delete(answer.tree);
+    free(elsewhere.cache);
+    finish_runtime(&fixture);
+}
+
+static void unpacks_into_a_cache_whose_path_holds_letters_outside_the_ansi_codepage(void) {
+    acquires_into_a_cache_at("unicode-cache", "J\xc3\xb6rg/\xce\xa9\xce\xbc\xce\xad\xce\xb3\xce\xb1-\xe6\x97\xa5\xe6\x9c\xac/cache");
+}
+
+static void unpacks_into_a_cache_deeper_than_the_windows_path_limit(void) {
+    acquires_into_a_cache_at("deep-cache", DEEP_CACHE_FOLDER);
+}
+
 int main(void) {
     acquires_the_pinned_runtime_and_answers_its_executable();
     fetches_nothing_on_a_second_run();
@@ -457,5 +489,7 @@ int main(void) {
 #endif
     reuses_a_node_on_the_path_whose_major_is_twenty_or_more();
     ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin();
+    unpacks_into_a_cache_whose_path_holds_letters_outside_the_ansi_codepage();
+    unpacks_into_a_cache_deeper_than_the_windows_path_limit();
     return check_summary("install_runtime_test");
 }

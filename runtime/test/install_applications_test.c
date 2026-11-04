@@ -499,6 +499,57 @@ static void never_removes_the_application_when_its_loader_is_removed(void) {
     finish_install_base(&base);
 }
 
+/* install.registerLoader, what a launch or a hook registers */
+
+static catalog_answer register_loader(const install_base *base, const char *version, const char *path) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "places", places_of(base));
+    cJSON_AddItemToObject(argument, "environment", environment_with_path(base, path));
+    cJSON_AddStringToObject(argument, "id", LOADER_ID);
+    cJSON_AddStringToObject(argument, "version", version);
+    return call_catalog(runtime_install_register_loader, argument);
+}
+
+static void registers_an_installed_loader_again_keeping_its_provenance_and_requesting_its_commands(void) {
+    install_base base;
+    start_install_base(&base, "applications", "register-again");
+    list_claude(&base, PACKAGES, "[\"cc\"]", "[]");
+    cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
+    cJSON *installed = recorded_provenance(&base);
+    catalog_answer registered = register_loader(&base, "1.0.0", base.path);
+    if (registered.status != SPISOR_STATUS_SUCCESS) {
+        char *printed = registered.tree == NULL ? NULL : cJSON_PrintUnformatted(registered.tree);
+        fprintf(stderr, "install.registerLoader answered %d: %s\n", (int)registered.status, printed == NULL ? "(nothing)" : printed);
+        cJSON_free(printed);
+        check_failures++;
+    }
+    expect_json(cJSON_GetObjectItemCaseSensitive(registered.tree, "commands"), "[\"cc\"]", "commands requested again");
+    cJSON *kept = recorded_provenance(&base);
+    CHECK(installed != NULL && kept != NULL && cJSON_Compare(installed, kept, 1));
+    cJSON *registration = registration_of(&base, LOADER_ID);
+    check_text(text_at(cJSON_GetObjectItemCaseSensitive(registration, "application"), "id"), "claude", "application");
+    cJSON_Delete(registration);
+    cJSON_Delete(kept);
+    cJSON_Delete(installed);
+    cJSON_Delete(registered.tree);
+    remove_host_id(&base, LOADER_ID);
+    finish_install_base(&base);
+}
+
+static void refuses_to_register_a_loader_version_that_is_not_installed(void) {
+    install_base base;
+    start_install_base(&base, "applications", "register-absent");
+    list_claude(&base, PACKAGES, "[]", "[]");
+    cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
+    catalog_answer refused = register_loader(&base, "9.9.9", base.path);
+    CHECK(refused.status == SPISOR_STATUS_FAILURE && text_at(refused.tree, "fix") != NULL);
+    cJSON *registration = registration_of(&base, LOADER_ID);
+    check_text(text_at(registration, "version"), "1.0.0", "registration untouched");
+    cJSON_Delete(registration);
+    cJSON_Delete(refused.tree);
+    finish_install_base(&base);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -523,6 +574,8 @@ int main(void) {
     refuses_an_update_and_a_remove_of_a_path_application_naming_where_it_came_from();
     never_removes_the_application_when_its_loader_is_removed();
     reports_an_update_done_noting_a_version_that_could_not_be_recorded();
+    registers_an_installed_loader_again_keeping_its_provenance_and_requesting_its_commands();
+    refuses_to_register_a_loader_version_that_is_not_installed();
     expect_user_path_unchanged(&guard);
     return check_summary("install_applications_test");
 }

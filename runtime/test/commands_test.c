@@ -1005,6 +1005,107 @@ static void the_first_command_puts_the_shims_on_path_until_the_last_host_goes(vo
     CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
 }
 
+#ifdef _WIN32
+/** The runtime-launcher.exe beside this test, the source every Windows shim is copied from. */
+static void launcher_beside_test(wchar_t *path, DWORD size) {
+    DWORD length = GetModuleFileNameW(NULL, path, size);
+    wchar_t *slash = length == 0 ? NULL : wcsrchr(path, L'\\');
+    if (slash != NULL) {
+        wcscpy_s(slash + 1, size - (DWORD)(slash + 1 - path), L"runtime-launcher.exe");
+    }
+}
+
+static void a_rerequest_keeps_the_held_shim_while_its_source_cannot_be_read(void) {
+    scratch place;
+    fresh_scratch(&place, "unreadable-source");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char *before = shim_bytes(&place, "oc");
+    wchar_t launcher[MAX_PATH];
+    launcher_beside_test(launcher, MAX_PATH);
+    HANDLE held = CreateFileW(launcher, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    CHECK(held != INVALID_HANDLE_VALUE);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    CloseHandle(held);
+    char *after = shim_bytes(&place, "oc");
+    CHECK(before != NULL && after != NULL && strcmp(before, after) == 0);
+    free(after);
+    free(before);
+    CHECK(reverse_host(&place, "alpha"));
+}
+#endif
+
+#ifdef _WIN32
+/** Writes the copies a replace sets aside beside the held shim oc.exe, as two updates of a running shim leave them. */
+static void set_aside_beside(const scratch *place, char *first, char *second, size_t size) {
+    char shim[1400];
+    shim_file(place, "oc", shim, sizeof shim);
+    snprintf(first, size, "%s.old", shim);
+    snprintf(second, size, "%s.old-1", shim);
+    write_program(first, "the image that ran", 1);
+    write_program(second, "the image before it", 1);
+}
+
+static void a_rerequest_removes_what_a_replace_set_aside_for_a_running_image(void) {
+    scratch place;
+    fresh_scratch(&place, "set-aside");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char first[1500];
+    char second[1500];
+    set_aside_beside(&place, first, second, sizeof first);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    CHECK(runtime_probe_entry(first) == RUNTIME_ENTRY_MISSING && runtime_probe_entry(second) == RUNTIME_ENTRY_MISSING);
+    CHECK(reverse_host(&place, "alpha"));
+}
+
+static void a_removal_takes_what_a_replace_set_aside_and_leaves_no_shims_folder(void) {
+    scratch place;
+    fresh_scratch(&place, "set-aside-removed");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char first[1500];
+    char second[1500];
+    set_aside_beside(&place, first, second, sizeof first);
+    CHECK(reverse_host(&place, "alpha"));
+    CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
+}
+
+static void a_rerequest_reports_a_shim_source_that_is_gone(void) {
+    scratch place;
+    fresh_scratch(&place, "source-gone");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    wchar_t launcher[MAX_PATH];
+    launcher_beside_test(launcher, MAX_PATH);
+    wchar_t away[MAX_PATH + 8];
+    swprintf(away, MAX_PATH + 8, L"%ls.away", launcher);
+    CHECK(MoveFileExW(launcher, away, 0) != 0);
+    char search[2500];
+    default_search(&place, search, sizeof search);
+    answer result = call(runtime_commands_request, naming_request(&place, "alpha", search, "oc", "tool"));
+    MoveFileExW(away, launcher, 0);
+    CHECK(is_refused_saying(result, "cannot be read", "a gone source"));
+    CHECK(reverse_host(&place, "alpha"));
+}
+#endif
+
+static void a_rerequest_never_touches_a_user_s_old_copy_of_a_file_that_is_no_executable(void) {
+    scratch place;
+    fresh_scratch(&place, "user-old");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char part[1400];
+    shim_part(&place, "oc", SHIM_FILE_COUNT - 1, part, sizeof part);
+    char users[1500];
+    snprintf(users, sizeof users, "%s.old", part);
+    write_program(users, "the user's own copy", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    CHECK(runtime_probe_entry(users) == RUNTIME_ENTRY_OTHER);
+    CHECK(runtime_remove_file_entry(users) == RUNTIME_ENTRY_DONE);
+    CHECK(reverse_host(&place, "alpha"));
+}
+
 int main(void) {
 #ifdef _WIN32
     registry_text real_before;
@@ -1028,7 +1129,12 @@ int main(void) {
     a_defective_argument_is_refused_and_changes_nothing();
     a_rerequest_rewrites_the_held_command_and_reversal_restores_the_machine();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
+    a_rerequest_never_touches_a_user_s_old_copy_of_a_file_that_is_no_executable();
 #ifdef _WIN32
+    a_rerequest_removes_what_a_replace_set_aside_for_a_running_image();
+    a_removal_takes_what_a_replace_set_aside_and_leaves_no_shims_folder();
+    a_rerequest_reports_a_shim_source_that_is_gone();
+    a_rerequest_keeps_the_held_shim_while_its_source_cannot_be_read();
     delete_test_value();
     registry_text real_after;
     read_value(L"Path", &real_after);

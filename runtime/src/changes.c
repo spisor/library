@@ -9,6 +9,7 @@
 #include "hosts_lock.h"
 #include "paths.h"
 #include "registry.h"
+#include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
 
@@ -542,8 +543,20 @@ static void rewrite_own_file(apply_session *session, cJSON *own) {
     }
 }
 
+/** Removes what a replace set aside for a running image of the file own records, once that image has exited. */
+static void remove_set_aside(const cJSON *own) {
+    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(own, "kind");
+    const cJSON *path = cJSON_GetObjectItemCaseSensitive(own, "path");
+    if (cJSON_IsString(kind) && strcmp(kind->valuestring, "file") == 0 && cJSON_IsString(path)) {
+        spisor_remove_set_aside(path->valuestring);
+    }
+}
+
 static void apply_single(apply_session *session) {
     cJSON *own = own_record_of(session->registration, session->change);
+    if (own != NULL) {
+        remove_set_aside(own);
+    }
     if (own != NULL && runtime_change_asks_new_content(own, session->change)) {
         rewrite_own_file(session, own);
         return;

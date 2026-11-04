@@ -35,4 +35,13 @@ int runtime_install_resolve_applications(runtime_install_run *run, cJSON **refus
  */
 cJSON *runtime_install_loaders(runtime_install_run *run);
 
+/**
+ * Registers loader id at version, installed in run's cache, as install registers it: its application
+ * from the host.json that version carries, the provenance its registration already records kept, and the
+ * commands its host.json asks for requested again. Answers what hosts.register answers, or NULL with
+ * *refusal set, or with none when memory runs out. run's report needs only an applications array.
+ */
+cJSON *runtime_install_register_installed_loader(const runtime_install_run *run, const char *id, const char *version,
+                                                 cJSON **refusal);
+
 #endif

@@ -20,4 +20,15 @@
 int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
                         char **output, char **problem);
 
+/**
+ * runtime_run_to_exit with the file input as the run's standard input and its standard output written
+ * to the file output, created or emptied first; no output is answered.
+ *
+ * @implNote Both files are opened here, through the wide APIs on Windows, so a path the child could not
+ * take as an argument never reaches its command line: System32's bsdtar reads its arguments in the ANSI
+ * codepage, so a letter outside it, or a path deeper than MAX_PATH, is refused there.
+ */
+int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
+                              const char *input, const char *output, int *exit_code, char **problem);
+
 #endif

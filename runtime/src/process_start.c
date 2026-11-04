@@ -15,8 +15,8 @@
 #if defined(_WIN32)
 #include <windows.h>
 
-#include "command_line_windows.h"
 #include "wide_path.h"
+#include "windows_process.h"
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -45,105 +45,6 @@ static size_t text_count(const cJSON *list) {
 
 #if defined(_WIN32)
 
-static wchar_t *wide_text(const char *text) {
-    int units = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    wchar_t *wide = units <= 0 ? NULL : malloc((size_t)units * sizeof *wide);
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, units) != units) {
-        free(wide);
-        wide = NULL;
-    }
-    return wide;
-}
-
-static wchar_t *command_line(const wchar_t *program, const cJSON *arguments) {
-    size_t size = wcslen(program) + 3;
-    for (const cJSON *argument = arguments == NULL ? NULL : arguments->child; argument != NULL; argument = argument->next) {
-        size += 2 * strlen(argument->valuestring) + 3;
-    }
-    wchar_t *line = malloc(size * sizeof *line);
-    if (line == NULL) {
-        return NULL;
-    }
-    size_t used = 0;
-    line[used++] = L'"';
-    wcscpy(line + used, program);
-    used += wcslen(program);
-    line[used++] = L'"';
-    for (const cJSON *argument = arguments == NULL ? NULL : arguments->child; argument != NULL; argument = argument->next) {
-        wchar_t *wide = wide_text(argument->valuestring);
-        if (wide == NULL) {
-            free(line);
-            return NULL;
-        }
-        used = runtime_append_quoted_argument(line, used, wide);
-        free(wide);
-    }
-    line[used] = L'\0';
-    return line;
-}
-
-static int compare_entries(const void *left, const void *right) {
-    const wchar_t *first = *(const wchar_t *const *)left;
-    const wchar_t *second = *(const wchar_t *const *)right;
-    int first_name = (int)(wcschr(first, L'=') - first);
-    int second_name = (int)(wcschr(second, L'=') - second);
-    return CompareStringOrdinal(first, first_name, second, second_name, TRUE) - CSTR_EQUAL;
-}
-
-static wchar_t *entry_of(const cJSON *variable) {
-    const char *parts[3] = {variable->string, "=", variable->valuestring};
-    char *text = runtime_cache_text(parts, 3);
-    wchar_t *entry = text == NULL ? NULL : wide_text(text);
-    free(text);
-    return entry;
-}
-
-static wchar_t *joined_block(wchar_t **entries, size_t count) {
-    size_t units = 2;
-    for (size_t index = 0; index < count; index++) {
-        units += wcslen(entries[index]) + 1;
-    }
-    wchar_t *block = malloc(units * sizeof *block);
-    size_t used = 0;
-    for (size_t index = 0; block != NULL && index < count; index++) {
-        wcscpy(block + used, entries[index]);
-        used += wcslen(entries[index]) + 1;
-    }
-    if (block != NULL) {
-        block[used++] = L'\0';
-        block[used] = L'\0';
-    }
-    return block;
-}
-
-/** The environment as CreateProcessW takes it: entries sorted by name ignoring case, each ended by NUL. */
-static wchar_t *environment_block(const cJSON *environment) {
-    size_t count = text_count(environment);
-    wchar_t **entries = calloc(count + 1, sizeof *entries);
-    int built = entries != NULL;
-    size_t index = 0;
-    for (const cJSON *variable = environment->child; built && variable != NULL; variable = variable->next) {
-        entries[index] = entry_of(variable);
-        built = entries[index++] != NULL;
-    }
-    wchar_t *block = NULL;
-    if (built) {
-        qsort(entries, count, sizeof *entries, compare_entries);
-        block = joined_block(entries, count);
-    }
-    for (size_t freed = 0; entries != NULL && freed < count; freed++) {
-        free(entries[freed]);
-    }
-    free(entries);
-    return block;
-}
-
-static HANDLE null_device(void) {
-    SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
-    return CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherited,
-                       OPEN_EXISTING, 0, NULL);
-}
-
 typedef struct windows_start {
     wchar_t *application;
     wchar_t *line;
@@ -153,28 +54,8 @@ typedef struct windows_start {
     LPPROC_THREAD_ATTRIBUTE_LIST attributes;
 } windows_start;
 
-/** Hands the child only the null device, so it inherits no other handle of the caller's. */
-static LPPROC_THREAD_ATTRIBUTE_LIST inherited_handles(HANDLE *null) {
-    SIZE_T size = 0;
-    InitializeProcThreadAttributeList(NULL, 1, 0, &size);
-    LPPROC_THREAD_ATTRIBUTE_LIST attributes = malloc(size);
-    if (attributes == NULL || !InitializeProcThreadAttributeList(attributes, 1, 0, &size)) {
-        free(attributes);
-        return NULL;
-    }
-    if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, null, sizeof *null, NULL, NULL)) {
-        DeleteProcThreadAttributeList(attributes);
-        free(attributes);
-        return NULL;
-    }
-    return attributes;
-}
-
 static void free_windows_start(windows_start *prepared) {
-    if (prepared->attributes != NULL) {
-        DeleteProcThreadAttributeList(prepared->attributes);
-        free(prepared->attributes);
-    }
+    runtime_windows_free_handle_list(prepared->attributes);
     if (prepared->null != INVALID_HANDLE_VALUE) {
         CloseHandle(prepared->null);
     }
@@ -186,14 +67,12 @@ static void free_windows_start(windows_start *prepared) {
 
 static int prepare_windows_start(const runtime_detached_start *start, windows_start *prepared) {
     memset(prepared, 0, sizeof *prepared);
-    prepared->null = null_device();
+    prepared->null = runtime_windows_null_device();
     prepared->application = spisor_wide_path(start->executable);
-    wchar_t *program = wide_text(start->executable);
-    prepared->line = program == NULL ? NULL : command_line(program, start->arguments);
-    free(program);
-    prepared->environment = start->environment == NULL ? NULL : environment_block(start->environment);
+    prepared->line = runtime_windows_command_line(start->executable, start->arguments);
+    prepared->environment = start->environment == NULL ? NULL : runtime_windows_environment_block(start->environment);
     prepared->directory = spisor_wide_path(start->directory);
-    prepared->attributes = prepared->null == INVALID_HANDLE_VALUE ? NULL : inherited_handles(&prepared->null);
+    prepared->attributes = prepared->null == INVALID_HANDLE_VALUE ? NULL : runtime_windows_handle_list(&prepared->null, 1);
     return prepared->application != NULL && prepared->line != NULL && prepared->directory != NULL &&
            prepared->attributes != NULL && (start->environment == NULL || prepared->environment != NULL);
 }

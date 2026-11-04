@@ -1465,6 +1465,47 @@
             ],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "registerLoader",
+          "symbol": "runtime_install_register_loader",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "portable": { "type": "string", "minLength": 1 },
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["portable", "state", "cache"]
+              },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "id": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "environment", "id", "version"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "provenance": { "type": "object" },
+              "commands": { "type": "array", "items": { "type": "string" } },
+              "refusedCommands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "name": { "type": "string" }, "detail": { "type": "string" }, "fix": { "type": "string" } },
+                  "required": ["name", "detail", "fix"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["provenance", "commands", "refusedCommands"],
+            "additionalProperties": false
+          }
         }
       ]
     },
