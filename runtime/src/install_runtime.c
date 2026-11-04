@@ -31,6 +31,7 @@
 #include "windows_file.h"
 #define current_process_id() _getpid()
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #define current_process_id() getpid()
 #endif
@@ -279,17 +280,38 @@ static char *system_tar(void) {
 
 static cJSON *tar_arguments(const acquisition *runtime) {
     cJSON *arguments = cJSON_CreateArray();
-    if (arguments == NULL || !runtime_install_add_text(arguments, runtime->zip ? "-xf" : "-xzf") ||
-        !runtime_install_add_text(arguments, runtime->staged.archive) || !runtime_install_add_text(arguments, "-C") ||
-        !runtime_install_add_text(arguments, runtime->staged.directory) ||
-        !runtime_install_add_text(arguments, runtime->member)) {
+    if (arguments == NULL || !runtime_install_add_text(arguments, runtime->zip ? "-xOf" : "-xzOf") ||
+        !runtime_install_add_text(arguments, "-") || !runtime_install_add_text(arguments, runtime->member)) {
         cJSON_Delete(arguments);
         return NULL;
     }
     return arguments;
 }
 
-/** Unpacks only the executable from the staged archive with the OS's tar; NULL on success, else the refusal. */
+/** Makes the executable just unpacked runnable by its owner, as the archive's own mode would. */
+static int mark_runnable(const char *executable) {
+#if defined(_WIN32)
+    (void)executable;
+    return 1;
+#else
+    return chmod(executable, 0755) == 0;
+#endif
+}
+
+static int make_executable_folder(const acquisition *runtime) {
+    const char *segments[2] = {runtime->staged.executable, ".."};
+    char *folder = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    int made = folder != NULL && spisor_make_directories(folder) == 1;
+    free(folder);
+    return made;
+}
+
+/**
+ * Unpacks only the executable from the staged archive with the OS's tar; NULL on success, else the refusal.
+ *
+ * @implNote tar reads the archive on its standard input and writes the executable on its standard output,
+ * both opened here, so no cache path is ever an argument of tar (see runtime_run_between_files).
+ */
 static cJSON *unpack(const acquisition *runtime) {
     char *tar = system_tar();
     if (tar == NULL) {
@@ -299,7 +321,9 @@ static cJSON *unpack(const acquisition *runtime) {
     cJSON *arguments = tar_arguments(runtime);
     int exit_code = -1;
     char *problem = NULL;
-    int ran = arguments != NULL && runtime_run_to_exit(tar, arguments, TAR_MILLISECONDS, &exit_code, NULL, &problem);
+    int ran = arguments != NULL && make_executable_folder(runtime) &&
+              runtime_run_between_files(tar, arguments, TAR_MILLISECONDS, runtime->staged.archive, runtime->staged.executable,
+                                        &exit_code, &problem);
     cJSON_Delete(arguments);
     free(tar);
     cJSON *refusal = NULL;
@@ -307,6 +331,8 @@ static cJSON *unpack(const acquisition *runtime) {
         refusal = runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked" : problem, AGAIN_FIX);
     } else if (exit_code != 0 || !spisor_file_exists(runtime->staged.executable)) {
         refusal = refused("the runtime archive holds no ", runtime->member, AGAIN_FIX);
+    } else if (!mark_runnable(runtime->staged.executable)) {
+        refusal = refused("the runtime could not be made runnable: ", runtime->staged.executable, CACHE_FIX);
     }
     free(problem);
     return refusal;

@@ -116,10 +116,11 @@ static wchar_t *command_line(const char *executable, const cJSON *arguments) {
 /** The handles a run hands its child: the null device, and the write end of the output pipe when one is taken. */
 typedef struct windows_run {
     HANDLE null;
+    HANDLE input;
     HANDLE output_read;
     HANDLE output_write;
     LPPROC_THREAD_ATTRIBUTE_LIST attributes;
-    HANDLE inherited[2];
+    HANDLE inherited[3];
 } windows_run;
 
 static HANDLE null_device(void) {
@@ -167,6 +168,31 @@ static int prepare(windows_run *run, int capture) {
     return run->attributes != NULL;
 }
 
+static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition) {
+    SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
+    wchar_t *wide = spisor_wide_path(path);
+    HANDLE file = wide == NULL ? INVALID_HANDLE_VALUE
+                               : CreateFileW(wide, access, FILE_SHARE_READ, &inherited, disposition, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(wide);
+    return file;
+}
+
+/** prepare for a run reading the file input as its standard input and writing the file output as its standard output. */
+static int prepare_between_files(windows_run *run, const char *input, const char *output) {
+    memset(run, 0, sizeof *run);
+    run->null = null_device();
+    run->input = inherited_file(input, GENERIC_READ, OPEN_EXISTING);
+    run->output_write = inherited_file(output, GENERIC_WRITE, CREATE_ALWAYS);
+    if (run->null == INVALID_HANDLE_VALUE || run->input == INVALID_HANDLE_VALUE || run->output_write == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    run->inherited[0] = run->null;
+    run->inherited[1] = run->input;
+    run->inherited[2] = run->output_write;
+    run->attributes = handle_list(run, 3);
+    return run->attributes != NULL;
+}
+
 static void close_handle(HANDLE *handle) {
     if (*handle != NULL && *handle != INVALID_HANDLE_VALUE) {
         CloseHandle(*handle);
@@ -180,6 +206,7 @@ static void release(windows_run *run) {
         free(run->attributes);
     }
     close_handle(&run->null);
+    close_handle(&run->input);
     close_handle(&run->output_read);
     close_handle(&run->output_write);
 }
@@ -189,7 +216,7 @@ static int create(const wchar_t *application, wchar_t *line, windows_run *run, P
     memset(&startup, 0, sizeof startup);
     startup.StartupInfo.cb = sizeof startup;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = run->null;
+    startup.StartupInfo.hStdInput = run->input != NULL ? run->input : run->null;
     startup.StartupInfo.hStdOutput = run->output_write != NULL ? run->output_write : run->null;
     startup.StartupInfo.hStdError = run->null;
     startup.lpAttributeList = run->attributes;
@@ -248,26 +275,24 @@ static int await_exit(windows_run *run, HANDLE process, unsigned timeout_millise
     return read;
 }
 
-int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
-                        char **output, char **problem) {
+/** Runs executable with the handles of run, which prepared says were made, answering as runtime_run_to_exit does. */
+static int run_prepared(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                        char **output, char **problem, windows_run *run, int prepared) {
     *problem = NULL;
     wchar_t *application = spisor_wide_path(executable);
     wchar_t *line = command_line(executable, arguments);
-    windows_run run;
-    memset(&run, 0, sizeof run);
     PROCESS_INFORMATION information = {NULL, NULL, 0, 0};
     run_output collected = {{0}, 0};
-    int started = application != NULL && line != NULL && prepare(&run, output != NULL) &&
-                  create(application, line, &run, &information);
+    int started = application != NULL && line != NULL && prepared && create(application, line, run, &information);
     DWORD error = started ? ERROR_SUCCESS : GetLastError();
     int exited = 0;
     if (started) {
-        close_handle(&run.output_write);
-        exited = await_exit(&run, information.hProcess, timeout_milliseconds, exit_code, &collected);
+        close_handle(&run->output_write);
+        exited = await_exit(run, information.hProcess, timeout_milliseconds, exit_code, &collected);
         CloseHandle(information.hThread);
         CloseHandle(information.hProcess);
     }
-    release(&run);
+    release(run);
     free(line);
     free(application);
     if (!started) {
@@ -278,6 +303,20 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
         *problem = problem_of(executable, "it did not exit in time and was stopped");
     }
     return exited && answer_output(&collected, output);
+}
+
+int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                        char **output, char **problem) {
+    windows_run run;
+    int prepared = prepare(&run, output != NULL);
+    return run_prepared(executable, arguments, timeout_milliseconds, exit_code, output, problem, &run, prepared);
+}
+
+int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
+                              const char *input, const char *output, int *exit_code, char **problem) {
+    windows_run run;
+    int prepared = prepare_between_files(&run, input, output);
+    return run_prepared(executable, arguments, timeout_milliseconds, exit_code, NULL, problem, &run, prepared);
 }
 
 #else
@@ -301,13 +340,23 @@ static size_t argument_count(const cJSON *arguments) {
     return count;
 }
 
-static int spawn_silenced(const char *executable, char **list, const int *output_pipe, pid_t *child) {
+/** Where a run's standard input comes from and its standard output goes; the null device for NULL. */
+typedef struct run_files {
+    const char *input;
+    const char *output;
+} run_files;
+
+static int spawn_silenced(const char *executable, char **list, const int *output_pipe, const run_files *files,
+                          pid_t *child) {
     posix_spawn_file_actions_t actions;
     if (posix_spawn_file_actions_init(&actions) != 0) {
         return ENOMEM;
     }
-    int error = posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
-    if (output_pipe == NULL) {
+    int error = posix_spawn_file_actions_addopen(&actions, 0, files->input != NULL ? files->input : "/dev/null", O_RDONLY, 0);
+    if (files->output != NULL) {
+        error = error != 0 ? error
+                           : posix_spawn_file_actions_addopen(&actions, 1, files->output, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    } else if (output_pipe == NULL) {
         error = error != 0 ? error : posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
     } else {
         error = error != 0 ? error : posix_spawn_file_actions_adddup2(&actions, output_pipe[1], 1);
@@ -414,8 +463,8 @@ static int open_output_pipe(int ends[2]) {
 #endif
 }
 
-int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
-                        char **output, char **problem) {
+static int run_with(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                    char **output, char **problem, const run_files *files) {
     *problem = NULL;
     double deadline = now_milliseconds() + timeout_milliseconds;
     int ends[2] = {-1, -1};
@@ -425,7 +474,7 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
         return 0;
     }
     pid_t child = 0;
-    int error = spawn_silenced(executable, list, output == NULL ? NULL : ends, &child);
+    int error = spawn_silenced(executable, list, output == NULL ? NULL : ends, files, &child);
     free(list);
     run_output collected = {{0}, 0};
     if (ends[1] >= 0) {
@@ -441,6 +490,18 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
         *problem = problem_of(executable, "it did not exit in time and was stopped");
     }
     return exited && answer_output(&collected, output);
+}
+
+int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                        char **output, char **problem) {
+    run_files silenced = {NULL, NULL};
+    return run_with(executable, arguments, timeout_milliseconds, exit_code, output, problem, &silenced);
+}
+
+int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
+                              const char *input, const char *output, int *exit_code, char **problem) {
+    run_files files = {input, output};
+    return run_with(executable, arguments, timeout_milliseconds, exit_code, NULL, problem, &files);
 }
 
 #endif
