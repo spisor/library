@@ -13,6 +13,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
+#include "wide_path.h"
 #else
 #include <dirent.h>
 #include <errno.h>
@@ -104,19 +106,6 @@ static int remove_children(const char *path);
 
 #if defined(_WIN32)
 
-static wchar_t *to_wide(const char *text) {
-    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    if (length <= 0) {
-        return NULL;
-    }
-    wchar_t *wide = malloc((size_t)length * sizeof(wchar_t));
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
-        free(wide);
-        return NULL;
-    }
-    return wide;
-}
-
 static char *to_utf8(const wchar_t *wide) {
     int length = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
     if (length <= 0) {
@@ -155,7 +144,7 @@ static int read_found_entries(HANDLE handle, WIN32_FIND_DATAW *found, entry_buff
 int runtime_list_directory(const char *path, runtime_directory_listing *listing) {
     memset(listing, 0, sizeof(*listing));
     char *pattern = child_path(path, "*");
-    wchar_t *wide_pattern = pattern == NULL ? NULL : to_wide(pattern);
+    wchar_t *wide_pattern = pattern == NULL ? NULL : spisor_wide_path(pattern);
     free(pattern);
     if (wide_pattern == NULL) {
         return 0;
@@ -174,14 +163,14 @@ int runtime_list_directory(const char *path, runtime_directory_listing *listing)
 }
 
 static DWORD attributes_of(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     DWORD attributes = wide == NULL ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(wide);
     free(wide);
     return attributes;
 }
 
 static int delete_link_at(const char *path, int is_directory) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     int deleted = wide != NULL && (is_directory ? RemoveDirectoryW(wide) : DeleteFileW(wide)) != 0;
     free(wide);
     return deleted;
@@ -192,7 +181,7 @@ static int delete_link_at(const char *path, int is_directory) {
  * SetFileAttributesW follows a link and would change the attributes of its target.
  */
 static int delete_file_at(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     int deleted = wide != NULL && DeleteFileW(wide) != 0;
     if (!deleted && wide != NULL && GetLastError() == ERROR_ACCESS_DENIED) {
         SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
@@ -203,7 +192,7 @@ static int delete_file_at(const char *path) {
 }
 
 static int delete_directory_at(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     int deleted = wide != NULL && RemoveDirectoryW(wide) != 0;
     free(wide);
     return deleted;
@@ -250,7 +239,7 @@ static int write_all(HANDLE handle, const uint8_t *bytes, size_t length) {
 
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
     (void)executable;
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return RUNTIME_ENTRY_FAILED;
     }
@@ -271,7 +260,7 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
 }
 
 runtime_entry_outcome runtime_create_directory(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     int created = wide != NULL && CreateDirectoryW(wide, NULL) != 0;
     free(wide);
     return created || runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;

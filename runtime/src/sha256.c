@@ -112,7 +112,7 @@ void runtime_sha256_finish_hex(runtime_sha256 *hash, char out_hex[RUNTIME_SHA256
     out_hex[64] = 0;
 }
 
-int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]) {
+int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size) {
     FILE *file = runtime_open_file(path, RUNTIME_FILE_READ);
     uint8_t *chunk = malloc(FILE_CHUNK);
     if (file == NULL || chunk == NULL) {
@@ -124,15 +124,23 @@ int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]) 
     }
     runtime_sha256 hash;
     runtime_sha256_start(&hash);
+    uint64_t total = 0;
     size_t read;
     while ((read = fread(chunk, 1, FILE_CHUNK, file)) > 0) {
         runtime_sha256_add(&hash, chunk, read);
+        total += read;
     }
     int complete = !ferror(file);
     fclose(file);
     free(chunk);
     if (complete) {
         runtime_sha256_finish_hex(&hash, out_hex);
+        *size = total;
     }
     return complete;
+}
+
+int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]) {
+    uint64_t size;
+    return runtime_sha256_file_sized(path, out_hex, &size);
 }

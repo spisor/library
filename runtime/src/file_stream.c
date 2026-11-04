@@ -5,21 +5,10 @@
 #if defined(_WIN32)
 #include <windows.h>
 
-static wchar_t *to_wide(const char *text) {
-    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    if (length <= 0) {
-        return NULL;
-    }
-    wchar_t *wide = malloc((size_t)length * sizeof(wchar_t));
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
-        free(wide);
-        return NULL;
-    }
-    return wide;
-}
+#include "wide_path.h"
 
 FILE *runtime_open_file(const char *path, runtime_file_mode mode) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return NULL;
     }
@@ -29,8 +18,8 @@ FILE *runtime_open_file(const char *path, runtime_file_mode mode) {
 }
 
 int runtime_move_file_over(const char *from, const char *to) {
-    wchar_t *wide_from = to_wide(from);
-    wchar_t *wide_to = to_wide(to);
+    wchar_t *wide_from = spisor_wide_path(from);
+    wchar_t *wide_to = spisor_wide_path(to);
     int moved = wide_from != NULL && wide_to != NULL &&
                 MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     free(wide_from);

@@ -23,4 +23,7 @@ void runtime_sha256_finish_hex(runtime_sha256 *hash, char out_hex[RUNTIME_SHA256
 /** The SHA-256 of the whole file at path, as lowercase hex. 1 on success, 0 when it cannot be read. */
 int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]);
 
+/** spisor_sha256_file that also answers the file's length in bytes into *size. */
+int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size);
+
 #endif

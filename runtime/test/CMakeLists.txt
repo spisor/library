@@ -86,3 +86,7 @@ target_link_libraries(catalog_check_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(catalog_check_test PRIVATE Ws2_32)
 endif()
+
+runtime_test(cache_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(cache_test PRIVATE ${runtime_fetch_libraries})

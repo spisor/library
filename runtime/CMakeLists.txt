@@ -96,12 +96,22 @@ target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
+set(runtime_cache_sources src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
+    src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
+    src/file_times.c src/node_json_file.c src/platform_key.c src/process_alive.c)
+add_library(runtime_cache OBJECT ${runtime_cache_sources})
+target_link_libraries(runtime_cache PUBLIC runtime_objects)
+target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_cache PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_cache)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>)
+    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_cache>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})
