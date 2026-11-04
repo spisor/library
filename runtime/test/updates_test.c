@@ -287,6 +287,19 @@ static void it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_
     finish_base();
 }
 
+static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_installed(void) {
+    start_base("libraries-missing");
+    list_library("runtime", "0.1.0", "0.1.0");
+    mark_installed("libraries", "runtime", "0.1.0");
+    write_catalog();
+    catalog_answer started = apply_booted();
+    expect_success(started, "missing library");
+    CHECK(!exists_in(cache, "hosts/" FOREBAY_HOST ".json"));
+    remove_run_record(started);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 /* host-updates.test.ts, through updates.check then updates.apply */
 
 static void list_both_hosts(void) {
@@ -576,6 +589,7 @@ int main(void) {
     it_keeps_what_runs_now_and_schedules_the_libraries_the_next_start_loads_hinting_them();
     it_keeps_the_versions_the_host_already_scheduled_for_its_next_start();
     it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_is_installed_intact();
+    it_writes_no_hint_while_a_library_the_host_boots_with_is_not_installed();
 
     it_schedules_a_newer_loader_and_forebay_host_for_the_next_start_which_then_runs_both();
     it_holds_a_host_to_its_pin();
