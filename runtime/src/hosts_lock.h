@@ -26,4 +26,12 @@ runtime_hosts_guard *runtime_hosts_lock(const char *state);
 
 void runtime_hosts_unlock(runtime_hosts_guard *guard);
 
+/**
+ * Takes the same kind of OS file lock on the lock file at path, creating it, for another
+ * read-modify-write that must exclude other threads and processes; its folder must exist. NULL when it
+ * cannot be opened or locked. Release with runtime_hosts_unlock. Never the registry lock itself, so a
+ * caller holding one may take the other.
+ */
+runtime_hosts_guard *runtime_lock_file(const char *path);
+
 #endif
