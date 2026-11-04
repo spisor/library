@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "boot_hint.h"
 #include "cache_folders.h"
 #include "cache_refusal.h"
 #include "directory_tree.h"
@@ -65,12 +66,13 @@ static cJSON *read_entry(const char *folder, const char *name) {
 
 static int add_hint(cJSON *referenced, const char *hosts, const char *name) {
     size_t id_length = strlen(name) - strlen(JSON_EXTENSION);
-    cJSON *hint = id_length == 0 ? NULL : read_entry(hosts, name);
+    cJSON *recorded = id_length == 0 ? NULL : read_entry(hosts, name);
+    cJSON *hint = runtime_boot_hint_of(recorded);
+    cJSON_Delete(recorded);
     int added = 1;
-    if (cJSON_IsObject(hint)) {
-        const cJSON *libraries = cJSON_GetObjectItemCaseSensitive(hint, "libraries");
+    if (hint != NULL) {
         const cJSON *host = cJSON_GetObjectItemCaseSensitive(hint, "host");
-        added = add_version_map(referenced, cJSON_IsObject(libraries) ? libraries : NULL);
+        added = add_version_map(referenced, cJSON_GetObjectItemCaseSensitive(hint, "libraries"));
         if (added && cJSON_IsString(host)) {
             char *id = malloc(id_length + 1);
             added = id != NULL;

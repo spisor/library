@@ -96,7 +96,7 @@ target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
-set(runtime_cache_sources src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
+set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
     src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
     src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
@@ -105,7 +105,7 @@ target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_cache PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_cache)
 
-set(runtime_updates_sources src/boot.c src/boot_hint.c src/boot_resolve.c src/plugin_choices.c src/updates.c
+set(runtime_updates_sources src/boot.c src/boot_resolve.c src/plugin_choices.c src/updates.c
     src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_rollback.c src/version_map.c)
 add_library(runtime_updates OBJECT ${runtime_updates_sources})
 target_link_libraries(runtime_updates PUBLIC runtime_objects)

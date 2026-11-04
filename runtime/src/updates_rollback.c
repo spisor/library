@@ -23,7 +23,10 @@ static cJSON *not_intact(const char *item, const char *version) {
     return runtime_cache_refusal(parts, 4, RUNTIME_REINSTALL_FIX);
 }
 
-/** Swaps item's run and rollback versions in references. */
+/**
+ * Swaps item's run and rollback versions in references, and records the version it moves away from in
+ * rolled_back_from, so no check schedules it again while it is still the catalog's latest.
+ */
 static int swap(runtime_host_references *references, const char *item, const char *version) {
     const char *current = runtime_map_version(references->run, item);
     char *switched_from = NULL;
@@ -32,8 +35,14 @@ static int swap(runtime_host_references *references, const char *item, const cha
         switched_from = runtime_cache_text(parts, 1);
     }
     cJSON_DeleteItemFromObjectCaseSensitive(references->rollback, item);
+    if (switched_from != NULL && references->rolled_back_from == NULL) {
+        references->rolled_back_from = cJSON_CreateObject();
+    }
     int swapped = (current == NULL || switched_from != NULL) && runtime_map_set(references->run, item, version) &&
-                  (switched_from == NULL || runtime_map_set(references->rollback, item, switched_from));
+                  (switched_from == NULL ||
+                   (runtime_map_set(references->rollback, item, switched_from) &&
+                    references->rolled_back_from != NULL &&
+                    runtime_map_set(references->rolled_back_from, item, switched_from)));
     free(switched_from);
     return swapped;
 }

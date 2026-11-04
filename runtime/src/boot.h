@@ -10,8 +10,11 @@
 RUNTIME_EXPORT int32_t runtime_boot_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 /**
- * boot.write: {cache, hostId, libraries, host?} records the libraries and host bundle version the next
- * start of hostId boots, keeping the recorded host version when host is left out, and answers {hint}.
+ * boot.write: {cache, hostId, libraries, host?, state?} records the libraries and host bundle version the
+ * next start of hostId boots, keeping the recorded host version when host is left out, and answers {hint}.
+ *
+ * @implNote Keeping the recorded host is a read-modify-write, so with state it holds the registry lock
+ * under it, the one updates holds while it switches a hint, and a write never reverts a switch.
  */
 RUNTIME_EXPORT int32_t runtime_boot_write(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

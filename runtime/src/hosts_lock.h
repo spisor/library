@@ -8,9 +8,9 @@ typedef struct runtime_hosts_guard runtime_hosts_guard;
  * references under state/bundles, and the cache sweep hold, waiting until no other thread or process
  * holds it, and creates state/hosts/.lock when it is missing. NULL when the lock file cannot be opened
  * or locked. Release with runtime_hosts_unlock. Hold it around one check-act-store step, never around
- * an unbounded operation; the longest it is held is one version's install by updates.check, bounded by
- * fetch's own deadline per file, so that no sweep can remove the version before its completion marker
- * is written.
+ * an unbounded operation: no install or download is ever done while it is held. An install records the
+ * version it is about to store as a reference first, under the lock, so a sweep keeps that version while
+ * its files arrive unlocked; installing never makes a start or a registration wait.
  *
  * It is not reentrant: a thread that holds it and takes it again waits on itself for ever. So code
  * holding it never calls a json function that takes it (cache.sweep, registry.register, the updates

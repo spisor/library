@@ -10,6 +10,9 @@
  */
 void runtime_fetch_allow_plain_http(int allowed);
 
+/** Makes every file: fetch whose url contains containing wait milliseconds first; NULL stops it. */
+void runtime_fetch_stall_file_urls(const char *containing, unsigned milliseconds);
+
 /** Replaces the 75 second deadline of one fetch; 0 restores it. */
 void runtime_fetch_use_deadline(unsigned milliseconds);
 

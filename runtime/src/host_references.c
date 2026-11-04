@@ -71,16 +71,19 @@ static cJSON *copy_or_empty(const cJSON *map) {
     return map == NULL ? cJSON_CreateObject() : cJSON_Duplicate(map, 1);
 }
 
-static runtime_host_references copied(const cJSON *run, const cJSON *next, const cJSON *rollback) {
-    runtime_host_references references = {copy_or_empty(run), copy_or_empty(next), NULL};
-    if (rollback != NULL && rollback->child != NULL) {
-        references.rollback = cJSON_Duplicate(rollback, 1);
-    }
+static cJSON *copy_if_kept(const cJSON *map) {
+    return runtime_is_version_map(map) && map->child != NULL ? cJSON_Duplicate(map, 1) : NULL;
+}
+
+static runtime_host_references copied(const cJSON *run, const cJSON *next, const cJSON *rollback,
+                                      const cJSON *rolled_back_from) {
+    runtime_host_references references = {copy_or_empty(run), copy_or_empty(next), copy_if_kept(rollback),
+                                          copy_if_kept(rolled_back_from)};
     return references;
 }
 
 runtime_host_references runtime_read_host_references(const char *state, const char *host_id) {
-    runtime_host_references none = {NULL, NULL, NULL};
+    runtime_host_references none = {NULL, NULL, NULL, NULL};
     char *problem = NULL;
     char *path = runtime_host_references_path(state, host_id, &problem);
     free(problem);
@@ -92,9 +95,10 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
     const cJSON *run = NULL;
     const cJSON *next = NULL;
     const cJSON *rollback = NULL;
-    runtime_host_references references = runtime_host_references_of(recorded, &run, &next, &rollback)
-                                             ? copied(run, next, rollback)
-                                             : copied(NULL, NULL, NULL);
+    runtime_host_references references =
+        runtime_host_references_of(recorded, &run, &next, &rollback)
+            ? copied(run, next, rollback, cJSON_GetObjectItemCaseSensitive(recorded, "rolledBackFrom"))
+            : copied(NULL, NULL, NULL, NULL);
     cJSON_Delete(recorded);
     if (references.run == NULL || references.next == NULL) {
         runtime_free_host_references(&references);
@@ -107,7 +111,9 @@ static char *references_text(const runtime_host_references *references) {
     int built = recorded != NULL && cJSON_AddItemReferenceToObject(recorded, "run", references->run) &&
                 cJSON_AddItemReferenceToObject(recorded, "next", references->next) &&
                 (references->rollback == NULL || references->rollback->child == NULL ||
-                 cJSON_AddItemReferenceToObject(recorded, "rollback", references->rollback));
+                 cJSON_AddItemReferenceToObject(recorded, "rollback", references->rollback)) &&
+                (references->rolled_back_from == NULL || references->rolled_back_from->child == NULL ||
+                 cJSON_AddItemReferenceToObject(recorded, "rolledBackFrom", references->rolled_back_from));
     char *pretty = built ? spisor_json_stringify_pretty(recorded) : NULL;
     cJSON_Delete(recorded);
     const char *parts[2] = {pretty, "\n"};
@@ -151,6 +157,8 @@ void runtime_free_host_references(runtime_host_references *references) {
     cJSON_Delete(references->run);
     cJSON_Delete(references->next);
     cJSON_Delete(references->rollback);
+    cJSON_Delete(references->rolled_back_from);
+    references->rolled_back_from = NULL;
     references->run = NULL;
     references->next = NULL;
     references->rollback = NULL;

@@ -1,5 +1,11 @@
 #include "updates_fixture.h"
 
+#include "hosts_lock.h"
+
+#if !defined(_WIN32)
+#include <time.h>
+#endif
+
 #define HOST "forebay-host"
 #define LIBRARIES "{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"
 
@@ -218,6 +224,70 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     finish_base();
 }
 
+/* fix round 1: boot.write with a state waits for the registry lock */
+
+typedef struct locked_write {
+    catalog_answer answer;
+} locked_write;
+
+static void write_with_state(locked_write *job) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "cache", cache);
+    cJSON_AddStringToObject(argument, "hostId", HOST);
+    cJSON_AddItemToObject(argument, "libraries", parsed(LIBRARIES));
+    cJSON_AddStringToObject(argument, "state", state);
+    job->answer = call_catalog(runtime_boot_write, argument);
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI writing_entry(LPVOID argument) {
+    write_with_state(argument);
+    return 0;
+}
+#else
+static void *writing_entry(void *argument) {
+    write_with_state(argument);
+    return NULL;
+}
+#endif
+
+static void wait_a_moment(void) {
+#if defined(_WIN32)
+    Sleep(400);
+#else
+    struct timespec pause = {0, 400000000L};
+    nanosleep(&pause, NULL);
+#endif
+}
+
+static void it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free(void) {
+    start_base("hint-locked");
+    write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    CHECK(guard != NULL);
+    locked_write job = {{0, NULL}};
+#if defined(_WIN32)
+    HANDLE thread = CreateThread(NULL, 0, writing_entry, &job, 0, NULL);
+    CHECK(thread != NULL);
+#else
+    pthread_t thread;
+    CHECK(pthread_create(&thread, NULL, writing_entry, &job) == 0);
+#endif
+    wait_a_moment();
+    expect_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}", "still waiting for the lock");
+    runtime_hosts_unlock(guard);
+#if defined(_WIN32)
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    expect_success(job.answer, "locked write");
+    cJSON_Delete(job.answer.tree);
+    expect_hint(HOST, "{\"libraries\":" LIBRARIES ",\"host\":\"1.0.0\"}", "written once the lock was free");
+    finish_base();
+}
+
 int main(void) {
     it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back();
     it_keeps_the_recorded_host_version_when_a_write_names_none();
@@ -236,5 +306,6 @@ int main(void) {
     it_refuses_an_installed_version_that_carries_no_executable_for_the_platform();
 
     it_leaves_everything_the_hint_names_after_a_sweep();
+    it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free();
     return check_summary("boot_hint_test");
 }

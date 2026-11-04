@@ -1,8 +1,19 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "fetch_transport.h"
 
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+#include "fetch_hooks.h"
 #include "file_stream.h"
 #include "paths.h"
 
@@ -161,12 +172,39 @@ static void copy_into_sink(FILE *file, const char *url, runtime_fetch_sink *sink
     }
 }
 
+#ifdef SPISOR_FETCH_TEST_HOOKS
+static const char *stalled_url_part = NULL;
+static unsigned stall_milliseconds = 0;
+
+void runtime_fetch_stall_file_urls(const char *containing, unsigned milliseconds) {
+    stalled_url_part = containing;
+    stall_milliseconds = milliseconds;
+}
+
+static void stall_if_asked(const char *url) {
+    if (stalled_url_part == NULL || strstr(url, stalled_url_part) == NULL) {
+        return;
+    }
+#if defined(_WIN32)
+    Sleep(stall_milliseconds);
+#else
+    struct timespec pause = {(time_t)(stall_milliseconds / 1000), (long)(stall_milliseconds % 1000) * 1000000L};
+    nanosleep(&pause, NULL);
+#endif
+}
+#else
+static void stall_if_asked(const char *url) {
+    (void)url;
+}
+#endif
+
 void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
     const char *path = path_after_authority(url, answer);
     char *local = path == NULL ? NULL : local_path_of(url, path, answer);
     if (local == NULL) {
         return;
     }
+    stall_if_asked(url);
     FILE *file = runtime_open_file(local, RUNTIME_FILE_READ);
     free(local);
     if (file == NULL) {

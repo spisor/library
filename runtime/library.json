@@ -1144,9 +1144,21 @@
               "run": { "type": "object", "additionalProperties": { "type": "string" } },
               "next": { "type": "object", "additionalProperties": { "type": "string" } },
               "rollback": { "type": "object", "additionalProperties": { "type": "string" } },
+              "unrecorded": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "fix": { "type": "string" }
+                  },
+                  "required": ["message", "fix"],
+                  "additionalProperties": false
+                }
+              },
               "runRecord": { "type": "string" }
             },
-            "required": ["plugins", "run", "next", "rollback", "runRecord"],
+            "required": ["plugins", "run", "next", "rollback", "unrecorded", "runRecord"],
             "additionalProperties": false
           }
         },
@@ -1293,7 +1305,8 @@
               "cache": { "type": "string", "minLength": 1 },
               "hostId": { "type": "string", "minLength": 1 },
               "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
-              "host": { "type": "string", "minLength": 1 }
+              "host": { "type": "string", "minLength": 1 },
+              "state": { "type": "string", "minLength": 1 }
             },
             "required": ["cache", "hostId", "libraries"]
           },

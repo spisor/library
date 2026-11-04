@@ -10,6 +10,13 @@
 char *runtime_boot_hint_path(const char *cache, const char *host_id, char **problem);
 
 /**
+ * The parsed text of a hint file read as a hint, {libraries, host?}: its libraries' string entries and
+ * its host when that is a string. NULL when recorded is no object or memory runs out. The one reader of
+ * the format, which the sweep and boot.read share.
+ */
+cJSON *runtime_boot_hint_of(const cJSON *recorded);
+
+/**
  * The hint host_id last recorded, {libraries, host?}: its libraries' string entries and its host when
  * that is a string. NULL when there is none, it is not a readable JSON object, host_id is no plain file
  * name, or memory runs out.

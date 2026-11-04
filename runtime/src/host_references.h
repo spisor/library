@@ -7,13 +7,18 @@
 
 /**
  * The bundle versions one host holds, each an id-to-version object: what it runs now, what it scheduled
- * for its next start, and what it ran before a start switched it, kept until a later start. rollback may
- * be NULL, meaning none.
+ * for its next start, what it ran before a start switched it, kept until a later start, and each version
+ * a rollback moved it away from, which is not scheduled again while it is still the catalog's latest.
+ * rollback and rolled_back_from may be NULL, meaning none.
+ *
+ * @implNote rolled_back_from is written as rolledBackFrom, a member plan three's readers never look at,
+ * so the sweep and every reader of run, next and rollback read the file as they always did.
  */
 typedef struct runtime_host_references {
     cJSON *run;
     cJSON *next;
     cJSON *rollback;
+    cJSON *rolled_back_from;
 } runtime_host_references;
 
 /**
@@ -40,14 +45,14 @@ char *runtime_host_references_path(const char *state, const char *host_id, char 
 
 /**
  * What host_id recorded, as owned copies, or empty run and next when it recorded nothing readable;
- * rollback is NULL when it kept none or an empty one. Every member NULL when memory runs out or host_id
+ * rollback and rolled_back_from are NULL when it kept none or an empty one. Every member NULL when memory runs out or host_id
  * is no plain file name. Release with runtime_free_host_references.
  */
 runtime_host_references runtime_read_host_references(const char *state, const char *host_id);
 
 /**
- * Records references for host_id as JSON.stringify({run, next, rollback?}, null, 2) and a newline,
- * leaving rollback out when it is NULL or empty. 1 on success; 0 with *problem set as
+ * Records references for host_id as JSON.stringify({run, next, rollback?, rolledBackFrom?}, null, 2) and a
+ * newline, leaving rollback and rolledBackFrom out when they are NULL or empty. 1 on success; 0 with *problem set as
  * runtime_host_references_path sets it, or naming the file that could not be written.
  *
  * @implNote Replaced at once, so a sweep never reads half a file and takes it for none. A caller

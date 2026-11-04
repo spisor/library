@@ -6,6 +6,7 @@
 #include "boot_resolve.h"
 #include "catalog_answer.h"
 #include "host_references.h"
+#include "hosts_lock.h"
 #include "platform_key.h"
 #include "spisor/json_kind.h"
 
@@ -85,12 +86,19 @@ static int32_t write_hint(const cJSON *argument, const char *cache, const char *
     if (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0)) {
         return runtime_catalog_refuse_argument("host", "the host bundle version, or leave it out", out, out_len);
     }
-    char *problem = NULL;
-    if (!runtime_write_boot_hint(cache, host_id, libraries, host == NULL ? NULL : host->valuestring, &problem)) {
-        return refuse_problem(problem, "check that SPISOR_CACHE names a writable folder, then try again", out,
-                              out_len);
+    const char *state = nonempty_text(argument, "state");
+    runtime_hosts_guard *guard = state == NULL ? NULL : runtime_hosts_lock(state);
+    if (state != NULL && guard == NULL) {
+        return spisor_fail("the registry lock under the state folder could not be taken",
+                           "check that SPISOR_STATE names a writable folder, then try again", out, out_len);
     }
-    return read_hint(argument, cache, host_id, out, out_len);
+    char *problem = NULL;
+    int written = runtime_write_boot_hint(cache, host_id, libraries, host == NULL ? NULL : host->valuestring, &problem);
+    int32_t status = written ? read_hint(argument, cache, host_id, out, out_len)
+                             : refuse_problem(problem, "check that SPISOR_CACHE names a writable folder, then try again",
+                                              out, out_len);
+    runtime_hosts_unlock(guard);
+    return status;
 }
 
 static const char *platform_member(const cJSON *argument) {

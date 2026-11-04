@@ -5,7 +5,6 @@
 
 #include "cache_folders.h"
 #include "cache_refusal.h"
-#include "catalog_answer.h"
 #include "host_references.h"
 #include "node_json_file.h"
 #include "spisor/file.h"
@@ -36,12 +35,15 @@ static cJSON *string_entries(const cJSON *value) {
     return entries;
 }
 
-static cJSON *hint_of(const cJSON *recorded) {
+cJSON *runtime_boot_hint_of(const cJSON *recorded) {
     const cJSON *host = cJSON_GetObjectItemCaseSensitive(recorded, "host");
     cJSON *hint = cJSON_IsObject(recorded) ? cJSON_CreateObject() : NULL;
-    int built = hint != NULL &&
-                runtime_catalog_attach(hint, "libraries",
-                                     string_entries(cJSON_GetObjectItemCaseSensitive(recorded, "libraries"))) &&
+    cJSON *libraries = hint == NULL ? NULL : string_entries(cJSON_GetObjectItemCaseSensitive(recorded, "libraries"));
+    int attached = libraries != NULL && cJSON_AddItemToObject(hint, "libraries", libraries);
+    if (!attached) {
+        cJSON_Delete(libraries);
+    }
+    int built = attached &&
                 (!cJSON_IsString(host) || cJSON_AddStringToObject(hint, "host", host->valuestring) != NULL);
     if (!built) {
         cJSON_Delete(hint);
@@ -56,7 +58,7 @@ cJSON *runtime_read_boot_hint(const char *cache, const char *host_id) {
     free(problem);
     cJSON *recorded = path == NULL ? NULL : runtime_read_node_json(path);
     free(path);
-    cJSON *hint = hint_of(recorded);
+    cJSON *hint = runtime_boot_hint_of(recorded);
     cJSON_Delete(recorded);
     return hint;
 }
