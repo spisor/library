@@ -1,12 +1,20 @@
-add_library(runtime_objects OBJECT src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
+set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
     src/sha256.c src/file_stream.c src/service_call.c)
+add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
+
+add_library(runtime_objects_config_test_hooks OBJECT ${runtime_objects_sources})
+target_include_directories(runtime_objects_config_test_hooks PUBLIC src)
+target_include_directories(runtime_objects_config_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(runtime_objects_config_test_hooks PUBLIC spisor_library)
+target_compile_definitions(runtime_objects_config_test_hooks PRIVATE SPISOR_CONFIG_TEST_HOOKS)
+spisor_strict_warnings(runtime_objects_config_test_hooks)
 
 add_library(runtime_change_reversal OBJECT src/change_reversal.c)
 target_link_libraries(runtime_change_reversal PUBLIC runtime_objects)

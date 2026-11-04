@@ -1,3 +1,7 @@
+#if defined(SPISOR_CONFIG_TEST_HOOKS) && !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "config.h"
 
 #include <stdio.h>
@@ -13,6 +17,15 @@
 #include "spisor/json_kind.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
+
+#ifdef SPISOR_CONFIG_TEST_HOOKS
+#include "config_hooks.h"
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+#endif
 
 #define PORTABLE_CONFIG_FILE "config.json"
 #define ECOSYSTEM_SETTINGS_FILE "settings.json"
@@ -508,9 +521,51 @@ static layer_write chosen_layer(settings_layer layer, const config_targets *targ
     return chosen;
 }
 
+#ifdef SPISOR_CONFIG_TEST_HOOKS
+#if defined(_WIN32)
+#define pause_briefly() Sleep(20)
+#else
+static void pause_briefly(void) {
+    struct timespec pause = {0, 20 * 1000000L};
+    nanosleep(&pause, NULL);
+}
+#endif
+
+static char *pause_signals = NULL;
+
+void runtime_config_pause_after_read(const char *signals) {
+    free(pause_signals);
+    pause_signals = signals == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, &signals, 1);
+}
+
+/** Pauses the first writer to arrive, once, until the test releases it. */
+static void pause_after_read(void) {
+    char *signals = pause_signals;
+    pause_signals = NULL;
+    if (signals == NULL) {
+        return;
+    }
+    const char *paused_segments[2] = {signals, "paused"};
+    const char *release_segments[2] = {signals, "release"};
+    char *paused = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, paused_segments, 2);
+    char *release = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, release_segments, 2);
+    spisor_replace_file(paused, (const uint8_t *)"", 0);
+    for (int waited = 0; waited < 500 && !spisor_file_exists(release); waited++) {
+        pause_briefly();
+    }
+    free(release);
+    free(paused);
+    free(signals);
+}
+#else
+static void pause_after_read(void) {
+}
+#endif
+
 static int32_t store_locked(const config_request *request, const config_targets *targets, settings_layer layer,
                             const char *key, const cJSON *value, uint8_t **out, size_t *out_len) {
     layer_files files = read_layers(targets);
+    pause_after_read();
     int failed;
     cJSON *previous = previous_value(request, &files, key, &failed);
     layer_write chosen = chosen_layer(layer, targets, &files);
