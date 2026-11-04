@@ -181,6 +181,7 @@ static void passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_numb
 static void starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins(void) {
     host_world world;
     install_launch_world(&world, "launch", "session", 1);
+    world.layer_delay = "1000";
     program launcher;
     const char *passed[] = {"session", "0", NULL};
     launch(&world, &launcher, passed, NULL);
@@ -188,7 +189,7 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
     expect_holders(&world, LOADER_ID, launcher.child.pid, started_pid(started), "session held");
-    char *starts = text_in(world.starts, "");
+    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
     expect_contains(starts, "javascript-host", "session host on javascript-host");
     expect_contains(starts, "host.js " LOADER_ID, "its entry run for the loader");
     release_application(&world, "session");
