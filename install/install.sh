@@ -3,9 +3,8 @@ set -eu
 
 HOST_ID='forebay-host'
 
-# Reads the catalog index and prints forebay-host's latest version, then one line per file of this
-# platform's build: key, where to fetch it, sha256 and size. It checks what catalog.schema.json's
-# file key, version and sha256 patterns check, without their lookaheads, which awk has no form of.
+# Prints forebay-host's latest version, then key, url, sha256 and size per file of this platform's build,
+# checked as catalog.schema.json's patterns check them, rewritten without the lookaheads awk lacks.
 LIST_HOST_FILES='
 function refuse(detail, fix) {
   printf "%s\nfix: %s\n", detail, fix > "/dev/stderr"
