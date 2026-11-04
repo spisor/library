@@ -5,6 +5,12 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+# An unchanged source must build unchanged bytes: a shim is rewritten whenever runtime-launcher.exe's bytes differ.
+if(MSVC)
+    add_compile_options(/Brepro)
+    add_link_options(/Brepro)
+endif()
+
 add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
 set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
