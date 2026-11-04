@@ -115,40 +115,33 @@ static int64_t array_index_of(const char *key) {
     return value <= MAX_ARRAY_INDEX ? (int64_t)value : -1;
 }
 
-typedef struct ordered_member {
-    const cJSON *member;
-    int64_t index;
-} ordered_member;
-
 static int compare_by_index(const void *left, const void *right) {
-    int64_t left_index = ((const ordered_member *)left)->index;
-    int64_t right_index = ((const ordered_member *)right)->index;
+    int64_t left_index = array_index_of((*(const cJSON *const *)left)->string);
+    int64_t right_index = array_index_of((*(const cJSON *const *)right)->string);
     return (left_index > right_index) - (left_index < right_index);
 }
 
-/** Members in the order JavaScript enumerates them, or NULL when memory runs out. */
-static ordered_member *members_in_javascript_order(const cJSON *object, size_t count) {
-    ordered_member *ordered = malloc(count * sizeof(ordered_member));
+const cJSON **spisor_json_members_in_javascript_order(const cJSON *object, size_t *count) {
+    *count = (size_t)cJSON_GetArraySize(object);
+    if (*count == 0) {
+        return NULL;
+    }
+    const cJSON **ordered = malloc(*count * sizeof *ordered);
     if (ordered == NULL) {
         return NULL;
     }
     size_t indexed = 0;
     const cJSON *member = NULL;
     cJSON_ArrayForEach(member, object) {
-        int64_t index = array_index_of(member->string);
-        if (index >= 0) {
-            ordered[indexed].member = member;
-            ordered[indexed].index = index;
-            indexed++;
+        if (array_index_of(member->string) >= 0) {
+            ordered[indexed++] = member;
         }
     }
-    qsort(ordered, indexed, sizeof(ordered_member), compare_by_index);
+    qsort(ordered, indexed, sizeof *ordered, compare_by_index);
     size_t placed = indexed;
     cJSON_ArrayForEach(member, object) {
         if (array_index_of(member->string) < 0) {
-            ordered[placed].member = member;
-            ordered[placed].index = -1;
-            placed++;
+            ordered[placed++] = member;
         }
     }
     return ordered;
@@ -175,12 +168,12 @@ static void append_array(text_buffer *buffer, const cJSON *array, int depth) {
 }
 
 static void append_object(text_buffer *buffer, const cJSON *object, int depth) {
-    size_t count = (size_t)cJSON_GetArraySize(object);
+    size_t count;
+    const cJSON **ordered = spisor_json_members_in_javascript_order(object, &count);
     if (count == 0) {
         append_text(buffer, "{}");
         return;
     }
-    ordered_member *ordered = members_in_javascript_order(object, count);
     if (ordered == NULL) {
         buffer->out_of_memory = 1;
         return;
@@ -188,9 +181,9 @@ static void append_object(text_buffer *buffer, const cJSON *object, int depth) {
     append_text(buffer, "{\n");
     for (size_t position = 0; position < count; position++) {
         append_indent(buffer, depth + 1);
-        append_quoted(buffer, ordered[position].member->string);
+        append_quoted(buffer, ordered[position]->string);
         append_text(buffer, ": ");
-        append_value(buffer, ordered[position].member, depth + 1);
+        append_value(buffer, ordered[position], depth + 1);
         append_text(buffer, position + 1 < count ? ",\n" : "\n");
     }
     append_indent(buffer, depth);

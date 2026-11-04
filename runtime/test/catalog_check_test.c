@@ -56,6 +56,9 @@ static char *index_text(const char *latest) {
 }
 
 static void start_scratch(const char *label) {
+    if (base[0] != 0) {
+        CHECK(runtime_remove_tree(base) == 1);
+    }
     snprintf(base, sizeof base, "%s/catalog-check-J\xc3\xb6rg-%d-%s", RUNTIME_SCRATCH_PATH, (int)current_process_id(),
              label);
     snprintf(cache, sizeof cache, "%s/cache", base);

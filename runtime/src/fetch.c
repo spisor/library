@@ -32,6 +32,7 @@
  * standing for a 15 second connect plus a 60 second read.
  */
 #define DOWNLOAD_DEADLINE_MILLISECONDS 75000u
+#define LONGEST_TIMEOUT_SECONDS 86400.0
 #define LARGEST_EXACT_INTEGER 9007199254740991.0
 #define CORRUPT_FILE_FIX "never use it: ask the catalog's publisher to correct the file or its entry"
 #define UNWRITABLE_FIX "free the cached file or point SPISOR_CACHE at a writable directory, then try again"
@@ -71,6 +72,7 @@ typedef struct fetch_order {
     const char *last_modified;
     int limited;
     uint64_t max_bytes;
+    unsigned deadline_milliseconds;
 } fetch_order;
 
 typedef struct fetch_files {
@@ -133,6 +135,20 @@ static int read_max_bytes(const cJSON *argument, fetch_order *order) {
     return 1;
 }
 
+static int read_timeout(const cJSON *argument, fetch_order *order) {
+    order->deadline_milliseconds = DOWNLOAD_DEADLINE_MILLISECONDS;
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "timeoutSeconds");
+    if (item == NULL) {
+        return 1;
+    }
+    double seconds = cJSON_IsNumber(item) ? item->valuedouble : 0;
+    if (!(seconds > 0 && seconds <= LONGEST_TIMEOUT_SECONDS)) {
+        return 0;
+    }
+    order->deadline_milliseconds = (unsigned)ceil(seconds * 1000);
+    return 1;
+}
+
 static int32_t read_order(const cJSON *argument, fetch_order *order, uint8_t **out, size_t *out_len) {
     int usable = 1;
     memset(order, 0, sizeof *order);
@@ -157,6 +173,9 @@ static int32_t read_order(const cJSON *argument, fetch_order *order, uint8_t **o
     }
     if (!read_max_bytes(argument, order)) {
         return refuse_argument("maxBytes", "a whole number of bytes, zero or more", out, out_len);
+    }
+    if (!read_timeout(argument, order)) {
+        return refuse_argument("timeoutSeconds", "a number of seconds above zero and at most a day", out, out_len);
     }
     return SPISOR_STATUS_SUCCESS;
 }
@@ -370,7 +389,7 @@ static void transfer(const fetch_order *order, url_scheme scheme, runtime_fetch_
         return;
     }
     runtime_fetch_request request = {order->url, order->etag, order->last_modified,
-                                     deadline_override != 0 ? deadline_override : DOWNLOAD_DEADLINE_MILLISECONDS,
+                                     deadline_override != 0 ? deadline_override : order->deadline_milliseconds,
                                      plain_http_allowed};
     runtime_fetch_over_network(&request, sink, answer);
 }

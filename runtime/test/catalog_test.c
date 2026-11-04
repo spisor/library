@@ -7,6 +7,7 @@
 #include "catalog_call.h"
 #include "catalog_check.h"
 #include "catalog_fold.h"
+#include "catalog_schema.h"
 #include "catalog_url.h"
 #include "check.h"
 #include "spisor/file.h"
@@ -265,38 +266,167 @@ static void it_names_the_earliest_folded_pair(void) {
     CHECK(first == 1 && second == 3);
 }
 
-static const cJSON *schema_value_at(const cJSON *schema, const char *pointer) {
-    char path[512];
-    snprintf(path, sizeof path, "%s", pointer + 1);
-    return value_at(schema, path);
+typedef struct schema_walk {
+    size_t found[8];
+} schema_walk;
+
+static const char *const KEYWORDS[] = {"pattern", "required", "enum", "const", "minLength", "minimum", "minItems",
+                                       "properties"};
+#define KEYWORD_COUNT (sizeof KEYWORDS / sizeof KEYWORDS[0])
+
+static int ends_with(const char *text, const char *suffix) {
+    size_t length = strlen(text);
+    size_t suffix_length = strlen(suffix);
+    return length >= suffix_length && strcmp(text + length - suffix_length, suffix) == 0;
 }
 
-static int enum_holds(const cJSON *values, const char *value) {
-    for (const cJSON *entry = values == NULL ? NULL : values->child; entry != NULL; entry = entry->next) {
-        if (cJSON_IsString(entry) && strcmp(entry->valuestring, value) == 0) {
-            return 1;
+static int same_names(const cJSON *array, const char *const *names) {
+    size_t index = 0;
+    for (const cJSON *entry = array->child; entry != NULL; entry = entry->next, index++) {
+        if (!cJSON_IsString(entry) || names[index] == NULL || strcmp(entry->valuestring, names[index]) != 0) {
+            return 0;
+        }
+    }
+    return names[index] == NULL;
+}
+
+static int same_property_names(const cJSON *properties, const runtime_catalog_property_rule *rules) {
+    size_t index = 0;
+    for (const cJSON *entry = properties->child; entry != NULL; entry = entry->next, index++) {
+        if (rules[index].name == NULL || strcmp(entry->string, rules[index].name) != 0) {
+            return 0;
+        }
+    }
+    return rules[index].name == NULL;
+}
+
+static int held_list(const char *pointer, const cJSON *value) {
+    for (size_t index = 0; index < LIST_COUNT; index++) {
+        if (strcmp(runtime_catalog_schema_lists[index].pointer, pointer) == 0) {
+            return same_names(value, runtime_catalog_schema_lists[index].values);
         }
     }
     return 0;
 }
 
-static void the_checker_holds_what_the_schema_says(void) {
-    cJSON *schema = read_json_file(RUNTIME_CATALOG_SCHEMA_PATH);
-    for (size_t index = 0; index < runtime_catalog_schema_pattern_count; index++) {
-        const runtime_catalog_schema_value *pattern = &runtime_catalog_schema_patterns[index];
-        const cJSON *value = schema_value_at(schema, pattern->pointer);
-        check_text(cJSON_IsString(value) ? value->valuestring : NULL, pattern->value, pattern->pointer);
+static int held_text(const runtime_catalog_schema_text *table, size_t count, const char *pointer, const cJSON *value,
+                     int as_json) {
+    for (size_t index = 0; index < count; index++) {
+        if (strcmp(table[index].pointer, pointer) != 0) {
+            continue;
+        }
+        if (!as_json) {
+            return cJSON_IsString(value) && strcmp(value->valuestring, table[index].value) == 0;
+        }
+        cJSON *constant = parsed(table[index].value);
+        int equal = cJSON_Compare(value, constant, 1);
+        cJSON_Delete(constant);
+        return equal;
     }
-    for (size_t index = 0; index < runtime_catalog_schema_enum_value_count; index++) {
-        const runtime_catalog_schema_value *value = &runtime_catalog_schema_enum_values[index];
-        const cJSON *values = schema_value_at(schema, value->pointer);
-        if (!enum_holds(values, value->value)) {
-            fprintf(stderr, "%s does not hold %s\n", value->pointer, value->value);
+    return 0;
+}
+
+static int held_bound(const char *pointer, const cJSON *value) {
+    for (size_t index = 0; index < BOUND_COUNT; index++) {
+        if (strcmp(runtime_catalog_schema_bounds[index].pointer, pointer) == 0) {
+            return cJSON_IsNumber(value) && value->valuedouble == runtime_catalog_schema_bounds[index].value;
+        }
+    }
+    return 0;
+}
+
+static int held_properties(const char *pointer, const cJSON *value) {
+    for (size_t index = 0; index < runtime_catalog_schema_property_set_count; index++) {
+        if (strcmp(runtime_catalog_schema_property_sets[index].pointer, pointer) == 0) {
+            return same_property_names(value, runtime_catalog_schema_property_sets[index].rules);
+        }
+    }
+    return 0;
+}
+
+/** Whether the checker holds the keyword at pointer as the schema says it. */
+static int held(size_t keyword, const char *pointer, const cJSON *value) {
+    switch (keyword) {
+    case 0:
+        return held_text(runtime_catalog_schema_patterns, PATTERN_COUNT, pointer, value, 0);
+    case 1:
+    case 2:
+        return held_list(pointer, value);
+    case 3:
+        return held_text(runtime_catalog_schema_constants, CONSTANT_COUNT, pointer, value, 1);
+    case 7:
+        return held_properties(pointer, value);
+    default:
+        return held_bound(pointer, value);
+    }
+}
+
+static void visit_keyword(schema_walk *walk, const char *pointer, const cJSON *member) {
+    for (size_t keyword = 0; keyword < KEYWORD_COUNT; keyword++) {
+        int is_if_clause = keyword == 7 && strstr(pointer, "/if/") != NULL;
+        if (strcmp(member->string, KEYWORDS[keyword]) != 0 || is_if_clause) {
+            continue;
+        }
+        walk->found[keyword]++;
+        if (!held(keyword, pointer, member)) {
+            fprintf(stderr, "the checker does not hold %s as the schema says it\n", pointer);
             check_failures++;
         }
     }
-    CHECK(cJSON_GetArraySize(schema_value_at(schema, "/definitions/item/properties/kind/enum")) == 3);
-    CHECK(cJSON_GetArraySize(schema_value_at(schema, "/definitions/item/properties/runtime/enum")) == 3);
+}
+
+static void walk_schema(schema_walk *walk, const cJSON *node, const char *pointer) {
+    int index = 0;
+    for (const cJSON *child = node->child; child != NULL; child = child->next, index++) {
+        char path[512];
+        if (cJSON_IsArray(node)) {
+            snprintf(path, sizeof path, "%s/%d", pointer, index);
+        } else {
+            snprintf(path, sizeof path, "%s/%s", pointer, child->string);
+            visit_keyword(walk, path, child);
+        }
+        if (cJSON_IsObject(child) || cJSON_IsArray(child)) {
+            walk_schema(walk, child, path);
+        }
+    }
+}
+
+static size_t held_count(size_t keyword) {
+    size_t count = 0;
+    if (keyword == 0) {
+        return PATTERN_COUNT;
+    }
+    if (keyword == 3) {
+        return CONSTANT_COUNT;
+    }
+    if (keyword == 7) {
+        return runtime_catalog_schema_property_set_count;
+    }
+    for (size_t index = 0; keyword <= 2 && index < LIST_COUNT; index++) {
+        count += ends_with(runtime_catalog_schema_lists[index].pointer, keyword == 1 ? "/required" : "/enum");
+    }
+    for (size_t index = 0; keyword >= 4 && index < BOUND_COUNT; index++) {
+        char suffix[32];
+        snprintf(suffix, sizeof suffix, "/%s", KEYWORDS[keyword]);
+        count += ends_with(runtime_catalog_schema_bounds[index].pointer, suffix);
+    }
+    return count;
+}
+
+static void the_checker_holds_what_the_schema_says(void) {
+    cJSON *schema = read_json_file(RUNTIME_CATALOG_SCHEMA_PATH);
+    schema_walk walk;
+    memset(&walk, 0, sizeof walk);
+    walk_schema(&walk, schema, "");
+    for (size_t keyword = 0; keyword < KEYWORD_COUNT; keyword++) {
+        if (walk.found[keyword] != held_count(keyword)) {
+            fprintf(stderr, "the schema has %zu %s, the checker holds %zu\n", walk.found[keyword], KEYWORDS[keyword],
+                    held_count(keyword));
+            check_failures++;
+        }
+    }
+    const cJSON *rules = value_at(schema, "definitions/item/allOf");
+    CHECK(cJSON_GetArraySize(rules) == RUNTIME_CATALOG_ITEM_RULE_COUNT);
     cJSON_Delete(schema);
 }
 

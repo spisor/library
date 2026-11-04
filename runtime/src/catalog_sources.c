@@ -4,7 +4,7 @@
 #include "catalog.h"
 #include "catalog_answer.h"
 #include "catalog_merge.h"
-#include "catalog_order.h"
+#include "spisor/json_write.h"
 #include "catalog_source.h"
 #include "spisor/json_kind.h"
 
@@ -85,7 +85,7 @@ static int add_shadowed(cJSON *shadowed, const char *id, const runtime_catalog_s
 static int merge_reading(cJSON *items, const runtime_catalog_reading *reading, cJSON *shadowed) {
     size_t count;
     const cJSON **members =
-        runtime_catalog_ordered_members(cJSON_GetObjectItemCaseSensitive(reading->catalog, "items"), &count);
+        spisor_json_members_in_javascript_order(cJSON_GetObjectItemCaseSensitive(reading->catalog, "items"), &count);
     if (members == NULL && count > 0) {
         return 0;
     }

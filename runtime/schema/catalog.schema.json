@@ -60,7 +60,7 @@
           "minLength": 1
         },
         "runtime": {
-          "description": "The language runtime the item's bundle needs. A host item names it; a plugin item without it needs javascript, and a reader answers that default; a library item runs in its host's runtime and names none.",
+          "description": "The language runtime the item's bundle needs: required on a host item; a plugin item without it needs javascript, which a reader answers.",
           "enum": [
             "javascript",
             "jvm",
@@ -106,25 +106,6 @@
             "required": [
               "runtime"
             ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "library"
-              }
-            },
-            "required": [
-              "kind"
-            ]
-          },
-          "then": {
-            "not": {
-              "required": [
-                "runtime"
-              ]
-            }
           }
         }
       ]

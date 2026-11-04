@@ -6,19 +6,23 @@
 #include "cJSON.h"
 #include "catalog_read.h"
 
-/** A value the checker holds as catalog.schema.json does, named by its JSON pointer into the schema. */
-typedef struct runtime_catalog_schema_value {
+typedef struct runtime_catalog_checker runtime_catalog_checker;
+
+/** One member of a schema object's properties, and how the checker checks its value. */
+typedef struct runtime_catalog_property_rule {
+    const char *name;
+    int (*rule)(runtime_catalog_checker *check, const cJSON *value);
+} runtime_catalog_property_rule;
+
+/** The properties the checker visits for one schema object, in schema order, ending with a NULL name. */
+typedef struct runtime_catalog_schema_properties {
     const char *pointer;
-    const char *value;
-} runtime_catalog_schema_value;
+    const runtime_catalog_property_rule *rules;
+} runtime_catalog_schema_properties;
 
-/** Every pattern the checker tests, as the schema words it, so a test can compare the two. */
-extern const runtime_catalog_schema_value runtime_catalog_schema_patterns[];
-extern const size_t runtime_catalog_schema_pattern_count;
-
-/** Every enum value the checker accepts, one entry per value, pointing at the enum it belongs to. */
-extern const runtime_catalog_schema_value runtime_catalog_schema_enum_values[];
-extern const size_t runtime_catalog_schema_enum_value_count;
+/** Every properties object of catalog.schema.json outside an if clause; the pointer ends in /properties. */
+extern const runtime_catalog_schema_properties runtime_catalog_schema_property_sets[];
+extern const size_t runtime_catalog_schema_property_set_count;
 
 /**
  * Whether document satisfies catalog.schema.json; when it does not, the refusal ajv's first error gives,
@@ -28,7 +32,8 @@ extern const size_t runtime_catalog_schema_enum_value_count;
  * compiled draft-07 validator does (keywords of any type, then type, then the type's own keywords:
  * required, propertyNames, additionalProperties, properties in schema order), so of two faults the same
  * one is named. An anyOf that fails is reported as the anyOf itself, an if as its then's first fault, and
- * propertyNames as the pattern, with the key appended raw. Pinned by test/fixtures/catalog.
+ * propertyNames as the pattern, with the key appended raw. Every value it holds of the schema is in
+ * catalog_schema.h or the property sets above, which a test compares against the schema file.
  */
 int runtime_catalog_check_schema(const cJSON *document, runtime_catalog_refusal *refusal);
 

@@ -34,6 +34,8 @@
 #endif
 
 #define MILLISECONDS_PER_HOUR 3600000.0
+/** forebay/host's INDEX_DEADLINE_MS: an index is small, so a request that takes longer is stuck. */
+#define INDEX_TIMEOUT_SECONDS 30
 #define BYTE_ORDER_MARK "\xEF\xBB\xBF"
 
 #ifdef SPISOR_CATALOG_TEST_HOOKS
@@ -180,6 +182,7 @@ static cJSON *fetch_answer(const char *url, const char *destination, const char 
     cJSON *request = cJSON_CreateObject();
     int built = requested != NULL && request != NULL && cJSON_AddStringToObject(request, "url", requested) != NULL &&
                 cJSON_AddStringToObject(request, "destination", destination) != NULL &&
+                cJSON_AddNumberToObject(request, "timeoutSeconds", INDEX_TIMEOUT_SECONDS) != NULL &&
                 (etag == NULL || cJSON_AddStringToObject(request, "etag", etag) != NULL);
     char *text = built ? cJSON_PrintUnformatted(request) : NULL;
     free(requested);

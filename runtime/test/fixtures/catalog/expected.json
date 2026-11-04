@@ -1508,19 +1508,12 @@
       "by": "readCatalog, the runtime member being one it does not know"
     },
     {
-      "name": "refuses a library item that names a runtime",
-      "fixture": "refuses-a-library-item-that-names-a-runtime.json",
+      "name": "accepts a library item that names a runtime",
+      "fixture": "accepts-a-library-item-that-names-a-runtime.json",
       "origin": "https://example.com/catalog/index.json",
       "from": "added: Ruling A, the runtime member",
-      "accepted": false,
-      "detail": "the catalog index must NOT be valid",
-      "fix": "remove the member, which this kind of item may not carry; only a host item may have an application",
-      "path": "/items/thing",
-      "by": "ajv over runtime/schema/catalog.schema.json, refused as readCatalog's refusalFor words it",
-      "c": {
-        "fix": "remove runtime, which a library item may not carry: a library runs in its host's runtime",
-        "because": "readCatalog's fix for a not names the application, the only member a not refused before runtime existed"
-      }
+      "accepted": true,
+      "by": "readCatalog, the runtime member being one it does not know"
     },
     {
       "name": "refuses a runtime that is not a string",

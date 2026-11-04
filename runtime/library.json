@@ -786,7 +786,8 @@
               "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "etag": { "type": "string" },
               "lastModified": { "type": "string" },
-              "maxBytes": { "type": "integer", "minimum": 0 }
+              "maxBytes": { "type": "integer", "minimum": 0 },
+              "timeoutSeconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 86400 }
             },
             "required": ["url", "destination"]
           },

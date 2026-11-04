@@ -77,8 +77,8 @@ target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
 spisor_strict_warnings(runtime_fetch_test_hooks)
 
-set(runtime_catalog_sources src/catalog.c src/catalog_answer.c src/catalog_check.c src/catalog_fold.c
-    src/catalog_fold_table.c src/catalog_sources.c src/catalog_order.c src/catalog_path.c src/catalog_read.c
+set(runtime_catalog_sources src/catalog.c src/catalog_answer.c src/catalog_check.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
+    src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
 add_library(runtime_catalog OBJECT ${runtime_catalog_sources})

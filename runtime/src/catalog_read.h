@@ -5,6 +5,8 @@
 
 #include "cJSON.h"
 
+#define RUNTIME_CATALOG_OUT_OF_MEMORY_FIX "close other programs to free memory, then try again"
+
 /** Why an index is refused: what is wrong, how to correct it, and the JSON pointer it names, or NULL. */
 typedef struct runtime_catalog_refusal {
     char *detail;

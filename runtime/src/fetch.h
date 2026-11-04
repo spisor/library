@@ -7,7 +7,7 @@
 #include "export.h"
 
 /**
- * fetch.get: fetches url into destination and answers {outcome: "stored", sha256, bytes, etag?,
+ * fetch.get: fetches url into destination, within timeoutSeconds when given and 75 seconds otherwise, and answers {outcome: "stored", sha256, bytes, etag?,
  * lastModified?}, or {outcome: "not-modified"} when the server answers 304 to the etag or lastModified
  * sent; anything else is refused.
  *

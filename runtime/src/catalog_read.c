@@ -6,7 +6,7 @@
 
 #include "catalog_check.h"
 #include "catalog_fold.h"
-#include "catalog_order.h"
+#include "spisor/json_write.h"
 #include "catalog_text.h"
 #include "catalog_url.h"
 #include "spisor/json_kind.h"
@@ -18,7 +18,6 @@
 #define CASE_FIX "give every file of a version a name that differs from the others in more than case"
 #define URL_FIX "use an https url under an https index, or a file url inside the index's own directory under a file index"
 #define DEFAULT_PLUGIN_RUNTIME "javascript"
-#define OUT_OF_MEMORY_FIX "close other programs to free memory, then try again"
 
 int runtime_catalog_refuse(runtime_catalog_refusal *refusal, char *detail, const char *fix, char *path) {
     refusal->detail = detail != NULL ? detail : runtime_catalog_copy(OUT_OF_MEMORY_DETAIL);
@@ -66,9 +65,9 @@ static const cJSON *member(const cJSON *object, const char *name) {
 
 static int check_latest(const cJSON *items, runtime_catalog_refusal *refusal) {
     size_t count;
-    const cJSON **ordered = runtime_catalog_ordered_members(items, &count);
+    const cJSON **ordered = spisor_json_members_in_javascript_order(items, &count);
     if (ordered == NULL && count > 0) {
-        return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+        return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
     }
     int valid = 1;
     for (size_t index = 0; valid && index < count; index++) {
@@ -91,7 +90,7 @@ typedef struct key_set {
 
 static int add_keys(key_set *set, const cJSON *files) {
     size_t count;
-    const cJSON **members = runtime_catalog_ordered_members(files, &count);
+    const cJSON **members = spisor_json_members_in_javascript_order(files, &count);
     if (members == NULL && count > 0) {
         return 0;
     }
@@ -129,9 +128,9 @@ static int refuse_collision(const char *id, const char *version, const key_set *
 static int check_version_collisions(const char *id, const cJSON *version, runtime_catalog_refusal *refusal) {
     const cJSON *shared = member(version, "files");
     size_t platform_count;
-    const cJSON **platforms = runtime_catalog_ordered_members(member(version, "platforms"), &platform_count);
+    const cJSON **platforms = spisor_json_members_in_javascript_order(member(version, "platforms"), &platform_count);
     if (platforms == NULL && platform_count > 0) {
-        return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+        return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
     }
     int valid = 1;
     for (size_t index = 0; valid && index < (platform_count == 0 ? 1 : platform_count); index++) {
@@ -141,7 +140,7 @@ static int check_version_collisions(const char *id, const cJSON *version, runtim
         size_t second = 0;
         int collides = key_set_collides(shared, platform_files, &first, &second, &set);
         if (collides != 0) {
-            valid = collides < 0 ? runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL)
+            valid = collides < 0 ? runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL)
                                  : refuse_collision(id, version->string, &set, first, second, refusal);
         }
         free(set.keys);
@@ -154,17 +153,17 @@ typedef int (*version_rule)(const char *id, cJSON *version, const char *origin, 
 
 static int each_version(cJSON *items, const char *origin, version_rule rule, runtime_catalog_refusal *refusal) {
     size_t item_count;
-    const cJSON **ordered_items = runtime_catalog_ordered_members(items, &item_count);
+    const cJSON **ordered_items = spisor_json_members_in_javascript_order(items, &item_count);
     if (ordered_items == NULL && item_count > 0) {
-        return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+        return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
     }
     int valid = 1;
     for (size_t item_index = 0; valid && item_index < item_count; item_index++) {
         size_t version_count;
-        const cJSON **versions = runtime_catalog_ordered_members(member(ordered_items[item_index], "versions"),
+        const cJSON **versions = spisor_json_members_in_javascript_order(member(ordered_items[item_index], "versions"),
                                                                  &version_count);
         if (versions == NULL && version_count > 0) {
-            valid = runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+            valid = runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
         }
         for (size_t index = 0; valid && index < version_count; index++) {
             valid = rule(ordered_items[item_index]->string, (cJSON *)versions[index], origin, refusal);
@@ -190,9 +189,9 @@ static int refuse_url(const char *id, const char *version, const char *key, cons
 static int resolve_files(const char *id, const cJSON *version, cJSON *files, const char *origin,
                          runtime_catalog_refusal *refusal) {
     size_t count;
-    const cJSON **references = runtime_catalog_ordered_members(files, &count);
+    const cJSON **references = spisor_json_members_in_javascript_order(files, &count);
     if (references == NULL && count > 0) {
-        return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+        return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
     }
     int valid = 1;
     for (size_t index = 0; valid && index < count; index++) {
@@ -205,7 +204,7 @@ static int resolve_files(const char *id, const cJSON *version, cJSON *files, con
             valid = replacement != NULL && cJSON_ReplaceItemInObjectCaseSensitive(reference, "url", replacement);
             if (!valid) {
                 cJSON_Delete(replacement);
-                runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+                runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
             }
             free(resolved);
         }
@@ -220,9 +219,9 @@ static int urls_rule(const char *id, cJSON *version, const char *origin, runtime
     }
     size_t count;
     const cJSON **platforms =
-        runtime_catalog_ordered_members(cJSON_GetObjectItemCaseSensitive(version, "platforms"), &count);
+        spisor_json_members_in_javascript_order(cJSON_GetObjectItemCaseSensitive(version, "platforms"), &count);
     if (platforms == NULL && count > 0) {
-        return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+        return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
     }
     int valid = 1;
     for (size_t index = 0; valid && index < count; index++) {
@@ -238,7 +237,7 @@ static int add_default_runtimes(cJSON *items, runtime_catalog_refusal *refusal) 
         int plugin = strcmp(member(item, "kind")->valuestring, "plugin") == 0;
         if (plugin && member(item, "runtime") == NULL &&
             cJSON_AddStringToObject(item, "runtime", DEFAULT_PLUGIN_RUNTIME) == NULL) {
-            return runtime_catalog_refuse(refusal, NULL, OUT_OF_MEMORY_FIX, NULL);
+            return runtime_catalog_refuse(refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
         }
     }
     return 1;
