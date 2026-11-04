@@ -293,9 +293,9 @@ static void passes_its_arguments_to_install_and_answers_its_exit_code(void) {
     host_world world;
     start_script_world(&world, "arguments");
     program run;
-    const char *absent[] = {"--plugin", "absent-plugin", NULL};
+    const char *absent[] = {"--plugin", "absent-plugin", "--plugin", "odd \"id\" with space\\", NULL};
     CHECK(install(&world, &run, absent) == 1);
-    expect_contains(run.err, "absent-plugin could not be installed", "install ran with the arguments");
+    expect_contains(run.err, "absent-plugin, odd \"id\" with space\\ could not be installed", "install ran with every argument as given");
     program_free(&run);
     finish_world(&world);
 }
