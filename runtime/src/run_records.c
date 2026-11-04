@@ -107,15 +107,15 @@ int runtime_is_run_record_of(const char *state, const char *host_id, const char 
     return inside;
 }
 
-int runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
-                      double check_milliseconds) {
+runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
+                                    double check_milliseconds) {
     if (!runtime_is_run_record_of(state, host_id, record)) {
-        return 0;
+        return RUNTIME_RUN_NOT_A_RECORD;
     }
     char *folder = runs_folder(state, host_id);
     int stamped = folder != NULL && spisor_make_directories(folder) && write_record(record, run, check_milliseconds);
     free(folder);
-    return stamped;
+    return stamped ? RUNTIME_RUN_STAMPED : RUNTIME_RUN_UNWRITABLE;
 }
 
 static cJSON *parsed_record(const uint8_t *bytes, size_t length) {

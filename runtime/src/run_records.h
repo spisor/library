@@ -25,13 +25,18 @@ char *runtime_record_run(const char *state, const char *host_id, const cJSON *ru
  */
 int runtime_is_run_record_of(const char *state, const char *host_id, const char *record);
 
+typedef enum runtime_run_stamp {
+    RUNTIME_RUN_STAMPED,
+    RUNTIME_RUN_NOT_A_RECORD,
+    RUNTIME_RUN_UNWRITABLE
+} runtime_run_stamp;
+
 /**
  * Stamps the run record at record alive again, now, as runtime_record_run wrote it, making its folder
- * again when a removal took it. 1 on success; 0 when record is no run record of host_id or cannot be
- * written.
+ * again when a removal took it. NOT_A_RECORD, writing nothing, when record is no run record of host_id.
  */
-int runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
-                      double check_milliseconds);
+runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
+                                    double check_milliseconds);
 
 /**
  * What every live start of any host runs, as an array of id-to-version objects in host and file name
