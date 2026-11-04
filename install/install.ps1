@@ -318,6 +318,52 @@ function Initialize-Install([object[]]$Arguments) {
     return @{ Executable = $executable; Catalog = $catalog; Rest = $rest }
 }
 
+function ConvertTo-ArgumentText([string]$Argument) {
+    if ($Argument -ne '' -and $Argument -notmatch '[\s"]') { return $Argument }
+    $backslash = [char]92
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq $backslash) {
+            $backslashes++
+            continue
+        }
+        $count = if ($character -eq '"') { 2 * $backslashes + 1 } else { $backslashes }
+        [void]$builder.Append($backslash, $count)
+        [void]$builder.Append($character)
+        $backslashes = 0
+    }
+    [void]$builder.Append($backslash, 2 * $backslashes)
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+<#
+.NOTES
+Started through Process with UseShellExecute off rather than with &, which on PowerShell 7 hands a
+file that is no program to ShellExecute, whose "Open with" dialog blocks a headless machine forever.
+ArgumentList exists only on .NET Core; Windows PowerShell gets one command line quoted as
+CommandLineToArgvW reads it.
+#>
+function Invoke-ForebayHost([string]$Executable, [string[]]$Arguments) {
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $Executable
+    $start.UseShellExecute = $false
+    if ($null -ne $start.PSObject.Properties['ArgumentList']) {
+        foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    } else {
+        $start.Arguments = ($Arguments | ForEach-Object { ConvertTo-ArgumentText $_ }) -join ' '
+    }
+    $process = [System.Diagnostics.Process]::Start($start)
+    try {
+        $process.WaitForExit()
+        return $process.ExitCode
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Complete-Install([int]$Code) {
     # run through irm | iex there is no script file, and exit would close the user's shell
     if ($MyInvocation.ScriptName) { exit $Code }
@@ -333,14 +379,12 @@ try {
 if ($null -eq $prepared) {
     Complete-Install 1
 } else {
-    $ErrorActionPreference = 'Continue'
-    $global:LASTEXITCODE = 1
+    $code = 1
     try {
-        & $prepared.Executable install "--catalog=$($prepared.Catalog)" @($prepared.Rest)
+        $code = Invoke-ForebayHost $prepared.Executable (@('install', "--catalog=$($prepared.Catalog)") + @($prepared.Rest))
     } catch {
         [Console]::Error.WriteLine("$($prepared.Executable) could not be started: $($_.Exception.Message)`nfix: run this again; if it repeats, report the forebay-host build for this platform")
-        $global:LASTEXITCODE = 1
     }
-    Complete-Install $LASTEXITCODE
+    Complete-Install $code
 }
 } @args
