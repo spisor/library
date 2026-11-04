@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "boot_stub.h"
+#include "catalog_time.h"
 #include "file_times.h"
 #include "host_commands.h"
 #include "host_context.h"
@@ -31,11 +32,34 @@ static cJSON *registrations_of(const host_context *context, cJSON **refusal) {
     return registrations;
 }
 
-static cJSON *check_call(const host_context *context, const cJSON *registration, cJSON **refusal) {
+/**
+ * The settings host registration checks with: its own layers, which choose its plugins and pins, and the
+ * catalog sources of ecosystem, forebay-host's settings.
+ *
+ * @implNote install records a local catalog source in forebay-host's own layer, which no other host reads,
+ * so without this a loader would check no catalog at all.
+ */
+static cJSON *check_settings(const host_context *context, const cJSON *registration, const cJSON *ecosystem, cJSON **refusal) {
     cJSON *settings = host_settings_of(context, host_text(registration, "home"), refusal);
+    const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(ecosystem, "catalog");
+    cJSON *copy = catalog == NULL ? NULL : cJSON_Duplicate(catalog, 1);
+    cJSON_DeleteItemFromObjectCaseSensitive(settings, "catalog");
+    if (settings != NULL && copy != NULL && !cJSON_AddItemToObject(settings, "catalog", copy)) {
+        cJSON_Delete(copy);
+        cJSON_Delete(settings);
+        settings = NULL;
+    }
+    return settings;
+}
+
+static cJSON *check_call(const host_context *context, const cJSON *registration, const cJSON *ecosystem, cJSON **refusal) {
+    char now[RUNTIME_CATALOG_TIME_SIZE];
+    cJSON *settings = runtime_catalog_format_time(runtime_now_milliseconds(), now)
+                          ? check_settings(context, registration, ecosystem, refusal)
+                          : NULL;
     cJSON *call = settings == NULL ? NULL : host_places_argument(context);
     int built = call != NULL && cJSON_AddStringToObject(call, "hostId", host_text(registration, "id")) != NULL &&
-                cJSON_AddNumberToObject(call, "now", runtime_now_milliseconds()) != NULL &&
+                cJSON_AddStringToObject(call, "now", now) != NULL &&
                 cJSON_AddItemToObject(call, "settings", settings);
     if (!built) {
         cJSON_Delete(call);
@@ -76,21 +100,28 @@ static int record(cJSON *answers, cJSON *refused, const char *id, cJSON *answer,
 }
 
 static int update_each(const host_context *context, const cJSON *registrations, cJSON *summary) {
+    cJSON *refusal = NULL;
+    const cJSON *first = cJSON_GetArrayItem(registrations, 0);
+    int ecosystem_first = first != NULL && strcmp(host_text(first, "id"), RUNTIME_BOOTED_HOST_ID) == 0;
+    cJSON *ecosystem = ecosystem_first ? host_settings_of(context, host_text(first, "home"), &refusal) : cJSON_CreateObject();
+    cJSON_Delete(refusal);
     cJSON *checks = cJSON_AddObjectToObject(summary, "checks");
     cJSON *applications = cJSON_AddObjectToObject(summary, "applications");
     cJSON *refused = cJSON_AddArrayToObject(summary, "refused");
-    int complete = checks != NULL && applications != NULL && refused != NULL;
+    int complete = ecosystem != NULL && checks != NULL && applications != NULL && refused != NULL;
     const cJSON *registration;
     cJSON_ArrayForEach(registration, registrations) {
         const char *id = host_text(registration, "id");
-        cJSON *refusal = NULL;
-        cJSON *checked = complete ? host_call(runtime_updates_check, check_call(context, registration, &refusal), &refusal) : NULL;
+        refusal = NULL;
+        cJSON *checked =
+            complete ? host_call(runtime_updates_check, check_call(context, registration, ecosystem, &refusal), &refusal) : NULL;
         complete = complete && record(checks, refused, id, checked, refusal);
         if (complete && has_method_application(registration)) {
             cJSON *updated = host_call(runtime_install_application, application_call(context, id), &refusal);
             complete = record(applications, refused, id, updated, refusal);
         }
     }
+    cJSON_Delete(ecosystem);
     return complete;
 }
 

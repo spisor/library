@@ -8,9 +8,17 @@
 #include "processes.h"
 #include "updates.h"
 
-static cJSON *apply_call(const host_context *context, const char *id, cJSON *settings) {
+/**
+ * @implNote running names the registered version, which a start runs when its references record none, as
+ * after they were removed; a scheduled version installed intact still wins.
+ */
+static cJSON *apply_call(const host_context *context, const char *id, const char *registered, cJSON *settings) {
     cJSON *call = host_places_argument(context);
-    if (call == NULL || cJSON_AddStringToObject(call, "hostId", id) == NULL || !cJSON_AddItemToObject(call, "settings", settings)) {
+    cJSON *running = call == NULL ? NULL : cJSON_AddObjectToObject(call, "running");
+    int built = running != NULL && cJSON_AddStringToObject(call, "hostId", id) != NULL &&
+                (registered == NULL || cJSON_AddStringToObject(running, id, registered) != NULL) &&
+                cJSON_AddItemToObject(call, "settings", settings);
+    if (!built) {
         cJSON_Delete(call);
         return NULL;
     }
@@ -33,7 +41,9 @@ static void remove_run_record(const host_context *context, const char *id, const
 /** updates.apply for id: the plugins its settings enable, and the version it runs into start. */
 static cJSON *apply(const host_context *context, const char *id, loader_start *start, cJSON **refusal) {
     cJSON *settings = host_settings_of(context, host_text(start->registration, "home"), refusal);
-    cJSON *applied = settings == NULL ? NULL : host_call(runtime_updates_apply, apply_call(context, id, settings), refusal);
+    const char *registered = host_text(start->registration, "version");
+    cJSON *applied = settings == NULL ? NULL
+                                      : host_call(runtime_updates_apply, apply_call(context, id, registered, settings), refusal);
     const char *record = host_text(applied, "runRecord");
     if (record != NULL) {
         remove_run_record(context, id, record);
