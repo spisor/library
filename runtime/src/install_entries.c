@@ -227,7 +227,7 @@ static char *open_code_source(const entry_loader *loader) {
         "  process.stderr.write(`spisor did not start ${LOADER_ID}: ${detail}\\nfix: ${error?.fix ?? REINSTALL_FIX}\\n`);\n",
         "}\n\n",
         "export const SpisorHost = async () => {\n",
-        "  started ??= Promise.resolve()\n",
+        "  started ?\?= Promise.resolve()\n",
         "    .then(() => import(hostEntry()))\n",
         "    .then((host) => host.runSessionHost(LOADER_ID))\n",
         "    .catch(reportRefusal);\n",
