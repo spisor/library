@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 
+#include "boot_hint.h"
 #include "cache_folders.h"
 #include "cache_refusal.h"
 #include "changes.h"
@@ -17,11 +18,12 @@
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
 
-#define STATE_FIX                                                                                        "close whatever holds the host's files open, check that SPISOR_STATE names a writable folder, then "     "remove it again"
+#define STATE_FIX                                                                                            "close whatever holds the host's files open, check that SPISOR_STATE names a writable folder, then "         "remove it again"
 
 typedef struct removal {
     const cJSON *argument;
     const char *state;
+    const char *cache;
     const char *id;
 } removal;
 
@@ -36,10 +38,11 @@ static cJSON *host_request(const removal *request, const char *member) {
 
 /** Deletes the host's holders file under its holders lock, so no prune rewrites it as it goes; 1 when none is left. */
 static int remove_holders(const removal *request) {
-    char *problem = NULL;
+    char *path_problem = NULL;
+    char *lock_problem = NULL;
     char *folder = runtime_processes_folder(request->state);
-    char *path = runtime_holders_path(request->state, request->id, RUNTIME_JSON_EXTENSION, &problem);
-    char *lock = runtime_holders_path(request->state, request->id, ".lock", &problem);
+    char *path = runtime_holders_path(request->state, request->id, RUNTIME_JSON_EXTENSION, &path_problem);
+    char *lock = runtime_holders_path(request->state, request->id, ".lock", &lock_problem);
     int removed = folder != NULL && path != NULL && lock != NULL;
     if (removed && spisor_file_exists(folder)) {
         runtime_holders_guard *guard = runtime_lock_holders(lock);
@@ -48,10 +51,21 @@ static int remove_holders(const removal *request) {
             runtime_unlock_holders(guard);
         }
     }
-    free(problem);
+    free(lock_problem);
+    free(path_problem);
     free(lock);
     free(path);
     free(folder);
+    return removed;
+}
+
+/** Deletes the host's boot hint, so the sweep no longer keeps the libraries it names; 1 when none is left. */
+static int remove_boot_hint(const removal *request) {
+    char *problem = NULL;
+    char *hint = runtime_boot_hint_path(request->cache, request->id, &problem);
+    int removed = hint != NULL && runtime_remove_file_entry(hint) == RUNTIME_ENTRY_DONE;
+    free(problem);
+    free(hint);
     return removed;
 }
 
@@ -82,6 +96,8 @@ static cJSON *remove_host(const removal *request, cJSON **refusal) {
         *refusal = refuse_leftover(request, "references file or a run record");
     } else if (!remove_holders(request)) {
         *refusal = refuse_leftover(request, "holders file");
+    } else if (!remove_boot_hint(request)) {
+        *refusal = refuse_leftover(request, "boot hint");
     } else {
         return forget_into(request, answer, refusal);
     }
@@ -107,7 +123,7 @@ static cJSON *remove_for(const cJSON *argument, cJSON **refusal) {
                                    RUNTIME_PLAIN_HOST_ID_FIX);
         return NULL;
     }
-    removal request = {argument, state, id};
+    removal request = {argument, state, cache, id};
     return remove_host(&request, refusal);
 }
 

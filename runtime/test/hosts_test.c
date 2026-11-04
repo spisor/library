@@ -13,6 +13,7 @@
 #include "path_entry_windows_hooks.h"
 #endif
 
+#include "boot_hint.h"
 #include "catalog_call.h"
 #include "catalog_time.h"
 #include "changes.h"
@@ -571,6 +572,30 @@ static void deletes_the_holders_file_of_the_host(void) {
     discard(&place);
 }
 
+static void deletes_the_boot_hint_of_the_host_and_leaves_another_hosts(void) {
+    hosts_scratch place;
+    fresh(&place, "hint");
+    register_present(&place, HOST_ID);
+    cJSON *libraries = cJSON_CreateObject();
+    cJSON_AddStringToObject(libraries, "runtime", "0.1.0");
+    char *problem = NULL;
+    CHECK(runtime_write_boot_hint(place.cache, HOST_ID, libraries, "1.0.0", &problem));
+    CHECK(runtime_write_boot_hint(place.cache, "other-host", libraries, "1.0.0", &problem));
+    cJSON_Delete(libraries);
+    char *hint = runtime_boot_hint_path(place.cache, HOST_ID, &problem);
+    char *other = runtime_boot_hint_path(place.cache, "other-host", &problem);
+    CHECK(hint != NULL && spisor_file_exists(hint) && other != NULL);
+    catalog_answer answer = remove_host(&place, HOST_ID);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(answer.tree);
+    CHECK(!spisor_file_exists(hint));
+    CHECK(spisor_file_exists(other));
+    free(problem);
+    free(other);
+    free(hint);
+    discard(&place);
+}
+
 static void refuses_to_remove_a_host_id_that_is_no_plain_file_name(void) {
     hosts_scratch place;
     fresh(&place, "plainid");
@@ -710,6 +735,7 @@ int main(void) {
     deletes_the_references_file_and_leaves_another_hosts();
     deletes_every_run_record_of_the_host_with_its_references();
     deletes_the_holders_file_of_the_host();
+    deletes_the_boot_hint_of_the_host_and_leaves_another_hosts();
     refuses_to_remove_a_host_id_that_is_no_plain_file_name();
     locates_an_application_at_its_binary_on_path();
     locates_an_application_off_path_at_its_home_and_leaves_out_what_its_origin_lacks();
