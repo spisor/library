@@ -16,7 +16,7 @@ char *host_method_question(const char *id, const cJSON *methods) {
     int built = runtime_catalog_text_add(&text, id) &&
                 runtime_catalog_text_add(&text, " is not installed and was not found. Install it through:\n");
     int number = 0;
-    char line[32];
+    char line[64];
     for (const cJSON *method = methods == NULL ? NULL : methods->child; built && method != NULL; method = method->next) {
         snprintf(line, sizeof line, "  %d) ", ++number);
         built = cJSON_IsString(method) && runtime_catalog_text_add(&text, line) &&

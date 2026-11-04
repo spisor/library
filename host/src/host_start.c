@@ -95,7 +95,9 @@ static cJSON *layer_start(const host_context *context, const char *runtime, cons
     int javascript = runtime != NULL && strcmp(runtime, JAVASCRIPT_RUNTIME) == 0;
     char *executable = path != NULL && javascript ? javascript_runtime(context, refusal) : NULL;
     cJSON *start = NULL;
-    if (path != NULL && native) {
+    if (path != NULL && native && !host_make_runnable(path)) {
+        *refusal = refused("the entry of ", id, " cannot be made runnable");
+    } else if (path != NULL && native) {
         start = start_with(context, path, NULL, id);
     } else if (executable != NULL) {
         start = start_with(context, executable, path, id);

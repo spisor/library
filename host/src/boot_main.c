@@ -110,7 +110,10 @@ static int boot(int count, char **arguments) {
                                     : host_call(runtime_boot_resolve, resolve_call(cache, arguments[0], count - 1, arguments + 1),
                                                 &refusal);
     free(cache);
-    if (resolved != NULL) {
+    if (resolved != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
+        const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};
+        refusal = host_refusal_of(parts, 2, "check that the cache SPISOR_CACHE names is writable, then run the command again");
+    } else if (resolved != NULL) {
         refusal = host_replace_process(host_text(resolved, "executable"), cJSON_GetObjectItemCaseSensitive(resolved, "arguments"));
     }
     cJSON_Delete(resolved);

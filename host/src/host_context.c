@@ -20,6 +20,7 @@
 #include <windows.h>
 #else
 #include <limits.h>
+#include <sys/stat.h>
 #include <unistd.h>
 extern char **environ;
 #endif
@@ -81,6 +82,11 @@ double host_process_id(void) {
     return (double)_getpid();
 }
 
+int host_make_runnable(const char *path) {
+    (void)path;
+    return 1;
+}
+
 #else
 
 cJSON *host_process_environment(void) {
@@ -108,6 +114,11 @@ cJSON *host_process_environment(void) {
 
 double host_process_id(void) {
     return (double)getpid();
+}
+
+int host_make_runnable(const char *path) {
+    struct stat status;
+    return stat(path, &status) == 0 && ((status.st_mode & S_IXUSR) != 0 || chmod(path, status.st_mode | S_IXUSR) == 0);
 }
 
 #endif

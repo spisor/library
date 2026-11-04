@@ -1,4 +1,7 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+endif()
 
 set(host_sources src/application_choices.c src/boot_placement.c src/catalog_inputs.c src/catalog_writer.c
     src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c

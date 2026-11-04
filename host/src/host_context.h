@@ -47,6 +47,14 @@ cJSON *host_settings_of(const host_context *context, const char *home, cJSON **r
 /** path made absolute against the current directory, freed with free; NULL when memory runs out. */
 char *host_absolute_path(const char *path);
 
+/**
+ * Gives the owner of the file at path leave to run it; 1 when it may run. Nothing to do on Windows.
+ *
+ * @implNote A catalog lists no file modes, so the cache stores a native executable as a plain file, and
+ * whatever starts one from the cache makes it runnable first.
+ */
+int host_make_runnable(const char *path);
+
 /** This process's id. */
 double host_process_id(void);
 
