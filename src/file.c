@@ -17,6 +17,7 @@
 #include <windows.h>
 
 #include "wide_path.h"
+#include "windows_file.h"
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -60,13 +61,7 @@ spisor_file_presence spisor_probe_file(const char *path) {
 }
 
 static FILE *open_for_reading(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    if (wide == NULL) {
-        return NULL;
-    }
-    FILE *file = _wfopen(wide, L"rb");
-    free(wide);
-    return file;
+    return spisor_windows_open(path, 0);
 }
 
 static int is_directory(const char *path) {
@@ -95,7 +90,7 @@ static FILE *open_for_appending(const char *path) {
 static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
     (void)target;
     (void)owner_only;
-    return open_for_writing(temporary, L"wb");
+    return spisor_windows_open(temporary, 1);
 }
 
 static int create_directory(const char *path) {
@@ -117,13 +112,7 @@ static void remove_file(const char *path) {
 }
 
 static int move_over(const char *from, const char *to) {
-    wchar_t *wide_from = spisor_wide_path(from);
-    wchar_t *wide_to = spisor_wide_path(to);
-    int moved = wide_from != NULL && wide_to != NULL
-        && MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-    free(wide_from);
-    free(wide_to);
-    return moved;
+    return spisor_windows_move_over(from, to);
 }
 
 static char *to_utf8(const wchar_t *wide) {
