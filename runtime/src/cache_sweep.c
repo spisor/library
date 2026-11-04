@@ -93,7 +93,7 @@ static int doom_abandoned(sweep_scope *scope, const char **segments, size_t coun
 }
 
 static int doom_bundles(sweep_scope *scope) {
-    cJSON *installed = runtime_cache_installed_bundles(scope->cache);
+    cJSON *installed = runtime_cache_marked_bundles(scope->cache);
     int doomed = doom_unkept(scope, installed, NULL);
     cJSON_Delete(installed);
     const char *segments[5] = {scope->cache, "bundles", NULL, NULL, NULL};
@@ -104,7 +104,7 @@ static int doom_libraries(sweep_scope *scope) {
     cJSON *platforms = runtime_cache_library_platforms(scope->cache);
     int doomed = platforms != NULL;
     for (const cJSON *platform = doomed ? platforms->child : NULL; doomed && platform != NULL; platform = platform->next) {
-        cJSON *installed = runtime_cache_installed_libraries(scope->cache, platform->valuestring);
+        cJSON *installed = runtime_cache_marked_libraries(scope->cache, platform->valuestring);
         doomed = doom_unkept(scope, installed, platform->valuestring);
         cJSON_Delete(installed);
     }

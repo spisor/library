@@ -43,6 +43,13 @@ static char *lock_path(const char *state) {
     return path;
 }
 
+runtime_hosts_guard *runtime_hosts_lock(const char *state) {
+    char *path = lock_path(state);
+    runtime_hosts_guard *guard = path == NULL ? NULL : runtime_lock_file(path);
+    free(path);
+    return guard;
+}
+
 #if defined(_WIN32)
 
 static HANDLE open_lock_file(const char *path) {
@@ -56,10 +63,8 @@ static HANDLE open_lock_file(const char *path) {
     return handle;
 }
 
-runtime_hosts_guard *runtime_hosts_lock(const char *state) {
-    char *path = lock_path(state);
+runtime_hosts_guard *runtime_lock_file(const char *path) {
     HANDLE handle = path == NULL ? INVALID_HANDLE_VALUE : open_lock_file(path);
-    free(path);
     if (handle == INVALID_HANDLE_VALUE) {
         return NULL;
     }
@@ -94,10 +99,8 @@ static int lock_exclusively(int descriptor) {
     return locked;
 }
 
-runtime_hosts_guard *runtime_hosts_lock(const char *state) {
-    char *path = lock_path(state);
+runtime_hosts_guard *runtime_lock_file(const char *path) {
     int descriptor = path == NULL ? -1 : open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
-    free(path);
     if (descriptor < 0) {
         return NULL;
     }

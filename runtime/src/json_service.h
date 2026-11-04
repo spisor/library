@@ -13,6 +13,9 @@ typedef cJSON *(*runtime_json_operation)(const cJSON *argument, cJSON **refusal)
 int32_t runtime_serve_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len,
                            runtime_json_operation operation);
 
+/** Whether refusal is an object carrying a string message and a string fix, the shape every service refuses with. */
+int runtime_is_refusal(const cJSON *refusal);
+
 /** The {message, fix} refusal of one message and its fix; NULL when memory runs out. */
 cJSON *runtime_refusal(const char *message, const char *fix);
 

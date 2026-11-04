@@ -14,13 +14,13 @@ cJSON *runtime_refusal(const char *message, const char *fix) {
     return refusal;
 }
 
-static int is_refusal(const cJSON *refusal) {
+int runtime_is_refusal(const cJSON *refusal) {
     return cJSON_IsString(cJSON_GetObjectItemCaseSensitive(refusal, "message")) &&
            cJSON_IsString(cJSON_GetObjectItemCaseSensitive(refusal, "fix"));
 }
 
 static int32_t answer_or_refuse(cJSON *answer, cJSON *refusal, uint8_t **out, size_t *out_len) {
-    if (answer != NULL || !is_refusal(refusal)) {
+    if (answer != NULL || !runtime_is_refusal(refusal)) {
         cJSON_Delete(refusal);
         return runtime_catalog_answer(answer, out, out_len);
     }

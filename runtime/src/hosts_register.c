@@ -81,7 +81,7 @@ static cJSON *command_request(const cJSON *argument, const cJSON *identity, cons
 }
 
 static int add_refused(cJSON *refused_commands, const cJSON *command, const cJSON *refusal) {
-    cJSON *refused = cJSON_CreateObject();
+    cJSON *refused = runtime_is_refusal(refusal) ? cJSON_CreateObject() : NULL;
     int added = refused != NULL && copy_member(refused, command, "name") &&
                 cJSON_AddStringToObject(refused, "detail",
                                         cJSON_GetObjectItemCaseSensitive(refusal, "message")->valuestring) != NULL &&

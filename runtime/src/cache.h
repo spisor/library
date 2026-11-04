@@ -20,7 +20,8 @@ RUNTIME_EXPORT int32_t runtime_cache_install(const uint8_t *in, size_t in_len, u
 
 /**
  * cache.installed: {cache, platform?} answers {bundles, libraries}, each id's versions whose install
- * completed, read from the folder names and markers on disk without re-hashing; libraries for platform.
+ * completed and whose recorded files are all present, read from the folder names and markers on disk
+ * without re-hashing; libraries for platform.
  */
 RUNTIME_EXPORT int32_t runtime_cache_installed(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
