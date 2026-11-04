@@ -135,6 +135,9 @@ if(NOT WIN32)
     target_link_libraries(processes_test PRIVATE Threads::Threads)
 endif()
 
+add_executable(node_probe node_probe.c)
+spisor_strict_warnings(node_probe)
+
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
     ${runtime_hosts_test_objects})
 foreach(name install_methods_test install_entries_test install_runtime_test install_ecosystem_test
@@ -146,5 +149,7 @@ foreach(name install_methods_test install_entries_test install_runtime_test inst
         add_dependencies(${name} runtime_launcher)
     endif()
 endforeach()
+target_compile_definitions(install_runtime_test PRIVATE RUNTIME_NODE_PROBE_PATH="$<TARGET_FILE:node_probe>")
+add_dependencies(install_runtime_test node_probe)
 set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
     RESOURCE_LOCK user_path_value)

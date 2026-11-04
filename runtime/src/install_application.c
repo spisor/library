@@ -119,6 +119,7 @@ static int record_version(const application_operation *request, const char *vers
     cJSON *refusal = NULL;
     cJSON *registration = registration_of(request, &refusal);
     cJSON_Delete(refusal);
+    refusal = NULL;
     cJSON *provenance = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(registration, "application"), "provenance");
     cJSON_DeleteItemFromObjectCaseSensitive(provenance, "version");
     cJSON *call = provenance == NULL || cJSON_AddStringToObject(provenance, "version", version) == NULL
@@ -136,10 +137,21 @@ static int record_version(const application_operation *request, const char *vers
     return registered != NULL;
 }
 
-static cJSON *answer_of(const char *operation, const char *version) {
+/**
+ * @implNote An update the method carried out is done whether or not its version could be recorded, as
+ * forebay/host's recordVersion left it; the unrecorded version is noted so the caller can say so.
+ */
+static cJSON *answer_of(const char *operation, const char *version, int recorded) {
     cJSON *answer = cJSON_CreateObject();
+    cJSON *unrecorded = recorded ? NULL
+                                 : runtime_refusal("the updated version could not be recorded in the loader's registration",
+                                                   "run install again to record how the application was installed");
     if (answer == NULL || cJSON_AddStringToObject(answer, "operation", operation) == NULL ||
-        (version != NULL && cJSON_AddStringToObject(answer, "version", version) == NULL)) {
+        (version != NULL && cJSON_AddStringToObject(answer, "version", version) == NULL) ||
+        (!recorded && (unrecorded == NULL || !cJSON_AddItemToObject(answer, "unrecorded", unrecorded)))) {
+        if (cJSON_GetObjectItemCaseSensitive(answer, "unrecorded") == NULL) {
+            cJSON_Delete(unrecorded);
+        }
         cJSON_Delete(answer);
         return NULL;
     }
@@ -155,7 +167,7 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
     int done = mapped != NULL && runtime_install_operate(request->places, method, request->operation, mapped, refusal);
     char *version = done && strcmp(request->operation, "update") == 0 ? reported_version(request, application, method, mapped)
                                                                         : NULL;
-    cJSON *answer = done && (version == NULL || record_version(request, version)) ? answer_of(request->operation, version) : NULL;
+    cJSON *answer = done ? answer_of(request->operation, version, version == NULL || record_version(request, version)) : NULL;
     free(version);
     cJSON_Delete(mapped);
     cJSON_Delete(registration);

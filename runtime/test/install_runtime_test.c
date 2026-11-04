@@ -1,6 +1,11 @@
 #include "install_fixture.h"
 
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
+
 #include "install_hooks.h"
+#include "file_times.h"
 #include "install_runtime.h"
 #include "process_run.h"
 
@@ -61,7 +66,7 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
     char *tar = system_tar();
     int exit_code = -1;
     char *problem = NULL;
-    CHECK(runtime_run_to_exit(tar, arguments, &exit_code, &problem) && exit_code == 0);
+    CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
     CHECK(spisor_sha256_file(fixture->archive, fixture->archive_sha256));
     free(problem);
     free(tar);
@@ -85,9 +90,11 @@ static void finish_runtime(runtime_fixture *fixture) {
     finish_install_base(&fixture->base);
 }
 
-static catalog_answer acquire(const runtime_fixture *fixture) {
+/** install.runtime for base's cache, looking for a node on path. */
+static catalog_answer acquire_on(const install_base *base, const char *path) {
     cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "cache", fixture->base.cache);
+    cJSON_AddStringToObject(argument, "cache", base->cache);
+    cJSON_AddItemToObject(argument, "environment", environment_with_path(base, path));
     catalog_answer answer = call_catalog(runtime_install_runtime, argument);
     if (answer.status != SPISOR_STATUS_SUCCESS) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);
@@ -95,6 +102,10 @@ static catalog_answer acquire(const runtime_fixture *fixture) {
         cJSON_free(printed);
     }
     return answer;
+}
+
+static catalog_answer acquire(const runtime_fixture *fixture) {
+    return acquire_on(&fixture->base, fixture->base.path);
 }
 
 static char *runtime_directory(const runtime_fixture *fixture) {
@@ -119,7 +130,7 @@ static void acquires_the_pinned_runtime_and_answers_its_executable(void) {
     char expected[2048];
     cJSON *quoted = cJSON_CreateString(executable);
     char *executable_json = cJSON_PrintUnformatted(quoted);
-    snprintf(expected, sizeof expected, "{\"name\":\"node\",\"version\":\"" TEST_VERSION "\",\"executable\":%s,\"fetched\":true}",
+    snprintf(expected, sizeof expected, "{\"name\":\"node\",\"version\":\"" TEST_VERSION "\",\"executable\":%s,\"fetched\":true,\"source\":\"acquired\"}",
              executable_json);
     expect_json(answer.tree, expected, "acquired");
     CHECK(spisor_file_exists(executable));
@@ -224,12 +235,100 @@ static void refuses_a_platform_with_no_pinned_build(void) {
     start_install_base(&base, "runtime", "unpinned");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", base.cache);
+    cJSON_AddItemToObject(argument, "environment", environment_of(&base));
     cJSON_AddStringToObject(argument, "platform", "aix-ppc64");
     catalog_answer answer = call_catalog(runtime_install_runtime, argument);
     expect_refusal(answer, "aix-ppc64", "no pinned build");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "runtimes"));
     finish_install_base(&base);
+}
+
+/** A node on a PATH folder of its own answering version, as node -p process.versions.node does. */
+static char *path_node(const install_base *base, const char *version) {
+    char *folder = joined(base->root, "path-node");
+    write_in(folder, "version.txt", version);
+    size_t length = 0;
+    uint8_t *probe = spisor_read_file(RUNTIME_NODE_PROBE_PATH, &length);
+#if defined(_WIN32)
+    char *node = joined(folder, "node.exe");
+#else
+    char *node = joined(folder, "node");
+#endif
+    CHECK(probe != NULL && spisor_replace_file(node, probe, length) == 1);
+#if !defined(_WIN32)
+    CHECK(chmod(node, 0755) == 0);
+#endif
+    free(node);
+    free(probe);
+    return folder;
+}
+
+static void reuses_a_node_on_the_path_whose_major_is_twenty_or_more(void) {
+    runtime_fixture fixture;
+    start_runtime(&fixture, "path-node", NULL);
+    char *folder = path_node(&fixture.base, "22.1.0");
+    catalog_answer answer = acquire_on(&fixture.base, folder);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    check_text(text_at(answer.tree, "version"), "22.1.0", "path version");
+    check_text(text_at(answer.tree, "source"), "path", "path source");
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    const char *executable = text_at(answer.tree, "executable");
+    CHECK(executable != NULL && strncmp(executable, folder, strlen(folder)) == 0);
+    CHECK(!exists_in(fixture.base.cache, "runtimes/node"));
+    cJSON *record = json_in(fixture.base.cache, "runtimes/javascript.json");
+    CHECK(record != NULL && cJSON_Compare(record, answer.tree, 1));
+    cJSON_Delete(record);
+    cJSON_Delete(answer.tree);
+    free(folder);
+    finish_runtime(&fixture);
+}
+
+static void ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin(void) {
+    runtime_fixture fixture;
+    start_runtime(&fixture, "old-path-node", NULL);
+    char *folder = path_node(&fixture.base, "18.0.0");
+    catalog_answer answer = acquire_on(&fixture.base, folder);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    check_text(text_at(answer.tree, "version"), TEST_VERSION, "pinned version");
+    check_text(text_at(answer.tree, "source"), "acquired", "acquired source");
+    CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    char *executable = executable_path(&fixture);
+    check_text(text_at(answer.tree, "executable"), executable, "pinned executable");
+    free(executable);
+    cJSON_Delete(answer.tree);
+    free(folder);
+    finish_runtime(&fixture);
+}
+
+/** A program that would run for half a minute, which a bounded run stops. */
+static void stops_a_run_that_does_not_exit_in_time_and_refuses_it(void) {
+    cJSON *arguments = cJSON_CreateArray();
+#if defined(_WIN32)
+    wchar_t folder[MAX_PATH];
+    UINT length = GetSystemDirectoryW(folder, MAX_PATH);
+    char narrow[4 * MAX_PATH];
+    int written = WideCharToMultiByte(CP_UTF8, 0, folder, (int)length, narrow, (int)sizeof narrow - 1, NULL, NULL);
+    narrow[written] = 0;
+    char *program = joined(narrow, "ping.exe");
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("-n"));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("30"));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("127.0.0.1"));
+#else
+    char *program = joined(spisor_file_exists("/bin/sleep") ? "/bin" : "/usr/bin", "sleep");
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("30"));
+#endif
+    double started = runtime_now_milliseconds();
+    int exit_code = -1;
+    char *output = NULL;
+    char *problem = NULL;
+    CHECK(!runtime_run_to_exit(program, arguments, 500, &exit_code, &output, &problem));
+    CHECK(runtime_now_milliseconds() - started < 10000);
+    CHECK(problem != NULL && strstr(problem, "in time") != NULL);
+    free(problem);
+    free(output);
+    free(program);
+    cJSON_Delete(arguments);
 }
 
 int main(void) {
@@ -240,5 +339,8 @@ int main(void) {
     removes_the_runtime_versions_no_longer_pinned();
     refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_executable();
     refuses_a_platform_with_no_pinned_build();
+    stops_a_run_that_does_not_exit_in_time_and_refuses_it();
+    reuses_a_node_on_the_path_whose_major_is_twenty_or_more();
+    ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin();
     return check_summary("install_runtime_test");
 }

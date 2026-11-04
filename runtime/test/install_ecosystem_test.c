@@ -264,6 +264,54 @@ static void registers_the_host_at_install_keeping_its_provenance_on_a_later_inst
     finish_install_base(&base);
 }
 
+/** An https source nothing answers: its check fails at once, and it is recorded all the same. */
+#define UNREACHABLE_SOURCE "https://127.0.0.1:1/catalog.json"
+
+static void records_an_https_source_in_the_portable_layer_even_when_its_check_fails(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "https-source");
+    list_ecosystem(&base);
+    cJSON_Delete(install_defaults(&base, ""));
+    cJSON *sources = local_sources(&base);
+    cJSON *https = cJSON_CreateObject();
+    cJSON_AddStringToObject(https, "kind", "https");
+    cJSON_AddStringToObject(https, "url", UNREACHABLE_SOURCE);
+    cJSON_AddItemToArray(sources, https);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "sources", sources);
+    char *extra = cJSON_PrintUnformatted(argument);
+    cJSON_Delete(argument);
+    cJSON *report = expect_report(install_with(&base, extra, NULL), "https source");
+    cJSON_free(extra);
+    const cJSON *failed = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    check_text(text_at(failed, "id"), "catalog", "failed check reported");
+    cJSON *portable = ecosystem_settings(&base, 0, 1);
+    expect_member(portable, "catalog", "{\"sources\":[{\"kind\":\"https\",\"url\":\"" UNREACHABLE_SOURCE "\"}]}",
+                  "https in the portable layer");
+    cJSON *merged = ecosystem_settings(&base, 1, 1);
+    const cJSON *listed = value_at(merged, "catalog/sources");
+    CHECK(cJSON_GetArraySize(listed) == 2);
+    check_text(text_at(cJSON_GetArrayItem(listed, 1), "url"), UNREACHABLE_SOURCE, "https after the local source");
+    cJSON_Delete(merged);
+    cJSON_Delete(portable);
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void refuses_a_source_that_is_neither_local_nor_https(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "bad-source");
+    list_ecosystem(&base);
+    catalog_answer answer = install_with(&base, "{\"sources\": [{\"kind\": \"ftp\", \"url\": \"ftp://x\"}]}", NULL);
+    expect_refusal(answer, "sources", "bad source kind");
+    cJSON_Delete(answer.tree);
+    answer = install_with(&base, "{\"sources\": [{\"kind\": \"local\"}]}", NULL);
+    expect_refusal(answer, "sources", "local source without a path");
+    cJSON_Delete(answer.tree);
+    CHECK(!exists_in(base.cache, "bundles"));
+    finish_install_base(&base);
+}
+
 static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item(void) {
     install_base base;
     start_install_base(&base, "ecosystem", "no-javascript");
@@ -282,8 +330,31 @@ static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item
     finish_install_base(&base);
 }
 
-/** Packs a one-file runtime archive with the OS's tar and makes install.runtime acquire it; answers its stem's executable path inside. */
-static void serve_runtime_build(install_base *base) {
+/** A served runtime build install.runtime is pointed at: its archive's file: url and SHA-256. */
+typedef struct served_build {
+    char url[2048];
+    char sha256[RUNTIME_SHA256_HEX_SIZE];
+} served_build;
+
+/** Bytes that do not compress, so an archive of them takes long enough to fetch and unpack that two installs overlap. */
+static void write_incompressible(const char *path, size_t size) {
+    char *bytes = malloc(size);
+    unsigned long state = 2463534242UL;
+    for (size_t index = 0; index < size; index++) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        bytes[index] = (char)(state & 0xff);
+    }
+    char *parent = joined(path, "..");
+    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)bytes, size) == 1);
+    free(parent);
+    free(bytes);
+}
+
+/** Packs a one-file runtime archive of size bytes with the OS's tar and makes install.runtime acquire it. */
+static void serve_runtime_build(install_base *base, size_t size, served_build *served) {
 #if defined(_WIN32)
     const char *member = "node-v1.2.3-fixture/node.exe";
     const char *archive_name = "node-v1.2.3-fixture.zip";
@@ -292,7 +363,8 @@ static void serve_runtime_build(install_base *base) {
     const char *archive_name = "node-v1.2.3-fixture.tar.gz";
 #endif
     char *packing = joined(base->root, "packing");
-    write_in(packing, member, "the node executable");
+    char *executable = joined(packing, member);
+    write_incompressible(executable, size);
     char *archive = joined(base->root, archive_name);
     cJSON *arguments = cJSON_CreateArray();
 #if defined(_WIN32)
@@ -314,16 +386,17 @@ static void serve_runtime_build(install_base *base) {
     cJSON_AddItemToArray(arguments, cJSON_CreateString("node-v1.2.3-fixture"));
     int exit_code = -1;
     char *problem = NULL;
-    CHECK(runtime_run_to_exit(tar, arguments, &exit_code, &problem) && exit_code == 0);
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
-    CHECK(spisor_sha256_file(archive, sha256));
+    CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
+    CHECK(spisor_sha256_file(archive, served->sha256));
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive);
-    runtime_install_use_runtime_build("1.2.3", url, sha256);
+    snprintf(served->url, sizeof served->url, "%s", url);
+    runtime_install_use_runtime_build("1.2.3", served->url, served->sha256);
     free(url);
     free(problem);
     free(tar);
     cJSON_Delete(arguments);
     free(archive);
+    free(executable);
     free(packing);
 }
 
@@ -335,7 +408,8 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     list_library(&base, "koffi", "2.16.3");
     list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     write_catalog(&base);
-    serve_runtime_build(&base);
+    served_build served;
+    serve_runtime_build(&base, 64, &served);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"scripted\"]}", NULL), "javascript");
     expect_installed_ids(report, "[\"forebay-host\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
@@ -367,10 +441,22 @@ static void enter_install_base(install_base *base, const char *root) {
     base->items = NULL;
 }
 
-static int run_child_install(const char *root) {
+/** The child half of the concurrent test: one install requesting the comma-separated plugins, from the served build. */
+static int run_child_install(const char *root, const char *requested, const char *url, const char *sha256) {
     install_base base;
     enter_install_base(&base, root);
-    catalog_answer answer = install_with(&base, "{\"defaults\": " PLUGINS ", \"choices\": {}}", NULL);
+    runtime_install_use_runtime_build("1.2.3", url, sha256);
+    cJSON *argument = parsed("{\"choices\": {}}");
+    cJSON *ids = cJSON_AddArrayToObject(argument, "requested");
+    char copy[256];
+    snprintf(copy, sizeof copy, "%s", requested);
+    for (char *id = strtok(copy, ","); id != NULL; id = strtok(NULL, ",")) {
+        cJSON_AddItemToArray(ids, cJSON_CreateString(id));
+    }
+    char *extra = cJSON_PrintUnformatted(argument);
+    cJSON_Delete(argument);
+    catalog_answer answer = install_with(&base, extra, NULL);
+    cJSON_free(extra);
     int succeeded = answer.status == SPISOR_STATUS_SUCCESS &&
                     cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "unavailable")) == 0;
     if (!succeeded) {
@@ -406,15 +492,44 @@ static void expect_intact(const install_base *base, const char *rest) {
     cJSON_Delete(answer.tree);
 }
 
-/** Two installs at once over one base end with one consistent registry and cache, and neither fails (Review Focus 4). */
+/** Whether the JavaScript runtime the installs acquired is unpacked intact: its marker names the executable's bytes. */
+static int runtime_is_intact(const install_base *base) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s", runtime_platform_key());
+    char *directory = joined(base->cache, rest);
+#if defined(_WIN32)
+    char *executable = joined(directory, "node-v1.2.3-fixture/node.exe");
+#else
+    char *executable = joined(directory, "node-v1.2.3-fixture/bin/node");
+#endif
+    char *marker = text_in(directory, ".unpacked");
+    char hash[RUNTIME_SHA256_HEX_SIZE];
+    int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) &&
+                 strncmp(marker + 65, hash, 64) == 0;
+    free(marker);
+    free(executable);
+    free(directory);
+    return intact;
+}
+
+/**
+ * Two installs at once over one base, asking for different plugins and both acquiring the JavaScript
+ * runtime, end with one consistent registry and cache, neither failing and neither losing the other's
+ * settings (Review Focus 4).
+ */
 static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(const char *self) {
     install_base base;
     start_install_base(&base, "ecosystem", "concurrent");
     list_ecosystem(&base);
+    list_plugin(&base, "scripted", "1.0.0", NULL);
+    list_library(&base, "koffi", "2.16.3");
+    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     cJSON *application = application_json("claude", "claude", "{}");
     list_loader(&base, "claude-loader", "1.0.0", application, "[]", 0, "[\"keeper\"]");
     list_host(&base, "keeper", "1.0.0", "native", NULL);
     write_catalog(&base);
+    served_build served;
+    serve_runtime_build(&base, 24 * 1024 * 1024, &served);
     write_in(base.path, "claude.cmd", "@echo off\r\n");
 #if !defined(_WIN32)
     char *binary = joined(base.path, "claude");
@@ -422,9 +537,10 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(chmod(binary, 0755) == 0);
     free(binary);
 #endif
-    const char *arguments[2] = {"--child", base.root};
-    child_process first = start_child(self, arguments, 2, 0, NULL);
-    child_process second = start_child(self, arguments, 2, 0, NULL);
+    const char *first_arguments[5] = {"--child", base.root, "announcer,scripted", served.url, served.sha256};
+    const char *second_arguments[5] = {"--child", base.root, "viewer,scripted", served.url, served.sha256};
+    child_process first = start_child(self, first_arguments, 5, 0, NULL);
+    child_process second = start_child(self, second_arguments, 5, 0, NULL);
     CHECK(first.pid != 0 && second.pid != 0);
     CHECK(child_exit_code(&first) == 0);
     CHECK(child_exit_code(&second) == 0);
@@ -434,18 +550,22 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(hosts.tree, "hosts")) == 3);
     expect_json(cJSON_GetObjectItemCaseSensitive(hosts.tree, "unreadable"), "[]", "no unreadable registration");
     cJSON_Delete(hosts.tree);
-    expect_intact(&base, "bundles/forebay-host/1.0.0");
-    expect_intact(&base, "bundles/announcer/1.0.0");
-    expect_intact(&base, "bundles/viewer/1.0.0");
-    expect_intact(&base, "bundles/claude-loader/1.0.0");
-    expect_intact(&base, "bundles/keeper/1.0.0");
-    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
-    expect_member(references, "run",
-                  "{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\"}",
-                  "one consistent run");
+    const char *versions[8] = {"bundles/forebay-host/1.0.0", "bundles/announcer/1.0.0", "bundles/viewer/1.0.0",
+                               "bundles/scripted/1.0.0", "bundles/javascript-host/1.0.0", "bundles/claude-loader/1.0.0",
+                               "bundles/keeper/1.0.0", NULL};
+    for (size_t index = 0; versions[index] != NULL; index++) {
+        expect_intact(&base, versions[index]);
+    }
+    CHECK(runtime_is_intact(&base));
     cJSON *settings = ecosystem_settings(&base, 1, 1);
-    expect_member(settings, "plugins", "{\"announcer\":{\"enabled\":true},\"viewer\":{\"enabled\":true}}", "plugins once");
+    expect_member(settings, "plugins",
+                  "{\"announcer\":{\"enabled\":true},\"scripted\":{\"enabled\":true},\"viewer\":{\"enabled\":true}}",
+                  "both installs' plugins enabled");
     CHECK(cJSON_GetArraySize(value_at(settings, "catalog/sources")) == 1);
+    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
+    const cJSON *run = cJSON_GetObjectItemCaseSensitive(references, "run");
+    CHECK(cJSON_HasObjectItem(run, "forebay-host") && cJSON_HasObjectItem(run, "scripted") &&
+          (cJSON_HasObjectItem(run, "announcer") || cJSON_HasObjectItem(run, "viewer")));
     cJSON_Delete(settings);
     cJSON_Delete(references);
     finish_install_base(&base);
@@ -462,8 +582,8 @@ static const char *self_path(const char *argument) {
 }
 
 int main(int argc, char **argv) {
-    if (argc == 3 && strcmp(argv[1], "--child") == 0) {
-        return run_child_install(argv[2]);
+    if (argc == 6 && strcmp(argv[1], "--child") == 0) {
+        return run_child_install(argv[2], argv[3], argv[4], argv[5]);
     }
     user_path_guard guard;
     guard_user_path(&guard);
@@ -479,6 +599,8 @@ int main(int argc, char **argv) {
     records_a_local_source_in_the_application_layer_never_the_portable_one();
     appends_a_source_not_yet_listed_and_never_replaces_the_ones_that_are();
     registers_the_host_at_install_keeping_its_provenance_on_a_later_install();
+    records_an_https_source_in_the_portable_layer_even_when_its_check_fails();
+    refuses_a_source_that_is_neither_local_nor_https();
     acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item();
     acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin();
     refuses_an_argument_with_no_usable_places();

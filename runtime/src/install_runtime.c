@@ -1,5 +1,10 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "install_runtime.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,15 +14,24 @@
 #include "fetch.h"
 #include "install_support.h"
 #include "json_service.h"
+#include "on_path.h"
 #include "paths.h"
 #include "platform_key.h"
 #include "process_run.h"
 #include "sha256.h"
 #include "spisor/file.h"
+#include "spisor/json_write.h"
 #include "spisor/path.h"
 
 #if defined(_WIN32)
+#include <process.h>
 #include <windows.h>
+
+#include "wide_path.h"
+#define current_process_id() _getpid()
+#else
+#include <unistd.h>
+#define current_process_id() getpid()
 #endif
 
 #ifdef SPISOR_INSTALL_TEST_HOOKS
@@ -26,10 +40,15 @@
 
 #define RUNTIME_NAME "node"
 #define PINNED_VERSION "26.13.0"
+#define COMPATIBLE_MAJOR 20
 #define UNPACKED_MARKER ".unpacked"
+#define RECORD_FILE "javascript.json"
 #define DOWNLOAD_SECONDS 1800
-#define RUNTIME_FIX "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or use a host that needs no JavaScript runtime"
+#define TAR_MILLISECONDS 600000u
+#define VERSION_MILLISECONDS 10000u
+#define RUNTIME_FIX "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or put Node 20 or newer on the PATH"
 #define AGAIN_FIX "run install again; if it repeats, report the pinned archive"
+#define CACHE_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
 #define ZIP_ENDING ".zip"
 #define TAR_GZ_ENDING ".tar.gz"
 
@@ -50,18 +69,25 @@ static const runtime_build PINNED_BUILDS[] = {
      "d38bd5e5a2ddce6bbb5ce45e46e208337da4d51fffe611e567fd32073d6439f6"},
 };
 
-/** One acquisition: the build chosen and every path it lays out. */
+/** Where one unpacked runtime lives: its folder, the archive fetched into it, its marker and its executable. */
+typedef struct runtime_layout {
+    char *directory;
+    char *archive;
+    char *marker;
+    char *executable;
+} runtime_layout;
+
+/** One acquisition: the build chosen, the folder it is published to and the staging folder it is built in. */
 typedef struct acquisition {
     const char *version;
     runtime_build build;
     int zip;
+    const char *archive_name;
     char *versions;
-    char *directory;
-    char *archive;
     char *stem;
     char *member;
-    char *executable;
-    char *marker;
+    runtime_layout final;
+    runtime_layout staged;
 } acquisition;
 
 #ifdef SPISOR_INSTALL_TEST_HOOKS
@@ -111,42 +137,66 @@ static char *joined(const char *const *segments, size_t count) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
 }
 
-static void discard(acquisition *runtime) {
-    free(runtime->versions);
-    free(runtime->directory);
-    free(runtime->archive);
-    free(runtime->stem);
-    free(runtime->member);
-    free(runtime->executable);
-    free(runtime->marker);
+static cJSON *refused(const char *message, const char *subject, const char *fix) {
+    const char *parts[2] = {message, subject};
+    return runtime_cache_refusal(parts, 2, fix);
 }
 
-/** Lays out the paths of the build's archive, named by its url's last segment. 1 on success. */
+static void discard_layout(runtime_layout *layout) {
+    free(layout->directory);
+    free(layout->archive);
+    free(layout->marker);
+    free(layout->executable);
+}
+
+static void discard(acquisition *runtime) {
+    free(runtime->versions);
+    free(runtime->stem);
+    free(runtime->member);
+    discard_layout(&runtime->final);
+    discard_layout(&runtime->staged);
+}
+
+/** Lays out the runtime in directory, which it takes. 1 on success. */
+static int lay_out_in(const acquisition *runtime, char *directory, runtime_layout *layout) {
+    layout->directory = directory;
+    const char *archive_segments[2] = {directory, runtime->archive_name};
+    const char *marker_segments[2] = {directory, UNPACKED_MARKER};
+    const char *executable_segments[3] = {directory, runtime->stem, runtime->zip ? "node.exe" : "bin/node"};
+    layout->archive = directory == NULL ? NULL : joined(archive_segments, 2);
+    layout->marker = directory == NULL ? NULL : joined(marker_segments, 2);
+    layout->executable = directory == NULL ? NULL : joined(executable_segments, 3);
+    return layout->archive != NULL && layout->marker != NULL && layout->executable != NULL;
+}
+
+/** @implNote Named by process and a number no other acquisition of this process takes, so two installs never build in one folder. */
+static char *staging_folder(const char *cache, const char *version, const char *platform) {
+    static unsigned long acquisitions = 0;
+    char name[128];
+    snprintf(name, sizeof name, ".%s-staging-%d-%lu", platform, (int)current_process_id(), ++acquisitions);
+    const char *segments[5] = {cache, "runtimes", RUNTIME_NAME, version, name};
+    return joined(segments, 5);
+}
+
 static int lay_out(acquisition *runtime, const char *cache, const char *platform) {
     const char *archive_name = strrchr(runtime->build.url, '/');
-    archive_name = archive_name == NULL ? runtime->build.url : archive_name + 1;
+    runtime->archive_name = archive_name == NULL ? runtime->build.url : archive_name + 1;
     const char *ending = runtime->zip ? ZIP_ENDING : TAR_GZ_ENDING;
-    runtime->stem = runtime_catalog_copy_bytes(archive_name, strlen(archive_name) - strlen(ending));
+    runtime->stem = runtime_catalog_copy_bytes(runtime->archive_name, strlen(runtime->archive_name) - strlen(ending));
+    const char *member_parts[2] = {runtime->stem, runtime->zip ? "/node.exe" : "/bin/node"};
+    runtime->member = runtime->stem == NULL ? NULL : runtime_cache_text(member_parts, 2);
     const char *versions_segments[3] = {cache, "runtimes", RUNTIME_NAME};
     const char *directory_segments[5] = {cache, "runtimes", RUNTIME_NAME, runtime->version, platform};
     runtime->versions = joined(versions_segments, 3);
-    runtime->directory = joined(directory_segments, 5);
-    const char *archive_segments[2] = {runtime->directory, archive_name};
-    const char *marker_segments[2] = {runtime->directory, UNPACKED_MARKER};
-    runtime->archive = runtime->directory == NULL ? NULL : joined(archive_segments, 2);
-    runtime->marker = runtime->directory == NULL ? NULL : joined(marker_segments, 2);
-    const char *member_parts[2] = {runtime->stem, runtime->zip ? "/node.exe" : "/bin/node"};
-    runtime->member = runtime->stem == NULL ? NULL : runtime_cache_text(member_parts, 2);
-    const char *executable_segments[3] = {runtime->directory, runtime->stem, runtime->zip ? "node.exe" : "bin/node"};
-    runtime->executable = runtime->directory == NULL || runtime->stem == NULL ? NULL : joined(executable_segments, 3);
-    return runtime->versions != NULL && runtime->archive != NULL && runtime->marker != NULL && runtime->member != NULL &&
-           runtime->executable != NULL;
+    return runtime->member != NULL && runtime->versions != NULL &&
+           lay_out_in(runtime, joined(directory_segments, 5), &runtime->final) &&
+           lay_out_in(runtime, staging_folder(cache, runtime->version, platform), &runtime->staged);
 }
 
-/** Whether the marker names the pinned archive and the executable still has the hash it names. */
-static int is_unpacked(const acquisition *runtime) {
+/** Whether layout's marker names the pinned archive and its executable still has the hash the marker names. */
+static int is_unpacked(const acquisition *runtime, const runtime_layout *layout) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(runtime->marker, &length);
+    uint8_t *bytes = spisor_read_file(layout->marker, &length);
     char recorded[2 * RUNTIME_SHA256_HEX_SIZE + 2];
     char actual[RUNTIME_SHA256_HEX_SIZE];
     int unpacked = bytes != NULL && length == 2 * (RUNTIME_SHA256_HEX_SIZE - 1) + 2;
@@ -154,22 +204,17 @@ static int is_unpacked(const acquisition *runtime) {
         memcpy(recorded, bytes, length);
         recorded[length] = 0;
         unpacked = strncmp(recorded, runtime->build.sha256, RUNTIME_SHA256_HEX_SIZE - 1) == 0 &&
-                   recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' && spisor_sha256_file(runtime->executable, actual) &&
+                   recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' && spisor_sha256_file(layout->executable, actual) &&
                    strncmp(recorded + RUNTIME_SHA256_HEX_SIZE, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
     }
     free(bytes);
     return unpacked;
 }
 
-static cJSON *refused(const char *message, const char *subject, const char *fix) {
-    const char *parts[2] = {message, subject};
-    return runtime_cache_refusal(parts, 2, fix);
-}
-
 static cJSON *fetch_call(const acquisition *runtime) {
     cJSON *call = cJSON_CreateObject();
     if (call == NULL || cJSON_AddStringToObject(call, "url", runtime->build.url) == NULL ||
-        cJSON_AddStringToObject(call, "destination", runtime->archive) == NULL ||
+        cJSON_AddStringToObject(call, "destination", runtime->staged.archive) == NULL ||
         cJSON_AddStringToObject(call, "sha256", runtime->build.sha256) == NULL ||
         cJSON_AddNumberToObject(call, "timeoutSeconds", DOWNLOAD_SECONDS) == NULL) {
         cJSON_Delete(call);
@@ -206,31 +251,32 @@ static char *system_tar(void) {
 static cJSON *tar_arguments(const acquisition *runtime) {
     cJSON *arguments = cJSON_CreateArray();
     if (arguments == NULL || !runtime_install_add_text(arguments, runtime->zip ? "-xf" : "-xzf") ||
-        !runtime_install_add_text(arguments, runtime->archive) || !runtime_install_add_text(arguments, "-C") ||
-        !runtime_install_add_text(arguments, runtime->directory) || !runtime_install_add_text(arguments, runtime->member)) {
+        !runtime_install_add_text(arguments, runtime->staged.archive) || !runtime_install_add_text(arguments, "-C") ||
+        !runtime_install_add_text(arguments, runtime->staged.directory) ||
+        !runtime_install_add_text(arguments, runtime->member)) {
         cJSON_Delete(arguments);
         return NULL;
     }
     return arguments;
 }
 
-/** Unpacks only the executable from the archive with the OS's tar; NULL on success, else the refusal. */
+/** Unpacks only the executable from the staged archive with the OS's tar; NULL on success, else the refusal. */
 static cJSON *unpack(const acquisition *runtime) {
     char *tar = system_tar();
     if (tar == NULL) {
-        return refused("this system has no tar to unpack ", runtime->archive,
+        return refused("this system has no tar to unpack ", runtime->staged.archive,
                        "install tar (bsdtar on Windows 10 1803 or later), then run install again");
     }
     cJSON *arguments = tar_arguments(runtime);
     int exit_code = -1;
     char *problem = NULL;
-    int ran = arguments != NULL && runtime_run_to_exit(tar, arguments, &exit_code, &problem);
+    int ran = arguments != NULL && runtime_run_to_exit(tar, arguments, TAR_MILLISECONDS, &exit_code, NULL, &problem);
     cJSON_Delete(arguments);
     free(tar);
     cJSON *refusal = NULL;
     if (!ran) {
-        refusal = problem == NULL ? NULL : runtime_refusal(problem, AGAIN_FIX);
-    } else if (exit_code != 0 || !spisor_file_exists(runtime->executable)) {
+        refusal = runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked" : problem, AGAIN_FIX);
+    } else if (exit_code != 0 || !spisor_file_exists(runtime->staged.executable)) {
         refusal = refused("the runtime archive holds no ", runtime->member, AGAIN_FIX);
     }
     free(problem);
@@ -239,40 +285,65 @@ static cJSON *unpack(const acquisition *runtime) {
 
 static int write_marker(const acquisition *runtime) {
     char executable_hash[RUNTIME_SHA256_HEX_SIZE];
-    if (!spisor_sha256_file(runtime->executable, executable_hash)) {
+    if (!spisor_sha256_file(runtime->staged.executable, executable_hash)) {
         return 0;
     }
     const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
     char *text = runtime_cache_text(parts, 4);
-    int written = text != NULL && spisor_replace_file(runtime->marker, (const uint8_t *)text, strlen(text)) == 1;
+    int written = text != NULL && spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text)) == 1;
     free(text);
     return written;
 }
 
-/** Fetches the archive, keeps only its executable and records both hashes; NULL on success, else the refusal. */
-static cJSON *unpack_fresh(const acquisition *runtime) {
-    const char *stem_segments[2] = {runtime->directory, runtime->stem};
-    char *stem_directory = joined(stem_segments, 2);
-    int cleared = stem_directory != NULL && runtime_remove_file_entry(runtime->marker) == RUNTIME_ENTRY_DONE &&
-                  runtime_remove_tree(stem_directory) && spisor_make_directories(runtime->directory) == 1;
-    free(stem_directory);
-    if (!cleared) {
-        return refused("the runtime folder could not be cleared: ", runtime->directory,
-                       "check that SPISOR_CACHE names a writable folder, then run install again");
+/** Fetches, unpacks and marks the runtime in the staging folder; NULL on success, else the refusal. */
+static cJSON *build_staged(const acquisition *runtime) {
+    if (!runtime_remove_tree(runtime->staged.directory) || spisor_make_directories(runtime->staged.directory) != 1) {
+        return refused("the runtime's staging folder could not be made: ", runtime->staged.directory, CACHE_FIX);
     }
     cJSON *refusal = NULL;
     cJSON *stored = runtime_call_or_refuse(runtime_fetch_get, fetch_call(runtime), &refusal);
     cJSON_Delete(stored);
     if (stored == NULL) {
-        return refusal;
+        return refusal != NULL ? refusal : runtime_refusal("the runtime archive could not be fetched", AGAIN_FIX);
     }
     refusal = unpack(runtime);
-    runtime_remove_file_entry(runtime->archive);
+    runtime_remove_file_entry(runtime->staged.archive);
     if (refusal == NULL && !write_marker(runtime)) {
-        refusal = refused("the runtime's marker could not be written: ", runtime->marker,
-                          "check that SPISOR_CACHE names a writable folder, then run install again");
+        refusal = refused("the runtime's marker could not be written: ", runtime->staged.marker, CACHE_FIX);
     }
     return refusal;
+}
+
+static int rename_directory(const char *from, const char *to) {
+#if defined(_WIN32)
+    wchar_t *wide_from = spisor_wide_path(from);
+    wchar_t *wide_to = spisor_wide_path(to);
+    int renamed = wide_from != NULL && wide_to != NULL && MoveFileExW(wide_from, wide_to, 0) != 0;
+    free(wide_to);
+    free(wide_from);
+    return renamed;
+#else
+    return rename(from, to) == 0;
+#endif
+}
+
+/**
+ * Moves the staged runtime into its final folder; NULL on success, else the refusal.
+ *
+ * @implNote A rename onto a folder that exists fails, so of two installs acquiring at once the second
+ * finds the first's intact runtime and accepts it; only a final folder that is not intact is removed
+ * first. No lock is held (Ruling L): the staging folder is this process's alone.
+ */
+static cJSON *publish(const acquisition *runtime) {
+    if (rename_directory(runtime->staged.directory, runtime->final.directory) || is_unpacked(runtime, &runtime->final)) {
+        return NULL;
+    }
+    if (runtime_remove_tree(runtime->final.directory) &&
+        (rename_directory(runtime->staged.directory, runtime->final.directory) || is_unpacked(runtime, &runtime->final))) {
+        return NULL;
+    }
+    return refused("the runtime could not be moved into place at ", runtime->final.directory,
+                   "close whatever runs the JavaScript runtime from the cache, then run install again");
 }
 
 /** @implNote A version still running holds its files, so one that cannot be removed waits for the next acquisition. */
@@ -292,19 +363,19 @@ static void remove_other_versions(const acquisition *runtime) {
     runtime_free_directory_listing(&listing);
 }
 
-static cJSON *answer_of(const acquisition *runtime, int fetched) {
+static cJSON *answer_of(const char *version, const char *executable, int fetched, const char *source) {
     cJSON *answer = cJSON_CreateObject();
     if (answer == NULL || cJSON_AddStringToObject(answer, "name", RUNTIME_NAME) == NULL ||
-        cJSON_AddStringToObject(answer, "version", runtime->version) == NULL ||
-        cJSON_AddStringToObject(answer, "executable", runtime->executable) == NULL ||
-        cJSON_AddBoolToObject(answer, "fetched", fetched) == NULL) {
+        cJSON_AddStringToObject(answer, "version", version) == NULL ||
+        cJSON_AddStringToObject(answer, "executable", executable) == NULL ||
+        cJSON_AddBoolToObject(answer, "fetched", fetched) == NULL || cJSON_AddStringToObject(answer, "source", source) == NULL) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-cJSON *runtime_acquire_javascript(const char *cache, const char *platform, cJSON **refusal) {
+static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **refusal) {
     acquisition runtime;
     memset(&runtime, 0, sizeof runtime);
     if (!build_for(platform, &runtime.build, &runtime.version)) {
@@ -318,9 +389,11 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, cJSON
     }
     cJSON *answer = NULL;
     if (lay_out(&runtime, cache, platform)) {
-        int unpacked = is_unpacked(&runtime);
-        *refusal = unpacked ? NULL : unpack_fresh(&runtime);
-        answer = *refusal == NULL ? answer_of(&runtime, !unpacked) : NULL;
+        int unpacked = is_unpacked(&runtime, &runtime.final);
+        *refusal = unpacked ? NULL : build_staged(&runtime);
+        *refusal = unpacked || *refusal != NULL ? *refusal : publish(&runtime);
+        runtime_remove_tree(runtime.staged.directory);
+        answer = *refusal == NULL ? answer_of(runtime.version, runtime.final.executable, !unpacked, "acquired") : NULL;
         if (answer != NULL) {
             remove_other_versions(&runtime);
         }
@@ -329,16 +402,102 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, cJSON
     return answer;
 }
 
+/** The leading number of a version line such as 22.1.0, or -1 when it has none. */
+static long major_of(const char *version) {
+    char *end = NULL;
+    long major = strtol(version, &end, 10);
+    return end == version || (*end != '.' && *end != 0) ? -1 : major;
+}
+
+static char *trimmed(const char *text) {
+    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') {
+        text++;
+    }
+    size_t length = strlen(text);
+    while (length > 0 && (text[length - 1] == ' ' || text[length - 1] == '\t' || text[length - 1] == '\r' ||
+                          text[length - 1] == '\n')) {
+        length--;
+    }
+    return runtime_catalog_copy_bytes(text, length);
+}
+
+/** The version the node at executable reports, run once with a bounded wait; NULL when it reports none. */
+static char *reported_version(const char *executable) {
+    cJSON *arguments = cJSON_CreateArray();
+    char *output = NULL;
+    char *problem = NULL;
+    int exit_code = -1;
+    int ran = arguments != NULL && runtime_install_add_text(arguments, "-p") &&
+              runtime_install_add_text(arguments, "process.versions.node") &&
+              runtime_run_to_exit(executable, arguments, VERSION_MILLISECONDS, &exit_code, &output, &problem);
+    char *version = ran && exit_code == 0 ? trimmed(output) : NULL;
+    free(problem);
+    free(output);
+    cJSON_Delete(arguments);
+    return version;
+}
+
+/**
+ * A compatible node on the PATH of environment, as spec 5.3 orders it before acquiring one; NULL when
+ * there is none, its version cannot be read, or its major is below COMPATIBLE_MAJOR.
+ *
+ * @implNote Found by detect's PATH rules and run once, only here at install, never by detection.
+ */
+static cJSON *runtime_on_path(const cJSON *environment) {
+    char *executable = environment == NULL ? NULL : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME, environment);
+    char *version = executable == NULL ? NULL : reported_version(executable);
+    cJSON *answer = version != NULL && major_of(version) >= COMPATIBLE_MAJOR ? answer_of(version, executable, 0, "path")
+                                                                            : NULL;
+    free(version);
+    free(executable);
+    return answer;
+}
+
+/** Records the runtime answered as the one every host started on JavaScript runs with; 1 on success. */
+static int record_runtime(const char *cache, const cJSON *answer) {
+    const char *folder_segments[2] = {cache, "runtimes"};
+    const char *file_segments[3] = {cache, "runtimes", RECORD_FILE};
+    char *folder = joined(folder_segments, 2);
+    char *file = joined(file_segments, 3);
+    char *pretty = spisor_json_stringify_pretty(answer);
+    const char *parts[2] = {pretty, "\n"};
+    char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
+    int recorded = folder != NULL && file != NULL && text != NULL && spisor_make_directories(folder) == 1 &&
+                   spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == 1;
+    free(text);
+    free(pretty);
+    free(file);
+    free(folder);
+    return recorded;
+}
+
+cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal) {
+    int this_machine = strcmp(platform, runtime_platform_key()) == 0;
+    cJSON *answer = this_machine ? runtime_on_path(environment) : NULL;
+    if (answer == NULL) {
+        answer = acquire_pinned(cache, platform, refusal);
+    }
+    if (answer != NULL && !record_runtime(cache, answer)) {
+        cJSON_Delete(answer);
+        answer = NULL;
+        *refusal = refused("the JavaScript runtime could not be recorded under ", cache, CACHE_FIX);
+    }
+    return answer;
+}
+
 static cJSON *runtime_for(const cJSON *argument, cJSON **refusal) {
     const char *cache = runtime_install_text(argument, "cache");
     const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
-    if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache) ||
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
+    if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache) || !cJSON_IsObject(environment) ||
         (platform != NULL && !(cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring)))) {
-        *refusal = runtime_refusal("the argument carries no usable cache or platform",
-                                   "send {\"cache\": \"<absolute directory>\", \"platform\"?: \"<os>-<arch>\"}");
+        *refusal = runtime_refusal("the argument carries no usable cache, environment or platform",
+                                   "send {\"cache\": \"<absolute directory>\", \"environment\": {<name>: <value>}, "
+                                   "\"platform\"?: \"<os>-<arch>\"}");
         return NULL;
     }
-    return runtime_acquire_javascript(cache, platform == NULL ? runtime_platform_key() : platform->valuestring, refusal);
+    return runtime_acquire_javascript(cache, platform == NULL ? runtime_platform_key() : platform->valuestring,
+                                      environment, refusal);
 }
 
 RUNTIME_EXPORT int32_t runtime_install_runtime(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

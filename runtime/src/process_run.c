@@ -18,17 +18,46 @@
 #else
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 extern char **environ;
 #endif
 
+/** What a run collected of its standard output. */
+typedef struct run_output {
+    char bytes[RUNTIME_RUN_OUTPUT_LIMIT + 1];
+    size_t length;
+} run_output;
+
 static char *problem_of(const char *executable, const char *reason) {
     const char *parts[4] = {"could not run ", executable, ": ", reason};
     return runtime_cache_text(parts, 4);
+}
+
+static void keep(run_output *collected, const char *bytes, size_t length) {
+    size_t room = RUNTIME_RUN_OUTPUT_LIMIT - collected->length;
+    size_t kept = length < room ? length : room;
+    memcpy(collected->bytes + collected->length, bytes, kept);
+    collected->length += kept;
+}
+
+static int answer_output(const run_output *collected, char **output) {
+    if (output == NULL) {
+        return 1;
+    }
+    *output = malloc(collected->length + 1);
+    if (*output == NULL) {
+        return 0;
+    }
+    memcpy(*output, collected->bytes, collected->length);
+    (*output)[collected->length] = 0;
+    return 1;
 }
 
 #if defined(_WIN32)
@@ -79,59 +108,161 @@ static wchar_t *command_line(const char *executable, const cJSON *arguments) {
     return line;
 }
 
+/** The handles a run hands its child: the null device, and the write end of the output pipe when one is taken. */
+typedef struct windows_run {
+    HANDLE null;
+    HANDLE output_read;
+    HANDLE output_write;
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes;
+    HANDLE inherited[2];
+} windows_run;
+
 static HANDLE null_device(void) {
     SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
     return CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherited,
                        OPEN_EXISTING, 0, NULL);
 }
 
-static int wait_for(HANDLE process, int *exit_code) {
-    DWORD code = 0;
-    int waited = WaitForSingleObject(process, INFINITE) == WAIT_OBJECT_0 && GetExitCodeProcess(process, &code);
-    *exit_code = (int)code;
-    return waited;
+static int open_output_pipe(windows_run *run) {
+    SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
+    if (!CreatePipe(&run->output_read, &run->output_write, &inherited, 0)) {
+        run->output_read = NULL;
+        run->output_write = NULL;
+        return 0;
+    }
+    return SetHandleInformation(run->output_read, HANDLE_FLAG_INHERIT, 0) != 0;
 }
 
-static int create_silenced(const wchar_t *application, wchar_t *line, HANDLE null, PROCESS_INFORMATION *information) {
-    STARTUPINFOW startup;
+static LPPROC_THREAD_ATTRIBUTE_LIST handle_list(windows_run *run, DWORD count) {
+    SIZE_T size = 0;
+    InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes = malloc(size);
+    if (attributes == NULL || !InitializeProcThreadAttributeList(attributes, 1, 0, &size)) {
+        free(attributes);
+        return NULL;
+    }
+    if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, run->inherited,
+                                   count * sizeof run->inherited[0], NULL, NULL)) {
+        DeleteProcThreadAttributeList(attributes);
+        free(attributes);
+        return NULL;
+    }
+    return attributes;
+}
+
+static int prepare(windows_run *run, int capture) {
+    memset(run, 0, sizeof *run);
+    run->null = null_device();
+    if (run->null == INVALID_HANDLE_VALUE || (capture && !open_output_pipe(run))) {
+        return 0;
+    }
+    run->inherited[0] = run->null;
+    run->inherited[1] = run->output_write;
+    run->attributes = handle_list(run, capture ? 2 : 1);
+    return run->attributes != NULL;
+}
+
+static void close_handle(HANDLE *handle) {
+    if (*handle != NULL && *handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(*handle);
+    }
+    *handle = NULL;
+}
+
+static void release(windows_run *run) {
+    if (run->attributes != NULL) {
+        DeleteProcThreadAttributeList(run->attributes);
+        free(run->attributes);
+    }
+    close_handle(&run->null);
+    close_handle(&run->output_read);
+    close_handle(&run->output_write);
+}
+
+static int create(const wchar_t *application, wchar_t *line, windows_run *run, PROCESS_INFORMATION *information) {
+    STARTUPINFOEXW startup;
     memset(&startup, 0, sizeof startup);
-    startup.cb = sizeof startup;
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = null;
-    startup.hStdOutput = null;
-    startup.hStdError = null;
-    return CreateProcessW(application, line, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &startup, information) != 0;
+    startup.StartupInfo.cb = sizeof startup;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = run->null;
+    startup.StartupInfo.hStdOutput = run->output_write != NULL ? run->output_write : run->null;
+    startup.StartupInfo.hStdError = run->null;
+    startup.lpAttributeList = run->attributes;
+    return CreateProcessW(application, line, NULL, NULL, TRUE, CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL,
+                          NULL, &startup.StartupInfo, information) != 0;
 }
 
-int runtime_run_to_exit(const char *executable, const cJSON *arguments, int *exit_code, char **problem) {
+/** Reads the pipe until the child's end closes, keeping what fits; the child cannot outlive the wait that follows. */
+static void read_output(windows_run *run, run_output *collected) {
+    char buffer[512];
+    DWORD read = 0;
+    while (run->output_read != NULL && ReadFile(run->output_read, buffer, sizeof buffer, &read, NULL) && read > 0) {
+        keep(collected, buffer, read);
+    }
+}
+
+/** 1 with the exit code once process exits within timeout; 0 after terminating one that did not. */
+static int await_exit(HANDLE process, unsigned timeout_milliseconds, int *exit_code) {
+    DWORD code = 0;
+    if (WaitForSingleObject(process, timeout_milliseconds) != WAIT_OBJECT_0) {
+        TerminateProcess(process, 1);
+        WaitForSingleObject(process, 5000);
+        return 0;
+    }
+    int read = GetExitCodeProcess(process, &code) != 0;
+    *exit_code = (int)code;
+    return read;
+}
+
+/**
+ * @implNote The output is read only after the exit, so a child writing more than the pipe holds blocks,
+ * outlives the timeout and is terminated; what is read here is a version line, far below that.
+ */
+int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                        char **output, char **problem) {
     *problem = NULL;
     wchar_t *application = spisor_wide_path(executable);
     wchar_t *line = command_line(executable, arguments);
-    HANDLE null = null_device();
+    windows_run run;
+    memset(&run, 0, sizeof run);
     PROCESS_INFORMATION information = {NULL, NULL, 0, 0};
-    int started = application != NULL && line != NULL && null != INVALID_HANDLE_VALUE &&
-                  create_silenced(application, line, null, &information);
+    run_output collected = {{0}, 0};
+    int started = application != NULL && line != NULL && prepare(&run, output != NULL) &&
+                  create(application, line, &run, &information);
     DWORD error = started ? ERROR_SUCCESS : GetLastError();
-    int waited = started && wait_for(information.hProcess, exit_code);
+    int exited = 0;
     if (started) {
-        error = waited ? ERROR_SUCCESS : GetLastError();
+        close_handle(&run.output_write);
+        exited = await_exit(information.hProcess, timeout_milliseconds, exit_code);
+        read_output(&run, &collected);
         CloseHandle(information.hThread);
         CloseHandle(information.hProcess);
     }
-    if (null != INVALID_HANDLE_VALUE) {
-        CloseHandle(null);
-    }
+    release(&run);
     free(line);
     free(application);
-    if (!waited) {
+    if (!started) {
         char reason[64];
         snprintf(reason, sizeof reason, "Windows error %lu", (unsigned long)error);
         *problem = problem_of(executable, reason);
+    } else if (!exited) {
+        *problem = problem_of(executable, "it did not exit in time and was stopped");
     }
-    return waited;
+    return exited && answer_output(&collected, output);
 }
 
 #else
+
+static double now_milliseconds(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)now.tv_sec * 1000.0 + (double)now.tv_nsec / 1000000.0;
+}
+
+static void pause_briefly(void) {
+    struct timespec pause = {0, 10 * 1000000L};
+    nanosleep(&pause, NULL);
+}
 
 static size_t argument_count(const cJSON *arguments) {
     size_t count = 0;
@@ -141,49 +272,119 @@ static size_t argument_count(const cJSON *arguments) {
     return count;
 }
 
-static int spawn_silenced(const char *executable, char **list, pid_t *child) {
+static int spawn_silenced(const char *executable, char **list, const int *output_pipe, pid_t *child) {
     posix_spawn_file_actions_t actions;
     if (posix_spawn_file_actions_init(&actions) != 0) {
         return ENOMEM;
     }
     int error = posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
-    error = error != 0 ? error : posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+    if (output_pipe == NULL) {
+        error = error != 0 ? error : posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+    } else {
+        error = error != 0 ? error : posix_spawn_file_actions_adddup2(&actions, output_pipe[1], 1);
+        error = error != 0 ? error : posix_spawn_file_actions_addclose(&actions, output_pipe[0]);
+    }
     error = error != 0 ? error : posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
     error = error != 0 ? error : posix_spawn(child, executable, &actions, NULL, list, environ);
     posix_spawn_file_actions_destroy(&actions);
     return error;
 }
 
-static int wait_for(pid_t child, int *exit_code) {
-    int status = 0;
-    pid_t waited;
-    do {
-        waited = waitpid(child, &status, 0);
-    } while (waited < 0 && errno == EINTR);
-    *exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
-    return waited == child;
+/** Reads the pipe until its end or the deadline, keeping what fits. */
+static void read_output(int descriptor, double deadline, run_output *collected) {
+    char buffer[512];
+    struct pollfd waiting = {descriptor, POLLIN, 0};
+    for (;;) {
+        double left = deadline - now_milliseconds();
+        int ready = left <= 0 ? 0 : poll(&waiting, 1, (int)left + 1);
+        if (ready < 0 && errno == EINTR) {
+            continue;
+        }
+        ssize_t read_now = ready > 0 ? read(descriptor, buffer, sizeof buffer) : 0;
+        if (read_now < 0 && errno == EINTR) {
+            continue;
+        }
+        if (read_now <= 0) {
+            return;
+        }
+        keep(collected, buffer, (size_t)read_now);
+    }
 }
 
-int runtime_run_to_exit(const char *executable, const cJSON *arguments, int *exit_code, char **problem) {
-    *problem = NULL;
-    size_t count = argument_count(arguments);
-    char **list = calloc(count + 2, sizeof *list);
-    if (list == NULL) {
-        return 0;
+/** 1 with the exit code once child exits by the deadline; 0 after killing one that did not. */
+static int await_exit(pid_t child, double deadline, int *exit_code) {
+    int status = 0;
+    for (;;) {
+        pid_t waited = waitpid(child, &status, WNOHANG);
+        if (waited == child) {
+            *exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+            return 1;
+        }
+        if ((waited < 0 && errno != EINTR) || now_milliseconds() > deadline) {
+            kill(child, SIGKILL);
+            while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
+            }
+            return 0;
+        }
+        pause_briefly();
     }
-    list[0] = (char *)executable;
-    size_t index = 1;
-    for (const cJSON *argument = arguments == NULL ? NULL : arguments->child; argument != NULL; argument = argument->next) {
+}
+
+static char **argument_list(const char *executable, const cJSON *arguments) {
+    char **list = calloc(argument_count(arguments) + 2, sizeof *list);
+    size_t index = 0;
+    if (list != NULL) {
+        list[index++] = (char *)executable;
+    }
+    for (const cJSON *argument = list == NULL || arguments == NULL ? NULL : arguments->child; argument != NULL;
+         argument = argument->next) {
         list[index++] = argument->valuestring;
     }
-    pid_t child = 0;
-    int error = spawn_silenced(executable, list, &child);
-    free(list);
-    int waited = error == 0 && wait_for(child, exit_code);
-    if (!waited) {
-        *problem = problem_of(executable, strerror(error != 0 ? error : errno));
+    return list;
+}
+
+static int open_output_pipe(int ends[2]) {
+    if (pipe(ends) != 0) {
+        return 0;
     }
-    return waited;
+    if (fcntl(ends[0], F_SETFD, FD_CLOEXEC) != 0) {
+        close(ends[0]);
+        close(ends[1]);
+        return 0;
+    }
+    return 1;
+}
+
+int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+                        char **output, char **problem) {
+    *problem = NULL;
+    double deadline = now_milliseconds() + timeout_milliseconds;
+    int ends[2] = {-1, -1};
+    char **list = argument_list(executable, arguments);
+    if (list == NULL || (output != NULL && !open_output_pipe(ends))) {
+        free(list);
+        return 0;
+    }
+    pid_t child = 0;
+    int error = spawn_silenced(executable, list, output == NULL ? NULL : ends, &child);
+    free(list);
+    run_output collected = {{0}, 0};
+    if (ends[1] >= 0) {
+        close(ends[1]);
+    }
+    if (error == 0 && ends[0] >= 0) {
+        read_output(ends[0], deadline, &collected);
+    }
+    if (ends[0] >= 0) {
+        close(ends[0]);
+    }
+    int exited = error == 0 && await_exit(child, deadline, exit_code);
+    if (error != 0) {
+        *problem = problem_of(executable, strerror(error));
+    } else if (!exited) {
+        *problem = problem_of(executable, "it did not exit in time and was stopped");
+    }
+    return exited && answer_output(&collected, output);
 }
 
 #endif

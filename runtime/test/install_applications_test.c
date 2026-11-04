@@ -456,6 +456,37 @@ static void refuses_an_update_and_a_remove_of_a_path_application_naming_where_it
     finish_install_base(&base);
 }
 
+/** Makes the stored registration one registry.register refuses while registry.get still answers it. */
+static void make_registration_unrewritable(const install_base *base) {
+    char *path = joined(base->state, "hosts/" LOADER_ID ".json");
+    cJSON *registration = json_in(base->state, "hosts/" LOADER_ID ".json");
+    cJSON_ReplaceItemInObjectCaseSensitive(registration, "requiresCommand", cJSON_CreateString("yes"));
+    char *text = cJSON_PrintUnformatted(registration);
+    write_file(path, text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    free(path);
+}
+
+static void reports_an_update_done_noting_a_version_that_could_not_be_recorded(void) {
+    install_base base;
+    start_install_base(&base, "applications", "update-unrecorded");
+    list_claude(&base, PACKAGES, "[]", "[]");
+    cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
+    make_registration_unrewritable(&base);
+    catalog_answer answer = through_record(&base, "update");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    check_text(text_at(answer.tree, "operation"), "update", "update done");
+    check_text(text_at(answer.tree, "version"), "2.0.0", "version reported");
+    const cJSON *unrecorded = cJSON_GetObjectItemCaseSensitive(answer.tree, "unrecorded");
+    CHECK(text_at(unrecorded, "message") != NULL && text_at(unrecorded, "fix") != NULL);
+    char *version = stored_version(&base);
+    check_text(version, "2.0.0", "the application was updated");
+    free(version);
+    cJSON_Delete(answer.tree);
+    finish_install_base(&base);
+}
+
 static void never_removes_the_application_when_its_loader_is_removed(void) {
     install_base base;
     start_install_base(&base, "applications", "loader-removed");
@@ -491,6 +522,7 @@ int main(void) {
     removes_through_the_recorded_method_and_leaves_the_loader_registered();
     refuses_an_update_and_a_remove_of_a_path_application_naming_where_it_came_from();
     never_removes_the_application_when_its_loader_is_removed();
+    reports_an_update_done_noting_a_version_that_could_not_be_recorded();
     expect_user_path_unchanged(&guard);
     return check_summary("install_applications_test");
 }

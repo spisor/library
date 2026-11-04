@@ -6,6 +6,7 @@
 #include "boot.h"
 #include "cache_refusal.h"
 #include "catalog.h"
+#include "catalog_source.h"
 #include "catalog_time.h"
 #include "file_times.h"
 #include "install_entries.h"
@@ -103,22 +104,20 @@ static int check_source(ecosystem *install, const cJSON *source, const char *now
     return recorded;
 }
 
-static cJSON *current_catalog(const ecosystem *install, const cJSON *sources) {
+static cJSON *current_catalog(const ecosystem *install, const cJSON *sources, cJSON **refusal) {
     cJSON *call = cJSON_CreateObject();
     if (call == NULL || !runtime_install_copy_into(call, "sources", sources) ||
         cJSON_AddStringToObject(call, "cache", install->run.cache) == NULL) {
         cJSON_Delete(call);
         return NULL;
     }
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_catalog_current, call, &refusal);
-    cJSON_Delete(refusal);
+    cJSON *answer = runtime_call_or_refuse(runtime_catalog_current, call, refusal);
     cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(answer, "catalog");
     cJSON_Delete(answer);
     return catalog;
 }
 
-static int read_catalog(ecosystem *install, const cJSON *sources) {
+static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusal) {
     char now[RUNTIME_CATALOG_TIME_SIZE];
     if (!runtime_catalog_format_time(runtime_now_milliseconds(), now)) {
         return 0;
@@ -128,7 +127,7 @@ static int read_catalog(ecosystem *install, const cJSON *sources) {
             return 0;
         }
     }
-    install->run.catalog = current_catalog(install, sources);
+    install->run.catalog = current_catalog(install, sources, refusal);
     return install->run.catalog != NULL;
 }
 
@@ -345,7 +344,7 @@ static int writes_in_process_entry(const ecosystem *install) {
 
 static int acquire_javascript(ecosystem *install) {
     cJSON *refusal = NULL;
-    cJSON *acquired = runtime_acquire_javascript(install->run.cache, install->run.platform, &refusal);
+    cJSON *acquired = runtime_acquire_javascript(install->run.cache, install->run.platform, install->run.environment, &refusal);
     if (acquired == NULL) {
         return refusal != NULL && runtime_install_report_refusal(install->run.report, "node", refusal);
     }
@@ -377,7 +376,7 @@ static int record_run(ecosystem *install) {
 static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal) {
     static const char *const host_ids[1] = {RUNTIME_ECOSYSTEM_HOST_ID};
     static const char *const library_ids[1] = {RUNTIME_LIBRARY_ID};
-    if (!read_catalog(install, sources) || !runtime_install_resolve_applications(&install->run, refusal)) {
+    if (!read_catalog(install, sources, refusal) || !runtime_install_resolve_applications(&install->run, refusal)) {
         return 0;
     }
     install->values = runtime_install_settings_values(&install->settings, 1, 1, refusal);
@@ -403,15 +402,33 @@ static int read_argument(const cJSON *argument, ecosystem *install) {
     install->run.platform = platform == NULL ? runtime_platform_key() : cJSON_GetStringValue(platform);
     install->defaults = cJSON_GetObjectItemCaseSensitive(argument, "defaults");
     install->requested = cJSON_GetObjectItemCaseSensitive(argument, "requested");
-    const cJSON *sources = cJSON_GetObjectItemCaseSensitive(argument, "sources");
-    return cJSON_IsArray(sources) && install->run.portable != NULL && install->run.state != NULL && install->run.cache != NULL &&
+    return install->run.portable != NULL && install->run.state != NULL && install->run.cache != NULL &&
            cJSON_IsObject(install->run.environment) && is_choice_map(install->run.choices) &&
            (install->defaults == NULL || is_text_array(install->defaults)) &&
            (install->requested == NULL || is_text_array(install->requested)) && install->run.platform != NULL &&
            runtime_is_platform_key(install->run.platform);
 }
 
+/** Whether sources is an array of catalog sources as catalog.sources reads them; 0 with *refusal set otherwise. */
+static int are_sources(const cJSON *sources, cJSON **refusal) {
+    runtime_catalog_source *read = NULL;
+    size_t count = 0;
+    char *problem = NULL;
+    int usable = cJSON_IsArray(sources) && runtime_catalog_sources_of(sources, &read, &count, &problem);
+    if (!usable) {
+        const char *parts[2] = {"the sources hold an entry that is no catalog source: ",
+                                problem == NULL ? "they are not an array" : problem};
+        *refusal = runtime_cache_refusal(parts, 2, ECOSYSTEM_FIX);
+    }
+    free(problem);
+    free(read);
+    return usable;
+}
+
 static cJSON *ecosystem_for(const cJSON *argument, cJSON **refusal) {
+    if (!are_sources(cJSON_GetObjectItemCaseSensitive(argument, "sources"), refusal)) {
+        return NULL;
+    }
     ecosystem install;
     memset(&install, 0, sizeof install);
     if (!read_argument(argument, &install)) {
