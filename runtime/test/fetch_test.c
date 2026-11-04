@@ -245,6 +245,16 @@ static void another_status_is_refused_naming_it(void) {
     expect_nothing_stored("404");
 }
 
+static void a_fetch_outliving_its_timeout_is_refused(void) {
+    cJSON *request = request_for_path("/stall");
+    cJSON_AddNumberToObject(request, "timeoutSeconds", 1);
+    expect_refused(get(request), "did not finish within 1000 ms", "timeoutSeconds");
+    expect_nothing_stored("timeoutSeconds");
+    cJSON *unusable = request_for_path("/stall");
+    cJSON_AddNumberToObject(unusable, "timeoutSeconds", 0);
+    expect_refused(get(unusable), "timeoutSeconds", "timeoutSeconds zero");
+}
+
 static void a_fetch_outliving_its_deadline_is_refused(void) {
     runtime_fetch_use_deadline(300);
     expect_refused(get(request_for_path("/stall")), "did not finish within 300 ms", "deadline");
@@ -504,6 +514,7 @@ static void run_against_the_server(void) {
     a_body_of_exactly_max_bytes_is_stored();
     another_status_is_refused_naming_it();
     a_fetch_outliving_its_deadline_is_refused();
+    a_fetch_outliving_its_timeout_is_refused();
     a_relative_redirect_is_followed();
     a_redirect_to_a_file_url_is_refused();
 #if defined(_WIN32)

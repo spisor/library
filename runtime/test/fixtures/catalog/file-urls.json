@@ -1,0 +1,59 @@
+{
+  "by": "node:url pathToFileURL",
+  "windows": [
+    {
+      "path": "C:\\builds\\index.json",
+      "url": "file:///C:/builds/index.json"
+    },
+    {
+      "path": "C:\\a b\\Jörg\\x#?%.json",
+      "url": "file:///C:/a%20b/J%C3%B6rg/x%23%3F%25.json"
+    },
+    {
+      "path": "\\\\srv\\share\\i.json",
+      "url": "file://srv/share/i.json"
+    },
+    {
+      "path": "D:\\x\\y\\",
+      "url": "file:///D:/x/y/"
+    },
+    {
+      "path": "c:\\lower.json",
+      "url": "file:///c:/lower.json"
+    },
+    {
+      "path": "C:\\a\tb\nc.json",
+      "url": "file:///C:/a%09b%0Ac.json"
+    },
+    {
+      "path": "C:\\x;y=z&w,v'u.json",
+      "url": "file:///C:/x;y=z&w,v'u.json"
+    }
+  ],
+  "posix": [
+    {
+      "path": "/home/user/index.json",
+      "url": "file:///home/user/index.json"
+    },
+    {
+      "path": "/a b/x%\\.json",
+      "url": "file:///a%20b/x%25%5C.json"
+    },
+    {
+      "path": "/Jörg/x#?.json",
+      "url": "file:///J%C3%B6rg/x%23%3F.json"
+    },
+    {
+      "path": "/x/y/",
+      "url": "file:///x/y/"
+    },
+    {
+      "path": "/a\tb\nc\rd.json",
+      "url": "file:///a%09b%0Ac%0Dd.json"
+    },
+    {
+      "path": "/x;y=z&w,v'u.json",
+      "url": "file:///x;y=z&w,v'u.json"
+    }
+  ]
+}

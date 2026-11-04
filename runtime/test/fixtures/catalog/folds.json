@@ -1,0 +1,115 @@
+{
+  "by": "forebay/host foldedDuplicate",
+  "vectors": [
+    {
+      "first": "A.js",
+      "second": "a.js",
+      "collide": true
+    },
+    {
+      "first": "a.js",
+      "second": "b.js",
+      "collide": false
+    },
+    {
+      "first": "Ä.js",
+      "second": "ä.js",
+      "collide": true
+    },
+    {
+      "first": "é.js",
+      "second": "é.js",
+      "collide": true
+    },
+    {
+      "first": "É.js",
+      "second": "é.js",
+      "collide": true
+    },
+    {
+      "first": "İ.js",
+      "second": "i̇.js",
+      "collide": true
+    },
+    {
+      "first": "İ.js",
+      "second": "i.js",
+      "collide": false
+    },
+    {
+      "first": "Σ.js",
+      "second": "σ.js",
+      "collide": true
+    },
+    {
+      "first": "Д.js",
+      "second": "д.js",
+      "collide": true
+    },
+    {
+      "first": "ẞ.js",
+      "second": "ß.js",
+      "collide": true
+    },
+    {
+      "first": "K.js",
+      "second": "k.js",
+      "collide": true
+    },
+    {
+      "first": "Ω.js",
+      "second": "ω.js",
+      "collide": true
+    },
+    {
+      "first": "Ａ.js",
+      "second": "ａ.js",
+      "collide": true
+    },
+    {
+      "first": "𐐀.js",
+      "second": "𐐨.js",
+      "collide": true
+    },
+    {
+      "first": "가.js",
+      "second": "가.js",
+      "collide": true
+    },
+    {
+      "first": "Å.js",
+      "second": "Å.js",
+      "collide": true
+    },
+    {
+      "first": "Å.js",
+      "second": "å.js",
+      "collide": true
+    },
+    {
+      "first": "straße",
+      "second": "strasse",
+      "collide": false
+    },
+    {
+      "first": "Ǆ",
+      "second": "ǆ",
+      "collide": true
+    },
+    {
+      "first": "ǅ",
+      "second": "ǆ",
+      "collide": true
+    },
+    {
+      "first": "ẛ̣",
+      "second": "ṩ",
+      "collide": false
+    },
+    {
+      "first": "q̣̇",
+      "second": "q̣̇",
+      "collide": true
+    }
+  ]
+}

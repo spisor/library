@@ -1,0 +1,1 @@
+{"format":1,"items":{"thing":{"kind":"host","runtime":"native","latest":"1.0.0","versions":{"1.0.0":{"platforms":{"linux":{"files":{"h":{"url":"http://x/h","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}}}}}}}}}

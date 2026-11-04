@@ -1,0 +1,439 @@
+{
+  "by": "forebay/host resolveWithinOrigin",
+  "vectors": [
+    {
+      "url": "plugin.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/plugin.js"
+    },
+    {
+      "url": "plugin.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/plugin.js"
+    },
+    {
+      "url": "https://cdn.example.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/p.js"
+    },
+    {
+      "url": "sub/dir/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/sub/dir/p.js"
+    },
+    {
+      "url": "../../x",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": null
+    },
+    {
+      "url": "file:///C:/other/x.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "%2e%2e/x.js",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": null
+    },
+    {
+      "url": "%2E%2e/x.js",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": null
+    },
+    {
+      "url": ".%2e/x.js",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": null
+    },
+    {
+      "url": "%2e./x.js",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": null
+    },
+    {
+      "url": "%2e/x.js",
+      "origin": "file:///C:/builds/out/index.json",
+      "resolved": "file:///C:/builds/out/x.js"
+    },
+    {
+      "url": "file:///a/bc/x",
+      "origin": "file:///a/b/index.json",
+      "resolved": null
+    },
+    {
+      "url": "file:///a/b/x",
+      "origin": "file:///a/b/index.json",
+      "resolved": "file:///a/b/x"
+    },
+    {
+      "url": "file://host/share/x.js",
+      "origin": "file://host/share/index.json",
+      "resolved": null
+    },
+    {
+      "url": "file://host/share/x.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "http://example.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "file:///C:/x.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "https://example.com/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "data:text/plain,x",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "ftp://example.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "javascript:alert(1)",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "plugin.js",
+      "origin": "http://example.com/index.json",
+      "resolved": null
+    },
+    {
+      "url": "plugin.js",
+      "origin": "not a url",
+      "resolved": null
+    },
+    {
+      "url": "//cdn.example.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/p.js"
+    },
+    {
+      "url": "/root.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/root.js"
+    },
+    {
+      "url": "?q=1",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/index.json?q=1"
+    },
+    {
+      "url": "#frag",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/index.json#frag"
+    },
+    {
+      "url": "",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/index.json"
+    },
+    {
+      "url": ".",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/"
+    },
+    {
+      "url": "..",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/"
+    },
+    {
+      "url": "../..",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/"
+    },
+    {
+      "url": "a/./b/../c",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/a/c"
+    },
+    {
+      "url": "HTTPS://CDN.Example.COM:443/P.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/P.js"
+    },
+    {
+      "url": "https://cdn.example.com:8443/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com:8443/p.js"
+    },
+    {
+      "url": "https://cdn.example.com:0443/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/p.js"
+    },
+    {
+      "url": "https://cdn.example.com:/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/p.js"
+    },
+    {
+      "url": "https://cdn.example.com:x/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "https://cdn.example.com:99999/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "https:p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/p.js"
+    },
+    {
+      "url": "https:/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/p.js"
+    },
+    {
+      "url": "https:\\\\cdn.example.com\\p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn.example.com/p.js"
+    },
+    {
+      "url": "a\\b.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/a/b.js"
+    },
+    {
+      "url": "\\\\cdn\\p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://cdn/p.js"
+    },
+    {
+      "url": "  plugin.js  ",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/plugin.js"
+    },
+    {
+      "url": "plu\tg\nin.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/plugin.js"
+    },
+    {
+      "url": "a b\"<>`{}^|.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/a%20b%22%3C%3E%60%7B%7D%5E|.js"
+    },
+    {
+      "url": "p.js?a b'\"<>`^#f g`\"<>",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/p.js?a%20b%27%22%3C%3E`^#f%20g%60%22%3C%3E"
+    },
+    {
+      "url": "%41%zz%",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/%41%zz%"
+    },
+    {
+      "url": "Jörg.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/J%C3%B6rg.js"
+    },
+    {
+      "url": "https://user:pa ss@cdn.example.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://user:pa%20ss@cdn.example.com/p.js"
+    },
+    {
+      "url": "https://[::1]:8443/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://[::1]:8443/p.js"
+    },
+    {
+      "url": "https://[0:0::1]/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://[::1]/p.js"
+    },
+    {
+      "url": "https://exämple.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://xn--exmple-cua.com/p.js",
+      "c": {
+        "resolved": null,
+        "because": "the C resolver carries no IDNA mapping, so it refuses a host with a letter outside ASCII rather than convert it to punycode"
+      }
+    },
+    {
+      "url": "https://exa mple.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "https://ex%41mple.com/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/p.js"
+    },
+    {
+      "url": "https://127.0.0.1/p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://127.0.0.1/p.js"
+    },
+    {
+      "url": "https://example.com./p.js",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com./p.js"
+    },
+    {
+      "url": "file://localhost/C:/builds/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "file:///C:/builds/sub/../p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "file:///C:/builds/%2e%2e/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "file:C:/builds/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "file:p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "C:/builds/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "/C:/builds/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "/p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "//p.js",
+      "origin": "file:///C:/builds/index.json",
+      "resolved": null
+    },
+    {
+      "url": "../../../x",
+      "origin": "file:///C:/b/i.json",
+      "resolved": null
+    },
+    {
+      "url": "sub/p.js",
+      "origin": "file:///home/user/catalog/index.json",
+      "resolved": "file:///home/user/catalog/sub/p.js"
+    },
+    {
+      "url": "../p.js",
+      "origin": "file:///home/user/catalog/index.json",
+      "resolved": null
+    },
+    {
+      "url": "p.js",
+      "origin": "file:///home/us%20er/catalog/index.json",
+      "resolved": "file:///home/us%20er/catalog/p.js"
+    },
+    {
+      "url": "sub dir/p.js",
+      "origin": "file:///C:/a%20b/index.json",
+      "resolved": "file:///C:/a%20b/sub%20dir/p.js"
+    },
+    {
+      "url": "x",
+      "origin": "https://example.com",
+      "resolved": "https://example.com/x"
+    },
+    {
+      "url": "x",
+      "origin": "https://example.com/index.json?q#f",
+      "resolved": "https://example.com/x"
+    },
+    {
+      "url": "#f",
+      "origin": "https://example.com/a/index.json?q",
+      "resolved": "https://example.com/a/index.json?q#f"
+    },
+    {
+      "url": "x?y#z",
+      "origin": "https://example.com/a/",
+      "resolved": "https://example.com/a/x?y#z"
+    },
+    {
+      "url": "HTTPS://example.com/x",
+      "origin": "HTTPS://Example.com/i.json",
+      "resolved": "https://example.com/x"
+    },
+    {
+      "url": "file:///C:/builds/p.js",
+      "origin": "FILE:///C:/builds/index.json",
+      "resolved": "file:///C:/builds/p.js"
+    },
+    {
+      "url": "sub/p.js",
+      "origin": "file:///C:/builds/",
+      "resolved": "file:///C:/builds/sub/p.js"
+    },
+    {
+      "url": "p.js",
+      "origin": "file:///index.json",
+      "resolved": "file:///p.js"
+    },
+    {
+      "url": "p.js",
+      "origin": "https://example.com/a%2Fb/index.json",
+      "resolved": "https://example.com/a%2Fb/p.js"
+    },
+    {
+      "url": "%2Fetc",
+      "origin": "file:///a/b/index.json",
+      "resolved": "file:///a/b/%2Fetc"
+    },
+    {
+      "url": "..%2fx",
+      "origin": "file:///a/b/c/index.json",
+      "resolved": "file:///a/b/c/..%2fx"
+    },
+    {
+      "url": "a/%2e%2E/../x",
+      "origin": "file:///a/b/c/index.json",
+      "resolved": null
+    },
+    {
+      "url": "\u0001x",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/x"
+    },
+    {
+      "url": "x\u001fy",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/catalog/x%1Fy"
+    },
+    {
+      "url": "https://example.com/",
+      "origin": "https://example.com/catalog/index.json",
+      "resolved": "https://example.com/%7F"
+    }
+  ]
+}

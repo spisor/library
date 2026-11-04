@@ -69,3 +69,20 @@ endif()
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})
 set_tests_properties(fetch_network_test PROPERTIES LABELS network)
+
+set(runtime_catalog_fixture_definitions RUNTIME_CATALOG_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/catalog"
+    RUNTIME_CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
+foreach(name catalog_test catalog_sources_test catalog_resolve_test)
+    runtime_test(${name} $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+        $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
+    target_compile_definitions(${name} PRIVATE ${runtime_catalog_fixture_definitions})
+endforeach()
+
+runtime_test(catalog_check_test http_fixture.c $<TARGET_OBJECTS:runtime_catalog>
+    $<TARGET_OBJECTS:runtime_catalog_refresh_test_hooks> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(catalog_check_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(catalog_check_test PRIVATE Ws2_32)
+endif()
