@@ -95,14 +95,30 @@ static cJSON *start_refusal(const char *executable, DWORD error) {
     return host_refusal_of(parts, 3, START_FIX);
 }
 
-static int wait_for(HANDLE process, const host_child_watch *watch) {
+/** Waits for process to exit, ticking watch meanwhile; 1 with its exit code, 0 with *error when the wait failed. */
+static int wait_for(HANDLE process, const host_child_watch *watch, int *exit_code, DWORD *error) {
     DWORD interval = watch != NULL && watch->tick != NULL ? watch->interval_milliseconds : INFINITE;
-    while (WaitForSingleObject(process, interval) == WAIT_TIMEOUT) {
+    DWORD waited = WAIT_TIMEOUT;
+    while ((waited = WaitForSingleObject(process, interval)) == WAIT_TIMEOUT) {
         watch->tick(watch->context);
     }
-    DWORD code = 1;
-    GetExitCodeProcess(process, &code);
-    return (int)code;
+    DWORD code = STILL_ACTIVE;
+    if (waited != WAIT_OBJECT_0 || !GetExitCodeProcess(process, &code) || code == STILL_ACTIVE) {
+        *error = waited == WAIT_OBJECT_0 ? GetLastError() : waited;
+        return 0;
+    }
+    *exit_code = (int)code;
+    return 1;
+}
+
+static cJSON *wait_refusal(const char *executable, DWORD error) {
+    char reason[64];
+    snprintf(reason, sizeof reason, "Windows error %lu", (unsigned long)error);
+    const char *parts[3] = {"spisor could not wait for ", executable, " to exit: "};
+    const char *fix_parts[2] = {reason, "; the application may still be running, so check it before starting it again"};
+    char fix[256];
+    snprintf(fix, sizeof fix, "%s%s", fix_parts[0], fix_parts[1]);
+    return host_refusal_of(parts, 3, fix);
 }
 
 int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
@@ -126,7 +142,11 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
         if (watch != NULL && watch->started != NULL) {
             watch->started((double)information.dwProcessId, watch->context);
         }
-        *exit_code = wait_for(information.hProcess, watch);
+        DWORD wait_error = ERROR_SUCCESS;
+        if (!wait_for(information.hProcess, watch, exit_code, &wait_error)) {
+            *refusal = wait_refusal(executable, wait_error);
+            created = 0;
+        }
         CloseHandle(information.hProcess);
     } else if (prepared) {
         *refusal = start_refusal(executable, error);
@@ -135,10 +155,10 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     return created;
 }
 
-cJSON *host_replace_process(const char *executable, const cJSON *arguments) {
+cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch) {
     cJSON *refusal = NULL;
     int code = 1;
-    if (host_run_child(executable, arguments, NULL, NULL, &code, &refusal)) {
+    if (host_run_child(executable, arguments, NULL, watch, &code, &refusal)) {
         exit(code);
     }
     return refusal;

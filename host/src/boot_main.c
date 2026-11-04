@@ -66,7 +66,7 @@ static int boot(int count, char **arguments) {
         const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};
         refusal = host_refusal_of(parts, 2, "check that the cache SPISOR_CACHE names is writable, then run the command again");
     } else if (resolved != NULL) {
-        refusal = host_replace_process(host_text(resolved, "executable"), cJSON_GetObjectItemCaseSensitive(resolved, "arguments"));
+        refusal = host_replace_process(host_text(resolved, "executable"), cJSON_GetObjectItemCaseSensitive(resolved, "arguments"), NULL);
     }
     cJSON_Delete(resolved);
     return host_refuse(refusal);

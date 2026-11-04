@@ -175,7 +175,8 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     return ran;
 }
 
-cJSON *host_replace_process(const char *executable, const cJSON *arguments) {
+cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch) {
+    (void)watch;
     char **list = argument_list(executable, arguments);
     if (list == NULL) {
         return NULL;

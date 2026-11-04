@@ -115,7 +115,8 @@ static int run_held(const host_context *context, const char *binary, cJSON *star
     }
     launch_holds holds = {context, starts, 0, {NULL, NULL, NULL}};
     host_start_own_run(&holds.run, context);
-    host_child_watch watch = {hold_for_application, stamp_own_run, HOST_OWN_RUN_INTERVAL_MILLISECONDS, &holds};
+    host_child_watch watch = {hold_for_application, holds.run.record == NULL ? NULL : stamp_own_run,
+                              HOST_OWN_RUN_INTERVAL_MILLISECONDS, &holds};
     int exit_code = 1;
     int ran = host_run_child(binary, arguments, context->environment, &watch, &exit_code, &refusal);
     host_finish_own_run(&holds.run);
