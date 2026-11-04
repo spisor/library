@@ -13,6 +13,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
+#include "wide_path.h"
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -44,10 +46,9 @@ static char *lock_path(const char *state) {
 #if defined(_WIN32)
 
 static HANDLE open_lock_file(const char *path) {
-    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
-    wchar_t *wide = length <= 0 ? NULL : malloc((size_t)length * sizeof(wchar_t));
+    wchar_t *wide = spisor_wide_path(path);
     HANDLE handle = INVALID_HANDLE_VALUE;
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, length) > 0) {
+    if (wide != NULL) {
         handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     }

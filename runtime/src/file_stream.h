@@ -12,7 +12,8 @@ typedef enum runtime_file_mode {
  * The file at the UTF-8 path, opened for binary reading, or for binary writing from empty. NULL when it
  * cannot be opened.
  *
- * @implNote Windows opens through _wfopen, so a non-ASCII name resolves whatever the process code page is.
+ * @implNote Windows opens through spisor_windows_open, wide and sharing delete access, so a non-ASCII name
+ * resolves whatever the process code page is and an open reader never blocks a replace.
  */
 FILE *runtime_open_file(const char *path, runtime_file_mode mode);
 

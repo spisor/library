@@ -17,6 +17,7 @@
 #include "directory_tree.h"
 #include "fetch.h"
 #include "paths.h"
+#include "service_call.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -184,19 +185,12 @@ static cJSON *fetch_answer(const char *url, const char *destination, const char 
                 cJSON_AddStringToObject(request, "destination", destination) != NULL &&
                 cJSON_AddNumberToObject(request, "timeoutSeconds", INDEX_TIMEOUT_SECONDS) != NULL &&
                 (etag == NULL || cJSON_AddStringToObject(request, "etag", etag) != NULL);
-    char *text = built ? cJSON_PrintUnformatted(request) : NULL;
     free(requested);
-    cJSON_Delete(request);
-    if (text == NULL) {
+    cJSON *answer = built ? runtime_call_service(runtime_fetch_get, request, status) : NULL;
+    if (!built) {
         *status = SPISOR_STATUS_OUT_OF_MEMORY;
-        return NULL;
     }
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    *status = runtime_fetch_get((const uint8_t *)text, strlen(text), &out, &out_len);
-    cJSON_free(text);
-    cJSON *answer = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    spisor_release(out);
+    cJSON_Delete(request);
     return answer;
 }
 

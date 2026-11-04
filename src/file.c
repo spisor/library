@@ -15,6 +15,9 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
+#include "wide_path.h"
+#include "windows_file.h"
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -32,22 +35,9 @@ static char *duplicate_text(const char *text) {
 }
 
 #if defined(_WIN32)
-static wchar_t *to_wide(const char *path) {
-    int wide_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
-    if (wide_length <= 0) {
-        return NULL;
-    }
-    wchar_t *wide = malloc((size_t)wide_length * sizeof(wchar_t));
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, wide_length) <= 0) {
-        free(wide);
-        return NULL;
-    }
-    return wide;
-}
-
 /** GetFileAttributesW rather than _wstat, because _wstat refuses a directory named with a trailing separator. */
 int spisor_file_exists(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return 0;
     }
@@ -57,7 +47,7 @@ int spisor_file_exists(const char *path) {
 }
 
 spisor_file_presence spisor_probe_file(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return SPISOR_FILE_UNKNOWN;
     }
@@ -71,17 +61,11 @@ spisor_file_presence spisor_probe_file(const char *path) {
 }
 
 static FILE *open_for_reading(const char *path) {
-    wchar_t *wide = to_wide(path);
-    if (wide == NULL) {
-        return NULL;
-    }
-    FILE *file = _wfopen(wide, L"rb");
-    free(wide);
-    return file;
+    return spisor_windows_open(path, 0);
 }
 
 static int is_directory(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return 0;
     }
@@ -90,7 +74,7 @@ static int is_directory(const char *path) {
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 static FILE *open_for_writing(const char *path, const wchar_t *mode) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return NULL;
     }
@@ -106,11 +90,11 @@ static FILE *open_for_appending(const char *path) {
 static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
     (void)target;
     (void)owner_only;
-    return open_for_writing(temporary, L"wb");
+    return spisor_windows_open(temporary, 1);
 }
 
 static int create_directory(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return 0;
     }
@@ -120,7 +104,7 @@ static int create_directory(const char *path) {
 }
 
 static void remove_file(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide != NULL) {
         DeleteFileW(wide);
         free(wide);
@@ -128,13 +112,7 @@ static void remove_file(const char *path) {
 }
 
 static int move_over(const char *from, const char *to) {
-    wchar_t *wide_from = to_wide(from);
-    wchar_t *wide_to = to_wide(to);
-    int moved = wide_from != NULL && wide_to != NULL
-        && MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-    free(wide_from);
-    free(wide_to);
-    return moved;
+    return spisor_windows_move_over(from, to);
 }
 
 static char *to_utf8(const wchar_t *wide) {
@@ -174,7 +152,7 @@ static char *final_path_of_link(const wchar_t *wide) {
 }
 
 int spisor_is_link(const char *path) {
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return 0;
     }
@@ -187,7 +165,7 @@ static char *write_target_of(const char *path) {
     if (!spisor_is_link(path)) {
         return duplicate_text(path);
     }
-    wchar_t *wide = to_wide(path);
+    wchar_t *wide = spisor_wide_path(path);
     char *target = wide == NULL ? NULL : final_path_of_link(wide);
     free(wide);
     return target;

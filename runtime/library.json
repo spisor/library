@@ -996,6 +996,364 @@
           }
         }
       ]
+    },
+    {
+      "id": "cache",
+      "functions": [
+        {
+          "name": "install",
+          "symbol": "runtime_cache_install",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "id": { "type": "string", "minLength": 1 },
+              "item": { "type": "object" },
+              "version": { "type": "string", "minLength": 1 },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
+            },
+            "required": ["cache", "id", "item", "version"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "version": { "type": "string" },
+              "directory": { "type": "string" },
+              "fetched": { "type": "array", "items": { "type": "string" } },
+              "cached": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["id", "version", "directory", "fetched", "cached"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "installed",
+          "symbol": "runtime_cache_installed",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "platform": { "type": "string" }
+            },
+            "required": ["cache"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "bundles": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+              "libraries": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
+            },
+            "required": ["bundles", "libraries"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "check",
+          "symbol": "runtime_cache_check",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "directory": { "type": "string", "minLength": 1 }
+            },
+            "required": ["directory"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "kind": { "enum": ["absent", "intact", "damaged"] },
+              "detail": { "type": "string" },
+              "fix": { "type": "string" },
+              "file": { "type": "string" }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "platform",
+          "symbol": "runtime_cache_platform",
+          "kind": "json",
+          "argument": { "type": "object" },
+          "result": {
+            "type": "object",
+            "properties": {
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
+            },
+            "required": ["platform"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sweep",
+          "symbol": "runtime_cache_sweep",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "state": { "type": "string", "minLength": 1 }
+            },
+            "required": ["cache", "state"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "removed": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["removed"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "updates",
+      "functions": [
+        {
+          "name": "apply",
+          "symbol": "runtime_updates_apply",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "hostId": { "type": "string", "minLength": 1 },
+              "settings": { "type": "object" },
+              "defaults": { "type": "object", "additionalProperties": { "type": "string" } },
+              "running": { "type": "object", "additionalProperties": { "type": "string" } },
+              "libraries": { "type": "array", "items": { "type": "string" } },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
+            },
+            "required": ["places", "hostId"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "plugins": { "type": "object", "additionalProperties": { "type": "string" } },
+              "run": { "type": "object", "additionalProperties": { "type": "string" } },
+              "next": { "type": "object", "additionalProperties": { "type": "string" } },
+              "rollback": { "type": "object", "additionalProperties": { "type": "string" } },
+              "unrecorded": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "fix": { "type": "string" }
+                  },
+                  "required": ["message", "fix"],
+                  "additionalProperties": false
+                }
+              },
+              "runRecord": { "type": "string" }
+            },
+            "required": ["plugins", "run", "next", "rollback", "unrecorded", "runRecord"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "check",
+          "symbol": "runtime_updates_check",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "hostId": { "type": "string", "minLength": 1 },
+              "now": { "type": "string", "minLength": 1 },
+              "settings": { "type": "object" },
+              "defaults": { "type": "object", "additionalProperties": { "type": "string" } },
+              "problems": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "version": { "type": "string" }
+                  },
+                  "required": ["id", "version"]
+                }
+              },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
+            },
+            "required": ["places", "hostId", "now"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "checked": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "enum": ["skipped", "unchanged", "changed", "failed"] },
+                    "detail": { "type": "string" }
+                  },
+                  "required": ["kind"],
+                  "additionalProperties": false
+                }
+              },
+              "fetched": { "type": "array", "items": { "type": "string" } },
+              "refused": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "message": { "type": "string" },
+                    "fix": { "type": "string" }
+                  },
+                  "required": ["id", "message", "fix"],
+                  "additionalProperties": false
+                }
+              },
+              "removed": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["checked", "fetched", "refused", "removed"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "rollback",
+          "symbol": "runtime_updates_rollback",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "hostId": { "type": "string", "minLength": 1 },
+              "item": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "hostId", "item"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "run": { "type": "object", "additionalProperties": { "type": "string" } },
+              "next": { "type": "object", "additionalProperties": { "type": "string" } },
+              "rollback": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["run", "next", "rollback"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "boot",
+      "functions": [
+        {
+          "name": "read",
+          "symbol": "runtime_boot_read",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 }
+            },
+            "required": ["cache", "hostId"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "hint": {
+                "type": "object",
+                "properties": {
+                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "host": { "type": "string" }
+                },
+                "required": ["libraries"],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "write",
+          "symbol": "runtime_boot_write",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+              "host": { "type": "string", "minLength": 1 },
+              "state": { "type": "string", "minLength": 1 }
+            },
+            "required": ["cache", "hostId", "libraries"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "hint": {
+                "type": "object",
+                "properties": {
+                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "host": { "type": "string" }
+                },
+                "required": ["libraries"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["hint"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "resolve",
+          "symbol": "runtime_boot_resolve",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "cache": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string" },
+              "arguments": { "type": "array", "items": { "type": "string" } },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
+            },
+            "required": ["cache"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "executable": { "type": "string" },
+              "arguments": { "type": "array", "items": { "type": "string" } },
+              "version": { "type": "string" },
+              "directory": { "type": "string" }
+            },
+            "required": ["executable", "arguments", "version", "directory"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }
