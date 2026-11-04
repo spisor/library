@@ -30,25 +30,38 @@ static int add_shell_escaped(runtime_catalog_text *text, const char *value) {
     return 1;
 }
 
+/** Adds count backslashes; 0 when memory runs out. */
+static int add_backslashes(runtime_catalog_text *text, size_t count) {
+    for (size_t added = 0; added < count; added++) {
+        if (!runtime_catalog_text_add_character(text, '\\')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /**
- * value quoted as CommandLineToArgvW reads it, by cross-spawn's two rules: a quote and the one backslash
- * before it, if any, become backslash backslash backslash quote, and a backslash ending value is doubled.
+ * value quoted as CommandLineToArgvW reads it back: a run of backslashes before a quote is doubled and the
+ * quote escaped, and a run ending value is doubled, since the closing quote follows it.
  */
 static char *quoted(const char *value) {
     runtime_catalog_text text;
     runtime_catalog_text_start(&text);
     int built = runtime_catalog_text_add_character(&text, '"');
-    size_t length = strlen(value);
-    for (size_t index = 0; built && index < length; index++) {
-        if (value[index] == '\\' && value[index + 1] == '"') {
-            built = runtime_catalog_text_add(&text, "\\\\\\\"");
-            index++;
-        } else if (value[index] == '"') {
-            built = runtime_catalog_text_add(&text, "\\\"");
-        } else if (value[index] == '\\' && index + 1 == length) {
-            built = runtime_catalog_text_add(&text, "\\\\");
+    for (const char *at = value; built && *at != 0;) {
+        size_t run = 0;
+        while (at[run] == '\\') {
+            run++;
+        }
+        if (at[run] == '"') {
+            built = add_backslashes(&text, 2 * run + 1) && runtime_catalog_text_add_character(&text, '"');
+            at += run + 1;
+        } else if (at[run] == 0) {
+            built = add_backslashes(&text, 2 * run);
+            at += run;
         } else {
-            built = runtime_catalog_text_add_character(&text, value[index]);
+            built = add_backslashes(&text, run) && runtime_catalog_text_add_character(&text, at[run]);
+            at += run + 1;
         }
     }
     if (!built || !runtime_catalog_text_add_character(&text, '"')) {

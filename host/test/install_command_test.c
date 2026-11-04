@@ -143,6 +143,26 @@ static void puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_inst
     finish_world(&world);
 }
 
+static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_ansi_codepage(void) {
+    host_world world;
+    start_world_at(&world, "install-command", "relative");
+    char *folder = joined(world.base.root, "\xce\xa9\xce\xbc\xce\xad\xce\xb3\xce\xb1");
+    free(world.base.catalog);
+    world.base.catalog = joined(folder, "catalog");
+    list_launch_catalog(&world, "[]", 0);
+    program run;
+    const char *arguments[] = {"install", "--catalog", "catalog/catalog.json", NULL};
+    world_start_in(&world, &run, FOREBAY_HOST_PATH, arguments, NULL, 1, folder);
+    CHECK(program_finish(&run, 120000) == 0);
+    check_text(run.err, "", "nothing refused");
+    cJSON *registration = registration_in(&world, "forebay-host");
+    CHECK(registration != NULL);
+    cJSON_Delete(registration);
+    program_free(&run);
+    free(folder);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -153,6 +173,7 @@ int main(void) {
     answers_2_without_a_catalog_or_with_one_that_is_neither_https_nor_a_path();
     answers_1_naming_what_could_not_be_installed_after_printing_the_report();
     puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed();
+    installs_from_a_relative_catalog_under_a_folder_named_outside_the_ansi_codepage();
     expect_user_path_unchanged(&guard);
     return check_summary("install_command_test");
 }

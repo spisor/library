@@ -161,6 +161,19 @@ static void escapes_a_quote_and_a_trailing_backslash_as_cross_spawn_does(void) {
     cJSON_Delete(arguments);
 }
 
+static void doubles_a_run_of_backslashes_before_a_quote_and_at_the_end(void) {
+    cJSON *ending = parsed("[\"a\\\\\\\\\"]");
+    char *ending_line = host_command_shell_line("x.cmd", ending);
+    check_text(ending_line, "\"x.cmd ^^^\"a\\\\\\\\^^^\"\"", "a run at the end");
+    cJSON *quoting = parsed("[\"\\\\\\\\\\\"\"]");
+    char *quoting_line = host_command_shell_line("x.cmd", quoting);
+    check_text(quoting_line, "\"x.cmd ^^^\"\\\\\\\\\\^^^\"^^^\"\"", "a run before a quote");
+    free(quoting_line);
+    cJSON_Delete(quoting);
+    free(ending_line);
+    cJSON_Delete(ending);
+}
+
 /* main.ts and host-main.ts, the options parseArgs read */
 
 static void reads_options_given_both_ways_and_refuses_an_unknown_one_or_a_missing_value(void) {
@@ -201,6 +214,7 @@ int main(void) {
     asks_about_no_further_application_once_the_terminal_answers_nothing();
     runs_a_batch_file_through_the_command_shell_with_each_argument_escaped_for_both_parses();
     escapes_a_quote_and_a_trailing_backslash_as_cross_spawn_does();
+    doubles_a_run_of_backslashes_before_a_quote_and_at_the_end();
     reads_options_given_both_ways_and_refuses_an_unknown_one_or_a_missing_value();
     CHECK(runtime_remove_tree(scratch) == 1);
     return check_summary("command_line_test");

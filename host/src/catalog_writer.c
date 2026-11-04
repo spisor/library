@@ -47,15 +47,6 @@ static int refuse(cJSON **refusal, const char *const *parts, size_t count, const
     return 0;
 }
 
-static int equals_ignoring_case(const char *left, const char *right) {
-    for (; *left != 0 && *right != 0; left++, right++) {
-        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
-            return 0;
-        }
-    }
-    return *left == *right;
-}
-
 static int check_files(const catalog_input *input, const char *label, cJSON **refusal) {
     for (const cJSON *file = input->files->child; file != NULL; file = file->next) {
         if (!runtime_catalog_is_file_key(file->string)) {
@@ -65,7 +56,7 @@ static int check_files(const catalog_input *input, const char *label, cJSON **re
             free(key);
             return 0;
         }
-        if (equals_ignoring_case(file->string, RUNTIME_INSTALL_MARKER)) {
+        if (host_equals_ignoring_case(file->string, RUNTIME_INSTALL_MARKER)) {
             const char *parts[4] = {label, " lists the file ", file->string,
                                     ", which the cache would take for its completion marker " RUNTIME_INSTALL_MARKER};
             return refuse(refusal, parts, 4, "rename the file");

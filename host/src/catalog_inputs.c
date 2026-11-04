@@ -109,15 +109,6 @@ static const char *base_name(const char *key) {
     return slash == NULL ? key : slash + 1;
 }
 
-static int equals_ignoring_case(const char *left, const char *right) {
-    for (; *left != 0 && *right != 0; left++, right++) {
-        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
-            return 0;
-        }
-    }
-    return *left == *right;
-}
-
 /** The entry the manifest names, refused unless it is a relative path the bundle's own files would not replace. */
 static const char *entry_of(const cJSON *manifest, const char *path, cJSON **refusal) {
     const cJSON *entry = cJSON_GetObjectItemCaseSensitive(manifest, "entry");
@@ -129,7 +120,7 @@ static const char *entry_of(const cJSON *manifest, const char *path, cJSON **ref
         free(named);
         return NULL;
     }
-    if (equals_ignoring_case(entry->valuestring, PLUGIN_MANIFEST) || equals_ignoring_case(base_name(entry->valuestring), MODULE_MARKER)) {
+    if (host_equals_ignoring_case(entry->valuestring, PLUGIN_MANIFEST) || host_equals_ignoring_case(base_name(entry->valuestring), MODULE_MARKER)) {
         const char *parts[4] = {path, " names the entry ", entry->valuestring,
                                 ", which the bundle's own " PLUGIN_MANIFEST " or " MODULE_MARKER " would replace"};
         *refusal = refused(parts, 4, "name a script as the entry, for example \"entry\": \"index.js\"");

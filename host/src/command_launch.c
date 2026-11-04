@@ -10,6 +10,7 @@
 #include "host_start.h"
 #include "loader_start.h"
 #include "on_path.h"
+#include "own_run.h"
 #include "paths.h"
 
 #define HOLD_FIX "nothing is needed now; the application runs, and a background host it lacks starts with the next launch"
@@ -19,6 +20,7 @@ typedef struct launch_holds {
     const host_context *context;
     cJSON *starts;
     double application;
+    own_run run;
 } launch_holds;
 
 /** The application's binary on the PATH, refused naming how to put it there. */
@@ -89,6 +91,11 @@ static void hold_for_application(double pid, void *context) {
     cJSON_Delete(refusal);
 }
 
+static void stamp_own_run(void *context) {
+    launch_holds *holds = context;
+    host_stamp_own_run(&holds->run);
+}
+
 static cJSON *application_arguments(int count, char **arguments) {
     cJSON *list = cJSON_CreateArray();
     for (int index = 0; list != NULL && index < count; index++) {
@@ -106,9 +113,12 @@ static int run_held(const host_context *context, const char *binary, cJSON *star
     if (!host_hold_all(context, starts, self, &refusal)) {
         return host_refuse(refusal);
     }
-    launch_holds holds = {context, starts, 0};
+    launch_holds holds = {context, starts, 0, {NULL, NULL, NULL}};
+    host_start_own_run(&holds.run, context);
+    host_child_watch watch = {hold_for_application, stamp_own_run, HOST_OWN_RUN_INTERVAL_MILLISECONDS, &holds};
     int exit_code = 1;
-    int ran = host_run_child(binary, arguments, context->environment, hold_for_application, &holds, &exit_code, &refusal);
+    int ran = host_run_child(binary, arguments, context->environment, &watch, &exit_code, &refusal);
+    host_finish_own_run(&holds.run);
     if (holds.application != 0) {
         host_release_all(context, starts, holds.application);
     }

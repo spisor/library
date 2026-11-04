@@ -203,6 +203,58 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     finish_world(&world);
 }
 
+/**
+ * Makes the shim of the loader's one required command unrewritable, as a running image was before it could
+ * be set aside: its record asks for new content, and a directory stands where the shim was.
+ */
+static void make_shim_unrewritable(const host_world *world) {
+    char *path = joined(world->base.state, "hosts/" LOADER_ID ".json");
+    cJSON *registration = json_in(world->base.state, "hosts/" LOADER_ID ".json");
+    cJSON *change;
+    cJSON_ArrayForEach(change, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const char *changed = text_at(change, "path");
+        if (changed != NULL && strstr(changed, "fx") != NULL && cJSON_HasObjectItem(change, "digest")) {
+            cJSON_ReplaceItemInObjectCaseSensitive(change, "digest", cJSON_CreateString("stale"));
+            CHECK(runtime_remove_file_entry(changed) == RUNTIME_ENTRY_DONE);
+            CHECK(spisor_make_directories(changed) == 1);
+        }
+    }
+    char *text = cJSON_PrintUnformatted(registration);
+    write_file(path, text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    free(path);
+}
+
+static void runs_the_application_when_the_loader_cannot_be_registered_again_saying_why(void) {
+    host_world world;
+    start_world_at(&world, "launch", "unregistrable");
+    install_fake_application(&world);
+    install_base *base = &world.base;
+    list_native_forebay_host(base, "1.0.0");
+    list_library(base, "runtime", "0.1.0");
+    list_loader(base, LOADER_ID, "1.0.0", application_json(APPLICATION_ID, APPLICATION_ID, "{}"), "[\"fx\"]", 1,
+                "[\"" BACKGROUND_ID "\"]");
+    list_native_background(base, BACKGROUND_ID, 1);
+    write_catalog(base);
+    CHECK(world_install(&world, NULL, NULL) == 0);
+    make_shim_unrewritable(&world);
+    program launcher;
+    const char *passed[] = {"unregistrable", "6", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "unregistrable");
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "unregistrable");
+    CHECK(program_finish(&launcher, 30000) == 6);
+    expect_contains(launcher.err, "spisor could not register " LOADER_ID " again: ", "the problem named");
+    expect_contains(launcher.err, "fix: ", "with its fix");
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 /* boot-executable.test.ts, the JS runtime install records */
 
 static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(void) {
@@ -262,6 +314,7 @@ int main(void) {
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
     refuses_a_session_host_when_install_recorded_no_javascript_runtime();
+    runs_the_application_when_the_loader_cannot_be_registered_again_saying_why();
     expect_user_path_unchanged(&guard);
     return check_summary("launch_test");
 }

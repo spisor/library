@@ -34,8 +34,11 @@ static char *installed_version(const host_context *context, const char *id, cons
     }
     cJSON *check = argument == NULL ? NULL : host_call(runtime_cache_check, argument, refusal);
     const char *kind = host_text(check, "kind");
-    if (check != NULL && (kind == NULL || strcmp(kind, "intact") != 0)) {
+    int intact = kind != NULL && strcmp(kind, "intact") == 0;
+    if (check != NULL && !intact) {
         *refusal = refused(id, " is not installed intact in ", directory);
+    }
+    if (!intact) {
         free(directory);
         directory = NULL;
     }

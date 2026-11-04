@@ -6,7 +6,7 @@ endif()
 set(host_sources src/application_choices.c src/boot_placement.c src/catalog_inputs.c src/catalog_writer.c
     src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c
     src/command_remove.c src/command_status.c src/command_update.c src/host_context.c src/host_holds.c src/host_options.c
-    src/host_output.c src/host_start.c src/loader_start.c src/terminal_question.c src/windows_command.c)
+    src/host_output.c src/host_service.c src/host_start.c src/loader_start.c src/own_executable.c src/own_run.c src/terminal_question.c src/windows_command.c)
 if(WIN32)
     set(host_platform_sources src/child_windows.c src/host_arguments.c)
 else()
@@ -36,8 +36,25 @@ endfunction()
 
 host_executable(forebay_host forebay-host src/main.c $<TARGET_OBJECTS:host_objects> ${host_runtime_objects})
 
-host_executable(forebay_boot forebay-boot src/boot_main.c src/host_output.c src/host_context.c src/windows_command.c
-    ${host_platform_sources} ${host_runtime_objects})
+if(WIN32)
+    set(host_boot_platform_sources src/child_windows.c src/host_arguments.c ${PROJECT_SOURCE_DIR}/runtime/src/command_line_windows.c
+        ${PROJECT_SOURCE_DIR}/runtime/src/windows_process.c)
+else()
+    set(host_boot_platform_sources src/child_posix.c)
+endif()
+set(host_boot_runtime_sources alive_stamp.c boot.c boot_hint.c boot_resolve.c cache_folders.c cache_marker.c cache_place.c cache_refusal.c
+    catalog_answer.c catalog_path.c catalog_text.c directory_tree.c file_stream.c file_times.c process_alive.c host_references.c hosts_lock.c
+    json_service.c node_json_file.c platform_key.c run_records.c segment.c service_call.c sha256.c)
+list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/src/)
+
+# forebay-boot changes almost never once published, so it carries only what boot.resolve needs.
+add_executable(forebay_boot src/boot_main.c src/host_output.c src/host_service.c src/own_executable.c src/windows_command.c
+    ${host_boot_platform_sources} ${host_boot_runtime_sources})
+target_link_libraries(forebay_boot PRIVATE spisor_library)
+target_include_directories(forebay_boot PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
+    ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(forebay_boot PROPERTIES OUTPUT_NAME forebay-boot)
+spisor_strict_warnings(forebay_boot)
 
 if(WIN32)
     add_dependencies(forebay_host runtime_launcher)

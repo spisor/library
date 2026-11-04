@@ -31,7 +31,8 @@ static int run_application(const host_world *world, const char *binary, const ch
     cJSON *environment = world_environment(world);
     int exit_code = -1;
     *refusal = NULL;
-    int ran = host_run_child(binary, list, environment, on_started, &run, &exit_code, refusal);
+    host_child_watch watch = {on_started, NULL, 0, &run};
+    int ran = host_run_child(binary, list, environment, &watch, &exit_code, refusal);
     cJSON_Delete(environment);
     cJSON_Delete(list);
     return ran ? exit_code : -1;
@@ -89,7 +90,7 @@ static void hands_a_batch_shim_each_argument_byte_identical_and_runs_nothing_an_
     char third[2048];
     snprintf(first, sizeof first, "x\" & echo INJECTED> %s & \"y", marker);
     snprintf(third, sizeof third, "\"%%PATH%%\" ^ ! & echo INJECTED> %s", marker);
-    const char *given[] = {"vectors", "0", first, "\"x\" & y", third, NULL};
+    const char *given[] = {"vectors", "0", first, "\"x\" & y", third, "a\\\\", "\\\\\"x", NULL};
     cJSON *refusal = NULL;
     CHECK(run_application(&world, shim, given, 0, &refusal) == 0);
     cJSON *started = application_start(&world, "vectors");

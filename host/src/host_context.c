@@ -4,6 +4,7 @@
 
 #include "host_context.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,9 +19,10 @@
 #if defined(_WIN32)
 #include <process.h>
 #include <windows.h>
+
+#include "windows_process.h"
 #else
 #include <limits.h>
-#include <sys/stat.h>
 #include <unistd.h>
 extern char **environ;
 #endif
@@ -82,11 +84,6 @@ double host_process_id(void) {
     return (double)_getpid();
 }
 
-int host_make_runnable(const char *path) {
-    (void)path;
-    return 1;
-}
-
 #else
 
 cJSON *host_process_environment(void) {
@@ -116,26 +113,7 @@ double host_process_id(void) {
     return (double)getpid();
 }
 
-int host_make_runnable(const char *path) {
-    struct stat status;
-    return stat(path, &status) == 0 && ((status.st_mode & S_IXUSR) != 0 || chmod(path, status.st_mode | S_IXUSR) == 0);
-}
-
 #endif
-
-cJSON *host_call(runtime_json_function function, cJSON *argument, cJSON **refusal) {
-    *refusal = NULL;
-    return runtime_call_or_refuse(function, argument, refusal);
-}
-
-const char *host_text(const cJSON *object, const char *name) {
-    const cJSON *member = cJSON_GetObjectItemCaseSensitive(object, name);
-    return cJSON_IsString(member) ? member->valuestring : NULL;
-}
-
-cJSON *host_refusal_of(const char *const *parts, size_t count, const char *fix) {
-    return runtime_cache_refusal(parts, count, fix);
-}
 
 static cJSON *places_call(const char *home, const cJSON *environment) {
     cJSON *call = cJSON_CreateObject();
@@ -212,10 +190,31 @@ cJSON *host_settings_of(const host_context *context, const char *home, cJSON **r
     return values;
 }
 
-char *host_absolute_path(const char *path) {
 #if defined(_WIN32)
-    char *absolute = _fullpath(NULL, path, 0);
+
+static char *utf8_of(const wchar_t *wide) {
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    char *narrow = bytes <= 0 ? NULL : malloc((size_t)bytes);
+    if (narrow != NULL) {
+        WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, bytes, NULL, NULL);
+    }
+    return narrow;
+}
+
+/** @implNote GetFullPathNameW on the UTF-16 path, since _fullpath works in the ANSI codepage. */
+char *host_absolute_path(const char *path) {
+    wchar_t *wide = runtime_windows_text(path);
+    DWORD units = wide == NULL ? 0 : GetFullPathNameW(wide, 0, NULL, NULL);
+    wchar_t *full = units == 0 ? NULL : malloc(units * sizeof *full);
+    char *absolute = full != NULL && GetFullPathNameW(wide, units, full, NULL) < units ? utf8_of(full) : NULL;
+    free(full);
+    free(wide);
+    return absolute;
+}
+
 #else
+
+char *host_absolute_path(const char *path) {
     char *absolute = NULL;
     if (spisor_path_is_absolute(0, path)) {
         absolute = malloc(strlen(path) + 1);
@@ -227,6 +226,16 @@ char *host_absolute_path(const char *path) {
         const char *segments[2] = {getcwd(directory, sizeof directory), path};
         absolute = segments[0] == NULL ? NULL : spisor_path_join(0, segments, 2);
     }
-#endif
     return absolute;
+}
+
+#endif
+
+int host_equals_ignoring_case(const char *left, const char *right) {
+    for (; *left != 0 && *right != 0; left++, right++) {
+        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
+            return 0;
+        }
+    }
+    return *left == *right;
 }

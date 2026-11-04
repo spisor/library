@@ -372,17 +372,23 @@ static inline cJSON *world_environment(const host_world *world) {
     return world_environment_with_path(world, world->bin);
 }
 
-/** Starts executable with the NULL-ended arguments under the world's environment and path. */
-static inline void world_start(host_world *world, program *run, const char *executable, const char *const *arguments,
-                               const char *path, int detached) {
+/** Starts executable with the NULL-ended arguments under the world's environment and path, in directory. */
+static inline void world_start_in(host_world *world, program *run, const char *executable, const char *const *arguments,
+                                  const char *path, int detached, const char *directory) {
     char label[32];
     snprintf(label, sizeof label, "run-%d", ++world->runs);
     prepare_program(run, world->streams, label);
     cJSON *list = strings_of(arguments);
     cJSON *environment = world_environment_with_path(world, path == NULL ? world->bin : path);
-    program_start(run, executable, list, environment, world->base.root, detached);
+    program_start(run, executable, list, environment, directory, detached);
     cJSON_Delete(environment);
     cJSON_Delete(list);
+}
+
+/** Starts executable with the NULL-ended arguments under the world's environment and path, in its root. */
+static inline void world_start(host_world *world, program *run, const char *executable, const char *const *arguments,
+                               const char *path, int detached) {
+    world_start_in(world, run, executable, arguments, path, detached, world->base.root);
 }
 
 /** Runs forebay-host's test build with the NULL-ended arguments to its end; its exit code. */

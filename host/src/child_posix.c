@@ -11,10 +11,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "host_child.h"
-#include "host_context.h"
+#include "host_service.h"
 #include "host_output.h"
 
 extern char **environ;
@@ -105,18 +106,42 @@ static int exit_code_of(int status) {
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 }
 
-static int wait_for(pid_t child) {
-    int status = 0;
-    while (waitpid(child, &status, 0) < 0) {
-        if (errno != EINTR) {
-            return 1;
-        }
-    }
-    return exit_code_of(status);
+static double now_milliseconds(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)now.tv_sec * 1000.0 + (double)now.tv_nsec / 1000000.0;
 }
 
-int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, host_child_started started,
-                   void *context, int *exit_code, cJSON **refusal) {
+static void pause_briefly(void) {
+    struct timespec pause = {0, 50 * 1000000L};
+    nanosleep(&pause, NULL);
+}
+
+/** Waits for child, ticking watch every interval while it runs; its exit code. */
+static int wait_for(pid_t child, const host_child_watch *watch) {
+    int ticking = watch != NULL && watch->tick != NULL;
+    double ticked = now_milliseconds();
+    int status = 0;
+    for (;;) {
+        pid_t waited = waitpid(child, &status, ticking ? WNOHANG : 0);
+        if (waited == child) {
+            return exit_code_of(status);
+        }
+        if (waited < 0 && errno != EINTR) {
+            return 1;
+        }
+        if (ticking && now_milliseconds() - ticked >= watch->interval_milliseconds) {
+            watch->tick(watch->context);
+            ticked = now_milliseconds();
+        }
+        if (ticking) {
+            pause_briefly();
+        }
+    }
+}
+
+int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
+                   int *exit_code, cJSON **refusal) {
     *refusal = NULL;
     char **list = argument_list(executable, arguments);
     char **variables = environment == NULL ? NULL : environment_list(environment);
@@ -140,10 +165,10 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
         if (terminate_pending) {
             kill(child, SIGTERM);
         }
-        if (started != NULL) {
-            started((double)child, context);
+        if (watch != NULL && watch->started != NULL) {
+            watch->started((double)child, watch->context);
         }
-        *exit_code = wait_for(child);
+        *exit_code = wait_for(child, watch);
         running_child = 0;
     }
     restore_stop_signals(previous);

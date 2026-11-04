@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host_output.h"
 #include "install_ecosystem.h"
 #include "loader.h"
 #include "processes.h"
@@ -63,6 +64,25 @@ static cJSON *loader_call(const host_context *context, const char *id, const cha
     return call;
 }
 
+/**
+ * Registers loader id at version again, requesting its commands, and writes what it could not do to stderr.
+ *
+ * @implNote Never refuses the start (RULES section 2): the registration and its commands stand from the
+ * last time they could be written, and a shim rewrite can fail, a running image above all.
+ */
+static void register_again(const host_context *context, const char *id, const char *version) {
+    cJSON *refusal = NULL;
+    cJSON *registered = host_call(runtime_install_register_loader, loader_call(context, id, version, 1), &refusal);
+    if (registered == NULL) {
+        host_write(1, "spisor could not register ");
+        host_write(1, id);
+        host_write(1, " again: ");
+        host_print_refusal(refusal);
+    }
+    cJSON_Delete(registered);
+    cJSON_Delete(refusal);
+}
+
 int host_start_loader(const host_context *context, const char *id, loader_start *start, cJSON **refusal) {
     memset(start, 0, sizeof *start);
     start->registration = host_registration(context, id, refusal);
@@ -74,13 +94,12 @@ int host_start_loader(const host_context *context, const char *id, loader_start 
         strcpy(start->version, version);
     }
     cJSON_Delete(applied);
-    cJSON *registered = start->version == NULL ? NULL
-                                               : host_call(runtime_install_register_loader,
-                                                           loader_call(context, id, start->version, 1), refusal);
-    cJSON *installed = registered == NULL ? NULL
-                                          : host_call(runtime_loader_installed, loader_call(context, id, start->version, 0),
-                                                      refusal);
-    cJSON_Delete(registered);
+    if (start->version != NULL) {
+        register_again(context, id, start->version);
+    }
+    cJSON *installed = start->version == NULL ? NULL
+                                              : host_call(runtime_loader_installed, loader_call(context, id, start->version, 0),
+                                                          refusal);
     start->standard = cJSON_DetachItemFromObjectCaseSensitive(installed, "standard");
     cJSON_Delete(installed);
     return start->standard != NULL;
