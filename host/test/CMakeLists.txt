@@ -42,3 +42,7 @@ host_test(profile_test)
 host_test(command_line_test)
 host_test(child_test)
 host_test(catalog_build_test)
+host_test(install_script_test)
+target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
+    CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json" RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>")
+add_dependencies(install_script_test runtime)
