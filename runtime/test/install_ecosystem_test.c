@@ -303,10 +303,10 @@ static void refuses_a_source_that_is_neither_local_nor_https(void) {
     start_install_base(&base, "ecosystem", "bad-source");
     list_ecosystem(&base);
     catalog_answer answer = install_with(&base, "{\"sources\": [{\"kind\": \"ftp\", \"url\": \"ftp://x\"}]}", NULL);
-    expect_refusal(answer, "sources", "bad source kind");
+    expect_refusal(answer, "no catalog source", "bad source kind");
     cJSON_Delete(answer.tree);
     answer = install_with(&base, "{\"sources\": [{\"kind\": \"local\"}]}", NULL);
-    expect_refusal(answer, "sources", "local source without a path");
+    expect_refusal(answer, "no catalog source", "local source without a path");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "bundles"));
     finish_install_base(&base);
