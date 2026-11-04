@@ -20,7 +20,8 @@ FILE *spisor_windows_open(const char *path, int writing);
  *
  * @implNote Retried a bounded number of times on a sharing violation or access denied, which is what a
  * replace meets while another process (a virus scanner, the search indexer, or a reader opened by
- * older code) briefly holds the destination; any other failure is answered at once.
+ * older code) briefly holds the destination. Access denied on a directory or a read-only file can never
+ * clear, so it is answered at once, as is any other failure.
  */
 int spisor_windows_move_over(const char *from, const char *to);
 #endif

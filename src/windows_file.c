@@ -36,22 +36,31 @@ FILE *spisor_windows_open(const char *path, int writing) {
     return handle == INVALID_HANDLE_VALUE ? NULL : stream_of(handle, writing);
 }
 
-static int is_held_elsewhere(DWORD error) {
-    return error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED || error == ERROR_LOCK_VIOLATION;
+/** Whether destination can never be replaced by a rename, however long one waits: a directory or a read-only file. */
+static int is_unreplaceable(const wchar_t *destination) {
+    DWORD attributes = GetFileAttributesW(destination);
+    return attributes != INVALID_FILE_ATTRIBUTES &&
+           (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY)) != 0;
+}
+
+/** Whether a failed rename is worth trying again: the destination is held by another process for a moment. */
+static int is_worth_retrying(DWORD error, const wchar_t *destination) {
+    if (error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION) {
+        return 1;
+    }
+    return error == ERROR_ACCESS_DENIED && !is_unreplaceable(destination);
 }
 
 int spisor_windows_move_over(const char *from, const char *to) {
     wchar_t *wide_from = spisor_wide_path(from);
     wchar_t *wide_to = spisor_wide_path(to);
     int moved = 0;
-    for (int attempt = 0; wide_from != NULL && wide_to != NULL && !moved && attempt < MOVE_ATTEMPTS; attempt++) {
+    for (int attempt = 1; wide_from != NULL && wide_to != NULL && !moved; attempt++) {
         moved = MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-        if (!moved && !is_held_elsewhere(GetLastError())) {
+        if (moved || attempt == MOVE_ATTEMPTS || !is_worth_retrying(GetLastError(), wide_to)) {
             break;
         }
-        if (!moved) {
-            Sleep(MOVE_PAUSE_MILLISECONDS);
-        }
+        Sleep(MOVE_PAUSE_MILLISECONDS);
     }
     free(wide_from);
     free(wide_to);

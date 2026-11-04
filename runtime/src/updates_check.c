@@ -158,14 +158,19 @@ static int plan_targets(const runtime_updates_request *request, check_plan *plan
     return planned;
 }
 
-/** Each target that is not what runs, set into next (background.ts nextOf). */
-static int schedule(cJSON *next, const cJSON *targets, const cJSON *run) {
+/**
+ * Each target that is not what runs, set into next (background.ts nextOf), leaving out a version a rollback
+ * moved away from as the references hold it now, under the lock.
+ */
+static int schedule(cJSON *next, const cJSON *targets, const runtime_host_references *recorded) {
     int scheduled = 1;
     for (const cJSON *target = targets->child; scheduled && target != NULL; target = target->next) {
         const char *id = runtime_map_version(target, "id");
         const char *version = runtime_map_version(target, "version");
-        const char *running = runtime_map_version(run, id);
-        if (running == NULL || strcmp(running, version) != 0) {
+        const char *running = runtime_map_version(recorded->run, id);
+        const char *rolled_away = runtime_map_version(recorded->rolled_back_from, id);
+        int held = rolled_away != NULL && strcmp(rolled_away, version) == 0;
+        if (!held && (running == NULL || strcmp(running, version) != 0)) {
             scheduled = runtime_map_set(next, id, version);
         }
     }
@@ -194,8 +199,8 @@ static int record_next(const runtime_updates_request *request, const check_plan 
     runtime_host_references recorded =
         guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                       : runtime_read_host_references(request->state, request->host_id);
-    int recorded_next = recorded.run != NULL && schedule(recorded.next, plan->targets, recorded.run);
     release_rollbacks(recorded.rolled_back_from, plan->catalog);
+    int recorded_next = recorded.run != NULL && schedule(recorded.next, plan->targets, &recorded);
     char *problem = NULL;
     if (recorded_next && !runtime_record_host_references(request->state, request->host_id, &recorded, &problem)) {
         *refusal = runtime_updates_unrecorded(problem);

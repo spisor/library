@@ -25,7 +25,8 @@ static cJSON *not_intact(const char *item, const char *version) {
 
 /**
  * Swaps item's run and rollback versions in references, and records the version it moves away from in
- * rolled_back_from, so no check schedules it again while it is still the catalog's latest.
+ * rolled_back_from, so no check schedules it again while it is still the catalog's latest; a next naming
+ * that version is dropped, or the next start would switch straight back to it.
  */
 static int swap(runtime_host_references *references, const char *item, const char *version) {
     const char *current = runtime_map_version(references->run, item);
@@ -35,6 +36,10 @@ static int swap(runtime_host_references *references, const char *item, const cha
         switched_from = runtime_cache_text(parts, 1);
     }
     cJSON_DeleteItemFromObjectCaseSensitive(references->rollback, item);
+    const char *scheduled = runtime_map_version(references->next, item);
+    if (scheduled != NULL && current != NULL && strcmp(scheduled, current) == 0) {
+        cJSON_DeleteItemFromObjectCaseSensitive(references->next, item);
+    }
     if (switched_from != NULL && references->rolled_back_from == NULL) {
         references->rolled_back_from = cJSON_CreateObject();
     }

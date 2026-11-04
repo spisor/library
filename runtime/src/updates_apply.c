@@ -89,11 +89,14 @@ static int switch_host(const runtime_updates_request *request, const runtime_hos
     return version == NULL || runtime_map_set(record->references.run, request->host_id, version);
 }
 
-static int add_fetches(cJSON *next, const cJSON *fetch) {
+/** Schedules each fetch in next, leaving out a version a rollback moved away from. */
+static int add_fetches(cJSON *next, const cJSON *fetch, const cJSON *rolled_back_from) {
     int added = 1;
     for (const cJSON *target = fetch == NULL ? NULL : fetch->child; added && target != NULL; target = target->next) {
-        added = runtime_map_set(next, cJSON_GetObjectItemCaseSensitive(target, "id")->valuestring,
-                                cJSON_GetObjectItemCaseSensitive(target, "version")->valuestring);
+        const char *id = cJSON_GetObjectItemCaseSensitive(target, "id")->valuestring;
+        const char *version = cJSON_GetObjectItemCaseSensitive(target, "version")->valuestring;
+        const char *rolled_away = runtime_map_version(rolled_back_from, id);
+        added = (rolled_away != NULL && strcmp(rolled_away, version) == 0) || runtime_map_set(next, id, version);
     }
     return added;
 }
@@ -137,7 +140,8 @@ static int complete_run(const runtime_updates_request *request, const runtime_ho
     }
     completed = completed &&
                 add_plugins(request, recorded, cJSON_GetObjectItemCaseSensitive(plan->plugins, "run"), record) &&
-                add_fetches(record->references.next, cJSON_GetObjectItemCaseSensitive(plan->plugins, "fetch"));
+                add_fetches(record->references.next, cJSON_GetObjectItemCaseSensitive(plan->plugins, "fetch"),
+                            record->references.rolled_back_from);
     record->version = runtime_map_version(record->references.run, request->host_id);
     return completed;
 }

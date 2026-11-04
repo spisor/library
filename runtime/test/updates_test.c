@@ -113,15 +113,14 @@ static void it_keeps_the_version_each_of_two_concurrent_starts_runs_and_lets_a_s
     mark_installed("bundles", "a", "2.0.0");
     catalog_answer second = apply_plain(LOADER, "{\"plugins\":{\"a\":{\"enabled\":true}}}");
     expect_success(second, "second start");
+    catalog_answer later = apply_plain(LOADER, "{\"plugins\":{\"a\":{\"enabled\":true}}}");
+    remove_run_record(later);
+    cJSON_Delete(later.tree);
+    expect_references(LOADER, "{\"run\":{\"a\":\"2.0.0\"},\"next\":{}}", "only the first start's run names 1.0.0");
     cJSON_Delete(sweep_cache().tree);
     CHECK(folder_exists("bundles/a/1.0.0") && folder_exists("bundles/a/2.0.0"));
 
     remove_run_record(first);
-    cJSON_Delete(sweep_cache().tree);
-    CHECK(folder_exists("bundles/a/1.0.0"));
-    catalog_answer later = apply_plain(LOADER, "{\"plugins\":{\"a\":{\"enabled\":true}}}");
-    remove_run_record(later);
-    cJSON_Delete(later.tree);
     cJSON_Delete(sweep_cache().tree);
     CHECK(!folder_exists("bundles/a/1.0.0") && folder_exists("bundles/a/2.0.0"));
     remove_run_record(second);
@@ -606,6 +605,7 @@ static int references_name(const char *host, const char *fragment) {
 
 #define STALL_MILLISECONDS 3000
 #define START_BOUND_MILLISECONDS 1500.0
+#define UNWRITABLE_BOUND_MILLISECONDS 500.0
 
 static void it_lets_a_start_finish_while_a_check_s_download_is_stalled(void) {
     start_base("stalled-download");
@@ -718,8 +718,14 @@ static void it_reports_a_hint_it_could_not_write_and_still_starts(void) {
     char *blocker = joined(cache, "hosts/" FOREBAY_HOST ".json");
     CHECK(spisor_make_directories(blocker) == 1);
     free(blocker);
+    double started_at = runtime_now_milliseconds();
     catalog_answer started = apply_booted();
+    double took = runtime_now_milliseconds() - started_at;
     expect_success(started, "start with an unwritable hint");
+    if (took >= UNWRITABLE_BOUND_MILLISECONDS) {
+        fprintf(stderr, "a hint blocked by a directory held the start for %.0f ms\n", took);
+        check_failures++;
+    }
     const cJSON *unrecorded = cJSON_GetObjectItemCaseSensitive(started.tree, "unrecorded");
     CHECK(cJSON_GetArraySize(unrecorded) == 1);
     const char *message = text_at(cJSON_GetArrayItem(unrecorded, 0), "message");
@@ -740,6 +746,51 @@ static void it_passes_on_the_refusal_of_a_service_it_calls(void) {
     catalog_answer checked = call_catalog(runtime_updates_check, argument);
     expect_refusal(checked, "no usable now", "catalog.check's own refusal");
     cJSON_Delete(checked.tree);
+    finish_base();
+}
+
+/* fix round 2 */
+
+static void it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from(void) {
+    start_base("apply-filters-rolled-away");
+    list_plugin("a", "1.0.0", "2.0.0");
+    list_plugin("a", "2.0.0", "2.0.0");
+    write_catalog();
+    mark_installed("bundles", "a", "1.0.0");
+    record_references(LOADER, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{},\"rolledBackFrom\":{\"a\":\"2.0.0\"}}");
+    catalog_answer started = apply_plain(LOADER, "{\"plugins\":{\"a\":{\"enabled\":true}}}");
+    expect_member_json(started.tree, "next", "{}", "the rolled-away version is not scheduled again");
+    remove_run_record(started);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void it_drops_a_next_naming_the_version_a_rollback_moves_away_from(void) {
+    start_base("rollback-drops-next");
+    install_both_forebay_hosts();
+    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{\"" FOREBAY_HOST
+                                    "\":\"2.0.0\"},\"rollback\":{\"" FOREBAY_HOST "\":\"1.0.0\"}}");
+    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    expect_member_json(rolled.tree, "next", "{}", "next no longer names the version rolled away from");
+    cJSON_Delete(rolled.tree);
+    catalog_answer started = apply_with(FOREBAY_HOST, no_settings(), "{}");
+    expect_member_json(started.tree, "run", "{\"" FOREBAY_HOST "\":\"1.0.0\"}", "the next start stays rolled back");
+    remove_run_record(started);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void it_never_schedules_under_the_lock_a_version_a_rollback_moved_away_from(void) {
+    start_base("locked-schedule-filters");
+    install_both_forebay_hosts();
+    cJSON_Delete(rollback_of(FOREBAY_HOST, FOREBAY_HOST).tree);
+    catalog_answer checked = check_with(FOREBAY_HOST, no_settings(),
+                                        "{\"problems\":[{\"id\":\"" FOREBAY_HOST "\",\"version\":\"2.0.0\"}]}");
+    expect_success(checked, "repair check");
+    cJSON_Delete(checked.tree);
+    runtime_host_references recorded = runtime_read_host_references(state, FOREBAY_HOST);
+    expect_json(recorded.next, "{}", "a repair of the rolled-away version is not scheduled to run");
+    runtime_free_host_references(&recorded);
     finish_base();
 }
 
@@ -784,5 +835,9 @@ int main(void) {
     it_rolls_a_plugin_back_and_holds_it_on_the_next_start();
     it_reports_a_hint_it_could_not_write_and_still_starts();
     it_passes_on_the_refusal_of_a_service_it_calls();
+
+    it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from();
+    it_drops_a_next_naming_the_version_a_rollback_moves_away_from();
+    it_never_schedules_under_the_lock_a_version_a_rollback_moved_away_from();
     return check_summary("updates_test");
 }
