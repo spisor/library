@@ -67,6 +67,29 @@ int runtime_cache_has_marker(const char *directory) {
     return present;
 }
 
+static int names_present_files(const char *directory, const cJSON *hashes) {
+    const char *none = NULL;
+    char *resolved_directory = runtime_cache_resolve(directory, &none, 0);
+    int present = resolved_directory != NULL;
+    for (const cJSON *member = present ? hashes->child : NULL; present && member != NULL; member = member->next) {
+        const char *key = member->string;
+        char *path = runtime_cache_resolve(resolved_directory, &key, 1);
+        present = path != NULL && runtime_cache_is_strictly_inside(resolved_directory, path) && spisor_file_exists(path);
+        free(path);
+    }
+    free(resolved_directory);
+    return present;
+}
+
+int runtime_cache_has_files(const char *directory) {
+    char *path = marker_path(directory);
+    cJSON *hashes = path == NULL ? NULL : recorded_hashes(path);
+    free(path);
+    int present = hashes != NULL && names_present_files(directory, hashes);
+    cJSON_Delete(hashes);
+    return present;
+}
+
 static char *marker_text(const cJSON *hashes) {
     cJSON *marker = cJSON_CreateObject();
     cJSON *copy = cJSON_Duplicate(hashes, 1);

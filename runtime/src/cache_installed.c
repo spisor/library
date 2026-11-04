@@ -6,22 +6,26 @@
 #include "cache_folders.h"
 #include "cache_marker.h"
 
-static int is_marked(const char *cache, const char *root, const char *id, const char *version, const char *platform) {
+typedef int (*version_test)(const char *directory);
+
+static int is_marked(const char *cache, const char *root, const char *id, const char *version, const char *platform,
+                     version_test test) {
     const char *segments[5] = {cache, root, id, version, platform};
     char *directory = runtime_cache_joined(segments, platform == NULL ? 4 : 5);
-    int marked = directory != NULL && runtime_cache_has_marker(directory);
+    int marked = directory != NULL && test(directory);
     free(directory);
     return marked;
 }
 
 /** The versions of id marked complete, or NULL when memory runs out. */
-static cJSON *marked_versions(const char *cache, const char *root, const char *id, const char *platform) {
+static cJSON *marked_versions(const char *cache, const char *root, const char *id, const char *platform,
+                              version_test test) {
     const char *segments[3] = {cache, root, id};
     cJSON *versions = runtime_cache_folder_names(segments, 3);
     cJSON *version = versions == NULL ? NULL : versions->child;
     while (version != NULL) {
         cJSON *next = version->next;
-        if (!is_marked(cache, root, id, version->valuestring, platform)) {
+        if (!is_marked(cache, root, id, version->valuestring, platform, test)) {
             cJSON_Delete(cJSON_DetachItemViaPointer(versions, version));
         }
         version = next;
@@ -45,12 +49,12 @@ static int add_versions(cJSON *installed, const char *id, cJSON *versions) {
     return 1;
 }
 
-static cJSON *installed_under(const char *cache, const char *root, const char *platform) {
+static cJSON *installed_under(const char *cache, const char *root, const char *platform, version_test test) {
     const char *segments[2] = {cache, root};
     cJSON *ids = runtime_cache_folder_names(segments, 2);
     cJSON *installed = ids == NULL ? NULL : cJSON_CreateObject();
     for (const cJSON *id = installed == NULL ? NULL : ids->child; id != NULL; id = id->next) {
-        if (!add_versions(installed, id->valuestring, marked_versions(cache, root, id->valuestring, platform))) {
+        if (!add_versions(installed, id->valuestring, marked_versions(cache, root, id->valuestring, platform, test))) {
             cJSON_Delete(installed);
             installed = NULL;
             break;
@@ -61,11 +65,19 @@ static cJSON *installed_under(const char *cache, const char *root, const char *p
 }
 
 cJSON *runtime_cache_installed_bundles(const char *cache) {
-    return installed_under(cache, "bundles", NULL);
+    return installed_under(cache, "bundles", NULL, runtime_cache_has_files);
 }
 
 cJSON *runtime_cache_installed_libraries(const char *cache, const char *platform) {
-    return installed_under(cache, "libraries", platform);
+    return installed_under(cache, "libraries", platform, runtime_cache_has_files);
+}
+
+cJSON *runtime_cache_marked_bundles(const char *cache) {
+    return installed_under(cache, "bundles", NULL, runtime_cache_has_marker);
+}
+
+cJSON *runtime_cache_marked_libraries(const char *cache, const char *platform) {
+    return installed_under(cache, "libraries", platform, runtime_cache_has_marker);
 }
 
 static int compare_names(const void *left, const void *right) {

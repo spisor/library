@@ -10,6 +10,15 @@
 int runtime_cache_has_marker(const char *directory);
 
 /**
+ * Whether directory holds a readable completion marker and every file it names is present inside
+ * directory, without re-hashing them.
+ *
+ * @implNote A sweep that removes a version while an install of it is completing can leave the marker
+ * behind its files, so a marker alone does not mean the version can run.
+ */
+int runtime_cache_has_files(const char *directory);
+
+/**
  * Writes directory's completion marker naming hashes, an object of file keys to SHA-256s, as
  * JSON.stringify({files}, null, 2) and a newline. 1 on success.
  *

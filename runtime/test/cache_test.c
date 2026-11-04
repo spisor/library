@@ -763,11 +763,24 @@ static void it_answers_each_id_s_versions_that_carry_a_readable_completion_marke
     make_version("bundles/a/2.0.0", NULL);
     make_version("bundles/a/3.0.0", "{");
     make_version("bundles/b/1.0.0", "{\"files\":{\"plugin.json\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
+    char *present = in_cache("bundles/b/1.0.0");
+    write_in(present, "plugin.json", "{}");
+    free(present);
     make_version("libraries/runtime/0.1.0/linux-x64", "{\"files\":{}}");
     make_version("libraries/runtime/0.2.0/win32-x64", "{\"files\":{}}");
     make_version("libraries/runtime/0.3.0/linux-x64", NULL);
     expect_answer(installed("linux-x64"), "{\"bundles\":{\"a\":[\"1.0.0\"],\"b\":[\"1.0.0\"]},\"libraries\":{\"runtime\":[\"0.1.0\"]}}",
                   "installed");
+    finish_cache();
+}
+
+/** A sweep racing an install can leave a marker naming files it already deleted; no caller may run that version. */
+static void it_leaves_out_a_version_whose_marker_names_a_file_that_is_missing(void) {
+    start_cache("installed-missing");
+    make_version("bundles/a/1.0.0", "{\"files\":{\"plugin.json\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
+    make_version("libraries/runtime/0.1.0/linux-x64",
+                 "{\"files\":{\"runtime.so\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
+    expect_answer(installed("linux-x64"), "{\"bundles\":{},\"libraries\":{}}", "missing files");
     finish_cache();
 }
 
@@ -893,6 +906,15 @@ static void it_keeps_every_version_a_reference_file_names_and_the_newest_install
     expect_removed("[\"a@1.0.0\",\"a@1.2.0\"]", "referenced");
     CHECK(!bundle_present("a", "1.0.0") && bundle_present("a", "1.1.0") && !bundle_present("a", "1.2.0") &&
           bundle_present("a", "2.0.0"));
+    finish_cache();
+}
+
+static void it_sweeps_a_marked_version_whose_files_are_gone(void) {
+    start_cache("sweep-files-gone");
+    make_version("bundles/a/1.0.0", "{\"files\":{\"plugin.json\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
+    installed_bundle("a", "2.0.0", 1);
+    expect_removed("[\"a@1.0.0\"]", "files gone");
+    CHECK(!bundle_present("a", "1.0.0") && bundle_present("a", "2.0.0"));
     finish_cache();
 }
 
@@ -1360,8 +1382,10 @@ int main(void) {
 
     it_answers_each_id_s_versions_that_carry_a_readable_completion_marker();
     it_answers_nothing_for_a_cache_with_no_bundles_folder();
+    it_leaves_out_a_version_whose_marker_names_a_file_that_is_missing();
 
     it_keeps_every_version_a_reference_file_names_and_the_newest_installed();
+    it_sweeps_a_marked_version_whose_files_are_gone();
     it_keeps_the_versions_two_hosts_reference_files_name();
     it_keeps_a_version_a_host_scheduled_for_its_next_start();
     it_keeps_the_newest_installed_version_of_an_id_no_host_references();
