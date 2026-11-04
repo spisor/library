@@ -20,6 +20,7 @@
 
 #if defined(_WIN32)
 #include <process.h>
+#include <windows.h>
 #define current_process_id() _getpid()
 #else
 #include <unistd.h>
@@ -47,6 +48,20 @@ void runtime_fetch_use_deadline(unsigned milliseconds) {
     deadline_override = milliseconds;
 }
 #endif
+
+/**
+ * @implNote fetch is called from worker threads, so the partial name carries a per-call number as well as
+ * the process id: two fetches of one destination in one process never write into one partial file.
+ */
+static unsigned long next_partial_number(void) {
+#if defined(_WIN32)
+    static volatile LONG partial_number = 0;
+    return (unsigned long)InterlockedIncrement(&partial_number);
+#else
+    static unsigned long partial_number = 0;
+    return __atomic_add_fetch(&partial_number, 1, __ATOMIC_RELAXED);
+#endif
+}
 
 typedef struct fetch_order {
     const char *url;
@@ -208,13 +223,14 @@ static int make_parent(const char *destination) {
 }
 
 static int open_partial(const char *destination, fetch_files *files) {
-    size_t size = strlen(destination) + 32;
+    size_t size = strlen(destination) + 48;
     files->partial = malloc(size);
     files->file = NULL;
     if (files->partial == NULL) {
         return 0;
     }
-    snprintf(files->partial, size, "%s.partial-%d", destination, (int)current_process_id());
+    snprintf(files->partial, size, "%s.partial-%d-%lu", destination, (int)current_process_id(),
+             next_partial_number());
     if (!make_parent(destination)) {
         return 0;
     }
@@ -343,7 +359,7 @@ static int32_t settle_received(const fetch_order *order, fetch_files *files, run
         discard_partial(files);
         return refuse_unwritable(order->destination, out, out_len);
     }
-    free(files->partial);
+    discard_partial(files);
     return answer_stored(actual, sink->bytes, answer, out, out_len);
 }
 

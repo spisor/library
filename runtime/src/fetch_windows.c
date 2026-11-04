@@ -5,6 +5,7 @@
 #include <wchar.h>
 
 #include <windows.h>
+#include <shlwapi.h>
 #include <winhttp.h>
 
 #ifdef SPISOR_FETCH_TEST_HOOKS
@@ -15,6 +16,7 @@
 #define CONNECT_MILLISECONDS 15000u
 #define MAXIMUM_REDIRECTS 5
 #define HEADER_TEXT_LIMIT 2048
+#define URL_LIMIT 4096
 
 /**
  * @implNote The automatic access type (Windows 8.1 and later) takes the proxy the user's system settings
@@ -92,9 +94,10 @@ static size_t without_fragment(const wchar_t *path, size_t length) {
     return length;
 }
 
-static int split_url(const runtime_fetch_request *request, url_parts *parts) {
+/** Splits wide_url, which parts then owns. 0 when it is not an https url, or an http one plain http allows. */
+static int split_url(int allow_plain_http, wchar_t *wide_url, url_parts *parts) {
     memset(parts, 0, sizeof *parts);
-    parts->wide_url = to_wide(request->url);
+    parts->wide_url = wide_url;
     URL_COMPONENTS components;
     memset(&components, 0, sizeof components);
     components.dwStructSize = sizeof components;
@@ -105,7 +108,7 @@ static int split_url(const runtime_fetch_request *request, url_parts *parts) {
         return 0;
     }
     int allowed = components.nScheme == INTERNET_SCHEME_HTTPS ||
-                  (request->allow_plain_http && components.nScheme == INTERNET_SCHEME_HTTP);
+                  (allow_plain_http && components.nScheme == INTERNET_SCHEME_HTTP);
     size_t path_length = without_fragment(components.lpszUrlPath,
                                           (size_t)components.dwUrlPathLength + components.dwExtraInfoLength);
     parts->host = copy_wide(components.lpszHostName, components.dwHostNameLength);
@@ -132,11 +135,14 @@ static int set_timeouts(HINTERNET session, unsigned deadline) {
     return WinHttpSetTimeouts(session, (int)deadline, connect, (int)deadline, (int)deadline) != 0;
 }
 
-static int limit_redirects(HINTERNET request) {
-    DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
-    DWORD maximum = MAXIMUM_REDIRECTS;
-    return WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof policy) &&
-           WinHttpSetOption(request, WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, &maximum, sizeof maximum);
+/**
+ * @implNote Redirects are followed by hand, as the TypeScript transport did, because WinHTTP answers a
+ * redirect loop and a redirect it will not follow with the one error, and every hop must be checked to be
+ * https before it is taken.
+ */
+static int disable_redirects(HINTERNET request) {
+    DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+    return WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof policy) != 0;
 }
 
 static int open_handles(const runtime_fetch_request *request, const url_parts *parts, winhttp_handles *handles) {
@@ -152,7 +158,7 @@ static int open_handles(const runtime_fetch_request *request, const url_parts *p
     }
     handles->request = WinHttpOpenRequest(handles->connection, L"GET", parts->path, NULL, WINHTTP_NO_REFERER,
                                           WINHTTP_DEFAULT_ACCEPT_TYPES, parts->secure ? WINHTTP_FLAG_SECURE : 0);
-    return handles->request != NULL && limit_redirects(handles->request);
+    return handles->request != NULL && disable_redirects(handles->request);
 }
 
 static wchar_t *conditional_headers(const runtime_fetch_request *request) {
@@ -218,9 +224,6 @@ static void refuse_error(const runtime_fetch_request *request, DWORD error, runt
     if (error == ERROR_WINHTTP_TIMEOUT) {
         runtime_fetch_refuse(answer, RUNTIME_FETCH_NETWORK_FIX, "%s did not finish within %u ms", request->url,
                              request->deadline_milliseconds);
-    } else if (error == ERROR_WINHTTP_REDIRECT_FAILED) {
-        runtime_fetch_refuse(answer, "check that the catalog still publishes this file",
-                             "%s redirected more than %d times, or off https", request->url, MAXIMUM_REDIRECTS);
     } else {
         runtime_fetch_refuse(answer, RUNTIME_FETCH_NETWORK_FIX, "%s could not be fetched: WinHTTP error %lu",
                              request->url, (unsigned long)error);
@@ -284,22 +287,79 @@ static void take_response(const runtime_fetch_request *request, HINTERNET handle
     read_body(request, handle, &reading, sink, answer);
 }
 
-void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
-                                runtime_fetch_answer *answer) {
-    ULONGLONG deadline = GetTickCount64() + request->deadline_milliseconds;
-    url_parts parts;
-    if (!split_url(request, &parts)) {
-        free_parts(&parts);
-        runtime_fetch_refuse(answer, "name the file by a complete https url", "%s is not a usable https url",
-                             request->url);
-        return;
+static int is_redirect(long status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+static wchar_t *redirect_target(HINTERNET handle, const wchar_t *current) {
+    wchar_t location[URL_LIMIT];
+    DWORD size = sizeof location;
+    if (!WinHttpQueryHeaders(handle, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX, location, &size,
+                             WINHTTP_NO_HEADER_INDEX)) {
+        return NULL;
     }
+    wchar_t *target = malloc(URL_LIMIT * sizeof(wchar_t));
+    DWORD length = URL_LIMIT;
+    if (target != NULL && UrlCombineW(current, location, target, &length, 0) != S_OK) {
+        free(target);
+        return NULL;
+    }
+    return target;
+}
+
+typedef enum hop_outcome {
+    HOP_ANSWERED,
+    HOP_REDIRECTED
+} hop_outcome;
+
+static hop_outcome take_hop(const runtime_fetch_request *request, const url_parts *parts, ULONGLONG deadline,
+                            runtime_fetch_sink *sink, runtime_fetch_answer *answer, wchar_t **next) {
     winhttp_handles handles;
-    if (!open_handles(request, &parts, &handles) || !send_request(request, handles.request)) {
+    hop_outcome outcome = HOP_ANSWERED;
+    if (!open_handles(request, parts, &handles) || !send_request(request, handles.request)) {
         refuse_error(request, GetLastError(), answer);
+    } else if (is_redirect(status_of(handles.request))) {
+        *next = redirect_target(handles.request, parts->wide_url);
+        outcome = HOP_REDIRECTED;
     } else {
         take_response(request, handles.request, deadline, sink, answer);
     }
     close_handles(&handles);
-    free_parts(&parts);
+    return outcome;
+}
+
+static void refuse_redirect(const runtime_fetch_request *request, runtime_fetch_answer *answer) {
+    runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected to a url it may not follow", request->url);
+}
+
+void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
+                                runtime_fetch_answer *answer) {
+    ULONGLONG deadline = GetTickCount64() + request->deadline_milliseconds;
+    wchar_t *current = to_wide(request->url);
+    for (int hop = 0; hop <= MAXIMUM_REDIRECTS; hop++) {
+        url_parts parts;
+        if (!split_url(request->allow_plain_http, current, &parts)) {
+            free_parts(&parts);
+            if (hop == 0) {
+                runtime_fetch_refuse(answer, "name the file by a complete https url", "%s is not a usable https url",
+                                     request->url);
+            } else {
+                refuse_redirect(request, answer);
+            }
+            return;
+        }
+        current = NULL;
+        hop_outcome outcome = take_hop(request, &parts, deadline, sink, answer, &current);
+        free_parts(&parts);
+        if (outcome == HOP_ANSWERED) {
+            return;
+        }
+        if (current == NULL) {
+            refuse_redirect(request, answer);
+            return;
+        }
+    }
+    free(current);
+    runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected more than %d times", request->url,
+                         MAXIMUM_REDIRECTS);
 }

@@ -23,6 +23,7 @@
 #include <winhttp.h>
 #define current_process_id() _getpid()
 #else
+#include <pthread.h>
 #include <unistd.h>
 #define current_process_id() getpid()
 #endif
@@ -270,15 +271,71 @@ static void a_redirect_loop_is_refused(void) {
     CHECK(fixture != NULL);
     char url[256];
     snprintf(url, sizeof url, "http://127.0.0.1:%u/loop", (unsigned)http_fixture_port(fixture));
-    expect_refused(get(request_for(url)), "", "loop");
+    expect_refused(get(request_for(url)), "redirected more than 5 times", "loop");
     char *log = http_fixture_stop(fixture);
     CHECK(log != NULL && occurrences(log, "GET /loop ") <= 6);
     free(log);
     expect_nothing_stored("loop");
 }
 
+#if defined(_WIN32)
+static void a_destination_held_open_with_the_same_bytes_is_accepted(void) {
+    expect_stored_body(get(request_for_path("/file")), "before holding");
+    wchar_t wide[1300];
+    CHECK(MultiByteToWideChar(CP_UTF8, 0, destination, -1, wide, 1300) > 0);
+    HANDLE held = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    CHECK(held != INVALID_HANDLE_VALUE);
+    expect_stored_body(get(request_for_path("/file")), "held open");
+    CloseHandle(held);
+    remove_destination();
+}
+#endif
+
+typedef struct concurrent_fetch {
+    answer result;
+} concurrent_fetch;
+
+static void fetch_slowly(concurrent_fetch *fetch) {
+    fetch->result = get(request_for_path("/slow"));
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI fetching_entry(LPVOID argument) {
+    fetch_slowly(argument);
+    return 0;
+}
+#else
+static void *fetching_entry(void *argument) {
+    fetch_slowly(argument);
+    return NULL;
+}
+#endif
+
+static void two_threads_fetching_one_destination_both_store_it(void) {
+    concurrent_fetch fetches[2];
+    memset(fetches, 0, sizeof fetches);
+#if defined(_WIN32)
+    HANDLE threads[2];
+    threads[0] = CreateThread(NULL, 0, fetching_entry, &fetches[0], 0, NULL);
+    threads[1] = CreateThread(NULL, 0, fetching_entry, &fetches[1], 0, NULL);
+    CHECK(threads[0] != NULL && threads[1] != NULL);
+    WaitForMultipleObjects(2, threads, TRUE, INFINITE);
+    CloseHandle(threads[0]);
+    CloseHandle(threads[1]);
+#else
+    pthread_t threads[2];
+    CHECK(pthread_create(&threads[0], NULL, fetching_entry, &fetches[0]) == 0);
+    CHECK(pthread_create(&threads[1], NULL, fetching_entry, &fetches[1]) == 0);
+    pthread_join(threads[0], NULL);
+    pthread_join(threads[1], NULL);
+#endif
+    expect_stored_body(fetches[0].result, "first thread");
+    expect_stored_body(fetches[1].result, "second thread");
+    remove_destination();
+}
+
 static void a_redirect_to_a_file_url_is_refused(void) {
-    expect_refused(get(request_for_path("/to-file")), "", "redirect to file");
+    expect_refused(get(request_for_path("/to-file")), "redirected to a url it may not follow", "redirect to file");
     expect_nothing_stored("redirect to file");
 }
 
@@ -383,9 +440,9 @@ static void libcurl_honours_https_proxy_and_no_proxy(void) {
     char proxy_url[64];
     snprintf(proxy_url, sizeof proxy_url, "http://127.0.0.1:%u", (unsigned)http_fixture_port(proxy));
     setenv("HTTPS_PROXY", proxy_url, 1);
-    expect_refused(get(request_for("https://catalog.invalid/index.json")), "", "through the proxy");
+    expect_refused(get(request_for("https://catalog.invalid/index.json")), "502", "through the proxy");
     setenv("NO_PROXY", "catalog.invalid", 1);
-    expect_refused(get(request_for("https://catalog.invalid/index.json")), "", "past the proxy");
+    expect_refused(get(request_for("https://catalog.invalid/index.json")), "resolve host", "past the proxy");
     unsetenv("NO_PROXY");
     unsetenv("HTTPS_PROXY");
     char *log = http_fixture_stop(proxy);
@@ -425,6 +482,7 @@ static void run_against_the_server(void) {
         {"/cut", 200, NULL, cut_body, CUT_BODY_LENGTH, 1000, NULL, NULL, 0},
         {"/streamed", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_UNTIL_CLOSE, NULL, NULL, 0},
         {"/stall", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 1500},
+        {"/slow", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 300},
         {"/moved", 302, "Location: /file\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
         {"/to-file", 302, "Location: file:///etc/hosts\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
     };
@@ -448,6 +506,10 @@ static void run_against_the_server(void) {
     a_fetch_outliving_its_deadline_is_refused();
     a_relative_redirect_is_followed();
     a_redirect_to_a_file_url_is_refused();
+#if defined(_WIN32)
+    a_destination_held_open_with_the_same_bytes_is_accepted();
+#endif
+    two_threads_fetching_one_destination_both_store_it();
     any_other_scheme_is_refused();
     an_unusable_argument_is_refused();
 #if defined(__linux__)

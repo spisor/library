@@ -60,7 +60,7 @@ endif()
 
 if(WIN32)
     set(runtime_fetch_transport_source src/fetch_windows.c)
-    set(runtime_fetch_libraries Winhttp)
+    set(runtime_fetch_libraries Winhttp Shlwapi)
 else()
     set(runtime_fetch_transport_source src/fetch_curl.c)
     find_package(Threads REQUIRED)

@@ -39,9 +39,9 @@ enum {
     CURLOPT_REDIR_PROTOCOLS = 182
 };
 enum { CURLPROTO_HTTP = 1, CURLPROTO_HTTPS = 2 };
-enum { CURLINFO_RESPONSE_CODE = 0x200002 };
 enum {
     CURLE_OK = 0,
+    CURLE_UNSUPPORTED_PROTOCOL = 1,
     CURLE_PARTIAL_FILE = 18,
     CURLE_WRITE_ERROR = 23,
     CURLE_OPERATION_TIMEDOUT = 28,
@@ -57,7 +57,6 @@ typedef struct curl_api {
     curl_handle *(*easy_init)(void);
     int (*easy_setopt)(curl_handle *, int, ...);
     int (*easy_perform)(curl_handle *);
-    int (*easy_getinfo)(curl_handle *, int, ...);
     void (*easy_cleanup)(curl_handle *);
     const char *(*easy_strerror)(int);
     curl_list *(*slist_append)(curl_list *, const char *);
@@ -107,7 +106,6 @@ static int resolve_all(curl_api *api) {
     return resolve(handle, "curl_easy_init", &api->easy_init) &&
            resolve(handle, "curl_easy_setopt", &api->easy_setopt) &&
            resolve(handle, "curl_easy_perform", &api->easy_perform) &&
-           resolve(handle, "curl_easy_getinfo", &api->easy_getinfo) &&
            resolve(handle, "curl_easy_cleanup", &api->easy_cleanup) &&
            resolve(handle, "curl_easy_strerror", &api->easy_strerror) &&
            resolve(handle, "curl_slist_append", &api->slist_append) &&
@@ -148,6 +146,10 @@ typedef struct transfer {
     uint64_t declared;
     int refused_status;
 } transfer;
+
+static int is_redirect(long status) {
+    return status >= 300 && status <= 399;
+}
 
 static int is_success(long status) {
     return status >= 200 && status <= 299;
@@ -316,8 +318,11 @@ static void settle(const curl_api *api, const runtime_fetch_request *request, in
     } else if (code == CURLE_OPERATION_TIMEDOUT) {
         runtime_fetch_refuse(answer, RUNTIME_FETCH_NETWORK_FIX, "%s did not finish within %u ms", request->url,
                              request->deadline_milliseconds);
+    } else if (code == CURLE_UNSUPPORTED_PROTOCOL && is_redirect(state->status)) {
+        runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected to a url it may not follow",
+                             request->url);
     } else if (code == CURLE_TOO_MANY_REDIRECTS) {
-        runtime_fetch_refuse(answer, "check that the catalog still publishes this file",
+        runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX,
                              "%s redirected more than %ld times", request->url, MAXIMUM_REDIRECTS);
     } else {
         runtime_fetch_refuse(answer, RUNTIME_FETCH_NETWORK_FIX, "%s could not be fetched: %s", request->url,

@@ -8,6 +8,7 @@
 #include "sha256.h"
 
 #define RUNTIME_FETCH_NETWORK_FIX "check the network, then try again"
+#define RUNTIME_FETCH_PUBLISHED_FIX "check that the catalog still publishes this file"
 #define RUNTIME_FETCH_DETAIL_SIZE 1024
 
 /** Where fetched bytes go: the partial file, the running hash and the byte count, bounded by limit when limited. */

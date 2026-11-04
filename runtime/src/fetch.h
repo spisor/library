@@ -11,7 +11,7 @@
  * lastModified?}, or {outcome: "not-modified"} when the server answers 304 to the etag or lastModified
  * sent; anything else is refused.
  *
- * @implNote The bytes go to destination.partial-PID and are renamed into place only after they are
+ * @implNote The bytes go to destination.partial-PID-N, N counting calls within the process, and are renamed into place only after they are
  * complete, within maxBytes, and match sha256 when it is given, so a refusal never leaves a file at
  * destination or the partial one beside it. A file: url is copied through the same path, so a local
  * catalog and a published one are verified alike.
