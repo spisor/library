@@ -42,32 +42,32 @@ static char state[1400];
 static char catalog_folder[1400];
 static cJSON *catalog_items;
 
-static char *joined(const char *base, const char *rest) {
+static inline char *joined(const char *base, const char *rest) {
     const char *segments[2] = {base, rest};
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
 }
 
-static void write_file(const char *path, const char *content) {
+static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
     free(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
 }
 
-static void write_in(const char *base, const char *rest, const char *content) {
+static inline void write_in(const char *base, const char *rest, const char *content) {
     char *path = joined(base, rest);
     write_file(path, content);
     free(path);
 }
 
-static int exists_in(const char *base, const char *rest) {
+static inline int exists_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     int exists = spisor_file_exists(path);
     free(path);
     return exists;
 }
 
-static char *text_in(const char *base, const char *rest) {
+static inline char *text_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
@@ -75,13 +75,13 @@ static char *text_in(const char *base, const char *rest) {
     return text;
 }
 
-static void expect_text_in(const char *base, const char *rest, const char *expected, const char *label) {
+static inline void expect_text_in(const char *base, const char *rest, const char *expected, const char *label) {
     char *text = text_in(base, rest);
     check_text(text, expected, label);
     free(text);
 }
 
-static void expect_json(const cJSON *actual, const char *expected_json, const char *label) {
+static inline void expect_json(const cJSON *actual, const char *expected_json, const char *label) {
     cJSON *expected = parsed(expected_json);
     if (actual == NULL || !cJSON_Compare(actual, expected, 1)) {
         char *printed = actual == NULL ? NULL : cJSON_PrintUnformatted(actual);
@@ -92,7 +92,7 @@ static void expect_json(const cJSON *actual, const char *expected_json, const ch
     cJSON_Delete(expected);
 }
 
-static void expect_json_in(const char *base, const char *rest, const char *expected_json, const char *label) {
+static inline void expect_json_in(const char *base, const char *rest, const char *expected_json, const char *label) {
     char *text = text_in(base, rest);
     cJSON *actual = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
     expect_json(actual, expected_json, label);
@@ -100,11 +100,11 @@ static void expect_json_in(const char *base, const char *rest, const char *expec
     free(text);
 }
 
-static void expect_member_json(const cJSON *tree, const char *slashed, const char *expected_json, const char *label) {
+static inline void expect_member_json(const cJSON *tree, const char *slashed, const char *expected_json, const char *label) {
     expect_json(value_at(tree, slashed), expected_json, label);
 }
 
-static void start_base(const char *label) {
+static inline void start_base(const char *label) {
     snprintf(scratch, sizeof scratch, "%s/updates-%d-%s", RUNTIME_SCRATCH_PATH, (int)current_process_id(), label);
     start_empty_directory(scratch);
     snprintf(cache, sizeof cache, "%s/cache", scratch);
@@ -113,13 +113,13 @@ static void start_base(const char *label) {
     catalog_items = cJSON_CreateObject();
 }
 
-static void finish_base(void) {
+static inline void finish_base(void) {
     cJSON_Delete(catalog_items);
     catalog_items = NULL;
     CHECK(runtime_remove_tree(scratch) == 1);
 }
 
-static void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
+static inline void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
     runtime_sha256 hash;
     runtime_sha256_start(&hash);
     runtime_sha256_add(&hash, (const uint8_t *)text, strlen(text));
@@ -127,7 +127,7 @@ static void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) 
 }
 
 /** A FileRef to catalog/<id>/<version>/<name>, served holding served and listed as holding content. */
-static cJSON *served_reference(const char *id, const char *version, const char *name, const char *content,
+static inline cJSON *served_reference(const char *id, const char *version, const char *name, const char *content,
                                const char *served) {
     char rest[512];
     snprintf(rest, sizeof rest, "%s/%s/%s", id, version, name);
@@ -145,7 +145,7 @@ static cJSON *served_reference(const char *id, const char *version, const char *
     return reference;
 }
 
-static cJSON *catalog_item(const char *id, const char *kind, const char *latest) {
+static inline cJSON *catalog_item(const char *id, const char *kind, const char *latest) {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(catalog_items, id);
     if (item == NULL) {
         item = cJSON_AddObjectToObject(catalog_items, id);
@@ -160,7 +160,7 @@ static cJSON *catalog_item(const char *id, const char *kind, const char *latest)
     return item;
 }
 
-static void list_version(const char *id, const char *kind, const char *version, const char *latest,
+static inline void list_version(const char *id, const char *kind, const char *version, const char *latest,
                          const char *name, const char *served) {
     char content[256];
     snprintf(content, sizeof content, "%s@%s", id, version);
@@ -176,31 +176,31 @@ static void list_version(const char *id, const char *kind, const char *version, 
     }
 }
 
-static void list_plugin(const char *id, const char *version, const char *latest) {
+static inline void list_plugin(const char *id, const char *version, const char *latest) {
     list_version(id, "plugin", version, latest, "plugin.json", NULL);
 }
 
 /** A plugin version whose file is served with other bytes than the catalog lists, so it never installs. */
-static void list_corrupt_plugin(const char *id, const char *version, const char *latest) {
+static inline void list_corrupt_plugin(const char *id, const char *version, const char *latest) {
     list_version(id, "plugin", version, latest, "plugin.json", "other bytes");
 }
 
 /** A native host version carrying its executable for PLATFORM, at the path boot.resolve runs. */
-static void list_host(const char *id, const char *version, const char *latest) {
+static inline void list_host(const char *id, const char *version, const char *latest) {
     char name[256];
     snprintf(name, sizeof name, PLATFORM "/%s", id);
     list_version(id, "host", version, latest, name, NULL);
 }
 
-static void list_library(const char *id, const char *version, const char *latest) {
+static inline void list_library(const char *id, const char *version, const char *latest) {
     list_version(id, "library", version, latest, "lib.so", NULL);
 }
 
-static char *index_path(void) {
+static inline char *index_path(void) {
     return joined(catalog_folder, "index.json");
 }
 
-static void write_catalog(void) {
+static inline void write_catalog(void) {
     cJSON *index = cJSON_CreateObject();
     cJSON_AddNumberToObject(index, "format", 1);
     cJSON_AddItemToObject(index, "items", cJSON_Duplicate(catalog_items, 1));
@@ -213,7 +213,7 @@ static void write_catalog(void) {
 }
 
 /** Settings reading the local catalog, with the members of extra_json added. */
-static cJSON *settings_with(const char *extra_json) {
+static inline cJSON *settings_with(const char *extra_json) {
     cJSON *settings = parsed(extra_json);
     cJSON *source = cJSON_CreateObject();
     cJSON_AddStringToObject(source, "kind", "local");
@@ -226,14 +226,14 @@ static cJSON *settings_with(const char *extra_json) {
     return settings;
 }
 
-static cJSON *places_json(void) {
+static inline cJSON *places_json(void) {
     cJSON *places = cJSON_CreateObject();
     cJSON_AddStringToObject(places, "state", state);
     cJSON_AddStringToObject(places, "cache", cache);
     return places;
 }
 
-static void install_listed(const char *id, const char *version) {
+static inline void install_listed(const char *id, const char *version) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "id", id);
@@ -246,7 +246,7 @@ static void install_listed(const char *id, const char *version) {
 }
 
 /** A version folder carrying an empty completion marker, as forebay/host's tests make one. */
-static void mark_installed(const char *root, const char *id, const char *version) {
+static inline void mark_installed(const char *root, const char *id, const char *version) {
     char rest[512];
     if (strcmp(root, "libraries") == 0) {
         snprintf(rest, sizeof rest, "libraries/%s/%s/" PLATFORM "/.installed.json", id, version);
@@ -256,31 +256,31 @@ static void mark_installed(const char *root, const char *id, const char *version
     write_in(cache, rest, "{\"files\":{}}");
 }
 
-static void record_references(const char *host, const char *json) {
+static inline void record_references(const char *host, const char *json) {
     char rest[512];
     snprintf(rest, sizeof rest, "bundles/%s.json", host);
     write_in(state, rest, json);
 }
 
-static void expect_references(const char *host, const char *expected_json, const char *label) {
+static inline void expect_references(const char *host, const char *expected_json, const char *label) {
     char rest[512];
     snprintf(rest, sizeof rest, "bundles/%s.json", host);
     expect_json_in(state, rest, expected_json, label);
 }
 
-static void write_hint(const char *host, const char *json) {
+static inline void write_hint(const char *host, const char *json) {
     char rest[512];
     snprintf(rest, sizeof rest, "hosts/%s.json", host);
     write_in(cache, rest, json);
 }
 
-static void expect_hint(const char *host, const char *expected_json, const char *label) {
+static inline void expect_hint(const char *host, const char *expected_json, const char *label) {
     char rest[512];
     snprintf(rest, sizeof rest, "hosts/%s.json", host);
     expect_json_in(cache, rest, expected_json, label);
 }
 
-static catalog_answer apply_with(const char *host, cJSON *settings, const char *extra_json) {
+static inline catalog_answer apply_with(const char *host, cJSON *settings, const char *extra_json) {
     cJSON *argument = parsed(extra_json);
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -289,7 +289,7 @@ static catalog_answer apply_with(const char *host, cJSON *settings, const char *
     return call_catalog(runtime_updates_apply, argument);
 }
 
-static catalog_answer check_with(const char *host, cJSON *settings, const char *extra_json) {
+static inline catalog_answer check_with(const char *host, cJSON *settings, const char *extra_json) {
     cJSON *argument = parsed(extra_json);
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -299,7 +299,7 @@ static catalog_answer check_with(const char *host, cJSON *settings, const char *
     return call_catalog(runtime_updates_check, argument);
 }
 
-static catalog_answer rollback_of(const char *host, const char *item) {
+static inline catalog_answer rollback_of(const char *host, const char *item) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -307,14 +307,14 @@ static catalog_answer rollback_of(const char *host, const char *item) {
     return call_catalog(runtime_updates_rollback, argument);
 }
 
-static catalog_answer sweep_cache(void) {
+static inline catalog_answer sweep_cache(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "state", state);
     return call_catalog(runtime_cache_sweep, argument);
 }
 
-static catalog_answer resolve_boot(const char *host, const char *arguments_json) {
+static inline catalog_answer resolve_boot(const char *host, const char *arguments_json) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     if (host != NULL) {
@@ -327,7 +327,7 @@ static catalog_answer resolve_boot(const char *host, const char *arguments_json)
     return call_catalog(runtime_boot_resolve, argument);
 }
 
-static int expect_success(catalog_answer answer, const char *label) {
+static inline int expect_success(catalog_answer answer, const char *label) {
     if (answer.status == SPISOR_STATUS_SUCCESS) {
         return 1;
     }
@@ -337,12 +337,12 @@ static int expect_success(catalog_answer answer, const char *label) {
     return 0;
 }
 
-static void expect_fix(catalog_answer answer, const char *fix, const char *label) {
+static inline void expect_fix(catalog_answer answer, const char *fix, const char *label) {
     check_text(text_at(answer.tree, "fix"), fix, label);
 }
 
 /** Whether answer names, as its executable, an existing file at cache/bundles/host/version/PLATFORM/host. */
-static void expect_executable(catalog_answer answer, const char *host, const char *version, const char *label) {
+static inline void expect_executable(catalog_answer answer, const char *host, const char *version, const char *label) {
     const char *executable = text_at(answer.tree, "executable");
     char expected[512];
     snprintf(expected, sizeof expected, "/bundles/%s/%s/" PLATFORM "/%s", host, version, host);
