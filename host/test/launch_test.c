@@ -178,8 +178,6 @@ static void passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_numb
 }
 #endif
 
-/* design 7: a session host only when the loader's settings enable plugins of its own */
-
 static void starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins(void) {
     host_world world;
     install_launch_world(&world, "launch", "session", 1);
@@ -205,7 +203,7 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     finish_world(&world);
 }
 
-/* boot-executable.test.ts, as Ruling Z records the JS runtime */
+/* boot-executable.test.ts, the JS runtime install records */
 
 static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(void) {
     host_world world;
@@ -223,8 +221,6 @@ static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(v
     program_free(&launcher);
     finish_world(&world);
 }
-
-/* Ruling S */
 
 static void refuses_a_background_host_that_records_no_start_before_anything_starts(void) {
     host_world world;

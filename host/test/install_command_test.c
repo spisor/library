@@ -28,8 +28,6 @@ static void start_install_world(host_world *world, const char *label) {
     list_launch_catalog(world, "[]", 0);
 }
 
-/* plan four's Review Focus 5 */
-
 static void asks_nothing_without_a_terminal_and_reports_the_exact_application_flag(void) {
     host_world world;
     start_install_world(&world, "no-terminal");
@@ -128,8 +126,6 @@ static void answers_1_naming_what_could_not_be_installed_after_printing_the_repo
     program_free(&run);
     finish_world(&world);
 }
-
-/* design 7: every command shim and entry runs forebay-boot from the cache */
 
 static void puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed(void) {
     host_world world;

@@ -66,8 +66,6 @@ static void remove_every_host(host_world *world) {
     }
 }
 
-/* Review Focus 3 */
-
 static void installs_launches_through_its_command_and_removes_leaving_the_profile_byte_identical(void) {
     host_world world;
     start_world_at(&world, "profile", "joerg");

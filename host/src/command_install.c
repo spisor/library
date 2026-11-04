@@ -122,7 +122,7 @@ static int merge_asked(cJSON *choices, const cJSON *report) {
  * terminal answers, once more with what was chosen there.
  *
  * @implNote A refusal of a choice is the command line's misuse, a flag naming an application or method
- * install does not offer, so it exits 2 with the usage as plan four's flags did.
+ * install does not offer, so it exits 2 with the usage as any misused flag does.
  */
 static int install_through(const host_context *context, const cJSON *sources, const cJSON *plugins, cJSON *choices) {
     cJSON *refusal = NULL;
