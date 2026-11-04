@@ -392,7 +392,16 @@
                     },
                     "required": ["method", "version", "location", "os", "architecture", "installedAt"]
                   },
-                  "requiresCommand": { "type": "boolean" }
+                  "requiresCommand": { "type": "boolean" },
+                  "start": {
+                    "type": "object",
+                    "description": "How a launcher starts the host: the language runtime it needs and its entry, a relative path inside its installed bundle.",
+                    "properties": {
+                      "runtime": { "enum": ["javascript", "jvm", "native"] },
+                      "entry": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["runtime", "entry"]
+                  }
                 },
                 "required": ["id", "kind", "version", "provenance", "requiresCommand"]
               }
@@ -1370,7 +1379,7 @@
               "holder": { "type": "integer", "minimum": 1 },
               "start": {
                 "type": "object",
-                "description": "How to start the host, as its registration records it: the absolute executable, its arguments, the environment that replaces the caller's, and the folder it runs in (state by default).",
+                "description": "How to start the host, built from the start its registration records: the absolute executable, its arguments, the environment that replaces the caller's, and the folder it runs in (state by default).",
                 "properties": {
                   "executable": { "type": "string", "minLength": 1 },
                   "arguments": { "type": "array", "items": { "type": "string" } },
@@ -1500,6 +1509,404 @@
           "result": {
             "type": "object",
             "properties": {},
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "hosts",
+      "functions": [
+        {
+          "name": "register",
+          "symbol": "runtime_hosts_register",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "version": { "type": "string", "minLength": 1 },
+                  "home": { "type": "string" },
+                  "application": { "type": "object" },
+                  "requiresCommand": { "type": "boolean" },
+                  "commands": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string", "minLength": 1 },
+                        "target": { "type": "string", "minLength": 1 },
+                        "arguments": { "type": "array", "items": { "type": "string" } }
+                      },
+                      "required": ["name", "target"]
+                    }
+                  },
+                  "start": {
+                    "type": "object",
+                    "description": "How a launcher starts the host: the language runtime it needs and its entry, a relative path inside its installed bundle.",
+                    "properties": {
+                      "runtime": { "enum": ["javascript", "jvm", "native"] },
+                      "entry": { "type": "string", "minLength": 1 }
+                    },
+                    "required": ["runtime", "entry"]
+                  }
+                },
+                "required": ["id", "version", "requiresCommand", "commands"]
+              },
+              "provenance": { "type": "object" },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["places", "identity", "provenance", "environment"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "provenance": { "type": "object" },
+              "commands": { "type": "array", "items": { "type": "string" } },
+              "refusedCommands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "detail": { "type": "string" },
+                    "fix": { "type": "string" }
+                  },
+                  "required": ["name", "detail", "fix"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["provenance", "commands", "refusedCommands"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "list",
+          "symbol": "runtime_hosts_list",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              }
+            },
+            "required": ["places"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "hosts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "registration": { "type": "object" },
+                    "orphan": { "type": "boolean" }
+                  },
+                  "required": ["registration", "orphan"],
+                  "additionalProperties": false
+                }
+              },
+              "unreadable": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["hosts", "unreadable"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "remove",
+          "symbol": "runtime_hosts_remove",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "id": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "id"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "reversed": { "type": "integer", "minimum": 0 },
+              "drifted": { "type": "array" },
+              "forgotten": { "type": "boolean" }
+            },
+            "required": ["reversed", "drifted", "forgotten"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "provenance",
+          "symbol": "runtime_hosts_provenance",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "object",
+                "properties": {
+                  "method": { "type": "string", "minLength": 1 },
+                  "package": { "type": "string" },
+                  "options": { "type": "object" },
+                  "version": { "type": "string" }
+                },
+                "required": ["method"]
+              },
+              "application": {
+                "type": "object",
+                "properties": { "binary": { "type": "string", "minLength": 1 } },
+                "required": ["binary"]
+              },
+              "home": { "type": "string", "minLength": 1 },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "now": { "type": "number", "minimum": 0 }
+            },
+            "required": ["origin", "application", "home", "environment"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "method": { "type": "string" },
+              "package": { "type": "string" },
+              "options": { "type": "object" },
+              "version": { "type": "string" },
+              "location": { "type": "string" },
+              "os": { "type": "string" },
+              "architecture": { "type": "string" },
+              "installedAt": { "type": "string" }
+            },
+            "required": ["method", "location", "os", "architecture", "installedAt"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "loader",
+      "functions": [
+        {
+          "name": "check",
+          "symbol": "runtime_loader_check",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": { "standard": {} },
+            "required": ["standard"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "string" },
+                    "detail": { "type": "string" },
+                    "fix": { "type": "string" }
+                  },
+                  "required": ["path", "detail", "fix"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["issues"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "home",
+          "symbol": "runtime_loader_home",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "home": {
+                "type": "object",
+                "properties": {
+                  "envOverride": { "type": "string" },
+                  "nativeEnv": { "type": "string" },
+                  "xdgSubdir": { "type": "string" },
+                  "candidates": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                },
+                "required": ["candidates"]
+              },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["home", "environment"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "source": { "enum": ["override", "native", "xdg", "candidate", "default"] }
+            },
+            "required": ["home", "source"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "installed",
+          "symbol": "runtime_loader_installed",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": { "cache": { "type": "string", "minLength": 1 } },
+                "required": ["cache"]
+              },
+              "id": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "id", "version"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "standard": { "type": "object" } },
+            "required": ["standard"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "detect",
+      "functions": [
+        {
+          "name": "onPath",
+          "symbol": "runtime_detect_on_path",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "binary": { "type": "string", "minLength": 1 },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["binary", "environment"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "path": { "type": "string" } },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "lists",
+      "functions": [
+        {
+          "name": "plugins",
+          "symbol": "runtime_lists_plugins",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "installed": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
+              "detected": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
+              "available": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } }
+            },
+            "required": ["installed", "detected", "available"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "state": { "enum": ["installed", "detected", "available"] }
+                  },
+                  "required": ["id", "state"]
+                }
+              }
+            },
+            "required": ["items"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "applications",
+          "symbol": "runtime_lists_applications",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "catalog": {
+                "type": "object",
+                "properties": { "items": { "type": "object" } },
+                "required": ["items"]
+              },
+              "places": {
+                "type": "object",
+                "properties": { "state": { "type": "string", "minLength": 1 } },
+                "required": ["state"]
+              },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "detections": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": { "type": "string" },
+                    "item": { "type": "string" },
+                    "package": { "type": "string" },
+                    "options": { "type": "object" },
+                    "answer": {
+                      "type": "object",
+                      "properties": { "installed": { "type": "boolean" }, "version": { "type": "string" } },
+                      "required": ["installed"]
+                    },
+                    "refused": { "type": "string" }
+                  },
+                  "required": ["method", "item"]
+                }
+              }
+            },
+            "required": ["catalog", "places", "environment", "detections"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "label": { "type": "string" },
+                    "state": { "enum": ["installed", "detected", "available"] }
+                  },
+                  "required": ["id", "state"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["items"],
             "additionalProperties": false
           }
         }

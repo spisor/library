@@ -35,6 +35,14 @@ runtime_registry_answer runtime_registry_load(const char *state, const char *id,
 runtime_registry_answer runtime_registry_store(const char *state, const cJSON *registration);
 
 RUNTIME_EXPORT int32_t runtime_registry_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+/**
+ * registry.register, except that a provenance the host's stored registration already carries is kept in
+ * place of the given one, decided under the registry lock, so two first starts of one host cannot both
+ * record theirs. hosts.register calls it in-process; it is no function of the declaration.
+ */
+int32_t runtime_registry_register_first_provenance(const uint8_t *in, size_t in_len, uint8_t **out,
+                                                   size_t *out_len);
+
 RUNTIME_EXPORT int32_t runtime_registry_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_registry_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_registry_forget(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);

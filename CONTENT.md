@@ -69,6 +69,16 @@ Service), and that store may prompt the user.
 | `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, after making the shim; a held name is refused |
 | `install.packages` | `places` (`portable`), `item`, `manifestPackages` | `{ packages }`, the item's package under each method, as `{ name, options? }`; pure |
 | `install.plan` | `places` (`portable`), `item`, `manifestPackages`, `methods`, `chosen`, `installedProviders`, `catalog` | `{ steps }`, each `{ "install-provider": <catalog entry> }` or `{ "install": { method, package? } }`; pure |
+| `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
+| `hosts.list` | `places` (`state`) | what `registry.list` answers |
+| `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes, deleting its references, run records and holders, then forgetting it |
+| `hosts.provenance` | `origin`, `application` (`binary`), `home`, `environment`, `now`? | an application's provenance, located at its binary on PATH, else at `home` |
+| `loader.check` | `standard` | `{ issues }`, each `{ path, detail, fix }`; none means a loader standard |
+| `loader.home` | `home`, `environment` | `{ home, source }`, where the application keeps its files |
+| `loader.installed` | `places` (`cache`), `id`, `version` | `{ standard }`, the loader standard an installed host bundle carries |
+| `detect.onPath` | `binary`, `environment` | `{ path }` of the executable on PATH, or `{}`; reads directories only and launches nothing |
+| `lists.plugins` | `installed`, `detected`, `available` | `{ items }`, one row per id in its strongest state |
+| `lists.applications` | `catalog`, `places` (`state`), `environment`, `detections` | `{ items }`, each catalog application installed, detected or available |
 
 `places` is what `places.resolve` answers.
 
@@ -97,9 +107,13 @@ host's own files live in `<state>/hosts/<id>/` and `<cache>/hosts/<id>/`. A host
 segment, trimmed as it is, else the call is refused.
 
 A registration is `{ id, kind: "host", version, home?, application?, provenance, requiresCommand,
-commands, changes }`. `register` replaces `version`, `home`, `application`, `provenance` and
-`requiresCommand` and keeps the stored `commands` and `changes`, which the services that record them
-own, so a host may call it on every start. `get` answers `{ registration }`, or `{}` for an unknown
+start?, commands, changes }`, `start` being `{ runtime, entry }`: the language runtime the host needs
+(`javascript`, `jvm` or `native`) and its entry, a relative path inside its installed bundle, which is
+what a launcher starts a background host through. `register` replaces `version`, `home`,
+`application`, `provenance`, `requiresCommand` and `start` and keeps the stored `commands` and
+`changes`, which the services that record them own, so a host may call it on every start.
+`hosts.register` is what a host calls on every start: it keeps the provenance its first start
+recorded, decided under the registry lock, then requests its commands. `get` answers `{ registration }`, or `{}` for an unknown
 host. `list` answers every host sorted by id with an `orphan` flag, true when `provenance.location` no
 longer exists, plus the ids of registrations it could not read in `unreadable`. `forget` deletes the
 registration and the host's two folders, and is refused while a change in `changes` is not marked

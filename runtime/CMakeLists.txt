@@ -125,13 +125,23 @@ target_include_directories(runtime_processes PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_processes PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_processes)
 
+set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c src/hosts.c
+    src/hosts_register.c src/hosts_remove.c src/json_service.c src/lists.c src/loader_installed.c
+    src/loader_standard.c src/on_path.c src/user_home.c)
+add_library(runtime_hosts OBJECT ${runtime_hosts_sources})
+target_link_libraries(runtime_hosts PUBLIC runtime_objects)
+target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_hosts PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_hosts)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
-    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>)
+    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
+    $<TARGET_OBJECTS:runtime_hosts>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})

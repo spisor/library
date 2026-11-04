@@ -11,7 +11,7 @@
  * makes the process holder a holder of background host hostId, dropping holders that died, and starts
  * the host detached through start when no process recorded for it runs by its stamp; answers
  * {pid, started}, with outsideJob beside a started one (false only when a Windows job the caller runs in
- * forbade breaking away from it). start is the start the host's registration records; directory
+ * forbade breaking away from it). start is built from the start the host's registration records; directory
  * defaults to state, so the host never holds a folder of the user's.
  */
 RUNTIME_EXPORT int32_t runtime_processes_hold(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
