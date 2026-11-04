@@ -18,7 +18,9 @@
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
 
-#define STATE_FIX                                                                                            "close whatever holds the host's files open, check that SPISOR_STATE names a writable folder, then "         "remove it again"
+#define STATE_FIX                                                                                    \
+    "close whatever holds the host's files open, check that SPISOR_STATE names a writable folder, " \
+    "then remove it again"
 
 typedef struct removal {
     const cJSON *argument;
