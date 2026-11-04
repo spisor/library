@@ -6,7 +6,9 @@ typedef struct runtime_holders_guard runtime_holders_guard;
 /**
  * Takes the lock file at path, so one process or thread at a time reads and writes one background
  * host's holders, waiting while another holds it; its folder must exist. NULL when it cannot be
- * created. Release with runtime_unlock_holders.
+ * created, when a directory stands at path, or after thirty seconds without it, three times as long as
+ * any live lock can hold out before it counts as stale, so a lock that can never be read or taken
+ * refuses rather than waits for ever. Release with runtime_unlock_holders.
  *
  * @implNote The format is plan four's, the one forebay/host's withHoldersLock takes: a file created
  * only if absent, holding the locker's pid, a space and a token of its own. A lock whose pid is not

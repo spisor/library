@@ -61,13 +61,23 @@ cJSON *runtime_processes_holders_array(const double *holders, size_t count) {
     return array;
 }
 
+static cJSON *lock_refusal(const char *lock) {
+    const char *message[3] = {"the holders lock at ", lock, " could not be taken"};
+    const char *fix[3] = {"remove whatever stands at ", lock,
+                          " when it is no lock file, check that SPISOR_STATE names a writable folder, then try again"};
+    char *fix_text = runtime_cache_text(fix, 3);
+    cJSON *refusal = fix_text == NULL ? NULL : runtime_cache_refusal(message, 3, fix_text);
+    free(fix_text);
+    return refusal;
+}
+
 static cJSON *locked_step(const runtime_processes_request *request, const char *path, runtime_holders_step step,
                           cJSON **refusal) {
     char *problem = NULL;
     char *lock = runtime_holders_path(request->state, request->host_id, ".lock", &problem);
     runtime_holders_guard *guard = lock == NULL ? NULL : runtime_lock_holders(lock);
     if (guard == NULL) {
-        *refusal = lock == NULL ? NULL : runtime_processes_state_refusal("the holders lock", lock);
+        *refusal = lock == NULL ? NULL : lock_refusal(lock);
         free(lock);
         free(problem);
         return NULL;

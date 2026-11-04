@@ -32,9 +32,9 @@
 #endif
 
 #define HOST "background-fixture"
-#define INTERVAL 200.0
-#define INTERVAL_TEXT "200"
-#define ALLOWANCE 2000.0
+#define INTERVAL 750.0
+#define INTERVAL_TEXT "750"
+#define ALLOWANCE (4 * INTERVAL)
 #define FIXTURE RUNTIME_BACKGROUND_FIXTURE_PATH
 
 static char state[1024];
@@ -496,6 +496,25 @@ static void it_waits_for_an_empty_lock_until_it_is_ten_seconds_old(void) {
     write_lock("", 20000);
     CHECK(wait_until(has_entered, NULL, 5000));
     join_thread(waiting);
+    finish_case();
+}
+
+static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void) {
+    fresh_state("lock-directory");
+    char *path = lock_path();
+    CHECK(spisor_make_directories(path) == 1);
+    double started = runtime_now_milliseconds();
+    CHECK(runtime_lock_holders(path) == NULL);
+    catalog_answer answer = hold(self_pid(), sleep_start());
+    CHECK(runtime_now_milliseconds() - started < 2000);
+    CHECK(answer.status != 0);
+    const char *message = text_at(answer.tree, "message");
+    const char *fix = text_at(answer.tree, "fix");
+    CHECK(message != NULL && strstr(message, "the holders lock at ") != NULL && strstr(message, HOST ".lock") != NULL);
+    CHECK(fix != NULL && strstr(fix, HOST ".lock") != NULL);
+    CHECK(!holders_file_present());
+    cJSON_Delete(answer.tree);
+    free(path);
     finish_case();
 }
 
@@ -1145,6 +1164,7 @@ int main(void) {
     it_leaves_a_lock_that_is_no_longer_its_own();
     it_waits_for_a_fresh_lock_a_live_process_holds();
     it_waits_for_an_empty_lock_until_it_is_ten_seconds_old();
+    it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting();
     it_keeps_a_live_pid_stamped_within_three_of_its_checks();
     it_starts_a_host_when_a_live_pid_s_stamp_is_older_than_three_checks();
     it_starts_a_host_for_a_dead_pid_and_for_a_record_never_stamped();

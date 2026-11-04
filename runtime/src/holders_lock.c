@@ -32,6 +32,7 @@
 
 #define STALE_LOCK_MILLISECONDS 10000.0
 #define LOCK_RETRY_MILLISECONDS 25
+#define LONGEST_WAIT_MILLISECONDS (3.0 * STALE_LOCK_MILLISECONDS)
 
 struct runtime_holders_guard {
     char *path;
@@ -148,17 +149,24 @@ static runtime_holders_guard *guard_of(const char *path, char *token) {
     return guard;
 }
 
+/** Whether waiting on longer cannot help: something not a file stands at path, or the wait outlived any lock. */
+static int is_hopeless(const char *path, double started) {
+    return runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ||
+           runtime_now_milliseconds() - started > LONGEST_WAIT_MILLISECONDS;
+}
+
 runtime_holders_guard *runtime_lock_holders(const char *path) {
     char *token = new_token();
     if (token == NULL) {
         return NULL;
     }
+    double started = runtime_now_milliseconds();
     for (;;) {
         runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)token, strlen(token), 0);
         if (created == RUNTIME_ENTRY_DONE) {
             return guard_of(path, token);
         }
-        if (created != RUNTIME_ENTRY_EXISTS) {
+        if (created != RUNTIME_ENTRY_EXISTS || is_hopeless(path, started)) {
             free(token);
             return NULL;
         }

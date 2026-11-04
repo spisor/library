@@ -1,4 +1,6 @@
-#if !defined(_WIN32)
+#if defined(__linux__)
+#define _GNU_SOURCE
+#elif !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L
 #endif
 
@@ -18,9 +20,11 @@
 #else
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 extern char **environ;
@@ -243,6 +247,7 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
 #else
 
 #define LAST_SIGNAL 64
+#define HANDBACK_MILLISECONDS 5000
 
 static void free_list(char **list, size_t count) {
     for (size_t index = 0; list != NULL && index < count; index++) {
@@ -285,7 +290,15 @@ static char **environment_list(const cJSON *environment) {
     return list;
 }
 
+/**
+ * @implNote pipe2 creates both ends close-on-exec at once where it exists, so no other thread's fork and
+ * exec between pipe and fcntl can carry a write end away; elsewhere that gap remains, and the reads that
+ * wait on these pipes are bounded instead.
+ */
 static int close_on_exec_pipe(int ends[2]) {
+#if defined(__linux__)
+    return pipe2(ends, O_CLOEXEC) == 0;
+#else
     if (pipe(ends) != 0) {
         return 0;
     }
@@ -295,6 +308,7 @@ static int close_on_exec_pipe(int ends[2]) {
         return 0;
     }
     return 1;
+#endif
 }
 
 static void write_all(int descriptor, const void *bytes, size_t length) {
@@ -311,10 +325,36 @@ static void write_all(int descriptor, const void *bytes, size_t length) {
     }
 }
 
+static double now_milliseconds(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)now.tv_sec * 1000.0 + (double)now.tv_nsec / 1000000.0;
+}
+
+/** Whether descriptor has something to read, or reached its end, before the deadline. */
+static int readable_before(int descriptor, double deadline) {
+    struct pollfd waiting = {descriptor, POLLIN, 0};
+    for (;;) {
+        double left = deadline - now_milliseconds();
+        if (left <= 0) {
+            return 0;
+        }
+        int ready = poll(&waiting, 1, (int)left + 1);
+        if (ready > 0) {
+            return 1;
+        }
+        if (ready == 0 || errno != EINTR) {
+            return 0;
+        }
+    }
+}
+
+/** Reads up to length bytes, stopping at the end, an error, or HANDBACK_MILLISECONDS without data. */
 static size_t read_all(int descriptor, void *bytes, size_t length) {
     char *cursor = bytes;
     size_t got = 0;
-    while (got < length) {
+    double deadline = now_milliseconds() + HANDBACK_MILLISECONDS;
+    while (got < length && readable_before(descriptor, deadline)) {
         ssize_t read_now = read(descriptor, cursor + got, length - got);
         if (read_now == 0 || (read_now < 0 && errno != EINTR)) {
             break;
@@ -331,7 +371,7 @@ static void become_host(const char *directory, char **arguments, char **environm
     struct sigaction default_action;
     memset(&default_action, 0, sizeof default_action);
     default_action.sa_handler = SIG_DFL;
-    for (int signal_number = 1; signal_number < LAST_SIGNAL; signal_number++) {
+    for (int signal_number = 1; signal_number <= LAST_SIGNAL; signal_number++) {
         sigaction(signal_number, &default_action, NULL);
     }
     sigset_t none;
@@ -339,6 +379,9 @@ static void become_host(const char *directory, char **arguments, char **environm
     sigprocmask(SIG_SETMASK, &none, NULL);
     int null = open("/dev/null", O_RDWR);
     if (chdir(directory) == 0 && null >= 0 && dup2(null, 0) >= 0 && dup2(null, 1) >= 0 && dup2(null, 2) >= 0) {
+        if (null > 2) {
+            close(null);
+        }
         execve(arguments[0], arguments, environment);
     }
     int error = errno;
@@ -360,6 +403,11 @@ static void start_in_new_session(const char *directory, char **arguments, char *
     _exit(host > 0 ? 0 : 1);
 }
 
+/**
+ * @implNote The failure pipe reaches its end when the host execs; a write end some other process carried
+ * away would hold that end back, so a wait past HANDBACK_MILLISECONDS counts as started rather than
+ * keeping the holders lock for ever. A failed exec writes at once, well inside it.
+ */
 static int await_host(pid_t first, int pid_end, int failure, double *pid, int *error) {
     pid_t host = 0;
     int got_pid = read_all(pid_end, &host, sizeof host) == sizeof host;
