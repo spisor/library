@@ -9,6 +9,25 @@ $Sha256Pattern = '^[0-9a-f]{64}(?![\s\S])'
 $HostId = 'forebay-host'
 $InstallMarker = '.installed.json'
 
+<#
+.NOTES
+SPISOR_INSTALL_TRACE names a file the install test reads when a run hangs; nothing else sets it.
+#>
+function Write-InstallTrace([string]$Line) {
+    if ($env:SPISOR_INSTALL_TRACE) { [System.IO.File]::AppendAllText($env:SPISOR_INSTALL_TRACE, "$([DateTime]::UtcNow.ToString('o')) $Line`n") }
+}
+
+function Test-WindowsImage([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $first = $stream.ReadByte()
+        $second = $stream.ReadByte()
+    } finally {
+        $stream.Dispose()
+    }
+    return $first -eq 0x4D -and $second -eq 0x5A
+}
+
 function Stop-Install([string]$Detail, [string]$Fix) {
     throw "$Detail`nfix: $Fix"
 }
@@ -303,7 +322,12 @@ function Install-HostBuild([string]$Cache, [string]$Catalog, [string]$Platform) 
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
         Receive-Verified $file $target
     }
-    return Join-Path $directory "$Platform\$HostId.exe"
+    $executable = Join-Path $directory "$Platform\$HostId.exe"
+    Write-InstallTrace "fetched $HostId $($listing.Version)"
+    if ([System.Environment]::OSVersion.Platform -eq 'Win32NT' -and -not (Test-WindowsImage $executable)) {
+        Stop-Install "$executable is not a Windows program" 'run this again; if it repeats, report the forebay-host build for this platform'
+    }
+    return $executable
 }
 
 function Initialize-Install([object[]]$Arguments) {
@@ -355,9 +379,12 @@ function Invoke-ForebayHost([string]$Executable, [string[]]$Arguments) {
     } else {
         $start.Arguments = ($Arguments | ForEach-Object { ConvertTo-ArgumentText $_ }) -join ' '
     }
+    Write-InstallTrace "starting $Executable"
     $process = [System.Diagnostics.Process]::Start($start)
+    Write-InstallTrace "started $($process.Id)"
     try {
         $process.WaitForExit()
+        Write-InstallTrace "exited $($process.ExitCode)"
         return $process.ExitCode
     } finally {
         $process.Dispose()
@@ -370,6 +397,8 @@ function Complete-Install([int]$Code) {
     $global:LASTEXITCODE = $Code
 }
 
+if ($env:SPISOR_INSTALL_TRACE) { Set-PSDebug -Trace 1 }
+Write-InstallTrace "running on $($PSVersionTable.PSEdition) $($PSVersionTable.PSVersion)"
 $prepared = $null
 try {
     $prepared = Initialize-Install $args

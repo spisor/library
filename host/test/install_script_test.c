@@ -190,8 +190,11 @@ static char *script_path_variable(const host_world *world, int with_curl) {
 
 #endif
 
-/** Runs the platform's install script with the NULL-ended arguments, curl on its PATH unless with_curl is clear. */
-static int run_script(host_world *world, program *run, const char *const *script_arguments, int with_curl) {
+/**
+ * Starts the platform's install script with the NULL-ended arguments, curl on its PATH unless with_curl is
+ * clear, the script tracing into trace when it is not NULL.
+ */
+static void start_script(host_world *world, program *run, const char *const *script_arguments, int with_curl, const char *trace) {
     const char *arguments[32];
     size_t count = 0;
 #if defined(_WIN32)
@@ -209,11 +212,24 @@ static int run_script(host_world *world, program *run, const char *const *script
     }
     arguments[count] = NULL;
     char *path = script_path_variable(world, with_curl);
-    world_start(world, run, executable, arguments, path, IS_DETACHABLE);
-    int code = program_finish(run, SCRIPT_TIMEOUT);
+    char label[32];
+    snprintf(label, sizeof label, "run-%d", ++world->runs);
+    prepare_program(run, world->streams, label);
+    cJSON *list = strings_of(arguments);
+    cJSON *environment = world_environment_with_path(world, path);
+    if (trace != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_INSTALL_TRACE", trace);
+    }
+    program_start(run, executable, list, environment, world->base.root, IS_DETACHABLE);
+    cJSON_Delete(environment);
+    cJSON_Delete(list);
     free(path);
     free(executable);
-    return code;
+}
+
+static int run_script(host_world *world, program *run, const char *const *script_arguments, int with_curl) {
+    start_script(world, run, script_arguments, with_curl, NULL);
+    return program_finish(run, SCRIPT_TIMEOUT);
 }
 
 static int install(host_world *world, program *run, const char *const *extra) {
@@ -618,6 +634,26 @@ static void refuses_each_hostile_catalog_and_runs_nothing(void) {
 
 #if defined(_WIN32)
 
+#define SHORT_SCRIPT_TIMEOUT 60000
+
+/** Prints every running process whose image could be part of a hung install, for a log that has nothing else. */
+static void print_running_programs(void) {
+    FILE *listing = _popen("tasklist /fo csv /nh", "r");
+    char line[1024];
+    static const char *const NAMES[] = {"pwsh", "powershell", "forebay", "WerFault", "OpenWith", "conhost", "dllhost", "rundll32"};
+    while (listing != NULL && fgets(line, sizeof line, listing) != NULL) {
+        for (size_t index = 0; index < sizeof NAMES / sizeof NAMES[0]; index++) {
+            if (strstr(line, NAMES[index]) != NULL) {
+                fputs(line, stderr);
+                break;
+            }
+        }
+    }
+    if (listing != NULL) {
+        _pclose(listing);
+    }
+}
+
 /** A forebay-host.exe whose listed bytes are no program, so the call that starts it fails in PowerShell itself. */
 static void answers_1_when_forebay_host_cannot_be_started(void) {
     host_world world;
@@ -636,14 +672,25 @@ static void answers_1_when_forebay_host_cannot_be_started(void) {
     cJSON_free(text);
     cJSON_Delete(catalog);
     char *index = joined(world.base.catalog, "not-a-program.json");
+    char *trace = joined(world.base.root, "install-trace.txt");
     program run;
     const char *arguments[] = {index, NULL};
-    int code = run_script(&world, &run, arguments, 1);
+    start_script(&world, &run, arguments, 1, trace);
+    int finished = program_wait(&run, SHORT_SCRIPT_TIMEOUT);
+    if (!finished) {
+        fprintf(stderr, "a forebay-host that cannot start is still running after %d ms; the processes left:\n", SHORT_SCRIPT_TIMEOUT);
+        print_running_programs();
+    }
+    int code = program_finish(&run, 1);
     if (code != 1) {
-        fprintf(stderr, "a forebay-host that cannot start answered %d:\n%s\n%s\n", code, run.out, run.err);
+        char *traced = read_text_file(trace);
+        fprintf(stderr, "a forebay-host that cannot start answered %d:\n%s\n%s\ntrace:\n%s\n", code, run.out, run.err, traced);
+        free(traced);
         check_failures++;
     }
+    expect_contains(run.err, "is not a Windows program", "refused before anything starts");
     program_free(&run);
+    free(trace);
     free(index);
     finish_world(&world);
 }
