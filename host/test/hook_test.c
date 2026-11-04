@@ -117,6 +117,37 @@ static void keeps_the_application_s_provenance_across_a_launch_and_a_hook(void) 
     finish_world(&world);
 }
 
+static void keeps_the_version_a_launch_switched_to_when_a_later_hook_records_the_loader(void) {
+    host_world world;
+    install_launch_world(&world, "hook", "after-launch", 0);
+    schedule_second_loader(&world);
+    program launcher;
+    const char *passed[] = {"switched", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "switched");
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "switched");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    program hook;
+    CHECK(run_hook(&world, &hook, LOADER_ID, "session-start") == 0);
+    check_text(hook.out, "", "silent");
+    check_text(hook.err, "", "nothing refused");
+    cJSON *references = references_of(&world, LOADER_ID);
+    check_text(text_at(cJSON_GetObjectItemCaseSensitive(references, "run"), LOADER_ID), "2.0.0", "still the switched version");
+    cJSON *registration = registration_in(&world, LOADER_ID);
+    check_text(text_at(registration, "version"), "2.0.0", "registered at it");
+    sweep(&world);
+    CHECK(exists_in(world.base.cache, "bundles/" LOADER_ID "/2.0.0"));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(registration);
+    cJSON_Delete(references);
+    cJSON_Delete(started);
+    program_free(&hook);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -124,6 +155,7 @@ int main(void) {
     registers_and_records_the_version_a_start_would_run_keeping_the_one_switched_from();
     writes_a_refusal_and_its_fix_to_stderr_and_still_exits_0();
     keeps_the_application_s_provenance_across_a_launch_and_a_hook();
+    keeps_the_version_a_launch_switched_to_when_a_later_hook_records_the_loader();
     expect_user_path_unchanged(&guard);
     return check_summary("hook_test");
 }

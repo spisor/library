@@ -205,6 +205,25 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     finish_world(&world);
 }
 
+/* boot-executable.test.ts, as Ruling Z records the JS runtime */
+
+static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "no-javascript", 1);
+    char *record = joined(world.base.cache, "runtimes/javascript.json");
+    CHECK(runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE);
+    program launcher;
+    const char *passed[] = {"unstarted", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    CHECK(program_finish(&launcher, 30000) == 1);
+    expect_contains(launcher.err, "no JavaScript runtime is recorded", "named");
+    expect_contains(launcher.err, "fix: run forebay-host install --catalog <path or url> again", "reinstall fix");
+    CHECK(!exists_in(world.base.state, "processes/" BACKGROUND_ID ".json"));
+    free(record);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 /* Ruling S */
 
 static void refuses_a_background_host_that_records_no_start_before_anything_starts(void) {
@@ -246,6 +265,7 @@ int main(void) {
 #endif
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
+    refuses_a_session_host_when_install_recorded_no_javascript_runtime();
     expect_user_path_unchanged(&guard);
     return check_summary("launch_test");
 }
