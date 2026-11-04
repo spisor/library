@@ -66,14 +66,57 @@ function Test-Sha256([string]$Path, [string]$Sha256) {
     return (Get-FileSha256 $Path) -ceq $Sha256
 }
 
-function Receive-File([string]$Url, [string]$Path) {
-    $client = New-Object System.Net.WebClient
+<#
+.NOTES
+Redirects are followed by hand so that every hop stays on https, which the web client's own
+redirects would not guarantee.
+#>
+function Get-HttpsResponse([string]$Url) {
+    for ($hop = 0; $hop -lt 10; $hop++) {
+        $request = [System.Net.WebRequest]::Create($Url)
+        $request.AllowAutoRedirect = $false
+        try { $response = $request.GetResponse() } catch [System.Net.WebException] {
+            $response = $_.Exception.InnerException.Response
+            if ($null -eq $response) { $response = $_.Exception.Response }
+            if ($null -eq $response) { throw }
+        }
+        $status = [int]$response.StatusCode
+        $location = $response.Headers['Location']
+        if ($status -ge 300 -and $status -lt 400 -and $location) {
+            $response.Close()
+            $Url = (New-Object System.Uri((New-Object System.Uri($Url)), $location)).AbsoluteUri
+            if (-not $Url.StartsWith('https://', [System.StringComparison]::OrdinalIgnoreCase)) { throw "the redirect to $Url leaves https" }
+            continue
+        }
+        if ($status -ne 200) {
+            $response.Close()
+            throw "$Url answered $status"
+        }
+        return $response
+    }
+    throw "$Url redirects more than 10 times"
+}
+
+function Copy-Response([string]$Url, [System.IO.Stream]$Destination) {
+    $response = Get-HttpsResponse $Url
     try {
-        $client.DownloadFile($Url, $Path)
-    } catch {
-        Stop-Install "could not fetch $Url" 'check the network connection, then run this again'
+        $stream = $response.GetResponseStream()
+        try { $stream.CopyTo($Destination) } finally { $stream.Dispose() }
     } finally {
-        $client.Dispose()
+        $response.Close()
+    }
+}
+
+function Receive-File($File, [string]$Path) {
+    try {
+        if ($File.Local) {
+            [System.IO.File]::Copy($File.Source, $Path, $true)
+        } else {
+            $stream = [System.IO.File]::Create($Path)
+            try { Copy-Response $File.Source $stream } finally { $stream.Dispose() }
+        }
+    } catch {
+        Stop-Install "could not fetch $($File.Source)" 'check the network connection, then run this again'
     }
 }
 
@@ -85,12 +128,12 @@ function Remove-Temporary([string]$Part) {
     if (Test-Path -LiteralPath $Part) { Remove-Item -LiteralPath $Part -Force -ErrorAction SilentlyContinue }
 }
 
-function Receive-Verified([string]$Url, [string]$Path, [string]$Sha256, $Size) {
+function Receive-Verified($File, [string]$Path) {
     $part = New-TemporaryPath $Path
     try {
-        Receive-File $Url $part
-        if ((Get-Item -LiteralPath $part).Length -ne [long]$Size -or -not (Test-Sha256 $part $Sha256)) {
-            Stop-Install "$Url does not have the $Size bytes and SHA-256 $Sha256 it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
+        Receive-File $File $part
+        if ((Get-Item -LiteralPath $part).Length -ne [long]$File.Size -or -not (Test-Sha256 $part $File.Sha256)) {
+            Stop-Install "$($File.Source) does not have the $($File.Size) bytes and SHA-256 $($File.Sha256) it is pinned to" 'run this again; if it repeats, the download is being altered on the way'
         }
         Move-Item -LiteralPath $part -Destination $Path -Force
     } finally {
@@ -100,23 +143,53 @@ function Receive-Verified([string]$Url, [string]$Path, [string]$Sha256, $Size) {
 
 function Read-CatalogText([string]$Catalog) {
     if ($Catalog -match '^https://') {
-        $client = New-Object System.Net.WebClient
-        try { return [System.Text.Encoding]::UTF8.GetString($client.DownloadData($Catalog)) } catch { Stop-Install "could not fetch the catalog $Catalog" 'check the network connection and the url, then run this again' } finally { $client.Dispose() }
+        $buffer = New-Object System.IO.MemoryStream
+        try { Copy-Response $Catalog $buffer } catch { Stop-Install "could not fetch the catalog $Catalog" 'check the network connection and the url, then run this again' }
+        return [System.Text.Encoding]::UTF8.GetString($buffer.ToArray())
     }
     return [System.IO.File]::ReadAllText($Catalog, [System.Text.Encoding]::UTF8)
 }
 
+function ConvertFrom-JsonElement($Element) {
+    switch ($Element.ValueKind.ToString()) {
+        'Object' {
+            $map = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::Ordinal)
+            foreach ($property in $Element.EnumerateObject()) { $map[$property.Name] = ConvertFrom-JsonElement $property.Value }
+            return $map
+        }
+        'Array' { return ,@($Element.EnumerateArray() | ForEach-Object { ConvertFrom-JsonElement $_ }) }
+        'String' { return $Element.GetString() }
+        'Number' {
+            $whole = [long]0
+            if ($Element.TryGetInt64([ref]$whole)) { return $whole }
+            return $Element.GetDouble()
+        }
+        'True' { return $true }
+        'False' { return $false }
+    }
+    return $null
+}
+
 <#
 .NOTES
-Parsed with JavaScriptSerializer, not ConvertFrom-Json, whose objects fold the case of member names
-and so refuse two file keys that differ only by case as though the index were not JSON at all.
+Parsed with JavaScriptSerializer on Windows PowerShell and System.Text.Json on PowerShell 7, never
+ConvertFrom-Json, whose objects fold the case of member names and so refuse two file keys that differ
+only by case as though the index were not JSON at all. Each answers dictionaries with ordinal keys.
 #>
-function Read-CatalogIndex([string]$Catalog) {
-    $text = (Read-CatalogText $Catalog).TrimStart([char]0xFEFF)
+function ConvertFrom-CatalogText([string]$Text) {
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $document = [System.Text.Json.JsonDocument]::Parse($Text)
+        try { return ConvertFrom-JsonElement $document.RootElement } finally { $document.Dispose() }
+    }
     Add-Type -AssemblyName System.Web.Extensions
     $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
     $serializer.MaxJsonLength = [int]::MaxValue
-    try { $index = $serializer.DeserializeObject($text) } catch { $index = $null }
+    return $serializer.DeserializeObject($Text)
+}
+
+function Read-CatalogIndex([string]$Catalog) {
+    $text = (Read-CatalogText $Catalog).TrimStart([char]0xFEFF)
+    try { $index = ConvertFrom-CatalogText $text } catch { $index = $null }
     if (-not (Test-Map $index)) { Stop-Install "the catalog $Catalog is not a JSON catalog index" 'pass the catalog.json of a catalog, or its https url' }
     return $index
 }
@@ -159,16 +232,46 @@ function Get-BuildFiles($Entry, [string]$Version, [string]$Platform) {
     return $listed
 }
 
-function Test-Inside($Origin, $Url) {
-    if ($Origin.Scheme -eq 'https') { return $Url.Scheme -eq 'https' }
-    $directory = $Origin.AbsolutePath.Substring(0, $Origin.AbsolutePath.LastIndexOf('/') + 1)
-    return $Url.Scheme -eq 'file' -and $Url.Host -eq '' -and $Url.AbsolutePath.StartsWith($directory, [System.StringComparison]::Ordinal)
+function Resolve-LocalFile([string]$Directory, [string]$Url) {
+    if ($Url -eq '' -or $Url -match '^[A-Za-z][A-Za-z0-9+.-]*:' -or $Url.StartsWith('/') -or $Url -match '[?#\\\x00-\x1f]') { return $null }
+    $path = $Directory
+    foreach ($segment in $Url.Split('/')) {
+        $decoded = [System.Uri]::UnescapeDataString($segment)
+        if ($decoded -eq '' -or $decoded -eq '.' -or $decoded -eq '..' -or $decoded -match '[/\\:\x00-\x1f]') { return $null }
+        $path = Join-Path $path $decoded
+    }
+    return $path
+}
+
+function Resolve-RemoteUrl([string]$Origin, [string]$Url) {
+    if ($Url -match '[\x00-\x20]') { return $null }
+    if ($Url -cmatch '^https://') { return $Url }
+    if ($Url -eq '' -or $Url -match '^[A-Za-z][A-Za-z0-9+.-]*:' -or $Url.StartsWith('//')) { return $null }
+    $base = $Origin -replace '[?#].*$', ''
+    if ($Url.StartsWith('/')) { return [regex]::Match($base, '^https://[^/]*').Value + $Url }
+    return $base.Substring(0, $base.LastIndexOf('/') + 1) + $Url
+}
+
+<#
+.NOTES
+A local url is decoded segment by segment into a path inside the catalog's folder rather than read
+through System.Uri, which encodes its percent signs a second time.
+#>
+function Resolve-Source([string]$Catalog, $Url) {
+    if (-not ($Url -is [string])) { return $null }
+    if ($Catalog -match '^https://') {
+        $remote = Resolve-RemoteUrl $Catalog $Url
+        if ($null -eq $remote) { return $null }
+        return @{ Local = $false; Source = $remote }
+    }
+    $local = Resolve-LocalFile (Split-Path -Parent $Catalog) $Url
+    if ($null -eq $local) { return $null }
+    return @{ Local = $true; Source = $local }
 }
 
 function Get-HostFiles([string]$Catalog, [string]$Platform) {
     $found = Get-VersionEntry (Read-CatalogIndex $Catalog) $Catalog
     $listed = Get-BuildFiles $found.Entry $found.Version $Platform
-    $origin = New-Object System.Uri($Catalog)
     $files = @()
     $seen = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::Ordinal)
     foreach ($key in $listed.Keys) {
@@ -180,13 +283,12 @@ function Get-HostFiles([string]$Catalog, [string]$Platform) {
         $reference = $listed[$key]
         $sha256 = Get-Field $reference 'sha256'
         $size = Get-Field $reference 'size'
-        $url = $null
-        if ((Get-Field $reference 'url') -is [string]) { $url = New-Object System.Uri($origin, (Get-Field $reference 'url')) }
-        $usable = ($key -cmatch $FileKeyPattern) -and ($folded -cne $InstallMarker) -and ($null -ne $url) -and (Test-Inside $origin $url) -and ($sha256 -is [string]) -and ($sha256 -cmatch $Sha256Pattern) -and ($size -is [int] -or $size -is [long]) -and ($size -ge 0)
+        $source = Resolve-Source $Catalog (Get-Field $reference 'url')
+        $usable = ($key -cmatch $FileKeyPattern) -and ($folded -cne $InstallMarker) -and ($null -ne $source) -and ($sha256 -is [string]) -and ($sha256 -cmatch $Sha256Pattern) -and ($size -is [int] -or $size -is [long]) -and ($size -ge 0)
         if (-not $usable) {
             Stop-Install "the catalog lists the $HostId file `"$key`" with a name, url, sha256 or size the installer refuses" 'install from a catalog built by forebay-host catalog build'
         }
-        $files += @{ Key = $key; Url = $url.AbsoluteUri; Sha256 = $sha256; Size = $size }
+        $files += @{ Key = $key; Local = $source.Local; Source = $source.Source; Sha256 = $sha256; Size = $size }
     }
     return @{ Version = $found.Version; Files = $files }
 }
@@ -199,7 +301,7 @@ function Install-HostBuild([string]$Cache, [string]$Catalog, [string]$Platform) 
         if (Test-Sha256 $target $file.Sha256) { continue }
         Write-Fetching "fetching $HostId $($listing.Version) $($file.Key)"
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-        Receive-Verified $file.Url $target $file.Sha256 $file.Size
+        Receive-Verified $file $target
     }
     return Join-Path $directory "$Platform\$HostId.exe"
 }
@@ -232,7 +334,13 @@ if ($null -eq $prepared) {
     Complete-Install 1
 } else {
     $ErrorActionPreference = 'Continue'
-    & $prepared.Executable install "--catalog=$($prepared.Catalog)" @($prepared.Rest)
+    $global:LASTEXITCODE = 1
+    try {
+        & $prepared.Executable install "--catalog=$($prepared.Catalog)" @($prepared.Rest)
+    } catch {
+        [Console]::Error.WriteLine("$($prepared.Executable) could not be started: $($_.Exception.Message)`nfix: run this again; if it repeats, report the forebay-host build for this platform")
+        $global:LASTEXITCODE = 1
+    }
     Complete-Install $LASTEXITCODE
 }
 } @args

@@ -279,7 +279,7 @@ progress() {
 }
 
 require_tools() {
-  command -v curl >/dev/null 2>&1 || refuse 'curl is not installed, and the installer fetches with it' 'install curl, then run this again'
+  [ "$REMOTE" != 1 ] || command -v curl >/dev/null 2>&1 || refuse 'curl is not installed, and the installer fetches with it' 'install curl, then run this again'
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
     refuse 'neither sha256sum nor shasum is installed, and the installer verifies every download with one' 'install coreutils, then run this again'
   fi
@@ -365,7 +365,7 @@ remove_temporaries() {
 read_catalog_index() {
   if [ "$REMOTE" = 1 ]; then
     INDEX=$(mktemp "${TMPDIR:-/tmp}/forebay-catalog.XXXXXX")
-    curl -fsSL -o "$INDEX" "$CATALOG" || refuse "could not fetch the catalog $CATALOG" 'check the network connection and the url, then run this again'
+    curl -fsSL --proto '=https' --proto-redir '=https' -o "$INDEX" "$CATALOG" || refuse "could not fetch the catalog $CATALOG" 'check the network connection and the url, then run this again'
   else
     INDEX=$CATALOG
   fi
@@ -373,7 +373,7 @@ read_catalog_index() {
 
 receive() {
   if [ "$REMOTE" = 1 ]; then
-    curl -fsSL -o "$TEMPORARY" "$1"
+    curl -fsSL --proto '=https' --proto-redir '=https' -o "$TEMPORARY" "$1"
   else
     cp "$1" "$TEMPORARY"
   fi
@@ -412,19 +412,26 @@ EOF
   chmod 755 "$VERSION_DIRECTORY/$PLATFORM/$HOST_ID" "$VERSION_DIRECTORY/$PLATFORM/forebay-boot"
 }
 
-TEMPORARY=''
-INDEX=''
-REMOTE=0
-trap remove_temporaries EXIT
-trap 'remove_temporaries; exit 130' INT
-trap 'remove_temporaries; exit 143' TERM
+# Everything runs from main, called on the last line, so a download cut short runs nothing at all.
+main() {
+  TEMPORARY=''
+  INDEX=''
+  REMOTE=0
+  trap remove_temporaries EXIT
+  trap 'remove_temporaries; exit 130' INT
+  trap 'remove_temporaries; exit 143' TERM
+  [ "$#" -ge 1 ] || refuse 'no catalog was given, and none is published yet' 'pass the catalog to install from: sh install.sh <path or https url of catalog.json>'
+  CATALOG=$1
+  shift
+  check_catalog
+  require_tools
+  resolve_platform
+  resolve_cache
+  fetch_host
+  remove_temporaries
+  INDEX=''
+  trap - EXIT INT TERM
+  exec "$VERSION_DIRECTORY/$PLATFORM/$HOST_ID" install "--catalog=$CATALOG" "$@"
+}
 
-[ "$#" -ge 1 ] || refuse 'no catalog was given, and none is published yet' 'pass the catalog to install from: sh install.sh <path or https url of catalog.json>'
-CATALOG=$1
-shift
-check_catalog
-require_tools
-resolve_platform
-resolve_cache
-fetch_host
-exec "$VERSION_DIRECTORY/$PLATFORM/$HOST_ID" install "--catalog=$CATALOG" "$@"
+main "$@"

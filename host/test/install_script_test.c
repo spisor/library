@@ -13,6 +13,8 @@
 #define HOST_EXECUTABLE "forebay-host" EXECUTABLE_ENDING
 #define BOOT_EXECUTABLE "forebay-boot" EXECUTABLE_ENDING
 #define LAUNCHER_EXECUTABLE "runtime-launcher.exe"
+#define SPACED_KEY "docs/read me.txt"
+#define SPACED_CONTENT "a key with a space, served percent-encoded"
 
 /** PowerShell started with no console at all answers 0 and runs nothing, so it gets a hidden one. */
 #if defined(_WIN32)
@@ -76,6 +78,7 @@ static char *stage_forebay_host(const host_world *world) {
     char *boot_path = joined(stage, boot);
     copy_file(FOREBAY_HOST_PATH, executable_path);
     copy_file(FOREBAY_BOOT_PATH, boot_path);
+    write_in(stage, SPACED_KEY, SPACED_CONTENT);
 #if defined(_WIN32)
     char *launcher = platform_key_of(LAUNCHER_EXECUTABLE);
     char *launcher_path = joined(stage, launcher);
@@ -127,6 +130,12 @@ static char *system_folder(const char *rest) {
     char path[1024];
     snprintf(path, sizeof path, "%s%s", root == NULL ? "C:\\Windows" : root, rest);
     return copy_text(path);
+}
+
+/** The PowerShell the scripts run under: INSTALL_SCRIPT_POWERSHELL when set (pwsh), else Windows PowerShell. */
+static char *powershell_executable(void) {
+    const char *chosen = getenv("INSTALL_SCRIPT_POWERSHELL");
+    return chosen != NULL && chosen[0] != 0 ? copy_text(chosen) : system_folder("\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
 }
 
 static char *script_path_variable(const host_world *world, int with_curl) {
@@ -186,7 +195,7 @@ static int run_script(host_world *world, program *run, const char *const *script
     const char *arguments[32];
     size_t count = 0;
 #if defined(_WIN32)
-    char *executable = system_folder("\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+    char *executable = powershell_executable();
     const char *prefix[] = {"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT_PATH};
 #else
     char *executable = copy_text("/bin/sh");
@@ -256,6 +265,9 @@ static void fetches_forebay_host_for_this_platform_and_runs_its_install(void) {
     free(launcher);
 #endif
     CHECK(exists_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/.installed.json"));
+    char *spaced_text = text_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/" SPACED_KEY);
+    check_text(spaced_text, SPACED_CONTENT, "a key with a space is fetched from its percent-encoded url");
+    free(spaced_text);
     char *stub = runtime_boot_stub_path(world.base.cache);
     CHECK(has_same_bytes(stub, FOREBAY_BOOT_PATH));
     char marker[256];
@@ -513,7 +525,7 @@ static const hostile_catalog HOSTILE_CATALOGS[] = {
     {"a file whose bytes do not have the listed hash", with_a_hash_the_bytes_do_not_have, "bytes and SHA-256 0000"},
     {"a file whose bytes do not have the listed size", with_a_size_its_bytes_do_not_have, "does not have the "},
     {"a file that cannot be fetched", with_a_file_that_cannot_be_fetched, "could not fetch "},
-    {"a file served cut short", with_a_file_served_cut_short, "cut-short/" HOST_EXECUTABLE " does not have the "},
+    {"a file served cut short", with_a_file_served_cut_short, HOST_EXECUTABLE " does not have the "},
     {"a file key the schema refuses for ending in a dot", with_a_key_ending_in_a_dot, "file \"host.json.\" with a name, url"},
     {"two file keys that differ only by case", with_two_keys_that_differ_only_by_case, "host.json and HOST.json, which differ only by case"},
     {"a file key naming the cache's completion marker", with_a_key_naming_the_completion_marker, "file \".installed.json\" with a name, url"},
@@ -566,9 +578,9 @@ static void expect_only(const char *directory, const char *const *allowed, size_
 static void expect_no_strays(const host_world *world, const char *label) {
     char *version = version_directory(world);
     char *platform = joined(version, runtime_platform_key());
-    const char *version_names[] = {"host.json", runtime_platform_key()};
+    const char *version_names[] = {"host.json", "docs", runtime_platform_key()};
     const char *platform_names[] = {HOST_EXECUTABLE, BOOT_EXECUTABLE, LAUNCHER_EXECUTABLE};
-    expect_only(version, version_names, 2, label);
+    expect_only(version, version_names, 3, label);
     expect_only(platform, platform_names, 3, label);
     free(platform);
     free(version);
@@ -606,6 +618,36 @@ static void refuses_each_hostile_catalog_and_runs_nothing(void) {
 
 #if defined(_WIN32)
 
+/** A forebay-host.exe whose listed bytes are no program, so the call that starts it fails in PowerShell itself. */
+static void answers_1_when_forebay_host_cannot_be_started(void) {
+    host_world world;
+    start_script_world(&world, "not-a-program");
+    const char *bytes = "not a program";
+    write_in(world.base.catalog, "not-a-program/" HOST_EXECUTABLE, bytes);
+    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    sha256_of_text(bytes, sha256);
+    cJSON *catalog = json_in(world.base.catalog, "catalog.json");
+    cJSON *file = file_named(platform_files(catalog), HOST_EXECUTABLE);
+    set_member(file, "url", cJSON_CreateString("not-a-program/" HOST_EXECUTABLE));
+    set_member(file, "sha256", cJSON_CreateString(sha256));
+    set_member(file, "size", cJSON_CreateNumber((double)strlen(bytes)));
+    char *text = cJSON_Print(catalog);
+    write_in(world.base.catalog, "not-a-program.json", text);
+    cJSON_free(text);
+    cJSON_Delete(catalog);
+    char *index = joined(world.base.catalog, "not-a-program.json");
+    program run;
+    const char *arguments[] = {index, NULL};
+    int code = run_script(&world, &run, arguments, 1);
+    if (code != 1) {
+        fprintf(stderr, "a forebay-host that cannot start answered %d:\n%s\n%s\n", code, run.out, run.err);
+        check_failures++;
+    }
+    program_free(&run);
+    free(index);
+    finish_world(&world);
+}
+
 static void leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_invoke_expression(void) {
     host_world world;
     start_world_at(&world, "install-script", "invoke-expression");
@@ -614,7 +656,7 @@ static void leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_i
              "$ErrorActionPreference = 'Continue'; Invoke-Expression ([System.IO.File]::ReadAllText('%s')); "
              "Write-Output ('{0}|{1}|{2}' -f $ErrorActionPreference, (Test-Path variable:HostId), $LASTEXITCODE)",
              SCRIPT_PATH);
-    char *executable = system_folder("\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+    char *executable = powershell_executable();
     const char *arguments[] = {"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command, NULL};
     char *path = script_path_variable(&world, 1);
     program run;
@@ -631,14 +673,76 @@ static void leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_i
 
 static void names_curl_as_the_one_thing_to_install_when_it_is_missing(void) {
     host_world world;
-    start_script_world(&world, "without-curl");
+    start_world_at(&world, "install-script", "without-curl");
+    program run;
+    const char *arguments[] = {"https://catalog.invalid/catalog.json", NULL};
+    CHECK(run_script(&world, &run, arguments, 0) == 1);
+    expect_contains(run.err, "install curl, then run this again", "names curl");
+    CHECK(!spisor_file_exists(world.base.cache));
+    program_free(&run);
+    finish_world(&world);
+}
+
+static void installs_from_a_local_catalog_without_curl(void) {
+    host_world world;
+    start_script_world(&world, "local-without-curl");
     char *index = index_path_of(&world.base);
     program run;
     const char *arguments[] = {index, NULL};
-    CHECK(run_script(&world, &run, arguments, 0) == 1);
-    expect_contains(run.err, "install curl, then run this again", "names curl");
+    int code = run_script(&world, &run, arguments, 0);
+    if (code != 0) {
+        fprintf(stderr, "the script answered %d without curl:\n%s\n%s\n", code, run.out, run.err);
+        check_failures++;
+    }
+    CHECK(exists_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/.installed.json"));
     program_free(&run);
     free(index);
+    finish_world(&world);
+}
+
+static size_t line_count(const char *text) {
+    size_t count = 0;
+    for (const char *character = text; *character != 0; character++) {
+        count += *character == '\n';
+    }
+    return count;
+}
+
+/**
+ * Every prefix of install.sh that ends at a line, read from standard input as curl | sh reads it:
+ * none may fetch or run anything, since a connection cut short hands sh exactly such a prefix.
+ */
+static void a_script_cut_short_at_any_line_fetches_and_runs_nothing(void) {
+    host_world world;
+    start_script_world(&world, "cut-short");
+    char *script = read_text_file(SCRIPT_PATH);
+    char *index = index_path_of(&world.base);
+    char *prefix = joined(world.base.root, "prefix.sh");
+    char *path = script_path_variable(&world, 1);
+    size_t lines = line_count(script);
+    const char *end = script;
+    for (size_t kept = 1; kept < lines; kept++) {
+        end = strchr(end, '\n') + 1;
+        char *text = malloc((size_t)(end - script) + 1);
+        memcpy(text, script, (size_t)(end - script));
+        text[end - script] = 0;
+        write_in(world.base.root, "prefix.sh", text);
+        free(text);
+        const char *arguments[] = {"-c", "/bin/sh -s -- \"$1\" < \"$2\"", "sh", index, prefix, NULL};
+        program run;
+        world_start(&world, &run, "/bin/sh", arguments, path, IS_DETACHABLE);
+        program_finish(&run, SCRIPT_TIMEOUT);
+        if (spisor_file_exists(world.base.cache) || fetched_any(&run)) {
+            fprintf(stderr, "install.sh cut after line %zu fetched or ran something:\n%s\n%s\n", kept, run.out, run.err);
+            check_failures++;
+            CHECK(runtime_remove_tree(world.base.cache) == 1);
+        }
+        program_free(&run);
+    }
+    free(path);
+    free(prefix);
+    free(index);
+    free(script);
     finish_world(&world);
 }
 
@@ -707,8 +811,11 @@ int main(void) {
     refuses_each_hostile_catalog_and_runs_nothing();
 #if defined(_WIN32)
     leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_invoke_expression();
+    answers_1_when_forebay_host_cannot_be_started();
 #else
     names_curl_as_the_one_thing_to_install_when_it_is_missing();
+    installs_from_a_local_catalog_without_curl();
+    a_script_cut_short_at_any_line_fetches_and_runs_nothing();
 #endif
     expect_user_path_unchanged(&guard);
     return check_summary("install_script_test");
