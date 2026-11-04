@@ -18,8 +18,8 @@
 #if defined(_WIN32)
 #include <windows.h>
 
-#include "command_line_windows.h"
 #include "wide_path.h"
+#include "windows_process.h"
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -67,52 +67,6 @@ static int answer_output(const run_output *collected, char **output) {
 
 #if defined(_WIN32)
 
-static wchar_t *wide_text(const char *text) {
-    int units = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    wchar_t *wide = units <= 0 ? NULL : malloc((size_t)units * sizeof *wide);
-    if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, units) != units) {
-        free(wide);
-        wide = NULL;
-    }
-    return wide;
-}
-
-static size_t line_size(const char *executable, const cJSON *arguments) {
-    size_t size = strlen(executable) + 3;
-    for (const cJSON *argument = arguments == NULL ? NULL : arguments->child; argument != NULL; argument = argument->next) {
-        size += 2 * strlen(argument->valuestring) + 3;
-    }
-    return size;
-}
-
-static wchar_t *command_line(const char *executable, const cJSON *arguments) {
-    wchar_t *program = wide_text(executable);
-    wchar_t *line = program == NULL ? NULL : malloc(line_size(executable, arguments) * sizeof *line);
-    size_t used = 0;
-    if (line != NULL) {
-        line[used++] = L'"';
-        wcscpy(line + used, program);
-        used += wcslen(program);
-        line[used++] = L'"';
-    }
-    for (const cJSON *argument = arguments == NULL || line == NULL ? NULL : arguments->child; argument != NULL;
-         argument = argument->next) {
-        wchar_t *wide = wide_text(argument->valuestring);
-        if (wide == NULL) {
-            free(line);
-            line = NULL;
-            break;
-        }
-        used = runtime_append_quoted_argument(line, used, wide);
-        free(wide);
-    }
-    if (line != NULL) {
-        line[used] = L'\0';
-    }
-    free(program);
-    return line;
-}
-
 /** The handles a run hands its child: the null device, and the write end of the output pipe when one is taken. */
 typedef struct windows_run {
     HANDLE null;
@@ -122,12 +76,6 @@ typedef struct windows_run {
     LPPROC_THREAD_ATTRIBUTE_LIST attributes;
     HANDLE inherited[3];
 } windows_run;
-
-static HANDLE null_device(void) {
-    SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
-    return CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherited,
-                       OPEN_EXISTING, 0, NULL);
-}
 
 static int open_output_pipe(windows_run *run) {
     SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
@@ -139,32 +87,15 @@ static int open_output_pipe(windows_run *run) {
     return SetHandleInformation(run->output_read, HANDLE_FLAG_INHERIT, 0) != 0;
 }
 
-static LPPROC_THREAD_ATTRIBUTE_LIST handle_list(windows_run *run, DWORD count) {
-    SIZE_T size = 0;
-    InitializeProcThreadAttributeList(NULL, 1, 0, &size);
-    LPPROC_THREAD_ATTRIBUTE_LIST attributes = malloc(size);
-    if (attributes == NULL || !InitializeProcThreadAttributeList(attributes, 1, 0, &size)) {
-        free(attributes);
-        return NULL;
-    }
-    if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, run->inherited,
-                                   count * sizeof run->inherited[0], NULL, NULL)) {
-        DeleteProcThreadAttributeList(attributes);
-        free(attributes);
-        return NULL;
-    }
-    return attributes;
-}
-
 static int prepare(windows_run *run, int capture) {
     memset(run, 0, sizeof *run);
-    run->null = null_device();
+    run->null = runtime_windows_null_device();
     if (run->null == INVALID_HANDLE_VALUE || (capture && !open_output_pipe(run))) {
         return 0;
     }
     run->inherited[0] = run->null;
     run->inherited[1] = run->output_write;
-    run->attributes = handle_list(run, capture ? 2 : 1);
+    run->attributes = runtime_windows_handle_list(run->inherited, capture ? 2 : 1);
     return run->attributes != NULL;
 }
 
@@ -180,7 +111,7 @@ static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition) 
 /** prepare for a run reading the file input as its standard input and writing the file output as its standard output. */
 static int prepare_between_files(windows_run *run, const char *input, const char *output) {
     memset(run, 0, sizeof *run);
-    run->null = null_device();
+    run->null = runtime_windows_null_device();
     run->input = inherited_file(input, GENERIC_READ, OPEN_EXISTING);
     run->output_write = inherited_file(output, GENERIC_WRITE, CREATE_ALWAYS);
     if (run->null == INVALID_HANDLE_VALUE || run->input == INVALID_HANDLE_VALUE || run->output_write == INVALID_HANDLE_VALUE) {
@@ -189,7 +120,7 @@ static int prepare_between_files(windows_run *run, const char *input, const char
     run->inherited[0] = run->null;
     run->inherited[1] = run->input;
     run->inherited[2] = run->output_write;
-    run->attributes = handle_list(run, 3);
+    run->attributes = runtime_windows_handle_list(run->inherited, 3);
     return run->attributes != NULL;
 }
 
@@ -201,10 +132,7 @@ static void close_handle(HANDLE *handle) {
 }
 
 static void release(windows_run *run) {
-    if (run->attributes != NULL) {
-        DeleteProcThreadAttributeList(run->attributes);
-        free(run->attributes);
-    }
+    runtime_windows_free_handle_list(run->attributes);
     close_handle(&run->null);
     close_handle(&run->input);
     close_handle(&run->output_read);
@@ -280,7 +208,7 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
                         char **output, char **problem, windows_run *run, int prepared) {
     *problem = NULL;
     wchar_t *application = spisor_wide_path(executable);
-    wchar_t *line = command_line(executable, arguments);
+    wchar_t *line = runtime_windows_command_line(executable, arguments);
     PROCESS_INFORMATION information = {NULL, NULL, 0, 0};
     run_output collected = {{0}, 0};
     int started = application != NULL && line != NULL && prepared && create(application, line, run, &information);

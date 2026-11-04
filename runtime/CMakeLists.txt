@@ -125,7 +125,7 @@ spisor_strict_warnings(runtime_updates)
 set(runtime_processes_sources src/holders.c src/holders_lock.c src/process_start.c src/processes.c src/processes_hold.c
     src/processes_runs.c)
 if(WIN32)
-    list(APPEND runtime_processes_sources src/command_line_windows.c)
+    list(APPEND runtime_processes_sources src/command_line_windows.c src/windows_process.c)
 endif()
 add_library(runtime_processes OBJECT ${runtime_processes_sources})
 target_link_libraries(runtime_processes PUBLIC runtime_objects)
