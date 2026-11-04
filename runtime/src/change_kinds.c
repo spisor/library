@@ -333,7 +333,7 @@ int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
     }
     file_bytes asked = bytes_asked_for(change);
     if (asked.bytes == NULL) {
-        return 1;
+        return 0;
     }
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
     runtime_change_digest(asked.bytes, asked.length, digest);

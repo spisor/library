@@ -542,8 +542,32 @@ static void rewrite_own_file(apply_session *session, cJSON *own) {
     }
 }
 
+/**
+ * Removes the <path>.old a replace set aside for a running image of the file own records, once that image
+ * has exited; one still running is left for the next start.
+ */
+static void remove_set_aside(const cJSON *own) {
+    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(own, "kind");
+    const cJSON *path = cJSON_GetObjectItemCaseSensitive(own, "path");
+    if (!cJSON_IsString(kind) || strcmp(kind->valuestring, "file") != 0 || !cJSON_IsString(path)) {
+        return;
+    }
+    char *aside = malloc(strlen(path->valuestring) + 5);
+    if (aside != NULL) {
+        strcpy(aside, path->valuestring);
+        strcat(aside, ".old");
+        if (runtime_probe_entry(aside) == RUNTIME_ENTRY_OTHER) {
+            runtime_remove_file_entry(aside);
+        }
+    }
+    free(aside);
+}
+
 static void apply_single(apply_session *session) {
     cJSON *own = own_record_of(session->registration, session->change);
+    if (own != NULL) {
+        remove_set_aside(own);
+    }
     if (own != NULL && runtime_change_asks_new_content(own, session->change)) {
         rewrite_own_file(session, own);
         return;

@@ -1005,6 +1005,51 @@ static void the_first_command_puts_the_shims_on_path_until_the_last_host_goes(vo
     CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
 }
 
+#ifdef _WIN32
+/** The runtime-launcher.exe beside this test, the source every Windows shim is copied from. */
+static void launcher_beside_test(wchar_t *path, DWORD size) {
+    DWORD length = GetModuleFileNameW(NULL, path, size);
+    wchar_t *slash = length == 0 ? NULL : wcsrchr(path, L'\\');
+    if (slash != NULL) {
+        wcscpy_s(slash + 1, size - (DWORD)(slash + 1 - path), L"runtime-launcher.exe");
+    }
+}
+
+static void a_rerequest_keeps_the_held_shim_while_its_source_cannot_be_read(void) {
+    scratch place;
+    fresh_scratch(&place, "unreadable-source");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char *before = shim_bytes(&place, "oc");
+    wchar_t launcher[MAX_PATH];
+    launcher_beside_test(launcher, MAX_PATH);
+    HANDLE held = CreateFileW(launcher, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    CHECK(held != INVALID_HANDLE_VALUE);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    CloseHandle(held);
+    char *after = shim_bytes(&place, "oc");
+    CHECK(before != NULL && after != NULL && strcmp(before, after) == 0);
+    free(after);
+    free(before);
+    CHECK(reverse_host(&place, "alpha"));
+}
+#endif
+
+static void a_rerequest_removes_what_a_replace_set_aside_for_a_running_image(void) {
+    scratch place;
+    fresh_scratch(&place, "set-aside");
+    register_host(&place, "alpha", 0);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    char shim[1400];
+    shim_file(&place, "oc", shim, sizeof shim);
+    char aside[1500];
+    snprintf(aside, sizeof aside, "%s.old", shim);
+    write_program(aside, "the image that ran", 1);
+    CHECK(requests(&place, "alpha", "oc", "oc"));
+    CHECK(runtime_probe_entry(aside) == RUNTIME_ENTRY_MISSING);
+    CHECK(reverse_host(&place, "alpha"));
+}
+
 int main(void) {
 #ifdef _WIN32
     registry_text real_before;
@@ -1028,7 +1073,9 @@ int main(void) {
     a_defective_argument_is_refused_and_changes_nothing();
     a_rerequest_rewrites_the_held_command_and_reversal_restores_the_machine();
     the_first_command_puts_the_shims_on_path_until_the_last_host_goes();
+    a_rerequest_removes_what_a_replace_set_aside_for_a_running_image();
 #ifdef _WIN32
+    a_rerequest_keeps_the_held_shim_while_its_source_cannot_be_read();
     delete_test_value();
     registry_text real_after;
     read_value(L"Path", &real_after);
