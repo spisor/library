@@ -77,11 +77,31 @@ target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
 spisor_strict_warnings(runtime_fetch_test_hooks)
 
+set(runtime_catalog_sources src/catalog.c src/catalog_answer.c src/catalog_check.c src/catalog_fold.c
+    src/catalog_fold_table.c src/catalog_sources.c src/catalog_order.c src/catalog_path.c src/catalog_read.c
+    src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
+    src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
+add_library(runtime_catalog OBJECT ${runtime_catalog_sources})
+target_link_libraries(runtime_catalog PUBLIC runtime_objects)
+set_target_properties(runtime_catalog PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_catalog)
+
+add_library(runtime_catalog_refresh OBJECT src/catalog_refresh.c)
+target_link_libraries(runtime_catalog_refresh PUBLIC runtime_objects)
+set_target_properties(runtime_catalog_refresh PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_catalog_refresh)
+
+add_library(runtime_catalog_refresh_test_hooks OBJECT src/catalog_refresh.c)
+target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
+target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
+spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
-    $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>)
+    $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
+    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>)
 target_include_directories(runtime PRIVATE src)
 target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})

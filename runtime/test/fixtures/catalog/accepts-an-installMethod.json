@@ -1,0 +1,1 @@
+{"format":1,"items":{"thing":{"kind":"plugin","latest":"1.0.0","versions":{"1.0.0":{"files":{"plugin.js":{"url":"plugin.js","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}},"packages":{"npm":{"name":"x"}}}},"installMethod":"npm"}}}

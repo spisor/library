@@ -1,0 +1,1 @@
+{"format":1,"items":{"thing":{"kind":"library","latest":"1.0.0","versions":{"1.0.0":{"files":{"Lib/x.js":{"url":"a","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}},"platforms":{"linux-x64":{"files":{"lib/X.js":{"url":"b","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}}}}}}}}}

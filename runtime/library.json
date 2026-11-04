@@ -804,6 +804,197 @@
           }
         }
       ]
+    },
+    {
+      "id": "catalog",
+      "functions": [
+        {
+          "name": "read",
+          "symbol": "runtime_catalog_read",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "origin": { "type": "string", "minLength": 1 }
+            },
+            "required": ["text", "origin"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] }
+            },
+            "required": ["catalog"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sources",
+          "symbol": "runtime_catalog_sources",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "settings": { "type": "object" }
+            },
+            "required": ["settings"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "sources": { "type": "array", "items": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "local" }, "path": { "type": "string" } }, "required": ["kind", "path"] }, { "type": "object", "properties": { "kind": { "const": "https" }, "url": { "type": "string" } }, "required": ["kind", "url"] } ] } },
+              "skipped": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": { "type": "integer", "minimum": 0 },
+                    "detail": { "type": "string" }
+                  },
+                  "required": ["index", "detail"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["sources", "skipped"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "merge",
+          "symbol": "runtime_catalog_merge",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "catalogs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "local" }, "path": { "type": "string" } }, "required": ["kind", "path"] }, { "type": "object", "properties": { "kind": { "const": "https" }, "url": { "type": "string" } }, "required": ["kind", "url"] } ] },
+                    "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] }
+                  },
+                  "required": ["source", "catalog"]
+                }
+              }
+            },
+            "required": ["catalogs"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] },
+              "shadowed": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "source": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "local" }, "path": { "type": "string" } }, "required": ["kind", "path"] }, { "type": "object", "properties": { "kind": { "const": "https" }, "url": { "type": "string" } }, "required": ["kind", "url"] } ] }
+                  },
+                  "required": ["id", "source"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["catalog", "shadowed"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "check",
+          "symbol": "runtime_catalog_check",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "source": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "local" }, "path": { "type": "string" } }, "required": ["kind", "path"] }, { "type": "object", "properties": { "kind": { "const": "https" }, "url": { "type": "string" } }, "required": ["kind", "url"] } ] },
+              "cache": { "type": "string", "minLength": 1 },
+              "now": { "type": "string", "minLength": 1 },
+              "intervalHours": { "type": "number" }
+            },
+            "required": ["source", "cache", "now", "intervalHours"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "kind": { "enum": ["skipped", "unchanged", "changed", "failed"] },
+              "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] },
+              "detail": { "type": "string" }
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "current",
+          "symbol": "runtime_catalog_current",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "sources": { "type": "array", "items": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "local" }, "path": { "type": "string" } }, "required": ["kind", "path"] }, { "type": "object", "properties": { "kind": { "const": "https" }, "url": { "type": "string" } }, "required": ["kind", "url"] } ] } },
+              "cache": { "type": "string", "minLength": 1 }
+            },
+            "required": ["sources", "cache"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] }
+            },
+            "required": ["catalog"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "resolve",
+          "symbol": "runtime_catalog_resolve",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "catalog": { "type": "object", "properties": { "format": { "const": 1 }, "items": { "type": "object" } }, "required": ["format", "items"] },
+              "enabled": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "pin": { "type": "string" }
+                  },
+                  "required": ["id"]
+                }
+              },
+              "installed": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+              "kind": { "enum": ["plugin", "host", "library"] }
+            },
+            "required": ["catalog", "enabled", "installed"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "run": { "type": "object", "additionalProperties": { "type": "string" } },
+              "fetch": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "version": { "type": "string" }
+                  },
+                  "required": ["id", "version"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["run", "fetch"],
+            "additionalProperties": false
+          }
+        }
+      ]
     }
   ]
 }

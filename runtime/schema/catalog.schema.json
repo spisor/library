@@ -1,0 +1,281 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://forebay.github.io/host/catalog.schema.json",
+  "title": "Catalog index",
+  "description": "Lists each item's versions with file URLs, hashes and kinds. A marketplace is another catalog index.",
+  "type": "object",
+  "required": [
+    "format",
+    "items"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/item"
+      },
+      "propertyNames": {
+        "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))[a-z0-9]+(-[a-z0-9]+)*(?![\\s\\S])"
+      }
+    }
+  },
+  "definitions": {
+    "item": {
+      "type": "object",
+      "required": [
+        "kind",
+        "versions",
+        "latest"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "plugin",
+            "host",
+            "library"
+          ]
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/version"
+          },
+          "propertyNames": {
+            "pattern": "^(?![\\s\\S]*\\.\\.)[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]*[0-9A-Za-z-])?(\\+[0-9A-Za-z.-]*[0-9A-Za-z-])?(?![\\s\\S])"
+          }
+        },
+        "latest": {
+          "type": "string",
+          "pattern": "^(?![\\s\\S]*\\.\\.)[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]*[0-9A-Za-z-])?(\\+[0-9A-Za-z.-]*[0-9A-Za-z-])?(?![\\s\\S])"
+        },
+        "application": {
+          "$ref": "#/definitions/application"
+        },
+        "installMethod": {
+          "description": "The install method this plugin is a provider for, for example npm; an install planner matches a provider by exactly this member.",
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime": {
+          "description": "The language runtime the item's bundle needs. A host item names it; a plugin item without it needs javascript, and a reader answers that default; a library item runs in its host's runtime and names none.",
+          "enum": [
+            "javascript",
+            "jvm",
+            "native"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "plugin",
+                  "library"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "application"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "host"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "runtime"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "library"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "runtime"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "version": {
+      "type": "object",
+      "anyOf": [
+        {
+          "required": [
+            "files"
+          ]
+        },
+        {
+          "required": [
+            "platforms"
+          ]
+        }
+      ],
+      "properties": {
+        "files": {
+          "$ref": "#/definitions/files"
+        },
+        "platforms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "files"
+            ],
+            "properties": {
+              "files": {
+                "$ref": "#/definitions/files"
+              }
+            }
+          }
+        },
+        "packages": {
+          "type": "object"
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[^/\\\\:]*[^/\\\\:. ](?:/[^/\\\\:]*[^/\\\\:. ])*(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/fileRef"
+      }
+    },
+    "fileRef": {
+      "type": "object",
+      "required": [
+        "url",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "binary",
+        "home",
+        "packages"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binary": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"
+        },
+        "home": {
+          "type": "object",
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "envOverride": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nativeEnv": {
+              "type": "string",
+              "minLength": 1
+            },
+            "xdgSubdir": {
+              "description": "The directory under an absolute XDG_CONFIG_HOME that is the home, taken after nativeEnv and before candidates.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"
+            },
+            "candidates": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:~/|/|[A-Za-z]:[\\/])"
+              }
+            }
+          }
+        },
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
+                }
+              }
+            ]
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])"
+          }
+        }
+      }
+    }
+  }
+}
