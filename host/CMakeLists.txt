@@ -6,7 +6,7 @@ endif()
 set(host_sources src/application_choices.c src/catalog_inputs.c src/catalog_writer.c
     src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c
     src/command_remove.c src/command_status.c src/command_update.c src/host_context.c src/host_holds.c src/host_options.c
-    src/host_output.c src/host_service.c src/host_start.c src/loader_start.c src/own_executable.c src/own_run.c src/terminal_question.c src/windows_command.c)
+    src/host_output.c src/host_service.c src/host_start.c src/loader_start.c src/own_executable.c src/own_run.c src/required_plugins.c src/terminal_question.c src/windows_command.c)
 if(WIN32)
     set(host_platform_sources src/child_windows.c src/host_arguments.c)
 else()

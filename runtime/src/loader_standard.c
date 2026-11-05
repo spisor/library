@@ -281,15 +281,23 @@ static void check_background(issue_list *list, const cJSON *background) {
     }
 }
 
+static void check_plugins(issue_list *list, const cJSON *plugins) {
+    if (!is_unique_portable_list(plugins)) {
+        add_issue(list, "/plugins", "plugins is not a list of unique plugin ids",
+                  "list the ids of the plugins the loader cannot run without, or an empty list; " PORTABLE_NAME_FIX);
+    }
+}
+
 cJSON *runtime_loader_standard_issues(const cJSON *value) {
     issue_list list = {cJSON_CreateArray(), 1};
     list.complete = list.issues != NULL;
     if (!is_record(value)) {
-        add_issue(&list, "", "the standard is not an object", "give the standard an application, pathCommands and background");
+        add_issue(&list, "", "the standard is not an object", "give the standard an application, pathCommands, background and plugins");
     } else {
         check_application(&list, member(value, "application"));
         check_path_commands(&list, member(value, "pathCommands"));
         check_background(&list, member(value, "background"));
+        check_plugins(&list, member(value, "plugins"));
     }
     if (!list.complete) {
         cJSON_Delete(list.issues);

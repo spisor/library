@@ -29,8 +29,8 @@ cJSON *runtime_application_home(const cJSON *home, const cJSON *environment, cJS
 
 /**
  * loader.check: { standard } answering { issues }, each { path, detail, fix }; no issue means standard
- * is a loader standard, which carries an application, the PATH commands it asks for and the background
- * hosts it keeps running.
+ * is a loader standard, which carries an application, the PATH commands it asks for, the background
+ * hosts it keeps running and the plugins it cannot run without.
  */
 RUNTIME_EXPORT int32_t runtime_loader_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

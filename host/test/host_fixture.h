@@ -453,13 +453,14 @@ static inline void list_native_background(install_base *base, const char *id, in
  * The launch ecosystem: forebay-host, the runtime, the fixture loader for application, served by the fake
  * application's binary, naming commands and the background host.
  */
-static inline void list_launch_catalog_for(host_world *world, const char *application, const char *commands_json,
-                                           int javascript_plugin) {
+static inline void list_launch_catalog_requiring(host_world *world, const char *application, const char *commands_json,
+                                                  int javascript_plugin, const char *plugins_json) {
     install_base *base = &world->base;
     list_native_forebay_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
-    list_loader(base, LOADER_ID, "1.0.0", application_json(application, APPLICATION_ID, "{\"fake\": \"fixture-pkg\"}"),
-                commands_json, 0, "[\"" BACKGROUND_ID "\"]");
+    list_loader_requiring(base, LOADER_ID, "1.0.0",
+                          application_json(application, APPLICATION_ID, "{\"fake\": \"fixture-pkg\"}"), commands_json, 0,
+                          "[\"" BACKGROUND_ID "\"]", plugins_json);
     list_native_background(base, BACKGROUND_ID, 1);
     if (javascript_plugin) {
         list_plugin(base, SESSION_PLUGIN, "1.0.0", "javascript");
@@ -471,6 +472,11 @@ static inline void list_launch_catalog_for(host_world *world, const char *applic
         cJSON_AddItemToObject(files, "host.js", served_reference(base, "javascript-host", "1.0.0", "host.js", "export {};\n"));
     }
     write_catalog(base);
+}
+
+static inline void list_launch_catalog_for(host_world *world, const char *application, const char *commands_json,
+                                           int javascript_plugin) {
+    list_launch_catalog_requiring(world, application, commands_json, javascript_plugin, "[]");
 }
 
 static inline void list_launch_catalog(host_world *world, const char *commands_json, int javascript_plugin) {
@@ -650,6 +656,18 @@ static inline void install_launch_world(host_world *world, const char *suite, co
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
     const char *plugin[] = {"--plugin", SESSION_PLUGIN, NULL};
     CHECK(world_install(world, javascript ? plugin : NULL, javascript ? path : world->bin) == 0);
+    free(node);
+}
+
+/** The launch ecosystem whose loader requires SESSION_PLUGIN, installed with no plugin asked for beside it. */
+static inline void install_launch_world_requiring_session_plugin(host_world *world, const char *suite, const char *label) {
+    start_world_at(world, suite, label);
+    install_fake_application(world);
+    list_launch_catalog_requiring(world, APPLICATION_ID, "[]", 1, "[\"" SESSION_PLUGIN "\"]");
+    char *node = install_fake_node(world);
+    char path[4096];
+    snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
+    CHECK(world_install(world, NULL, path) == 0);
     free(node);
 }
 

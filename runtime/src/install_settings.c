@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cache_refusal.h"
 #include "catalog.h"
 #include "config.h"
 #include "install_support.h"
@@ -53,6 +54,20 @@ int runtime_install_settings_set(const runtime_install_settings *settings, const
     cJSON *answer = runtime_call_or_refuse(runtime_settings_set, call, refusal);
     cJSON_Delete(answer);
     return answer != NULL;
+}
+
+int runtime_install_plugin_enabled(const cJSON *values, const char *id) {
+    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(values, "plugins"), id), "enabled"));
+}
+
+int runtime_install_enable_plugin(const runtime_install_settings *settings, const char *id, const char *layer,
+                                  cJSON **refusal) {
+    const char *parts[3] = {"plugins.", id, ".enabled"};
+    char *key = runtime_cache_text(parts, 3);
+    int enabled = key != NULL && runtime_install_settings_set(settings, key, cJSON_CreateTrue(), layer, refusal);
+    free(key);
+    return enabled;
 }
 
 /** The catalog.sources list values carry, or NULL when they carry none. */

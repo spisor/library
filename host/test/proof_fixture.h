@@ -125,7 +125,7 @@ static inline char *write_proof_loader(const host_world *world, const char *vers
              "{\"id\": \"" LOADER_ID "\", \"version\": \"%s\", \"runtime\": \"native\", \"application\": {\"id\": \"claude\", "
              "\"label\": \"Claude Code\", \"binary\": \"" APPLICATION_ID "\", \"home\": {\"candidates\": [\"~/homes/claude\"]}, "
              "\"packages\": {\"fake\": \"fixture-pkg\"}}, \"pathCommands\": {\"requested\": [\"" PROOF_COMMAND "\"], \"minimum\": 0}, "
-             "\"background\": []}",
+             "\"background\": [], \"plugins\": []}",
              version);
     write_in(directory, "host.json", manifest);
     return directory;

@@ -168,6 +168,18 @@ static locate_status locate_ecosystem_targets(const config_request *request, con
     return status;
 }
 
+char *runtime_ecosystem_settings_file(const char *home) {
+    config_request request = {home, NULL, NULL, NULL, NULL, NULL};
+    config_target target = {NULL, NULL};
+    char *file = NULL;
+    if (locate_in_config_directory(&request, "settings", &target) == LOCATED) {
+        file = target.file;
+        target.file = NULL;
+    }
+    free_target(&target);
+    return file;
+}
+
 static int is_ecosystem_request(const config_request *request) {
     return request->plugin == NULL;
 }

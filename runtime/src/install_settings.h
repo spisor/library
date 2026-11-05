@@ -22,6 +22,13 @@ cJSON *runtime_install_settings_values(const runtime_install_settings *settings,
 int runtime_install_settings_set(const runtime_install_settings *settings, const char *key, cJSON *value,
                                  const char *layer, cJSON **refusal);
 
+/** Whether values, merged settings, set plugins.<id>.enabled to true. */
+int runtime_install_plugin_enabled(const cJSON *values, const char *id);
+
+/** Writes plugins.<id>.enabled as true into layer ("application" or "portable"); 1 on success, else as above. */
+int runtime_install_enable_plugin(const runtime_install_settings *settings, const char *id, const char *layer,
+                                  cJSON **refusal);
+
 /**
  * Appends each of sources that catalog.sources does not list yet, never replacing one that is: a local
  * source to the application layer, which starts from the merged list, and an https source to the

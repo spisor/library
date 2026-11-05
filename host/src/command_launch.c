@@ -12,6 +12,7 @@
 #include "on_path.h"
 #include "own_run.h"
 #include "paths.h"
+#include "required_plugins.h"
 
 #define HOLD_FIX "nothing is needed now; the application runs, and a background host it lacks starts with the next launch"
 
@@ -64,10 +65,30 @@ static cJSON *session_start_or_report(const host_context *context, const char *l
     return session;
 }
 
+/** The start of the session host of a loader that requires plugins, which cannot run without it; NULL with *refusal set. */
+static cJSON *session_start_or_refuse(const host_context *context, const char *loader_id, cJSON **refusal) {
+    cJSON *session = host_session_start_of(context, loader_id, refusal);
+    if (session == NULL && *refusal != NULL) {
+        const char *message = host_text(*refusal, "message");
+        const char *fix = host_text(*refusal, "fix");
+        const char *parts[4] = {"spisor could not start the session host of ", loader_id,
+                                ", which runs the plugins it requires: ", message == NULL ? "" : message};
+        cJSON *explained = host_refusal_of(parts, 4, fix == NULL ? HOST_REINSTALL_FIX : fix);
+        cJSON_Delete(*refusal);
+        *refusal = explained;
+    }
+    return session;
+}
+
+static int requires_plugins(const loader_start *loader) {
+    return cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(loader->standard, "plugins")) > 0;
+}
+
 /**
  * {host id: start} for every background host the loader's host.json names, and its session host on
- * javascript-host when its settings enable plugins of its own and it can be started; NULL with *refusal
- * set when a background host cannot be started, before anything is.
+ * javascript-host when its settings enable plugins of its own and it can be started, which a loader with
+ * required plugins cannot do without; NULL with *refusal set when a background host or such a session host
+ * cannot be started, before anything is.
  */
 static cJSON *starts_of(const host_context *context, const char *loader_id, const loader_start *loader, cJSON **refusal) {
     cJSON *starts = cJSON_CreateObject();
@@ -80,8 +101,16 @@ static cJSON *starts_of(const host_context *context, const char *loader_id, cons
             return NULL;
         }
     }
-    cJSON *session = starts != NULL && cJSON_GetArraySize(loader->plugins) > 0 ? session_start_or_report(context, loader_id)
-                                                                               : NULL;
+    cJSON *session = NULL;
+    if (starts != NULL && requires_plugins(loader)) {
+        session = session_start_or_refuse(context, loader_id, refusal);
+        if (session == NULL) {
+            cJSON_Delete(starts);
+            return NULL;
+        }
+    } else if (starts != NULL && cJSON_GetArraySize(loader->plugins) > 0) {
+        session = session_start_or_report(context, loader_id);
+    }
     if (session != NULL && !cJSON_AddItemToObject(starts, loader_id, session)) {
         cJSON_Delete(session);
         cJSON_Delete(starts);
@@ -157,7 +186,9 @@ static int launch(const host_context *context, const char *loader_id, int count,
     cJSON *refusal = NULL;
     char *binary = host_start_loader(context, loader_id, &loader, &refusal) ? application_binary(context, loader.standard, &refusal)
                                                                              : NULL;
-    cJSON *starts = binary == NULL ? NULL : starts_of(context, loader_id, &loader, &refusal);
+    int required = binary != NULL && host_check_required_plugins(context, loader_id, host_text(loader.registration, "home"),
+                                                                 loader.standard, &refusal);
+    cJSON *starts = required ? starts_of(context, loader_id, &loader, &refusal) : NULL;
     cJSON *passed = starts == NULL ? NULL : application_arguments(count, arguments);
     int code = passed == NULL ? host_refuse(refusal) : run_held(context, binary, starts, passed);
     cJSON_Delete(passed);
