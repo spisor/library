@@ -7,37 +7,27 @@
 #include <string.h>
 
 #include "boot.h"
-#include "boot_stub.h"
 #include "cache.h"
 #include "catalog_time.h"
-#include "config.h"
 #include "file_times.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "json_service.h"
-#include "paths.h"
 #include "places.h"
-#include "platform_key.h"
-#include "spisor/file.h"
 #include "spisor/json_write.h"
-#include "spisor/path.h"
 #include "updates.h"
 #include "user_home.h"
 
 #if defined(_WIN32)
 #include <windows.h>
-#define BOOT_FILE "forebay-boot.exe"
 #else
-#include <sys/stat.h>
 extern char **environ;
-#define BOOT_FILE "forebay-boot"
 #endif
-
-#define PATH_METHOD "path"
 
 /**
  * A host written in C over runtime's services and nothing else, answering install, status, update and
- * remove as forebay-host's commands do, so the proof can compare the trees the two leave.
+ * remove by calling the services forebay-host's commands call, so the proof compares two thin callers of
+ * one implementation.
  */
 typedef struct c_host {
     cJSON *environment;
@@ -154,44 +144,10 @@ static cJSON *places_call(const c_host *host) {
     return call;
 }
 
-static char *joined(const char *const *segments, size_t count) {
-    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
-}
-
-static int copy_runnable(const char *source, const char *destination) {
-    const char *parent_segments[2] = {destination, ".."};
-    char *parent = joined(parent_segments, 2);
-    size_t length = 0;
-    uint8_t *bytes = spisor_read_file(source, &length);
-    int copied = bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(destination, bytes, length) == 1;
-#if !defined(_WIN32)
-    copied = copied && chmod(destination, 0755) == 0;
-#endif
-    free(bytes);
-    free(parent);
-    return copied;
-}
-
-/** Puts the forebay-boot the hinted forebay-host build carries at the boot stub's path, when none is there yet. */
-static int place_boot_stub(const c_host *host) {
-    char *stub = runtime_boot_stub_path(host->cache);
-    if (spisor_file_exists(stub)) {
-        free(stub);
-        return 1;
-    }
+static cJSON *cache_call(const c_host *host) {
     cJSON *call = cJSON_CreateObject();
     cJSON_AddStringToObject(call, "cache", host->cache);
-    cJSON_AddStringToObject(call, "hostId", RUNTIME_BOOTED_HOST_ID);
-    cJSON *refusal = NULL;
-    cJSON *resolved = runtime_call_or_refuse(runtime_boot_resolve, call, &refusal);
-    cJSON_Delete(refusal);
-    const char *segments[3] = {text_of(resolved, "directory"), runtime_platform_key(), BOOT_FILE};
-    char *carried = segments[0] == NULL ? NULL : joined(segments, 3);
-    int placed = carried == NULL || !spisor_file_exists(carried) || copy_runnable(carried, stub);
-    free(carried);
-    cJSON_Delete(resolved);
-    free(stub);
-    return placed;
+    return call;
 }
 
 static cJSON *ecosystem_call(const c_host *host, const char *catalog, char **plugins, int plugin_count) {
@@ -217,50 +173,25 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
     }
     print_json(report);
     cJSON_Delete(report);
-    return place_boot_stub(host) ? 0 : refuse(runtime_refusal("forebay-boot could not be placed", "make the cache writable"));
-}
-
-/** Adds {detail, fix, file?, version, id} to damaged for each version under root that cache.check, which hashes, finds damaged. */
-static void add_damaged(const c_host *host, const cJSON *versions_of, const char *root, int per_platform, cJSON *damaged) {
-    const cJSON *versions;
-    cJSON_ArrayForEach(versions, versions_of) {
-        const cJSON *version;
-        cJSON_ArrayForEach(version, versions) {
-            const char *segments[5] = {host->cache, root, versions->string, version->valuestring, runtime_platform_key()};
-            char *directory = joined(segments, per_platform ? 5 : 4);
-            cJSON *call = cJSON_CreateObject();
-            cJSON_AddStringToObject(call, "directory", directory);
-            free(directory);
-            cJSON *refusal = NULL;
-            cJSON *check = runtime_call_or_refuse(runtime_cache_check, call, &refusal);
-            check = check == NULL ? refusal : check;
-            const char *kind = text_of(check, "kind");
-            if (kind != NULL && strcmp(kind, "intact") == 0) {
-                cJSON_Delete(check);
-                continue;
-            }
-            cJSON_DeleteItemFromObjectCaseSensitive(check, "kind");
-            cJSON_AddStringToObject(check, "version", version->valuestring);
-            cJSON_AddStringToObject(check, "id", versions->string);
-            cJSON_AddItemToArray(damaged, check);
-        }
-    }
+    cJSON *placed = runtime_call_or_refuse(runtime_boot_place, cache_call(host), &refusal);
+    cJSON_Delete(placed);
+    return placed == NULL ? refuse(refusal) : 0;
 }
 
 static int status(const c_host *host) {
     cJSON *refusal = NULL;
     cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(host), &refusal);
-    cJSON *call = cJSON_CreateObject();
-    cJSON_AddStringToObject(call, "cache", host->cache);
-    cJSON *installed = listed == NULL ? NULL : runtime_call_or_refuse(runtime_cache_installed, call, &refusal);
-    if (listed == NULL || installed == NULL) {
+    cJSON *installed = listed == NULL ? NULL : runtime_call_or_refuse(runtime_cache_installed, cache_call(host), &refusal);
+    cJSON *found = installed == NULL ? NULL : runtime_call_or_refuse(runtime_cache_damaged, cache_call(host), &refusal);
+    if (found == NULL) {
+        cJSON_Delete(installed);
         cJSON_Delete(listed);
         return refuse(refusal);
     }
     cJSON_AddItemToObject(listed, "installed", installed);
-    cJSON *damaged = cJSON_AddArrayToObject(listed, "damaged");
-    add_damaged(host, cJSON_GetObjectItemCaseSensitive(installed, "bundles"), "bundles", 0, damaged);
-    add_damaged(host, cJSON_GetObjectItemCaseSensitive(installed, "libraries"), "libraries", 1, damaged);
+    cJSON *damaged = cJSON_DetachItemFromObjectCaseSensitive(found, "damaged");
+    cJSON_Delete(found);
+    cJSON_AddItemToObject(listed, "damaged", damaged);
     print_json(listed);
     const cJSON *first = cJSON_GetArrayItem(damaged, 0);
     int code = first == NULL ? 0 : refuse(runtime_refusal(text_of(first, "detail"), text_of(first, "fix")));
@@ -268,105 +199,19 @@ static int status(const c_host *host) {
     return code;
 }
 
-/** Every registration hosts.list answers, forebay-host first, so its catalog check serves the rest. */
-static cJSON *registrations_of(const c_host *host) {
-    cJSON *refusal = NULL;
-    cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(host), &refusal);
-    cJSON_Delete(refusal);
-    cJSON *registrations = cJSON_CreateArray();
-    for (int pass = 0; pass < 2; pass++) {
-        const cJSON *row;
-        cJSON_ArrayForEach(row, cJSON_GetObjectItemCaseSensitive(listed, "hosts")) {
-            const cJSON *registration = cJSON_GetObjectItemCaseSensitive(row, "registration");
-            const char *id = text_of(registration, "id");
-            if (id != NULL && (strcmp(id, RUNTIME_BOOTED_HOST_ID) == 0) == (pass == 0)) {
-                cJSON_AddItemToArray(registrations, cJSON_Duplicate(registration, 1));
-            }
-        }
-    }
-    cJSON_Delete(listed);
-    return registrations;
-}
-
-static cJSON *settings_of(const c_host *host, const char *home) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON_AddStringToObject(call, "home", home);
-    cJSON_AddStringToObject(call, "portable", text_of(host->places, "portable"));
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_settings_all, call, &refusal);
-    cJSON_Delete(refusal);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer, "values");
-    cJSON_Delete(answer);
-    return values == NULL ? cJSON_CreateObject() : values;
-}
-
-/** The registration's own settings with forebay-host's catalog sources, which install records in its layer alone. */
-static cJSON *check_call(const c_host *host, const cJSON *registration, const cJSON *ecosystem) {
-    cJSON *settings = settings_of(host, text_of(registration, "home"));
-    cJSON_DeleteItemFromObjectCaseSensitive(settings, "catalog");
-    const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(ecosystem, "catalog");
-    if (catalog != NULL) {
-        cJSON_AddItemToObject(settings, "catalog", cJSON_Duplicate(catalog, 1));
-    }
+static int update(const c_host *host) {
     char now[RUNTIME_CATALOG_TIME_SIZE];
     runtime_catalog_format_time(runtime_now_milliseconds(), now);
     cJSON *call = places_call(host);
-    cJSON_AddStringToObject(call, "hostId", text_of(registration, "id"));
     cJSON_AddStringToObject(call, "now", now);
-    cJSON_AddItemToObject(call, "settings", settings);
-    return call;
-}
-
-static int has_method_application(const cJSON *registration) {
-    const char *method = text_of(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(registration, "application"), "provenance"), "method");
-    return method != NULL && strcmp(method, PATH_METHOD) != 0;
-}
-
-static void record(cJSON *answers, cJSON *refused, const char *id, cJSON *answer, cJSON *refusal) {
-    if (answer != NULL) {
-        cJSON_AddItemToObject(answers, id, answer);
-    } else if (refusal != NULL) {
-        cJSON_AddStringToObject(refusal, "id", id);
-        cJSON_AddItemToArray(refused, refusal);
-    }
-}
-
-static void update_one(const c_host *host, const cJSON *registration, const cJSON *ecosystem, cJSON *summary) {
-    const char *id = text_of(registration, "id");
     cJSON *refusal = NULL;
-    cJSON *checked = runtime_call_or_refuse(runtime_updates_check, check_call(host, registration, ecosystem), &refusal);
-    record(cJSON_GetObjectItemCaseSensitive(summary, "checks"), cJSON_GetObjectItemCaseSensitive(summary, "refused"), id, checked,
-           refusal);
-    if (checked != NULL && has_method_application(registration)) {
-        cJSON *call = places_call(host);
-        cJSON_AddStringToObject(call, "loader", id);
-        cJSON_AddStringToObject(call, "operation", "update");
-        refusal = NULL;
-        cJSON *updated = runtime_call_or_refuse(runtime_install_application, call, &refusal);
-        record(cJSON_GetObjectItemCaseSensitive(summary, "applications"), cJSON_GetObjectItemCaseSensitive(summary, "refused"), id,
-               updated, refusal);
-    }
-}
-
-static int update(const c_host *host) {
-    cJSON *registrations = registrations_of(host);
-    const cJSON *first = cJSON_GetArrayItem(registrations, 0);
-    int ecosystem_first = first != NULL && strcmp(text_of(first, "id"), RUNTIME_BOOTED_HOST_ID) == 0;
-    cJSON *ecosystem = ecosystem_first ? settings_of(host, text_of(first, "home")) : cJSON_CreateObject();
-    cJSON *summary = cJSON_CreateObject();
-    cJSON_AddObjectToObject(summary, "checks");
-    cJSON_AddObjectToObject(summary, "applications");
-    cJSON_AddArrayToObject(summary, "refused");
-    const cJSON *registration;
-    cJSON_ArrayForEach(registration, registrations) {
-        update_one(host, registration, ecosystem, summary);
+    cJSON *summary = runtime_call_or_refuse(runtime_updates_run, call, &refusal);
+    if (summary == NULL) {
+        return refuse(refusal);
     }
     print_json(summary);
     int refused = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(summary, "refused")) > 0;
     cJSON_Delete(summary);
-    cJSON_Delete(ecosystem);
-    cJSON_Delete(registrations);
     return refused ? refuse(runtime_refusal("not everything could be updated", "see refused above")) : 0;
 }
 
@@ -378,8 +223,7 @@ static int remove_host(const c_host *host, const char *id) {
     if (removed == NULL) {
         return refuse(refusal);
     }
-    cJSON *sweep = cJSON_CreateObject();
-    cJSON_AddStringToObject(sweep, "cache", host->cache);
+    cJSON *sweep = cache_call(host);
     cJSON_AddStringToObject(sweep, "state", host->state);
     cJSON *swept = runtime_call_or_refuse(runtime_cache_sweep, sweep, &refusal);
     if (swept == NULL) {

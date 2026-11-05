@@ -52,4 +52,12 @@ RUNTIME_EXPORT int32_t runtime_updates_check(const uint8_t *in, size_t in_len, u
  */
 RUNTIME_EXPORT int32_t runtime_updates_rollback(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * updates.run: {places, now} runs updates.check for every registered host, forebay-host first with the
+ * catalog sources its settings record lent to every other check, and install.application with operation
+ * update for each loader whose application an install method installed; answers {checks, applications,
+ * refused}, each refusal carrying the id it was for.
+ */
+RUNTIME_EXPORT int32_t runtime_updates_run(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 #endif

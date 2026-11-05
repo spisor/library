@@ -471,6 +471,68 @@ static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_
     finish_cache();
 }
 
+static char *read_text_in(const char *rest) {
+    char *path = in_cache(rest);
+    char *text = read_text(path);
+    free(path);
+    return text;
+}
+
+static cJSON *damaged_in_cache(void) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "cache", cache);
+    catalog_answer answer = call_catalog(runtime_cache_damaged, argument);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON *damaged = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "damaged");
+    cJSON_Delete(answer.tree);
+    return damaged;
+}
+
+static void expect_one_damaged(const char *part, const char *label) {
+    cJSON *damaged = damaged_in_cache();
+    const cJSON *first = cJSON_GetArrayItem(damaged, 0);
+    CHECK(cJSON_GetArraySize(damaged) == 1);
+    check_text(text_at(first, "id"), "a", label);
+    check_text(text_at(first, "version"), "1.0.0", label);
+    const char *detail = text_at(first, "detail");
+    if (detail == NULL || strstr(detail, part) == NULL) {
+        fprintf(stderr, "%s: expected a detail naming \"%s\", got \"%s\"\n", label, part, detail == NULL ? "(none)" : detail);
+        check_failures++;
+    }
+    CHECK(text_at(first, "fix") != NULL);
+    cJSON_Delete(damaged);
+}
+
+/** What status reports: a same-size change found by its hash, and a marker recording no sizes found as a start would refuse it. */
+static void it_reports_each_installed_version_a_start_would_refuse_or_whose_hash_changed(void) {
+    start_cache("damaged");
+    catalog_answer answer = install("a", plugin_item(), "1.0.0", "linux-x64");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(answer.tree);
+    cJSON *none = damaged_in_cache();
+    CHECK(cJSON_IsArray(none) && cJSON_GetArraySize(none) == 0);
+    cJSON_Delete(none);
+    char *original = read_text_in("bundles/a/1.0.0/dist/index.js");
+    char *changed = malloc(strlen(original) + 1);
+    strcpy(changed, original);
+    changed[0] = changed[0] == 'x' ? 'y' : 'x';
+    write_in(cache, "bundles/a/1.0.0/dist/index.js", changed);
+    expect_one_damaged("has SHA-256", "same size");
+    write_in(cache, "bundles/a/1.0.0/dist/index.js", original);
+    char *marker = read_text_in("bundles/a/1.0.0/.installed.json");
+    cJSON *parsed_marker = spisor_parse_json((const uint8_t *)marker, strlen(marker));
+    cJSON_DeleteItemFromObjectCaseSensitive(parsed_marker, "sizes");
+    char *stripped = cJSON_PrintUnformatted(parsed_marker);
+    write_in(cache, "bundles/a/1.0.0/.installed.json", stripped);
+    expect_one_damaged("records no size for", "no sizes");
+    cJSON_free(stripped);
+    cJSON_Delete(parsed_marker);
+    free(marker);
+    free(changed);
+    free(original);
+    finish_cache();
+}
+
 static void it_stores_files_in_the_order_javascript_enumerates_their_keys(void) {
     start_cache("key-order");
     cJSON *entry = cJSON_CreateObject();
@@ -1360,6 +1422,7 @@ int main(void) {
 
     it_installs_a_plugin_s_files_into_its_bundle_version_directory();
     it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_size();
+    it_reports_each_installed_version_a_start_would_refuse_or_whose_hash_changed();
     it_leaves_no_runnable_version_when_the_second_of_two_files_is_refused();
     it_stores_files_in_the_order_javascript_enumerates_their_keys();
     it_refuses_as_ambiguous_a_file_listed_both_for_every_platform_and_for_this_one();

@@ -1812,6 +1812,13 @@
           }
         },
         {
+          "name": "damaged",
+          "symbol": "runtime_cache_damaged",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "cache": { "type": "string", "minLength": 1 }, "platform": { "type": "string", "minLength": 1 } }, "required": ["cache"] },
+          "result": { "type": "object", "properties": { "damaged": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "detail": { "type": "string" }, "fix": { "type": "string" }, "file": { "type": "string" } }, "required": ["id", "version", "detail", "fix"], "additionalProperties": false } } }, "required": ["damaged"], "additionalProperties": false }
+        },
+        {
           "name": "platform",
           "symbol": "runtime_cache_platform",
           "kind": "json",
@@ -1999,6 +2006,13 @@
             "required": ["run", "next", "rollback"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "run",
+          "symbol": "runtime_updates_run",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "places": { "type": "object", "properties": { "portable": { "type": "string", "minLength": 1 }, "state": { "type": "string", "minLength": 1 }, "cache": { "type": "string", "minLength": 1 } }, "required": ["portable", "state", "cache"] }, "now": { "type": "string", "minLength": 1 } }, "required": ["places", "now"] },
+          "result": { "type": "object", "properties": { "checks": { "type": "object" }, "applications": { "type": "object" }, "refused": { "type": "array", "items": { "type": "object", "properties": { "message": { "type": "string" }, "fix": { "type": "string" }, "id": { "type": "string" } }, "required": ["message", "fix", "id"] } } }, "required": ["checks", "applications", "refused"], "additionalProperties": false }
         }
       ]
     },
@@ -2090,6 +2104,13 @@
             "required": ["executable", "arguments", "version", "directory"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "place",
+          "symbol": "runtime_boot_place",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "cache": { "type": "string", "minLength": 1 } }, "required": ["cache"] },
+          "result": { "type": "object", "properties": { "placed": { "type": "boolean" }, "path": { "type": "string" } }, "required": ["placed", "path"], "additionalProperties": false }
         }
       ]
     },
