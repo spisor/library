@@ -61,15 +61,24 @@ static inline void snapshot_directory(const char *directory, const char *relativ
 }
 
 /**
- * Every name, kind and byte under root, freed with free; left_out, a path relative to root written
- * "/a/b", is skipped with everything under it, or nothing is when it is NULL.
+ * Every name, kind and byte under root, freed with free, its length in *length; left_out, a path relative
+ * to root written "/a/b", is skipped with everything under it, or nothing is when it is NULL.
+ *
+ * @implNote Compare two of these by length and bytes when the tree may hold an executable: its NUL bytes
+ * end a strcmp early, and everything after them would go unseen.
  */
-static inline char *tree_snapshot(const char *root, const char *left_out) {
+static inline char *tree_snapshot_sized(const char *root, const char *left_out, size_t *length) {
     char *snapshot = NULL;
-    size_t length = 0;
-    snapshot_append(&snapshot, &length, "", 0);
-    snapshot_directory(root, "", left_out, &snapshot, &length);
+    *length = 0;
+    snapshot_append(&snapshot, length, "", 0);
+    snapshot_directory(root, "", left_out, &snapshot, length);
     return snapshot;
+}
+
+/** tree_snapshot_sized without the length, for a tree of text alone. */
+static inline char *tree_snapshot(const char *root, const char *left_out) {
+    size_t length = 0;
+    return tree_snapshot_sized(root, left_out, &length);
 }
 
 #endif

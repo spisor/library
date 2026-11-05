@@ -18,11 +18,24 @@ if(WIN32)
 endif()
 spisor_strict_warnings(fake_application)
 
+set(c_host_runtime_objects $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
+    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_path_entry_test_hooks> $<TARGET_OBJECTS:runtime_install_test_hooks>)
+host_executable(c_host c-host c_host.c ${c_host_runtime_objects})
+if(WIN32)
+    add_dependencies(c_host runtime_launcher)
+endif()
+
+add_executable(javascript_trap javascript_trap.c)
+spisor_strict_warnings(javascript_trap)
+
 host_executable(layer_fixture layer-fixture layer_fixture.c $<TARGET_OBJECTS:host_objects> ${host_test_runtime_objects})
 
 set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}"
     FOREBAY_HOST_PATH="$<TARGET_FILE:forebay_host_test>" FOREBAY_BOOT_PATH="$<TARGET_FILE:forebay_boot>"
     FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>"
+    C_HOST_PATH="$<TARGET_FILE:c_host>" JAVASCRIPT_TRAP_PATH="$<TARGET_FILE:javascript_trap>"
     STAGED_BUNDLES_PATH="${host_test_bundles}" FOREBAY_HOST_VERSION="${FOREBAY_HOST_VERSION}")
 if(WIN32)
     list(APPEND host_test_fixture_definitions RUNTIME_LAUNCHER_PATH="$<TARGET_FILE:runtime_launcher>")
@@ -47,6 +60,10 @@ host_test(command_line_test)
 host_test(child_test)
 host_test(catalog_build_test)
 host_test(install_script_test)
+host_test(c_host_proof)
+add_dependencies(c_host_proof c_host)
+host_test(hook_without_javascript)
+add_dependencies(hook_without_javascript javascript_trap)
 target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
     CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
 if(WIN32)
