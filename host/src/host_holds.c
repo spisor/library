@@ -1,5 +1,7 @@
 #include "host_holds.h"
 
+#include "host_output.h"
+#include "host_service.h"
 #include "processes.h"
 
 static cJSON *holder_call(const host_context *context, const char *host_id, double holder) {
@@ -25,9 +27,27 @@ static void release_before(const host_context *context, const cJSON *starts, con
     }
 }
 
-static int record_pid(cJSON *pids, const char *host_id, const cJSON *held) {
+static const cJSON *pid_of(const cJSON *held) {
     const cJSON *pid = cJSON_GetObjectItemCaseSensitive(held, "pid");
-    return pids == NULL || (cJSON_IsNumber(pid) && cJSON_AddNumberToObject(pids, host_id, pid->valuedouble) != NULL);
+    return cJSON_IsNumber(pid) ? pid : NULL;
+}
+
+static cJSON *unusable_pid_refusal(const char *host_id, const cJSON *held) {
+    char *answer = cJSON_PrintUnformatted(held);
+    const char *parts[4] = {"the hold of ", host_id, " answered no usable pid: ", answer == NULL ? "" : answer};
+    cJSON *refusal = host_refusal_of(parts, 4, HOST_REINSTALL_FIX);
+    cJSON_free(answer);
+    return refusal;
+}
+
+/** Notes the pid held answers for host_id in pids (when given); 0 with *refusal set for an answer without one, or none when memory ran out. */
+static int record_pid(cJSON *pids, const char *host_id, const cJSON *held, cJSON **refusal) {
+    const cJSON *pid = pid_of(held);
+    if (pid == NULL) {
+        *refusal = unusable_pid_refusal(host_id, held);
+        return 0;
+    }
+    return pids == NULL || cJSON_AddNumberToObject(pids, host_id, pid->valuedouble) != NULL;
 }
 
 int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON *pids, cJSON **refusal) {
@@ -39,12 +59,16 @@ int host_hold_all(const host_context *context, const cJSON *starts, double holde
             call = NULL;
         }
         cJSON *held = host_call(runtime_processes_hold, call, refusal);
-        if (held == NULL || !record_pid(pids, start->string, held)) {
-            cJSON_Delete(held);
+        if (held == NULL) {
             release_before(context, starts, start, holder);
             return 0;
         }
+        int recorded = record_pid(pids, start->string, held, refusal);
         cJSON_Delete(held);
+        if (!recorded) {
+            release_before(context, starts, start->next, holder);
+            return 0;
+        }
     }
     return 1;
 }
