@@ -283,6 +283,55 @@ static void installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_h
     finish_install_base(&base);
 }
 
+static void set_loader_setting(const install_base *base, const char *content) {
+    char *home = joined(base->user, "homes/claude");
+    write_in(home, "config/settings.json", content);
+    free(home);
+}
+
+static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-disabled");
+    list_plugin(&base, "stub-plugin", "1.0.0", "native");
+    list_claude_requiring(&base, "[\"stub-plugin\"]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, BINARY);
+    cJSON_Delete(install_choosing(&base, "{}", bin));
+    set_loader_setting(&base, "{\"plugins\": {\"stub-plugin\": {\"enabled\": false}}}");
+    cJSON *report = install_choosing(&base, "{}", bin);
+    cJSON *settings = loader_settings(&base);
+    expect_json(cJSON_GetObjectItemCaseSensitive(settings, "plugins"), "{\"stub-plugin\":{\"enabled\":false}}",
+                "the user's choice kept");
+    CHECK(!runtime_install_holds(cJSON_GetObjectItemCaseSensitive(report, "enabled"), "stub-plugin"));
+    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    check_text(text_at(row, "id"), "stub-plugin", "the disabled plugin reported");
+    CHECK(strstr(text_at(row, "fix"), "set plugins.stub-plugin.enabled to true in ") != NULL);
+    CHECK(strstr(text_at(row, "fix"), "settings.json") != NULL);
+    cJSON_Delete(settings);
+    cJSON_Delete(report);
+    free(bin);
+    finish_install_base(&base);
+}
+
+static void reports_a_required_plugin_this_machine_cannot_install_naming_it(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-foreign");
+    list_foreign_plugin(&base, "stub-plugin", "1.0.0");
+    list_claude_requiring(&base, "[\"stub-plugin\"]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, BINARY);
+    cJSON *report = install_choosing(&base, "{}", bin);
+    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    check_text(text_at(row, "id"), "stub-plugin", "the plugin reported");
+    cJSON *settings = loader_settings(&base);
+    CHECK(cJSON_GetObjectItemCaseSensitive(settings, "plugins") == NULL ||
+          !cJSON_HasObjectItem(cJSON_GetObjectItemCaseSensitive(settings, "plugins"), "stub-plugin"));
+    cJSON_Delete(settings);
+    cJSON_Delete(report);
+    free(bin);
+    finish_install_base(&base);
+}
+
 static void refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_row_for_the_plugin(void) {
     install_base base;
     start_install_base(&base, "applications", "required-absent");
@@ -628,6 +677,8 @@ int main(void) {
     records_the_registered_version_of_each_loader_keeping_what_it_scheduled();
     installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_home();
     refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_row_for_the_plugin();
+    leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it();
+    reports_a_required_plugin_this_machine_cannot_install_naming_it();
     registers_nothing_for_an_application_neither_installed_nor_detected();
     installs_and_registers_each_background_host_in_a_home_of_its_own();
     reports_a_background_host_the_catalog_does_not_list_and_still_registers_its_loader();
