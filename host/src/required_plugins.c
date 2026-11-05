@@ -7,6 +7,7 @@
 #include "cache.h"
 #include "cache_installed.h"
 #include "config.h"
+#include "host_output.h"
 #include "host_service.h"
 #include "install_settings.h"
 
@@ -41,15 +42,8 @@ static cJSON *refusal_with(const char *id, const char *loader_id, const char *st
     return host_refusal_of(parts, 5, fix);
 }
 
-static cJSON *not_installed(const char *id, const char *loader_id, const char *application_id) {
-    size_t size = strlen(application_id) + 96;
-    char *fix = malloc(size);
-    if (fix != NULL) {
-        snprintf(fix, size, "forebay-host install --catalog <catalog> --application %s", application_id);
-    }
-    cJSON *refusal = fix == NULL ? NULL : refusal_with(id, loader_id, " requires is not installed", fix);
-    free(fix);
-    return refusal;
+static cJSON *not_installed(const char *id, const char *loader_id) {
+    return refusal_with(id, loader_id, " requires is not installed", HOST_REINSTALL_FIX);
 }
 
 static cJSON *not_enabled(const char *id, const char *loader_id, const char *settings_file) {
@@ -69,11 +63,10 @@ int host_check_required_plugins(const host_context *context, const char *loader_
     cJSON *bundles = runtime_cache_installed_bundles(context->cache);
     cJSON *settings = host_settings_of(context, loader_home, refusal);
     char *settings_file = runtime_ecosystem_settings_file(loader_home);
-    const char *application_id = host_text(cJSON_GetObjectItemCaseSensitive(standard, "application"), "id");
-    int fine = bundles != NULL && settings != NULL && settings_file != NULL && application_id != NULL;
+    int fine = bundles != NULL && settings != NULL && settings_file != NULL;
     for (const cJSON *id = fine && required != NULL ? required->child : NULL; fine && id != NULL; id = id->next) {
         if (!is_installed(context, bundles, id->valuestring)) {
-            *refusal = not_installed(id->valuestring, loader_id, application_id);
+            *refusal = not_installed(id->valuestring, loader_id);
             fine = 0;
         } else if (!runtime_install_plugin_enabled(settings, id->valuestring)) {
             *refusal = not_enabled(id->valuestring, loader_id, settings_file);

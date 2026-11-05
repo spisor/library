@@ -405,8 +405,13 @@ static void refuses_a_launch_naming_the_required_plugin_that_is_not_installed(vo
     char *folder = joined(world.base.cache, "bundles/" SESSION_PLUGIN);
     CHECK(runtime_remove_tree(folder) == 1);
     free(folder);
-    expect_refused_launch(&world, "missing", SESSION_PLUGIN,
-                          "forebay-host install --catalog <catalog> --application " APPLICATION_ID);
+    expect_refused_launch(&world, "missing", SESSION_PLUGIN, "run forebay-host install --catalog <path or url> again");
+    char *node = joined(world.base.root, "node-bin");
+    char path[4096];
+    snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world.bin, node);
+    CHECK(world_install(&world, NULL, path) == 0);
+    CHECK(exists_in(world.base.cache, "bundles/" SESSION_PLUGIN));
+    free(node);
     finish_world(&world);
 }
 

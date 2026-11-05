@@ -10,7 +10,8 @@
  * with none when memory runs out.
  *
  * @implNote Not installed is judged before not enabled, since an enable switch means nothing for a plugin
- * that is not there. The fix names the placeholder <catalog>, because a registration records no catalog source.
+ * that is not there. The fix is installing again, which installs every required plugin, from a placeholder
+ * catalog, because a registration records no catalog source.
  */
 int host_check_required_plugins(const host_context *context, const char *loader_id, const char *loader_home,
                                 const cJSON *standard, cJSON **refusal);
