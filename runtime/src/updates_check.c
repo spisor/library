@@ -121,28 +121,35 @@ static int add_host_targets(cJSON *targets, const check_plan *plan, const cJSON 
     return added;
 }
 
-/** Whether the installed bundle version is one a start refuses on its sizes; an absent version is not. */
-static int start_refuses(const char *cache, const char *id, const char *version) {
+/** Whether check, which it frees, answers damaged. */
+static int is_damaged(cJSON *check) {
+    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
+    int damaged = cJSON_IsString(kind) && strcmp(kind->valuestring, "damaged") == 0;
+    cJSON_Delete(check);
+    return damaged;
+}
+
+/** Whether the installed bundle version has a file whose size or hash differs from the marker; an absent version has not. */
+static int is_damaged_on_disk(const char *cache, const char *id, const char *version) {
     const char *segments[4] = {cache, "bundles", id, version};
     char *directory = runtime_cache_joined(segments, 4);
-    cJSON *check = directory == NULL ? NULL : runtime_cache_check_version_sizes(directory);
-    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
-    int refused = cJSON_IsString(kind) && strcmp(kind->valuestring, "damaged") == 0;
-    cJSON_Delete(check);
+    int damaged = directory != NULL && (is_damaged(runtime_cache_check_version_sizes(directory)) ||
+                                        is_damaged(runtime_cache_check_version(directory)));
     free(directory);
-    return refused;
+    return damaged;
 }
 
 /**
- * Each version run names that a start would refuse on its sizes, to install again.
+ * Each version run names that is damaged on disk, by size or by hash, to install again.
  *
  * @implNote A start reports no problem of a native host it cannot boot, since nothing of it runs, so the
- * check finds them itself; a marker from before sizes were recorded is repaired this way.
+ * check finds them itself; a marker from before sizes were recorded is repaired this way. A start keeps its
+ * size-only check to stay fast, so this hourly scan is what finds damage that kept every size.
  */
 static int add_unstartable_targets(cJSON *targets, const char *cache, const cJSON *run) {
     int added = 1;
     for (const cJSON *entry = run == NULL ? NULL : run->child; added && entry != NULL; entry = entry->next) {
-        if (cJSON_IsString(entry) && start_refuses(cache, entry->string, entry->valuestring)) {
+        if (cJSON_IsString(entry) && is_damaged_on_disk(cache, entry->string, entry->valuestring)) {
             added = add_target(targets, entry->string, entry->valuestring, NULL);
         }
     }
