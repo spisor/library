@@ -36,7 +36,7 @@ set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_D
     FOREBAY_HOST_PATH="$<TARGET_FILE:forebay_host_test>" FOREBAY_BOOT_PATH="$<TARGET_FILE:forebay_boot>"
     FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>"
     C_HOST_PATH="$<TARGET_FILE:c_host>" JAVASCRIPT_TRAP_PATH="$<TARGET_FILE:javascript_trap>"
-    STAGED_BUNDLES_PATH="${host_test_bundles}" FOREBAY_HOST_VERSION="${FOREBAY_HOST_VERSION}")
+    STAGED_BUNDLES_PATH="${host_test_bundles}" FOREBAY_HOST_VERSION="${FOREBAY_HOST_VERSION}" BUILD_TYPE="$<CONFIG>")
 if(WIN32)
     list(APPEND host_test_fixture_definitions RUNTIME_LAUNCHER_PATH="$<TARGET_FILE:runtime_launcher>")
 endif()

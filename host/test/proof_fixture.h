@@ -15,13 +15,57 @@ static inline char *staged_forebay_host(void) {
     return joined(STAGED_BUNDLES_PATH, rest);
 }
 
-static inline int holds_runtime(const char *directory, const char *name) {
-    char file[64];
-    snprintf(file, sizeof file, "%s" EXECUTABLE_ENDING, name);
+/** The environment variable name of this process, read through the wide API on Windows; freed with free, NULL when unset. */
+static inline char *environment_value(const char *name) {
+#if defined(_WIN32)
+    wchar_t *wide_name = wide_of(name);
+    const wchar_t *wide = _wgetenv(wide_name);
+    free(wide_name);
+    if (wide == NULL) {
+        return NULL;
+    }
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    char *value = malloc((size_t)bytes);
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, value, bytes, NULL, NULL);
+    return value;
+#else
+    const char *value = getenv(name);
+    return value == NULL ? NULL : copy_text(value);
+#endif
+}
+
+static inline int holds_file(const char *directory, const char *name, const char *extension, size_t extension_length) {
+    char file[128];
+    snprintf(file, sizeof file, "%s%.*s", name, (int)extension_length, extension);
     char *path = joined(directory, file);
     int held = spisor_file_exists(path);
     free(path);
     return held;
+}
+
+/**
+ * Whether directory holds name as a PATH lookup could find it: bare, and on Windows with any extension
+ * PATHEXT names or the shell runs anyway (node.cmd, bun.bat, an npm shim).
+ */
+static inline int holds_runtime(const char *directory, const char *name) {
+    if (holds_file(directory, name, "", 0)) {
+        return 1;
+    }
+#if defined(_WIN32)
+    char *listed = environment_value("PATHEXT");
+    char extensions[2048];
+    snprintf(extensions, sizeof extensions, ".EXE;.CMD;.BAT;.COM;%s", listed == NULL ? "" : listed);
+    free(listed);
+    for (const char *start = extensions; *start != 0;) {
+        const char *end = strchr(start, ';');
+        size_t length = end == NULL ? strlen(start) : (size_t)(end - start);
+        if (length > 0 && holds_file(directory, name, start, length)) {
+            return 1;
+        }
+        start += length + (end == NULL ? 0 : 1);
+    }
+#endif
+    return 0;
 }
 
 /** Whether directory holds node or bun under the name a PATH lookup would find. */

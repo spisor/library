@@ -117,7 +117,9 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
     read_session_hook(&world, &hook);
     char *boot = runtime_boot_stub_path(world.base.cache);
     check_text(hook.command, boot, "the hook runs forebay-boot");
-    char *path = path_without_javascript(getenv("PATH"));
+    char *machine_path = environment_value("PATH");
+    char *path = path_without_javascript(machine_path);
+    free(machine_path);
     expect_no_javascript_on(path, "the stripped PATH");
     double runs[TIMED_RUNS];
     for (int index = 0; index < TIMED_RUNS; index++) {
@@ -125,10 +127,19 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
     }
     qsort(runs, TIMED_RUNS, sizeof runs[0], compare_milliseconds);
     double median = runs[TIMED_RUNS / 2];
-    printf("SessionStart hook on %s: median %.1f ms of %d runs, fastest %.1f ms, slowest %.1f ms\n", runtime_platform_key(), median,
-           TIMED_RUNS, runs[0], runs[TIMED_RUNS - 1]);
+    printf("SessionStart hook on %s, %s build: median %.1f ms of %d runs, fastest %.1f ms, slowest %.1f ms; runs:", runtime_platform_key(),
+           BUILD_TYPE, median, TIMED_RUNS, runs[0], runs[TIMED_RUNS - 1]);
+    for (int index = 0; index < TIMED_RUNS; index++) {
+        printf(" %.1f", runs[index]);
+    }
+    printf("\n");
     if (median > HOOK_BUDGET_MILLISECONDS) {
-        fprintf(stderr, "the hook's median %.1f ms is over its %.0f ms budget\n", median, HOOK_BUDGET_MILLISECONDS);
+        fprintf(stderr, "the hook's median %.1f ms on %s, %s build, is over its %.0f ms budget; runs:", median, runtime_platform_key(),
+                BUILD_TYPE, HOOK_BUDGET_MILLISECONDS);
+        for (int index = 0; index < TIMED_RUNS; index++) {
+            fprintf(stderr, " %.1f", runs[index]);
+        }
+        fprintf(stderr, "\n");
         check_failures++;
     }
     free(path);
@@ -175,7 +186,9 @@ static void a_session_start_starts_no_node_or_bun_even_when_one_is_on_path(void)
     session_hook hook;
     read_session_hook(&world, &hook);
     char *trap = javascript_trap_folder(&world);
-    char *stripped = path_without_javascript(getenv("PATH"));
+    char *machine_path = environment_value("PATH");
+    char *stripped = path_without_javascript(machine_path);
+    free(machine_path);
     char *path = malloc(strlen(trap) + strlen(stripped) + 2);
     sprintf(path, "%s" PATH_SEPARATOR "%s", trap, stripped);
     char *started = joined(world.base.root, "javascript-started.txt");
@@ -194,9 +207,35 @@ static void a_session_start_starts_no_node_or_bun_even_when_one_is_on_path(void)
     finish_world(&world);
 }
 
+/** A folder holding only a shell shim of node or bun, as npm and package managers put on PATH, is one the stripped PATH leaves out. */
+static void a_shim_of_node_or_bun_counts_as_a_javascript_runtime(void) {
+    host_world world;
+    start_world_at(&world, "hook-without-javascript", "shims");
+#if defined(_WIN32)
+    static const char *const SHIMS[] = {"node.cmd", "bun.bat", "node.CMD"};
+#else
+    static const char *const SHIMS[] = {"node", "bun"};
+#endif
+    for (size_t index = 0; index < sizeof SHIMS / sizeof SHIMS[0]; index++) {
+        char rest[64];
+        snprintf(rest, sizeof rest, "shim-%zu/%s", index, SHIMS[index]);
+        write_in(world.base.root, rest, "shim");
+        snprintf(rest, sizeof rest, "shim-%zu", index);
+        char *folder = joined(world.base.root, rest);
+        if (!holds_javascript_runtime(folder)) {
+            fprintf(stderr, "%s was not taken for a JavaScript runtime\n", SHIMS[index]);
+            check_failures++;
+        }
+        free(folder);
+    }
+    CHECK(!holds_javascript_runtime(world.bin));
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
+    a_shim_of_node_or_bun_counts_as_a_javascript_runtime();
     a_session_start_with_no_javascript_on_path_registers_records_and_finishes_within_its_budget();
     a_session_start_starts_no_node_or_bun_even_when_one_is_on_path();
     expect_user_path_unchanged(&guard);
