@@ -9,6 +9,7 @@ int host_command_remove(int count, char **arguments);
 int host_command_launch(int count, char **arguments);
 int host_command_hook(int count, char **arguments);
 int host_command_background(int count, char **arguments);
+int host_command_action(int count, char **arguments);
 int host_command_catalog_build(int count, char **arguments);
 
 /** Runs the forebay-host command line argv after the program name, answering the exit code: 0 done, 1 refused, 2 misused. */

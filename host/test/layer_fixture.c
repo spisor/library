@@ -93,6 +93,28 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
 }
 
 /**
+ * Run as <host-id> action <plugin> <action> <input-json>: prints the arguments after the host id, one per
+ * line, and exits with the number after "exit-" when the action starts with it, 0 otherwise.
+ */
+static int run_action(int count, char **arguments) {
+    host_context context;
+    cJSON *refusal = NULL;
+    if (!host_open_context(&context, &refusal)) {
+        cJSON_Delete(refusal);
+        return 2;
+    }
+    record_start(&context, count, arguments);
+    for (int index = count - 4; index < count; index++) {
+        fputs(arguments[index], stdout);
+        fputs("\n", stdout);
+    }
+    const char *action = arguments[count - 2];
+    int code = strncmp(action, "exit-", 5) == 0 ? atoi(action + 5) : 0;
+    host_close_context(&context);
+    return code;
+}
+
+/**
  * A host's language layer as the tests need one, run as a native background host <host-id>, or as the JS
  * runtime the cache records, <entry> <host-id>: loops on processes.prune for the host id it was given, its
  * last argument, until it is told to exit. SPISOR_FIXTURE_START_DELAY milliseconds pass before it records its
@@ -102,6 +124,9 @@ static int run(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[1], "-p") == 0) {
         fputs(NODE_VERSION "\n", stdout);
         return 0;
+    }
+    if (count >= 6 && strcmp(arguments[count - 4], "action") == 0) {
+        return run_action(count, arguments);
     }
     host_context context;
     cJSON *refusal = NULL;

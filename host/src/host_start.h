@@ -16,6 +16,9 @@
  */
 cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusal);
 
+/** Appends the count strings of extra to the arguments of start, a start host_start_of answered; 0 when memory runs out. */
+int host_start_append_arguments(cJSON *start, const char *const *extra, size_t count);
+
 /**
  * How to start loader_id's own plugins in a session host on javascript-host, the version its boot hint
  * names, with the loader id as its last argument; NULL with *refusal set when it is not installed.
