@@ -7,6 +7,9 @@ if(WIN32)
     add_dependencies(forebay_host_test runtime_launcher)
 endif()
 
+set(host_test_bundles $<TARGET_FILE_DIR:forebay_host_test>/test-bundles)
+stage_bundles(forebay_host_test_bundles forebay_host_test ${host_test_bundles})
+
 add_executable(fake_application fake_application.c)
 target_link_libraries(fake_application PRIVATE spisor_cjson)
 target_include_directories(fake_application PRIVATE ${PROJECT_SOURCE_DIR}/host/src)
@@ -19,7 +22,8 @@ host_executable(layer_fixture layer-fixture layer_fixture.c $<TARGET_OBJECTS:hos
 
 set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}"
     FOREBAY_HOST_PATH="$<TARGET_FILE:forebay_host_test>" FOREBAY_BOOT_PATH="$<TARGET_FILE:forebay_boot>"
-    FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>")
+    FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>"
+    STAGED_BUNDLES_PATH="${host_test_bundles}" FOREBAY_HOST_VERSION="${FOREBAY_HOST_VERSION}")
 if(WIN32)
     list(APPEND host_test_fixture_definitions RUNTIME_LAUNCHER_PATH="$<TARGET_FILE:runtime_launcher>")
 endif()
@@ -28,7 +32,7 @@ function(host_test name)
     host_executable(${name} ${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:host_objects> ${host_test_runtime_objects})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
     target_compile_definitions(${name} PRIVATE ${host_test_fixture_definitions})
-    add_dependencies(${name} forebay_host_test forebay_boot fake_application layer_fixture)
+    add_dependencies(${name} forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
     add_test(NAME host_${name} COMMAND ${name})
     set_tests_properties(host_${name} PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
 endfunction()
@@ -44,8 +48,7 @@ host_test(child_test)
 host_test(catalog_build_test)
 host_test(install_script_test)
 target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
-    CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json" RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>")
-add_dependencies(install_script_test runtime)
+    CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
 if(WIN32)
     find_program(SPISOR_PWSH pwsh)
     if(SPISOR_PWSH)
