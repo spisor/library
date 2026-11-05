@@ -416,6 +416,23 @@ static void it_reinstalls_a_version_whose_marker_records_no_sizes(void) {
     finish_base();
 }
 
+static void damage_keeping_sizes(const char *id, const char *version, const char *name);
+
+/** The hourly check hashes a running version, so damage that kept every size is installed again. */
+static void same_size_damage_is_scheduled_for_repair(void) {
+    start_base("check-same-size");
+    list_plugin("a", "1.0.0", "1.0.0");
+    write_catalog();
+    cJSON_Delete(check_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}").tree);
+    record_references(TEST_HOST, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{}}");
+    damage_keeping_sizes("a", "1.0.0", "plugin.json");
+    catalog_answer checked =
+        check_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}");
+    expect_member_json(checked.tree, "fetched", "[\"a@1.0.0\"]", "same-size damage installed again");
+    cJSON_Delete(checked.tree);
+    finish_base();
+}
+
 static void it_refuses_an_item_no_catalog_source_lists(void) {
     start_base("check-unlisted");
     write_catalog();
@@ -873,6 +890,7 @@ int main(void) {
     it_records_the_versions_scheduled_for_the_next_start_whether_or_not_they_install();
     it_refetches_a_damaged_version_the_start_reported_even_one_the_latest_does_not_name();
     it_reinstalls_a_version_whose_marker_records_no_sizes();
+    same_size_damage_is_scheduled_for_repair();
     it_refuses_an_item_no_catalog_source_lists();
     it_sweeps_what_nothing_names_once_it_has_installed();
     it_reports_each_catalog_check();
