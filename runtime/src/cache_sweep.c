@@ -43,7 +43,7 @@ static int doom(sweep_scope *scope, const char *id, const char *version, const c
     return 1;
 }
 
-/** semver's newest, the last of equals winning as [...versions].sort(compareVersions).at(-1) does. */
+/** semver's newest; of versions that compare equal, the last listed wins. */
 static const char *newest_of(const cJSON *versions) {
     const char *newest = NULL;
     for (const cJSON *version = versions->child; version != NULL; version = version->next) {

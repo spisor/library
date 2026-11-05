@@ -107,8 +107,6 @@ static catalog_answer through_record(const install_base *base, const char *opera
     return call_catalog(runtime_install_application, argument);
 }
 
-/* missing-applications.test.ts */
-
 static void asks_nothing_installs_nothing_and_reports_the_exact_flag(void) {
     install_base base;
     start_install_base(&base, "applications", "flag");
@@ -191,8 +189,6 @@ static void refuses_a_choice_naming_an_application_the_catalog_does_not_list(voi
     cJSON_Delete(answer.tree);
     finish_install_base(&base);
 }
-
-/* install-loaders.test.ts */
 
 static void registers_one_loader_per_installed_or_detected_application_with_its_own_home(void) {
     install_base base;
@@ -364,8 +360,6 @@ static void requests_each_command_running_forebay_boot_with_launch(void) {
     cJSON_Delete(report);
     finish_install_base(&base);
 }
-
-/* provenance.test.ts */
 
 static void records_one_shape_for_an_application_installed_through_a_method_and_found_through_it(void) {
     install_base base;

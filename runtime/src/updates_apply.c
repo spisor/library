@@ -66,8 +66,9 @@ static int start_references(const runtime_host_references *recorded, start_recor
 }
 
 /**
- * The version of the host this start runs: the one its references schedule once installed intact, else
- * the one they record it running, else the one the caller runs (cache-session.ts hostRunOf).
+ * The version of the host this start runs: the one its references schedule once installed with every file
+ * at its recorded size, else
+ * the one they record it running, else the one the caller runs.
  */
 static int switch_host(const runtime_updates_request *request, const runtime_host_references *recorded,
                        start_record *record) {
@@ -75,7 +76,7 @@ static int switch_host(const runtime_updates_request *request, const runtime_hos
     current = current != NULL ? current : runtime_map_version(running_of(request), request->host_id);
     const char *scheduled = runtime_map_version(recorded->next, request->host_id);
     int switching = scheduled != NULL && (current == NULL || strcmp(scheduled, current) != 0) &&
-                    runtime_bundle_is_intact(request->cache, request->host_id, scheduled);
+                    runtime_bundle_is_sized(request->cache, request->host_id, scheduled);
     const char *version = switching ? scheduled : current;
     if (!start_references(recorded, record)) {
         return 0;
@@ -110,7 +111,7 @@ static const char *plugin_version(const runtime_updates_request *request, const 
     const char *previous = runtime_map_version(recorded->run, id);
     const char *rolled_away = runtime_map_version(recorded->rolled_back_from, id);
     int holds = rolled_away != NULL && previous != NULL && strcmp(resolved, rolled_away) == 0 &&
-                strcmp(previous, rolled_away) != 0 && runtime_bundle_is_intact(request->cache, id, previous);
+                strcmp(previous, rolled_away) != 0 && runtime_bundle_is_sized(request->cache, id, previous);
     return holds ? previous : resolved;
 }
 
@@ -129,7 +130,7 @@ static int add_plugins(const runtime_updates_request *request, const runtime_hos
     return added;
 }
 
-/** run is the host's version, then what the caller runs beside it, then its plugins, as startFromCache orders them. */
+/** run is the host's version, then what the caller runs beside it, then its plugins. */
 static int complete_run(const runtime_updates_request *request, const runtime_host_references *recorded,
                         const start_plan *plan, start_record *record) {
     int completed = 1;
@@ -183,7 +184,7 @@ static int note_unrecorded(cJSON *unrecorded, char *problem) {
 
 /**
  * Resolves the libraries the host boots with for its next start and records them in its boot hint with
- * the host version this start runs (boot-from-cache.ts hostLibraryReferences).
+ * the host version this start runs.
  *
  * @implNote A hint naming a library that is not installed would refuse every boot, so no hint is written
  * until each one the host names resolves to an installed version. A hint that cannot be written is
@@ -258,12 +259,12 @@ cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON *
         return NULL;
     }
     start_record record = {{NULL, NULL, NULL, NULL}, NULL, cJSON_CreateObject(), cJSON_CreateArray()};
-    runtime_hosts_guard *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock(request, refusal);
+    runtime_hosts_guard *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock_registered(request, refusal);
     int recorded = guard != NULL && record_start(request, &plan, &record, refusal);
-    runtime_hosts_unlock(guard);
     char *run_record = recorded ? runtime_record_run(request->state, request->host_id, record.references.run,
                                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS)
                                 : NULL;
+    runtime_hosts_unlock(guard);
     cJSON *answer = run_record == NULL ? NULL : started(&record, run_record);
     if (recorded && run_record == NULL) {
         *refusal = runtime_updates_unrecorded(unrecorded_run(request));

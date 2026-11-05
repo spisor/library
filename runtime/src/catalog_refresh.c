@@ -35,7 +35,7 @@
 #endif
 
 #define MILLISECONDS_PER_HOUR 3600000.0
-/** forebay/host's INDEX_DEADLINE_MS: an index is small, so a request that takes longer is stuck. */
+/** An index is small, so a request that takes longer is stuck. */
 #define INDEX_TIMEOUT_SECONDS 30
 #define BYTE_ORDER_MARK "\xEF\xBB\xBF"
 

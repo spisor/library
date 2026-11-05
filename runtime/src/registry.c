@@ -664,6 +664,11 @@ static int32_t forget_host(const registry_request *request, uint8_t **out, size_
     return status;
 }
 
+static int32_t forget_host_locked(const registry_request *request, uint8_t **out, size_t *out_len) {
+    const char *id = string_member(request->argument, "id");
+    return id == NULL ? refuse_id(out, out_len) : forget_locked(request, id, out, out_len);
+}
+
 static int32_t refuse_places(uint8_t **out, size_t *out_len) {
     return spisor_fail("the argument carries no usable places",
                        "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}}; "
@@ -713,4 +718,8 @@ RUNTIME_EXPORT int32_t runtime_registry_list(const uint8_t *in, size_t in_len, u
 
 RUNTIME_EXPORT int32_t runtime_registry_forget(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return serve(in, in_len, 1, forget_host, out, out_len);
+}
+
+int32_t runtime_registry_forget_locked(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return serve(in, in_len, 1, forget_host_locked, out, out_len);
 }

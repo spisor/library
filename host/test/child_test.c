@@ -42,8 +42,6 @@ static char *fake_binary(const host_world *world) {
     return joined(world->bin, APPLICATION_ID EXECUTABLE_ENDING);
 }
 
-/* child.test.ts */
-
 static void answers_the_application_s_exit_code(void) {
     host_world world;
     start_world_at(&world, "child", "exit-code");

@@ -12,8 +12,6 @@ static int nothing_was_started(const host_world *world) {
     return none;
 }
 
-/* hook.test.ts */
-
 static void registers_the_loader_and_records_its_reference_starting_nothing_and_printing_nothing(void) {
     host_world world;
     install_launch_world(&world, "hook", "records", 1);
@@ -75,8 +73,6 @@ static void writes_a_refusal_and_its_fix_to_stderr_and_still_exits_0(void) {
     program_free(&unknown);
     finish_world(&world);
 }
-
-/* launch.test.ts, the provenance case */
 
 static cJSON *recorded_provenance(const host_world *world) {
     cJSON *registration = registration_in(world, LOADER_ID);

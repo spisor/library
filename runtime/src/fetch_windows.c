@@ -136,8 +136,7 @@ static int set_timeouts(HINTERNET session, unsigned deadline) {
 }
 
 /**
- * @implNote Redirects are followed by hand, as the TypeScript transport did, because WinHTTP answers a
- * redirect loop and a redirect it will not follow with the one error, and every hop must be checked to be
+ * @implNote Redirects are followed by hand because WinHTTP answers a redirect loop and a redirect it will not follow with the one error, and every hop must be checked to be
  * https before it is taken.
  */
 static int disable_redirects(HINTERNET request) {

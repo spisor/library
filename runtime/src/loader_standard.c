@@ -87,7 +87,7 @@ static int is_portable_name(const cJSON *value) {
     return cJSON_IsString(value) && is_portable_text(value->valuestring);
 }
 
-/** @implNote "C:/" or "/" at the start counts as absolute, the TypeScript check's own rule; a backslash does not. */
+/** @implNote "C:/" or "/" at the start counts as absolute; a backslash does not. */
 static int is_home_candidate(const char *candidate) {
     int drive = ((candidate[0] >= 'A' && candidate[0] <= 'Z') || (candidate[0] >= 'a' && candidate[0] <= 'z')) &&
                 candidate[1] == ':' && candidate[2] == '/';

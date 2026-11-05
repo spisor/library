@@ -14,6 +14,14 @@
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal);
 
 /**
+ * The executable of the JavaScript runtime <cache>/runtimes/javascript.json records, freed with free. When
+ * no record names one that is still a file, as after the PATH's node was upgraded or removed, the runtime
+ * is acquired again as install.runtime acquires it, on environment's PATH for this machine, and recorded.
+ * NULL with *refusal set when none can be found or acquired.
+ */
+char *runtime_javascript_executable(const char *cache, const cJSON *environment, cJSON **refusal);
+
+/**
  * install.runtime: { cache, environment, platform? } answering { name, version, executable, fetched, source },
  * in spec 5.3's order: a node on the PATH of environment whose major version is 20 or more, run once with
  * -p process.versions.node under a bounded wait (source "path"), else the pinned Node 26.13.0 for

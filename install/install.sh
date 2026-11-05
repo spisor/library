@@ -189,6 +189,7 @@ function percent_decoded(segment,    result, position, character, code) {
   return result
 }
 function local_path(url,    count, parts, position, segment, path) {
+  if (url ~ /^file:/) return file_url_path(url)
   if (url ~ /^[A-Za-z][A-Za-z0-9+.-]*:/ || substr(url, 1, 1) == "/" || url ~ /[?#\\]/) return ""
   count = split(url, parts, "/")
   path = ""
@@ -198,6 +199,19 @@ function local_path(url,    count, parts, position, segment, path) {
     path = path (position > 1 ? "/" : "") segment
   }
   return path
+}
+function file_url_path(url,    count, parts, position, segment, path, prefix) {
+  if (substr(url, 1, 8) != "file:///" || url ~ /[?#\\]/) return ""
+  count = split(substr(url, 8), parts, "/")
+  path = ""
+  for (position = 2; position <= count; position++) {
+    segment = percent_decoded(parts[position])
+    if (segment == "" || segment == "." || segment == ".." || index(segment, "/") > 0 || index(segment, "\\") > 0 || index(segment, "\001") > 0) return ""
+    path = path "/" segment
+  }
+  prefix = directory "/"
+  if (substr(path, 1, length(prefix)) != prefix || length(path) == length(prefix)) return ""
+  return substr(path, length(prefix) + 1)
 }
 function remote_url(url,    base) {
   if (url ~ /^https:\/\//) return url
@@ -352,6 +366,7 @@ check_catalog() {
         */*) CATALOG_DIRECTORY=${CATALOG%/*} ;;
         *) CATALOG_DIRECTORY=. ;;
       esac
+      CATALOG_ROOT=$(cd "$CATALOG_DIRECTORY" && pwd)
       ;;
   esac
 }
@@ -391,7 +406,7 @@ fetch_verified() {
 
 fetch_host() {
   read_catalog_index
-  listing=$(INDEX_FILE=$INDEX CATALOG=$CATALOG LC_ALL=C awk -v remote="$REMOTE" -v host="$HOST_ID" -v platform="$PLATFORM" \
+  listing=$(INDEX_FILE=$INDEX CATALOG=$CATALOG LC_ALL=C awk -v remote="$REMOTE" -v directory="${CATALOG_ROOT:-}" -v host="$HOST_ID" -v platform="$PLATFORM" \
     -v required="$PLATFORM/$HOST_ID $PLATFORM/forebay-boot" "$LIST_HOST_FILES")
   newline='
 '
@@ -417,6 +432,7 @@ main() {
   TEMPORARY=''
   INDEX=''
   REMOTE=0
+  CATALOG_ROOT=''
   trap remove_temporaries EXIT
   trap 'remove_temporaries; exit 130' INT
   trap 'remove_temporaries; exit 143' TERM

@@ -5,8 +5,10 @@
 
 #include "boot.h"
 #include "cache.h"
+#include "cache_marker.h"
 #include "cache_place.h"
 #include "host_output.h"
+#include "install_runtime.h"
 #include "node_json_file.h"
 #include "paths.h"
 #include "spisor/path.h"
@@ -23,16 +25,17 @@ static cJSON *refused(const char *first, const char *second, const char *third) 
     return host_refusal_of(parts, 3, HOST_REINSTALL_FIX);
 }
 
-/** cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists. */
+/**
+ * cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists at its
+ * recorded size.
+ *
+ * @implNote Sizes only, as forebay-boot checks at every start: hashing is for install, update and status,
+ * so a start never waits on it.
+ */
 static char *installed_version(const host_context *context, const char *id, const char *version, cJSON **refusal) {
     const char *segments[4] = {context->cache, "bundles", id, version};
     char *directory = version == NULL ? NULL : joined(segments, 4);
-    cJSON *argument = directory == NULL ? NULL : cJSON_CreateObject();
-    if (argument != NULL && cJSON_AddStringToObject(argument, "directory", directory) == NULL) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    cJSON *check = argument == NULL ? NULL : host_call(runtime_cache_check, argument, refusal);
+    cJSON *check = directory == NULL ? NULL : runtime_cache_check_version_sizes(directory);
     const char *kind = host_text(check, "kind");
     int intact = kind != NULL && strcmp(kind, "intact") == 0;
     if (check != NULL && !intact) {
@@ -59,23 +62,6 @@ static char *entry_inside(const char *directory, const char *id, const char *ent
     return path;
 }
 
-/** The JS runtime executable install recorded in cache/runtimes/javascript.json. */
-static char *javascript_runtime(const host_context *context, cJSON **refusal) {
-    const char *segments[3] = {context->cache, "runtimes", "javascript.json"};
-    char *record = joined(segments, 3);
-    cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record);
-    const char *executable = host_text(recorded, "executable");
-    char *copy = executable == NULL ? NULL : malloc(strlen(executable) + 1);
-    if (copy != NULL) {
-        strcpy(copy, executable);
-    } else {
-        *refusal = refused("no JavaScript runtime is recorded in ", record == NULL ? context->cache : record, "");
-    }
-    cJSON_Delete(recorded);
-    free(record);
-    return copy;
-}
-
 static cJSON *start_with(const host_context *context, const char *executable, const char *script, const char *id) {
     cJSON *start = cJSON_CreateObject();
     cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
@@ -96,7 +82,8 @@ static cJSON *layer_start(const host_context *context, const char *runtime, cons
     char *path = entry_inside(directory, id, entry, refusal);
     int native = runtime != NULL && strcmp(runtime, NATIVE_RUNTIME) == 0;
     int javascript = runtime != NULL && strcmp(runtime, JAVASCRIPT_RUNTIME) == 0;
-    char *executable = path != NULL && javascript ? javascript_runtime(context, refusal) : NULL;
+    char *executable = path != NULL && javascript ? runtime_javascript_executable(context->cache, context->environment, refusal)
+                                                  : NULL;
     cJSON *start = NULL;
     if (path != NULL && native && !host_make_runnable(path)) {
         *refusal = refused("the entry of ", id, " cannot be made runnable");

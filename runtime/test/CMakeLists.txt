@@ -91,7 +91,7 @@ runtime_test(cache_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(cache_test PRIVATE ${runtime_fetch_libraries})
 
-foreach(name updates_test boot_hint_test)
+foreach(name updates_test boot_hint_test cache_locate_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog>
         $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
@@ -153,6 +153,9 @@ target_compile_definitions(install_runtime_test PRIVATE RUNTIME_NODE_PROBE_PATH=
 add_dependencies(install_runtime_test node_probe)
 set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
     RESOURCE_LOCK user_path_value)
+
+runtime_test(host_removal_test $<TARGET_OBJECTS:runtime_updates> ${runtime_hosts_test_objects})
+target_link_libraries(host_removal_test PRIVATE ${runtime_fetch_libraries})
 
 add_executable(settings_lock_test settings_lock_test.c $<TARGET_OBJECTS:runtime_secret_store>
     $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)

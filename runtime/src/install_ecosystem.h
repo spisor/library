@@ -30,7 +30,7 @@
  * installed.
  *
  * @implNote No install or download runs under the registry lock: each version is recorded as a
- * reference first under a short lock, then stored unlocked (Ruling L), so a sweep running meanwhile keeps
+ * reference first under a short lock, then stored unlocked, so a sweep running meanwhile keeps
  * it and two installs at once end with one consistent registry and cache.
  */
 RUNTIME_EXPORT int32_t runtime_install_ecosystem(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);

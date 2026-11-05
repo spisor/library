@@ -64,9 +64,8 @@ static char *expected_message(const cJSON *expected) {
 }
 
 static void expect_recorded_refusal(catalog_answer answer, const cJSON *expected, const char *name) {
-    const cJSON *c_answer = cJSON_GetObjectItemCaseSensitive(expected, "c");
-    const char *prefix = text_at(c_answer, "detailStartsWith");
-    const char *fix = text_at(c_answer, "fix") != NULL ? text_at(c_answer, "fix") : text_at(expected, "fix");
+    const char *prefix = text_at(expected, "detailStartsWith");
+    const char *fix = text_at(expected, "fix");
     const char *message = text_at(answer.tree, "message");
     if (answer.status != SPISOR_STATUS_FAILURE || message == NULL) {
         fprintf(stderr, "%s: expected a refusal, got status %d\n", name, (int)answer.status);
@@ -207,8 +206,7 @@ static void every_url_resolves_as_node_does(void) {
     cJSON *recorded = read_json_file(path);
     for (const cJSON *vector = cJSON_GetObjectItemCaseSensitive(recorded, "vectors")->child; vector != NULL;
          vector = vector->next) {
-        const cJSON *c_answer = cJSON_GetObjectItemCaseSensitive(vector, "c");
-        const cJSON *expected = cJSON_GetObjectItemCaseSensitive(c_answer != NULL ? c_answer : vector, "resolved");
+        const cJSON *expected = cJSON_GetObjectItemCaseSensitive(vector, "resolved");
         char *resolved = runtime_catalog_resolve_within_origin(text_at(vector, "url"), text_at(vector, "origin"));
         const char *wanted = cJSON_IsString(expected) ? expected->valuestring : NULL;
         if ((wanted == NULL) != (resolved == NULL) || (wanted != NULL && strcmp(wanted, resolved) != 0)) {

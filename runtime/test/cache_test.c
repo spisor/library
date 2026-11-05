@@ -274,8 +274,6 @@ static void finish_cache(void) {
     CHECK(runtime_remove_tree(scratch) == 1);
 }
 
-/* store.test.ts */
-
 static void it_fetches_into_a_fresh_store_then_answers_cached_without_fetching(void) {
     start_cache("fresh");
     catalog_answer first = install("a", plugin_item(), "1.0.0", "linux-x64");
@@ -432,8 +430,6 @@ static void it_leaves_no_temporary_file_behind_even_when_the_rename_into_place_f
     expect_listing("bundles/a/1.0.0", "[\"p.js\"]", "occupied leaves no temporary file");
     finish_cache();
 }
-
-/* install-version.test.ts */
 
 static void it_installs_a_plugin_s_files_into_its_bundle_version_directory(void) {
     start_cache("plugin");
@@ -719,8 +715,6 @@ static void it_completes_an_interrupted_install_on_the_next_install(void) {
     finish_cache();
 }
 
-/* cache-bundle-source.test.ts, the completion check */
-
 static char *marked_bundle(const char *id, const char *version, int marked) {
     char rest[256];
     snprintf(rest, sizeof rest, "bundles/%s/%s", id, version);
@@ -825,8 +819,6 @@ static void it_answers_damaged_for_a_marker_that_names_a_file_outside_its_versio
     finish_cache();
 }
 
-/* installed.test.ts */
-
 static void make_version(const char *rest, const char *marker) {
     char *directory = in_cache(rest);
     CHECK(spisor_make_directories(directory) == 1);
@@ -868,8 +860,6 @@ static void it_answers_nothing_for_a_cache_with_no_bundles_folder(void) {
     expect_answer(installed(NULL), "{\"bundles\":{},\"libraries\":{}}", "installed empty");
     finish_cache();
 }
-
-/* sweep.test.ts */
 
 static void installed_bundle(const char *id, const char *version, int marked) {
     char rest[256];
@@ -1122,8 +1112,6 @@ static void it_removes_an_old_unmarked_library_version_for_one_platform(void) {
     finish_cache();
 }
 
-/* references.test.ts: the reading half */
-
 static void it_skips_a_reference_file_that_is_not_two_maps_of_versions(void) {
     start_cache("sweep-broken-references");
     const char *versions[5] = {"1.0.0", "2.0.0", "3.0.0", "4.0.0", "5.0.0"};
@@ -1152,8 +1140,6 @@ static void it_keeps_what_a_reference_file_keeps_for_rollback(void) {
     finish_cache();
 }
 
-/* boot-hint.ts: what a hint names */
-
 static void it_keeps_what_a_boot_hint_names_for_the_next_start(void) {
     start_cache("sweep-hints");
     installed_bundle("forebay-host", "1.0.0", 1);
@@ -1170,8 +1156,6 @@ static void it_keeps_what_a_boot_hint_names_for_the_next_start(void) {
     CHECK(library_present("runtime", "0.1.0", "linux-x64") && library_present("koffi", "1.0.0", "linux-x64"));
     finish_cache();
 }
-
-/* run-records.test.ts: the sweep's half */
 
 static void write_run_record(const char *host, const char *name, long pid, double alive_at, const char *run) {
     char rest[512];
@@ -1332,8 +1316,6 @@ static void it_sweeps_only_while_it_holds_the_registry_lock(void) {
     expect_answer(job.answer, "{\"removed\":[\"a@1.0.0\"]}", "after the lock");
     finish_cache();
 }
-
-/* Review Focus 6: a deep cache */
 
 static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     start_cache("deep");

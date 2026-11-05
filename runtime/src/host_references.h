@@ -11,8 +11,8 @@
  * a rollback moved it away from, which is not scheduled again while it is still the catalog's latest.
  * rollback and rolled_back_from may be NULL, meaning none.
  *
- * @implNote rolled_back_from is written as rolledBackFrom, a member plan three's readers never look at,
- * so the sweep and every reader of run, next and rollback read the file as they always did.
+ * @implNote rolled_back_from is written as rolledBackFrom, a member the sweep never reads: it keeps what
+ * run, next and rollback name, and a version a rollback moved away from is not one of them.
  */
 typedef struct runtime_host_references {
     cJSON *run;
@@ -26,7 +26,7 @@ typedef struct runtime_host_references {
  * object whose run and next are version maps, with *rollback the rollback map or NULL when it has none
  * that is one; 0 for any other shape, which names nothing.
  *
- * @implNote The format is plan three's, read as forebay/host wrote it, so the sweep and updates agree.
+ * @implNote The sweep reads the file through this too, so the sweep and updates agree.
  */
 int runtime_host_references_of(const cJSON *recorded, const cJSON **run, const cJSON **next, const cJSON **rollback);
 

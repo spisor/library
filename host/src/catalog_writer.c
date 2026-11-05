@@ -202,13 +202,29 @@ static char *destination_of(const char *out, const catalog_input *input, const c
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, input->platform == NULL ? 5 : 6);
 }
 
-/** Copies source to its place under out, answering its FileRef {url, sha256, size}. */
-static cJSON *place_file(const char *out, const catalog_input *input, const char *key, const char *source, cJSON **refusal) {
+/** The bytes of a files value: the file at its path, or its generated text. */
+static uint8_t *bytes_of(const cJSON *file, size_t *length) {
+    const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(file, HOST_GENERATED_TEXT));
+    if (!cJSON_IsObject(file)) {
+        return spisor_read_file(file->valuestring, length);
+    }
+    *length = text == NULL ? 0 : strlen(text);
+    uint8_t *bytes = text == NULL ? NULL : malloc(*length + 1);
+    if (bytes != NULL) {
+        memcpy(bytes, text, *length + 1);
+    }
+    return bytes;
+}
+
+/** Writes file to its place under out, answering its FileRef {url, sha256, size}. */
+static cJSON *place_file(const char *out, const catalog_input *input, const cJSON *file, cJSON **refusal) {
+    const char *key = file->string;
+    const char *source = cJSON_IsString(file) ? file->valuestring : key;
     char *destination = destination_of(out, input, key);
     const char *parent_segments[2] = {destination, ".."};
     char *parent = destination == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parent_segments, 2);
     size_t length = 0;
-    uint8_t *bytes = parent == NULL ? NULL : spisor_read_file(source, &length);
+    uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length);
     char hash[RUNTIME_SHA256_HEX_SIZE];
     int copied = bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(destination, bytes, length) == 1;
     cJSON *reference = copied ? cJSON_CreateObject() : NULL;
@@ -238,7 +254,7 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
 static cJSON *placed_files(const char *out, const catalog_input *input, cJSON **refusal) {
     cJSON *files = cJSON_CreateObject();
     for (const cJSON *file = files == NULL ? NULL : input->files->child; file != NULL; file = file->next) {
-        cJSON *reference = place_file(out, input, file->string, file->valuestring, refusal);
+        cJSON *reference = place_file(out, input, file, refusal);
         if (reference == NULL || !cJSON_AddItemToObject(files, file->string, reference)) {
             cJSON_Delete(reference);
             cJSON_Delete(files);

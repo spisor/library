@@ -106,7 +106,7 @@ static int compare_milliseconds(const void *left, const void *right) {
 }
 
 /**
- * Review Focus 5: with every JavaScript runtime taken off the machine's PATH, the hook registers, records
+ * With every JavaScript runtime taken off the machine's PATH, the hook registers, records
  * and exits 0 within the budget; the median of several runs is held to it, so one slow process start on a
  * busy runner does not decide it.
  */

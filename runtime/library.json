@@ -1819,6 +1819,13 @@
           "result": { "type": "object", "properties": { "damaged": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "detail": { "type": "string" }, "fix": { "type": "string" }, "file": { "type": "string" } }, "required": ["id", "version", "detail", "fix"], "additionalProperties": false } } }, "required": ["damaged"], "additionalProperties": false }
         },
         {
+          "name": "locate",
+          "symbol": "runtime_cache_locate",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "cache": { "type": "string", "minLength": 1 }, "plugins": { "type": "object", "additionalProperties": { "type": "string" } } }, "required": ["cache", "plugins"] },
+          "result": { "type": "object", "properties": { "located": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "directory": { "type": "string" }, "manifest": { "type": "string" }, "entry": { "type": "string" } }, "required": ["id", "version", "directory", "manifest"], "additionalProperties": false } }, "problems": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "detail": { "type": "string" }, "fix": { "type": "string" }, "file": { "type": "string" } }, "required": ["id", "version", "detail", "fix"], "additionalProperties": false } } }, "required": ["located", "problems"], "additionalProperties": false }
+        },
+        {
           "name": "platform",
           "symbol": "runtime_cache_platform",
           "kind": "json",

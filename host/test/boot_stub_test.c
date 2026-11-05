@@ -20,8 +20,6 @@ static void install_boot_world(host_world *world, const char *label) {
     free(stub);
 }
 
-/* boot-entry.test.ts and boot-host.ts, through forebay-boot */
-
 static void runs_the_version_the_hint_names_with_its_arguments_passed_through(void) {
     host_world world;
     install_boot_world(&world, "hinted");

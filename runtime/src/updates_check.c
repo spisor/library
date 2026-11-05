@@ -190,7 +190,7 @@ static int plan_targets(const runtime_updates_request *request, check_plan *plan
 }
 
 /**
- * Each target that is not what runs, set into next (background.ts nextOf), leaving out a version a rollback
+ * Each target that is not what runs, set into next, leaving out a version a rollback
  * moved away from as the references hold it now, under the lock.
  */
 static int schedule(cJSON *next, const cJSON *targets, const runtime_host_references *recorded) {
@@ -226,7 +226,7 @@ static void release_rollbacks(cJSON *rolled_back_from, const cJSON *catalog) {
  * lost, and releases the rollbacks the catalog has moved past.
  */
 static int record_next(const runtime_updates_request *request, const check_plan *plan, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+    runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
     runtime_host_references recorded =
         guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                       : runtime_read_host_references(request->state, request->host_id);
@@ -276,15 +276,19 @@ typedef enum hint_switch { HINT_UNCHANGED, HINT_SWITCHED, HINT_UNWRITTEN } hint_
  *
  * @implNote Taken under the registry lock, briefly, after the install: the references are read again so
  * a version a later rollback or sweep let go is never hinted, and every command boots what the hint names.
+ * The version's files are hashed before the lock is taken and only their sizes checked again under it.
  */
 static hint_switch switch_hint(const runtime_updates_request *request, const char *id, const char *version,
                                cJSON **refusal) {
+    if (!runtime_bundle_is_intact(request->cache, id, version)) {
+        return HINT_UNCHANGED;
+    }
     runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
     runtime_host_references recorded = guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                                                      : runtime_read_host_references(request->state, request->host_id);
     int still_named = recorded.run != NULL && (names(recorded.run, id, version) || names(recorded.next, id, version));
     hint_switch outcome = HINT_UNCHANGED;
-    if (still_named && runtime_bundle_is_intact(request->cache, id, version)) {
+    if (still_named && runtime_bundle_is_sized(request->cache, id, version)) {
         outcome = runtime_hint_host_version(request->cache, id, version) ? HINT_SWITCHED : HINT_UNWRITTEN;
     }
     runtime_free_host_references(&recorded);

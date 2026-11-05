@@ -45,9 +45,29 @@ static char *application_binary(const host_context *context, const cJSON *standa
 }
 
 /**
+ * The start of the loader's session host on javascript-host, or NULL after writing to stderr why it cannot
+ * be started.
+ *
+ * @implNote Never refuses the launch (RULES section 2): the application runs without its plugins rather
+ * than not at all, and the next launch tries again.
+ */
+static cJSON *session_start_or_report(const host_context *context, const char *loader_id) {
+    cJSON *refusal = NULL;
+    cJSON *session = host_session_start_of(context, loader_id, &refusal);
+    if (session == NULL) {
+        host_write(1, "spisor could not start the session host of ");
+        host_write(1, loader_id);
+        host_write(1, ", so the application runs without its plugins: ");
+        host_print_refusal(refusal);
+    }
+    cJSON_Delete(refusal);
+    return session;
+}
+
+/**
  * {host id: start} for every background host the loader's host.json names, and its session host on
- * javascript-host when its settings enable plugins of its own; NULL with *refusal set when one cannot be
- * started, before anything is.
+ * javascript-host when its settings enable plugins of its own and it can be started; NULL with *refusal
+ * set when a background host cannot be started, before anything is.
  */
 static cJSON *starts_of(const host_context *context, const char *loader_id, const loader_start *loader, cJSON **refusal) {
     cJSON *starts = cJSON_CreateObject();
@@ -60,13 +80,12 @@ static cJSON *starts_of(const host_context *context, const char *loader_id, cons
             return NULL;
         }
     }
-    if (starts != NULL && cJSON_GetArraySize(loader->plugins) > 0) {
-        cJSON *session = host_session_start_of(context, loader_id, refusal);
-        if (session == NULL || !cJSON_AddItemToObject(starts, loader_id, session)) {
-            cJSON_Delete(session);
-            cJSON_Delete(starts);
-            return NULL;
-        }
+    cJSON *session = starts != NULL && cJSON_GetArraySize(loader->plugins) > 0 ? session_start_or_report(context, loader_id)
+                                                                               : NULL;
+    if (session != NULL && !cJSON_AddItemToObject(starts, loader_id, session)) {
+        cJSON_Delete(session);
+        cJSON_Delete(starts);
+        return NULL;
     }
     return starts;
 }

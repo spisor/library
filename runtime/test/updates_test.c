@@ -33,8 +33,6 @@ static int folder_exists(const char *rest) {
     return exists_in(cache, rest);
 }
 
-/* references.test.ts: the writing cases */
-
 static void it_writes_what_a_host_runs_and_what_it_scheduled_for_its_next_start_to_its_own_file(void) {
     start_base("references-write");
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
@@ -86,8 +84,6 @@ static void it_refuses_a_host_id_that_would_write_outside_the_bundles_folder(voi
     cJSON_Delete(empty);
     finish_base();
 }
-
-/* run-records.test.ts: removeHostReferences, and the case that needs a start */
 
 static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_references_are_removed(void) {
     start_base("references-remove");
@@ -146,8 +142,6 @@ static void it_records_its_run_as_a_live_record_of_this_process(void) {
     finish_base();
 }
 
-/* catalog-start.test.ts, through updates.apply */
-
 static void it_resolves_the_enabled_set_and_the_host_s_defaults_each_default_held_to_its_pin(void) {
     start_base("start-defaults");
     write_catalog();
@@ -195,8 +189,6 @@ static void it_records_the_host_s_own_references_beside_its_plugins(void) {
     finish_base();
 }
 
-/* cache-session.ts hostRunOf, through updates.apply */
-
 static void it_switches_to_the_scheduled_host_version_once_it_is_installed_intact_keeping_the_previous(void) {
     start_base("switch");
     write_catalog();
@@ -227,8 +219,6 @@ static void it_switches_to_the_scheduled_host_version_once_it_is_installed_intac
     cJSON_Delete(later.tree);
     finish_base();
 }
-
-/* boot-from-cache.test.ts hostLibraryReferences, through updates.apply */
 
 static void install_libraries(void) {
     list_library("runtime", "0.1.0", "0.1.0");
@@ -311,8 +301,6 @@ static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_install
     finish_base();
 }
 
-/* host-updates.test.ts, through updates.check then updates.apply */
-
 static void list_both_hosts(void) {
     list_host(LOADER, "1.0.0", "2.0.0");
     list_host(LOADER, "2.0.0", "2.0.0");
@@ -360,8 +348,6 @@ static void it_holds_a_host_to_its_pin(void) {
     runtime_free_host_references(&recorded);
     finish_base();
 }
-
-/* background.test.ts, through updates.check */
 
 static void it_records_a_version_it_could_not_install_as_refused_and_finishes(void) {
     start_base("check-refused");
@@ -473,7 +459,7 @@ typedef struct concurrent_check {
 static void check_concurrently(concurrent_check *job) {
     char settings[256];
     snprintf(settings, sizeof settings, "{\"plugins\":{\"%s\":{\"enabled\":true}}}", job->plugin);
-    job->answer = check_with(TEST_HOST, settings_with(settings), "{}");
+    job->answer = check_unregistered(TEST_HOST, settings_with(settings), "{}");
 }
 
 #if defined(_WIN32)
@@ -489,6 +475,7 @@ static void *checking_entry(void *argument) {
 #endif
 
 static void run_two_checks(concurrent_check *jobs) {
+    register_host(TEST_HOST);
 #if defined(_WIN32)
     HANDLE threads[2];
     threads[0] = CreateThread(NULL, 0, checking_entry, &jobs[0], 0, NULL);
@@ -523,8 +510,6 @@ static void it_loses_no_next_write_when_two_checks_of_one_host_run_at_once(void)
         finish_base();
     }
 }
-
-/* plan four Review Focus 4: install A, schedule B, apply, and B runs */
 
 static void it_runs_the_scheduled_version_after_apply_and_a_sweep_keeps_what_the_hint_and_rollback_name(void) {
     start_base("focus-four");
@@ -604,6 +589,48 @@ static void it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intac
     finish_base();
 }
 
+/** Rewrites the one file of an installed bundle version with other bytes of the same length. */
+static void damage_keeping_sizes(const char *id, const char *version, const char *name) {
+    char rest[512];
+    snprintf(rest, sizeof rest, "bundles/%s/%s/%s", id, version, name);
+    char *text = text_in(cache, rest);
+    CHECK(text != NULL && text[0] != 0);
+    if (text != NULL && text[0] != 0) {
+        text[0] = text[0] == 'x' ? 'y' : 'x';
+        write_in(cache, rest, text);
+    }
+    free(text);
+}
+
+static void it_starts_a_scheduled_version_on_its_sizes_without_hashing_it(void) {
+    start_base("start-on-sizes");
+    list_plugin(LOADER, "2.0.0", "2.0.0");
+    write_catalog();
+    mark_installed("bundles", LOADER, "1.0.0");
+    install_listed(LOADER, "2.0.0");
+    damage_keeping_sizes(LOADER, "2.0.0", "plugin.json");
+    record_references(LOADER, "{\"run\":{\"" LOADER "\":\"1.0.0\"},\"next\":{\"" LOADER "\":\"2.0.0\"}}");
+    catalog_answer started = apply_plain(LOADER, "{}");
+    expect_member_json(started.tree, "run", "{\"" LOADER "\":\"2.0.0\"}", "switched on sizes alone");
+    remove_run_record(started);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes(void) {
+    start_base("rollback-hashed");
+    list_plugin(FOREBAY_HOST, "1.0.0", "2.0.0");
+    write_catalog();
+    install_listed(FOREBAY_HOST, "1.0.0");
+    damage_keeping_sizes(FOREBAY_HOST, "1.0.0", "plugin.json");
+    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+                                    "\":\"1.0.0\"}}");
+    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    expect_refusal(rolled, "is not installed intact", "hashed before the lock");
+    cJSON_Delete(rolled.tree);
+    finish_base();
+}
+
 static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     start_base("escape-id");
     expect_refusal(apply_plain("../escape", "{}"), "outside", "apply escape");
@@ -611,8 +638,6 @@ static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     expect_refusal(rollback_of("../escape", "a"), "outside", "rollback escape");
     finish_base();
 }
-
-/* fix round 1 */
 
 static void pause_milliseconds(unsigned milliseconds) {
 #if defined(_WIN32)
@@ -642,6 +667,7 @@ static void it_lets_a_start_finish_while_a_check_s_download_is_stalled(void) {
     write_catalog();
     runtime_fetch_stall_file_urls("/slow/", STALL_MILLISECONDS);
     concurrent_check job = {"slow", {0, NULL}};
+    register_host(TEST_HOST);
 #if defined(_WIN32)
     HANDLE thread = CreateThread(NULL, 0, checking_entry, &job, 0, NULL);
     CHECK(thread != NULL);
@@ -778,8 +804,6 @@ static void it_passes_on_the_refusal_of_a_service_it_calls(void) {
     finish_base();
 }
 
-/* fix round 2 */
-
 static void it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from(void) {
     start_base("apply-filters-rolled-away");
     list_plugin("a", "1.0.0", "2.0.0");
@@ -859,6 +883,8 @@ int main(void) {
     it_refuses_a_rollback_no_switch_kept_a_version_for();
     it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact();
     it_refuses_a_host_id_that_is_no_plain_file_name();
+    it_starts_a_scheduled_version_on_its_sizes_without_hashing_it();
+    it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes();
 
     it_lets_a_start_finish_while_a_check_s_download_is_stalled();
     it_holds_a_rollback_until_the_catalog_moves_past_the_version_rolled_away_from();
