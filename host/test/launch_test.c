@@ -482,6 +482,71 @@ static void starts_the_application_unchanged_when_its_session_host_publishes_not
     finish_world(&world);
 }
 
+static void expect_unheld(const host_world *world, const char *id, const char *label) {
+    cJSON *holders = holders_of(world, id);
+    if (holder_count(holders) != 0) {
+        fprintf(stderr, "%s: %s is still held\n", label, id);
+        check_failures++;
+    }
+    cJSON_Delete(holders);
+}
+
+static void starts_the_application_with_the_environment_of_a_session_host_an_earlier_launch_left_running(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "running-host", 1);
+    world.fixture_ready = "{\"SPISOR_TEST\": \"first\"}";
+    program first;
+    const char *first_arguments[] = {"first", "0", NULL};
+    launch(&world, &first, first_arguments, NULL);
+    cJSON *first_started = await_application(&world, "first");
+    long session = await_holders(&world, LOADER_ID, 2);
+    world.fixture_ready = "none";
+    world.ready_timeout = "1500";
+    program second;
+    const char *second_arguments[] = {"second", "0", NULL};
+    launch(&world, &second, second_arguments, NULL);
+    cJSON *second_started = await_application(&world, "second");
+    check_text(text_at(second_started, "spisorTest"), "first", "environment the running host published earlier");
+    CHECK(await_holders(&world, LOADER_ID, 4) == session);
+    long background = await_holders(&world, BACKGROUND_ID, 4);
+    release_application(&world, "first");
+    release_application(&world, "second");
+    CHECK(program_finish(&first, 30000) == 0);
+    CHECK(program_finish(&second, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    cJSON_Delete(second_started);
+    cJSON_Delete(first_started);
+    program_free(&second);
+    program_free(&first);
+    finish_world(&world);
+}
+
+static void waits_past_a_ready_record_an_earlier_dead_session_host_left(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "stale-record", 1);
+    write_in(world.base.state, "processes/" LOADER_ID ".ready.json", "{\"pid\":999999,\"environment\":{\"SPISOR_TEST\":\"stale\"}}");
+    world.fixture_ready = "{\"SPISOR_TEST\": \"fresh\"}";
+    world.layer_delay = "1000";
+    program launcher;
+    const char *passed[] = {"stale", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "stale");
+    check_text(text_at(started, "spisorTest"), "fresh", "record of the new host, not the stale one");
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "stale");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 static void refuses_the_launch_with_the_refusal_its_session_host_publishes(void) {
     host_world world;
     install_launch_world(&world, "launch", "refused", 1);
@@ -492,6 +557,8 @@ static void refuses_the_launch_with_the_refusal_its_session_host_publishes(void)
     CHECK(program_finish(&launcher, 30000) == 1);
     expect_contains(launcher.err, "the fixture session host refused", "published refusal");
     expect_contains(launcher.err, "fix: the fixture fix", "published fix");
+    expect_unheld(&world, LOADER_ID, "after a published refusal");
+    expect_unheld(&world, BACKGROUND_ID, "after a published refusal");
     cJSON *never = application_start(&world, "refused");
     CHECK(never == NULL);
     cJSON_Delete(never);
@@ -509,6 +576,8 @@ static void refuses_the_launch_when_its_session_host_never_becomes_ready(void) {
     launch(&world, &launcher, passed, NULL);
     CHECK(program_finish(&launcher, 30000) == 1);
     expect_contains(launcher.err, "the session host of " LOADER_ID " did not become ready within 0.3 seconds", "timeout");
+    expect_unheld(&world, LOADER_ID, "after a timeout");
+    expect_unheld(&world, BACKGROUND_ID, "after a timeout");
     cJSON *never = application_start(&world, "unready");
     CHECK(never == NULL);
     cJSON_Delete(never);
@@ -556,6 +625,8 @@ int main(void) {
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
     starts_the_application_with_the_environment_its_session_host_publishes();
     starts_the_application_unchanged_when_its_session_host_publishes_nothing();
+    starts_the_application_with_the_environment_of_a_session_host_an_earlier_launch_left_running();
+    waits_past_a_ready_record_an_earlier_dead_session_host_left();
     refuses_the_launch_with_the_refusal_its_session_host_publishes();
     refuses_the_launch_when_its_session_host_never_becomes_ready();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
