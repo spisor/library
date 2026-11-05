@@ -585,23 +585,23 @@ static int32_t store_locked(const config_request *request, const config_targets 
  * @implNote Its own lock file, never the registry lock, so a caller holding that may still write settings;
  * only the read and the write of one file happen under it.
  */
-static runtime_hosts_guard *lock_layer(const config_target *target) {
+static spisor_lock *lock_layer(const config_target *target) {
     const char *segments[2] = {target->directory, ".settings.lock"};
     char *path = spisor_make_directories(target->directory) ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
-    runtime_hosts_guard *guard = path == NULL ? NULL : runtime_lock_file(path);
+    spisor_lock *guard = path == NULL ? NULL : spisor_lock_file(path);
     free(path);
     return guard;
 }
 
 static int32_t store_after_previous(const config_request *request, const config_targets *targets, settings_layer layer,
                                     const char *key, const cJSON *value, uint8_t **out, size_t *out_len) {
-    runtime_hosts_guard *guard = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application);
+    spisor_lock *guard = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application);
     if (guard == NULL) {
         return spisor_fail("the settings folder could not be locked for writing",
                            "check that the settings folder is writable, then try again", out, out_len);
     }
     int32_t status = store_locked(request, targets, layer, key, value, out, out_len);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return status;
 }
 

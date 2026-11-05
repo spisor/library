@@ -1292,7 +1292,7 @@ static void it_sweeps_only_while_it_holds_the_registry_lock(void) {
     start_cache("sweep-lock");
     installed_bundle("a", "1.0.0", 1);
     installed_bundle("a", "2.0.0", 1);
-    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    spisor_lock *guard = runtime_hosts_lock(state);
     CHECK(guard != NULL);
     sweeping job;
     memset(&job, 0, sizeof job);
@@ -1306,7 +1306,7 @@ static void it_sweeps_only_while_it_holds_the_registry_lock(void) {
     pause_milliseconds(300);
     CHECK(!job.finished);
     CHECK(bundle_present("a", "1.0.0"));
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
 #if defined(_WIN32)
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);

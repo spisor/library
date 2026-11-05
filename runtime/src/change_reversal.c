@@ -180,12 +180,12 @@ static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len
 static int32_t reverse_all(reversal_session *session, cJSON *result, uint8_t **out, size_t *out_len) {
     int32_t status = SPISOR_STATUS_SUCCESS;
     while (status == SPISOR_STATUS_SUCCESS && !session->finished) {
-        runtime_hosts_guard *guard = runtime_hosts_lock(session->state);
+        spisor_lock *guard = runtime_hosts_lock(session->state);
         if (guard == NULL) {
             return refuse_unlocked(session->state, out, out_len);
         }
         status = reverse_step(session, out, out_len);
-        runtime_hosts_unlock(guard);
+        spisor_unlock(guard);
         cJSON_Delete(session->registration);
         session->registration = NULL;
     }

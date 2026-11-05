@@ -233,7 +233,7 @@ static void release_rollbacks(cJSON *rolled_back_from, const cJSON *catalog) {
  * lost, and releases the rollbacks the catalog has moved past.
  */
 static int record_next(const runtime_updates_request *request, const check_plan *plan, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
+    spisor_lock *guard = runtime_updates_lock_registered(request, refusal);
     runtime_host_references recorded =
         guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                       : runtime_read_host_references(request->state, request->host_id);
@@ -245,7 +245,7 @@ static int record_next(const runtime_updates_request *request, const check_plan 
         recorded_next = 0;
     }
     runtime_free_host_references(&recorded);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return recorded_next;
 }
 
@@ -290,7 +290,7 @@ static hint_switch switch_hint(const runtime_updates_request *request, const cha
     if (!runtime_bundle_is_intact(request->cache, id, version)) {
         return HINT_UNCHANGED;
     }
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+    spisor_lock *guard = runtime_updates_lock(request, refusal);
     runtime_host_references recorded = guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                                                      : runtime_read_host_references(request->state, request->host_id);
     int still_named = recorded.run != NULL && (names(recorded.run, id, version) || names(recorded.next, id, version));
@@ -299,7 +299,7 @@ static hint_switch switch_hint(const runtime_updates_request *request, const cha
         outcome = runtime_hint_host_version(request->cache, id, version) ? HINT_SWITCHED : HINT_UNWRITTEN;
     }
     runtime_free_host_references(&recorded);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return outcome;
 }
 
@@ -371,9 +371,9 @@ static int install_targets(const runtime_updates_request *request, const check_p
 
 /** Sweeps with the registry lock held, never through cache.sweep, which takes the lock itself. */
 static cJSON *sweep(const runtime_updates_request *request, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+    spisor_lock *guard = runtime_updates_lock(request, refusal);
     cJSON *removed = guard == NULL ? NULL : runtime_cache_sweep_versions(request->cache, request->state);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return removed;
 }
 

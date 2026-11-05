@@ -16,8 +16,8 @@
 #define UNREGISTERED_FIX "install the host again to register it, or stop the copy of it that outlived its removal"
 #define UNREADABLE_REGISTRATION_FIX "install the host again so its registration is rewritten"
 
-runtime_hosts_guard *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+spisor_lock *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal) {
+    spisor_lock *guard = runtime_hosts_lock(request->state);
     if (guard == NULL) {
         const char *parts[1] = {"the registry lock under the state folder could not be taken"};
         *refusal = runtime_cache_refusal(parts, 1, WRITABLE_STATE_FIX);
@@ -36,19 +36,19 @@ static cJSON *refuse_unregistered(const runtime_updates_request *request, runtim
     return runtime_cache_refusal(parts, 3, UNREADABLE_REGISTRATION_FIX);
 }
 
-runtime_hosts_guard *runtime_updates_lock_registered(const runtime_updates_request *request, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+spisor_lock *runtime_updates_lock_registered(const runtime_updates_request *request, cJSON **refusal) {
+    spisor_lock *guard = runtime_updates_lock(request, refusal);
     cJSON *registration = NULL;
     runtime_registry_answer loaded =
         guard == NULL ? RUNTIME_REGISTRY_OK : runtime_registry_load(request->state, request->host_id, &registration);
     cJSON_Delete(registration);
     if (loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
-        runtime_hosts_unlock(guard);
+        spisor_unlock(guard);
         return NULL;
     }
     if (loaded != RUNTIME_REGISTRY_OK) {
         *refusal = refuse_unregistered(request, loaded);
-        runtime_hosts_unlock(guard);
+        spisor_unlock(guard);
         return NULL;
     }
     return guard;

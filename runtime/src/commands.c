@@ -891,13 +891,13 @@ static int32_t answer(const command_call *call, uint8_t **out, size_t *out_len) 
 }
 
 static int32_t run_locked(command_call *call, command_step step, uint8_t **out, size_t *out_len) {
-    runtime_hosts_guard *guard = runtime_hosts_lock(call->state);
+    spisor_lock *guard = runtime_hosts_lock(call->state);
     if (guard == NULL) {
         return spisor_fail("the registry lock could not be taken; nothing was changed",
                            "check that the hosts directory under the state place can be written", out, out_len);
     }
     int done = step(call);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return done ? answer(call, out, out_len) : spisor_fail(call->reason, call->fix, out, out_len);
 }
 

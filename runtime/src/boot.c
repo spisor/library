@@ -87,7 +87,7 @@ static int32_t write_hint(const cJSON *argument, const char *cache, const char *
         return runtime_catalog_refuse_argument("host", "the host bundle version, or leave it out", out, out_len);
     }
     const char *state = nonempty_text(argument, "state");
-    runtime_hosts_guard *guard = state == NULL ? NULL : runtime_hosts_lock(state);
+    spisor_lock *guard = state == NULL ? NULL : runtime_hosts_lock(state);
     if (state != NULL && guard == NULL) {
         return spisor_fail("the registry lock under the state folder could not be taken",
                            "check that SPISOR_STATE names a writable folder, then try again", out, out_len);
@@ -97,7 +97,7 @@ static int32_t write_hint(const cJSON *argument, const char *cache, const char *
     int32_t status = written ? read_hint(argument, cache, host_id, out, out_len)
                              : refuse_problem(problem, "check that SPISOR_CACHE names a writable folder, then try again",
                                               out, out_len);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return status;
 }
 
