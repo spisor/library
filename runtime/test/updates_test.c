@@ -880,6 +880,20 @@ static void it_answers_what_a_host_s_last_start_recorded_running_and_changes_not
     finish_base();
 }
 
+static void it_refuses_to_answer_a_recorded_run_its_references_file_cannot_tell(void) {
+    start_base("recorded-damaged");
+    record_references(TEST_HOST, "{\"run\": {\"a\": ");
+    catalog_answer unparsed = recorded_of(TEST_HOST);
+    expect_refusal(unparsed, "bundles", "unparsed references");
+    CHECK(text_at(unparsed.tree, "fix") != NULL && strstr(text_at(unparsed.tree, "fix"), TEST_HOST ".json") != NULL);
+    cJSON_Delete(unparsed.tree);
+    record_references(TEST_HOST, "{\"run\": 5, \"next\": {}}");
+    catalog_answer misshapen = recorded_of(TEST_HOST);
+    expect_refusal(misshapen, "could not be read", "misshapen references");
+    cJSON_Delete(misshapen.tree);
+    finish_base();
+}
+
 int main(void) {
     it_writes_what_a_host_runs_and_what_it_scheduled_for_its_next_start_to_its_own_file();
     it_replaces_what_the_same_host_recorded_before();
@@ -918,6 +932,7 @@ int main(void) {
     it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact();
     it_refuses_a_host_id_that_is_no_plain_file_name();
     it_answers_what_a_host_s_last_start_recorded_running_and_changes_nothing();
+    it_refuses_to_answer_a_recorded_run_its_references_file_cannot_tell();
     it_starts_a_scheduled_version_on_its_sizes_without_hashing_it();
     it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes();
 

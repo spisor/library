@@ -54,8 +54,9 @@ RUNTIME_EXPORT int32_t runtime_updates_rollback(const uint8_t *in, size_t in_len
 
 /**
  * updates.recorded: {places, hostId} answers {run}, what hostId's last start recorded running, an empty
- * run when it recorded nothing; it switches, schedules and records nothing, so a second process of a
- * running host can start what that host runs without moving it to another version.
+ * run when no references file exists; a file that exists and cannot be read is refused, naming it. It
+ * switches, schedules and records nothing, so a second process of a running host can start what that
+ * host runs without moving it to another version.
  */
 RUNTIME_EXPORT int32_t runtime_updates_recorded(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
