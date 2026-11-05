@@ -35,6 +35,14 @@ int runtime_map_merge(cJSON *into, const cJSON *from) {
     return merged;
 }
 
+/** Whether check, which it frees, answers intact. */
+static int is_intact(cJSON *check) {
+    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
+    int intact = cJSON_IsString(kind) && strcmp(kind->valuestring, "intact") == 0;
+    cJSON_Delete(check);
+    return intact;
+}
+
 int runtime_bundle_is_intact(const char *cache, const char *id, const char *version) {
     const char *segments[2] = {cache, "bundles"};
     char *bundles = runtime_cache_joined(segments, 2);
@@ -43,10 +51,7 @@ int runtime_bundle_is_intact(const char *cache, const char *id, const char *vers
     int inside = directory != NULL && id[0] != 0 && version[0] != 0 &&
                  runtime_cache_is_strictly_inside(bundles, versions) &&
                  runtime_cache_is_strictly_inside(versions, directory);
-    cJSON *check = inside ? runtime_cache_check_version(directory) : NULL;
-    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
-    int intact = cJSON_IsString(kind) && strcmp(kind->valuestring, "intact") == 0;
-    cJSON_Delete(check);
+    int intact = inside && is_intact(runtime_cache_check_version_sizes(directory)) && is_intact(runtime_cache_check_version(directory));
     free(directory);
     free(versions);
     free(bundles);

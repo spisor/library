@@ -4,7 +4,9 @@
 
 #include "boot_hint.h"
 #include "cache_install.h"
+#include "cache_folders.h"
 #include "cache_installed.h"
+#include "cache_marker.h"
 #include "cache_refusal.h"
 #include "cache_sweep.h"
 #include "catalog_answer.h"
@@ -119,6 +121,34 @@ static int add_host_targets(cJSON *targets, const check_plan *plan, const cJSON 
     return added;
 }
 
+/** Whether the installed bundle version is one a start refuses on its sizes; an absent version is not. */
+static int start_refuses(const char *cache, const char *id, const char *version) {
+    const char *segments[4] = {cache, "bundles", id, version};
+    char *directory = runtime_cache_joined(segments, 4);
+    cJSON *check = directory == NULL ? NULL : runtime_cache_check_version_sizes(directory);
+    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
+    int refused = cJSON_IsString(kind) && strcmp(kind->valuestring, "damaged") == 0;
+    cJSON_Delete(check);
+    free(directory);
+    return refused;
+}
+
+/**
+ * Each version run names that a start would refuse on its sizes, to install again.
+ *
+ * @implNote A start reports no problem of a native host it cannot boot, since nothing of it runs, so the
+ * check finds them itself; a marker from before sizes were recorded is repaired this way.
+ */
+static int add_unstartable_targets(cJSON *targets, const char *cache, const cJSON *run) {
+    int added = 1;
+    for (const cJSON *entry = run == NULL ? NULL : run->child; added && entry != NULL; entry = entry->next) {
+        if (cJSON_IsString(entry) && start_refuses(cache, entry->string, entry->valuestring)) {
+            added = add_target(targets, entry->string, entry->valuestring, NULL);
+        }
+    }
+    return added;
+}
+
 static cJSON *kept_hosts(const runtime_updates_request *request) {
     cJSON *ids = cJSON_CreateArray();
     int built = ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(request->host_id)) &&
@@ -151,6 +181,7 @@ static int plan_targets(const runtime_updates_request *request, check_plan *plan
     recorded.rolled_back_from = NULL;
     int planned = recorded.run != NULL && fetch != NULL && plan->hosts != NULL && plan->targets != NULL &&
                   add_targets(plan->targets, cJSON_GetObjectItemCaseSensitive(request->argument, "problems"), NULL) &&
+                  add_unstartable_targets(plan->targets, request->cache, recorded.run) &&
                   add_targets(plan->targets, fetch, plan->rolled_back_from) &&
                   add_host_targets(plan->targets, plan, recorded.run);
     cJSON_Delete(fetch);
