@@ -135,6 +135,9 @@ if(NOT WIN32)
     target_link_libraries(processes_test PRIVATE Threads::Threads)
 endif()
 
+runtime_test(processes_ready_test ${runtime_processes_test_objects})
+target_link_libraries(processes_ready_test PRIVATE ${runtime_fetch_libraries})
+
 add_executable(node_probe node_probe.c)
 spisor_strict_warnings(node_probe)
 

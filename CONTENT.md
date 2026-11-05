@@ -102,6 +102,8 @@ Service), and that store may prompt the user.
 | `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
 | `processes.release` | `state`, `hostId`, `holder` | `{ holders }`, the holders left; the host stops itself at its next prune |
 | `processes.prune` | `state`, `hostId`, `self`, `now`, `checkMilliseconds` | `{ exit }`, true when no holder is alive or another process is the host |
+| `processes.ready` | `state`, `hostId`, `pid`, `environment`, `refused`, `fix` | `{}`, after publishing that the session host is ready with the environment the application starts with, or that it refuses |
+| `processes.awaitReady` | `state`, `hostId`, `pid`, `timeoutMilliseconds` | `{ environment }` from the record naming `pid`, a published refusal as it was published, or a refusal at the timeout |
 | `processes.recordRun` | `state`, `hostId`, `run`, `checkMilliseconds`, `record` | `{ record }`, the run record of the versions this process runs, stamped alive, which the sweep keeps |
 | `processes.liveRuns` | `state`, `now` | `{ runs }`, what every live start runs, after deleting the records of starts that are gone |
 | `processes.removeRuns` | `state`, `hostId`, `record` | `{}`, after deleting `record`, or every run record of `hostId` |

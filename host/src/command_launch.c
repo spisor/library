@@ -13,6 +13,7 @@
 #include "own_run.h"
 #include "paths.h"
 #include "required_plugins.h"
+#include "session_ready.h"
 
 #define HOLD_FIX "nothing is needed now; the application runs, and a background host it lacks starts with the next launch"
 
@@ -129,7 +130,7 @@ static cJSON *starts_of(const host_context *context, const char *loader_id, cons
 static void hold_for_application(double pid, void *context) {
     launch_holds *holds = context;
     cJSON *refusal = NULL;
-    if (host_hold_all(holds->context, holds->starts, pid, &refusal)) {
+    if (host_hold_all(holds->context, holds->starts, pid, NULL, &refusal)) {
         holds->application = pid;
         return;
     }
@@ -155,24 +156,57 @@ static cJSON *application_arguments(int count, char **arguments) {
     return list;
 }
 
-static int run_held(const host_context *context, const char *binary, cJSON *starts, const cJSON *arguments) {
+/**
+ * The environment the application starts with: this process's own, with the variables the loader's session
+ * host publishes set over it. NULL with *refusal set when that host publishes a refusal or is not ready in
+ * time, which never happens for a launch that starts no session host.
+ */
+static cJSON *application_environment(const host_context *context, const char *loader_id, const cJSON *pids,
+                                       cJSON **refusal) {
+    const cJSON *session = cJSON_GetObjectItemCaseSensitive(pids, loader_id);
+    cJSON *published = cJSON_IsNumber(session) ? host_await_session_environment(context, loader_id, session->valuedouble, refusal)
+                                               : cJSON_CreateObject();
+    cJSON *environment = published == NULL ? NULL : host_overlay_environment(context->environment, published);
+    cJSON_Delete(published);
+    return environment;
+}
+
+static int run_application(const host_context *context, const char *binary, cJSON *starts, const cJSON *arguments,
+                           const cJSON *environment) {
     cJSON *refusal = NULL;
     double self = host_process_id();
-    if (!host_hold_all(context, starts, self, &refusal)) {
-        return host_refuse(refusal);
-    }
     launch_holds holds = {context, starts, 0, {NULL, NULL, NULL}};
     host_start_own_run(&holds.run, context);
     host_child_watch watch = {hold_for_application, holds.run.record == NULL ? NULL : stamp_own_run,
                               HOST_OWN_RUN_INTERVAL_MILLISECONDS, &holds};
     int exit_code = 1;
-    int ran = host_run_child(binary, arguments, context->environment, &watch, &exit_code, &refusal);
+    int ran = host_run_child(binary, arguments, environment, &watch, &exit_code, &refusal);
     host_finish_own_run(&holds.run);
     if (holds.application != 0) {
         host_release_all(context, starts, holds.application);
     }
     host_release_all(context, starts, self);
     return ran ? exit_code : host_refuse(refusal);
+}
+
+static int run_held(const host_context *context, const char *loader_id, const char *binary, cJSON *starts,
+                    const cJSON *arguments) {
+    cJSON *refusal = NULL;
+    double self = host_process_id();
+    cJSON *pids = cJSON_CreateObject();
+    if (pids == NULL || !host_hold_all(context, starts, self, pids, &refusal)) {
+        cJSON_Delete(pids);
+        return host_refuse(refusal);
+    }
+    cJSON *environment = application_environment(context, loader_id, pids, &refusal);
+    cJSON_Delete(pids);
+    if (environment == NULL) {
+        host_release_all(context, starts, self);
+        return host_refuse(refusal);
+    }
+    int code = run_application(context, binary, starts, arguments, environment);
+    cJSON_Delete(environment);
+    return code;
 }
 
 /**
@@ -190,7 +224,7 @@ static int launch(const host_context *context, const char *loader_id, int count,
                                                                  loader.standard, &refusal);
     cJSON *starts = required ? starts_of(context, loader_id, &loader, &refusal) : NULL;
     cJSON *passed = starts == NULL ? NULL : application_arguments(count, arguments);
-    int code = passed == NULL ? host_refuse(refusal) : run_held(context, binary, starts, passed);
+    int code = passed == NULL ? host_refuse(refusal) : run_held(context, loader_id, binary, starts, passed);
     cJSON_Delete(passed);
     cJSON_Delete(starts);
     free(binary);

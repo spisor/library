@@ -25,7 +25,12 @@ static void release_before(const host_context *context, const cJSON *starts, con
     }
 }
 
-int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON **refusal) {
+static int record_pid(cJSON *pids, const char *host_id, const cJSON *held) {
+    const cJSON *pid = cJSON_GetObjectItemCaseSensitive(held, "pid");
+    return pids == NULL || (cJSON_IsNumber(pid) && cJSON_AddNumberToObject(pids, host_id, pid->valuedouble) != NULL);
+}
+
+int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON *pids, cJSON **refusal) {
     *refusal = NULL;
     for (const cJSON *start = starts->child; start != NULL; start = start->next) {
         cJSON *call = holder_call(context, start->string, holder);
@@ -34,7 +39,8 @@ int host_hold_all(const host_context *context, const cJSON *starts, double holde
             call = NULL;
         }
         cJSON *held = host_call(runtime_processes_hold, call, refusal);
-        if (held == NULL) {
+        if (held == NULL || !record_pid(pids, start->string, held)) {
+            cJSON_Delete(held);
             release_before(context, starts, start, holder);
             return 0;
         }

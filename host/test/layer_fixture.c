@@ -10,6 +10,7 @@
 #include "file_times.h"
 #include "host_context.h"
 #include "processes.h"
+#include "processes_ready.h"
 #include "spisor/file.h"
 
 #if defined(_WIN32)
@@ -51,6 +52,32 @@ static void record_start(const host_context *context, int count, char **argument
     }
 }
 
+static cJSON *ready_argument(const host_context *context, const char *host_id, const char *mode) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "state", context->state);
+    cJSON_AddStringToObject(argument, "hostId", host_id);
+    cJSON_AddNumberToObject(argument, "pid", host_process_id());
+    if (strcmp(mode, "refuse") == 0) {
+        cJSON_AddStringToObject(argument, "refused", "the fixture session host refused");
+        cJSON_AddStringToObject(argument, "fix", "the fixture fix");
+    } else if (mode[0] != 0) {
+        cJSON_AddItemToObject(argument, "environment", cJSON_Parse(mode));
+    }
+    return argument;
+}
+
+/** Publishes the ready record a session host does on every start, through the library as the real one does. */
+static void publish_ready(const host_context *context, const char *host_id) {
+    const char *configured = host_text(context->environment, "SPISOR_FIXTURE_READY");
+    const char *mode = configured == NULL ? "" : configured;
+    if (strcmp(mode, "none") == 0) {
+        return;
+    }
+    cJSON *refusal = NULL;
+    cJSON_Delete(host_call(runtime_processes_ready, ready_argument(context, host_id, mode), &refusal));
+    cJSON_Delete(refusal);
+}
+
 static int prune_says_exit(const host_context *context, const char *host_id, double interval) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", context->state);
@@ -66,6 +93,28 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
 }
 
 /**
+ * Run as <host-id> action <plugin> <action> <input-json>: prints the arguments after the host id, one per
+ * line, and exits with the number after "exit-" when the action starts with it, 0 otherwise.
+ */
+static int run_action(int count, char **arguments) {
+    host_context context;
+    cJSON *refusal = NULL;
+    if (!host_open_context(&context, &refusal)) {
+        cJSON_Delete(refusal);
+        return 2;
+    }
+    record_start(&context, count, arguments);
+    for (int index = count - 4; index < count; index++) {
+        fputs(arguments[index], stdout);
+        fputs("\n", stdout);
+    }
+    const char *action = arguments[count - 2];
+    int code = strncmp(action, "exit-", 5) == 0 ? atoi(action + 5) : 0;
+    host_close_context(&context);
+    return code;
+}
+
+/**
  * A host's language layer as the tests need one, run as a native background host <host-id>, or as the JS
  * runtime the cache records, <entry> <host-id>: loops on processes.prune for the host id it was given, its
  * last argument, until it is told to exit. SPISOR_FIXTURE_START_DELAY milliseconds pass before it records its
@@ -75,6 +124,9 @@ static int run(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[1], "-p") == 0) {
         fputs(NODE_VERSION "\n", stdout);
         return 0;
+    }
+    if (count >= 6 && strcmp(arguments[count - 4], "action") == 0) {
+        return run_action(count, arguments);
     }
     host_context context;
     cJSON *refusal = NULL;
@@ -87,6 +139,7 @@ static int run(int count, char **arguments) {
         pause_milliseconds(atol(delay));
     }
     record_start(&context, count, arguments);
+    publish_ready(&context, arguments[count - 1]);
     const char *configured = host_text(context.environment, "SPISOR_FIXTURE_INTERVAL");
     double interval = configured == NULL ? DEFAULT_INTERVAL : atof(configured);
     double started = runtime_now_milliseconds();

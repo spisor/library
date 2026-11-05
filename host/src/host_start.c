@@ -114,6 +114,16 @@ cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusa
     return start;
 }
 
+int host_start_append_arguments(cJSON *start, const char *const *extra, size_t count) {
+    cJSON *arguments = cJSON_GetObjectItemCaseSensitive(start, "arguments");
+    for (size_t index = 0; index < count; index++) {
+        if (!cJSON_AddItemToArray(arguments, cJSON_CreateString(extra[index]))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static char *hinted_version(const host_context *context, const char *id) {
     cJSON *argument = cJSON_CreateObject();
     if (argument != NULL && (cJSON_AddStringToObject(argument, "cache", context->cache) == NULL ||

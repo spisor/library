@@ -2206,6 +2206,51 @@
           }
         },
         {
+          "name": "ready",
+          "symbol": "runtime_processes_ready",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "pid": { "type": "integer", "minimum": 1 },
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "refused": { "type": "string", "minLength": 1 },
+              "fix": { "type": "string", "minLength": 1 }
+            },
+            "required": ["state", "hostId", "pid"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "awaitReady",
+          "symbol": "runtime_processes_await_ready",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string", "minLength": 1 },
+              "hostId": { "type": "string", "minLength": 1 },
+              "pid": { "type": "integer", "minimum": 1 },
+              "timeoutMilliseconds": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["state", "hostId", "pid", "timeoutMilliseconds"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["environment"],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "recordRun",
           "symbol": "runtime_processes_record_run",
           "kind": "json",
