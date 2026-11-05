@@ -438,6 +438,84 @@ static void refuses_a_launch_when_the_session_host_of_a_loader_with_required_plu
     finish_world(&world);
 }
 
+static void starts_the_application_with_the_environment_its_session_host_publishes(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "published", 1);
+    world.fixture_ready = "{\"SPISOR_TEST\": \"1\"}";
+    world.layer_delay = "500";
+    program launcher;
+    const char *passed[] = {"published", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "published");
+    check_text(text_at(started, "spisorTest"), "1", "published variable seen by the application");
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "published");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+static void starts_the_application_unchanged_when_its_session_host_publishes_nothing(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "nothing-published", 1);
+    program launcher;
+    const char *passed[] = {"unchanged", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "unchanged");
+    CHECK(text_at(started, "spisorTest") == NULL);
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "unchanged");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+static void refuses_the_launch_with_the_refusal_its_session_host_publishes(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "refused", 1);
+    world.fixture_ready = "refuse";
+    program launcher;
+    const char *passed[] = {"refused", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    CHECK(program_finish(&launcher, 30000) == 1);
+    expect_contains(launcher.err, "the fixture session host refused", "published refusal");
+    expect_contains(launcher.err, "fix: the fixture fix", "published fix");
+    cJSON *never = application_start(&world, "refused");
+    CHECK(never == NULL);
+    cJSON_Delete(never);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+static void refuses_the_launch_when_its_session_host_never_becomes_ready(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "never-ready", 1);
+    world.fixture_ready = "none";
+    world.ready_timeout = "300";
+    program launcher;
+    const char *passed[] = {"unready", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    CHECK(program_finish(&launcher, 30000) == 1);
+    expect_contains(launcher.err, "the session host of " LOADER_ID " did not become ready within 0.3 seconds", "timeout");
+    cJSON *never = application_start(&world, "unready");
+    CHECK(never == NULL);
+    cJSON_Delete(never);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 static void refuses_a_background_host_that_records_no_start_before_anything_starts(void) {
     host_world world;
     start_world_at(&world, "launch", "no-start");
@@ -476,6 +554,10 @@ int main(void) {
     passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_number();
 #endif
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
+    starts_the_application_with_the_environment_its_session_host_publishes();
+    starts_the_application_unchanged_when_its_session_host_publishes_nothing();
+    refuses_the_launch_with_the_refusal_its_session_host_publishes();
+    refuses_the_launch_when_its_session_host_never_becomes_ready();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
     starts_the_session_host_on_a_javascript_runtime_found_again_when_the_recorded_one_is_gone();
     starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it();

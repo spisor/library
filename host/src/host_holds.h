@@ -7,8 +7,9 @@
 /**
  * Makes holder a holder of each of starts, an object {host id: start}, starting any that is not running;
  * 1, or 0 with *refusal set after releasing the ones already held, so a refusal leaves nothing held.
+ * When pids is not NULL it gains {host id: pid} for each host held, the process that runs it.
  */
-int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON **refusal);
+int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON *pids, cJSON **refusal);
 
 /** Drops holder from each of starts' hosts; never signals one, which stops itself once it sees no holder. */
 void host_release_all(const host_context *context, const cJSON *starts, double holder);

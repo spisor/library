@@ -25,18 +25,6 @@ static int is_text_list(const cJSON *list) {
     return 1;
 }
 
-static int is_environment(const cJSON *environment) {
-    if (!cJSON_IsObject(environment)) {
-        return 0;
-    }
-    for (const cJSON *variable = environment->child; variable != NULL; variable = variable->next) {
-        if (!cJSON_IsString(variable) || *variable->string == 0 || strchr(variable->string, '=') != NULL) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static const char *absolute_text(const cJSON *object, const char *name) {
     const char *text = runtime_catalog_text_member(object, name);
     return text != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, text) ? text : NULL;
@@ -56,7 +44,7 @@ static cJSON *read_start(const runtime_processes_request *request, runtime_detac
     if (start->arguments != NULL && !is_text_list(start->arguments)) {
         return runtime_processes_argument_refusal("start.arguments", "an array of strings, or leave it out");
     }
-    if (start->environment != NULL && !is_environment(start->environment)) {
+    if (start->environment != NULL && !runtime_processes_is_environment(start->environment)) {
         return runtime_processes_argument_refusal("start.environment",
                                                   "an object of strings whose names hold no =, or leave it out");
     }

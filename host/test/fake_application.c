@@ -123,7 +123,7 @@ static char *signal_file(const char *signals, const char *tag, const char *endin
 }
 
 /**
- * Records {pid, parent, argv} and, on Windows, consoleWindow and the pids attached to its console as
+ * Records {pid, parent, argv}, spisorTest when SPISOR_TEST is set, and, on Windows, consoleWindow and the pids attached to its console as
  * consoleProcesses, as <tag>.started, written whole under a temporary name first.
  */
 static void record_start(const char *signals, const char *tag, int count, char **arguments) {
@@ -139,6 +139,11 @@ static void record_start(const char *signals, const char *tag, int count, char *
         cJSON_AddItemToArray(console_processes, cJSON_CreateNumber((double)attached[index]));
     }
 #endif
+    char *published = environment_value("SPISOR_TEST");
+    if (published != NULL) {
+        cJSON_AddStringToObject(started, "spisorTest", published);
+        free(published);
+    }
     cJSON *argv = cJSON_AddArrayToObject(started, "argv");
     for (int index = 1; index < count; index++) {
         cJSON_AddItemToArray(argv, cJSON_CreateString(arguments[index]));

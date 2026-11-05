@@ -10,6 +10,7 @@
 #include "file_times.h"
 #include "host_context.h"
 #include "processes.h"
+#include "processes_ready.h"
 #include "spisor/file.h"
 
 #if defined(_WIN32)
@@ -51,6 +52,32 @@ static void record_start(const host_context *context, int count, char **argument
     }
 }
 
+static cJSON *ready_argument(const host_context *context, const char *host_id, const char *mode) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "state", context->state);
+    cJSON_AddStringToObject(argument, "hostId", host_id);
+    cJSON_AddNumberToObject(argument, "pid", host_process_id());
+    if (strcmp(mode, "refuse") == 0) {
+        cJSON_AddStringToObject(argument, "refused", "the fixture session host refused");
+        cJSON_AddStringToObject(argument, "fix", "the fixture fix");
+    } else if (mode[0] != 0) {
+        cJSON_AddItemToObject(argument, "environment", cJSON_Parse(mode));
+    }
+    return argument;
+}
+
+/** Publishes the ready record a session host does on every start, through the library as the real one does. */
+static void publish_ready(const host_context *context, const char *host_id) {
+    const char *configured = host_text(context->environment, "SPISOR_FIXTURE_READY");
+    const char *mode = configured == NULL ? "" : configured;
+    if (strcmp(mode, "none") == 0) {
+        return;
+    }
+    cJSON *refusal = NULL;
+    cJSON_Delete(host_call(runtime_processes_ready, ready_argument(context, host_id, mode), &refusal));
+    cJSON_Delete(refusal);
+}
+
 static int prune_says_exit(const host_context *context, const char *host_id, double interval) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", context->state);
@@ -87,6 +114,7 @@ static int run(int count, char **arguments) {
         pause_milliseconds(atol(delay));
     }
     record_start(&context, count, arguments);
+    publish_ready(&context, arguments[count - 1]);
     const char *configured = host_text(context.environment, "SPISOR_FIXTURE_INTERVAL");
     double interval = configured == NULL ? DEFAULT_INTERVAL : atof(configured);
     double started = runtime_now_milliseconds();

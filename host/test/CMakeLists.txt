@@ -1,5 +1,5 @@
 set(host_test_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>
-    $<TARGET_OBJECTS:runtime_install_test_hooks>)
+    $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook>)
 
 host_executable(forebay_host_test forebay-host-test ${PROJECT_SOURCE_DIR}/host/src/main.c $<TARGET_OBJECTS:host_objects>
     ${host_test_runtime_objects})

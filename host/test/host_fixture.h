@@ -310,6 +310,8 @@ typedef struct host_world {
     char *portable_secrets;
     int runs;
     const char *layer_delay;
+    const char *fixture_ready;
+    const char *ready_timeout;
 } host_world;
 
 static inline void start_world_at(host_world *world, const char *suite, const char *label) {
@@ -321,6 +323,8 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->portable_secrets = joined(world->base.root, "secrets.json");
     world->runs = 0;
     world->layer_delay = NULL;
+    world->fixture_ready = NULL;
+    world->ready_timeout = NULL;
     CHECK(spisor_make_directories(world->bin) == 1 && spisor_make_directories(world->signals) == 1 &&
           spisor_make_directories(world->streams) == 1);
 }
@@ -364,6 +368,12 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_STARTS", world->starts);
     if (world->layer_delay != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_START_DELAY", world->layer_delay);
+    }
+    if (world->fixture_ready != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_READY", world->fixture_ready);
+    }
+    if (world->ready_timeout != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_TEST_READY_TIMEOUT", world->ready_timeout);
     }
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "ComSpec");

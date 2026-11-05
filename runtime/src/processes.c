@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cache_folders.h"
 #include "cache_refusal.h"
@@ -31,6 +32,18 @@ cJSON *runtime_processes_argument_refusal(const char *member, const char *shape)
 cJSON *runtime_processes_state_refusal(const char *what, const char *path) {
     const char *parts[4] = {what, " at ", path, " could not be used"};
     return runtime_cache_refusal(parts, 4, WRITABLE_STATE_FIX);
+}
+
+int runtime_processes_is_environment(const cJSON *environment) {
+    if (!cJSON_IsObject(environment)) {
+        return 0;
+    }
+    for (const cJSON *variable = environment->child; variable != NULL; variable = variable->next) {
+        if (!cJSON_IsString(variable) || *variable->string == 0 || strchr(variable->string, '=') != NULL) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 double runtime_processes_pid_member(const cJSON *argument, const char *name) {
