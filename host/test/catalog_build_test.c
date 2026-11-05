@@ -28,7 +28,6 @@ static char *bundled_plugin(const char *id, const char *version, const char *ext
              extra_members == NULL ? "" : extra_members);
     write_in(directory, "plugin.json", manifest);
     write_in(directory, "index.js", "export default { activate() {} };\n");
-    write_in(directory, "package.json", "{\"type\":\"module\"}\n");
     return directory;
 }
 
@@ -390,6 +389,52 @@ static void refuses_a_loader_directory_holding_anything_beside_its_host_json_nam
     finish_case();
 }
 
+static void expect_marker_written(const char *rest, const char *label) {
+    char *text = text_in(base_folder, rest);
+    check_text(text, "{\"type\":\"module\"}\n", label);
+    free(text);
+}
+
+static void writes_the_esm_marker_beside_a_plugin_s_js_entry_itself(void) {
+    start_case("plugin-marker");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = bundled_plugin("greeter", "1.0.0", NULL);
+    CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
+    char *path = build(&inputs, &refusal);
+    CHECK(path != NULL);
+    expect_marker_written("catalog/files/greeter/1.0.0/package.json", "plugin marker");
+    cJSON *catalog = path == NULL ? NULL : read_back(path);
+    const cJSON *files = value_at(item_of(catalog, "greeter"), "versions/1.0.0/files");
+    CHECK(cJSON_HasObjectItem(files, "package.json") && cJSON_HasObjectItem(files, "index.js"));
+    cJSON_Delete(catalog);
+    cJSON_Delete(refusal);
+    free(path);
+    free(directory);
+    host_free_catalog_inputs(&inputs);
+    finish_case();
+}
+
+static void replaces_a_javascript_host_s_own_package_json_with_the_esm_marker(void) {
+    start_case("host-marker");
+    char *directory = in_base("scripted");
+    write_in(directory, "host.json",
+             "{\"id\": \"scripted-host\", \"version\": \"1.0.0\", \"runtime\": \"javascript\", \"entry\": \"lib/host.js\"}");
+    write_in(directory, "lib/host.js", "export {};\n");
+    write_in(directory, "lib/package.json", "{\"type\":\"commonjs\"}\n");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    CHECK(host_read_host_directory(&inputs, directory, NULL, &refusal));
+    char *path = build(&inputs, &refusal);
+    CHECK(path != NULL);
+    expect_marker_written("catalog/files/scripted-host/1.0.0/lib/package.json", "host marker replaces the bundle's");
+    cJSON_Delete(refusal);
+    free(path);
+    host_free_catalog_inputs(&inputs);
+    free(directory);
+    finish_case();
+}
+
 static void lists_no_application_for_a_host_json_that_has_none(void) {
     start_case("plain");
     char *directory = in_base("plain");
@@ -538,6 +583,8 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
 }
 
 int main(void) {
+    writes_the_esm_marker_beside_a_plugin_s_js_entry_itself();
+    replaces_a_javascript_host_s_own_package_json_with_the_esm_marker();
     writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver();
     lists_a_plugin_as_the_provider_of_the_install_method_its_manifest_names();
     lists_every_copied_file_with_its_real_hash_and_size();

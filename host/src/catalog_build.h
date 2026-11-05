@@ -5,7 +5,15 @@
 
 #include "cJSON.h"
 
-/** One built item for a local catalog, per platform when platform names one. */
+/** The package.json the catalog writes beside a .js entry, marking it as ESM. */
+#define MODULE_MARKER_TEXT "{\"type\":\"module\"}\n"
+/** The member of a files value that is an object rather than a path: the text the catalog writes as that file. */
+#define HOST_GENERATED_TEXT "text"
+
+/**
+ * One built item for a local catalog, per platform when platform names one. files maps each file key to
+ * the path it is copied from, or to {text} for a file the build writes itself.
+ */
 typedef struct catalog_input {
     const char *kind;
     char *id;

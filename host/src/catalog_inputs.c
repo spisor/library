@@ -129,7 +129,7 @@ static const char *entry_of(const cJSON *manifest, const char *path, cJSON **ref
     return entry->valuestring;
 }
 
-/** The module marker key a .js entry needs beside it, or NULL when its extension says ESM already. */
+/** The module marker key a .js entry needs beside it, or NULL when its extension says ESM already or memory runs out. */
 static char *module_marker_key(const char *entry) {
     size_t length = strlen(entry);
     if (length < 3 || strcmp(entry + length - 3, ".js") != 0) {
@@ -147,6 +147,54 @@ static char *module_marker_key(const char *entry) {
 
 static int add_file(cJSON *files, const char *key, const char *path) {
     return cJSON_AddStringToObject(files, key, path) != NULL;
+}
+
+/** {text: MODULE_MARKER_TEXT} under key, a file the catalog writes itself rather than copies. */
+static cJSON *generated_marker(const char *key) {
+    cJSON *holder = cJSON_CreateObject();
+    cJSON *marker = holder == NULL ? NULL : cJSON_AddObjectToObject(holder, key);
+    if (marker == NULL || cJSON_AddStringToObject(marker, HOST_GENERATED_TEXT, MODULE_MARKER_TEXT) == NULL) {
+        cJSON_Delete(holder);
+        return NULL;
+    }
+    cJSON_DetachItemViaPointer(holder, marker);
+    cJSON_Delete(holder);
+    return marker;
+}
+
+/** The index among files' members, kept in key order, at which key belongs. */
+static int sorted_index(const cJSON *files, const char *key) {
+    int index = 0;
+    for (const cJSON *file = files->child; file != NULL && strcmp(file->string, key) < 0; file = file->next) {
+        index++;
+    }
+    return index;
+}
+
+/**
+ * Adds the package.json marking a .js entry as ESM to files, written by the catalog itself and replacing
+ * any the bundle holds, in key order when sorted is set and else last; 1 also when entry needs none.
+ *
+ * @implNote A .js entry sits in the cache with no package.json above it, so without the marker Node would
+ * load it as ESM only through syntax detection, which Node 20 before 20.19 lacks.
+ */
+static int add_module_marker(cJSON *files, const char *entry, int sorted) {
+    char *key = module_marker_key(entry);
+    if (key == NULL) {
+        return 1;
+    }
+    cJSON *marker = generated_marker(key);
+    int added = marker != NULL;
+    if (added && cJSON_HasObjectItem(files, key)) {
+        added = cJSON_ReplaceItemInObjectCaseSensitive(files, key, marker);
+    } else if (added) {
+        added = cJSON_InsertItemInArray(files, sorted ? sorted_index(files, key) : cJSON_GetArraySize(files), marker);
+    }
+    if (!added) {
+        cJSON_Delete(marker);
+    }
+    free(key);
+    return added;
 }
 
 static int compare_names(const void *left, const void *right) {
@@ -268,17 +316,14 @@ int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJ
     char *path = NULL;
     cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, &path, refusal);
     const char *entry = manifest == NULL ? NULL : entry_of(manifest, path, refusal);
-    char *marker = entry == NULL ? NULL : module_marker_key(entry);
     catalog_input input = {"plugin", NULL, NULL, NULL, entry == NULL ? NULL : cJSON_CreateObject(), NULL, NULL, NULL};
     int added = input.files != NULL && add_bundled_file(input.files, root, entry, refusal) &&
-                (marker == NULL || add_bundled_file(input.files, root, marker, refusal)) &&
-                add_file(input.files, PLUGIN_MANIFEST, path);
+                add_module_marker(input.files, entry, 0) && add_file(input.files, PLUGIN_MANIFEST, path);
     if (added) {
         added = add_input(inputs, &input, manifest, NULL);
     } else {
         cJSON_Delete(input.files);
     }
-    free(marker);
     cJSON_Delete(manifest);
     free(path);
     free(root);
@@ -335,10 +380,12 @@ int host_read_host_directory(catalog_inputs *inputs, const char *directory, cons
     char *path = NULL;
     cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, &path, refusal);
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(manifest, "application");
+    const char *entry = manifest == NULL || application != NULL ? NULL : entry_of(manifest, path, refusal);
     int checked = manifest != NULL && names_runtime(manifest, path, refusal) &&
-                  (application == NULL ? entry_of(manifest, path, refusal) != NULL : check_standard(manifest, path, refusal));
+                  (application == NULL ? entry != NULL : check_standard(manifest, path, refusal));
     catalog_input input = {"host", NULL, NULL, NULL, checked ? every_file(root) : NULL, NULL, NULL, NULL};
-    int added = input.files != NULL && (application == NULL || only_the_manifest(input.files, root, refusal));
+    int added = input.files != NULL && (application == NULL ? add_module_marker(input.files, entry, 1)
+                                                            : only_the_manifest(input.files, root, refusal));
     if (added && application != NULL) {
         input.application = cJSON_Duplicate(application, 1);
         added = input.application != NULL;
