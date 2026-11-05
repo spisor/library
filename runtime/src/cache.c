@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 
+#include "cache_damaged.h"
 #include "cache_install.h"
 #include "cache_installed.h"
 #include "cache_marker.h"
@@ -107,6 +108,29 @@ static int32_t check(const cJSON *argument, uint8_t **out, size_t *out_len) {
     return runtime_catalog_answer(runtime_cache_check_version(directory), out, out_len);
 }
 
+static cJSON *damaged_answer(const char *cache, const char *platform) {
+    cJSON *damaged = runtime_cache_damaged_versions(cache, platform);
+    cJSON *answer = damaged == NULL ? NULL : cJSON_CreateObject();
+    if (answer == NULL || !runtime_catalog_attach(answer, "damaged", damaged)) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
+}
+
+static int32_t damaged(const cJSON *argument, uint8_t **out, size_t *out_len) {
+    const char *cache = nonempty_text(argument, "cache");
+    const char *platform = platform_member(argument);
+    if (cache == NULL) {
+        return runtime_catalog_refuse_argument("cache", "the cache folder's path", out, out_len);
+    }
+    if (platform == NULL) {
+        return runtime_catalog_refuse_argument("platform", "a platform key such as linux-x64, or leave it out", out,
+                                               out_len);
+    }
+    return runtime_catalog_answer(damaged_answer(cache, platform), out, out_len);
+}
+
 static int32_t platform(const cJSON *argument, uint8_t **out, size_t *out_len) {
     (void)argument;
     cJSON *answer = cJSON_CreateObject();
@@ -156,6 +180,10 @@ RUNTIME_EXPORT int32_t runtime_cache_installed(const uint8_t *in, size_t in_len,
 
 RUNTIME_EXPORT int32_t runtime_cache_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return serve(in, in_len, out, out_len, check);
+}
+
+RUNTIME_EXPORT int32_t runtime_cache_damaged(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return serve(in, in_len, out, out_len, damaged);
 }
 
 RUNTIME_EXPORT int32_t runtime_cache_platform(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

@@ -76,7 +76,7 @@ static void refuses_with_the_reinstall_fix_when_there_is_no_hint_never_guessing_
     finish_world(&world);
 }
 
-static void refuses_a_bundle_whose_file_no_longer_has_its_hash(void) {
+static void refuses_a_bundle_whose_file_no_longer_has_its_recorded_size(void) {
     host_world world;
     install_boot_world(&world, "damaged");
     char rest[256];
@@ -86,6 +86,35 @@ static void refuses_a_bundle_whose_file_no_longer_has_its_hash(void) {
     const char *arguments[] = {"forebay-host", "status", NULL};
     CHECK(run_boot(&world, &run, arguments) == 1);
     expect_contains(run.err, "forebay-host was not started", "damaged");
+    expect_contains(run.err, "but its install recorded", "names the size");
+    expect_contains(run.err, "fix: run forebay-host install --catalog <path or url> again", "reinstall fix");
+    program_free(&run);
+    finish_world(&world);
+}
+
+/** The carried forebay-boot copy with its last byte flipped: the start's size check passes, status's hashes do not. */
+static void starts_a_same_size_corruption_which_status_then_refuses(void) {
+    host_world world;
+    install_boot_world(&world, "same-size");
+    char rest[256];
+    snprintf(rest, sizeof rest, "bundles/forebay-host/1.0.0/%s/forebay-boot" EXECUTABLE_ENDING, runtime_platform_key());
+    char *carried = joined(world.base.cache, rest);
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(carried, &length);
+    CHECK(bytes != NULL && length > 0);
+    if (bytes != NULL && length > 0) {
+        bytes[length - 1] ^= 0xff;
+        CHECK(spisor_replace_file(carried, bytes, length) == 1);
+    }
+    program run;
+    const char *arguments[] = {"forebay-host", "status", NULL};
+    CHECK(run_boot(&world, &run, arguments) == 1);
+    expect_contains(run.out, "\"damaged\"", "status ran and lists what is damaged");
+    expect_contains(run.err, "forebay-boot" EXECUTABLE_ENDING, "names the file");
+    expect_contains(run.err, "has SHA-256", "found by its hash");
+    expect_contains(run.err, "fix: ", "with a fix");
+    free(bytes);
+    free(carried);
     program_free(&run);
     finish_world(&world);
 }
@@ -236,18 +265,91 @@ static void identifies_the_running_version_when_the_cache_is_named_by_its_short_
 }
 #endif
 
+#if defined(_WIN32)
+/**
+ * forebay-boot started with no console at all, as an application that spawns its hooks detached starts
+ * it: the forebay-host it boots gets a console with no window, which the application it launches
+ * inherits, rather than a console window of its own.
+ */
+static void gives_what_it_boots_no_console_window_when_it_has_no_console(void) {
+    host_world world;
+    install_boot_world(&world, "no-console");
+    program launcher;
+    const char *arguments[] = {"forebay-host", "launch", LOADER_ID, "windowless", "0", NULL};
+    char *stub = stub_of(&world);
+    world_start(&world, &launcher, stub, arguments, NULL, 1);
+    cJSON *started = await_application(&world, "windowless");
+    const cJSON *window = cJSON_GetObjectItemCaseSensitive(started, "consoleWindow");
+    CHECK(cJSON_IsFalse(window));
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "windowless");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    free(stub);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+static int lists_pid(const cJSON *pids, long pid) {
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, pids) {
+        if (cJSON_IsNumber(entry) && (long)entry->valuedouble == pid) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * forebay-boot started in a console with no window, as Node's spawn with windowsHide starts a hook: what it
+ * boots shares that console rather than getting one of its own, so the application forebay-host launches,
+ * which inherits forebay-host's, is attached to forebay-boot's console.
+ */
+static void shares_a_windowless_console_with_what_it_boots(void) {
+    host_world world;
+    install_boot_world(&world, "hidden-console");
+    program launcher;
+    const char *arguments[] = {"forebay-host", "launch", LOADER_ID, "shared", "0", NULL};
+    char *stub = stub_of(&world);
+    world_start(&world, &launcher, stub, arguments, NULL, 0);
+    cJSON *started = await_application(&world, "shared");
+    const cJSON *pids = cJSON_GetObjectItemCaseSensitive(started, "consoleProcesses");
+    if (!lists_pid(pids, launcher.child.pid)) {
+        char *printed = cJSON_PrintUnformatted(pids);
+        fprintf(stderr, "forebay-boot %ld is not attached to the application's console %s\n", launcher.child.pid, printed);
+        cJSON_free(printed);
+        check_failures++;
+    }
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(started, "consoleWindow")));
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "shared");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    free(stub);
+    program_free(&launcher);
+    finish_world(&world);
+}
+#endif
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
     runs_the_version_the_hint_names_with_its_arguments_passed_through();
     refuses_a_swept_version_with_the_reinstall_fix();
     refuses_with_the_reinstall_fix_when_there_is_no_hint_never_guessing_a_version();
-    refuses_a_bundle_whose_file_no_longer_has_its_hash();
+    refuses_a_bundle_whose_file_no_longer_has_its_recorded_size();
+    starts_a_same_size_corruption_which_status_then_refuses();
     refuses_a_start_that_names_no_host();
     keeps_the_forebay_host_version_a_launch_runs_through_a_sweep_until_it_ends();
 #if defined(_WIN32)
     records_the_forebay_host_version_a_background_command_runs_while_its_layer_runs();
     identifies_the_running_version_when_the_cache_is_named_by_its_short_name();
+    gives_what_it_boots_no_console_window_when_it_has_no_console();
+    shares_a_windowless_console_with_what_it_boots();
 #endif
     expect_user_path_unchanged(&guard);
     return check_summary("boot_stub_test");

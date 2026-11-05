@@ -104,7 +104,7 @@ target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
-set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
+set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
     src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
     src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
     src/alive_stamp.c)
@@ -150,10 +150,10 @@ target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_ui)
 
-set(runtime_install_sources src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
+set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
     src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
     src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
-    src/process_run.c)
+    src/process_run.c src/updates_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})
 target_link_libraries(runtime_install PUBLIC runtime_objects)
 target_include_directories(runtime_install PRIVATE ${PROJECT_SOURCE_DIR}/src)

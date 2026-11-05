@@ -52,7 +52,7 @@ static char *version_directory(const char *cache, const char *host_id, const cha
 }
 
 static int is_verified(const char *host_id, const char *directory, cJSON **refusal) {
-    cJSON *check = runtime_cache_check_version(directory);
+    cJSON *check = runtime_cache_check_version_sizes(directory);
     const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
     const cJSON *detail = cJSON_GetObjectItemCaseSensitive(check, "detail");
     int intact = cJSON_IsString(kind) && strcmp(kind->valuestring, "intact") == 0;

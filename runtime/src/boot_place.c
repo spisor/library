@@ -2,13 +2,13 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "boot_placement.h"
-
 #include <stdlib.h>
 
 #include "boot.h"
+#include "boot_resolve.h"
 #include "boot_stub.h"
-#include "host_output.h"
+#include "cache_refusal.h"
+#include "json_service.h"
 #include "paths.h"
 #include "platform_key.h"
 #include "spisor/file.h"
@@ -31,17 +31,12 @@ static char *joined(const char *const *segments, size_t count) {
 }
 
 /** The forebay-boot the hinted forebay-host build carries, or NULL when there is none. */
-static char *carried_stub(const host_context *context) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && (cJSON_AddStringToObject(argument, "cache", context->cache) == NULL ||
-                             cJSON_AddStringToObject(argument, "hostId", RUNTIME_BOOTED_HOST_ID) == NULL)) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
+static char *carried_stub(const char *cache) {
     cJSON *refusal = NULL;
-    cJSON *resolved = host_call(runtime_boot_resolve, argument, &refusal);
+    cJSON *resolved = runtime_resolve_booted_host(cache, RUNTIME_BOOTED_HOST_ID, runtime_platform_key(), &refusal);
     cJSON_Delete(refusal);
-    const char *segments[3] = {host_text(resolved, "directory"), runtime_platform_key(), STUB_FILE};
+    const char *segments[3] = {cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(resolved, "directory")),
+                               runtime_platform_key(), STUB_FILE};
     char *carried = segments[0] == NULL ? NULL : joined(segments, 3);
     cJSON_Delete(resolved);
     if (carried != NULL && !spisor_file_exists(carried)) {
@@ -66,15 +61,35 @@ static int copy_runnable(const char *source, const char *destination) {
     return copied;
 }
 
-cJSON *host_place_boot_stub(const host_context *context) {
-    char *stub = runtime_boot_stub_path(context->cache);
-    char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(context);
-    cJSON *refusal = NULL;
+static cJSON *placement(const char *stub, int placed) {
+    cJSON *answer = cJSON_CreateObject();
+    if (answer != NULL && (cJSON_AddBoolToObject(answer, "placed", placed) == NULL || cJSON_AddStringToObject(answer, "path", stub) == NULL)) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
+}
+
+static cJSON *place(const cJSON *argument, cJSON **refusal) {
+    const char *cache = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "cache"));
+    if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache)) {
+        *refusal = runtime_refusal("the argument carries no usable cache", "send {\"cache\": \"<absolute directory>\"}");
+        return NULL;
+    }
+    char *stub = runtime_boot_stub_path(cache);
+    char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(cache);
+    cJSON *answer = NULL;
     if (carried != NULL && !copy_runnable(carried, stub)) {
         const char *parts[2] = {"forebay-boot could not be put at ", stub};
-        refusal = host_refusal_of(parts, 2, PLACEMENT_FIX);
+        *refusal = runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
+    } else if (stub != NULL) {
+        answer = placement(stub, carried != NULL);
     }
     free(carried);
     free(stub);
-    return refusal;
+    return answer;
+}
+
+RUNTIME_EXPORT int32_t runtime_boot_place(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return runtime_serve_json(in, in_len, out, out_len, place);
 }

@@ -7,8 +7,7 @@
 #include <unistd.h>
 #endif
 
-#define HOST_VERSION "1.0.0"
-#define LIBRARY_VERSION "0.1.0"
+#define HOST_VERSION FOREBAY_HOST_VERSION
 #define SCRIPT_TIMEOUT 300000
 #define HOST_EXECUTABLE "forebay-host" EXECUTABLE_ENDING
 #define BOOT_EXECUTABLE "forebay-boot" EXECUTABLE_ENDING
@@ -57,55 +56,27 @@ static char *cached_file(const host_world *world, const char *name) {
     return joined(world->base.cache, rest);
 }
 
-static const char *base_name_of(const char *path) {
-    const char *slash = strrchr(path, '/');
-    const char *backslash = strrchr(path, '\\');
-    const char *last = slash > backslash ? slash : backslash;
-    return last == NULL ? path : last + 1;
-}
-
-/** forebay-host as a build directory catalog build reads: its host.json and this platform's executables. */
-static char *stage_forebay_host(const host_world *world) {
-    char *stage = joined(world->base.root, "stage/forebay-host");
-    char manifest[512];
-    snprintf(manifest, sizeof manifest,
-             "{\"id\": \"forebay-host\", \"version\": \"" HOST_VERSION "\", \"runtime\": \"native\", \"entry\": \"%s/" HOST_EXECUTABLE "\"}",
-             runtime_platform_key());
-    write_in(stage, "host.json", manifest);
-    char *executable = platform_key_of(HOST_EXECUTABLE);
-    char *boot = platform_key_of(BOOT_EXECUTABLE);
-    char *executable_path = joined(stage, executable);
-    char *boot_path = joined(stage, boot);
-    copy_file(FOREBAY_HOST_PATH, executable_path);
-    copy_file(FOREBAY_BOOT_PATH, boot_path);
-    write_in(stage, SPACED_KEY, SPACED_CONTENT);
-#if defined(_WIN32)
-    char *launcher = platform_key_of(LAUNCHER_EXECUTABLE);
-    char *launcher_path = joined(stage, launcher);
-    copy_file(RUNTIME_LAUNCHER_PATH, launcher_path);
-    free(launcher_path);
-    free(launcher);
-#endif
-    free(boot_path);
-    free(executable_path);
-    free(boot);
-    free(executable);
+/** The bundle directory the build staged under name, copied into the world so a test may add to it. */
+static char *staged_copy(const host_world *world, const char *name) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "stage/%s", name);
+    char *stage = joined(world->base.root, rest);
+    char *staged = joined(STAGED_BUNDLES_PATH, name);
+    copy_tree(staged, stage);
+    free(staged);
     return stage;
 }
 
-static char *stage_runtime_library(const host_world *world) {
-    char *stage = joined(world->base.root, "stage/runtime");
-    write_in(stage, "library.json", "{\"version\": \"" LIBRARY_VERSION "\"}");
-    char *library = joined(stage, base_name_of(RUNTIME_LIBRARY_PATH));
-    copy_file(RUNTIME_LIBRARY_PATH, library);
-    free(library);
+static char *stage_forebay_host(const host_world *world) {
+    char *stage = staged_copy(world, "forebay-host");
+    write_in(stage, SPACED_KEY, SPACED_CONTENT);
     return stage;
 }
 
 /** A local catalog of forebay-host and the runtime library for this platform, written by catalog build. */
 static void build_catalog(host_world *world) {
     char *host = stage_forebay_host(world);
-    char *library = stage_runtime_library(world);
+    char *library = staged_copy(world, "runtime");
     char host_argument[1200];
     char library_argument[1200];
     snprintf(host_argument, sizeof host_argument, "%s@%s", host, runtime_platform_key());
@@ -286,8 +257,10 @@ static void fetches_forebay_host_for_this_platform_and_runs_its_install(void) {
     free(spaced_text);
     char *stub = runtime_boot_stub_path(world.base.cache);
     CHECK(has_same_bytes(stub, FOREBAY_BOOT_PATH));
+    cJSON *library = json_in(STAGED_BUNDLES_PATH, "runtime/library.json");
     char marker[256];
-    snprintf(marker, sizeof marker, "libraries/runtime/" LIBRARY_VERSION "/%s/.installed.json", runtime_platform_key());
+    snprintf(marker, sizeof marker, "libraries/runtime/%s/%s/.installed.json", text_at(library, "version"), runtime_platform_key());
+    cJSON_Delete(library);
     CHECK(exists_in(world.base.cache, marker));
     cJSON *registration = registration_in(&world, "forebay-host");
     check_text(text_at(registration, "version"), HOST_VERSION, "registered at the catalog's version");

@@ -2,7 +2,7 @@
 #include <string.h>
 
 #include "application_choices.h"
-#include "boot_placement.h"
+#include "boot.h"
 #include "cache_refusal.h"
 #include "host_commands.h"
 #include "host_context.h"
@@ -117,6 +117,23 @@ static int merge_asked(cJSON *choices, const cJSON *report) {
     return chosen;
 }
 
+/** boot.place for the context's cache: NULL when forebay-boot is in place, else its refusal. */
+static cJSON *place_boot_stub(const host_context *context) {
+    cJSON *argument = cJSON_CreateObject();
+    if (argument != NULL && cJSON_AddStringToObject(argument, "cache", context->cache) == NULL) {
+        cJSON_Delete(argument);
+        argument = NULL;
+    }
+    cJSON *refusal = NULL;
+    cJSON *placed = host_call(runtime_boot_place, argument, &refusal);
+    cJSON_Delete(placed);
+    if (placed == NULL && refusal == NULL) {
+        const char *parts[1] = {"forebay-host ran out of memory"};
+        refusal = host_refusal_of(parts, 1, "close other programs, then run install again");
+    }
+    return placed == NULL ? refusal : NULL;
+}
+
 /**
  * Installs once with the flags' choices, then, when the report leaves applications missing and the
  * terminal answers, once more with what was chosen there.
@@ -141,7 +158,7 @@ static int install_through(const host_context *context, const cJSON *sources, co
         return host_refuse(refusal);
     }
     host_print_json(report);
-    cJSON *placed = host_place_boot_stub(context);
+    cJSON *placed = place_boot_stub(context);
     const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
     int code = placed != NULL ? host_refuse(placed) : HOST_EXIT_DONE;
     if (code == HOST_EXIT_DONE && cJSON_GetArraySize(unavailable) > 0) {

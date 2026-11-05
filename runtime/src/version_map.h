@@ -12,7 +12,7 @@ int runtime_map_set(cJSON *map, const char *id, const char *version);
 /** Every string entry of from set into into, as {...into, ...from} orders them. 1 on success. */
 int runtime_map_merge(cJSON *into, const cJSON *from);
 
-/** Whether the bundle version is installed in cache with every file still carrying its recorded hash. */
+/** Whether the bundle version is installed in cache with every file still carrying its recorded size and hash. */
 int runtime_bundle_is_intact(const char *cache, const char *id, const char *version);
 
 #endif

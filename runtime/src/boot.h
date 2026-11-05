@@ -30,4 +30,14 @@ RUNTIME_EXPORT int32_t runtime_boot_write(const uint8_t *in, size_t in_len, uint
  */
 RUNTIME_EXPORT int32_t runtime_boot_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * boot.place: {cache} copies the forebay-boot the hinted forebay-host version carries to cache/boot when
+ * none is there yet, made runnable, and answers {placed, path}; placed is false when one was already there
+ * or no hinted version carries one. A copy that cannot be written is refused.
+ *
+ * @implNote Never replaces a stub that is there: forebay-boot runs every command, and how a running one is
+ * replaced is the launcher update's to decide.
+ */
+RUNTIME_EXPORT int32_t runtime_boot_place(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 #endif

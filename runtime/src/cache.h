@@ -32,6 +32,14 @@ RUNTIME_EXPORT int32_t runtime_cache_installed(const uint8_t *in, size_t in_len,
  */
 RUNTIME_EXPORT int32_t runtime_cache_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * cache.damaged: {cache, platform?} answers {damaged: [{id, version, detail, fix, file?}]}, every installed
+ * bundle version and every library version for platform (this machine's when absent) that a start would
+ * refuse on its sizes or whose files no longer carry their hashes. Local and network-free, but it hashes
+ * every installed file, so status runs it and a start does not.
+ */
+RUNTIME_EXPORT int32_t runtime_cache_damaged(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 /** cache.platform: {} answers {platform}, this build's key as Node spells it, process.platform-process.arch. */
 RUNTIME_EXPORT int32_t runtime_cache_platform(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

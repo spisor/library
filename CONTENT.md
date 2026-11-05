@@ -87,14 +87,17 @@ Service), and that store may prompt the user.
 | `cache.install` | `cache`, `id`, `item`, `version`, `platform` | `{ id, version, directory, fetched, cached }`, after storing every file of the version by hash and writing `.installed.json` last |
 | `cache.installed` | `cache`, `platform` | `{ bundles, libraries }`, each id's versions whose install completed and whose files are present |
 | `cache.check` | `directory` | `{ kind }`, `absent`, `intact`, or `damaged` with `detail`, `fix` and `file?`; local and network-free |
+| `cache.damaged` | `cache`, `platform?` | `{ damaged }`, every installed version a start would refuse on its sizes or whose files no longer carry their hashes, each with `id`, `version`, `detail`, `fix` and `file?`; hashes every installed file, so status runs it and a start does not |
 | `cache.platform` | nothing | `{ platform }`, this build's key as Node spells it, for example `linux-x64` |
 | `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
 | `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed |
 | `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback |
+| `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, forebay-host first lending its catalog sources, and `install.application` updating each application an install method installed |
 | `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback |
 | `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
 | `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
 | `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
+| `boot.place` | `cache` | `{ placed, path }`, after copying the forebay-boot the hinted forebay-host version carries to `cache/boot` when none is there; never replaces one |
 | `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
 | `processes.release` | `state`, `hostId`, `holder` | `{ holders }`, the holders left; the host stops itself at its next prune |
 | `processes.prune` | `state`, `hostId`, `self`, `now`, `checkMilliseconds` | `{ exit }`, true when no holder is alive or another process is the host |

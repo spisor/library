@@ -3,7 +3,7 @@ if(NOT WIN32)
     find_package(Threads REQUIRED)
 endif()
 
-set(host_sources src/application_choices.c src/boot_placement.c src/catalog_inputs.c src/catalog_writer.c
+set(host_sources src/application_choices.c src/catalog_inputs.c src/catalog_writer.c
     src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c
     src/command_remove.c src/command_status.c src/command_update.c src/host_context.c src/host_holds.c src/host_options.c
     src/host_output.c src/host_service.c src/host_start.c src/loader_start.c src/own_executable.c src/own_run.c src/terminal_question.c src/windows_command.c)
@@ -59,5 +59,37 @@ spisor_strict_warnings(forebay_boot)
 if(WIN32)
     add_dependencies(forebay_host runtime_launcher)
 endif()
+
+set(FOREBAY_HOST_VERSION 0.1.0)
+
+if(WIN32)
+    set(stage_bundle_platform_sources src/host_arguments.c)
+else()
+    set(stage_bundle_platform_sources "")
+endif()
+add_executable(stage_bundle bundle/stage_bundle.c ${stage_bundle_platform_sources}
+    ${PROJECT_SOURCE_DIR}/runtime/src/directory_tree.c ${PROJECT_SOURCE_DIR}/runtime/src/platform_key.c)
+target_link_libraries(stage_bundle PRIVATE spisor_library)
+target_include_directories(stage_bundle PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
+    ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(stage_bundle PROPERTIES OUTPUT_NAME stage-bundle)
+spisor_strict_warnings(stage_bundle)
+
+function(stage_bundles target executable directory)
+    set(host_files $<TARGET_FILE:${executable}> $<TARGET_FILE:forebay_boot>)
+    if(WIN32)
+        list(APPEND host_files $<TARGET_FILE:runtime_launcher>)
+    endif()
+    add_custom_target(${target} ALL
+        COMMAND stage_bundle host ${directory}/forebay-host ${FOREBAY_HOST_VERSION} ${host_files}
+        COMMAND stage_bundle library ${directory}/runtime ${PROJECT_SOURCE_DIR}/runtime/library.json $<TARGET_FILE:runtime>
+        VERBATIM)
+    add_dependencies(${target} stage_bundle ${executable} forebay_boot runtime)
+    if(WIN32)
+        add_dependencies(${target} runtime_launcher)
+    endif()
+endfunction()
+
+stage_bundles(forebay_host_bundles forebay_host $<TARGET_FILE_DIR:forebay_host>/bundles)
 
 add_subdirectory(test)

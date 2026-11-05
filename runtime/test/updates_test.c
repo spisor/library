@@ -401,6 +401,35 @@ static void it_refetches_a_damaged_version_the_start_reported_even_one_the_lates
     finish_base();
 }
 
+static void strip_marker_sizes(const char *rest) {
+    char *text = text_in(cache, rest);
+    cJSON *marker = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    CHECK(cJSON_HasObjectItem(marker, "sizes"));
+    cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");
+    char *stripped = cJSON_PrintUnformatted(marker);
+    write_in(cache, rest, stripped);
+    cJSON_free(stripped);
+    cJSON_Delete(marker);
+    free(text);
+}
+
+/** A running version a start would refuse, here a marker recording no sizes, is installed again by the next check. */
+static void it_reinstalls_a_version_whose_marker_records_no_sizes(void) {
+    start_base("check-no-sizes");
+    list_plugin("a", "1.0.0", "1.0.0");
+    write_catalog();
+    cJSON_Delete(check_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}").tree);
+    record_references(TEST_HOST, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{}}");
+    strip_marker_sizes("bundles/a/1.0.0/.installed.json");
+    cJSON_Delete(check_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}").tree);
+    char *text = text_in(cache, "bundles/a/1.0.0/.installed.json");
+    cJSON *marker = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    CHECK(cJSON_HasObjectItem(marker, "sizes"));
+    cJSON_Delete(marker);
+    free(text);
+    finish_base();
+}
+
 static void it_refuses_an_item_no_catalog_source_lists(void) {
     start_base("check-unlisted");
     write_catalog();
@@ -819,6 +848,7 @@ int main(void) {
     it_records_a_version_it_could_not_install_as_refused_and_finishes();
     it_records_the_versions_scheduled_for_the_next_start_whether_or_not_they_install();
     it_refetches_a_damaged_version_the_start_reported_even_one_the_latest_does_not_name();
+    it_reinstalls_a_version_whose_marker_records_no_sizes();
     it_refuses_an_item_no_catalog_source_lists();
     it_sweeps_what_nothing_names_once_it_has_installed();
     it_reports_each_catalog_check();

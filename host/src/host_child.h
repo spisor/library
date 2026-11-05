@@ -31,7 +31,8 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
 /**
  * Runs executable with arguments in this process's place under this process's environment and never
  * returns, but with the refusal when it cannot start: execv on POSIX, so the pid stays and watch is never
- * called; on Windows, where a process cannot be replaced, as host_run_child with watch, exiting with its code.
+ * called; on Windows, where a process cannot be replaced, as host_run_child with watch, exiting with its code,
+ * except that a process with no console at all starts it with a console that has no window.
  */
 cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch);
 
