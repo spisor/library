@@ -365,8 +365,12 @@ static int enable_required_plugin(runtime_install_run *run, const catalog_loader
 }
 
 /**
- * Installs required plugin id referenced for the loader, then enables it; one the report records as unavailable,
- * for want of a version or a failed install, stays disabled, which a launch refuses by name. 0 only when memory runs out.
+ * Installs required plugin id referenced for the loader, then enables it; one the report records as unavailable
+ * stays disabled, which a launch refuses by name.
+ *
+ * @implNote The version is NULL only when memory ran out: first_unlisted_plugin has refused any id that is not a
+ * catalog item of kind plugin, the target carries no pin, and the catalog schema requires every item a latest
+ * version (ITEM_REQUIRED in catalog_schema.c, checked by check_latest). 0 only when memory runs out.
  */
 static int install_required_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
     cJSON *target = runtime_install_target(id);
@@ -374,10 +378,7 @@ static int install_required_plugin(runtime_install_run *run, const catalog_loade
     cJSON *refusal = NULL;
     int out_of_memory = target == NULL;
     const char *installed = NULL;
-    if (target != NULL && version == NULL) {
-        out_of_memory = !runtime_install_report_unavailable(run->report, id, "the catalog lists no installable version of the plugin",
-                                                            "add a catalog that lists a version of it, then install again");
-    } else if (version != NULL && !reference_version(run, loader->id, id, version, &refusal)) {
+    if (version != NULL && !reference_version(run, loader->id, id, version, &refusal)) {
         out_of_memory = !runtime_install_report_refusal(run->report, id, refusal);
     } else if (version != NULL) {
         installed = runtime_install_item(run->catalog, target, "plugin", run->cache, run->report, &out_of_memory);
