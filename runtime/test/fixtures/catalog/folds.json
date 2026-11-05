@@ -1,5 +1,5 @@
 {
-  "by": "forebay/host foldedDuplicate",
+  "by": "JavaScript's first.normalize(\"NFC\").toLowerCase() === second.normalize(\"NFC\").toLowerCase()",
   "vectors": [
     {
       "first": "A.js",

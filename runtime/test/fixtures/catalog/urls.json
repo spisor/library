@@ -1,5 +1,5 @@
 {
-  "by": "forebay/host resolveWithinOrigin",
+  "by": "Node's new URL(url, origin).href, null when that leaves the kind of source that served the index: any https url under an https index, and under a file index a file url inside the index's own directory with no host",
   "vectors": [
     {
       "url": "plugin.js",
@@ -264,11 +264,8 @@
     {
       "url": "https://exämple.com/p.js",
       "origin": "https://example.com/catalog/index.json",
-      "resolved": "https://xn--exmple-cua.com/p.js",
-      "c": {
-        "resolved": null,
-        "because": "the C resolver carries no IDNA mapping, so it refuses a host with a letter outside ASCII rather than convert it to punycode"
-      }
+      "resolved": null,
+      "because": "no IDNA mapping is carried, so a host with a letter outside ASCII is refused rather than converted to punycode"
     },
     {
       "url": "https://exa mple.com/p.js",
