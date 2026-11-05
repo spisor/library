@@ -52,13 +52,26 @@ static char *input_json(const cJSON *pairs, char **problem) {
     return text;
 }
 
+/** Whether host_id is a loader that records no start of its own, whose plugins run in its session host. */
+static int runs_in_session_host(const host_context *context, const char *host_id) {
+    cJSON *refusal = NULL;
+    cJSON *registration = host_registration(context, host_id, &refusal);
+    int loader = cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(registration, "application")) &&
+                 !cJSON_HasObjectItem(registration, "start");
+    cJSON_Delete(registration);
+    cJSON_Delete(refusal);
+    return loader;
+}
+
 /**
- * Runs the start the registration of host_id records with the arguments action, plugin, action and input,
- * as this process's child sharing its terminal, and answers its exit code.
+ * Runs the start the registration of host_id records, or a loader's session host when it records none,
+ * with the arguments action, plugin, action and input, as this process's child sharing its terminal, and
+ * answers its exit code.
  */
 static int run_action(const host_context *context, const char *host_id, const char *const *action_arguments) {
     cJSON *refusal = NULL;
-    cJSON *start = host_start_of(context, host_id, &refusal);
+    cJSON *start = runs_in_session_host(context, host_id) ? host_session_start_of(context, host_id, &refusal)
+                                                          : host_start_of(context, host_id, &refusal);
     if (start == NULL || !host_start_append_arguments(start, action_arguments, 4)) {
         cJSON_Delete(start);
         return host_refuse(refusal);

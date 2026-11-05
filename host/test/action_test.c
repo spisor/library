@@ -78,6 +78,19 @@ static void is_misused_by_a_repeated_input_name_a_missing_name_or_missing_argume
     finish_world(&world);
 }
 
+static void runs_the_session_host_of_a_loader_that_records_no_start(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "action", "session");
+    program run;
+    const char *arguments[] = {LOADER_ID, SESSION_PLUGIN, "render", NULL};
+    CHECK(run_action(&world, &run, arguments) == 0);
+    char *starts = await_starts_holding(&world, "action");
+    expect_contains(starts, "host.js " LOADER_ID " action " SESSION_PLUGIN " render", "the session host ran the action");
+    free(starts);
+    program_free(&run);
+    finish_world(&world);
+}
+
 static void refuses_a_host_that_is_not_registered(void) {
     host_world world;
     install_launch_world(&world, "action", "unregistered", 0);
@@ -98,6 +111,7 @@ int main(void) {
     keeps_an_equals_sign_inside_an_input_value();
     answers_the_exit_code_of_the_action();
     is_misused_by_a_repeated_input_name_a_missing_name_or_missing_arguments();
+    runs_the_session_host_of_a_loader_that_records_no_start();
     refuses_a_host_that_is_not_registered();
     expect_user_path_unchanged(&guard);
     return check_summary("action_test");
