@@ -291,6 +291,48 @@ static void gives_what_it_boots_no_console_window_when_it_has_no_console(void) {
     program_free(&launcher);
     finish_world(&world);
 }
+
+static int lists_pid(const cJSON *pids, long pid) {
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, pids) {
+        if (cJSON_IsNumber(entry) && (long)entry->valuedouble == pid) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * forebay-boot started in a console with no window, as Node's spawn with windowsHide starts a hook: what it
+ * boots shares that console rather than getting one of its own, so the application forebay-host launches,
+ * which inherits forebay-host's, is attached to forebay-boot's console.
+ */
+static void shares_a_windowless_console_with_what_it_boots(void) {
+    host_world world;
+    install_boot_world(&world, "hidden-console");
+    program launcher;
+    const char *arguments[] = {"forebay-host", "launch", LOADER_ID, "shared", "0", NULL};
+    char *stub = stub_of(&world);
+    world_start(&world, &launcher, stub, arguments, NULL, 0);
+    cJSON *started = await_application(&world, "shared");
+    const cJSON *pids = cJSON_GetObjectItemCaseSensitive(started, "consoleProcesses");
+    if (!lists_pid(pids, launcher.child.pid)) {
+        char *printed = cJSON_PrintUnformatted(pids);
+        fprintf(stderr, "forebay-boot %ld is not attached to the application's console %s\n", launcher.child.pid, printed);
+        cJSON_free(printed);
+        check_failures++;
+    }
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(started, "consoleWindow")));
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "shared");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    free(stub);
+    program_free(&launcher);
+    finish_world(&world);
+}
 #endif
 
 int main(void) {
@@ -307,6 +349,7 @@ int main(void) {
     records_the_forebay_host_version_a_background_command_runs_while_its_layer_runs();
     identifies_the_running_version_when_the_cache_is_named_by_its_short_name();
     gives_what_it_boots_no_console_window_when_it_has_no_console();
+    shares_a_windowless_console_with_what_it_boots();
 #endif
     expect_user_path_unchanged(&guard);
     return check_summary("boot_stub_test");

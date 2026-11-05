@@ -161,16 +161,17 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
 }
 
 /**
- * CREATE_NO_WINDOW when this process has no console window, else nothing, so the child inherits the
- * console it has.
+ * CREATE_NO_WINDOW when this process has no console at all, else nothing, so the child shares the console
+ * it has, a windowless one included.
  *
  * @implNote Without it Windows gives the console child of a console-less process a console window of its
- * own, which flashes open on a SessionStart run by an application that spawns its hooks detached.
- * GetConsoleWindow is also NULL in a console made with no window; the child then gets a windowless console
- * of its own rather than sharing that one, about 20 ms more per hook measured on Windows Debug.
+ * own, which flashes open on a SessionStart run by an application that spawns its hooks detached. The test
+ * is GetConsoleProcessList, not GetConsoleWindow: the latter is NULL in the windowless console a windowsHide
+ * spawn makes too, where a console of the child's own cost about 20 ms per hook on Windows Debug.
  */
 static DWORD replacing_flags(void) {
-    return GetConsoleWindow() == NULL ? CREATE_NO_WINDOW : 0;
+    DWORD attached[1];
+    return GetConsoleProcessList(attached, 1) == 0 ? CREATE_NO_WINDOW : 0;
 }
 
 cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch) {

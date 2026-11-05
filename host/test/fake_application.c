@@ -122,13 +122,22 @@ static char *signal_file(const char *signals, const char *tag, const char *endin
     return path;
 }
 
-/** Records {pid, parent, argv} and, on Windows, consoleWindow as <tag>.started, written whole under a temporary name first. */
+/**
+ * Records {pid, parent, argv} and, on Windows, consoleWindow and the pids attached to its console as
+ * consoleProcesses, as <tag>.started, written whole under a temporary name first.
+ */
 static void record_start(const char *signals, const char *tag, int count, char **arguments) {
     cJSON *started = cJSON_CreateObject();
     cJSON_AddNumberToObject(started, "pid", (double)own_id());
     cJSON_AddNumberToObject(started, "parent", (double)parent_id());
 #if defined(_WIN32)
     cJSON_AddBoolToObject(started, "consoleWindow", GetConsoleWindow() != NULL);
+    DWORD attached[64];
+    DWORD attached_count = GetConsoleProcessList(attached, 64);
+    cJSON *console_processes = cJSON_AddArrayToObject(started, "consoleProcesses");
+    for (DWORD index = 0; index < attached_count && index < 64; index++) {
+        cJSON_AddItemToArray(console_processes, cJSON_CreateNumber((double)attached[index]));
+    }
 #endif
     cJSON *argv = cJSON_AddArrayToObject(started, "argv");
     for (int index = 1; index < count; index++) {
