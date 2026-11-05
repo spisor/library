@@ -21,9 +21,10 @@
  * settings unless the user turned it off; each source not yet listed is recorded; forebay-host is
  * registered and its boot hint written. The loader of every installed or detected application is
  * installed and registered with its commands, which run forebay-boot, and its application entry, and
- * every background host a loader names is installed and registered. koffi and the javascript-host
- * bundle install only when something runs on them, and the pinned Node is acquired (javascript) only
- * when a plugin or background host this install would start runs on JavaScript.
+ * every background host a loader names is installed and registered. koffi, the apps library and the
+ * javascript-host bundle install only when something runs on them, the apps library named in the
+ * javascript-host's boot hint beside the runtime and koffi, and the pinned Node is acquired
+ * (javascript) only when a plugin or background host this install would start runs on JavaScript.
  *
  * An item that cannot be installed is reported under unavailable and the rest still install. A choice
  * naming an unknown application, or a method that is not offered, is refused before anything is

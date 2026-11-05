@@ -475,6 +475,7 @@ static inline void list_launch_catalog_requiring(host_world *world, const char *
     if (javascript_plugin) {
         list_plugin(base, SESSION_PLUGIN, "1.0.0", "javascript");
         list_library(base, "koffi", "2.16.3");
+        list_library(base, "apps", "0.1.2");
         cJSON *item = catalog_item(base, "javascript-host", "host", "javascript", "1.0.0");
         cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), "1.0.0");
         cJSON *files = cJSON_AddObjectToObject(entry, "files");
