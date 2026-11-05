@@ -13,4 +13,13 @@
  */
 cJSON *runtime_cache_damaged_versions(const char *cache, const char *platform);
 
+/**
+ * The {detail, fix, file?} of the version in directory when the size check or the hash check finds it
+ * damaged; NULL when it is intact or gone, *out_of_memory set when memory ran out.
+ *
+ * @implNote Gone covers a sweep removing the marker between the installed listing and this check: that
+ * version is not installed any more, which is no damage to report.
+ */
+cJSON *runtime_cache_version_damage(const char *directory, int *out_of_memory);
+
 #endif

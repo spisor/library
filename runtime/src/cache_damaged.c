@@ -7,9 +7,13 @@
 #include "cache_installed.h"
 #include "cache_marker.h"
 
-static int is_intact(const cJSON *check) {
+static int is_kind(const cJSON *check, const char *expected) {
     const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
-    return cJSON_IsString(kind) && strcmp(kind->valuestring, "intact") == 0;
+    return cJSON_IsString(kind) && strcmp(kind->valuestring, expected) == 0;
+}
+
+static int is_intact(const cJSON *check) {
+    return is_kind(check, "intact");
 }
 
 /** The first of the size check and the full hash check that finds the version in directory damaged, or an intact answer. */
@@ -22,17 +26,24 @@ static cJSON *verdict_of(const char *directory) {
     return runtime_cache_check_version(directory);
 }
 
-/** Adds {id, version, detail, fix, file?} to damaged when the version fails; 0 when memory runs out. */
-static int add_verdict(cJSON *damaged, const char *id, const char *version, const char *directory) {
-    cJSON *verdict = directory == NULL ? NULL : verdict_of(directory);
-    if (verdict == NULL) {
-        return 0;
-    }
-    if (is_intact(verdict)) {
+cJSON *runtime_cache_version_damage(const char *directory, int *out_of_memory) {
+    cJSON *verdict = verdict_of(directory);
+    *out_of_memory = verdict == NULL;
+    if (verdict == NULL || !is_kind(verdict, "damaged")) {
         cJSON_Delete(verdict);
-        return 1;
+        return NULL;
     }
     cJSON_DeleteItemFromObjectCaseSensitive(verdict, "kind");
+    return verdict;
+}
+
+/** Adds {id, version, detail, fix, file?} to damaged when the version is damaged; 0 when memory runs out. */
+static int add_verdict(cJSON *damaged, const char *id, const char *version, const char *directory) {
+    int out_of_memory = directory == NULL;
+    cJSON *verdict = directory == NULL ? NULL : runtime_cache_version_damage(directory, &out_of_memory);
+    if (verdict == NULL) {
+        return !out_of_memory;
+    }
     int added = cJSON_AddStringToObject(verdict, "version", version) != NULL && cJSON_AddStringToObject(verdict, "id", id) != NULL &&
                 cJSON_AddItemToArray(damaged, verdict);
     if (!added) {
