@@ -1,9 +1,8 @@
 """Writes runtime/src/catalog_fold_table.c: what one code point folds to, and each combining class.
 
 A catalog refuses two file keys of one version that name one file on a file system that ignores case
-and normalization, as Windows and macOS do. forebay/host compared key.normalize("NFC").toLowerCase();
-the C reader compares the canonical decomposition of the lowercased decomposition, which answers the
-same for every pair forebay/host's tests and the fixtures name. Hangul syllables decompose by formula
+and normalization, as Windows and macOS do. The C reader compares the canonical decomposition of the lowercased
+decomposition, which answers alike for every pair runtime/test/fixtures/catalog/folds.json names. Hangul syllables decompose by formula
 in the C code, so they are left out of the table.
 
 Run with any Python 3; the table follows that Python's Unicode version, printed into the file.

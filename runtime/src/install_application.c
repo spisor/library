@@ -138,8 +138,8 @@ static int record_version(const application_operation *request, const char *vers
 }
 
 /**
- * @implNote An update the method carried out is done whether or not its version could be recorded, as
- * forebay/host's recordVersion left it; the unrecorded version is noted so the caller can say so.
+ * @implNote An update the method carried out is done whether or not its version could be recorded; the
+ * unrecorded version is noted so the caller can say so.
  */
 static cJSON *answer_of(const char *operation, const char *version, int recorded) {
     cJSON *answer = cJSON_CreateObject();

@@ -9,8 +9,7 @@
  * state/bundles/runs/<host>/ names, and what each boot hint cache/hosts/<host>.json names, its libraries
  * and its host bundle under the host id. NULL when memory runs out.
  *
- * @implNote The formats are plan three's, read as forebay/host wrote them. A file that is not the shape
- * it should be names nothing. A run record whose process is gone, or which stopped being stamped for
+ * @implNote A file that is not the shape it should be names nothing. A run record whose process is gone, or which stopped being stamped for
  * three of its intervals, is deleted as it is read, by the same liveness a background host's holders
  * are judged by.
  */

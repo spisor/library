@@ -1,7 +1,5 @@
 #include "host_fixture.h"
 
-/* launch.test.ts */
-
 static void runs_the_application_with_its_arguments_answers_its_exit_code_and_the_background_host_stops(void) {
     host_world world;
     install_launch_world(&world, "launch", "exit-code", 0);
@@ -255,8 +253,6 @@ static void runs_the_application_when_the_loader_cannot_be_registered_again_sayi
     program_free(&launcher);
     finish_world(&world);
 }
-
-/* boot-executable.test.ts, the JS runtime install records */
 
 static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(void) {
     host_world world;

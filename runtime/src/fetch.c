@@ -28,8 +28,7 @@
 #endif
 
 /**
- * @implNote weivel's DOWNLOAD_DEADLINE_MS, which the TypeScript fetcher used: one overall deadline
- * standing for a 15 second connect plus a 60 second read.
+ * @implNote One overall deadline standing for a 15 second connect plus a 60 second read.
  */
 #define DOWNLOAD_DEADLINE_MILLISECONDS 75000u
 #define LONGEST_TIMEOUT_SECONDS 86400.0
@@ -348,8 +347,7 @@ static int32_t refuse_hash(const fetch_order *order, const char *actual, uint8_t
 }
 
 /**
- * @implNote As the TypeScript writeIntoPlace did: on Windows a rename onto a file another process has
- * open fails, and when two hosts share one cache that file is the very one being stored, so a
+ * @implNote On Windows a rename onto a file another process has open fails, and when two hosts share one cache that file is the very one being stored, so a
  * destination already holding these bytes is accepted.
  */
 static int move_into_place(fetch_files *files, const char *destination, const char *sha256) {

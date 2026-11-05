@@ -89,8 +89,7 @@ static int make_local(char *decoded) {
 #endif
 
 /**
- * @implNote Matches Node's fileURLToPath, which the TypeScript cache decoded with: an encoded "/" (and on
- * Windows an encoded "\") is refused rather than decoded, so a url can never name a different path than
+ * @implNote Matches Node's fileURLToPath: an encoded "/" (and on Windows an encoded "\") is refused rather than decoded, so a url can never name a different path than
  * the one a containment check saw, and on Windows the path must start with a drive letter.
  */
 static char *local_path_of(const char *url, const char *path, runtime_fetch_answer *answer) {

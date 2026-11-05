@@ -33,8 +33,6 @@ static int folder_exists(const char *rest) {
     return exists_in(cache, rest);
 }
 
-/* references.test.ts: the writing cases */
-
 static void it_writes_what_a_host_runs_and_what_it_scheduled_for_its_next_start_to_its_own_file(void) {
     start_base("references-write");
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
@@ -86,8 +84,6 @@ static void it_refuses_a_host_id_that_would_write_outside_the_bundles_folder(voi
     cJSON_Delete(empty);
     finish_base();
 }
-
-/* run-records.test.ts: removeHostReferences, and the case that needs a start */
 
 static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_references_are_removed(void) {
     start_base("references-remove");
@@ -146,8 +142,6 @@ static void it_records_its_run_as_a_live_record_of_this_process(void) {
     finish_base();
 }
 
-/* catalog-start.test.ts, through updates.apply */
-
 static void it_resolves_the_enabled_set_and_the_host_s_defaults_each_default_held_to_its_pin(void) {
     start_base("start-defaults");
     write_catalog();
@@ -195,8 +189,6 @@ static void it_records_the_host_s_own_references_beside_its_plugins(void) {
     finish_base();
 }
 
-/* cache-session.ts hostRunOf, through updates.apply */
-
 static void it_switches_to_the_scheduled_host_version_once_it_is_installed_intact_keeping_the_previous(void) {
     start_base("switch");
     write_catalog();
@@ -227,8 +219,6 @@ static void it_switches_to_the_scheduled_host_version_once_it_is_installed_intac
     cJSON_Delete(later.tree);
     finish_base();
 }
-
-/* boot-from-cache.test.ts hostLibraryReferences, through updates.apply */
 
 static void install_libraries(void) {
     list_library("runtime", "0.1.0", "0.1.0");
@@ -311,8 +301,6 @@ static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_install
     finish_base();
 }
 
-/* host-updates.test.ts, through updates.check then updates.apply */
-
 static void list_both_hosts(void) {
     list_host(LOADER, "1.0.0", "2.0.0");
     list_host(LOADER, "2.0.0", "2.0.0");
@@ -360,8 +348,6 @@ static void it_holds_a_host_to_its_pin(void) {
     runtime_free_host_references(&recorded);
     finish_base();
 }
-
-/* background.test.ts, through updates.check */
 
 static void it_records_a_version_it_could_not_install_as_refused_and_finishes(void) {
     start_base("check-refused");
@@ -524,8 +510,6 @@ static void it_loses_no_next_write_when_two_checks_of_one_host_run_at_once(void)
     }
 }
 
-/* plan four Review Focus 4: install A, schedule B, apply, and B runs */
-
 static void it_runs_the_scheduled_version_after_apply_and_a_sweep_keeps_what_the_hint_and_rollback_name(void) {
     start_base("focus-four");
     list_host(FOREBAY_HOST, "1.0.0", "1.0.0");
@@ -611,8 +595,6 @@ static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     expect_refusal(rollback_of("../escape", "a"), "outside", "rollback escape");
     finish_base();
 }
-
-/* fix round 1 */
 
 static void pause_milliseconds(unsigned milliseconds) {
 #if defined(_WIN32)
@@ -777,8 +759,6 @@ static void it_passes_on_the_refusal_of_a_service_it_calls(void) {
     cJSON_Delete(checked.tree);
     finish_base();
 }
-
-/* fix round 2 */
 
 static void it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from(void) {
     start_base("apply-filters-rolled-away");

@@ -382,7 +382,7 @@ static int rename_directory(const char *from, const char *to) {
  *
  * @implNote A rename onto a folder that exists fails, so of two installs acquiring at once the second
  * finds the first's intact runtime and accepts it; only a final folder that is not intact is removed
- * first. No lock is held (Ruling L): the staging folder is this process's alone.
+ * first. No lock is held: the staging folder is this process's alone.
  */
 static cJSON *publish(const acquisition *runtime) {
     if (rename_directory(runtime->staged.directory, runtime->final.directory) || is_unpacked(runtime, &runtime->final)) {

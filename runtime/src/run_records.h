@@ -43,8 +43,7 @@ runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, cons
  * order, deleting each run record whose process is gone, which stopped being stamped for three of its
  * intervals, or which is not the shape of one. NULL when memory runs out.
  *
- * @implNote The format is plan three's, read as forebay/host's liveRuns read it, and this is its one
- * reader: the cache sweep keeps what it answers.
+ * @implNote This is the format's one reader: the cache sweep keeps what it answers.
  */
 cJSON *runtime_live_runs(const char *state, double now);
 

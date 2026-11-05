@@ -563,7 +563,7 @@ static void expect_recorded_runtime(const install_base *base) {
 /**
  * Two installs at once over one base, asking for different plugins and both acquiring the JavaScript
  * runtime, end with one consistent registry and cache, neither failing and neither losing the other's
- * settings (Review Focus 4).
+ * settings.
  */
 static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(const char *self) {
     install_base base;

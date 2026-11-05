@@ -29,8 +29,8 @@ cJSON *runtime_read_boot_hint(const char *cache, const char *host_id);
  * 1 on success; 0 with *problem set as runtime_boot_hint_path sets it, or naming the file that could not
  * be written.
  *
- * @implNote Replaced at once, so a start never reads a half-written hint. The format is plan four's,
- * which cache.sweep reads.
+ * @implNote Replaced at once, so a start never reads a half-written hint. cache.sweep reads this format
+ * too, so the two change together.
  */
 int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON *libraries, const char *host,
                             char **problem);
@@ -39,9 +39,8 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
  * Makes version the host bundle the next start of host_id runs, keeping the libraries its hint names. 1
  * when that is recorded, and when host_id has no readable hint, which is left as it is.
  *
- * @implNote forebay/host's hintHostVersion also left a hint alone that named no runtime and koffi,
- * because only a JavaScript host could boot through one; a native host boots through a hint whose
- * libraries may be empty, so any readable hint is switched. A host with no hint at all has never been
+ * @implNote Any readable hint is switched, whatever libraries it names: a native host boots through a
+ * hint whose libraries may be empty. A host with no hint at all has never been
  * installed to boot through one, and none is invented for it.
  */
 int runtime_hint_host_version(const char *cache, const char *host_id, const char *version);

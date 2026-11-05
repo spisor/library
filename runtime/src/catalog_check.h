@@ -25,8 +25,7 @@ extern const runtime_catalog_schema_properties runtime_catalog_schema_property_s
 extern const size_t runtime_catalog_schema_property_set_count;
 
 /**
- * Whether document satisfies catalog.schema.json; when it does not, the refusal ajv's first error gives,
- * worded as forebay/host's readCatalog worded it.
+ * Whether document satisfies catalog.schema.json; when it does not, the refusal ajv's first error gives.
  *
  * @implNote A hand-written check, not a schema interpreter: it visits keywords in the order ajv's
  * compiled draft-07 validator does (keywords of any type, then type, then the type's own keywords:

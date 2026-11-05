@@ -245,7 +245,7 @@ static inline void install_listed(const char *id, const char *version) {
     cJSON_Delete(answer.tree);
 }
 
-/** A version folder carrying an empty completion marker, as forebay/host's tests make one. */
+/** A version folder carrying an empty completion marker. */
 static inline void mark_installed(const char *root, const char *id, const char *version) {
     char rest[512];
     if (strcmp(root, "libraries") == 0) {

@@ -15,8 +15,6 @@ static char *scratch_file(const char *name, const char *content) {
     return path;
 }
 
-/* terminal-question.test.ts */
-
 static void writes_the_question_to_the_terminal_and_answers_the_first_line_typed(void) {
     char *input = scratch_file("in", "2\nignored\n");
     char *output = scratch_file("out", "");
@@ -62,8 +60,6 @@ static void names_the_controlling_terminal_of_this_operating_system(void) {
     check_text(terminal.output, "/dev/tty", "posix output");
 #endif
 }
-
-/* missing-applications.test.ts: the terminal numbering and a typed skip */
 
 typedef struct scripted_answers {
     const char *const *answers;
@@ -140,8 +136,6 @@ static void asks_about_no_further_application_once_the_terminal_answers_nothing(
     cJSON_Delete(choices);
 }
 
-/* child.test.ts, commandShellInvocation */
-
 static void runs_a_batch_file_through_the_command_shell_with_each_argument_escaped_for_both_parses(void) {
     cJSON *arguments = parsed("[\"a b\",\"x&y\"]");
     char *line = host_command_shell_line("C:\\bin\\app.cmd", arguments);
@@ -173,8 +167,6 @@ static void doubles_a_run_of_backslashes_before_a_quote_and_at_the_end(void) {
     free(ending_line);
     cJSON_Delete(ending);
 }
-
-/* main.ts and host-main.ts, the options parseArgs read */
 
 static void reads_options_given_both_ways_and_refuses_an_unknown_one_or_a_missing_value(void) {
     char *given[] = {"--catalog", "one", "--plugin=a", "--plugin", "b"};

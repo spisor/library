@@ -22,12 +22,12 @@ typedef struct runtime_install_method {
 /**
  * The method called name, or NULL when none is built in.
  *
- * @implNote Plan seven adds the official methods; until then the test build alone carries fake.
+ * @implNote No official method is built in yet, so only the test build, which carries fake, has one.
  */
 const runtime_install_method *runtime_install_method_named(const char *name);
 
 /**
- * One detection of item through method, as forebay/host's detectThroughMethods answered one:
+ * One detection of item through method:
  * {method, item, package, options?, answer} or {method, item, refused}. mapped is {name, options?}.
  * NULL when memory runs out.
  */

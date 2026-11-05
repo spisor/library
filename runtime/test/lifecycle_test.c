@@ -332,7 +332,7 @@ static int registry_holds_only_its_lock(const scratch *place) {
 }
 
 /**
- * Proof 2 end to end: two hosts with commands, a collision, a shared state/bin, a user rename and
+ * Two hosts with commands, a collision, a shared state/bin, a user rename and
  * delete and a key in an application config, then both reversed and forgotten, leave the scratch
  * tree byte-identical to the one before.
  *

@@ -9,14 +9,14 @@
  * or with none when memory runs out.
  *
  * @implNote An install calls this before it stores a version and again once it is stored, so a sweep
- * keeps the version while its files arrive unlocked (Ruling L); the lock is held only around the read
+ * keeps the version while its files arrive unlocked; the lock is held only around the read
  * and the write, never around a download.
  */
 int runtime_install_reference_versions(const char *state, const char *host_id, const cJSON *versions, cJSON **refusal);
 
 /**
  * Under the registry lock, replaces what host_id runs in its references with run, keeping next and
- * rollback, as forebay/host's recordReferences did after an install. 1 on success, as above.
+ * rollback. 1 on success, as above.
  */
 int runtime_install_replace_run(const char *state, const char *host_id, const cJSON *run, cJSON **refusal);
 

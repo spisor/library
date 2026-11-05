@@ -190,7 +190,7 @@ static int plan_targets(const runtime_updates_request *request, check_plan *plan
 }
 
 /**
- * Each target that is not what runs, set into next (background.ts nextOf), leaving out a version a rollback
+ * Each target that is not what runs, set into next, leaving out a version a rollback
  * moved away from as the references hold it now, under the lock.
  */
 static int schedule(cJSON *next, const cJSON *targets, const runtime_host_references *recorded) {

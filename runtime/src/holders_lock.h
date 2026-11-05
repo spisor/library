@@ -10,8 +10,7 @@ typedef struct runtime_holders_guard runtime_holders_guard;
  * any live lock can hold out before it counts as stale, so a lock that can never be read or taken
  * refuses rather than waits for ever. Release with runtime_unlock_holders.
  *
- * @implNote The format is plan four's, the one forebay/host's withHoldersLock takes: a file created
- * only if absent, holding the locker's pid, a space and a token of its own. A lock whose pid is not
+ * @implNote The lock is a file created only if absent, holding the locker's pid, a space and a token of its own. A lock whose pid is not
  * alive, or that is older than ten seconds, is stale and taken: it is moved aside, and put back by a
  * hard link (which refuses to replace a newer lock) when what was moved is not the lock judged. An
  * empty lock is judged by its age alone, since its creator may not have written its token yet.

@@ -32,8 +32,6 @@ static void install_host(const char *version) {
     install_listed(HOST, version);
 }
 
-/* boot-hint.ts */
-
 static void it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back(void) {
     start_base("hint-round-trip");
     catalog_answer written = write_hint_through_boot(HOST, LIBRARIES, "1.0.0");
@@ -91,8 +89,6 @@ static void it_refuses_a_host_id_that_would_record_its_libraries_outside_the_hos
     CHECK(!exists_in(scratch, "escape.json"));
     finish_base();
 }
-
-/* boot-host.ts, through boot.resolve */
 
 static void it_resolves_the_executable_of_the_version_the_hint_names_with_the_arguments(void) {
     start_base("resolve-hinted");
@@ -234,8 +230,6 @@ static void it_refuses_an_installed_version_that_carries_no_executable_for_the_p
     finish_base();
 }
 
-/* boot-entry.test.ts: what a sweep leaves */
-
 static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     start_base("sweep-keeps-hint");
     install_host("1.0.0");
@@ -258,8 +252,6 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     cJSON_Delete(resolved.tree);
     finish_base();
 }
-
-/* fix round 1: boot.write with a state waits for the registry lock */
 
 typedef struct locked_write {
     catalog_answer answer;

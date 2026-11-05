@@ -81,8 +81,6 @@ static int catalog_written(void) {
     return exists_in(base_folder, "catalog/catalog.json");
 }
 
-/* local-catalog.test.ts */
-
 static void writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver(void) {
     start_case("latest");
     catalog_inputs inputs = {NULL, 0, 0};
@@ -347,8 +345,6 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
     finish_case();
 }
 
-/* local-catalog.test.ts, with a loader standard */
-
 #define STANDARD_MEMBERS                                                                                              \
     "\"application\": {\"id\": \"claude-code\", \"label\": \"Claude Code\", \"binary\": \"claude\", \"home\": "       \
     "{\"candidates\": [\"~/.claude\"]}, \"packages\": {\"npm\": \"@anthropic-ai/claude-code\"}}, \"pathCommands\": "  \
@@ -454,8 +450,6 @@ static void refuses_a_host_json_that_names_no_runtime(void) {
     free(directory);
     finish_case();
 }
-
-/* main.test.ts, through the command line */
 
 static int run_build(const char *const *arguments, program *run) {
     prepare_program(run, base_folder, "build");

@@ -67,7 +67,7 @@ static int start_references(const runtime_host_references *recorded, start_recor
 
 /**
  * The version of the host this start runs: the one its references schedule once installed intact, else
- * the one they record it running, else the one the caller runs (cache-session.ts hostRunOf).
+ * the one they record it running, else the one the caller runs.
  */
 static int switch_host(const runtime_updates_request *request, const runtime_host_references *recorded,
                        start_record *record) {
@@ -183,7 +183,7 @@ static int note_unrecorded(cJSON *unrecorded, char *problem) {
 
 /**
  * Resolves the libraries the host boots with for its next start and records them in its boot hint with
- * the host version this start runs (boot-from-cache.ts hostLibraryReferences).
+ * the host version this start runs.
  *
  * @implNote A hint naming a library that is not installed would refuse every boot, so no hint is written
  * until each one the host names resolves to an installed version. A hint that cannot be written is

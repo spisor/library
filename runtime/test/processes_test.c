@@ -88,7 +88,7 @@ static void remember_detached(double pid) {
     }
 }
 
-/** Kills every host a case started and left, as the TypeScript afterEach did. */
+/** Kills every host a case started and left. */
 static void finish_case(void) {
     for (size_t index = 0; index < detached_count; index++) {
         kill_pid((long)detached[index]);
@@ -220,8 +220,6 @@ static child_process exited_child(void) {
     return child;
 }
 
-/* holders.test.ts: the holders file */
-
 static void it_reads_back_what_was_written_and_reads_as_empty_when_there_is_none(void) {
     fresh_state("read-back");
     runtime_holders_record none = read_record();
@@ -290,8 +288,6 @@ static void it_refuses_a_host_id_that_would_place_the_file_outside_the_processes
     cJSON_Delete(answer.tree);
     finish_case();
 }
-
-/* holders.test.ts: the lock */
 
 static char *lock_path(void) {
     return joined(state, "processes/" HOST ".lock");
@@ -518,8 +514,6 @@ static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void)
     finish_case();
 }
 
-/* holders.test.ts: isHostRunning, as hold judges the recorded host */
-
 static void expect_kept(double running) {
     catalog_answer answer = hold(self_pid(), sleep_start());
     CHECK(answer.status == 0);
@@ -570,8 +564,6 @@ static void it_tells_this_process_alive_and_an_exited_one_dead(void) {
     CHECK(!runtime_process_is_alive((double)dead.pid));
     release_child(&dead);
 }
-
-/* background.test.ts: hold and release */
 
 static void it_starts_one_process_for_two_holders_and_stamps_it_alive(void) {
     fresh_state("two-holders");
@@ -713,8 +705,6 @@ static void it_starts_the_host_in_the_environment_and_directory_given(void) {
     finish_case();
 }
 
-/* self-exit.test.ts: prune */
-
 static int prune_exits(double self, double now) {
     catalog_answer answer = prune(self, now);
     CHECK(answer.status == 0);
@@ -782,8 +772,6 @@ static void it_exits_at_once_when_nothing_holds_it(void) {
     CHECK(!holders_file_present());
     finish_case();
 }
-
-/* launch.test.ts and background-run.test.ts: real holders and a real background host */
 
 typedef struct stamped_by {
     double pid;
@@ -1011,8 +999,6 @@ static void it_starts_inside_a_job_that_forbids_breaking_away_and_says_so(void) 
 }
 
 #endif
-
-/* run-records.test.ts: a start's run record through processes */
 
 static catalog_answer record_run(const char *host_id, const char *run, const char *record) {
     cJSON *argument = host_argument(host_id);
