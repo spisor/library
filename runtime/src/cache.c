@@ -5,6 +5,7 @@
 #include "cache_damaged.h"
 #include "cache_install.h"
 #include "cache_installed.h"
+#include "cache_locate.h"
 #include "cache_marker.h"
 #include "cache_sweep.h"
 #include "catalog_answer.h"
@@ -131,6 +132,19 @@ static int32_t damaged(const cJSON *argument, uint8_t **out, size_t *out_len) {
     return runtime_catalog_answer(damaged_answer(cache, platform), out, out_len);
 }
 
+static int32_t locate(const cJSON *argument, uint8_t **out, size_t *out_len) {
+    const char *cache = nonempty_text(argument, "cache");
+    const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(argument, "plugins");
+    if (cache == NULL) {
+        return runtime_catalog_refuse_argument("cache", "the cache folder's path", out, out_len);
+    }
+    if (!cJSON_IsObject(plugins)) {
+        return runtime_catalog_refuse_argument("plugins", "an object of plugin ids to the version each runs", out,
+                                               out_len);
+    }
+    return runtime_catalog_answer(runtime_cache_locate_plugins(cache, plugins), out, out_len);
+}
+
 static int32_t platform(const cJSON *argument, uint8_t **out, size_t *out_len) {
     (void)argument;
     cJSON *answer = cJSON_CreateObject();
@@ -184,6 +198,10 @@ RUNTIME_EXPORT int32_t runtime_cache_check(const uint8_t *in, size_t in_len, uin
 
 RUNTIME_EXPORT int32_t runtime_cache_damaged(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return serve(in, in_len, out, out_len, damaged);
+}
+
+RUNTIME_EXPORT int32_t runtime_cache_locate(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return serve(in, in_len, out, out_len, locate);
 }
 
 RUNTIME_EXPORT int32_t runtime_cache_platform(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

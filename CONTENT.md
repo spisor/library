@@ -88,6 +88,7 @@ Service), and that store may prompt the user.
 | `cache.installed` | `cache`, `platform` | `{ bundles, libraries }`, each id's versions whose install completed and whose files are present |
 | `cache.check` | `directory` | `{ kind }`, `absent`, `intact`, or `damaged` with `detail`, `fix` and `file?`; local and network-free |
 | `cache.damaged` | `cache`, `platform?` | `{ damaged }`, every installed version a start would refuse on its sizes or whose files no longer carry their hashes, each with `id`, `version`, `detail`, `fix` and `file?`; hashes every installed file, so status runs it and a start does not |
+| `cache.locate` | `cache`, `plugins` | `{ located, problems }`, each plugin's installed folder, `plugin.json` and the entry it names, or why that version cannot run (a file not at its recorded size, or `plugin.json` naming another version); sizes only, so a start runs it |
 | `cache.platform` | nothing | `{ platform }`, this build's key as Node spells it, for example `linux-x64` |
 | `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
 | `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed; a host with no registration is refused |

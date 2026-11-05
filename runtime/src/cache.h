@@ -40,6 +40,14 @@ RUNTIME_EXPORT int32_t runtime_cache_check(const uint8_t *in, size_t in_len, uin
  */
 RUNTIME_EXPORT int32_t runtime_cache_damaged(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
+/**
+ * cache.locate: {cache, plugins} answers {located, problems}: for each plugins id at the version it maps
+ * to, in id order, where that version is installed with its plugin.json and the entry it names, or the
+ * problem that stops it running (files not at their recorded sizes, or plugin.json naming another
+ * version). A version that is not installed is in neither. Checks sizes only, so a start can afford it.
+ */
+RUNTIME_EXPORT int32_t runtime_cache_locate(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
 /** cache.platform: {} answers {platform}, this build's key as Node spells it, process.platform-process.arch. */
 RUNTIME_EXPORT int32_t runtime_cache_platform(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

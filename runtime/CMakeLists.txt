@@ -104,7 +104,7 @@ target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
-set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_marker.c
+set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
     src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
     src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
     src/alive_stamp.c)
