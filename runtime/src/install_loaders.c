@@ -3,6 +3,7 @@
 
 #include "boot_stub.h"
 #include "cache_refusal.h"
+#include "config.h"
 #include "catalog_text.h"
 #include "hosts.h"
 #include "install_entries.h"
@@ -319,15 +320,42 @@ static cJSON *unlisted_plugin_refusal(const catalog_loader *loader, const char *
     return refusal;
 }
 
-/** Enables plugin id in the loader's home unless the loader's merged settings already do; 0 only when memory runs out. */
+static int is_mentioned_enabled(const cJSON *values, const char *id) {
+    const cJSON *plugin = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(values, "plugins"), id);
+    return cJSON_HasObjectItem(plugin, "enabled");
+}
+
+/** Reports the plugin the user turned off as unavailable, with the fix a launch gives; 0 only when memory runs out. */
+static int report_disabled_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
+    char *file = runtime_ecosystem_settings_file(loader->home);
+    const char *message_parts[5] = {"the plugin ", id, " that ", loader->id, " requires is disabled"};
+    const char *fix_parts[4] = {"set plugins.", id, ".enabled to true in ", file};
+    char *message = file == NULL ? NULL : runtime_cache_text(message_parts, 5);
+    char *fix = message == NULL ? NULL : runtime_cache_text(fix_parts, 4);
+    int reported = fix != NULL && runtime_install_report_unavailable(run->report, id, message, fix);
+    free(fix);
+    free(message);
+    free(file);
+    return reported;
+}
+
+/**
+ * Enables plugin id in the loader's home when no layer of its settings mentions its enabled, so a plugin the
+ * user turned off stays off and is reported instead; 0 only when memory runs out.
+ */
 static int enable_required_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
     runtime_install_settings settings = {loader->home, run->portable, run->state};
     cJSON *refusal = NULL;
     cJSON *values = runtime_install_settings_values(&settings, 1, 1, &refusal);
-    int done = values != NULL && runtime_install_plugin_enabled(values, id);
-    if (!done && values != NULL && runtime_install_enable_plugin(&settings, id, "application", &refusal)) {
+    int done;
+    if (values == NULL) {
+        done = refusal != NULL && runtime_install_report_refusal(run->report, id, refusal);
+        refusal = NULL;
+    } else if (is_mentioned_enabled(values, id)) {
+        done = runtime_install_plugin_enabled(values, id) || report_disabled_plugin(run, loader, id);
+    } else if (runtime_install_enable_plugin(&settings, id, "application", &refusal)) {
         done = runtime_install_add_text(cJSON_GetObjectItemCaseSensitive(run->report, "enabled"), id);
-    } else if (!done) {
+    } else {
         done = refusal != NULL && runtime_install_report_refusal(run->report, id, refusal);
         refusal = NULL;
     }
@@ -337,8 +365,8 @@ static int enable_required_plugin(runtime_install_run *run, const catalog_loader
 }
 
 /**
- * Installs required plugin id referenced for the loader, then enables it; an install the report records as
- * unavailable leaves it disabled, which a launch refuses by name. 0 only when memory runs out.
+ * Installs required plugin id referenced for the loader, then enables it; one the report records as unavailable,
+ * for want of a version or a failed install, stays disabled, which a launch refuses by name. 0 only when memory runs out.
  */
 static int install_required_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
     cJSON *target = runtime_install_target(id);
@@ -346,7 +374,10 @@ static int install_required_plugin(runtime_install_run *run, const catalog_loade
     cJSON *refusal = NULL;
     int out_of_memory = target == NULL;
     const char *installed = NULL;
-    if (version != NULL && !reference_version(run, loader->id, id, version, &refusal)) {
+    if (target != NULL && version == NULL) {
+        out_of_memory = !runtime_install_report_unavailable(run->report, id, "the catalog lists no installable version of the plugin",
+                                                            "add a catalog that lists a version of it, then install again");
+    } else if (version != NULL && !reference_version(run, loader->id, id, version, &refusal)) {
         out_of_memory = !runtime_install_report_refusal(run->report, id, refusal);
     } else if (version != NULL) {
         installed = runtime_install_item(run->catalog, target, "plugin", run->cache, run->report, &out_of_memory);

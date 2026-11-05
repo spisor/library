@@ -347,7 +347,7 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
 #define STANDARD_MEMBERS                                                                                              \
     "\"application\": {\"id\": \"claude-code\", \"label\": \"Claude Code\", \"binary\": \"claude\", \"home\": "       \
     "{\"candidates\": [\"~/.claude\"]}, \"packages\": {\"npm\": \"@anthropic-ai/claude-code\"}}, \"pathCommands\": "  \
-    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"], "      "\"plugins\": []"
+    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"], \"plugins\": []"
 
 static char *loader_directory(const char *application_override) {
     char *directory = in_base("loader");

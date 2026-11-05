@@ -31,10 +31,10 @@ int runtime_install_resolve_applications(runtime_install_run *run, cJSON **refus
 /**
  * Installs the loader of every application the report calls installed or detected and registers each as
  * a host of its own with the commands its host.json asks for and the entry its application starts it
- * through, then installs and registers every background host a registered loader names. Installs and enables in each loader's home the plugins its standard requires,
- * recording id and version of each in run->required_plugins; a loader whose required plugin no catalog lists
- * is refused. Answers the ids
- * of the background hosts registered, or NULL when memory runs out; what could not be done is reported.
+ * through, then installs and registers every background host a registered loader names. Installs and enables
+ * in each loader's home the plugins its standard requires, recording id and version of each in
+ * run->required_plugins; a loader whose required plugin no catalog lists is refused. Answers the ids of the
+ * background hosts registered, or NULL when memory runs out; what could not be done is reported.
  */
 cJSON *runtime_install_loaders(runtime_install_run *run);
 
