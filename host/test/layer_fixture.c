@@ -68,7 +68,8 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
 /**
  * A host's language layer as the tests need one, run as a native background host <host-id>, or as the JS
  * runtime the cache records, <entry> <host-id>: loops on processes.prune for the host id it was given, its
- * last argument, until it is told to exit. Asked -p for its version, as install asks a node, it answers one.
+ * last argument, until it is told to exit. SPISOR_FIXTURE_START_DELAY milliseconds pass before it records its
+ * start, as a slow process start would let them. Asked -p for its version, as install asks a node, it answers one.
  */
 static int run(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[1], "-p") == 0) {
@@ -80,6 +81,10 @@ static int run(int count, char **arguments) {
     if (count < 2 || !host_open_context(&context, &refusal)) {
         cJSON_Delete(refusal);
         return 2;
+    }
+    const char *delay = host_text(context.environment, "SPISOR_FIXTURE_START_DELAY");
+    if (delay != NULL) {
+        pause_milliseconds(atol(delay));
     }
     record_start(&context, count, arguments);
     const char *configured = host_text(context.environment, "SPISOR_FIXTURE_INTERVAL");

@@ -309,6 +309,7 @@ typedef struct host_world {
     char *starts;
     char *portable_secrets;
     int runs;
+    const char *layer_delay;
 } host_world;
 
 static inline void start_world_at(host_world *world, const char *suite, const char *label) {
@@ -319,6 +320,7 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->starts = joined(world->base.root, "starts.txt");
     world->portable_secrets = joined(world->base.root, "secrets.json");
     world->runs = 0;
+    world->layer_delay = NULL;
     CHECK(spisor_make_directories(world->bin) == 1 && spisor_make_directories(world->signals) == 1 &&
           spisor_make_directories(world->streams) == 1);
 }
@@ -360,6 +362,9 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     cJSON_AddStringToObject(environment, "FAKE_APPLICATION_SIGNALS", world->signals);
     cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_INTERVAL", INTERVAL_TEXT);
     cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_STARTS", world->starts);
+    if (world->layer_delay != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_START_DELAY", world->layer_delay);
+    }
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "ComSpec");
     copy_system_variable(environment, "PATHEXT");
@@ -669,6 +674,24 @@ static inline void expect_holders(const host_world *world, const char *id, long 
     snprintf(expected, sizeof expected, second == 0 ? "[%ld]" : "[%ld,%ld]", first, second);
     expect_json(cJSON_GetObjectItemCaseSensitive(holders, "holders"), expected, label);
     cJSON_Delete(holders);
+}
+
+/**
+ * What the layers started so far wrote to the starts file once it holds part, or what it holds after
+ * START_TIMEOUT; freed with free.
+ *
+ * @implNote A hold records the host's pid as it starts the process, before the layer runs at all, so a held
+ * host is no proof its layer has recorded its start yet; a slow start (macOS) shows it.
+ */
+static inline char *await_starts_holding(const host_world *world, const char *part) {
+    double started = runtime_now_milliseconds();
+    char *starts = text_in(world->starts, "");
+    while ((starts == NULL || strstr(starts, part) == NULL) && runtime_now_milliseconds() - started < START_TIMEOUT) {
+        free(starts);
+        pause_milliseconds(25);
+        starts = text_in(world->starts, "");
+    }
+    return starts;
 }
 
 #endif
