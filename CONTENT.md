@@ -90,10 +90,10 @@ Service), and that store may prompt the user.
 | `cache.damaged` | `cache`, `platform?` | `{ damaged }`, every installed version a start would refuse on its sizes or whose files no longer carry their hashes, each with `id`, `version`, `detail`, `fix` and `file?`; hashes every installed file, so status runs it and a start does not |
 | `cache.platform` | nothing | `{ platform }`, this build's key as Node spells it, for example `linux-x64` |
 | `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
-| `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed |
-| `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback |
+| `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed; a host with no registration is refused |
+| `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback; a host with no registration is refused |
 | `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, forebay-host first lending its catalog sources, and `install.application` updating each application an install method installed |
-| `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback |
+| `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback; a host with no registration is refused |
 | `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
 | `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
 | `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
@@ -106,7 +106,7 @@ Service), and that store may prompt the user.
 | `processes.removeRuns` | `state`, `hostId`, `record` | `{}`, after deleting `record`, or every run record of `hostId` |
 | `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
 | `hosts.list` | `places` (`state`) | what `registry.list` answers |
-| `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes, deleting its references, run records and holders, then forgetting it |
+| `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes and deleting its holders, then deleting its references, run records and boot hint and forgetting it under one hold of the registry lock |
 | `hosts.provenance` | `origin`, `application` (`binary`), `home`, `environment`, `now`? | an application's provenance, located at its binary on PATH, else at `home` |
 | `loader.check` | `standard` | `{ issues }`, each `{ path, detail, fix }`; none means a loader standard |
 | `loader.home` | `home`, `environment` | `{ home, source }`, where the application keeps its files |

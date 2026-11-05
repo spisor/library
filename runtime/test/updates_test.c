@@ -459,7 +459,7 @@ typedef struct concurrent_check {
 static void check_concurrently(concurrent_check *job) {
     char settings[256];
     snprintf(settings, sizeof settings, "{\"plugins\":{\"%s\":{\"enabled\":true}}}", job->plugin);
-    job->answer = check_with(TEST_HOST, settings_with(settings), "{}");
+    job->answer = check_unregistered(TEST_HOST, settings_with(settings), "{}");
 }
 
 #if defined(_WIN32)
@@ -475,6 +475,7 @@ static void *checking_entry(void *argument) {
 #endif
 
 static void run_two_checks(concurrent_check *jobs) {
+    register_host(TEST_HOST);
 #if defined(_WIN32)
     HANDLE threads[2];
     threads[0] = CreateThread(NULL, 0, checking_entry, &jobs[0], 0, NULL);
@@ -624,6 +625,7 @@ static void it_lets_a_start_finish_while_a_check_s_download_is_stalled(void) {
     write_catalog();
     runtime_fetch_stall_file_urls("/slow/", STALL_MILLISECONDS);
     concurrent_check job = {"slow", {0, NULL}};
+    register_host(TEST_HOST);
 #if defined(_WIN32)
     HANDLE thread = CreateThread(NULL, 0, checking_entry, &job, 0, NULL);
     CHECK(thread != NULL);

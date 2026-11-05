@@ -99,7 +99,7 @@ cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSO
         *refusal = runtime_cache_refusal(parts, 1, "pass item, the id of the bundle to roll back");
         return NULL;
     }
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+    runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
     cJSON *answer = guard == NULL ? NULL : roll_back(request, item, refusal);
     runtime_hosts_unlock(guard);
     return answer;

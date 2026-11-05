@@ -46,5 +46,7 @@ int32_t runtime_registry_register_first_provenance(const uint8_t *in, size_t in_
 RUNTIME_EXPORT int32_t runtime_registry_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_registry_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_registry_forget(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+/** registry.forget for a caller that already holds runtime_hosts_lock, which is not taken again. */
+int32_t runtime_registry_forget_locked(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

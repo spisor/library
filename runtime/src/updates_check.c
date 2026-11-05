@@ -226,7 +226,7 @@ static void release_rollbacks(cJSON *rolled_back_from, const cJSON *catalog) {
  * lost, and releases the rollbacks the catalog has moved past.
  */
 static int record_next(const runtime_updates_request *request, const check_plan *plan, cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_updates_lock(request, refusal);
+    runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
     runtime_host_references recorded =
         guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                       : runtime_read_host_references(request->state, request->host_id);

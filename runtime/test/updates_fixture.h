@@ -15,6 +15,8 @@
 #include "catalog_url.h"
 #include "check.h"
 #include "directory_tree.h"
+#include "host_references.h"
+#include "hosts.h"
 #include "paths.h"
 #include "scratch_directory.h"
 #include "sha256.h"
@@ -280,7 +282,18 @@ static inline void expect_hint(const char *host, const char *expected_json, cons
     expect_json_in(cache, rest, expected_json, label);
 }
 
-static inline catalog_answer apply_with(const char *host, cJSON *settings, const char *extra_json) {
+/** Registers host with the least a registration holds, unless it is registered or no plain file name. */
+static inline void register_host(const char *host) {
+    char rest[512];
+    snprintf(rest, sizeof rest, "hosts/%s.json", host);
+    if (runtime_is_plain_host_id(host) && !exists_in(state, rest)) {
+        char registration[600];
+        snprintf(registration, sizeof registration, "{\"id\":\"%s\"}", host);
+        write_in(state, rest, registration);
+    }
+}
+
+static inline catalog_answer apply_unregistered(const char *host, cJSON *settings, const char *extra_json) {
     cJSON *argument = parsed(extra_json);
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -289,7 +302,12 @@ static inline catalog_answer apply_with(const char *host, cJSON *settings, const
     return call_catalog(runtime_updates_apply, argument);
 }
 
-static inline catalog_answer check_with(const char *host, cJSON *settings, const char *extra_json) {
+static inline catalog_answer apply_with(const char *host, cJSON *settings, const char *extra_json) {
+    register_host(host);
+    return apply_unregistered(host, settings, extra_json);
+}
+
+static inline catalog_answer check_unregistered(const char *host, cJSON *settings, const char *extra_json) {
     cJSON *argument = parsed(extra_json);
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -299,7 +317,13 @@ static inline catalog_answer check_with(const char *host, cJSON *settings, const
     return call_catalog(runtime_updates_check, argument);
 }
 
+static inline catalog_answer check_with(const char *host, cJSON *settings, const char *extra_json) {
+    register_host(host);
+    return check_unregistered(host, settings, extra_json);
+}
+
 static inline catalog_answer rollback_of(const char *host, const char *item) {
+    register_host(host);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);

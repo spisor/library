@@ -258,12 +258,12 @@ cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON *
         return NULL;
     }
     start_record record = {{NULL, NULL, NULL, NULL}, NULL, cJSON_CreateObject(), cJSON_CreateArray()};
-    runtime_hosts_guard *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock(request, refusal);
+    runtime_hosts_guard *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock_registered(request, refusal);
     int recorded = guard != NULL && record_start(request, &plan, &record, refusal);
-    runtime_hosts_unlock(guard);
     char *run_record = recorded ? runtime_record_run(request->state, request->host_id, record.references.run,
                                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS)
                                 : NULL;
+    runtime_hosts_unlock(guard);
     cJSON *answer = run_record == NULL ? NULL : started(&record, run_record);
     if (recorded && run_record == NULL) {
         *refusal = runtime_updates_unrecorded(unrecorded_run(request));

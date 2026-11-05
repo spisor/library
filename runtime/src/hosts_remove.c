@@ -10,6 +10,7 @@
 #include "holders.h"
 #include "holders_lock.h"
 #include "host_references.h"
+#include "hosts_lock.h"
 #include "hosts_request.h"
 #include "json_service.h"
 #include "paths.h"
@@ -78,7 +79,7 @@ static cJSON *refuse_leftover(const removal *request, const char *what) {
 }
 
 static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal) {
-    cJSON *forgotten = runtime_call_or_refuse(runtime_registry_forget, host_request(request, "id"), refusal);
+    cJSON *forgotten = runtime_call_or_refuse(runtime_registry_forget_locked, host_request(request, "id"), refusal);
     cJSON *flag = cJSON_DetachItemFromObjectCaseSensitive(forgotten, "forgotten");
     cJSON_Delete(forgotten);
     if (flag == NULL || !cJSON_AddItemToObject(answer, "forgotten", flag)) {
@@ -89,22 +90,42 @@ static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal
     return answer;
 }
 
+/**
+ * Deletes what the host recorded in state and cache and then its registration, all under one hold of the
+ * registry lock.
+ *
+ * @implNote An update write refuses a host with no registration under the same lock, so a copy of the
+ * host still running cannot record anything again between these deletions and the forget.
+ */
+static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, cJSON **refusal) {
+    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+    if (guard == NULL) {
+        *refusal = refuse_leftover(request, "references file, run records and boot hint");
+    } else if (!runtime_remove_host_references(request->state, request->id)) {
+        *refusal = refuse_leftover(request, "references file or a run record");
+    } else if (!remove_boot_hint(request)) {
+        *refusal = refuse_leftover(request, "boot hint");
+    } else {
+        answer = forget_into(request, answer, refusal);
+        runtime_hosts_unlock(guard);
+        return answer;
+    }
+    runtime_hosts_unlock(guard);
+    cJSON_Delete(answer);
+    return NULL;
+}
+
 static cJSON *remove_host(const removal *request, cJSON **refusal) {
     cJSON *answer = runtime_call_or_refuse(runtime_changes_reverse_json, host_request(request, "host"), refusal);
     if (answer == NULL) {
         return NULL;
     }
-    if (!runtime_remove_host_references(request->state, request->id)) {
-        *refusal = refuse_leftover(request, "references file or a run record");
-    } else if (!remove_holders(request)) {
+    if (!remove_holders(request)) {
         *refusal = refuse_leftover(request, "holders file");
-    } else if (!remove_boot_hint(request)) {
-        *refusal = refuse_leftover(request, "boot hint");
-    } else {
-        return forget_into(request, answer, refusal);
+        cJSON_Delete(answer);
+        return NULL;
     }
-    cJSON_Delete(answer);
-    return NULL;
+    return remove_recorded_and_forget(request, answer, refusal);
 }
 
 static cJSON *remove_for(const cJSON *argument, cJSON **refusal) {

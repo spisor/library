@@ -154,6 +154,9 @@ add_dependencies(install_runtime_test node_probe)
 set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
     RESOURCE_LOCK user_path_value)
 
+runtime_test(host_removal_test $<TARGET_OBJECTS:runtime_updates> ${runtime_hosts_test_objects})
+target_link_libraries(host_removal_test PRIVATE ${runtime_fetch_libraries})
+
 add_executable(settings_lock_test settings_lock_test.c $<TARGET_OBJECTS:runtime_secret_store>
     $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
 target_link_libraries(settings_lock_test PRIVATE runtime_objects_config_test_hooks ${runtime_secret_store_libraries}
