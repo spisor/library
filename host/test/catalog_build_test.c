@@ -435,6 +435,24 @@ static void replaces_a_javascript_host_s_own_package_json_with_the_esm_marker(vo
     finish_case();
 }
 
+static void refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replace(void) {
+    const char *entries[] = {"plugin.json", "Package.json", "dist/package.json"};
+    for (size_t index = 0; index < sizeof entries / sizeof entries[0]; index++) {
+        start_case("replaced-entry");
+        char *directory = in_base("replaced");
+        char manifest[256];
+        snprintf(manifest, sizeof manifest, "{\"id\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"%s\"}", entries[index]);
+        write_in(directory, "plugin.json", manifest);
+        catalog_inputs inputs = {NULL, 0, 0};
+        cJSON *refusal = NULL;
+        CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
+        expect_refusal_naming(refusal, "would replace", entries[index]);
+        host_free_catalog_inputs(&inputs);
+        free(directory);
+        finish_case();
+    }
+}
+
 static void lists_no_application_for_a_host_json_that_has_none(void) {
     start_case("plain");
     char *directory = in_base("plain");
@@ -583,6 +601,7 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
 }
 
 int main(void) {
+    refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replace();
     writes_the_esm_marker_beside_a_plugin_s_js_entry_itself();
     replaces_a_javascript_host_s_own_package_json_with_the_esm_marker();
     writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver();
