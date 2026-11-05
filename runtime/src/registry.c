@@ -437,12 +437,12 @@ static int32_t register_with(const registry_request *request, int keep_stored_pr
     if (defect != NULL) {
         return refuse_registration(defect, out, out_len);
     }
-    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+    spisor_lock *guard = runtime_hosts_lock(request->state);
     if (guard == NULL) {
         return refuse_unlocked(request->state, out, out_len);
     }
     int32_t status = register_locked(request, given, keep_stored_provenance, out, out_len);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return status;
 }
 
@@ -655,12 +655,12 @@ static int32_t forget_host(const registry_request *request, uint8_t **out, size_
     if (id == NULL) {
         return refuse_id(out, out_len);
     }
-    runtime_hosts_guard *guard = runtime_hosts_lock(request->state);
+    spisor_lock *guard = runtime_hosts_lock(request->state);
     if (guard == NULL) {
         return refuse_unlocked(request->state, out, out_len);
     }
     int32_t status = forget_locked(request, id, out, out_len);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return status;
 }
 

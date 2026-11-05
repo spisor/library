@@ -174,13 +174,13 @@ static int32_t sweep(const cJSON *argument, uint8_t **out, size_t *out_len) {
     if (state == NULL) {
         return runtime_catalog_refuse_argument("state", "the state folder's path", out, out_len);
     }
-    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    spisor_lock *guard = runtime_hosts_lock(state);
     if (guard == NULL) {
         return spisor_fail("the registry lock under the state folder could not be taken",
                            "check that SPISOR_STATE names a writable folder, then try again", out, out_len);
     }
     cJSON *answer = swept(cache, state);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return runtime_catalog_answer(answer, out, out_len);
 }
 

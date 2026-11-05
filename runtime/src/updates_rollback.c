@@ -123,9 +123,9 @@ cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSO
         free(kept);
         kept = NULL;
     }
-    runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
+    spisor_lock *guard = runtime_updates_lock_registered(request, refusal);
     cJSON *answer = guard == NULL ? NULL : roll_back(request, item, kept, refusal);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     free(kept);
     return answer;
 }

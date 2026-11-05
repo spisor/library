@@ -640,11 +640,11 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
-    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    spisor_lock *guard = runtime_hosts_lock(state);
     runtime_changes_outcome outcome =
         guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
                       : runtime_changes_apply_held(state, host, change);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     return outcome;
 }
 

@@ -23,7 +23,7 @@ cJSON *runtime_updates_check_for(const runtime_updates_request *request, cJSON *
 cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSON **refusal);
 
 /** The registry lock under request's state, or NULL with *refusal saying it could not be taken. */
-runtime_hosts_guard *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal);
+spisor_lock *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal);
 
 /**
  * The registry lock, taken only while request's host is registered: NULL with *refusal set when it is
@@ -32,7 +32,7 @@ runtime_hosts_guard *runtime_updates_lock(const runtime_updates_request *request
  * @implNote Every update write takes this, so a host still running after hosts.remove deleted its state
  * under the same lock cannot record references, run records or hints the sweep would keep for ever.
  */
-runtime_hosts_guard *runtime_updates_lock_registered(const runtime_updates_request *request, cJSON **refusal);
+spisor_lock *runtime_updates_lock_registered(const runtime_updates_request *request, cJSON **refusal);
 
 /** The refusal of a references file that could not be written, taking problem, which it frees. */
 cJSON *runtime_updates_unrecorded(char *problem);

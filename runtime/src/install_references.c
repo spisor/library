@@ -34,7 +34,7 @@ static int replace_run(runtime_host_references *references, const cJSON *run) {
 
 static int change_under_lock(const char *state, const char *host_id, const cJSON *versions, run_change change,
                              cJSON **refusal) {
-    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    spisor_lock *guard = runtime_hosts_lock(state);
     if (guard == NULL) {
         *refusal = runtime_refusal("the registry lock under the state folder could not be taken", STATE_FIX);
         return 0;
@@ -44,7 +44,7 @@ static int change_under_lock(const char *state, const char *host_id, const cJSON
     int recorded = references.run != NULL && references.next != NULL && change(&references, versions) &&
                    runtime_record_host_references(state, host_id, &references, &problem);
     runtime_free_host_references(&references);
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
     if (!recorded && problem != NULL) {
         *refusal = runtime_refusal(problem, STATE_FIX);
     }

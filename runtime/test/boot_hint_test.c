@@ -290,7 +290,7 @@ static void wait_a_moment(void) {
 static void it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free(void) {
     start_base("hint-locked");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    runtime_hosts_guard *guard = runtime_hosts_lock(state);
+    spisor_lock *guard = runtime_hosts_lock(state);
     CHECK(guard != NULL);
     locked_write job = {{0, NULL}};
 #if defined(_WIN32)
@@ -302,7 +302,7 @@ static void it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free(vo
 #endif
     wait_a_moment();
     expect_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}", "still waiting for the lock");
-    runtime_hosts_unlock(guard);
+    spisor_unlock(guard);
 #if defined(_WIN32)
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);
