@@ -23,6 +23,7 @@
 
 #define RUNTIME_LIBRARY_ID "runtime"
 #define KOFFI_LIBRARY_ID "koffi"
+#define APPS_LIBRARY_ID "apps"
 #define CATALOG_FIX "check the catalog path or url, then install again"
 #define ECOSYSTEM_FIX                                                                                           \
     "send {\"sources\": [{\"kind\": \"local\", \"path\"} | {\"kind\": \"https\", \"url\"}], \"places\": "         \
@@ -30,7 +31,7 @@
     "<method>}, \"defaults\"?: [<plugin id>], \"requested\"?: [<plugin id>], \"platform\"?: \"<os>-<arch>\"}"
 
 static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, KOFFI_LIBRARY_ID,
-                                             RUNTIME_JAVASCRIPT_HOST_ID};
+                                             APPS_LIBRARY_ID, RUNTIME_JAVASCRIPT_HOST_ID};
 
 /** What one ecosystem install has settled so far, beside the run every step shares. */
 typedef struct ecosystem {
@@ -349,8 +350,10 @@ static int acquire_javascript(ecosystem *install) {
 }
 
 /**
- * @implNote The JavaScript host and koffi come only with something that runs on them, and Node only with
- * something this install would start on it: OpenCode's in-process entry runs in OpenCode's own runtime.
+ * @implNote The JavaScript host, koffi and the apps library come only with something that runs on them,
+ * and Node only with something this install would start on it: OpenCode's in-process entry runs in
+ * OpenCode's own runtime. The apps library comes with every JavaScript host because any plugin it runs
+ * may consume the services the host offers from it.
  */
 static int install_javascript(ecosystem *install, const cJSON *background) {
     int starts = runs_javascript(install, background);
@@ -358,10 +361,10 @@ static int install_javascript(ecosystem *install, const cJSON *background) {
         return 1;
     }
     static const char *const host_ids[1] = {RUNTIME_JAVASCRIPT_HOST_ID};
-    static const char *const library_ids[1] = {KOFFI_LIBRARY_ID};
-    const char *libraries[2] = {RUNTIME_LIBRARY_ID, KOFFI_LIBRARY_ID};
-    return install_pinned(install, library_ids, 1, "library") && install_pinned(install, host_ids, 1, "host") &&
-           write_hint(install, RUNTIME_JAVASCRIPT_HOST_ID, libraries, 2) && (!starts || acquire_javascript(install));
+    static const char *const library_ids[2] = {KOFFI_LIBRARY_ID, APPS_LIBRARY_ID};
+    const char *libraries[3] = {RUNTIME_LIBRARY_ID, KOFFI_LIBRARY_ID, APPS_LIBRARY_ID};
+    return install_pinned(install, library_ids, 2, "library") && install_pinned(install, host_ids, 1, "host") &&
+           write_hint(install, RUNTIME_JAVASCRIPT_HOST_ID, libraries, 3) && (!starts || acquire_javascript(install));
 }
 
 static int record_run(ecosystem *install) {
