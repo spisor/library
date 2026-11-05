@@ -26,6 +26,7 @@ static void reports_every_registered_host_and_what_the_cache_holds(void) {
                                                                                    "bundles"),
                                                  LOADER_ID),
                 "[\"1.0.0\"]", "installed loader");
+    expect_json(cJSON_GetObjectItemCaseSensitive(status, "damaged"), "[]", "nothing damaged");
     program misused;
     const char *extra[] = {"status", "now", NULL};
     CHECK(run_command(&world, &misused, extra) == 2);

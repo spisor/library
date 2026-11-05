@@ -14,6 +14,7 @@ typedef struct install_record {
     cJSON *fetched;
     cJSON *cached;
     cJSON *hashes;
+    cJSON *sizes;
 } install_record;
 
 static int add_name(cJSON *names, const char *key) {
@@ -44,8 +45,10 @@ static int store_one(const runtime_cache_placement *placement, const char *id, c
         return 0;
     }
     const cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(placement->reference, "sha256");
+    const cJSON *size = cJSON_GetObjectItemCaseSensitive(placement->reference, "size");
     return add_name(outcome == RUNTIME_CACHE_CACHED ? record->cached : record->fetched, placement->key) &&
-           cJSON_AddStringToObject(record->hashes, placement->key, sha256->valuestring) != NULL;
+           cJSON_AddStringToObject(record->hashes, placement->key, sha256->valuestring) != NULL &&
+           cJSON_AddNumberToObject(record->sizes, placement->key, size->valuedouble) != NULL;
 }
 
 /**
@@ -57,7 +60,7 @@ static int store_one(const runtime_cache_placement *placement, const char *id, c
 static int mark_complete(const runtime_cache_plan *plan, const char *id, const char *version,
                          const install_record *record, cJSON **refusal) {
     int has_directory = plan->count > 0 || spisor_make_directories(plan->directory);
-    if (has_directory && runtime_cache_write_marker(plan->directory, record->hashes)) {
+    if (has_directory && runtime_cache_write_marker(plan->directory, record->hashes, record->sizes)) {
         return 1;
     }
     const char *parts[7] = {"file " RUNTIME_INSTALL_MARKER " of ", id, "@", version, ": the completion marker in ",
@@ -83,8 +86,8 @@ static cJSON *answer_of(const runtime_cache_plan *plan, const char *id, const ch
 }
 
 static cJSON *install_planned(const runtime_cache_plan *plan, const char *id, const char *version, cJSON **refusal) {
-    install_record record = {cJSON_CreateArray(), cJSON_CreateArray(), cJSON_CreateObject()};
-    int stored = record.fetched != NULL && record.cached != NULL && record.hashes != NULL;
+    install_record record = {cJSON_CreateArray(), cJSON_CreateArray(), cJSON_CreateObject(), cJSON_CreateObject()};
+    int stored = record.fetched != NULL && record.cached != NULL && record.hashes != NULL && record.sizes != NULL;
     for (size_t index = 0; stored && index < plan->count; index++) {
         stored = store_one(&plan->placements[index], id, version, &record, refusal);
     }
@@ -94,6 +97,7 @@ static cJSON *install_planned(const runtime_cache_plan *plan, const char *id, co
     cJSON_Delete(record.fetched);
     cJSON_Delete(record.cached);
     cJSON_Delete(record.hashes);
+    cJSON_Delete(record.sizes);
     return answer;
 }
 

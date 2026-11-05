@@ -220,6 +220,33 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
     return place_boot_stub(host) ? 0 : refuse(runtime_refusal("forebay-boot could not be placed", "make the cache writable"));
 }
 
+/** Adds {detail, fix, file?, version, id} to damaged for each version under root that cache.check, which hashes, finds damaged. */
+static void add_damaged(const c_host *host, const cJSON *versions_of, const char *root, int per_platform, cJSON *damaged) {
+    const cJSON *versions;
+    cJSON_ArrayForEach(versions, versions_of) {
+        const cJSON *version;
+        cJSON_ArrayForEach(version, versions) {
+            const char *segments[5] = {host->cache, root, versions->string, version->valuestring, runtime_platform_key()};
+            char *directory = joined(segments, per_platform ? 5 : 4);
+            cJSON *call = cJSON_CreateObject();
+            cJSON_AddStringToObject(call, "directory", directory);
+            free(directory);
+            cJSON *refusal = NULL;
+            cJSON *check = runtime_call_or_refuse(runtime_cache_check, call, &refusal);
+            check = check == NULL ? refusal : check;
+            const char *kind = text_of(check, "kind");
+            if (kind != NULL && strcmp(kind, "intact") == 0) {
+                cJSON_Delete(check);
+                continue;
+            }
+            cJSON_DeleteItemFromObjectCaseSensitive(check, "kind");
+            cJSON_AddStringToObject(check, "version", version->valuestring);
+            cJSON_AddStringToObject(check, "id", versions->string);
+            cJSON_AddItemToArray(damaged, check);
+        }
+    }
+}
+
 static int status(const c_host *host) {
     cJSON *refusal = NULL;
     cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(host), &refusal);
@@ -231,9 +258,14 @@ static int status(const c_host *host) {
         return refuse(refusal);
     }
     cJSON_AddItemToObject(listed, "installed", installed);
+    cJSON *damaged = cJSON_AddArrayToObject(listed, "damaged");
+    add_damaged(host, cJSON_GetObjectItemCaseSensitive(installed, "bundles"), "bundles", 0, damaged);
+    add_damaged(host, cJSON_GetObjectItemCaseSensitive(installed, "libraries"), "libraries", 1, damaged);
     print_json(listed);
+    const cJSON *first = cJSON_GetArrayItem(damaged, 0);
+    int code = first == NULL ? 0 : refuse(runtime_refusal(text_of(first, "detail"), text_of(first, "fix")));
     cJSON_Delete(listed);
-    return 0;
+    return code;
 }
 
 /** Every registration hosts.list answers, forebay-host first, so its catalog check serves the rest. */

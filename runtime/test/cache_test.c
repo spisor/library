@@ -452,7 +452,7 @@ static void it_installs_a_plugin_s_files_into_its_bundle_version_directory(void)
     finish_cache();
 }
 
-static void it_marks_a_version_complete_last_naming_every_file_and_its_hash(void) {
+static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_size(void) {
     start_cache("marker");
     cJSON *item = plugin_item();
     char plugin_sha256[RUNTIME_SHA256_HEX_SIZE];
@@ -462,9 +462,11 @@ static void it_marks_a_version_complete_last_naming_every_file_and_its_hash(void
     catalog_answer answer = install("a", item, "1.0.0", "linux-x64");
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    char expected[512];
-    snprintf(expected, sizeof expected, "{\n  \"files\": {\n    \"plugin.json\": \"%s\",\n    \"dist/index.js\": \"%s\"\n  }\n}\n",
-             plugin_sha256, index_sha256);
+    char expected[768];
+    snprintf(expected, sizeof expected,
+             "{\n  \"files\": {\n    \"plugin.json\": \"%s\",\n    \"dist/index.js\": \"%s\"\n  },\n  \"sizes\": {\n"
+             "    \"plugin.json\": %zu,\n    \"dist/index.js\": %zu\n  }\n}\n",
+             plugin_sha256, index_sha256, strlen(PLUGIN_JSON), strlen(INDEX_JS));
     expect_file_text(cache, "bundles/a/1.0.0/.installed.json", expected, "marker text");
     finish_cache();
 }
@@ -537,7 +539,7 @@ static void it_marks_a_version_of_no_files_complete_making_its_directory(void) {
                                     "linux-x64");
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    expect_file_text(cache, "bundles/a/1.0.0/.installed.json", "{\n  \"files\": {}\n}\n", "no files marker");
+    expect_file_text(cache, "bundles/a/1.0.0/.installed.json", "{\n  \"files\": {},\n  \"sizes\": {}\n}\n", "no files marker");
     finish_cache();
 }
 
@@ -1357,7 +1359,7 @@ int main(void) {
     it_leaves_no_temporary_file_behind_even_when_the_rename_into_place_fails();
 
     it_installs_a_plugin_s_files_into_its_bundle_version_directory();
-    it_marks_a_version_complete_last_naming_every_file_and_its_hash();
+    it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_size();
     it_leaves_no_runnable_version_when_the_second_of_two_files_is_refused();
     it_stores_files_in_the_order_javascript_enumerates_their_keys();
     it_refuses_as_ambiguous_a_file_listed_both_for_every_platform_and_for_this_one();

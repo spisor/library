@@ -76,7 +76,7 @@ static void refuses_with_the_reinstall_fix_when_there_is_no_hint_never_guessing_
     finish_world(&world);
 }
 
-static void refuses_a_bundle_whose_file_no_longer_has_its_hash(void) {
+static void refuses_a_bundle_whose_file_no_longer_has_its_recorded_size(void) {
     host_world world;
     install_boot_world(&world, "damaged");
     char rest[256];
@@ -86,6 +86,35 @@ static void refuses_a_bundle_whose_file_no_longer_has_its_hash(void) {
     const char *arguments[] = {"forebay-host", "status", NULL};
     CHECK(run_boot(&world, &run, arguments) == 1);
     expect_contains(run.err, "forebay-host was not started", "damaged");
+    expect_contains(run.err, "but its install recorded", "names the size");
+    expect_contains(run.err, "fix: run forebay-host install --catalog <path or url> again", "reinstall fix");
+    program_free(&run);
+    finish_world(&world);
+}
+
+/** The carried forebay-boot copy with its last byte flipped: the start's size check passes, status's hashes do not. */
+static void starts_a_same_size_corruption_which_status_then_refuses(void) {
+    host_world world;
+    install_boot_world(&world, "same-size");
+    char rest[256];
+    snprintf(rest, sizeof rest, "bundles/forebay-host/1.0.0/%s/forebay-boot" EXECUTABLE_ENDING, runtime_platform_key());
+    char *carried = joined(world.base.cache, rest);
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(carried, &length);
+    CHECK(bytes != NULL && length > 0);
+    if (bytes != NULL && length > 0) {
+        bytes[length - 1] ^= 0xff;
+        CHECK(spisor_replace_file(carried, bytes, length) == 1);
+    }
+    program run;
+    const char *arguments[] = {"forebay-host", "status", NULL};
+    CHECK(run_boot(&world, &run, arguments) == 1);
+    expect_contains(run.out, "\"damaged\"", "status ran and lists what is damaged");
+    expect_contains(run.err, "forebay-boot" EXECUTABLE_ENDING, "names the file");
+    expect_contains(run.err, "has SHA-256", "found by its hash");
+    expect_contains(run.err, "fix: ", "with a fix");
+    free(bytes);
+    free(carried);
     program_free(&run);
     finish_world(&world);
 }
@@ -242,7 +271,8 @@ int main(void) {
     runs_the_version_the_hint_names_with_its_arguments_passed_through();
     refuses_a_swept_version_with_the_reinstall_fix();
     refuses_with_the_reinstall_fix_when_there_is_no_hint_never_guessing_a_version();
-    refuses_a_bundle_whose_file_no_longer_has_its_hash();
+    refuses_a_bundle_whose_file_no_longer_has_its_recorded_size();
+    starts_a_same_size_corruption_which_status_then_refuses();
     refuses_a_start_that_names_no_host();
     keeps_the_forebay_host_version_a_launch_runs_through_a_sweep_until_it_ends();
 #if defined(_WIN32)

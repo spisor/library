@@ -165,14 +165,49 @@ static void it_refuses_a_hint_that_names_a_version_outside_the_bundles_folder(vo
     finish_base();
 }
 
-static void it_refuses_a_host_bundle_whose_file_no_longer_has_its_hash(void) {
-    start_base("resolve-tampered");
+static void it_refuses_a_host_bundle_whose_file_no_longer_has_its_recorded_size(void) {
+    start_base("resolve-resized");
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    write_in(cache, "bundles/forebay-host/1.0.0/" PLATFORM "/forebay-host", "tampered");
+    write_in(cache, "bundles/forebay-host/1.0.0/" PLATFORM "/forebay-host", "resized");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "was not started", "tampered");
-    expect_fix(resolved, REINSTALL_FIX, "tampered fix");
+    expect_refusal(resolved, "was not started", "resized");
+    expect_refusal(resolved, "has 7 bytes, but its install recorded 18", "resized size");
+    expect_fix(resolved, REINSTALL_FIX, "resized fix");
+    cJSON_Delete(resolved.tree);
+    finish_base();
+}
+
+/** A start checks sizes alone; the same-size corruption is status's to find, which hashes every file. */
+static void it_starts_a_host_bundle_whose_file_kept_its_size_without_hashing_it(void) {
+    start_base("resolve-same-size");
+    install_host("1.0.0");
+    write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(cache, "bundles/forebay-host/1.0.0/" PLATFORM "/forebay-host", "forebay-host@9.9.9");
+    catalog_answer resolved = resolve_boot(HOST, NULL);
+    expect_success(resolved, "same size");
+    expect_executable(resolved, HOST, "1.0.0", "same size executable");
+    cJSON_Delete(resolved.tree);
+    finish_base();
+}
+
+/** A completion marker from before sizes were recorded is no proof of a version a start may run. */
+static void it_refuses_a_host_bundle_whose_marker_records_no_sizes(void) {
+    start_base("resolve-no-sizes");
+    install_host("1.0.0");
+    write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    char *recorded = text_in(cache, "bundles/forebay-host/1.0.0/.installed.json");
+    cJSON *marker = recorded == NULL ? NULL : spisor_parse_json((const uint8_t *)recorded, strlen(recorded));
+    free(recorded);
+    CHECK(cJSON_HasObjectItem(marker, "sizes"));
+    cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");
+    char *text = cJSON_PrintUnformatted(marker);
+    write_in(cache, "bundles/forebay-host/1.0.0/.installed.json", text);
+    cJSON_free(text);
+    cJSON_Delete(marker);
+    catalog_answer resolved = resolve_boot(HOST, NULL);
+    expect_refusal(resolved, "records no size for", "no sizes");
+    expect_fix(resolved, REINSTALL_FIX, "no sizes fix");
     cJSON_Delete(resolved.tree);
     finish_base();
 }
@@ -301,7 +336,9 @@ int main(void) {
     it_refuses_with_the_reinstall_fix_when_there_is_no_hint();
     it_refuses_with_the_reinstall_fix_when_the_hint_is_corrupt_never_picking_an_installed_version();
     it_refuses_a_hint_that_names_a_version_outside_the_bundles_folder();
-    it_refuses_a_host_bundle_whose_file_no_longer_has_its_hash();
+    it_refuses_a_host_bundle_whose_file_no_longer_has_its_recorded_size();
+    it_starts_a_host_bundle_whose_file_kept_its_size_without_hashing_it();
+    it_refuses_a_host_bundle_whose_marker_records_no_sizes();
     it_refuses_when_the_version_the_hint_names_is_not_installed();
     it_refuses_an_installed_version_that_carries_no_executable_for_the_platform();
 
