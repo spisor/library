@@ -242,15 +242,17 @@ static inline cJSON *application_json(const char *id, const char *binary, const 
     return parsed(text);
 }
 
-/** A loader host for application, its host.json the loader standard asking for commands and background. */
-static inline void list_loader(install_base *base, const char *loader_id, const char *version, cJSON *application,
-                               const char *commands_json, int minimum, const char *background_json) {
+/** A loader host for application, its host.json the loader standard asking for commands, background hosts and required plugins. */
+static inline void list_loader_requiring(install_base *base, const char *loader_id, const char *version, cJSON *application,
+                                         const char *commands_json, int minimum, const char *background_json,
+                                         const char *plugins_json) {
     cJSON *standard = cJSON_CreateObject();
     cJSON_AddItemToObject(standard, "application", cJSON_Duplicate(application, 1));
     cJSON *path_commands = cJSON_AddObjectToObject(standard, "pathCommands");
     cJSON_AddItemToObject(path_commands, "requested", parsed(commands_json));
     cJSON_AddNumberToObject(path_commands, "minimum", minimum);
     cJSON_AddItemToObject(standard, "background", parsed(background_json));
+    cJSON_AddItemToObject(standard, "plugins", parsed(plugins_json));
     char *text = cJSON_PrintUnformatted(standard);
     cJSON_Delete(standard);
     cJSON *item = catalog_item(base, loader_id, "host", "native", version);
@@ -261,6 +263,12 @@ static inline void list_loader(install_base *base, const char *loader_id, const 
     }
     list_file(base, item, loader_id, version, "host.json", text, 0);
     cJSON_free(text);
+}
+
+/** list_loader_requiring with no required plugins. */
+static inline void list_loader(install_base *base, const char *loader_id, const char *version, cJSON *application,
+                               const char *commands_json, int minimum, const char *background_json) {
+    list_loader_requiring(base, loader_id, version, application, commands_json, minimum, background_json, "[]");
 }
 
 /** The foundation every ecosystem catalog carries: forebay-host and the runtime library. */

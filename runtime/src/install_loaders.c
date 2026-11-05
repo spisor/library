@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "boot_stub.h"
+#include "cache_refusal.h"
 #include "catalog_text.h"
 #include "hosts.h"
 #include "install_entries.h"
@@ -9,6 +10,7 @@
 #include "install_references.h"
 #include "install_report.h"
 #include "install_run.h"
+#include "install_settings.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "loader.h"
@@ -16,6 +18,7 @@
 #include "paths.h"
 #include "registry.h"
 #include "spisor/path.h"
+#include "version_map.h"
 
 #define LOADER_FIX "reinstall the loader from a catalog that lists a valid host.json"
 
@@ -295,12 +298,90 @@ static int report_loader_refusal(runtime_install_run *run, const char *id, cJSON
     return refusal == NULL ? 0 : runtime_install_report_refusal(run->report, id, refusal);
 }
 
+static const cJSON *first_unlisted_plugin(const runtime_install_run *run, const cJSON *plugins) {
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(run->catalog, "items");
+    for (const cJSON *id = plugins == NULL ? NULL : plugins->child; id != NULL; id = id->next) {
+        const char *kind = runtime_install_text(cJSON_GetObjectItemCaseSensitive(items, id->valuestring), "kind");
+        if (kind == NULL || strcmp(kind, "plugin") != 0) {
+            return id;
+        }
+    }
+    return NULL;
+}
+
+static cJSON *unlisted_plugin_refusal(const catalog_loader *loader, const char *plugin) {
+    const char *parts[5] = {"the loader ", loader->id, " cannot run without the plugin ", plugin, ", which no catalog lists"};
+    char *message = runtime_cache_text(parts, 5);
+    cJSON *refusal = message == NULL ? NULL
+                                     : runtime_refusal(message, "add a catalog that lists the plugin with forebay-host install "
+                                                                "--catalog <path or url>, then install again");
+    free(message);
+    return refusal;
+}
+
+/** Enables plugin id in the loader's home unless the loader's merged settings already do; 0 only when memory runs out. */
+static int enable_required_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
+    runtime_install_settings settings = {loader->home, run->portable, run->state};
+    cJSON *refusal = NULL;
+    cJSON *values = runtime_install_settings_values(&settings, 1, 1, &refusal);
+    int done = values != NULL && runtime_install_plugin_enabled(values, id);
+    if (!done && values != NULL && runtime_install_enable_plugin(&settings, id, "application", &refusal)) {
+        done = runtime_install_add_text(cJSON_GetObjectItemCaseSensitive(run->report, "enabled"), id);
+    } else if (!done) {
+        done = refusal != NULL && runtime_install_report_refusal(run->report, id, refusal);
+        refusal = NULL;
+    }
+    cJSON_Delete(refusal);
+    cJSON_Delete(values);
+    return done;
+}
+
+/**
+ * Installs required plugin id referenced for the loader, then enables it; an install the report records as
+ * unavailable leaves it disabled, which a launch refuses by name. 0 only when memory runs out.
+ */
+static int install_required_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
+    cJSON *target = runtime_install_target(id);
+    const char *version = target == NULL ? NULL : runtime_install_target_version(run->catalog, target, "plugin");
+    cJSON *refusal = NULL;
+    int out_of_memory = target == NULL;
+    const char *installed = NULL;
+    if (version != NULL && !reference_version(run, loader->id, id, version, &refusal)) {
+        out_of_memory = !runtime_install_report_refusal(run->report, id, refusal);
+    } else if (version != NULL) {
+        installed = runtime_install_item(run->catalog, target, "plugin", run->cache, run->report, &out_of_memory);
+    }
+    int done = !out_of_memory && (installed == NULL || (runtime_map_set(run->required_plugins, id, installed) &&
+                                                         enable_required_plugin(run, loader, id)));
+    cJSON_Delete(target);
+    return done;
+}
+
+/** Installs and enables every plugin the loader's standard requires; 0 with *refusal set when the catalog lacks one, or with none when memory runs out. */
+static int install_required_plugins(runtime_install_run *run, const catalog_loader *loader, cJSON **refusal) {
+    const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(loader->standard, "plugins");
+    const cJSON *unlisted = first_unlisted_plugin(run, plugins);
+    if (unlisted != NULL) {
+        *refusal = unlisted_plugin_refusal(loader, unlisted->valuestring);
+        return 0;
+    }
+    for (const cJSON *id = plugins->child; id != NULL; id = id->next) {
+        if (!install_required_plugin(run, loader, id->valuestring)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /** Registers one installed loader; the background hosts it names once it is, or an empty array. */
 static cJSON *register_loader(runtime_install_run *run, catalog_loader *loader) {
     cJSON *refusal = NULL;
     if (!learn(run, loader, &refusal)) {
         return report_loader_refusal(run, loader->id, refusal, loader->standard == NULL ? LOADER_FIX : NULL) ? cJSON_CreateArray()
                                                                                                               : NULL;
+    }
+    if (!install_required_plugins(run, loader, &refusal)) {
+        return report_loader_refusal(run, loader->id, refusal, NULL) ? cJSON_CreateArray() : NULL;
     }
     cJSON *call = register_call(run, loader, &refusal);
     cJSON *registered = call == NULL ? NULL : runtime_call_or_refuse(runtime_hosts_register, call, &refusal);

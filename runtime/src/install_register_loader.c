@@ -14,7 +14,7 @@ static cJSON *register_loader(const cJSON *argument, cJSON **refusal) {
     const char *id = runtime_install_text(argument, "id");
     const char *version = runtime_install_text(argument, "version");
     runtime_install_run run = {places, runtime_install_place(argument, "portable"), runtime_install_place(argument, "state"),
-                               runtime_install_place(argument, "cache"), environment, NULL, NULL, NULL, NULL};
+                               runtime_install_place(argument, "cache"), environment, NULL, NULL, NULL, NULL, NULL};
     if (run.portable == NULL || run.state == NULL || run.cache == NULL || !cJSON_IsObject(environment) || id == NULL ||
         id[0] == 0 || version == NULL || version[0] == 0) {
         *refusal = runtime_refusal("the argument carries no usable places, environment, loader id or version", REGISTER_LOADER_FIX);

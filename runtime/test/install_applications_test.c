@@ -5,9 +5,11 @@
 #endif
 
 #include "boot_stub.h"
+#include "config.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "install_methods.h"
+#include "install_support.h"
 #include "registry.h"
 
 #define LOADER_ID "claude-loader"
@@ -229,6 +231,75 @@ static void records_the_registered_version_of_each_loader_keeping_what_it_schedu
     cJSON *references = json_in(base.state, "bundles/" LOADER_ID ".json");
     expect_json(references, "{\"run\":{\"" LOADER_ID "\":\"1.0.0\"},\"next\":{\"" LOADER_ID "\":\"2.0.0\"}}", "loader references");
     cJSON_Delete(references);
+    free(bin);
+    finish_install_base(&base);
+}
+
+/** The settings the loader's own home and the portable place merge to, as a launch of the loader reads them. */
+static cJSON *loader_settings(const install_base *base) {
+    char *home = joined(base->user, "homes/claude");
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "home", home);
+    cJSON_AddStringToObject(argument, "portable", base->portable);
+    free(home);
+    catalog_answer answer = call_catalog(runtime_settings_all, argument);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "values");
+    cJSON_Delete(answer.tree);
+    return values;
+}
+
+static void list_claude_requiring(install_base *base, const char *plugins_json) {
+    list_foundation(base);
+    list_loader_requiring(base, LOADER_ID, "1.0.0", application_json("claude", BINARY, "{}"), "[]", 0, "[]", plugins_json);
+}
+
+static void installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_home(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-plugins");
+    list_plugin(&base, "stub-plugin", "1.0.0", "native");
+    list_claude_requiring(&base, "[\"stub-plugin\"]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, BINARY);
+    cJSON *report = install_choosing(&base, "{}", bin);
+    CHECK(exists_in(base.cache, "bundles/stub-plugin/1.0.0"));
+    cJSON *installed = installed_ids(report);
+    CHECK(runtime_install_holds(installed, "stub-plugin"));
+    cJSON_Delete(installed);
+    CHECK(runtime_install_holds(cJSON_GetObjectItemCaseSensitive(report, "enabled"), "stub-plugin"));
+    cJSON *settings = loader_settings(&base);
+    expect_json(cJSON_GetObjectItemCaseSensitive(settings, "plugins"), "{\"stub-plugin\":{\"enabled\":true}}",
+                "the plugin enabled in the loader's home");
+    cJSON *references = json_in(base.state, "bundles/" LOADER_ID ".json");
+    expect_json(cJSON_GetObjectItemCaseSensitive(references, "run"), "{\"stub-plugin\":\"1.0.0\",\"" LOADER_ID "\":\"1.0.0\"}",
+                "the loader references its plugin and itself");
+    cJSON_Delete(references);
+    cJSON *registration = registration_of(&base, LOADER_ID);
+    CHECK(registration != NULL);
+    cJSON_Delete(registration);
+    cJSON_Delete(settings);
+    cJSON_Delete(report);
+    free(bin);
+    finish_install_base(&base);
+}
+
+static void refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_row_for_the_plugin(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-absent");
+    list_claude_requiring(&base, "[\"stub-plugin\"]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, BINARY);
+    cJSON *report = install_choosing(&base, "{}", bin);
+    const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
+    CHECK(cJSON_GetArraySize(unavailable) == 1);
+    const cJSON *row = cJSON_GetArrayItem(unavailable, 0);
+    check_text(text_at(row, "id"), LOADER_ID, "the loader's install refused");
+    CHECK(strstr(text_at(row, "message"), "stub-plugin") != NULL);
+    CHECK(strstr(text_at(row, "fix"), "catalog") != NULL);
+    expect_json(cJSON_GetObjectItemCaseSensitive(report, "loaders"), "[]", "no loader row");
+    cJSON *registration = registration_of(&base, LOADER_ID);
+    CHECK(registration == NULL);
+    cJSON_Delete(report);
     free(bin);
     finish_install_base(&base);
 }
@@ -555,6 +626,8 @@ int main(void) {
     refuses_a_choice_naming_an_application_the_catalog_does_not_list();
     registers_one_loader_per_installed_or_detected_application_with_its_own_home();
     records_the_registered_version_of_each_loader_keeping_what_it_scheduled();
+    installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_home();
+    refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_row_for_the_plugin();
     registers_nothing_for_an_application_neither_installed_nor_detected();
     installs_and_registers_each_background_host_in_a_home_of_its_own();
     reports_a_background_host_the_catalog_does_not_list_and_still_registers_its_loader();

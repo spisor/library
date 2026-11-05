@@ -352,6 +352,92 @@ static void runs_the_application_without_its_session_host_when_no_javascript_run
     finish_world(&world);
 }
 
+static void write_loader_setting(const host_world *world, const char *content) {
+    cJSON *registration = registration_in(world, LOADER_ID);
+    char *file = joined(text_at(registration, "home"), "config/settings.json");
+    write_file(file, content);
+    free(file);
+    cJSON_Delete(registration);
+}
+
+static void expect_refused_launch(host_world *world, const char *tag, const char *expected_message, const char *expected_fix) {
+    program launcher;
+    const char *passed[] = {tag, "0", NULL};
+    launch(world, &launcher, passed, NULL);
+    CHECK(program_finish(&launcher, 30000) == 1);
+    expect_contains(launcher.err, expected_message, "the plugin named");
+    expect_contains(launcher.err, expected_fix, "with its fix");
+    cJSON *never = application_start(world, tag);
+    CHECK(never == NULL);
+    CHECK(!exists_in(world->base.state, "processes/" BACKGROUND_ID ".json"));
+    CHECK(!exists_in(world->base.state, "processes/" LOADER_ID ".json"));
+    cJSON_Delete(never);
+    program_free(&launcher);
+}
+
+static void starts_the_session_host_for_the_plugins_the_loader_requires(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "launch", "required");
+    world.layer_delay = "1000";
+    program launcher;
+    const char *passed[] = {"required", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "required");
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
+    expect_contains(starts, "host.js " LOADER_ID, "session host started");
+    release_application(&world, "required");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    free(starts);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+static void refuses_a_launch_naming_the_required_plugin_that_is_not_installed(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "launch", "required-missing");
+    char *folder = joined(world.base.cache, "bundles/" SESSION_PLUGIN);
+    CHECK(runtime_remove_tree(folder) == 1);
+    free(folder);
+    expect_refused_launch(&world, "missing", SESSION_PLUGIN,
+                          "forebay-host install --catalog <catalog> --application " APPLICATION_ID);
+    finish_world(&world);
+}
+
+static void refuses_a_launch_naming_the_setting_of_a_required_plugin_that_is_disabled(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "launch", "required-disabled");
+    write_loader_setting(&world, "{\"plugins\": {\"" SESSION_PLUGIN "\": {\"enabled\": false}}}");
+    cJSON *registration = registration_in(&world, LOADER_ID);
+    char *file = joined(text_at(registration, "home"), "config/settings.json");
+    char fix[2048];
+    snprintf(fix, sizeof fix, "set plugins." SESSION_PLUGIN ".enabled to true in %s", file);
+    expect_refused_launch(&world, "disabled", SESSION_PLUGIN, fix);
+    free(file);
+    cJSON_Delete(registration);
+    finish_world(&world);
+}
+
+static void refuses_a_launch_when_the_session_host_of_a_loader_with_required_plugins_cannot_start(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "launch", "required-no-javascript");
+    char *record = joined(world.base.cache, "runtimes/javascript.json");
+    char *node = joined(world.base.root, "node-bin/node" EXECUTABLE_ENDING);
+    CHECK(runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE);
+    CHECK(runtime_remove_file_entry(node) == RUNTIME_ENTRY_DONE);
+    block_runtime_acquisition(&world);
+    expect_refused_launch(&world, "blocked", "could not start the session host of " LOADER_ID, "fix: ");
+    free(node);
+    free(record);
+    finish_world(&world);
+}
+
 static void refuses_a_background_host_that_records_no_start_before_anything_starts(void) {
     host_world world;
     start_world_at(&world, "launch", "no-start");
@@ -394,6 +480,10 @@ int main(void) {
     starts_the_session_host_on_a_javascript_runtime_found_again_when_the_recorded_one_is_gone();
     starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it();
     runs_the_application_without_its_session_host_when_no_javascript_runtime_can_be_found();
+    starts_the_session_host_for_the_plugins_the_loader_requires();
+    refuses_a_launch_naming_the_required_plugin_that_is_not_installed();
+    refuses_a_launch_naming_the_setting_of_a_required_plugin_that_is_disabled();
+    refuses_a_launch_when_the_session_host_of_a_loader_with_required_plugins_cannot_start();
     runs_the_application_when_the_loader_cannot_be_registered_again_saying_why();
     expect_user_path_unchanged(&guard);
     return check_summary("launch_test");

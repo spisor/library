@@ -347,7 +347,7 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
 #define STANDARD_MEMBERS                                                                                              \
     "\"application\": {\"id\": \"claude-code\", \"label\": \"Claude Code\", \"binary\": \"claude\", \"home\": "       \
     "{\"candidates\": [\"~/.claude\"]}, \"packages\": {\"npm\": \"@anthropic-ai/claude-code\"}}, \"pathCommands\": "  \
-    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"]"
+    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"], "      "\"plugins\": []"
 
 static char *loader_directory(const char *application_override) {
     char *directory = in_base("loader");
@@ -490,7 +490,7 @@ static void refuses_a_host_json_whose_standard_is_invalid(void) {
     start_case("invalid-standard");
     char *directory = loader_directory(
         "\"application\": {\"id\": \"claude-code\", \"label\": \"Claude Code\", \"binary\": \"\", \"home\": {\"candidates\": "
-        "[\"~/.claude\"]}, \"packages\": {}}, \"pathCommands\": {\"requested\": [], \"minimum\": 0}, \"background\": []");
+        "[\"~/.claude\"]}, \"packages\": {}}, \"pathCommands\": {\"requested\": [], \"minimum\": 0}, \"background\": [], \"plugins\": []");
     catalog_inputs inputs = {NULL, 0, 0};
     cJSON *refusal = NULL;
     CHECK(!host_read_host_directory(&inputs, directory, NULL, &refusal));

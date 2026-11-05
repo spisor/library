@@ -16,7 +16,8 @@ static const char *VALID_STANDARD =
     " \"home\": {\"envOverride\": \"CLAUDE_CONFIG_DIR\", \"candidates\": [\"~/.claude\"]},"
     " \"packages\": {\"npm\": \"@anthropic-ai/claude-code\", \"winget\": {\"name\": \"Anthropic.ClaudeCode\","
     " \"source\": \"winget\"}}},"
-    " \"pathCommands\": {\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"]}";
+    " \"pathCommands\": {\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"],"
+    " \"plugins\": [\"proxy\"]}";
 
 static cJSON *valid_standard(void) {
     return parsed(VALID_STANDARD);
@@ -173,6 +174,27 @@ static void refuses_each_requested_list_that_is_no_list_of_unique_portable_names
         cJSON *standard = valid_standard();
         cJSON_ReplaceItemInObject(member_at(standard, "pathCommands", NULL), "requested", parsed(lists[index]));
         check_paths(standard, "/pathCommands/requested", lists[index]);
+    }
+}
+
+static void refuses_a_standard_with_no_plugins_member_naming_it(void) {
+    cJSON *standard = valid_standard();
+    cJSON_DeleteItemFromObject(standard, "plugins");
+    check_paths(standard, "/plugins", "no plugins");
+}
+
+static void accepts_an_empty_plugins_list(void) {
+    cJSON *standard = valid_standard();
+    cJSON_ReplaceItemInObject(standard, "plugins", parsed("[]"));
+    check_paths(standard, "", "an empty plugins list");
+}
+
+static void refuses_each_plugins_value_that_is_no_list_of_unique_portable_ids(void) {
+    const char *values[] = {"\"proxy\"", "[\"../x\"]", "[\"proxy\", \"proxy\"]", "[7]", "[\"\"]"};
+    for (size_t index = 0; index < sizeof values / sizeof values[0]; index++) {
+        cJSON *standard = valid_standard();
+        cJSON_ReplaceItemInObject(standard, "plugins", parsed(values[index]));
+        check_paths(standard, "/plugins", values[index]);
     }
 }
 
@@ -445,6 +467,9 @@ int main(void) {
     refuses_a_method_id_that_is_not_portable();
     refuses_each_binary_that_is_no_portable_name();
     refuses_each_requested_list_that_is_no_list_of_unique_portable_names();
+    refuses_a_standard_with_no_plugins_member_naming_it();
+    accepts_an_empty_plugins_list();
+    refuses_each_plugins_value_that_is_no_list_of_unique_portable_ids();
     names_a_binary_in_its_detail_as_json_writes_it();
     takes_the_override_variable_first();
     takes_the_native_variable_when_there_is_no_override();

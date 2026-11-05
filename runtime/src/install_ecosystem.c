@@ -226,22 +226,14 @@ static cJSON *plugin_targets(const ecosystem *install) {
     return targets;
 }
 
-static int is_enabled(const cJSON *values, const char *id) {
-    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(values, "plugins"), id), "enabled"));
-}
-
 /** @implNote Only an id the settings never mention is enabled unasked, so a plugin the user turned off stays off. */
 static int enable_choice(ecosystem *install, const char *id, const cJSON *mentioned) {
     int asked = runtime_install_holds(install->requested, id);
-    if ((!asked && runtime_install_holds(mentioned, id)) || is_enabled(install->values, id)) {
+    if ((!asked && runtime_install_holds(mentioned, id)) || runtime_install_plugin_enabled(install->values, id)) {
         return 1;
     }
-    const char *parts[3] = {"plugins.", id, ".enabled"};
-    char *key = runtime_cache_text(parts, 3);
     cJSON *refusal = NULL;
-    int enabled = key != NULL && runtime_install_settings_set(&install->settings, key, cJSON_CreateTrue(), "portable", &refusal);
-    free(key);
+    int enabled = runtime_install_enable_plugin(&install->settings, id, "portable", &refusal);
     if (!enabled) {
         return refusal != NULL && runtime_install_report_refusal(install->run.report, id, refusal);
     }
@@ -326,6 +318,11 @@ static int runs_javascript(const ecosystem *install, const cJSON *background) {
     }
     for (const cJSON *id = background->child; id != NULL; id = id->next) {
         if (is_text(item_member(install, id->valuestring, "runtime"), "javascript")) {
+            return 1;
+        }
+    }
+    for (const cJSON *plugin = install->run.required_plugins->child; plugin != NULL; plugin = plugin->next) {
+        if (is_text(item_member(install, plugin->string, "runtime"), "javascript")) {
             return 1;
         }
     }
@@ -441,13 +438,16 @@ static cJSON *ecosystem_for(const cJSON *argument, cJSON **refusal) {
     install.settings.state = install.run.state;
     install.run.report = runtime_install_new_report();
     install.running = cJSON_CreateObject();
+    install.run.required_plugins = cJSON_CreateObject();
     int done = install.home != NULL && install.run.report != NULL && install.running != NULL &&
+               install.run.required_plugins != NULL &&
                install_all(&install, cJSON_GetObjectItemCaseSensitive(argument, "sources"), refusal);
     cJSON *report = done ? install.run.report : NULL;
     if (!done) {
         cJSON_Delete(install.run.report);
     }
     cJSON_Delete(install.running);
+    cJSON_Delete(install.run.required_plugins);
     cJSON_Delete(install.values);
     cJSON_Delete(install.run.catalog);
     free(install.home);
