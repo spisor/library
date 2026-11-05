@@ -46,14 +46,20 @@ static cJSON *not_installed(const char *id, const char *loader_id) {
     return refusal_with(id, loader_id, " requires is not installed", HOST_REINSTALL_FIX);
 }
 
-static cJSON *not_enabled(const char *id, const char *loader_id, const char *settings_file) {
-    size_t size = strlen(id) + strlen(settings_file) + 64;
-    char *fix = malloc(size);
+static cJSON *not_enabled(const host_context *context, const char *id, const char *loader_id,
+                          const char *loader_home) {
+    char *key = runtime_install_enabled_key(id);
+    char *settings_file =
+        key == NULL ? NULL : runtime_ecosystem_settings_file_holding(loader_home, context->portable, key);
+    size_t size = settings_file == NULL ? 0 : strlen(key) + strlen(settings_file) + 32;
+    char *fix = size == 0 ? NULL : malloc(size);
     if (fix != NULL) {
-        snprintf(fix, size, "set plugins.%s.enabled to true in %s", id, settings_file);
+        snprintf(fix, size, "set %s to true in %s", key, settings_file);
     }
     cJSON *refusal = fix == NULL ? NULL : refusal_with(id, loader_id, " requires is disabled", fix);
     free(fix);
+    free(settings_file);
+    free(key);
     return refusal;
 }
 
@@ -62,18 +68,16 @@ int host_check_required_plugins(const host_context *context, const char *loader_
     const cJSON *required = cJSON_GetObjectItemCaseSensitive(standard, "plugins");
     cJSON *bundles = runtime_cache_installed_bundles(context->cache);
     cJSON *settings = host_settings_of(context, loader_home, refusal);
-    char *settings_file = runtime_ecosystem_settings_file(loader_home);
-    int fine = bundles != NULL && settings != NULL && settings_file != NULL;
+    int fine = bundles != NULL && settings != NULL;
     for (const cJSON *id = fine && required != NULL ? required->child : NULL; fine && id != NULL; id = id->next) {
         if (!is_installed(context, bundles, id->valuestring)) {
             *refusal = not_installed(id->valuestring, loader_id);
             fine = 0;
         } else if (!runtime_install_plugin_enabled(settings, id->valuestring)) {
-            *refusal = not_enabled(id->valuestring, loader_id, settings_file);
+            *refusal = not_enabled(context, id->valuestring, loader_id, loader_home);
             fine = 0;
         }
     }
-    free(settings_file);
     cJSON_Delete(settings);
     cJSON_Delete(bundles);
     return fine;

@@ -327,7 +327,9 @@ static int is_mentioned_enabled(const cJSON *values, const char *id) {
 
 /** Reports the plugin the user turned off as unavailable, with the fix a launch gives; 0 only when memory runs out. */
 static int report_disabled_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
-    char *file = runtime_ecosystem_settings_file(loader->home);
+    char *key = runtime_install_enabled_key(id);
+    char *file = key == NULL ? NULL : runtime_ecosystem_settings_file_holding(loader->home, run->portable, key);
+    free(key);
     const char *message_parts[5] = {"the plugin ", id, " that ", loader->id, " requires is disabled"};
     const char *fix_parts[4] = {"set plugins.", id, ".enabled to true in ", file};
     char *message = file == NULL ? NULL : runtime_cache_text(message_parts, 5);

@@ -168,18 +168,6 @@ static locate_status locate_ecosystem_targets(const config_request *request, con
     return status;
 }
 
-char *runtime_ecosystem_settings_file(const char *home) {
-    config_request request = {home, NULL, NULL, NULL, NULL, NULL};
-    config_target target = {NULL, NULL};
-    char *file = NULL;
-    if (locate_in_config_directory(&request, "settings", &target) == LOCATED) {
-        file = target.file;
-        target.file = NULL;
-    }
-    free_target(&target);
-    return file;
-}
-
 static int is_ecosystem_request(const config_request *request) {
     return request->plugin == NULL;
 }
@@ -247,6 +235,27 @@ static cJSON *merged_from_disk(const cJSON *defaults, const config_targets *targ
     cJSON *merged = merged_layers(defaults, &files);
     free_layers(&files);
     return merged;
+}
+
+static char *detached_file(config_target *target) {
+    char *file = target->file;
+    target->file = NULL;
+    return file;
+}
+
+char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key) {
+    config_request request = {home, portable, NULL, NULL, NULL, NULL};
+    config_targets targets;
+    if (locate_targets(&request, &targets) != LOCATED) {
+        return NULL;
+    }
+    layer_files files = read_layers(&targets);
+    int only_portable = runtime_walk(object_tree(&files.application), key) == NULL &&
+                        runtime_walk(object_tree(&files.portable), key) != NULL;
+    free_layers(&files);
+    char *file = detached_file(only_portable ? &targets.portable : &targets.application);
+    free_targets(&targets);
+    return file;
 }
 
 static const cJSON *defaults_of(const config_request *request) {

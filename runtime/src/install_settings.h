@@ -25,6 +25,9 @@ int runtime_install_settings_set(const runtime_install_settings *settings, const
 /** Whether values, merged settings, set plugins.<id>.enabled to true. */
 int runtime_install_plugin_enabled(const cJSON *values, const char *id);
 
+/** The settings key plugins.<id>.enabled, freed with free; NULL when memory runs out. */
+char *runtime_install_enabled_key(const char *id);
+
 /** Writes plugins.<id>.enabled as true into layer ("application" or "portable"); 1 on success, else as above. */
 int runtime_install_enable_plugin(const runtime_install_settings *settings, const char *id, const char *layer,
                                   cJSON **refusal);

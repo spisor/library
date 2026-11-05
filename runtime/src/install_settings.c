@@ -61,10 +61,14 @@ int runtime_install_plugin_enabled(const cJSON *values, const char *id) {
         cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(values, "plugins"), id), "enabled"));
 }
 
+char *runtime_install_enabled_key(const char *id) {
+    const char *parts[3] = {"plugins.", id, ".enabled"};
+    return runtime_cache_text(parts, 3);
+}
+
 int runtime_install_enable_plugin(const runtime_install_settings *settings, const char *id, const char *layer,
                                   cJSON **refusal) {
-    const char *parts[3] = {"plugins.", id, ".enabled"};
-    char *key = runtime_cache_text(parts, 3);
+    char *key = runtime_install_enabled_key(id);
     int enabled = key != NULL && runtime_install_settings_set(settings, key, cJSON_CreateTrue(), layer, refusal);
     free(key);
     return enabled;

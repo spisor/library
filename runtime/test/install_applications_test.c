@@ -313,6 +313,29 @@ static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(v
     finish_install_base(&base);
 }
 
+static void names_the_portable_settings_file_when_the_portable_layer_disables_a_required_plugin(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-disabled-portable");
+    list_plugin(&base, "stub-plugin", "1.0.0", "native");
+    list_claude_requiring(&base, "[\"stub-plugin\"]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, BINARY);
+    cJSON_Delete(install_choosing(&base, "{}", bin));
+    set_loader_setting(&base, "{}");
+    set_portable(&base, "plugins.stub-plugin.enabled", cJSON_CreateFalse());
+    cJSON *report = install_choosing(&base, "{}", bin);
+    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    check_text(text_at(row, "id"), "stub-plugin", "the disabled plugin reported");
+    char *file = joined(base.portable, "settings.json");
+    char fix[2048];
+    snprintf(fix, sizeof fix, "set plugins.stub-plugin.enabled to true in %s", file);
+    check_text(text_at(row, "fix"), fix, "the fix names the portable settings file that holds the false");
+    free(file);
+    cJSON_Delete(report);
+    free(bin);
+    finish_install_base(&base);
+}
+
 static void reports_a_required_plugin_this_machine_cannot_install_naming_it(void) {
     install_base base;
     start_install_base(&base, "applications", "required-foreign");
@@ -678,6 +701,7 @@ int main(void) {
     installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_home();
     refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_row_for_the_plugin();
     leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it();
+    names_the_portable_settings_file_when_the_portable_layer_disables_a_required_plugin();
     reports_a_required_plugin_this_machine_cannot_install_naming_it();
     registers_nothing_for_an_application_neither_installed_nor_detected();
     installs_and_registers_each_background_host_in_a_home_of_its_own();
