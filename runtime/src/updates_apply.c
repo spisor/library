@@ -129,7 +129,7 @@ static int add_plugins(const runtime_updates_request *request, const runtime_hos
     return added;
 }
 
-/** run is the host's version, then what the caller runs beside it, then its plugins, as startFromCache orders them. */
+/** run is the host's version, then what the caller runs beside it, then its plugins. */
 static int complete_run(const runtime_updates_request *request, const runtime_host_references *recorded,
                         const start_plan *plan, start_record *record) {
     int completed = 1;
