@@ -452,6 +452,26 @@ static void with_a_url_outside_the_catalog_directory(host_world *world, cJSON *f
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("../outside/" HOST_EXECUTABLE));
 }
 
+/** url, a relative url of the catalog, as an absolute file url under folder; freed with free. */
+static char *file_url_under(const char *folder, const char *url) {
+    char *base = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, folder);
+    char absolute[4096];
+    snprintf(absolute, sizeof absolute, "%s/%s", base, url);
+    free(base);
+    return copy_text(absolute);
+}
+
+static void with_a_file_url_outside_the_catalog_directory(host_world *world, cJSON *files) {
+    char *url = file_url_under(world->base.root, "outside/" HOST_EXECUTABLE);
+    set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString(url));
+    free(url);
+}
+
+static void with_a_file_url_naming_a_host(host_world *world, cJSON *files) {
+    (void)world;
+    set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("file://server/share/" HOST_EXECUTABLE));
+}
+
 static void with_a_hash_the_bytes_do_not_have(host_world *world, cJSON *files) {
     (void)world;
     set_member(file_named(files, HOST_EXECUTABLE), "sha256",
@@ -511,6 +531,8 @@ static const hostile_catalog HOSTILE_CATALOGS[] = {
     {"a forebay-host with no build for this platform", without_this_platform, "lists no forebay-host " HOST_VERSION " build for %s"},
     {"a file key that climbs out of the version", with_a_key_that_climbs_out, "file \"../escape\" with a name, url"},
     {"a file url outside the catalog's directory", with_a_url_outside_the_catalog_directory, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
+    {"an absolute file url outside the catalog's directory", with_a_file_url_outside_the_catalog_directory, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
+    {"a file url naming a host", with_a_file_url_naming_a_host, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
     {"a file whose bytes do not have the listed hash", with_a_hash_the_bytes_do_not_have, "bytes and SHA-256 0000"},
     {"a file whose bytes do not have the listed size", with_a_size_its_bytes_do_not_have, "does not have the "},
     {"a file that cannot be fetched", with_a_file_that_cannot_be_fetched, "could not fetch "},
@@ -573,6 +595,43 @@ static void expect_no_strays(const host_world *world, const char *label) {
     expect_only(platform, platform_names, 3, label);
     free(platform);
     free(version);
+}
+
+/** Rewrites every forebay-host file url of the catalog as the absolute file url catalog.read also accepts. */
+static void make_urls_absolute(const host_world *world, cJSON *files) {
+    for (cJSON *file = files == NULL ? NULL : files->child; file != NULL; file = file->next) {
+        char *url = file_url_under(world->base.catalog, text_at(file, "url"));
+        set_member(file, "url", cJSON_CreateString(url));
+        free(url);
+    }
+}
+
+static void installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_directory(void) {
+    host_world world;
+    start_script_world(&world, "file-urls");
+    cJSON *catalog = json_in(world.base.catalog, "catalog.json");
+    make_urls_absolute(&world, platform_files(catalog));
+    cJSON *version = cJSON_GetArrayItem(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog, "items"), "forebay-host"), "versions"), 0);
+    make_urls_absolute(&world, cJSON_GetObjectItemCaseSensitive(version, "files"));
+    char *text = cJSON_Print(catalog);
+    write_in(world.base.catalog, "absolute.json", text);
+    cJSON_free(text);
+    cJSON_Delete(catalog);
+    char *index = joined(world.base.catalog, "absolute.json");
+    program run;
+    const char *arguments[] = {index, NULL};
+    int code = run_script(&world, &run, arguments, 1);
+    if (code != 0) {
+        fprintf(stderr, "absolute file urls: the script answered %d:\n%s\n%s\n", code, run.out, run.err);
+        check_failures++;
+    }
+    char *executable = cached_file(&world, HOST_EXECUTABLE);
+    CHECK(has_same_bytes(executable, FOREBAY_HOST_PATH));
+    free(executable);
+    program_free(&run);
+    free(index);
+    finish_world(&world);
 }
 
 static void refuses_each_hostile_catalog_and_runs_nothing(void) {
@@ -829,6 +888,7 @@ int main(void) {
     refuses_with_the_fix_when_no_catalog_is_given_and_writes_nothing();
     refuses_a_catalog_that_is_neither_an_https_url_nor_a_local_path();
     refuses_each_hostile_catalog_and_runs_nothing();
+    installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_directory();
 #if defined(_WIN32)
     leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_invoke_expression();
     answers_1_when_forebay_host_cannot_be_started();

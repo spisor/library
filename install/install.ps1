@@ -251,7 +251,29 @@ function Get-BuildFiles($Entry, [string]$Version, [string]$Platform) {
     return $listed
 }
 
+<#
+.NOTES
+A file url is accepted only when it names no host and decodes to a path inside the catalog's folder,
+the rule catalog.read applies to a catalog read from a file.
+#>
+function Resolve-FileUrl([string]$Directory, [string]$Url) {
+    if (-not $Url.StartsWith('file:///') -or $Url -match '[?#\\\x00-\x1f]') { return $null }
+    $segments = $Url.Substring(8).Split('/')
+    $first = [System.Uri]::UnescapeDataString($segments[0])
+    if ($first -match '^[A-Za-z]:$') { $path = $first + [System.IO.Path]::DirectorySeparatorChar; $rest = 1 } else { $path = [string][System.IO.Path]::DirectorySeparatorChar; $rest = 0 }
+    for ($position = $rest; $position -lt $segments.Count; $position++) {
+        $decoded = [System.Uri]::UnescapeDataString($segments[$position])
+        if ($decoded -eq '' -or $decoded -eq '.' -or $decoded -eq '..' -or $decoded -match '[/\\:\x00-\x1f]') { return $null }
+        $path = Join-Path $path $decoded
+    }
+    $root = [System.IO.Path]::GetFullPath($Directory).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $comparison = if ([System.IO.Path]::DirectorySeparatorChar -eq '\') { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if (-not $path.StartsWith($root, $comparison) -or $path.Length -eq $root.Length) { return $null }
+    return $path
+}
+
 function Resolve-LocalFile([string]$Directory, [string]$Url) {
+    if ($Url -cmatch '^file:') { return Resolve-FileUrl $Directory $Url }
     if ($Url -eq '' -or $Url -match '^[A-Za-z][A-Za-z0-9+.-]*:' -or $Url.StartsWith('/') -or $Url -match '[?#\\\x00-\x1f]') { return $null }
     $path = $Directory
     foreach ($segment in $Url.Split('/')) {
