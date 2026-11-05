@@ -115,7 +115,7 @@ set_target_properties(runtime_cache PROPERTIES POSITION_INDEPENDENT_CODE ON C_VI
 spisor_strict_warnings(runtime_cache)
 
 set(runtime_updates_sources src/boot.c src/boot_resolve.c src/plugin_choices.c src/updates.c
-    src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_rollback.c src/version_map.c)
+    src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_recorded.c src/updates_rollback.c src/version_map.c)
 add_library(runtime_updates OBJECT ${runtime_updates_sources})
 target_link_libraries(runtime_updates PUBLIC runtime_objects)
 target_include_directories(runtime_updates PRIVATE ${PROJECT_SOURCE_DIR}/src)

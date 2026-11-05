@@ -864,6 +864,22 @@ static void it_never_schedules_under_the_lock_a_version_a_rollback_moved_away_fr
     finish_base();
 }
 
+static void it_answers_what_a_host_s_last_start_recorded_running_and_changes_nothing(void) {
+    start_base("recorded");
+    const char *recorded = "{\"run\":{\"" TEST_HOST "\":\"1.0.0\",\"a\":\"1.0.0\"},\"next\":{\"a\":\"2.0.0\"}}";
+    record_references(TEST_HOST, recorded);
+    catalog_answer answer = recorded_of(TEST_HOST);
+    expect_success(answer, "recorded");
+    expect_member_json(answer.tree, "run", "{\"" TEST_HOST "\":\"1.0.0\",\"a\":\"1.0.0\"}", "recorded run");
+    expect_references(TEST_HOST, recorded, "references unchanged");
+    cJSON_Delete(answer.tree);
+    catalog_answer none = recorded_of("never-started");
+    expect_success(none, "nothing recorded");
+    expect_member_json(none.tree, "run", "{}", "empty run");
+    cJSON_Delete(none.tree);
+    finish_base();
+}
+
 int main(void) {
     it_writes_what_a_host_runs_and_what_it_scheduled_for_its_next_start_to_its_own_file();
     it_replaces_what_the_same_host_recorded_before();
@@ -901,6 +917,7 @@ int main(void) {
     it_refuses_a_rollback_no_switch_kept_a_version_for();
     it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact();
     it_refuses_a_host_id_that_is_no_plain_file_name();
+    it_answers_what_a_host_s_last_start_recorded_running_and_changes_nothing();
     it_starts_a_scheduled_version_on_its_sizes_without_hashing_it();
     it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes();
 
