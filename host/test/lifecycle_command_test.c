@@ -126,6 +126,53 @@ static void reports_a_marker_that_records_no_sizes_and_update_repairs_it(void) {
     finish_world(&world);
 }
 
+/** Gives host id's registration a home settings.all refuses, so reading its settings is refused. */
+static void break_home_of(const host_world *world, const char *id) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "hosts/%s.json", id);
+    cJSON *registration = json_in(world->base.state, rest);
+    CHECK(registration != NULL);
+    cJSON_ReplaceItemInObjectCaseSensitive(registration, "home", cJSON_CreateString("relative-home"));
+    char *text = cJSON_PrintUnformatted(registration);
+    write_in(world->base.state, rest, text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+}
+
+static void records_a_host_whose_settings_are_refused_under_refused_and_checks_the_rest(void) {
+    host_world world;
+    install_launch_world(&world, "lifecycle", "loader-settings", 0);
+    break_home_of(&world, LOADER_ID);
+    program run;
+    const char *arguments[] = {"update", NULL};
+    CHECK(run_command(&world, &run, arguments) == 1);
+    cJSON *summary = parsed(run.out);
+    const cJSON *checks = cJSON_GetObjectItemCaseSensitive(summary, "checks");
+    CHECK(cJSON_HasObjectItem(checks, "forebay-host"));
+    CHECK(!cJSON_HasObjectItem(checks, LOADER_ID));
+    const cJSON *refused = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(summary, "refused"), 0);
+    check_text(text_at(refused, "id"), LOADER_ID, "the loader is refused");
+    expect_contains(text_at(refused, "message"), "the home is empty or not an absolute path", "with its settings refusal");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(summary, "refused")) == 1);
+    cJSON_Delete(summary);
+    program_free(&run);
+    finish_world(&world);
+}
+
+static void refuses_the_whole_update_when_forebay_host_s_settings_are_refused(void) {
+    host_world world;
+    install_launch_world(&world, "lifecycle", "ecosystem-settings", 0);
+    break_home_of(&world, "forebay-host");
+    program run;
+    const char *arguments[] = {"update", NULL};
+    CHECK(run_command(&world, &run, arguments) == 1);
+    check_text(run.out, "", "no summary");
+    expect_contains(run.err, "the home is empty or not an absolute path", "names the refusal");
+    expect_contains(run.err, "fix: ", "with its fix");
+    program_free(&run);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -133,6 +180,8 @@ int main(void) {
     checks_every_host_for_updates_and_updates_an_application_through_its_recorded_method();
     removes_a_host_its_registration_and_its_references_and_sweeps_what_nothing_needs();
     reports_a_marker_that_records_no_sizes_and_update_repairs_it();
+    records_a_host_whose_settings_are_refused_under_refused_and_checks_the_rest();
+    refuses_the_whole_update_when_forebay_host_s_settings_are_refused();
     expect_user_path_unchanged(&guard);
     return check_summary("lifecycle_command_test");
 }

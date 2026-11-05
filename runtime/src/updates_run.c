@@ -49,17 +49,15 @@ static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
     return registrations;
 }
 
-/** The settings values settings.all answers for a host's home; an empty object when there are none. */
-static cJSON *settings_of(const update_run *run, const char *home) {
+/** The settings values settings.all answers for a host's home; NULL with *refusal set when it refused. */
+static cJSON *settings_of(const update_run *run, const char *home, cJSON **refusal) {
     cJSON *call = cJSON_CreateObject();
     cJSON_AddStringToObject(call, "home", home == NULL ? "" : home);
     cJSON_AddStringToObject(call, "portable", text_of(run->places, "portable"));
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_settings_all, call, &refusal);
-    cJSON_Delete(refusal);
+    cJSON *answer = runtime_call_or_refuse(runtime_settings_all, call, refusal);
     cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer, "values");
     cJSON_Delete(answer);
-    return values == NULL ? cJSON_CreateObject() : values;
+    return values;
 }
 
 /**
@@ -69,8 +67,11 @@ static cJSON *settings_of(const update_run *run, const char *home) {
  * @implNote install records a local catalog source in forebay-host's own layer, which no other host reads,
  * so without this a loader would check no catalog at all.
  */
-static cJSON *check_call(const update_run *run, const cJSON *registration, const cJSON *ecosystem) {
-    cJSON *settings = settings_of(run, text_of(registration, "home"));
+static cJSON *check_call(const update_run *run, const cJSON *registration, const cJSON *ecosystem, cJSON **refusal) {
+    cJSON *settings = settings_of(run, text_of(registration, "home"), refusal);
+    if (settings == NULL) {
+        return NULL;
+    }
     cJSON_DeleteItemFromObjectCaseSensitive(settings, "catalog");
     const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(ecosystem, "catalog");
     if (catalog != NULL) {
@@ -102,12 +103,18 @@ static int record(const update_run *run, const char *member, const char *id, cJS
     return cJSON_AddItemToArray(cJSON_GetObjectItemCaseSensitive(run->summary, "refused"), refusal);
 }
 
+/**
+ * Checks one registration and updates its method-installed application; a host whose settings are
+ * refused is recorded under refused and neither checked nor updated, since what it would check is unknown.
+ */
 static int update_one(const update_run *run, const cJSON *registration, const cJSON *ecosystem) {
     const char *id = text_of(registration, "id");
     cJSON *refusal = NULL;
-    cJSON *checked = runtime_call_or_refuse(runtime_updates_check, check_call(run, registration, ecosystem), &refusal);
+    cJSON *check = check_call(run, registration, ecosystem, &refusal);
+    int settings_read = check != NULL;
+    cJSON *checked = settings_read ? runtime_call_or_refuse(runtime_updates_check, check, &refusal) : NULL;
     int complete = record(run, "checks", id, checked, refusal);
-    if (complete && has_method_application(registration)) {
+    if (complete && settings_read && has_method_application(registration)) {
         cJSON *call = places_call(run);
         cJSON_AddStringToObject(call, "loader", id);
         cJSON_AddStringToObject(call, "operation", "update");
@@ -140,7 +147,9 @@ static cJSON *run_updates(const cJSON *argument, cJSON **refusal) {
     cJSON *registrations = run.summary == NULL ? NULL : registrations_of(&run, refusal);
     const cJSON *first = cJSON_GetArrayItem(registrations, 0);
     int ecosystem_first = first != NULL && strcmp(text_of(first, "id"), RUNTIME_BOOTED_HOST_ID) == 0;
-    cJSON *ecosystem = registrations == NULL ? NULL : ecosystem_first ? settings_of(&run, text_of(first, "home")) : cJSON_CreateObject();
+    cJSON *ecosystem = registrations == NULL ? NULL
+                       : ecosystem_first ? settings_of(&run, text_of(first, "home"), refusal)
+                                         : cJSON_CreateObject();
     int complete = ecosystem != NULL;
     for (const cJSON *registration = complete ? registrations->child : NULL; complete && registration != NULL;
          registration = registration->next) {
