@@ -19,7 +19,7 @@ static void fresh_state(const char *name) {
 }
 
 static cJSON *call_with(const char *tail) {
-    char text[1024];
+    char text[2400];
     snprintf(text, sizeof text, "{\"state\":\"%s\",\"hostId\":\"" HOST "\",%s}", state, tail);
     for (char *at = text; *at != 0; at++) {
         *at = *at == '\\' ? '/' : *at;
