@@ -556,6 +556,88 @@ static void it_runs_the_scheduled_version_after_apply_and_a_sweep_keeps_what_the
     finish_base();
 }
 
+/** One of two starts of one host racing on the version its references schedule. */
+typedef struct concurrent_apply {
+    catalog_answer answer;
+} concurrent_apply;
+
+static void apply_concurrently(concurrent_apply *job) {
+    job->answer = apply_unregistered(FOREBAY_HOST, no_settings(), "{\"libraries\":[]}");
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI applying_entry(LPVOID argument) {
+    apply_concurrently(argument);
+    return 0;
+}
+#else
+static void *applying_entry(void *argument) {
+    apply_concurrently(argument);
+    return NULL;
+}
+#endif
+
+static void run_two_applies(concurrent_apply *jobs) {
+#if defined(_WIN32)
+    HANDLE threads[2];
+    threads[0] = CreateThread(NULL, 0, applying_entry, &jobs[0], 0, NULL);
+    threads[1] = CreateThread(NULL, 0, applying_entry, &jobs[1], 0, NULL);
+    CHECK(threads[0] != NULL && threads[1] != NULL);
+    WaitForMultipleObjects(2, threads, TRUE, INFINITE);
+    CloseHandle(threads[0]);
+    CloseHandle(threads[1]);
+#else
+    pthread_t threads[2];
+    CHECK(pthread_create(&threads[0], NULL, applying_entry, &jobs[0]) == 0);
+    CHECK(pthread_create(&threads[1], NULL, applying_entry, &jobs[1]) == 0);
+    pthread_join(threads[0], NULL);
+    pthread_join(threads[1], NULL);
+#endif
+}
+
+static int carries_rollback(catalog_answer answer) {
+    return cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "rollback")) > 0;
+}
+
+/**
+ * The lock is held from reading the references to writing them, so the second start reads the first one's
+ * switch: it finds the scheduled version consumed and switches nothing, and only one of them keeps a rollback.
+ */
+static void it_converges_two_starts_of_one_host_that_race_on_its_scheduled_version(void) {
+    for (int round = 0; round < 12; round++) {
+        start_base("concurrent-applies");
+        list_host(FOREBAY_HOST, "1.0.0", "1.0.0");
+        list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+        write_catalog();
+        install_listed(FOREBAY_HOST, "1.0.0");
+        install_listed(FOREBAY_HOST, "2.0.0");
+        write_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+        record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{\"" FOREBAY_HOST "\":\"2.0.0\"}}");
+        register_host(FOREBAY_HOST);
+        concurrent_apply jobs[2] = {{{0, NULL}}, {{0, NULL}}};
+        run_two_applies(jobs);
+        CHECK(expect_success(jobs[0].answer, "first start") && expect_success(jobs[1].answer, "second start"));
+        expect_member_json(jobs[0].answer.tree, "run", "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "the first runs B");
+        expect_member_json(jobs[1].answer.tree, "run", "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "the second runs B");
+        CHECK(carries_rollback(jobs[0].answer) != carries_rollback(jobs[1].answer));
+        runtime_host_references recorded = runtime_read_host_references(state, FOREBAY_HOST);
+        expect_json(recorded.run, "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "one recorded run");
+        expect_json(recorded.next, "{}", "the scheduled version consumed once");
+        runtime_free_host_references(&recorded);
+        expect_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"2.0.0\"}", "one boot hint naming B");
+        cJSON_Delete(sweep_cache().tree);
+        CHECK(folder_exists("bundles/" FOREBAY_HOST "/2.0.0"));
+        catalog_answer booted = resolve_boot(FOREBAY_HOST, "[\"status\"]");
+        expect_executable(booted, FOREBAY_HOST, "2.0.0", "B boots after the sweep");
+        cJSON_Delete(booted.tree);
+        remove_run_record(jobs[0].answer);
+        remove_run_record(jobs[1].answer);
+        cJSON_Delete(jobs[0].answer.tree);
+        cJSON_Delete(jobs[1].answer.tree);
+        finish_base();
+    }
+}
+
 /* updates.rollback */
 
 static void it_rolls_a_switched_host_back_to_the_version_it_switched_from(void) {
@@ -927,6 +1009,7 @@ int main(void) {
     it_loses_no_next_write_when_two_checks_of_one_host_run_at_once();
 
     it_runs_the_scheduled_version_after_apply_and_a_sweep_keeps_what_the_hint_and_rollback_name();
+    it_converges_two_starts_of_one_host_that_race_on_its_scheduled_version();
     it_rolls_a_switched_host_back_to_the_version_it_switched_from();
     it_refuses_a_rollback_no_switch_kept_a_version_for();
     it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact();
