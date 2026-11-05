@@ -66,7 +66,8 @@ static int start_references(const runtime_host_references *recorded, start_recor
 }
 
 /**
- * The version of the host this start runs: the one its references schedule once installed intact, else
+ * The version of the host this start runs: the one its references schedule once installed with every file
+ * at its recorded size, else
  * the one they record it running, else the one the caller runs.
  */
 static int switch_host(const runtime_updates_request *request, const runtime_host_references *recorded,
@@ -75,7 +76,7 @@ static int switch_host(const runtime_updates_request *request, const runtime_hos
     current = current != NULL ? current : runtime_map_version(running_of(request), request->host_id);
     const char *scheduled = runtime_map_version(recorded->next, request->host_id);
     int switching = scheduled != NULL && (current == NULL || strcmp(scheduled, current) != 0) &&
-                    runtime_bundle_is_intact(request->cache, request->host_id, scheduled);
+                    runtime_bundle_is_sized(request->cache, request->host_id, scheduled);
     const char *version = switching ? scheduled : current;
     if (!start_references(recorded, record)) {
         return 0;
@@ -110,7 +111,7 @@ static const char *plugin_version(const runtime_updates_request *request, const 
     const char *previous = runtime_map_version(recorded->run, id);
     const char *rolled_away = runtime_map_version(recorded->rolled_back_from, id);
     int holds = rolled_away != NULL && previous != NULL && strcmp(resolved, rolled_away) == 0 &&
-                strcmp(previous, rolled_away) != 0 && runtime_bundle_is_intact(request->cache, id, previous);
+                strcmp(previous, rolled_away) != 0 && runtime_bundle_is_sized(request->cache, id, previous);
     return holds ? previous : resolved;
 }
 

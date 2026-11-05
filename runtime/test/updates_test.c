@@ -589,6 +589,48 @@ static void it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intac
     finish_base();
 }
 
+/** Rewrites the one file of an installed bundle version with other bytes of the same length. */
+static void damage_keeping_sizes(const char *id, const char *version, const char *name) {
+    char rest[512];
+    snprintf(rest, sizeof rest, "bundles/%s/%s/%s", id, version, name);
+    char *text = text_in(cache, rest);
+    CHECK(text != NULL && text[0] != 0);
+    if (text != NULL && text[0] != 0) {
+        text[0] = text[0] == 'x' ? 'y' : 'x';
+        write_in(cache, rest, text);
+    }
+    free(text);
+}
+
+static void it_starts_a_scheduled_version_on_its_sizes_without_hashing_it(void) {
+    start_base("start-on-sizes");
+    list_plugin(LOADER, "2.0.0", "2.0.0");
+    write_catalog();
+    mark_installed("bundles", LOADER, "1.0.0");
+    install_listed(LOADER, "2.0.0");
+    damage_keeping_sizes(LOADER, "2.0.0", "plugin.json");
+    record_references(LOADER, "{\"run\":{\"" LOADER "\":\"1.0.0\"},\"next\":{\"" LOADER "\":\"2.0.0\"}}");
+    catalog_answer started = apply_plain(LOADER, "{}");
+    expect_member_json(started.tree, "run", "{\"" LOADER "\":\"2.0.0\"}", "switched on sizes alone");
+    remove_run_record(started);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes(void) {
+    start_base("rollback-hashed");
+    list_plugin(FOREBAY_HOST, "1.0.0", "2.0.0");
+    write_catalog();
+    install_listed(FOREBAY_HOST, "1.0.0");
+    damage_keeping_sizes(FOREBAY_HOST, "1.0.0", "plugin.json");
+    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+                                    "\":\"1.0.0\"}}");
+    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    expect_refusal(rolled, "is not installed intact", "hashed before the lock");
+    cJSON_Delete(rolled.tree);
+    finish_base();
+}
+
 static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     start_base("escape-id");
     expect_refusal(apply_plain("../escape", "{}"), "outside", "apply escape");
@@ -841,6 +883,8 @@ int main(void) {
     it_refuses_a_rollback_no_switch_kept_a_version_for();
     it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact();
     it_refuses_a_host_id_that_is_no_plain_file_name();
+    it_starts_a_scheduled_version_on_its_sizes_without_hashing_it();
+    it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes();
 
     it_lets_a_start_finish_while_a_check_s_download_is_stalled();
     it_holds_a_rollback_until_the_catalog_moves_past_the_version_rolled_away_from();

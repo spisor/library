@@ -291,6 +291,32 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
     finish_world(&world);
 }
 
+static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "session-sizes", 1);
+    char *script = joined(world.base.cache, "bundles/javascript-host/1.0.0/host.js");
+    write_file(script, "export {}:\n");
+    program launcher;
+    const char *passed[] = {"sized", "0", NULL};
+    launch(&world, &launcher, passed, NULL);
+    cJSON *started = await_application(&world, "sized");
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
+    expect_contains(starts, "host.js " LOADER_ID, "session host started on sizes");
+    release_application(&world, "sized");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    free(starts);
+    cJSON_Delete(started);
+    free(script);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
 /** A file where acquired runtimes are unpacked, so acquiring the pinned one is refused before any download. */
 static void block_runtime_acquisition(const host_world *world) {
     char *folder = joined(world->base.cache, "runtimes/node");
@@ -366,6 +392,7 @@ int main(void) {
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
     starts_the_session_host_on_a_javascript_runtime_found_again_when_the_recorded_one_is_gone();
+    starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it();
     runs_the_application_without_its_session_host_when_no_javascript_runtime_can_be_found();
     runs_the_application_when_the_loader_cannot_be_registered_again_saying_why();
     expect_user_path_unchanged(&guard);

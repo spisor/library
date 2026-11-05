@@ -64,7 +64,25 @@ static cJSON *rolled(const runtime_host_references *references) {
     return answer;
 }
 
-static cJSON *roll_back(const runtime_updates_request *request, const char *item, cJSON **refusal) {
+/** The version the host keeps as item's rollback now, freed with free; NULL when it keeps none. */
+static char *kept_version(const runtime_updates_request *request, const char *item) {
+    runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
+    const char *kept = recorded.rollback == NULL ? NULL : runtime_map_version(recorded.rollback, item);
+    const char *parts[1] = {kept};
+    char *version = kept == NULL ? NULL : runtime_cache_text(parts, 1);
+    runtime_free_host_references(&recorded);
+    return version;
+}
+
+/**
+ * Rolls item back to the version kept for it, verified is that version when its every file was hashed
+ * intact before the lock was taken, else NULL.
+ *
+ * @implNote Under the lock only the sizes are checked again, so the lock never waits on hashing; a kept
+ * version that changed after the hashing is refused as not intact rather than hashed under the lock.
+ */
+static cJSON *roll_back(const runtime_updates_request *request, const char *item, const char *verified,
+                        cJSON **refusal) {
     runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
     const char *kept = recorded.rollback == NULL ? NULL : runtime_map_version(recorded.rollback, item);
     char *version = NULL;
@@ -76,7 +94,8 @@ static cJSON *roll_back(const runtime_updates_request *request, const char *item
     char *problem = NULL;
     if (recorded.run != NULL && kept == NULL) {
         *refusal = no_rollback(item);
-    } else if (version != NULL && !runtime_bundle_is_intact(request->cache, item, version)) {
+    } else if (version != NULL && (verified == NULL || strcmp(verified, version) != 0 ||
+                                   !runtime_bundle_is_sized(request->cache, item, version))) {
         *refusal = not_intact(item, version);
     } else if (version != NULL && swap(&recorded, item, version)) {
         if (runtime_record_host_references(request->state, request->host_id, &recorded, &problem) &&
@@ -99,8 +118,14 @@ cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSO
         *refusal = runtime_cache_refusal(parts, 1, "pass item, the id of the bundle to roll back");
         return NULL;
     }
+    char *kept = kept_version(request, item);
+    if (kept != NULL && !runtime_bundle_is_intact(request->cache, item, kept)) {
+        free(kept);
+        kept = NULL;
+    }
     runtime_hosts_guard *guard = runtime_updates_lock_registered(request, refusal);
-    cJSON *answer = guard == NULL ? NULL : roll_back(request, item, refusal);
+    cJSON *answer = guard == NULL ? NULL : roll_back(request, item, kept, refusal);
     runtime_hosts_unlock(guard);
+    free(kept);
     return answer;
 }

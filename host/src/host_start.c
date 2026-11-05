@@ -5,6 +5,7 @@
 
 #include "boot.h"
 #include "cache.h"
+#include "cache_marker.h"
 #include "cache_place.h"
 #include "host_output.h"
 #include "install_runtime.h"
@@ -24,16 +25,17 @@ static cJSON *refused(const char *first, const char *second, const char *third) 
     return host_refusal_of(parts, 3, HOST_REINSTALL_FIX);
 }
 
-/** cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists. */
+/**
+ * cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists at its
+ * recorded size.
+ *
+ * @implNote Sizes only, as forebay-boot checks at every start: hashing is for install, update and status,
+ * so a start never waits on it.
+ */
 static char *installed_version(const host_context *context, const char *id, const char *version, cJSON **refusal) {
     const char *segments[4] = {context->cache, "bundles", id, version};
     char *directory = version == NULL ? NULL : joined(segments, 4);
-    cJSON *argument = directory == NULL ? NULL : cJSON_CreateObject();
-    if (argument != NULL && cJSON_AddStringToObject(argument, "directory", directory) == NULL) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    cJSON *check = argument == NULL ? NULL : host_call(runtime_cache_check, argument, refusal);
+    cJSON *check = directory == NULL ? NULL : runtime_cache_check_version_sizes(directory);
     const char *kind = host_text(check, "kind");
     int intact = kind != NULL && strcmp(kind, "intact") == 0;
     if (check != NULL && !intact) {
