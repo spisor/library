@@ -35,10 +35,12 @@ cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *p
 cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed);
 
 /**
- * The file holding the application layer of the ecosystem settings of home, settings.json under its config
- * directory, freed with free; NULL when memory runs out. The file need not exist.
+ * The settings file of the layer that answers key in the merged ecosystem settings of home: the portable
+ * place's settings.json when only that layer holds key, else settings.json under the home's config
+ * directory, the layer a user's choice is written to. portable may be NULL. Freed with free; NULL when
+ * memory runs out. The file need not exist.
  */
-char *runtime_ecosystem_settings_file(const char *home);
+char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key);
 
 RUNTIME_EXPORT int32_t runtime_config_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 RUNTIME_EXPORT int32_t runtime_config_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);

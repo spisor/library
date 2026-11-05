@@ -429,6 +429,19 @@ static void refuses_a_launch_naming_the_setting_of_a_required_plugin_that_is_dis
     finish_world(&world);
 }
 
+static void refuses_a_launch_naming_the_portable_settings_file_when_the_portable_layer_disables_a_required_plugin(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "launch", "required-disabled-portable");
+    write_loader_setting(&world, "{}");
+    set_portable(&world.base, "plugins." SESSION_PLUGIN ".enabled", cJSON_CreateFalse());
+    char *file = joined(world.base.portable, "settings.json");
+    char fix[2048];
+    snprintf(fix, sizeof fix, "set plugins." SESSION_PLUGIN ".enabled to true in %s", file);
+    expect_refused_launch(&world, "disabled-portable", SESSION_PLUGIN, fix);
+    free(file);
+    finish_world(&world);
+}
+
 static void refuses_a_launch_when_the_session_host_of_a_loader_with_required_plugins_cannot_start(void) {
     host_world world;
     install_launch_world_requiring_session_plugin(&world, "launch", "required-no-javascript");
@@ -641,6 +654,7 @@ int main(void) {
     starts_the_session_host_for_the_plugins_the_loader_requires();
     refuses_a_launch_naming_the_required_plugin_that_is_not_installed();
     refuses_a_launch_naming_the_setting_of_a_required_plugin_that_is_disabled();
+    refuses_a_launch_naming_the_portable_settings_file_when_the_portable_layer_disables_a_required_plugin();
     refuses_a_launch_when_the_session_host_of_a_loader_with_required_plugins_cannot_start();
     runs_the_application_when_the_loader_cannot_be_registered_again_saying_why();
     expect_user_path_unchanged(&guard);
