@@ -63,8 +63,8 @@ static DWORD standard_handles(HANDLE handles[3]) {
     return count;
 }
 
-/** Starts the child with the console and standard streams of this process and only those; 1 on success. */
-static int create(const wchar_t *application, wchar_t *line, wchar_t *block, PROCESS_INFORMATION *information) {
+/** Starts the child with the console and standard streams of this process and only those, and flags; 1 on success. */
+static int create(const wchar_t *application, wchar_t *line, wchar_t *block, DWORD extra_flags, PROCESS_INFORMATION *information) {
     HANDLE handles[3];
     DWORD count = standard_handles(handles);
     LPPROC_THREAD_ATTRIBUTE_LIST attributes = runtime_windows_handle_list(handles, count);
@@ -76,7 +76,7 @@ static int create(const wchar_t *application, wchar_t *line, wchar_t *block, PRO
     startup.StartupInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     startup.StartupInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     startup.lpAttributeList = attributes;
-    DWORD flags = EXTENDED_STARTUPINFO_PRESENT | (block != NULL ? CREATE_UNICODE_ENVIRONMENT : 0);
+    DWORD flags = EXTENDED_STARTUPINFO_PRESENT | (block != NULL ? CREATE_UNICODE_ENVIRONMENT : 0) | extra_flags;
     int created = attributes != NULL &&
                   CreateProcessW(application, line, NULL, NULL, count > 0, flags, block, NULL, &startup.StartupInfo, information);
     runtime_windows_free_handle_list(attributes);
@@ -121,8 +121,8 @@ static cJSON *wait_refusal(const char *executable, DWORD error) {
     return host_refusal_of(parts, 3, fix);
 }
 
-int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
-                   int *exit_code, cJSON **refusal) {
+static int run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
+                     DWORD extra_flags, int *exit_code, cJSON **refusal) {
     *refusal = NULL;
     int through_shell = host_needs_command_shell(executable);
     wchar_t *application = through_shell ? NULL : spisor_wide_path(executable);
@@ -132,7 +132,7 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     PROCESS_INFORMATION information = {NULL, NULL, 0, 0};
     int prepared = line != NULL && (through_shell || application != NULL) && (environment == NULL || block != NULL);
     SetConsoleCtrlHandler(outlive_stop, TRUE);
-    int created = prepared && create(application, line, block, &information);
+    int created = prepared && create(application, line, block, extra_flags, &information);
     DWORD error = created ? ERROR_SUCCESS : GetLastError();
     free(block);
     free(line);
@@ -155,10 +155,28 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     return created;
 }
 
+int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
+                   int *exit_code, cJSON **refusal) {
+    return run_child(executable, arguments, environment, watch, 0, exit_code, refusal);
+}
+
+/**
+ * CREATE_NO_WINDOW when this process has no console window, else nothing, so the child inherits the
+ * console it has.
+ *
+ * @implNote Without it Windows gives the console child of a console-less process a console window of its
+ * own, which flashes open on a SessionStart run by an application that spawns its hooks detached.
+ * GetConsoleWindow is also NULL in a console made with no window; the child then gets a windowless console
+ * of its own rather than sharing that one, about 20 ms more per hook measured on Windows Debug.
+ */
+static DWORD replacing_flags(void) {
+    return GetConsoleWindow() == NULL ? CREATE_NO_WINDOW : 0;
+}
+
 cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch) {
     cJSON *refusal = NULL;
     int code = 1;
-    if (host_run_child(executable, arguments, NULL, watch, &code, &refusal)) {
+    if (run_child(executable, arguments, NULL, watch, replacing_flags(), &code, &refusal)) {
         exit(code);
     }
     return refusal;

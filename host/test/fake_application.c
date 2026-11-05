@@ -122,11 +122,14 @@ static char *signal_file(const char *signals, const char *tag, const char *endin
     return path;
 }
 
-/** Records {pid, parent, argv} as <tag>.started, written whole under a temporary name first. */
+/** Records {pid, parent, argv} and, on Windows, consoleWindow as <tag>.started, written whole under a temporary name first. */
 static void record_start(const char *signals, const char *tag, int count, char **arguments) {
     cJSON *started = cJSON_CreateObject();
     cJSON_AddNumberToObject(started, "pid", (double)own_id());
     cJSON_AddNumberToObject(started, "parent", (double)parent_id());
+#if defined(_WIN32)
+    cJSON_AddBoolToObject(started, "consoleWindow", GetConsoleWindow() != NULL);
+#endif
     cJSON *argv = cJSON_AddArrayToObject(started, "argv");
     for (int index = 1; index < count; index++) {
         cJSON_AddItemToArray(argv, cJSON_CreateString(arguments[index]));

@@ -265,6 +265,34 @@ static void identifies_the_running_version_when_the_cache_is_named_by_its_short_
 }
 #endif
 
+#if defined(_WIN32)
+/**
+ * forebay-boot started with no console at all, as an application that spawns its hooks detached starts
+ * it: the forebay-host it boots gets a console with no window, which the application it launches
+ * inherits, rather than a console window of its own.
+ */
+static void gives_what_it_boots_no_console_window_when_it_has_no_console(void) {
+    host_world world;
+    install_boot_world(&world, "no-console");
+    program launcher;
+    const char *arguments[] = {"forebay-host", "launch", LOADER_ID, "windowless", "0", NULL};
+    char *stub = stub_of(&world);
+    world_start(&world, &launcher, stub, arguments, NULL, 1);
+    cJSON *started = await_application(&world, "windowless");
+    const cJSON *window = cJSON_GetObjectItemCaseSensitive(started, "consoleWindow");
+    CHECK(cJSON_IsFalse(window));
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "windowless");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    free(stub);
+    program_free(&launcher);
+    finish_world(&world);
+}
+#endif
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -278,6 +306,7 @@ int main(void) {
 #if defined(_WIN32)
     records_the_forebay_host_version_a_background_command_runs_while_its_layer_runs();
     identifies_the_running_version_when_the_cache_is_named_by_its_short_name();
+    gives_what_it_boots_no_console_window_when_it_has_no_console();
 #endif
     expect_user_path_unchanged(&guard);
     return check_summary("boot_stub_test");
