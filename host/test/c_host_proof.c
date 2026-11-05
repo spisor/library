@@ -4,7 +4,7 @@
 
 #define STEP_COUNT 5
 
-static const char *const STEP_NAMES[STEP_COUNT] = {"install", "status", "update", "remove " LOADER_ID, "remove forebay-host"};
+static const char *const STEP_NAMES[STEP_COUNT] = {"install", "status", "update", ("remove " LOADER_ID), "remove forebay-host"};
 static const char *const FIRST_LOADER[] = {"1.0.0", NULL};
 static const char *const BOTH_LOADERS[] = {"1.0.0", "1.1.0", NULL};
 
