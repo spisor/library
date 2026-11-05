@@ -21,6 +21,7 @@ typedef cJSON *(*runtime_updates_operation)(const runtime_updates_request *reque
 cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON **refusal);
 cJSON *runtime_updates_check_for(const runtime_updates_request *request, cJSON **refusal);
 cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSON **refusal);
+cJSON *runtime_updates_recorded_for(const runtime_updates_request *request, cJSON **refusal);
 
 /** The registry lock under request's state, or NULL with *refusal saying it could not be taken. */
 spisor_lock *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal);

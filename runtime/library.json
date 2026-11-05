@@ -2015,6 +2015,34 @@
           }
         },
         {
+          "name": "recorded",
+          "symbol": "runtime_updates_recorded",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "state": { "type": "string", "minLength": 1 },
+                  "cache": { "type": "string", "minLength": 1 }
+                },
+                "required": ["state", "cache"]
+              },
+              "hostId": { "type": "string", "minLength": 1 }
+            },
+            "required": ["places", "hostId"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "run": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "required": ["run"],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "run",
           "symbol": "runtime_updates_run",
           "kind": "json",

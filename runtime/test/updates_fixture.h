@@ -331,6 +331,13 @@ static inline catalog_answer rollback_of(const char *host, const char *item) {
     return call_catalog(runtime_updates_rollback, argument);
 }
 
+static inline catalog_answer recorded_of(const char *host) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "places", places_json());
+    cJSON_AddStringToObject(argument, "hostId", host);
+    return call_catalog(runtime_updates_recorded, argument);
+}
+
 static inline catalog_answer sweep_cache(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);

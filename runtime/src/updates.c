@@ -142,3 +142,7 @@ RUNTIME_EXPORT int32_t runtime_updates_check(const uint8_t *in, size_t in_len, u
 RUNTIME_EXPORT int32_t runtime_updates_rollback(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return serve(in, in_len, out, out_len, runtime_updates_rollback_for);
 }
+
+RUNTIME_EXPORT int32_t runtime_updates_recorded(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
+    return serve(in, in_len, out, out_len, runtime_updates_recorded_for);
+}

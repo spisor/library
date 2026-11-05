@@ -95,6 +95,7 @@ Service), and that store may prompt the user.
 | `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback; a host with no registration is refused |
 | `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, forebay-host first lending its catalog sources, and `install.application` updating each application an install method installed |
 | `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback; a host with no registration is refused |
+| `updates.recorded` | `places`, `hostId` | `{ run }`, what the host's last start recorded running, empty when it recorded nothing; nothing is switched or recorded |
 | `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
 | `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
 | `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
