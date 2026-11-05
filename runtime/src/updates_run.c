@@ -142,9 +142,9 @@ static cJSON *run_updates(const cJSON *argument, cJSON **refusal) {
     int ecosystem_first = first != NULL && strcmp(text_of(first, "id"), RUNTIME_BOOTED_HOST_ID) == 0;
     cJSON *ecosystem = registrations == NULL ? NULL : ecosystem_first ? settings_of(&run, text_of(first, "home")) : cJSON_CreateObject();
     int complete = ecosystem != NULL;
-    const cJSON *registration;
-    cJSON_ArrayForEach(registration, complete ? registrations : NULL) {
-        complete = complete && update_one(&run, registration, ecosystem);
+    for (const cJSON *registration = complete ? registrations->child : NULL; complete && registration != NULL;
+         registration = registration->next) {
+        complete = update_one(&run, registration, ecosystem);
     }
     cJSON_Delete(ecosystem);
     cJSON_Delete(registrations);
