@@ -254,18 +254,73 @@ static void runs_the_application_when_the_loader_cannot_be_registered_again_sayi
     finish_world(&world);
 }
 
-static void refuses_a_session_host_when_install_recorded_no_javascript_runtime(void) {
+static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the_recorded_one_is_gone(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "node-gone", 1);
+    char *recorded = joined(world.base.root, "node-bin/node" EXECUTABLE_ENDING);
+    char *again = joined(world.base.root, "node-again");
+    char *moved = joined(again, "node" EXECUTABLE_ENDING);
+    CHECK(spisor_make_directories(again) == 1);
+    copy_file(LAYER_FIXTURE_PATH, moved);
+    CHECK(runtime_remove_file_entry(recorded) == RUNTIME_ENTRY_DONE);
+    char path[4096];
+    snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world.bin, again);
+    program launcher;
+    const char *passed[] = {"again", "0", NULL};
+    launch(&world, &launcher, passed, path);
+    cJSON *started = await_application(&world, "again");
+    long session = await_holders(&world, LOADER_ID, 2);
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
+    expect_contains(starts, "host.js " LOADER_ID, "session host started");
+    cJSON *record = json_in(world.base.cache, "runtimes/javascript.json");
+    expect_contains(text_at(record, "executable"), "node-again", "the runtime found again is recorded");
+    release_application(&world, "again");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(session);
+    stop_if_alive(background);
+    cJSON_Delete(record);
+    free(starts);
+    cJSON_Delete(started);
+    free(moved);
+    free(again);
+    free(recorded);
+    program_free(&launcher);
+    finish_world(&world);
+}
+
+/** A file where acquired runtimes are unpacked, so acquiring the pinned one is refused before any download. */
+static void block_runtime_acquisition(const host_world *world) {
+    char *folder = joined(world->base.cache, "runtimes/node");
+    CHECK(runtime_remove_tree(folder) == 1);
+    write_file(folder, "no runtime may be unpacked here");
+    free(folder);
+}
+
+static void runs_the_application_without_its_session_host_when_no_javascript_runtime_can_be_found(void) {
     host_world world;
     install_launch_world(&world, "launch", "no-javascript", 1);
     char *record = joined(world.base.cache, "runtimes/javascript.json");
+    char *node = joined(world.base.root, "node-bin/node" EXECUTABLE_ENDING);
     CHECK(runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE);
+    CHECK(runtime_remove_file_entry(node) == RUNTIME_ENTRY_DONE);
+    block_runtime_acquisition(&world);
     program launcher;
-    const char *passed[] = {"unstarted", "0", NULL};
+    const char *passed[] = {"bare", "0", NULL};
     launch(&world, &launcher, passed, NULL);
-    CHECK(program_finish(&launcher, 30000) == 1);
-    expect_contains(launcher.err, "no JavaScript runtime is recorded", "named");
-    expect_contains(launcher.err, "fix: run forebay-host install --catalog <path or url> again", "reinstall fix");
-    CHECK(!exists_in(world.base.state, "processes/" BACKGROUND_ID ".json"));
+    cJSON *started = await_application(&world, "bare");
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "bare");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    expect_contains(launcher.err, "could not start the session host of " LOADER_ID, "reported");
+    expect_contains(launcher.err, "fix: ", "with its fix");
+    CHECK(!exists_in(world.base.state, "processes/" LOADER_ID ".json"));
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    free(node);
     free(record);
     program_free(&launcher);
     finish_world(&world);
@@ -310,7 +365,8 @@ int main(void) {
 #endif
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
     refuses_a_background_host_that_records_no_start_before_anything_starts();
-    refuses_a_session_host_when_install_recorded_no_javascript_runtime();
+    starts_the_session_host_on_a_javascript_runtime_found_again_when_the_recorded_one_is_gone();
+    runs_the_application_without_its_session_host_when_no_javascript_runtime_can_be_found();
     runs_the_application_when_the_loader_cannot_be_registered_again_saying_why();
     expect_user_path_unchanged(&guard);
     return check_summary("launch_test");

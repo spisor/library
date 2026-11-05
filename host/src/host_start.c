@@ -7,6 +7,7 @@
 #include "cache.h"
 #include "cache_place.h"
 #include "host_output.h"
+#include "install_runtime.h"
 #include "node_json_file.h"
 #include "paths.h"
 #include "spisor/path.h"
@@ -59,23 +60,6 @@ static char *entry_inside(const char *directory, const char *id, const char *ent
     return path;
 }
 
-/** The JS runtime executable install recorded in cache/runtimes/javascript.json. */
-static char *javascript_runtime(const host_context *context, cJSON **refusal) {
-    const char *segments[3] = {context->cache, "runtimes", "javascript.json"};
-    char *record = joined(segments, 3);
-    cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record);
-    const char *executable = host_text(recorded, "executable");
-    char *copy = executable == NULL ? NULL : malloc(strlen(executable) + 1);
-    if (copy != NULL) {
-        strcpy(copy, executable);
-    } else {
-        *refusal = refused("no JavaScript runtime is recorded in ", record == NULL ? context->cache : record, "");
-    }
-    cJSON_Delete(recorded);
-    free(record);
-    return copy;
-}
-
 static cJSON *start_with(const host_context *context, const char *executable, const char *script, const char *id) {
     cJSON *start = cJSON_CreateObject();
     cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
@@ -96,7 +80,8 @@ static cJSON *layer_start(const host_context *context, const char *runtime, cons
     char *path = entry_inside(directory, id, entry, refusal);
     int native = runtime != NULL && strcmp(runtime, NATIVE_RUNTIME) == 0;
     int javascript = runtime != NULL && strcmp(runtime, JAVASCRIPT_RUNTIME) == 0;
-    char *executable = path != NULL && javascript ? javascript_runtime(context, refusal) : NULL;
+    char *executable = path != NULL && javascript ? runtime_javascript_executable(context->cache, context->environment, refusal)
+                                                  : NULL;
     cJSON *start = NULL;
     if (path != NULL && native && !host_make_runnable(path)) {
         *refusal = refused("the entry of ", id, " cannot be made runnable");

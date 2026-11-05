@@ -12,9 +12,11 @@
 #include "catalog_text.h"
 #include "directory_tree.h"
 #include "fetch.h"
+#include "followed_entry.h"
 #include "file_times.h"
 #include "install_support.h"
 #include "json_service.h"
+#include "node_json_file.h"
 #include "on_path.h"
 #include "paths.h"
 #include "platform_key.h"
@@ -566,6 +568,34 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const
         *refusal = refused("the JavaScript runtime could not be recorded under ", cache, CACHE_FIX);
     }
     return answer;
+}
+
+static char *recorded_executable(const char *cache) {
+    const char *segments[3] = {cache, "runtimes", RECORD_FILE};
+    char *record = joined(segments, 3);
+    cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record);
+    const char *executable = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(recorded, "executable"));
+    char *copy = executable != NULL && runtime_is_followed_file(executable, 0) ? runtime_catalog_copy(executable) : NULL;
+    cJSON_Delete(recorded);
+    free(record);
+    return copy;
+}
+
+char *runtime_javascript_executable(const char *cache, const cJSON *environment, cJSON **refusal) {
+    char *executable = recorded_executable(cache);
+    if (executable != NULL) {
+        return executable;
+    }
+    cJSON *acquired = runtime_acquire_javascript(cache, runtime_platform_key(), environment, refusal);
+    const char *found = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(acquired, "executable"));
+    executable = found == NULL ? NULL : runtime_catalog_copy(found);
+    if (acquired != NULL && executable == NULL) {
+        *refusal = refused("the JavaScript runtime acquired again could not be read back under ", cache, CACHE_FIX);
+    } else if (acquired == NULL && *refusal == NULL) {
+        *refusal = refused("no JavaScript runtime could be found or acquired for ", cache, RUNTIME_FIX);
+    }
+    cJSON_Delete(acquired);
+    return executable;
 }
 
 static cJSON *runtime_for(const cJSON *argument, cJSON **refusal) {
