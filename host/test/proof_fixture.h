@@ -120,11 +120,11 @@ static inline char *write_proof_loader(const host_world *world, const char *vers
     char rest[256];
     snprintf(rest, sizeof rest, "inputs/loader-%s", version);
     char *directory = joined(world->base.root, rest);
-    char manifest[2048];
+    char manifest[4096];
     snprintf(manifest, sizeof manifest,
              "{\"id\": \"" LOADER_ID "\", \"version\": \"%s\", \"runtime\": \"native\", \"application\": {\"id\": \"claude\", "
              "\"label\": \"Claude Code\", \"binary\": \"" APPLICATION_ID "\", \"home\": {\"candidates\": [\"~/homes/claude\"]}, "
-             "\"packages\": {\"fake\": \"fixture-pkg\"}}, \"pathCommands\": {\"requested\": [\"" PROOF_COMMAND "\"], \"minimum\": 0}, "
+             "\"packages\": {\"fake\": \"fixture-pkg\"}, \"entry\": " HOOK_ENTRY_JSON "}, \"pathCommands\": {\"requested\": [\"" PROOF_COMMAND "\"], \"minimum\": 0}, "
              "\"background\": [], \"plugins\": []}",
              version);
     write_in(directory, "host.json", manifest);

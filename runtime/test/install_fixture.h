@@ -233,6 +233,14 @@ static inline void list_host(install_base *base, const char *id, const char *ver
 }
 
 /** The application JSON of id, found as binary, at home candidate ~/homes/<id>, under package mapping packages_json. */
+/** An entry running the loader's hook through the boot stub, with one settings member the removal takes back. */
+#define HOOK_ENTRY_JSON                                                                                              \
+    "{\"runsOnJavascriptHost\": false, \"directories\": [\"{{entryRoot}}\", \"{{entryRoot}}/hooks\", \"{{home}}\"], " \
+    "\"files\": [{\"path\": \"{{entryRoot}}/hooks/hooks.json\", \"json\": {\"hooks\": {\"SessionStart\": [{\"hooks\": " \
+    "[{\"type\": \"command\", \"command\": \"{{boot}}\", \"args\": [\"{{bootedHost}}\", \"hook\", \"{{loaderId}}\", "  \
+    "\"session-start\"], \"timeout\": 30}]}]}}}], "                                                                     \
+    "\"settings\": [{\"file\": \"{{home}}/settings.json\", \"key\": [\"enabledPlugins\", \"spisor@spisor\"], \"value\": true}]}"
+
 static inline cJSON *application_json(const char *id, const char *binary, const char *packages_json) {
     char text[1024];
     snprintf(text, sizeof text,
@@ -240,6 +248,12 @@ static inline cJSON *application_json(const char *id, const char *binary, const 
              "\"packages\": %s}",
              id, id, binary, id, packages_json);
     return parsed(text);
+}
+
+static inline cJSON *application_with_hook_entry(const char *id, const char *binary, const char *packages_json) {
+    cJSON *application = application_json(id, binary, packages_json);
+    cJSON_AddItemToObject(application, "entry", parsed(HOOK_ENTRY_JSON));
+    return application;
 }
 
 /** A loader host for application, its host.json the loader standard asking for commands, background hosts and required plugins. */

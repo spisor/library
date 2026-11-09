@@ -110,7 +110,7 @@ spisor_strict_warnings(background_fixture)
 
 set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_processes_test_objects}
     $<TARGET_OBJECTS:runtime_change_reversal>)
-foreach(name hosts_test loader_test detect_test lists_test)
+foreach(name hosts_test loader_test entry_template_test detect_test lists_test)
     runtime_test(${name} ${runtime_hosts_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)

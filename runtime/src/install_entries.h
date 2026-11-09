@@ -7,32 +7,24 @@
 #include "cJSON.h"
 #include "export.h"
 
-/** The catalog item OpenCode's in-process entry runs a loader's host on. */
+/** The catalog item an entry declaring runsOnJavascriptHost runs a loader's host on. */
 #define RUNTIME_JAVASCRIPT_HOST_ID "javascript-host"
 
-/** Whether the entry of application_id runs inside the application on the javascript-host bundle. */
-int runtime_entry_needs_javascript_host(const char *application_id);
-
 /**
- * Writes the entry that makes loader's application start the loader's host through its own plugin
- * mechanism, every file, directory and settings member through changes.apply under the loader's id, so
- * removing the loader reverses all of it. Answers {written: true, sequences}, the sequence of each change
- * recorded now, or {written: false, message, fix} for an application this runtime writes no entry for;
- * NULL with *refusal set when a change is refused.
+ * Writes the entry the loader's application declares, every directory, file and settings member through
+ * changes.apply under the loader's id, so removing the loader reverses all of it. Answers {written: true,
+ * runsOnJavascriptHost, sequences}, the sequence of each change recorded now, or {written: false, message,
+ * fix} for an application declaring no entry; NULL with *refusal set when a change is refused.
  */
 cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **refusal);
 
 /**
- * install.entry: { places: { state, cache }, loader: { id, application: { id, label }, home } } answering
- * what runtime_install_entry answers. Claude Code's entry is a directory marketplace in
- * <state>/entries/<loader id> whose one plugin runs forebay-boot on SessionStart, and the two settings
- * members that make Claude Code know and enable it; OpenCode's is one plugin file in its global plugin
- * directory that runs the loader's host on the javascript-host bundle in OpenCode's own process.
+ * install.entry: { places: { state, cache }, loader: { id, application: { id, label, entry }, home } }
+ * answering what runtime_install_entry answers.
  *
- * @implNote Only extraKnownMarketplaces.spisor and enabledPlugins["spisor@spisor"] are written into
- * Claude Code's settings, never hooks: a json-key change sets its member wholesale, so setting
- * hooks.SessionStart would replace the user's own hooks. A change already on disk is not recorded again,
- * so writing the entry twice changes nothing.
+ * @implNote A json-key change sets its member wholesale, so an entry must declare members it owns outright
+ * rather than one the user also writes to. A change already on disk is not recorded again, so writing the
+ * entry twice changes nothing.
  */
 RUNTIME_EXPORT int32_t runtime_install_entry_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "json_service.h"
+#include "loader_issues.h"
 #include "spisor/json_kind.h"
 
 #define PORTABLE_NAME_LIMIT 64
@@ -13,13 +14,7 @@
     "most 64 characters"
 #define PATH_COMMANDS_FIX "declare the PATH commands as {\"requested\": [\"name\"], \"minimum\": 0 or 1}"
 
-/** The issues found so far; complete drops to 0 when memory runs out, and every later add is skipped. */
-typedef struct issue_list {
-    cJSON *issues;
-    int complete;
-} issue_list;
-
-static void add_issue(issue_list *list, const char *path, const char *detail, const char *fix) {
+void runtime_loader_add_issue(issue_list *list, const char *path, const char *detail, const char *fix) {
     cJSON *issue = list->complete ? cJSON_CreateObject() : NULL;
     int added = issue != NULL && cJSON_AddStringToObject(issue, "path", path) != NULL &&
                 cJSON_AddStringToObject(issue, "detail", detail) != NULL &&
@@ -52,7 +47,7 @@ static void add_issue_naming(issue_list *list, const char *path, const char *bef
         list->complete = 0;
     } else {
         snprintf(detail, size, "%s%s%s", before, text, after);
-        add_issue(list, path, detail, fix);
+        runtime_loader_add_issue(list, path, detail, fix);
     }
     free(detail);
     cJSON_free(text);
@@ -108,7 +103,7 @@ static void check_text(issue_list *list, const cJSON *application, const char *n
     snprintf(path, sizeof path, "/application/%s", name);
     snprintf(detail, sizeof detail, "the application has no %s", name);
     snprintf(fix, sizeof fix, "name the application's %s as a non-empty string", name);
-    add_issue(list, path, detail, fix);
+    runtime_loader_add_issue(list, path, detail, fix);
 }
 
 static void check_binary(issue_list *list, const cJSON *binary) {
@@ -129,7 +124,7 @@ static void check_optional_name(issue_list *list, const cJSON *home, const char 
     snprintf(path, sizeof path, "/application/home/%s", name);
     snprintf(detail, sizeof detail, "%s is not an environment variable name", name);
     snprintf(fix, sizeof fix, "name the variable as a non-empty string, or leave %s out", name);
-    add_issue(list, path, detail, fix);
+    runtime_loader_add_issue(list, path, detail, fix);
 }
 
 static void check_xdg_subdir(issue_list *list, const cJSON *xdg_subdir) {
@@ -141,8 +136,8 @@ static void check_xdg_subdir(issue_list *list, const cJSON *xdg_subdir) {
 
 static void check_candidates(issue_list *list, const cJSON *candidates) {
     if (!cJSON_IsArray(candidates) || cJSON_GetArraySize(candidates) == 0) {
-        add_issue(list, "/application/home/candidates", "the home has no candidate directories",
-                  "list at least one candidate, for example \"~/.claude\"");
+        runtime_loader_add_issue(list, "/application/home/candidates", "the home has no candidate directories",
+                  "list at least one candidate, for example \"~/.application\"");
         return;
     }
     int index = 0;
@@ -160,7 +155,7 @@ static void check_candidates(issue_list *list, const cJSON *candidates) {
 
 static void check_home(issue_list *list, const cJSON *home) {
     if (!is_record(home)) {
-        add_issue(list, "/application/home", "the application has no home",
+        runtime_loader_add_issue(list, "/application/home", "the application has no home",
                   "give the application a home with a candidates list");
         return;
     }
@@ -198,7 +193,7 @@ static void check_package(issue_list *list, const cJSON *mapping) {
             snprintf(detail, strlen(method) + 128,
                      "the package under %s is neither a name nor an object with a name and optional options object",
                      method);
-            add_issue(list, path, detail, "write the package as \"name\" or {\"name\": \"name\", \"options\": {}}");
+            runtime_loader_add_issue(list, path, detail, "write the package as \"name\" or {\"name\": \"name\", \"options\": {}}");
         }
     }
     free(path);
@@ -207,7 +202,7 @@ static void check_package(issue_list *list, const cJSON *mapping) {
 
 static void check_packages(issue_list *list, const cJSON *packages) {
     if (!is_record(packages)) {
-        add_issue(list, "/application/packages", "the application has no packages",
+        runtime_loader_add_issue(list, "/application/packages", "the application has no packages",
                   "map each install method id to a package name");
         return;
     }
@@ -219,7 +214,7 @@ static void check_packages(issue_list *list, const cJSON *packages) {
 
 static void check_application(issue_list *list, const cJSON *application) {
     if (!is_record(application)) {
-        add_issue(list, "/application", "the standard has no application",
+        runtime_loader_add_issue(list, "/application", "the standard has no application",
                   "describe the application with an id, label, binary, home and packages");
         return;
     }
@@ -228,6 +223,7 @@ static void check_application(issue_list *list, const cJSON *application) {
     check_binary(list, member(application, "binary"));
     check_home(list, member(application, "home"));
     check_packages(list, member(application, "packages"));
+    runtime_loader_check_application_facts(list, application);
 }
 
 static int appears_before(const cJSON *requested, const cJSON *name) {
@@ -254,16 +250,16 @@ static int is_unique_portable_list(const cJSON *requested) {
 
 static void check_path_commands(issue_list *list, const cJSON *path_commands) {
     if (!is_record(path_commands)) {
-        add_issue(list, "/pathCommands", "the standard has no pathCommands", PATH_COMMANDS_FIX);
+        runtime_loader_add_issue(list, "/pathCommands", "the standard has no pathCommands", PATH_COMMANDS_FIX);
         return;
     }
     const cJSON *minimum = member(path_commands, "minimum");
     if (!is_unique_portable_list(member(path_commands, "requested"))) {
-        add_issue(list, "/pathCommands/requested", "requested is not a list of unique portable command names",
+        runtime_loader_add_issue(list, "/pathCommands/requested", "requested is not a list of unique portable command names",
                   PATH_COMMANDS_FIX "; " PORTABLE_NAME_FIX);
     }
     if (!cJSON_IsNumber(minimum) || (minimum->valuedouble != 0 && minimum->valuedouble != 1)) {
-        add_issue(list, "/pathCommands/minimum", "minimum is neither 0 nor 1",
+        runtime_loader_add_issue(list, "/pathCommands/minimum", "minimum is neither 0 nor 1",
                   "set \"minimum\" to 0 when the host works without a command on PATH, or 1 when it needs one");
     }
 }
@@ -276,14 +272,14 @@ static void check_background(issue_list *list, const cJSON *background) {
         valid = valid && is_non_empty_string(id);
     }
     if (!valid) {
-        add_issue(list, "/background", "background is not a list of host ids",
+        runtime_loader_add_issue(list, "/background", "background is not a list of host ids",
                   "list the ids of the hosts to keep running, or an empty list");
     }
 }
 
 static void check_plugins(issue_list *list, const cJSON *plugins) {
     if (!is_unique_portable_list(plugins)) {
-        add_issue(list, "/plugins", "plugins is not a list of unique plugin ids",
+        runtime_loader_add_issue(list, "/plugins", "plugins is not a list of unique plugin ids",
                   "list the ids of the plugins the loader cannot run without, or an empty list; " PORTABLE_NAME_FIX);
     }
 }
@@ -292,7 +288,7 @@ cJSON *runtime_loader_standard_issues(const cJSON *value) {
     issue_list list = {cJSON_CreateArray(), 1};
     list.complete = list.issues != NULL;
     if (!is_record(value)) {
-        add_issue(&list, "", "the standard is not an object", "give the standard an application, pathCommands, background and plugins");
+        runtime_loader_add_issue(&list, "", "the standard is not an object", "give the standard an application, pathCommands, background and plugins");
     } else {
         check_application(&list, member(value, "application"));
         check_path_commands(&list, member(value, "pathCommands"));

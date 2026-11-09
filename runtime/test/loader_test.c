@@ -452,7 +452,153 @@ static void refuses_an_installed_bundle_that_carries_no_standard(void) {
     cJSON_Delete(answer.tree);
 }
 
+static const char *VALID_FACTS =
+    "{\"proxy\": {\"baseUrlVariable\": \"ACME_URL\", \"placeholder\": {\"variable\": \"ACME_TOKEN\", \"value\": \"none\"},"
+    " \"ownLogin\": {\"variables\": [\"ACME_KEY\"], \"stateFile\": {\"directoryVariable\": \"ACME_DIR\","
+    " \"name\": \".acme.json\", \"member\": \"account\"}}},"
+    " \"entry\": {\"runsOnJavascriptHost\": false, \"directories\": [\"{{entryRoot}}\", \"{{home}}\"],"
+    " \"files\": [{\"path\": \"{{entryRoot}}/a.json\", \"json\": {\"command\": \"{{boot}}\"}},"
+    " {\"path\": \"{{home}}/b.js\", \"text\": \"const a = {{json:hint}}; `${a}`\"}],"
+    " \"settings\": [{\"file\": \"{{home}}/settings.json\", \"key\": [\"known\", \"{{loaderId}}\"], \"value\": true}]}}";
+
+/** A standard whose application declares the proxy and entry above. */
+static cJSON *standard_with_facts(void) {
+    cJSON *standard = valid_standard();
+    cJSON *facts = parsed(VALID_FACTS);
+    cJSON *application = application_of(standard);
+    cJSON_AddItemToObject(application, "proxy", cJSON_DetachItemFromObject(facts, "proxy"));
+    cJSON_AddItemToObject(application, "entry", cJSON_DetachItemFromObject(facts, "entry"));
+    cJSON_Delete(facts);
+    return standard;
+}
+
+static cJSON *entry_of(cJSON *standard) {
+    return cJSON_GetObjectItemCaseSensitive(application_of(standard), "entry");
+}
+
+static cJSON *proxy_of(cJSON *standard) {
+    return cJSON_GetObjectItemCaseSensitive(application_of(standard), "proxy");
+}
+
+static cJSON *first_file(cJSON *standard) {
+    return cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(entry_of(standard), "files"), 0);
+}
+
+static cJSON *first_setting(cJSON *standard) {
+    return cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(entry_of(standard), "settings"), 0);
+}
+
+static void check_file_path(const char *path, const char *label) {
+    cJSON *standard = standard_with_facts();
+    cJSON_ReplaceItemInObject(first_file(standard), "path", cJSON_CreateString(path));
+    check_paths(standard, "/application/entry/files/0/path", label);
+}
+
+static void accepts_declared_proxy_and_entry_facts(void) {
+    check_paths(standard_with_facts(), "", "a declared proxy and entry");
+}
+
+static void accepts_an_application_declaring_neither_proxy_nor_entry(void) {
+    check_paths(valid_standard(), "", "no proxy and no entry");
+}
+
+static void refuses_a_file_path_outside_what_removal_reverses(void) {
+    check_file_path("/etc/passwd", "an absolute file path");
+    check_file_path("{{boot}}/x", "a path starting at another placeholder");
+    check_file_path("{{homework}}/x", "a path starting at a longer name");
+    check_file_path("{{home}}/../x", "a path climbing out of its root");
+    check_file_path("{{home}}/a/../../x", "a path climbing out half way");
+    check_file_path("{{home}}\\x", "a path with a backslash");
+}
+
+static void accepts_a_file_at_the_root_itself_and_a_dotted_name(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_ReplaceItemInObject(first_file(standard), "path", cJSON_CreateString("{{entryRoot}}/.hidden/..name"));
+    check_paths(standard, "", "a segment that only starts with dots");
+}
+
+static void refuses_a_settings_file_outside_what_removal_reverses(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_ReplaceItemInObject(first_setting(standard), "file", cJSON_CreateString("~/settings.json"));
+    check_paths(standard, "/application/entry/settings/0/file", "a settings file outside the roots");
+}
+
+static void refuses_an_unknown_placeholder_where_it_is_written(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON *file = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(entry_of(standard), "files"), 1);
+    cJSON_ReplaceItemInObject(file, "text", cJSON_CreateString("{{nonsense}}"));
+    check_paths(standard, "/application/entry/files/1/text", "an unknown placeholder in a text");
+}
+
+static void refuses_an_unknown_placeholder_inside_a_json_value(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_ReplaceItemInObject(cJSON_GetObjectItemCaseSensitive(first_file(standard), "json"), "command",
+                              cJSON_CreateString("{{json:nonsense}}"));
+    check_paths(standard, "/application/entry/files/0/json", "an unknown placeholder in a json value");
+}
+
+static void refuses_a_file_with_both_contents_or_neither(void) {
+    cJSON *both = standard_with_facts();
+    cJSON_AddStringToObject(first_file(both), "text", "x");
+    check_paths(both, "/application/entry/files/0", "a file with json and text");
+    cJSON *neither = standard_with_facts();
+    cJSON_DeleteItemFromObject(first_file(neither), "json");
+    check_paths(neither, "/application/entry/files/0", "a file with no content");
+}
+
+static void refuses_a_setting_with_no_key_or_value(void) {
+    cJSON *no_key = standard_with_facts();
+    cJSON_ReplaceItemInObject(first_setting(no_key), "key", cJSON_CreateArray());
+    check_paths(no_key, "/application/entry/settings/0/key", "a setting with an empty key");
+    cJSON *no_value = standard_with_facts();
+    cJSON_DeleteItemFromObject(first_setting(no_value), "value");
+    check_paths(no_value, "/application/entry/settings/0/value", "a setting with no value");
+}
+
+static void refuses_an_entry_with_no_javascript_host_answer(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_DeleteItemFromObject(entry_of(standard), "runsOnJavascriptHost");
+    check_paths(standard, "/application/entry/runsOnJavascriptHost", "no runsOnJavascriptHost");
+}
+
+static void refuses_blank_proxy_names_naming_each(void) {
+    cJSON *base_url = standard_with_facts();
+    cJSON_ReplaceItemInObject(proxy_of(base_url), "baseUrlVariable", cJSON_CreateString(""));
+    check_paths(base_url, "/application/proxy/baseUrlVariable", "a blank base url variable");
+    cJSON *placeholder = standard_with_facts();
+    cJSON_ReplaceItemInObject(cJSON_GetObjectItemCaseSensitive(proxy_of(placeholder), "placeholder"), "value",
+                              cJSON_CreateString(""));
+    check_paths(placeholder, "/application/proxy/placeholder/value", "a blank placeholder value");
+    cJSON *variables = standard_with_facts();
+    cJSON_ReplaceItemInObject(cJSON_GetObjectItemCaseSensitive(proxy_of(variables), "ownLogin"), "variables",
+                              cJSON_CreateString("ACME_KEY"));
+    check_paths(variables, "/application/proxy/ownLogin/variables", "own login variables that are no list");
+    cJSON *state_file = standard_with_facts();
+    cJSON_DeleteItemFromObject(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(proxy_of(state_file), "ownLogin"), "stateFile"),
+        "member");
+    check_paths(state_file, "/application/proxy/ownLogin/stateFile/member", "a state file with no member");
+}
+
+static void accepts_own_login_with_no_state_file(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_DeleteItemFromObject(cJSON_GetObjectItemCaseSensitive(proxy_of(standard), "ownLogin"), "stateFile");
+    check_paths(standard, "", "an own login with no state file");
+}
+
 int main(void) {
+    accepts_declared_proxy_and_entry_facts();
+    accepts_an_application_declaring_neither_proxy_nor_entry();
+    refuses_a_file_path_outside_what_removal_reverses();
+    accepts_a_file_at_the_root_itself_and_a_dotted_name();
+    refuses_a_settings_file_outside_what_removal_reverses();
+    refuses_an_unknown_placeholder_where_it_is_written();
+    refuses_an_unknown_placeholder_inside_a_json_value();
+    refuses_a_file_with_both_contents_or_neither();
+    refuses_a_setting_with_no_key_or_value();
+    refuses_an_entry_with_no_javascript_host_answer();
+    refuses_blank_proxy_names_naming_each();
+    accepts_own_login_with_no_state_file();
     accepts_a_complete_standard();
     refuses_an_application_with_no_binary_naming_the_member();
     refuses_a_candidate_neither_home_rooted_nor_absolute_naming_its_index();

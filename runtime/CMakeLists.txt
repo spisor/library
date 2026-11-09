@@ -135,7 +135,7 @@ spisor_strict_warnings(runtime_processes)
 
 set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c src/hosts.c
     src/hosts_register.c src/hosts_remove.c src/json_service.c src/lists.c src/loader_installed.c
-    src/loader_standard.c src/on_path.c src/user_home.c)
+    src/loader_standard.c src/loader_application_facts.c src/entry_template.c src/on_path.c src/user_home.c)
 add_library(runtime_hosts OBJECT ${runtime_hosts_sources})
 target_link_libraries(runtime_hosts PUBLIC runtime_objects)
 target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)

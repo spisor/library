@@ -332,8 +332,9 @@ static int runs_javascript(const ecosystem *install, const cJSON *background) {
 
 static int writes_in_process_entry(const ecosystem *install) {
     for (const cJSON *row = cJSON_GetObjectItemCaseSensitive(install->run.report, "loaders")->child; row != NULL; row = row->next) {
-        if (runtime_entry_needs_javascript_host(runtime_install_text(row, "application")) &&
-            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(row, "entry"), "written"))) {
+        const cJSON *entry = cJSON_GetObjectItemCaseSensitive(row, "entry");
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsOnJavascriptHost")) &&
+            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written"))) {
             return 1;
         }
     }
@@ -351,8 +352,8 @@ static int acquire_javascript(ecosystem *install) {
 
 /**
  * @implNote The JavaScript host, koffi and the apps library come only with something that runs on them,
- * and Node only with something this install would start on it: OpenCode's in-process entry runs in
- * OpenCode's own runtime. The apps library comes with every JavaScript host because any plugin it runs
+ * and Node only with something this install would start on it: an entry running in the application's
+ * own process runs on the application's own runtime. The apps library comes with every JavaScript host because any plugin it runs
  * may consume the services the host offers from it.
  */
 static int install_javascript(ecosystem *install, const cJSON *background) {
