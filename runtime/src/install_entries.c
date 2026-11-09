@@ -7,21 +7,17 @@
 #include "cache_refusal.h"
 #include "catalog_text.h"
 #include "changes.h"
+#include "entry_template.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "paths.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
-#define MARKETPLACE_NAME "spisor"
-#define PLUGIN_NAME "spisor"
-#define ENABLED_PLUGIN PLUGIN_NAME "@" MARKETPLACE_NAME
-#define PLUGIN_DESCRIPTION "Registers the spisor host each time a session starts"
-#define HOOK_TIMEOUT_SECONDS 30
-#define REINSTALL_FIX "run forebay-host install again"
+#define ENTRY_ROOT_TEMPLATE "{{entryRoot}}"
 #define ENTRY_FIX                                                                                            \
     "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}, \"loader\": " \
-    "{\"id\", \"application\": {\"id\", \"label\"}, \"home\": \"<absolute directory>\"}}"
+    "{\"id\", \"application\": {\"id\", \"label\", \"entry\"}, \"home\": \"<absolute directory>\"}}"
 
 typedef struct entry_loader {
     const cJSON *places;
@@ -31,12 +27,46 @@ typedef struct entry_loader {
     const char *application;
     const char *label;
     const char *home;
+    const cJSON *entry;
 } entry_loader;
 
-typedef int (*entry_writer)(const entry_loader *loader, cJSON *changes);
+/** The paths the placeholders stand for, owned here, and the values that lend them out. */
+typedef struct entry_context {
+    char *entries;
+    char *entry_root;
+    char *boot;
+    char *hint;
+    char *bundles;
+    runtime_entry_values values;
+} entry_context;
 
 static char *joined(const char *const *segments, size_t count) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
+}
+
+static void finish_context(entry_context *context) {
+    free(context->entries);
+    free(context->entry_root);
+    free(context->boot);
+    free(context->hint);
+    free(context->bundles);
+}
+
+static int start_context(entry_context *context, const entry_loader *loader) {
+    const char *entries_segments[2] = {loader->state, "entries"};
+    const char *root_segments[3] = {loader->state, "entries", loader->id};
+    const char *hint_segments[3] = {loader->cache, "hosts", RUNTIME_JAVASCRIPT_HOST_ID ".json"};
+    const char *bundle_segments[3] = {loader->cache, "bundles", RUNTIME_JAVASCRIPT_HOST_ID};
+    context->entries = joined(entries_segments, 2);
+    context->entry_root = joined(root_segments, 3);
+    context->boot = runtime_boot_stub_path(loader->cache);
+    context->hint = joined(hint_segments, 3);
+    context->bundles = joined(bundle_segments, 3);
+    runtime_entry_values values = {loader->home, context->entry_root, loader->id, context->boot,
+                                   RUNTIME_BOOTED_HOST_ID, context->hint, context->bundles};
+    context->values = values;
+    return context->entries != NULL && context->entry_root != NULL && context->boot != NULL && context->hint != NULL &&
+           context->bundles != NULL;
 }
 
 static int add_change(cJSON *changes, cJSON *change) {
@@ -73,7 +103,7 @@ static int add_file(cJSON *changes, char *path, char *content) {
     return add_change(changes, change);
 }
 
-/** JSON.stringify(value, null, 2) and a newline, the form the applications write their own JSON in; value is freed. */
+/** JSON.stringify(value, null, 2) and a newline; value is freed. */
 static char *json_content(cJSON *value) {
     char *pretty = value == NULL ? NULL : spisor_json_stringify_pretty(value);
     cJSON_Delete(value);
@@ -83,188 +113,120 @@ static char *json_content(cJSON *value) {
     return content;
 }
 
-static cJSON *parsed(const char *json) {
-    return cJSON_Parse(json);
+/** The declared path with its placeholders filled, in the platform's own form. */
+static char *expanded_path(const char *template_text, const runtime_entry_values *values) {
+    char *expanded = runtime_entry_expand(template_text, values);
+    const char *segments[1] = {expanded};
+    char *path = expanded == NULL ? NULL : joined(segments, 1);
+    free(expanded);
+    return path;
 }
 
-static cJSON *hook_arguments(const entry_loader *loader) {
-    cJSON *arguments = cJSON_CreateArray();
-    if (arguments == NULL || !runtime_install_add_text(arguments, RUNTIME_BOOTED_HOST_ID) ||
-        !runtime_install_add_text(arguments, "hook") || !runtime_install_add_text(arguments, loader->id) ||
-        !runtime_install_add_text(arguments, "session-start")) {
-        cJSON_Delete(arguments);
-        return NULL;
+static int expand_strings_in(cJSON *value, const runtime_entry_values *values) {
+    if (cJSON_IsString(value)) {
+        char *expanded = runtime_entry_expand(value->valuestring, values);
+        char *set = expanded == NULL ? NULL : cJSON_SetValuestring(value, expanded);
+        free(expanded);
+        return set != NULL;
     }
-    return arguments;
-}
-
-/**
- * @implNote Exec form (args present) spawns forebay-boot directly with no shell, so no path is ever
- * quoted for Git Bash or PowerShell, whichever Claude Code would pick on Windows.
- */
-static cJSON *hooks_of(const entry_loader *loader) {
-    char *boot = runtime_boot_stub_path(loader->cache);
-    cJSON *hooks = boot == NULL ? NULL : parsed("{\"hooks\": {\"SessionStart\": [{\"hooks\": [{\"type\": \"command\"}]}]}}");
-    cJSON *command = cJSON_GetArrayItem(
-        cJSON_GetObjectItemCaseSensitive(
-            cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(hooks, "hooks"), "SessionStart"), 0),
-            "hooks"),
-        0);
-    cJSON *arguments = command == NULL ? NULL : hook_arguments(loader);
-    int built = arguments != NULL && cJSON_AddStringToObject(command, "command", boot) != NULL &&
-                cJSON_AddItemToObject(command, "args", arguments) &&
-                cJSON_AddNumberToObject(command, "timeout", HOOK_TIMEOUT_SECONDS) != NULL;
-    free(boot);
-    if (!built) {
-        if (cJSON_GetObjectItemCaseSensitive(command, "args") == NULL) {
-            cJSON_Delete(arguments);
+    cJSON *child;
+    cJSON_ArrayForEach(child, value) {
+        if (!expand_strings_in(child, values)) {
+            return 0;
         }
-        cJSON_Delete(hooks);
-        return NULL;
     }
-    return hooks;
+    return 1;
 }
 
-static cJSON *settings_key(const entry_loader *loader, const char *member, const char *name, cJSON *value) {
-    const char *segments[2] = {loader->home, "settings.json"};
-    char *file = joined(segments, 2);
-    cJSON *change = file == NULL || value == NULL ? NULL : cJSON_CreateObject();
-    cJSON *key = change == NULL ? NULL : cJSON_AddArrayToObject(change, "key");
-    int built = key != NULL && cJSON_AddStringToObject(change, "kind", "json-key") != NULL &&
-                cJSON_AddStringToObject(change, "file", file) != NULL && runtime_install_add_text(key, member) &&
-                runtime_install_add_text(key, name) && cJSON_AddItemToObject(change, "value", value) &&
-                cJSON_AddBoolToObject(change, "create", 1) != NULL;
+/** A copy of template_value with every string value filled, a member's name left as it stands. */
+static cJSON *expanded_json(const cJSON *template_value, const runtime_entry_values *values) {
+    cJSON *copy = cJSON_Duplicate(template_value, 1);
+    if (copy != NULL && !expand_strings_in(copy, values)) {
+        cJSON_Delete(copy);
+        return NULL;
+    }
+    return copy;
+}
+
+static int declares_entry_root(const cJSON *directories) {
+    const cJSON *directory;
+    cJSON_ArrayForEach(directory, directories) {
+        if (strncmp(directory->valuestring, ENTRY_ROOT_TEMPLATE, strlen(ENTRY_ROOT_TEMPLATE)) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** @implNote The directory above entryRoot is this runtime's own layout, so an entry cannot declare it and removal must still take it. */
+static int add_directories(const entry_context *context, const cJSON *directories, cJSON *changes) {
+    if (declares_entry_root(directories) && !add_directory(changes, runtime_catalog_copy(context->entries))) {
+        return 0;
+    }
+    const cJSON *directory;
+    cJSON_ArrayForEach(directory, directories) {
+        if (!add_directory(changes, expanded_path(directory->valuestring, &context->values))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int add_files(const entry_context *context, const cJSON *files, cJSON *changes) {
+    const cJSON *file;
+    cJSON_ArrayForEach(file, files) {
+        const cJSON *json = cJSON_GetObjectItemCaseSensitive(file, "json");
+        const char *text = runtime_install_text(file, "text");
+        char *content = json != NULL ? json_content(expanded_json(json, &context->values))
+                                     : (text == NULL ? NULL : runtime_entry_expand(text, &context->values));
+        if (!add_file(changes, expanded_path(runtime_install_text(file, "path"), &context->values), content)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static cJSON *setting_change(const entry_context *context, const cJSON *setting) {
+    char *file = expanded_path(runtime_install_text(setting, "file"), &context->values);
+    cJSON *key = expanded_json(cJSON_GetObjectItemCaseSensitive(setting, "key"), &context->values);
+    cJSON *value = expanded_json(cJSON_GetObjectItemCaseSensitive(setting, "value"), &context->values);
+    cJSON *change = file == NULL || key == NULL || value == NULL ? NULL : cJSON_CreateObject();
+    int built = change != NULL && cJSON_AddStringToObject(change, "kind", "json-key") != NULL &&
+                cJSON_AddStringToObject(change, "file", file) != NULL;
     free(file);
     if (!built) {
-        if (change == NULL || cJSON_GetObjectItemCaseSensitive(change, "value") == NULL) {
-            cJSON_Delete(value);
-        }
+        cJSON_Delete(key);
+        cJSON_Delete(value);
+        cJSON_Delete(change);
+        return NULL;
+    }
+    cJSON_AddItemToObject(change, "key", key);
+    cJSON_AddItemToObject(change, "value", value);
+    if (cJSON_AddBoolToObject(change, "create", 1) == NULL) {
         cJSON_Delete(change);
         return NULL;
     }
     return change;
 }
 
-static cJSON *marketplace_source(const char *root) {
-    cJSON *source = parsed("{\"source\": {\"source\": \"directory\"}}");
-    if (source != NULL && cJSON_AddStringToObject(cJSON_GetObjectItemCaseSensitive(source, "source"), "path", root) == NULL) {
-        cJSON_Delete(source);
-        return NULL;
+static int add_settings(const entry_context *context, const cJSON *settings, cJSON *changes) {
+    const cJSON *setting;
+    cJSON_ArrayForEach(setting, settings) {
+        if (!add_change(changes, setting_change(context, setting))) {
+            return 0;
+        }
     }
-    return source;
+    return 1;
 }
 
-static int add_claude_files(const entry_loader *loader, cJSON *changes, const char *root) {
-    const char *marketplace_segments[3] = {root, ".claude-plugin", "marketplace.json"};
-    const char *plugin_segments[3] = {root, ".claude-plugin", "plugin.json"};
-    const char *hooks_segments[3] = {root, "hooks", "hooks.json"};
-    return add_file(changes, joined(marketplace_segments, 3),
-                    json_content(parsed("{\"name\": \"" MARKETPLACE_NAME "\", \"owner\": {\"name\": \"spisor\"}, "
-                                        "\"description\": \"Starts the spisor host when Claude Code starts\", "
-                                        "\"plugins\": [{\"name\": \"" PLUGIN_NAME "\", \"source\": \".\", "
-                                        "\"description\": \"" PLUGIN_DESCRIPTION "\"}]}"))) &&
-           add_file(changes, joined(plugin_segments, 3),
-                    json_content(parsed("{\"name\": \"" PLUGIN_NAME "\", \"description\": \"" PLUGIN_DESCRIPTION "\"}"))) &&
-           add_file(changes, joined(hooks_segments, 3), json_content(hooks_of(loader)));
-}
-
-static int claude_code_entry(const entry_loader *loader, cJSON *changes) {
-    const char *entries_segments[2] = {loader->state, "entries"};
-    const char *root_segments[3] = {loader->state, "entries", loader->id};
-    char *root = joined(root_segments, 3);
-    const char *manifest_segments[2] = {root, ".claude-plugin"};
-    const char *hooks_segments[2] = {root, "hooks"};
-    int built = root != NULL && add_directory(changes, joined(entries_segments, 2)) &&
-                add_directory(changes, runtime_catalog_copy(root)) && add_directory(changes, joined(manifest_segments, 2)) &&
-                add_directory(changes, joined(hooks_segments, 2)) && add_claude_files(loader, changes, root) &&
-                add_directory(changes, runtime_catalog_copy(loader->home)) &&
-                add_change(changes, settings_key(loader, "enabledPlugins", ENABLED_PLUGIN, cJSON_CreateTrue())) &&
-                add_change(changes, settings_key(loader, "extraKnownMarketplaces", MARKETPLACE_NAME, marketplace_source(root)));
-    free(root);
+static int add_declared_changes(const entry_loader *loader, cJSON *changes) {
+    entry_context context;
+    int built = start_context(&context, loader) &&
+                add_directories(&context, cJSON_GetObjectItemCaseSensitive(loader->entry, "directories"), changes) &&
+                add_files(&context, cJSON_GetObjectItemCaseSensitive(loader->entry, "files"), changes) &&
+                add_settings(&context, cJSON_GetObjectItemCaseSensitive(loader->entry, "settings"), changes);
+    finish_context(&context);
     return built;
-}
-
-/** A JSON string literal of text, which JavaScript reads back as the same string. */
-static char *literal(const char *text) {
-    cJSON *string = cJSON_CreateString(text);
-    char *printed = string == NULL ? NULL : cJSON_PrintUnformatted(string);
-    cJSON_Delete(string);
-    char *copy = printed == NULL ? NULL : runtime_catalog_copy(printed);
-    cJSON_free(printed);
-    return copy;
-}
-
-/**
- * @implNote The host starts once per process however often OpenCode calls the plugin, and the plugin
- * returns at once, so a slow or refused start never holds OpenCode's own start; a refusal goes to
- * stderr, which OpenCode does not parse. The bundle is found through javascript-host's boot hint, so
- * the entry follows an update of javascript-host and never names a version a sweep can delete.
- */
-static char *open_code_source(const entry_loader *loader) {
-    const char *hint_segments[3] = {loader->cache, "hosts", RUNTIME_JAVASCRIPT_HOST_ID ".json"};
-    const char *bundle_segments[3] = {loader->cache, "bundles", RUNTIME_JAVASCRIPT_HOST_ID};
-    char *hint_path = joined(hint_segments, 3);
-    char *bundle_path = joined(bundle_segments, 3);
-    char *hint = hint_path == NULL ? NULL : literal(hint_path);
-    char *bundles = bundle_path == NULL ? NULL : literal(bundle_path);
-    char *loader_id = literal(loader->id);
-    const char *parts[] = {
-        "import { readFileSync } from \"node:fs\";\n",
-        "import { join } from \"node:path\";\n",
-        "import { pathToFileURL } from \"node:url\";\n\n",
-        "const HINT = ", hint, ";\n",
-        "const BUNDLES = ", bundles, ";\n",
-        "const LOADER_ID = ", loader_id, ";\n",
-        "const REINSTALL_FIX = \"" REINSTALL_FIX "\";\n\n",
-        "let started;\n\n",
-        "function hostEntry() {\n",
-        "  const { host } = JSON.parse(readFileSync(HINT, \"utf8\"));\n",
-        "  if (typeof host !== \"string\") throw new Error(`no javascript-host version is hinted in ${HINT}`);\n",
-        "  return pathToFileURL(join(BUNDLES, host, \"host.js\")).href;\n",
-        "}\n\n",
-        "function reportRefusal(error) {\n",
-        "  const detail = error?.detail ?? error?.message ?? String(error);\n",
-        "  process.stderr.write(`spisor did not start ${LOADER_ID}: ${detail}\\nfix: ${error?.fix ?? REINSTALL_FIX}\\n`);\n",
-        "}\n\n",
-        "export const SpisorHost = async () => {\n",
-        "  started ?\?= Promise.resolve()\n",
-        "    .then(() => import(hostEntry()))\n",
-        "    .then((host) => host.runSessionHost(LOADER_ID))\n",
-        "    .catch(reportRefusal);\n",
-        "  return {};\n",
-        "};\n",
-    };
-    size_t count = sizeof parts / sizeof parts[0];
-    char *source = hint == NULL || bundles == NULL || loader_id == NULL ? NULL : runtime_cache_text(parts, count);
-    free(loader_id);
-    free(bundles);
-    free(hint);
-    free(bundle_path);
-    free(hint_path);
-    return source;
-}
-
-static int open_code_entry(const entry_loader *loader, cJSON *changes) {
-    const char *plugins_segments[2] = {loader->home, "plugins"};
-    const char *name_parts[3] = {"spisor-", loader->id, ".js"};
-    char *name = runtime_cache_text(name_parts, 3);
-    const char *file_segments[3] = {loader->home, "plugins", name};
-    int built = name != NULL && add_directory(changes, runtime_catalog_copy(loader->home)) &&
-                add_directory(changes, joined(plugins_segments, 2)) &&
-                add_file(changes, joined(file_segments, 3), open_code_source(loader));
-    free(name);
-    return built;
-}
-
-static entry_writer writer_for(const char *application) {
-    if (strcmp(application, "claude") == 0) {
-        return claude_code_entry;
-    }
-    return strcmp(application, "opencode") == 0 ? open_code_entry : NULL;
-}
-
-int runtime_entry_needs_javascript_host(const char *application_id) {
-    return application_id != NULL && writer_for(application_id) == open_code_entry;
 }
 
 static cJSON *apply_call(const entry_loader *loader, const cJSON *change) {
@@ -294,9 +256,11 @@ static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **
     return sequences;
 }
 
-static cJSON *written(cJSON *sequences) {
+static cJSON *written(cJSON *sequences, const cJSON *entry) {
     cJSON *answer = sequences == NULL ? NULL : cJSON_CreateObject();
+    int on_javascript_host = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsOnJavascriptHost"));
     if (answer == NULL || cJSON_AddTrueToObject(answer, "written") == NULL ||
+        (on_javascript_host && cJSON_AddTrueToObject(answer, "runsOnJavascriptHost") == NULL) ||
         !cJSON_AddItemToObject(answer, "sequences", sequences)) {
         cJSON_Delete(sequences);
         cJSON_Delete(answer);
@@ -331,6 +295,7 @@ static int read_loader(const cJSON *places, const cJSON *loader, entry_loader *r
     read->application = runtime_install_text(application, "id");
     read->label = runtime_install_text(application, "label");
     read->home = runtime_install_text(loader, "home");
+    read->entry = cJSON_GetObjectItemCaseSensitive(application, "entry");
     if (read->label == NULL) {
         read->label = read->application;
     }
@@ -345,12 +310,11 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
         *refusal = runtime_refusal("the argument carries no usable places or loader", ENTRY_FIX);
         return NULL;
     }
-    entry_writer writer = writer_for(read.application);
-    if (writer == NULL) {
+    if (read.entry == NULL) {
         return not_written(&read);
     }
     cJSON *changes = cJSON_CreateArray();
-    cJSON *answer = changes != NULL && writer(&read, changes) ? written(applied(&read, changes, refusal)) : NULL;
+    cJSON *answer = changes != NULL && add_declared_changes(&read, changes) ? written(applied(&read, changes, refusal), read.entry) : NULL;
     cJSON_Delete(changes);
     return answer;
 }

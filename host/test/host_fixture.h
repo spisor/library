@@ -468,8 +468,11 @@ static inline void list_launch_catalog_requiring(host_world *world, const char *
     install_base *base = &world->base;
     list_native_forebay_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
+    int declares_entry = strcmp(application, APPLICATION_ID) != 0;
     list_loader_requiring(base, LOADER_ID, "1.0.0",
-                          application_json(application, APPLICATION_ID, "{\"fake\": \"fixture-pkg\"}"), commands_json, 0,
+                          (declares_entry ? application_with_hook_entry : application_json)(application, APPLICATION_ID,
+                                                                                            "{\"fake\": \"fixture-pkg\"}"),
+                          commands_json, 0,
                           "[\"" BACKGROUND_ID "\"]", plugins_json);
     list_native_background(base, BACKGROUND_ID, 1);
     if (javascript_plugin) {

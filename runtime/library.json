@@ -907,6 +907,9 @@
                       },
                       "label": {
                         "type": "string"
+                      },
+                      "entry": {
+                        "type": "object"
                       }
                     },
                     "required": [
@@ -934,6 +937,9 @@
             "type": "object",
             "properties": {
               "written": {
+                "type": "boolean"
+              },
+              "runsOnJavascriptHost": {
                 "type": "boolean"
               },
               "sequences": {
@@ -1303,6 +1309,9 @@
                       "type": "object",
                       "properties": {
                         "written": {
+                          "type": "boolean"
+                        },
+                        "runsOnJavascriptHost": {
                           "type": "boolean"
                         },
                         "message": {

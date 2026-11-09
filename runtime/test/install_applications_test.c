@@ -426,11 +426,34 @@ static void reports_a_background_host_the_catalog_does_not_list_and_still_regist
     finish_install_base(&base);
 }
 
+static void brings_the_javascript_host_for_an_entry_declaring_it_runs_there_whatever_the_application_is(void) {
+    install_base base;
+    start_install_base(&base, "applications", "declared-javascript");
+    list_foundation(&base);
+    list_library(&base, "koffi", "2.16.3");
+    list_library(&base, "apps", "0.1.2");
+    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
+    cJSON *application = application_json("sample", "sample", "{}");
+    cJSON_AddItemToObject(application, "entry",
+                          parsed("{\"runsOnJavascriptHost\": true, \"directories\": [\"{{home}}\"],"
+                                 " \"files\": [{\"path\": \"{{home}}/entry.js\", \"text\": \"x\"}], \"settings\": []}"));
+    list_loader(&base, "sample-loader", "1.0.0", application, "[]", 0, "[]");
+    write_catalog(&base);
+    char *bin = install_binary(&base, "sample");
+    make_directory_in_user(&base, "homes");
+    cJSON *report = install_choosing(&base, "{}", bin);
+    CHECK(exists_in(base.cache, "bundles/javascript-host"));
+    CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
+    cJSON_Delete(report);
+    free(bin);
+    finish_install_base(&base);
+}
+
 static void writes_each_entry_reports_one_without_and_removing_the_loader_takes_it_away(void) {
     install_base base;
     start_install_base(&base, "applications", "entries");
     list_foundation(&base);
-    list_loader(&base, "claude-loader", "1.0.0", application_json("claude", "claude", "{}"), "[]", 0, "[]");
+    list_loader(&base, "claude-loader", "1.0.0", application_with_hook_entry("claude", "claude", "{}"), "[]", 0, "[]");
     list_loader(&base, "elsewhere-loader", "1.0.0", application_json("elsewhere", "claude", "{}"), "[]", 0, "[]");
     write_catalog(&base);
     char *bin = install_binary(&base, "claude");
@@ -707,6 +730,7 @@ int main(void) {
     installs_and_registers_each_background_host_in_a_home_of_its_own();
     reports_a_background_host_the_catalog_does_not_list_and_still_registers_its_loader();
     writes_each_entry_reports_one_without_and_removing_the_loader_takes_it_away();
+    brings_the_javascript_host_for_an_entry_declaring_it_runs_there_whatever_the_application_is();
     keeps_the_first_install_s_provenance_on_a_second_install();
     requests_each_command_running_forebay_boot_with_launch();
     records_one_shape_for_an_application_installed_through_a_method_and_found_through_it();
