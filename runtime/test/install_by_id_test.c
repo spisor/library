@@ -262,23 +262,88 @@ static void an_unreadable_start_file_installs_and_says_the_primary_is_unconfirme
     cJSON_Delete(answer.tree);
 }
 
-static void a_different_recorded_primary_needs_the_user_and_installs_nothing(void) {
-    catalog_answer answer = install_with("github:11", "{\"recordedPrimary\":\"github:5\"}");
-    CHECK(succeeded(answer, "call 5"));
-    CHECK(flag_is(answer, "needsUserAcceptance", 1));
-    check_text(text_at(answer.tree, "recordedPrimary"), "github:5", "recorded");
-    check_text(text_at(answer.tree, "primary"), "github:11", "new primary");
-    CHECK(!cJSON_HasObjectItem(answer.tree, "version"));
-    CHECK(!exists_in_scratch("cache/bundles/github+11"));
-    cJSON_Delete(answer.tree);
+static char *read_scratch(const char *relative) {
+    char *path = in_scratch(relative);
+    size_t length = 0;
+    char *text = (char *)spisor_read_file(path, &length);
+    free(path);
+    return text;
 }
 
-static void the_same_recorded_primary_installs(void) {
-    catalog_answer answer = install_with("github:11", "{\"recordedPrimary\":\"github:11\"}");
-    CHECK(succeeded(answer, "call 6"));
+static void the_first_install_records_the_set_and_the_primary(void) {
+    catalog_answer answer = install_with("github:11", NULL);
+    CHECK(succeeded(answer, "first install"));
     CHECK(flag_is(answer, "needsUserAcceptance", -1));
     check_text(text_at(answer.tree, "version"), "1.0.0", "version");
     CHECK(exists_in_scratch("cache/bundles/github+11/1.0.0/plugin.json"));
+    char *record = read_scratch("cache/identities/github+11.json");
+    cJSON *recorded = record == NULL ? NULL : parsed(record);
+    check_text(text_at(recorded, "primary"), "github:11", "recorded primary");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(recorded, "ids")) == 1);
+    cJSON_Delete(recorded);
+    free(record);
+    cJSON_Delete(answer.tree);
+}
+
+static void an_unchanged_primary_installs_again_without_asking(void) {
+    catalog_answer answer = install_with("github:11", NULL);
+    CHECK(succeeded(answer, "second install"));
+    CHECK(flag_is(answer, "needsUserAcceptance", -1));
+    check_text(text_at(answer.tree, "version"), "1.0.0", "version");
+    cJSON_Delete(answer.tree);
+}
+
+static void write_record(const char *folder, const char *primary) {
+    char relative[128];
+    snprintf(relative, sizeof relative, "cache/identities/%s.json", folder);
+    char text[256];
+    snprintf(text, sizeof text, "{\"ids\":[\"%s\"],\"primary\":\"%s\"}", primary, primary);
+    write_in_scratch(relative, text);
+}
+
+static void a_changed_primary_is_refused_until_the_user_accepts_it(void) {
+    write_record("github+12", "github:5");
+    catalog_answer refused = install_with("github:12", NULL);
+    CHECK(succeeded(refused, "changed primary"));
+    CHECK(flag_is(refused, "needsUserAcceptance", 1));
+    check_text(text_at(refused.tree, "recordedPrimary"), "github:5", "recorded");
+    check_text(text_at(refused.tree, "primary"), "github:12", "new primary");
+    CHECK(!cJSON_HasObjectItem(refused.tree, "version"));
+    CHECK(!exists_in_scratch("cache/bundles/github+12"));
+    cJSON_Delete(refused.tree);
+    catalog_answer wrong = install_with("github:12", "{\"acceptPrimary\":\"github:99\"}");
+    CHECK(flag_is(wrong, "needsUserAcceptance", 1));
+    CHECK(!exists_in_scratch("cache/bundles/github+12"));
+    cJSON_Delete(wrong.tree);
+    catalog_answer accepted = install_with("github:12", "{\"acceptPrimary\":\"github:12\"}");
+    CHECK(succeeded(accepted, "accepted"));
+    CHECK(flag_is(accepted, "needsUserAcceptance", -1));
+    CHECK(exists_in_scratch("cache/bundles/github+12/1.0.0/plugin.json"));
+    char *record = read_scratch("cache/identities/github+12.json");
+    CHECK(record != NULL && strstr(record, "\"github:12\"") != NULL && strstr(record, "github:5") == NULL);
+    free(record);
+    cJSON_Delete(accepted.tree);
+}
+
+static void a_mirror_installs_from_the_primary_and_deploys_its_name(void) {
+    catalog_answer answer = install_with("github:6", NULL);
+    CHECK(succeeded(answer, "mirror"));
+    check_text(text_at(answer.tree, "id"), "github:5", "installed from the primary");
+    check_text(text_at(answer.tree, "name"), "greeter", "the primary's name");
+    check_text(text_at(answer.tree, "primary"), "github:5", "primary");
+    CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/plugin.json"));
+    CHECK(!exists_in_scratch("cache/bundles/github+6"));
+    char *identity = read_scratch("plugins-github-6/greeter_identity.json");
+    CHECK(identity != NULL && strstr(identity, "github:5") != NULL && strstr(identity, "greeter") != NULL);
+    free(identity);
+    cJSON_Delete(answer.tree);
+}
+
+static void copies_naming_different_primaries_stop_the_install(void) {
+    catalog_answer answer = install_with("github:13", NULL);
+    CHECK(expect_refusal(answer, "different primaries", "disagreement"));
+    CHECK(!exists_in_scratch("cache/bundles/github+13"));
+    CHECK(!exists_in_scratch("plugins-github-13"));
     cJSON_Delete(answer.tree);
 }
 
@@ -308,6 +373,11 @@ static void run_against_the_server(void) {
     static const char repository_nine_taken[] = REPOSITORY("9", "taken");
     static const char repository_ten[] = REPOSITORY("10", "ten");
     static const char repository_eleven[] = REPOSITORY("11", "eleven");
+    static const char repository_twelve[] = REPOSITORY("12", "twelve");
+    static const char repository_thirteen[] = REPOSITORY("13", "thirteen");
+    static const char repository_fourteen[] = REPOSITORY("14", "fourteen");
+    static const char thirteen_file[] = "{\"primary\":\"github:13\",\"ids\":[\"github:13\",\"github:14\"]}";
+    static const char fourteen_file[] = "{\"primary\":\"github:14\",\"ids\":[\"github:13\",\"github:14\"]}";
     static const char also_at_file[] = "{\"primary\":\"github:5\",\"ids\":[\"github:5\",\"github:6\"]}";
     http_route routes[] = {
         ROUTE("/repositories/5", 200, repository_five),
@@ -331,6 +401,15 @@ static void run_against_the_server(void) {
         ROUTE("/repositories/11", 200, repository_eleven),
         EMPTY_ROUTE("/o/eleven/HEAD/.weivel/also-at.json", 404),
         {"/repos/o/eleven/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        ROUTE("/repositories/12", 200, repository_twelve),
+        EMPTY_ROUTE("/o/twelve/HEAD/.weivel/also-at.json", 404),
+        {"/repos/o/twelve/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/repos/o/mirror/releases/latest", 200, NULL, release_json_tampered, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        ROUTE("/repositories/13", 200, repository_thirteen),
+        ROUTE("/repositories/14", 200, repository_fourteen),
+        ROUTE("/o/thirteen/HEAD/.weivel/also-at.json", 200, thirteen_file),
+        ROUTE("/o/fourteen/HEAD/.weivel/also-at.json", 200, fourteen_file),
+        {"/repos/o/thirteen/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
     };
     for (size_t index = 0; index < sizeof routes / sizeof routes[0]; index++) {
         if (routes[index].body_length == 0 && routes[index].body != NULL && routes[index].body[0] != '\0') {
@@ -349,8 +428,11 @@ static void run_against_the_server(void) {
     a_tampered_file_is_refused_and_nothing_is_deployed();
     a_name_taken_during_the_install_is_refused_and_nothing_is_installed();
     an_unreadable_start_file_installs_and_says_the_primary_is_unconfirmed();
-    a_different_recorded_primary_needs_the_user_and_installs_nothing();
-    the_same_recorded_primary_installs();
+    the_first_install_records_the_set_and_the_primary();
+    an_unchanged_primary_installs_again_without_asking();
+    a_changed_primary_is_refused_until_the_user_accepts_it();
+    a_mirror_installs_from_the_primary_and_deploys_its_name();
+    copies_naming_different_primaries_stop_the_install();
     a_release_without_an_index_is_refused_naming_it();
     refuses_a_local_id_and_a_missing_argument();
     free(http_fixture_stop(server));

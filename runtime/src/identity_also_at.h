@@ -6,6 +6,9 @@
 
 #include "export.h"
 
+/** The start of the refusal identity.alsoAt and identity.agree answer when the copies name different primaries. */
+#define RUNTIME_PRIMARIES_DISAGREE "the copies name different primaries"
+
 /**
  * identity.agree: {id, files} answers {ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable?} for
  * the repo id names. files maps a repo id to its also-at file, to null when that copy has none, or to false when
