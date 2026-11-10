@@ -174,7 +174,7 @@ static json_placement empty_object_point(const char *text, json_span object, con
 
 static int insert_member(const char *text, size_t length, json_span root, json_span object, const char *name,
                          const cJSON *value, json_edit_text *edited) {
-    json_span point;
+    json_span point = {0, 0};
     json_style style = json_style_of(text, root, object);
     json_placement placement = JSON_PLACED_AFTER_MEMBER;
     if (!after_last_member(text, object, &point)) {
