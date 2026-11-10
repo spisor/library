@@ -143,7 +143,7 @@ static void require_known(issue_list *list, const cJSON *value, const char *path
 static void check_file_content(issue_list *list, const cJSON *file, const char *file_path) {
     const cJSON *json = member(file, "json");
     const cJSON *text = member(file, "text");
-    char path[PATH_LIMIT];
+    char path[PATH_LIMIT + 8];
     if ((json == NULL) == (text == NULL)) {
         runtime_loader_add_issue(list, file_path, "a file declares exactly one of json and text", "give the file a json value or a text, not both");
     } else if (json != NULL) {
