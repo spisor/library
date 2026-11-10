@@ -431,7 +431,7 @@ static void brings_the_javascript_host_for_an_entry_declaring_it_runs_there_what
     start_install_base(&base, "applications", "declared-javascript");
     list_foundation(&base);
     list_library(&base, "koffi", "2.16.3");
-    list_library(&base, "apps", "0.1.2");
+    list_library(&base, "forebay-library", "0.1.2");
     list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     cJSON *application = application_json("sample", "sample", "{}");
     cJSON_AddItemToObject(application, "entry",

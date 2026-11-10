@@ -1,5 +1,6 @@
 #include "spisor/path.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,7 +26,14 @@ typedef struct win32_root {
 } win32_root;
 
 static void text_reserve(text *buffer, size_t extra) {
-    if (buffer->failed || buffer->length + extra + 1 <= buffer->capacity) {
+    if (buffer->failed) {
+        return;
+    }
+    if (extra >= SIZE_MAX - buffer->length) {
+        buffer->failed = 1;
+        return;
+    }
+    if (buffer->length + extra + 1 <= buffer->capacity) {
         return;
     }
     size_t capacity = buffer->capacity == 0 ? 64 : buffer->capacity;
