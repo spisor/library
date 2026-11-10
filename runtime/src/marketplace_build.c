@@ -18,6 +18,7 @@ typedef struct build_request {
     const char *built;
     const char *api_base;
     const char *token;
+    const cJSON *previous;
 } build_request;
 
 static void refuse_with(cJSON **refusal, const char *fix, const char *format, const char *first, const char *second,
@@ -52,11 +53,23 @@ static int read_token(const cJSON *argument, const char **token, cJSON **refusal
     return 1;
 }
 
+static int read_previous(const cJSON *argument, const cJSON **previous, cJSON **refusal) {
+    char problem[MESSAGE_SIZE / 2];
+    *previous = cJSON_GetObjectItemCaseSensitive(argument, "previous");
+    if (*previous != NULL && !runtime_marketplace_check_copy(*previous, problem, sizeof problem)) {
+        refuse_with(refusal, "send the copy this build replaces as marketplace-copy.schema.json describes it, or leave previous out",
+                    "previous is not a marketplace copy: %s", problem, "", "");
+        return 0;
+    }
+    return 1;
+}
+
 static int read_request(const cJSON *argument, build_request *request, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
     request->list = cJSON_GetObjectItemCaseSensitive(argument, "list");
     request->built = text_of(argument, "built");
-    if (!read_api_base(argument, &request->api_base, refusal) || !read_token(argument, &request->token, refusal)) {
+    if (!read_api_base(argument, &request->api_base, refusal) || !read_token(argument, &request->token, refusal) ||
+        !read_previous(argument, &request->previous, refusal)) {
         return 0;
     }
     if (request->built == NULL || !runtime_marketplace_is_built_time(request->built)) {
@@ -147,17 +160,24 @@ static cJSON *resolve_argument(const char *id, const build_request *request) {
     return argument;
 }
 
-/** What identity.resolve answers for id, or NULL with *refusal naming id and the resolve refusal's fix. */
-static cJSON *resolved(const char *id, const build_request *request, cJSON **refusal) {
+/**
+ * What identity.resolve answered for one repository: answer, or NULL with reason saying why the host could not be
+ * asked. reason stays empty when the failure was memory running out, which is not the host's to answer for.
+ */
+typedef struct lookup_result {
+    cJSON *answer;
+    char reason[MESSAGE_SIZE];
+} lookup_result;
+
+static lookup_result resolved(const char *repository_id, const build_request *request) {
+    lookup_result result = {NULL, ""};
     cJSON *lookup_refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(id, request), &lookup_refusal);
-    if (answer == NULL && runtime_is_refusal(lookup_refusal)) {
-        const char *fix = text_of(lookup_refusal, "fix");
-        refuse_with(refusal, fix != NULL ? fix : "check the id and try again", "%s cannot be looked up: %s", id,
-                    text_of(lookup_refusal, "message"), "");
+    result.answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(repository_id, request), &lookup_refusal);
+    if (result.answer == NULL && runtime_is_refusal(lookup_refusal)) {
+        snprintf(result.reason, sizeof result.reason, "it cannot be looked up: %s", text_of(lookup_refusal, "message"));
     }
     cJSON_Delete(lookup_refusal);
-    return answer;
+    return result;
 }
 
 /** The id of the repository itself: id up to the folder below it, freed with free; NULL when memory runs out. */
@@ -222,14 +242,6 @@ static char *shown_name(const cJSON *entry, const char *source_name) {
     return derived_name(source_name);
 }
 
-static int check_full_name(const char *id, const char *full_name, cJSON **refusal) {
-    if (full_name == NULL || !runtime_marketplace_is_full_name(full_name)) {
-        refuse_with(refusal, "check that the host answers an owner/name", "%s was answered a name that is not owner/name", id, "", "");
-        return 0;
-    }
-    return 1;
-}
-
 static int copies_member(cJSON *to, const cJSON *from, const char *member) {
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(from, member);
     return value == NULL || cJSON_AddItemToObject(to, member, cJSON_Duplicate(value, 1)) != 0;
@@ -259,10 +271,7 @@ static int check_name_is_free(const cJSON *copied, const cJSON *entry, cJSON **r
     return 1;
 }
 
-static int adds_skipped(cJSON *skipped, const char *id, const char *source_name) {
-    char reason[MESSAGE_SIZE];
-    snprintf(reason, sizeof reason, "its name \"%s\" cannot be made an import name; set an alias in the list to list it",
-             source_name);
+static int adds_skipped(cJSON *skipped, const char *id, const char *reason) {
     cJSON *row = cJSON_CreateObject();
     if (row == NULL || cJSON_AddStringToObject(row, "id", id) == NULL || cJSON_AddStringToObject(row, "reason", reason) == NULL ||
         !cJSON_AddItemToArray(skipped, row)) {
@@ -279,26 +288,76 @@ typedef struct entry_result {
     cJSON *copy;
 } entry_result;
 
-/** The copy of one list entry as its repository is now; a name that is no import name skips it, a refusal or failure fails it. */
-static entry_result copied_entry(const cJSON *entry, const build_request *request, cJSON *skipped, cJSON **refusal) {
-    entry_result result = {ENTRY_FAILED, NULL};
-    const char *id = text_of(entry, "id");
-    char *repository_id = repository_id_of(id);
-    cJSON *answer = repository_id == NULL ? NULL : resolved(repository_id, request, refusal);
-    const char *folder = folder_name_of(id);
-    const char *source_name = answer == NULL ? NULL : (folder != NULL ? folder : text_of(answer, "name"));
-    const char *full_name = answer == NULL ? NULL : text_of(answer, "fullName");
-    char *name = source_name == NULL ? NULL : shown_name(entry, source_name);
-    if (answer != NULL && check_full_name(id, full_name, refusal) && name != NULL) {
-        if (runtime_is_import_name(name)) {
-            result.copy = copy_entry(entry, name, full_name);
-            result.outcome = result.copy == NULL ? ENTRY_FAILED : ENTRY_COPIED;
-        } else if (adds_skipped(skipped, id, source_name)) {
-            result.outcome = ENTRY_SKIPPED;
+static const cJSON *previous_entry_of(const cJSON *previous, const char *id) {
+    const cJSON *entries = previous == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(previous, "entries");
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, entries) {
+        if (strcmp(text_of(entry, "id"), id) == 0) {
+            return entry;
         }
     }
+    return NULL;
+}
+
+/** An entry whose repository could not be looked up: the previous copy's entry unchanged when it has one, otherwise skipped. */
+static entry_result left_unlooked(const build_request *request, const cJSON *entry, const char *reason, cJSON *skipped) {
+    entry_result result = {ENTRY_FAILED, NULL};
+    const char *id = text_of(entry, "id");
+    const cJSON *kept = previous_entry_of(request->previous, id);
+    if (kept != NULL) {
+        result.copy = cJSON_Duplicate(kept, 1);
+        result.outcome = result.copy == NULL ? ENTRY_FAILED : ENTRY_COPIED;
+    } else if (adds_skipped(skipped, id, reason)) {
+        result.outcome = ENTRY_SKIPPED;
+    }
+    return result;
+}
+
+static int adds_skipped_for_name(cJSON *skipped, const char *id, const char *source_name) {
+    char reason[MESSAGE_SIZE];
+    snprintf(reason, sizeof reason, "its name \"%s\" cannot be made an import name; set an alias in the list to list it",
+             source_name);
+    return adds_skipped(skipped, id, reason);
+}
+
+/** The copy of one entry from what its repository answered; a name that is no import name skips it. */
+static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *skipped) {
+    entry_result result = {ENTRY_FAILED, NULL};
+    const char *id = text_of(entry, "id");
+    const char *folder = folder_name_of(id);
+    const char *source_name = folder != NULL ? folder : text_of(answer, "name");
+    const char *full_name = text_of(answer, "fullName");
+    char *name = source_name == NULL ? NULL : shown_name(entry, source_name);
+    if (name != NULL && runtime_is_import_name(name)) {
+        result.copy = copy_entry(entry, name, full_name);
+        result.outcome = result.copy == NULL ? ENTRY_FAILED : ENTRY_COPIED;
+    } else if (name != NULL && adds_skipped_for_name(skipped, id, source_name)) {
+        result.outcome = ENTRY_SKIPPED;
+    }
     free(name);
-    cJSON_Delete(answer);
+    return result;
+}
+
+/** The copy of one list entry as its repository is now; one that cannot be looked up is carried over or skipped. */
+static entry_result copied_entry(const build_request *request, const cJSON *entry, cJSON *skipped) {
+    entry_result result = {ENTRY_FAILED, NULL};
+    char *repository_id = repository_id_of(text_of(entry, "id"));
+    lookup_result found = {NULL, ""};
+    if (repository_id != NULL) {
+        found = resolved(repository_id, request);
+    }
+    const char *full_name = found.answer == NULL ? NULL : text_of(found.answer, "fullName");
+    if (found.answer != NULL && (full_name == NULL || !runtime_marketplace_is_full_name(full_name))) {
+        snprintf(found.reason, sizeof found.reason, "it cannot be looked up: the host answered a name that is not owner/name");
+        cJSON_Delete(found.answer);
+        found.answer = NULL;
+    }
+    if (found.answer != NULL) {
+        result = copied_from(entry, found.answer, skipped);
+    } else if (found.reason[0] != '\0') {
+        result = left_unlooked(request, entry, found.reason, skipped);
+    }
+    cJSON_Delete(found.answer);
     free(repository_id);
     return result;
 }
@@ -307,10 +366,10 @@ static int adds_copied_entry(cJSON *copied, cJSON *copy, cJSON **refusal) {
     return check_name_is_free(copied, copy, refusal) && cJSON_AddItemToArray(copied, copy);
 }
 
-static cJSON *copied_entries(const cJSON *entries, const build_request *request, cJSON *skipped, cJSON **refusal) {
+static cJSON *copied_entries(const build_request *request, const cJSON *entries, cJSON *skipped, cJSON **refusal) {
     cJSON *copied = cJSON_CreateArray();
     for (const cJSON *entry = entries->child; copied != NULL && entry != NULL; entry = entry->next) {
-        entry_result result = copied_entry(entry, request, skipped, refusal);
+        entry_result result = copied_entry(request, entry, skipped);
         if (result.outcome == ENTRY_SKIPPED) {
             continue;
         }
@@ -358,7 +417,7 @@ static cJSON *build(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     cJSON *skipped = cJSON_CreateArray();
-    cJSON *copied = skipped == NULL ? NULL : copied_entries(entries, &request, skipped, refusal);
+    cJSON *copied = skipped == NULL ? NULL : copied_entries(&request, entries, skipped, refusal);
     if (copied == NULL) {
         cJSON_Delete(skipped);
         return NULL;

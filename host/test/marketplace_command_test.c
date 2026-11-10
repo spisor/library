@@ -14,6 +14,9 @@
 #define TOKEN "tok-1234567890abcdef"
 #define TOKEN_VARIABLE "SPISOR_MARKETPLACE_TEST_TOKEN"
 #define AUTHORIZATION_LINE "Authorization: token " TOKEN
+#define KEPT_COPY \
+    "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[{\"id\":\"github:60\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\"}]}"
+
 static char base_folder[1024];
 
 static char *in_base(const char *rest) {
@@ -84,11 +87,10 @@ static void a_skipped_entry_is_reported_and_the_copy_still_written(void) {
 static void a_refusal_exits_non_zero_and_writes_nothing(void) {
     start_case("refuses");
     write_in(base_folder, "clash.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:4\"}]}");
-    write_in(base_folder, "unknown.json", "{\"format\":1,\"entries\":[{\"id\":\"github:60\"}]}");
     write_in(base_folder, "broken.json", "{\"format\":1");
-    write_in(base_folder, "kept/copy.json", "kept");
+    write_in(base_folder, "kept/copy.json", KEPT_COPY);
     char *kept = in_base("kept/copy.json");
-    const char *lists[] = {"clash.json", "unknown.json", "broken.json", "absent.json"};
+    const char *lists[] = {"clash.json", "broken.json", "absent.json"};
     for (size_t index = 0; index < sizeof lists / sizeof lists[0]; index++) {
         char *list = in_base(lists[index]);
         char *fresh = in_base("fresh/copy.json");
@@ -96,7 +98,7 @@ static void a_refusal_exits_non_zero_and_writes_nothing(void) {
         CHECK(!exists_in(base_folder, "fresh"));
         CHECK(run_command(list, kept) == 1);
         char *content = text_in(base_folder, "kept/copy.json");
-        check_text(content, "kept", "an existing copy is left alone");
+        check_text(content, KEPT_COPY, "an existing copy is left alone");
         free(content);
         free(fresh);
         free(list);
@@ -163,6 +165,65 @@ static void set_token_variable(const char *value) {
 static int run_command_with_token(const char *list_path, const char *out_path) {
     const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE};
     return host_command_marketplace_build(6, (char **)arguments);
+}
+
+static void an_unresolvable_entry_is_carried_over_or_skipped_and_the_copy_still_written(void) {
+    start_case("unresolvable");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\"}]}");
+    write_in(base_folder, "carried/copy.json", KEPT_COPY);
+    char *list = in_base("list.json");
+    char *carried = in_base("carried/copy.json");
+    char *fresh = in_base("fresh/copy.json");
+    CHECK(run_command(list, carried) == 0);
+    cJSON *kept = json_in(base_folder, "carried/copy.json");
+    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(kept, "entries");
+    CHECK(cJSON_GetArraySize(entries) == 2);
+    check_text(text_at(cJSON_GetArrayItem(entries, 1), "name"), "kept", "carried over from the copy at --out");
+    cJSON_Delete(kept);
+    CHECK(run_command(list, fresh) == 0);
+    cJSON *skipped = json_in(base_folder, "fresh/copy.json");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(skipped, "entries")) == 1);
+    cJSON_Delete(skipped);
+    free(fresh);
+    free(carried);
+    free(list);
+    finish_case();
+}
+
+static void a_copy_at_out_that_is_not_a_copy_is_refused_and_left_alone(void) {
+    start_case("bad-previous");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    write_in(base_folder, "a.json", "{\"format\":1}");
+    write_in(base_folder, "b.json", "not json");
+    char *list = in_base("list.json");
+    const char *outs[] = {"a.json", "b.json"};
+    for (size_t index = 0; index < 2; index++) {
+        char *out = in_base(outs[index]);
+        CHECK(run_command(list, out) == 1);
+        char *content = text_in(base_folder, outs[index]);
+        CHECK(strcmp(content, index == 0 ? "{\"format\":1}" : "not json") == 0);
+        free(content);
+        free(out);
+    }
+    free(list);
+    finish_case();
+}
+
+static void out_that_is_the_list_is_refused_and_the_list_left_alone(void) {
+    start_case("out-is-list");
+    const char *text = "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}";
+    write_in(base_folder, "marketplace.json", text);
+    write_in(base_folder, "sub/placeholder", "");
+    char *list = in_base("marketplace.json");
+    char *spelled_differently = in_base("sub/../marketplace.json");
+    CHECK(run_command(list, list) == 1);
+    CHECK(run_command(list, spelled_differently) == 1);
+    char *content = text_in(base_folder, "marketplace.json");
+    CHECK(strcmp(content, text) == 0);
+    free(content);
+    free(spelled_differently);
+    free(list);
+    finish_case();
 }
 
 static void the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere(void) {
@@ -252,6 +313,9 @@ static void run_against_the_server(void) {
     writes_the_copy_atomically_and_exits_0();
     a_skipped_entry_is_reported_and_the_copy_still_written();
     a_refusal_exits_non_zero_and_writes_nothing();
+    an_unresolvable_entry_is_carried_over_or_skipped_and_the_copy_still_written();
+    a_copy_at_out_that_is_not_a_copy_is_refused_and_left_alone();
+    out_that_is_the_list_is_refused_and_the_list_left_alone();
     the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere();
     a_variable_that_is_not_set_is_refused_and_writes_nothing();
     host_marketplace_aim_lookups(NULL);

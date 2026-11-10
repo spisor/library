@@ -179,7 +179,8 @@
             "properties": {
               "list": { "type": "object", "description": "A marketplace list as marketplace.schema.json describes it." },
               "built": { "type": "string", "description": "The RFC 3339 time the copy states, from the caller so the same inputs build the same copy." },
-              "token": { "type": "string", "description": "An access token sent to the host the list's ids name and to no other; refused for a list that names more than one host." }
+              "token": { "type": "string", "description": "An access token sent to the host the list's ids name and to no other; refused for a list that names more than one host." },
+              "previous": { "type": "object", "description": "The copy this build replaces: an entry whose repository cannot be looked up is carried over from it unchanged." }
             },
             "required": ["list", "built"]
           },
@@ -189,7 +190,7 @@
               "copy": { "type": "object", "description": "The generated copy, as marketplace-copy.schema.json describes it." },
               "skipped": {
                 "type": "array",
-                "description": "Entries left out because the repo name cannot be made an import name.",
+                "description": "Entries left out because the repo name cannot be made an import name, or the repo cannot be looked up and the previous copy has no entry for it.",
                 "items": { "type": "object", "properties": { "id": { "type": "string" }, "reason": { "type": "string" } }, "required": ["id", "reason"] }
               }
             },
