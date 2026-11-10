@@ -53,6 +53,7 @@ Service), and that store may prompt the user.
 | `identity.agree` | `id`, `files` | `{ ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable? }`, the copies of the repo id names that agree with it, from each copy's `.weivel/also-at.json` as `files` holds it (null for a copy with none, false for one that could not be read); an id counts only when the starting file lists it and its own file lists the starting id back, at most 16; copies naming different primaries are refused; pure |
 | `identity.alsoAt` | `id` | what `identity.agree` answers, after reading `.weivel/also-at.json` at the default branch of the repo and of each copy it lists; a copy that cannot be reached is left out |
 | `identity.acceptsVersion` | `recorded`, `primary` | `{ accepted, needsUserAcceptance }`; a primary that differs from the one recorded at install is accepted only by the user; pure |
+| `marketplace.build` | `list`, `built` | `{ copy }`, the generated copy of a marketplace list (`runtime/schema/marketplace.schema.json`, copied from weivel's model): each entry carries the `name`, `fullName` and `lastKnown` (the full name) `identity.resolve` answers for its id, the list's `alias` in place of the name when one is set, and its description and categories; `built`, an RFC 3339 time, comes from the caller so the same inputs build the same copy; refused, naming the ids, for a list that breaks its schema or has more than 10000 entries, a local id, an id below a repo, an id listed twice or one that does not resolve, a repo name that is no import name and has no alias, and two entries of one name once aliases apply; the shape, local, folder and duplicate refusals come before any lookup |
 | `places.resolve` | `home`, `environment` | `portable`, `state`, `cache`, `secretsFile`, `forceFileStore` |
 | `config.all` | `home`, `names`, `portable`, `plugin`, `config` | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order |
 | `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
@@ -392,6 +393,11 @@ No catalog is published yet, so a run without one is refused. Pass a local one b
 sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
+
+`forebay-host marketplace build --list <path> --out <path>` builds the generated copy of a marketplace list
+with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating
+the folder it lies in. A refusal writes nothing, leaves an existing copy as it was and exits 1; a name in a message is printed with
+its control characters escaped.
 
 ## Path vectors
 

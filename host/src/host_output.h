@@ -21,6 +21,13 @@ void host_write(int to_error, const char *text);
 /** Prints value as JSON.stringify(value, null, 2) does, and a newline, on standard output. */
 void host_print_json(const cJSON *value);
 
+/**
+ * text as it may be printed on a terminal: every byte below 0x20, 0x7F and the UTF-8 form of each of U+0080 to
+ * U+009F becomes a visible \\xNN or \\u00NN, so a name read from elsewhere cannot move the cursor or hide the line. NULL when
+ * memory runs out.
+ */
+char *host_printable(const char *text);
+
 /** Prints refusal, a {message, fix}, as "<message>\nfix: <fix>" on standard error; NULL is out of memory. */
 void host_print_refusal(const cJSON *refusal);
 

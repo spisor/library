@@ -4,7 +4,7 @@ if(NOT WIN32)
 endif()
 
 set(host_sources src/application_choices.c src/catalog_inputs.c src/catalog_writer.c
-    src/command_action.c src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c
+    src/command_action.c src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c src/command_marketplace.c
     src/command_remove.c src/command_status.c src/command_update.c src/host_context.c src/host_holds.c src/host_options.c
     src/host_output.c src/host_service.c src/host_start.c src/install_warning_report.c src/loader_start.c src/own_executable.c src/own_run.c src/required_plugins.c src/session_ready.c src/terminal_question.c src/windows_command.c)
 if(WIN32)
@@ -28,7 +28,8 @@ target_compile_definitions(host_ready_timeout_test_hook PRIVATE HOST_READY_TIMEO
 spisor_strict_warnings(host_ready_timeout_test_hook)
 
 set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>
-    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_marketplace_build>
+    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts>)
 set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry>

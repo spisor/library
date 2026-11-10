@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://weivel.github.io/model/marketplace-copy.schema.json",
+  "title": "weivel marketplace copy",
+  "description": "The generated copy of a marketplace list, carrying each entry's name and last known location so a host need not look up every id. Nobody edits it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "built",
+    "entries"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Pointer at the published schema, for an editor's completion and validation.",
+      "type": "string"
+    },
+    "format": {
+      "description": "The version of this document's shape.",
+      "const": 1,
+      "fix": "set \"format\" to 1"
+    },
+    "title": {
+      "description": "What this marketplace is called, for a surface to show.",
+      "type": "string",
+      "fix": "write a short name"
+    },
+    "built": {
+      "description": "When this copy was generated, as an RFC 3339 timestamp.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\\.[0-9]+)?([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])(?![\\s\\S])",
+      "fix": "write the time as RFC 3339, for example \"2026-11-10T12:00:00Z\""
+    },
+    "entries": {
+      "description": "The entries, in the order a surface lists them. A repeated id is accepted here and refused when a copy is built.",
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "description": "One listed repository as last resolved.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "fullName",
+          "lastKnown"
+        ],
+        "properties": {
+          "id": {
+            "description": "The repository identity of the listed repository, which survives a rename.",
+            "type": "string",
+            "pattern": "^(local:[^/\\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\\.{1,2}(/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
+            "fix": "write the id as a repository id, for example \"github:123\" or \"gitea@git.example.com:12/runtime\""
+          },
+          "name": {
+            "description": "The name the entry is shown under: the list's alias when one is set, otherwise the repository's own name.",
+            "type": "string",
+            "pattern": "^(?!package(?![\\s\\S]))(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\\.]|(?![\\s\\S])))[a-z0-9]+([-.][a-z0-9]+)*(?![\\s\\S])",
+            "fix": "use lowercase words joined by single hyphens or dots, for example \"config-ledger\" or \"api.http\""
+          },
+          "fullName": {
+            "description": "The owner and name of the repository when the copy was built.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9._-]+(?![\\s\\S])",
+            "fix": "write owner/name, for example \"spisor/runtime\""
+          },
+          "lastKnown": {
+            "description": "The location to try first when the id cannot be resolved, which is the full name at build time.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9._-]+(?![\\s\\S])",
+            "fix": "write owner/name, for example \"spisor/runtime\""
+          },
+          "description": {
+            "description": "A short line saying what the entry is.",
+            "type": "string",
+            "fix": "write one short sentence"
+          },
+          "categories": {
+            "description": "Topics this entry is filed under, each written as an import name.",
+            "type": "array",
+            "items": {
+              "description": "One category.",
+              "type": "string",
+              "pattern": "^(?!package(?![\\s\\S]))(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\\.]|(?![\\s\\S])))[a-z0-9]+([-.][a-z0-9]+)*(?![\\s\\S])",
+              "fix": "use lowercase words joined by single hyphens or dots, for example \"config-ledger\" or \"api.http\""
+            },
+            "uniqueItems": true,
+            "fix": "list categories as lowercase hyphenated words, for example [\"ai-provider\"]"
+          }
+        }
+      },
+      "fix": "list at most 10000 entries"
+    }
+  }
+}

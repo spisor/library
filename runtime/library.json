@@ -167,6 +167,30 @@
       ]
     },
     {
+      "id": "marketplace",
+      "functions": [
+        {
+          "name": "build",
+          "symbol": "runtime_marketplace_build",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "list": { "type": "object", "description": "A marketplace list as marketplace.schema.json describes it." },
+              "built": { "type": "string", "description": "The RFC 3339 time the copy states, from the caller so the same inputs build the same copy." }
+            },
+            "required": ["list", "built"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "copy": { "type": "object", "description": "The generated copy, as marketplace-copy.schema.json describes it." } },
+            "required": ["copy"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
       "id": "places",
       "functions": [
         {
