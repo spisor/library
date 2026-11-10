@@ -13,9 +13,17 @@
 #include "marketplace_memory.h"
 #include "marketplace_name_lookup.h"
 #include "paths.h"
-#include "spisor/path.h"
 
 #define NO_MARKETPLACE_FIX "list marketplaces in the portable settings.json as marketplaces: [{id, url}], or fix the ones refused above"
+#define RUN_AGAIN_FIX "run the command again"
+
+/** The name as it was found: which marketplace gave which id, and how the user asked for it. */
+typedef struct found_name {
+    const char *marketplace;
+    const char *id;
+    const char *bare;
+    int was_asked_bare;
+} found_name;
 
 /** The part of a name after its marketplace, as marketplace.lookup splits it at the first slash. */
 static const char *bare_name_of(const char *name) {
@@ -34,35 +42,15 @@ static cJSON *lookup_call(cJSON *copies, const char *name) {
     return argument;
 }
 
-static cJSON *remember_call(const host_context *context, const char *marketplace, const char *name, const char *id,
-                            const char *accepted_id) {
+static cJSON *remember_call(const host_context *context, const found_name *found, const char *marketplace, const char *accepted_id,
+                            int is_recording) {
     cJSON *argument = cJSON_CreateObject();
     int built = argument != NULL && cJSON_AddStringToObject(argument, "state", context->state) != NULL &&
-                cJSON_AddStringToObject(argument, "marketplace", marketplace) != NULL &&
-                cJSON_AddStringToObject(argument, "name", name) != NULL && cJSON_AddStringToObject(argument, "id", id) != NULL &&
-                (accepted_id == NULL || cJSON_AddStringToObject(argument, "accept", accepted_id) != NULL);
-    if (!built) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
-}
-
-static char *plugin_directory(const host_context *context) {
-    const char *segments[2] = {context->portable, "plugins"};
-    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-}
-
-static cJSON *install_call(const host_context *context, const char *id, const char *accepted_id) {
-    char *plugins = plugin_directory(context);
-    cJSON *argument = plugins == NULL ? NULL : cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", id) != NULL &&
-                cJSON_AddStringToObject(argument, "cache", context->cache) != NULL &&
-                cJSON_AddStringToObject(argument, "pluginDir", plugins) != NULL &&
-                (accepted_id == NULL || cJSON_AddStringToObject(argument, "acceptPrimary", accepted_id) != NULL) &&
-                (host_marketplace_lookup_api_base() == NULL ||
-                 cJSON_AddStringToObject(argument, "apiBase", host_marketplace_lookup_api_base()) != NULL);
-    free(plugins);
+                (marketplace == NULL || cJSON_AddStringToObject(argument, "marketplace", marketplace) != NULL) &&
+                cJSON_AddStringToObject(argument, "name", found->bare) != NULL &&
+                cJSON_AddStringToObject(argument, "id", found->id) != NULL &&
+                (accepted_id == NULL || cJSON_AddStringToObject(argument, "accept", accepted_id) != NULL) &&
+                (is_recording || cJSON_AddFalseToObject(argument, "record") != NULL);
     if (!built) {
         cJSON_Delete(argument);
         return NULL;
@@ -80,7 +68,7 @@ static int refuse_with(const char *const *parts, size_t count, const char *fix) 
 
 static int refuse_with_fix_parts(const char *const *parts, size_t count, const char *const *fix_parts, size_t fix_count) {
     char *fix = runtime_cache_text(fix_parts, fix_count);
-    int code = refuse_with(parts, count, fix == NULL ? "run the command again" : fix);
+    int code = refuse_with(parts, count, fix == NULL ? RUN_AGAIN_FIX : fix);
     free(fix);
     return code;
 }
@@ -105,18 +93,67 @@ static int refuse_not_found(const char *name) {
     return refuse_with(parts, 2, "check the spelling, or name its marketplace as <marketplace>/<name>");
 }
 
-static int refuse_changed_name(const char *qualified, const char *was, const char *now) {
-    const char *parts[5] = {qualified, " was ", was, " when it was first installed, and its marketplace now lists it as ", now};
-    const char *fix_parts[6] = {"check that ", now, " is the plugin you mean, then run forebay-host install --name ", qualified, " --accept ", now};
-    return refuse_with_fix_parts(parts, 5, fix_parts, 6);
+static int refuse_changed_name(const char *label, const char *was, const char *now, const char *application) {
+    const char *parts[5] = {label, " was ", was, " when it was first installed, and it now means ", now};
+    const char *fix_parts[8] = {"check that ", now, " is the plugin you mean, then run forebay-host install --name ", label,
+                                " --application ", application, " --accept ", now};
+    return refuse_with_fix_parts(parts, 5, fix_parts, 8);
 }
 
-static int refuse_changed_primary(const char *name, const cJSON *answer) {
+static int refuse_changed_primary(const char *name, const char *application, const cJSON *answer) {
     const char *primary = host_text(answer, "primary");
     const char *parts[5] = {name, " is recorded as installed from ", host_text(answer, "recordedPrimary"),
                             ", and its repo's copies now name this as the primary: ", primary};
-    const char *fix_parts[6] = {"check that ", primary, " is the plugin you mean, then run forebay-host install --name ", name, " --accept ", primary};
-    return refuse_with_fix_parts(parts, 5, fix_parts, 6);
+    const char *fix_parts[8] = {"check that ", primary, " is the plugin you mean, then run forebay-host install --name ", name,
+                                " --application ", application, " --accept-primary ", primary};
+    return refuse_with_fix_parts(parts, 5, fix_parts, 8);
+}
+
+static int refuse_no_marketplace(const char *name) {
+    const char *parts[3] = {"no marketplace could be read, so ", name, " cannot be looked up"};
+    return refuse_with(parts, 3, NO_MARKETPLACE_FIX);
+}
+
+/** The plugin folder of the registered application: its home, resolved by the paths service. NULL with *refusal set. */
+static char *plugin_directory_of(const host_context *context, const char *application, cJSON **refusal) {
+    cJSON *registration = host_registration(context, application, refusal);
+    const char *home = host_text(registration, "home");
+    char *directory = NULL;
+    if (registration != NULL && home == NULL) {
+        const char *parts[3] = {"the application ", application, " is registered without a home to deploy a plugin into"};
+        *refusal = host_refusal_of(parts, 3, "start the application once so that it registers its home, then run the command again");
+    }
+    cJSON *argument = home == NULL ? NULL : cJSON_CreateObject();
+    if (argument != NULL && cJSON_AddStringToObject(argument, "home", home) != NULL) {
+        cJSON *paths = host_call(runtime_paths_resolve, argument, refusal);
+        const char *plugin = host_text(paths, "plugin");
+        if (plugin != NULL) {
+            directory = malloc(strlen(plugin) + 1);
+            if (directory != NULL) {
+                strcpy(directory, plugin);
+            }
+        }
+        cJSON_Delete(paths);
+    } else {
+        cJSON_Delete(argument);
+    }
+    cJSON_Delete(registration);
+    return directory;
+}
+
+static cJSON *install_call(const host_context *context, const char *id, const char *plugin_directory, const char *accepted_primary) {
+    cJSON *argument = cJSON_CreateObject();
+    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", id) != NULL &&
+                cJSON_AddStringToObject(argument, "cache", context->cache) != NULL &&
+                cJSON_AddStringToObject(argument, "pluginDir", plugin_directory) != NULL &&
+                (accepted_primary == NULL || cJSON_AddStringToObject(argument, "acceptPrimary", accepted_primary) != NULL) &&
+                (host_marketplace_lookup_api_base() == NULL ||
+                 cJSON_AddStringToObject(argument, "apiBase", host_marketplace_lookup_api_base()) != NULL);
+    if (!built) {
+        cJSON_Delete(argument);
+        return NULL;
+    }
+    return argument;
 }
 
 /** A report in the shape host_print_install_warnings reads, holding the one plugin install.byId installed. */
@@ -141,51 +178,74 @@ static int print_installed(const host_context *context, const cJSON *installed) 
     return HOST_EXIT_DONE;
 }
 
-static int install_found(const host_context *context, const char *name, const char *id, const char *accepted_id) {
+/**
+ * Asks marketplace.remember about the name under marketplace, or under its bare name when marketplace is NULL, recording
+ * it only when is_recording. 1 when it is settled; 0 with *code the exit code after saying why it is not.
+ */
+static int settles_name(const host_context *context, const host_name_request *request, const found_name *found,
+                        const char *marketplace, int is_recording, int *code) {
     cJSON *refusal = NULL;
-    cJSON *installed = host_call(runtime_install_by_id, install_call(context, id, accepted_id), &refusal);
-    if (installed == NULL) {
-        return host_refuse_printably(refusal);
+    cJSON *answer = host_call(runtime_marketplace_remember, remember_call(context, found, marketplace, request->accepted_name_id, is_recording),
+                              &refusal);
+    if (answer == NULL) {
+        *code = refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
+        return 0;
     }
-    int code = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(installed, "needsUserAcceptance"))
-                   ? refuse_changed_primary(name, installed)
-                   : print_installed(context, installed);
+    int is_settled = !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "needsUserAcceptance"));
+    if (!is_settled) {
+        const char *label_parts[3] = {marketplace == NULL ? "" : marketplace, "/", found->bare};
+        char *label = marketplace == NULL ? NULL : runtime_cache_text(label_parts, 3);
+        *code = refuse_changed_name(marketplace == NULL ? found->bare : (label == NULL ? found->bare : label), host_text(answer, "was"),
+                                    host_text(answer, "now"), request->application);
+        free(label);
+    }
+    cJSON_Delete(answer);
+    return is_settled;
+}
+
+/** Settles the qualified name and, when the user asked for a bare name, the bare one too. */
+static int settles_names(const host_context *context, const host_name_request *request, const found_name *found, int is_recording,
+                         int *code) {
+    return settles_name(context, request, found, found->marketplace, is_recording, code) &&
+           (!found->was_asked_bare || settles_name(context, request, found, NULL, is_recording, code));
+}
+
+static int install_found(const host_context *context, const host_name_request *request, const found_name *found) {
+    cJSON *refusal = NULL;
+    char *plugin_directory = plugin_directory_of(context, request->application, &refusal);
+    if (plugin_directory == NULL) {
+        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
+    }
+    int code = HOST_EXIT_DONE;
+    if (!settles_names(context, request, found, 0, &code)) {
+        free(plugin_directory);
+        return code;
+    }
+    cJSON *installed = host_call(runtime_install_by_id, install_call(context, found->id, plugin_directory, request->accepted_primary), &refusal);
+    free(plugin_directory);
+    if (installed == NULL) {
+        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
+    }
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(installed, "needsUserAcceptance"))) {
+        code = refuse_changed_primary(request->name, request->application, installed);
+    } else if (settles_names(context, request, found, 1, &code)) {
+        code = print_installed(context, installed);
+    }
     cJSON_Delete(installed);
     return code;
 }
 
-/** Remembers id for the marketplace's name, then installs it; a name remembered as another id installs nothing. */
-static int install_remembering(const host_context *context, const char *name, const cJSON *found, const char *accepted_id) {
-    const char *marketplace = host_text(found, "marketplace");
-    const char *id = host_text(found, "id");
-    const char *bare = bare_name_of(name);
-    cJSON *refusal = NULL;
-    cJSON *remembered = host_call(runtime_marketplace_remember, remember_call(context, marketplace, bare, id, accepted_id), &refusal);
-    if (remembered == NULL) {
-        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
-    }
-    int code = HOST_EXIT_DONE;
-    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(remembered, "needsUserAcceptance"))) {
-        const char *qualified_parts[3] = {marketplace, "/", bare};
-        char *qualified = runtime_cache_text(qualified_parts, 3);
-        code = qualified == NULL ? refuse_out_of_memory() : refuse_changed_name(qualified, host_text(remembered, "was"), host_text(remembered, "now"));
-        free(qualified);
-    } else {
-        code = install_found(context, name, id, accepted_id);
-    }
-    cJSON_Delete(remembered);
-    return code;
-}
-
-static int install_looked_up(const host_context *context, const char *name, const cJSON *answer, const char *accepted_id) {
+static int install_looked_up(const host_context *context, const host_name_request *request, const cJSON *answer) {
     const cJSON *forms = cJSON_GetObjectItemCaseSensitive(answer, "ambiguous");
     if (cJSON_IsArray(forms)) {
-        return refuse_ambiguous(name, forms);
+        return refuse_ambiguous(request->name, forms);
     }
-    return host_text(answer, "id") == NULL ? refuse_not_found(name) : install_remembering(context, name, answer, accepted_id);
+    found_name found = {host_text(answer, "marketplace"), host_text(answer, "id"), bare_name_of(request->name),
+                        strchr(request->name, '/') == NULL};
+    return found.id == NULL || found.marketplace == NULL ? refuse_not_found(request->name) : install_found(context, request, &found);
 }
 
-int host_install_by_name(const host_context *context, const char *name, const char *accepted_id) {
+int host_install_by_name(const host_context *context, const host_name_request *request) {
     cJSON *refusal = NULL;
     cJSON *copies = host_read_marketplace_copies(context, &refusal);
     if (copies == NULL) {
@@ -193,14 +253,13 @@ int host_install_by_name(const host_context *context, const char *name, const ch
     }
     if (cJSON_GetArraySize(copies) == 0) {
         cJSON_Delete(copies);
-        const char *parts[3] = {"no marketplace could be read, so ", name, " cannot be looked up"};
-        return refuse_with(parts, 3, NO_MARKETPLACE_FIX);
+        return refuse_no_marketplace(request->name);
     }
-    cJSON *answer = host_call(runtime_marketplace_lookup, lookup_call(copies, name), &refusal);
+    cJSON *answer = host_call(runtime_marketplace_lookup, lookup_call(copies, request->name), &refusal);
     if (answer == NULL) {
         return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
     }
-    int code = install_looked_up(context, name, answer, accepted_id);
+    int code = install_looked_up(context, request, answer);
     cJSON_Delete(answer);
     return code;
 }

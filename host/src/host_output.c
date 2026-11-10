@@ -13,7 +13,7 @@
 #define USAGE                                                                                                         \
     "usage:\n"                                                                                                        \
     "  forebay-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"      \
-    "  forebay-host install --name <[marketplace/]name> [--accept <id>]\n"                                            \
+    "  forebay-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]\n"                                            \
     "  forebay-host status\n"                                                                                         \
     "  forebay-host update\n"                                                                                         \
     "  forebay-host remove <host-id>\n"                                                                               \
