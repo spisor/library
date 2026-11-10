@@ -2,7 +2,7 @@
 #define HOST_MARKETPLACE_LOOKUP_H
 
 /**
- * The apiBase marketplace build passes to its lookups: NULL, so each host's own API address is used.
+ * The apiBase marketplace build and install by name pass to their lookups: NULL, so each host's own API address is used.
  *
  * @implNote Only the test build of this file can answer anything else, through host_marketplace_aim_lookups, which
  * the production build does not define; the runtime refuses an apiBase unless its own fetch test hooks are built in.

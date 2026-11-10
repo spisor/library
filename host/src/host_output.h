@@ -31,6 +31,12 @@ char *host_printable(const char *text);
 /** Prints refusal, a {message, fix}, as "<message>\nfix: <fix>" on standard error; NULL is out of memory. */
 void host_print_refusal(const cJSON *refusal);
 
+/** host_print_refusal with every name in the message and the fix escaped as host_printable does. */
+void host_print_refusal_printably(const cJSON *refusal);
+
+/** host_print_refusal_printably, then HOST_EXIT_REFUSED; refusal is freed. */
+int host_refuse_printably(cJSON *refusal);
+
 /** host_print_refusal, then HOST_EXIT_REFUSED; refusal is freed. */
 int host_refuse(cJSON *refusal);
 

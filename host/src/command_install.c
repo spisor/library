@@ -8,6 +8,7 @@
 #include "host_context.h"
 #include "host_options.h"
 #include "host_output.h"
+#include "install_by_name.h"
 #include "install_ecosystem.h"
 #include "install_warning_report.h"
 #include "terminal_question.h"
@@ -179,19 +180,19 @@ static int install_through(const host_context *context, const cJSON *sources, co
     return code;
 }
 
-int host_command_install(int count, char **arguments) {
-    host_option options[3] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}};
+#define OPTION_CATALOG 0
+#define OPTION_PLUGIN 1
+#define OPTION_APPLICATION 2
+#define OPTION_NAME 3
+#define OPTION_ACCEPT 4
+#define OPTION_COUNT 5
+
+static int installs_from_catalog(const host_option *options) {
+    const char *catalog = host_last_value(&options[OPTION_CATALOG]);
     char *problem = NULL;
-    if (!host_parse_options(count, arguments, options, 3, NULL, &problem)) {
-        int code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
-        free(problem);
-        host_free_options(options, 3);
-        return code;
-    }
-    const char *catalog = host_last_value(&options[0]);
     int misused = 0;
     cJSON *sources = catalog == NULL ? NULL : sources_of(catalog, &misused);
-    cJSON *choices = sources == NULL ? NULL : choices_of(options[2].values, &problem);
+    cJSON *choices = sources == NULL ? NULL : choices_of(options[OPTION_APPLICATION].values, &problem);
     int code = HOST_EXIT_DONE;
     if (catalog == NULL) {
         code = host_misuse("--catalog <path or url> is required");
@@ -204,13 +205,49 @@ int host_command_install(int count, char **arguments) {
     } else {
         host_context context;
         cJSON *refusal = NULL;
-        code = host_open_context(&context, &refusal) ? install_through(&context, sources, options[1].values, choices)
-                                                    : host_refuse(refusal);
+        code = host_open_context(&context, &refusal)
+                   ? install_through(&context, sources, options[OPTION_PLUGIN].values, choices)
+                   : host_refuse(refusal);
         host_close_context(&context);
     }
     free(problem);
     cJSON_Delete(choices);
     cJSON_Delete(sources);
-    host_free_options(options, 3);
+    return code;
+}
+
+static int is_given(const host_option *option) {
+    return host_last_value(option) != NULL;
+}
+
+static int installs_by_name(const host_option *options) {
+    if (!is_given(&options[OPTION_NAME])) {
+        return host_misuse("--accept <id> is only meaningful with --name <[marketplace/]name>");
+    }
+    if (is_given(&options[OPTION_CATALOG]) || is_given(&options[OPTION_PLUGIN]) || is_given(&options[OPTION_APPLICATION])) {
+        return host_misuse("--name installs from the marketplaces in the settings and takes no --catalog, --plugin or --application");
+    }
+    host_context context;
+    cJSON *refusal = NULL;
+    int code = host_open_context(&context, &refusal)
+                   ? host_install_by_name(&context, host_last_value(&options[OPTION_NAME]), host_last_value(&options[OPTION_ACCEPT]))
+                   : host_refuse(refusal);
+    host_close_context(&context);
+    return code;
+}
+
+int host_command_install(int count, char **arguments) {
+    host_option options[OPTION_COUNT] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}, {"name", NULL}, {"accept", NULL}};
+    char *problem = NULL;
+    int code = HOST_EXIT_DONE;
+    if (!host_parse_options(count, arguments, options, OPTION_COUNT, NULL, &problem)) {
+        code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
+    } else if (is_given(&options[OPTION_NAME]) || is_given(&options[OPTION_ACCEPT])) {
+        code = installs_by_name(options);
+    } else {
+        code = installs_from_catalog(options);
+    }
+    free(problem);
+    host_free_options(options, OPTION_COUNT);
     return code;
 }
