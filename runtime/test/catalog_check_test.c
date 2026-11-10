@@ -78,7 +78,7 @@ static void serve(served *server, int status, const char *body, const char *etag
         strcpy(server->body, body);
     }
     http_route route = {"/index.json", status, NULL, server->body == NULL ? "" : server->body,
-                        server->body == NULL ? 0 : strlen(server->body), HTTP_ROUTE_BODY_LENGTH, etag, NULL, 0};
+                        server->body == NULL ? 0 : strlen(server->body), HTTP_ROUTE_BODY_LENGTH, etag, NULL, 0, 0};
     server->route = route;
     server->fixture = http_fixture_start(&server->route, 1);
     static char target[64];

@@ -14,8 +14,8 @@
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
-#define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0}
-#define EMPTY_ROUTE(path, status) {path, status, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0}
+#define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
+#define EMPTY_ROUTE(path, status) {path, status, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
 
 static const char found_seven[] = REPOSITORY("7", "n", "o/n");
 static const char renamed_eight[] = REPOSITORY("8", "renamed", "o/renamed");
@@ -209,7 +209,7 @@ static void run_against_the_server(void) {
         ROUTE("/repos/o/n50", 200, named_fifty),
         ROUTE("/api/v1/repositories/60", 200, gitea_sixty),
         ROUTE("/repositories/70", 200, no_names),
-        {"/repositories/80", 200, NULL, oversized_body, sizeof oversized_body, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
+        {"/repositories/80", 200, NULL, oversized_body, sizeof oversized_body, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
         ROUTE("/repositories/81", 200, not_an_object),
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
