@@ -101,6 +101,66 @@
             "required": ["name", "fullName"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "agree",
+          "symbol": "runtime_identity_agree",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "files": {
+                "type": "object",
+                "description": "A repo id to its also-at file; null when that copy was unreachable or has no file."
+              }
+            },
+            "required": ["id", "files"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 16 },
+              "primary": { "type": "string" },
+              "primaryConfirmed": { "type": "boolean" },
+              "startFileMalformed": { "type": "boolean" }
+            },
+            "required": ["ids", "primary", "primaryConfirmed"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "alsoAt",
+          "symbol": "runtime_identity_also_at",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] },
+          "result": {
+            "type": "object",
+            "properties": {
+              "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 16 },
+              "primary": { "type": "string" },
+              "primaryConfirmed": { "type": "boolean" },
+              "startFileMalformed": { "type": "boolean" }
+            },
+            "required": ["ids", "primary", "primaryConfirmed"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "acceptsVersion",
+          "symbol": "runtime_identity_accepts_version",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": { "recorded": { "type": "string" }, "primary": { "type": "string" } },
+            "required": ["recorded", "primary"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "accepted": { "type": "boolean" }, "needsUserAcceptance": { "type": "boolean" } },
+            "required": ["accepted", "needsUserAcceptance"],
+            "additionalProperties": false
+          }
         }
       ]
     },
