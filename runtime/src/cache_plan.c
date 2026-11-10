@@ -104,15 +104,10 @@ static int is_library(const cJSON *item) {
     return cJSON_IsString(kind) && strcmp(kind->valuestring, "library") == 0;
 }
 
-/** The folder an item's versions live in: the key itself for a name, the id's folder for an id, which holds no ":". */
 static char *item_folder(const char *id, cJSON **refusal) {
-    runtime_identity identity;
-    if (!runtime_identity_parse_id(id, &identity)) {
-        return runtime_cache_text(&id, 1);
-    }
-    char *folder = NULL;
-    runtime_identity_folder_status status = runtime_identity_folder_name(id, &folder);
-    if (status != RUNTIME_IDENTITY_FOLDER_NAMED && status != RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY) {
+    int unfit = 0;
+    char *folder = runtime_item_folder(id, &unfit);
+    if (unfit) {
         const char *parts[2] = {id, " is an id that cannot name a folder"};
         refuse(refusal, parts, 2, "use an id whose folder is portable: a local name in lowercase, without +, = or :");
     }

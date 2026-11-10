@@ -6,6 +6,7 @@
 
 #include "cache_folders.h"
 #include "catalog_path.h"
+#include "identity.h"
 #include "paths.h"
 #include "spisor/path.h"
 
@@ -67,7 +68,9 @@ int runtime_cache_is_strictly_inside(const char *parent, const char *child) {
 char *runtime_cache_bundle_directory(const char *cache, const char *id, const char *version) {
     const char *segments[2] = {cache, "bundles"};
     char *bundles = runtime_cache_joined(segments, 2);
-    char *versions = bundles == NULL ? NULL : runtime_cache_resolve(bundles, &id, 1);
+    int unfit = 0;
+    char *folder = bundles == NULL ? NULL : runtime_item_folder(id, &unfit);
+    char *versions = folder == NULL ? NULL : runtime_cache_resolve(bundles, (const char *const *)&folder, 1);
     char *directory = versions == NULL ? NULL : runtime_cache_resolve(versions, &version, 1);
     int inside = directory != NULL && id[0] != 0 && version[0] != 0 &&
                  runtime_cache_is_strictly_inside(bundles, versions) &&
@@ -77,6 +80,7 @@ char *runtime_cache_bundle_directory(const char *cache, const char *id, const ch
         directory = NULL;
     }
     free(versions);
+    free(folder);
     free(bundles);
     return directory;
 }

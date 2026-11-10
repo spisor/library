@@ -5,6 +5,7 @@
 
 #include "cache_folders.h"
 #include "cache_marker.h"
+#include "identity.h"
 
 typedef int (*version_test)(const char *directory);
 
@@ -33,8 +34,8 @@ static cJSON *marked_versions(const char *cache, const char *root, const char *i
     return versions;
 }
 
-/** Adds id's versions to installed unless there are none; 0 when memory runs out. */
-static int add_versions(cJSON *installed, const char *id, cJSON *versions) {
+/** Adds the versions of the item whose folder is given to installed, under its key, unless there are none; 0 when memory runs out. */
+static int add_versions(cJSON *installed, const char *folder, cJSON *versions) {
     if (versions == NULL) {
         return 0;
     }
@@ -42,11 +43,13 @@ static int add_versions(cJSON *installed, const char *id, cJSON *versions) {
         cJSON_Delete(versions);
         return 1;
     }
-    if (!cJSON_AddItemToObject(installed, id, versions)) {
+    char *key = runtime_item_key_of_folder(folder);
+    int added = key != NULL && cJSON_AddItemToObject(installed, key, versions);
+    if (!added) {
         cJSON_Delete(versions);
-        return 0;
     }
-    return 1;
+    free(key);
+    return added;
 }
 
 static cJSON *installed_under(const char *cache, const char *root, const char *platform, version_test test) {

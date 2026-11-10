@@ -6,6 +6,7 @@
 #include "cache_folders.h"
 #include "cache_installed.h"
 #include "cache_marker.h"
+#include "identity.h"
 
 static int is_kind(const cJSON *check, const char *expected) {
     const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
@@ -57,10 +58,13 @@ static int add_damaged_under(cJSON *damaged, const char *cache, const char *root
     cJSON_ArrayForEach(versions, installed) {
         const cJSON *version;
         cJSON_ArrayForEach(version, versions) {
-            const char *segments[5] = {cache, root, versions->string, version->valuestring, platform};
-            char *directory = runtime_cache_joined(segments, platform == NULL ? 4 : 5);
+            int unfit = 0;
+            char *folder = runtime_item_folder(versions->string, &unfit);
+            const char *segments[5] = {cache, root, folder, version->valuestring, platform};
+            char *directory = folder == NULL ? NULL : runtime_cache_joined(segments, platform == NULL ? 4 : 5);
             int added = add_verdict(damaged, versions->string, version->valuestring, directory);
             free(directory);
+            free(folder);
             if (!added) {
                 return 0;
             }
