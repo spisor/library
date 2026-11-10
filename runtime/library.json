@@ -874,6 +874,36 @@
           }
         },
         {
+          "name": "warnings",
+          "symbol": "runtime_install_warnings",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": { "manifest": { "type": "object" } },
+            "required": ["manifest"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "enum": ["named-dependency", "unbound-service"] },
+                    "subject": { "type": "string" },
+                    "detail": { "type": "string" }
+                  },
+                  "required": ["kind", "subject", "detail"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["warnings"],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "packages",
           "symbol": "runtime_install_packages",
           "kind": "json",

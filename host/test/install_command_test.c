@@ -163,6 +163,44 @@ static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_an
     finish_world(&world);
 }
 
+static void list_plugin_with_manifest(host_world *world, const char *id, const char *manifest) {
+    install_base *base = &world->base;
+    list_file(base, catalog_item(base, id, "plugin", "native", "1.0.0"), id, "1.0.0", "plugin.json", manifest, 0);
+    write_catalog(base);
+}
+
+static void prints_each_warning_and_still_installs(void) {
+    host_world world;
+    start_install_world(&world, "warned");
+    list_plugin_with_manifest(&world, "warned-plugin",
+                              "{\"id\": \"warned-plugin\", \"version\": \"1.0.0\", "
+                              "\"dependencies\": [{\"importName\": \"left-pad\", \"name\": \"left-pad\"}], "
+                              "\"services\": {\"consumes\": [\"github:12/files\"]}}");
+    program run;
+    const char *plugin[] = {"--plugin", "warned-plugin", NULL};
+    CHECK(run_install(&world, &run, plugin) == 0);
+    expect_contains(run.err, "warning: warned-plugin: left-pad", "the dependency by name");
+    expect_contains(run.err, "warning: warned-plugin: github:12/files", "the unbound service");
+    expect_contains(run.err, "whoever takes that name can replace it", "why");
+    expect_contains(run.out, "\"warned-plugin\"", "still installed");
+    program_free(&run);
+    finish_world(&world);
+}
+
+static void prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name(void) {
+    host_world world;
+    start_install_world(&world, "quiet");
+    list_plugin_with_manifest(&world, "quiet-plugin",
+                              "{\"id\": \"quiet-plugin\", \"version\": \"1.0.0\", "
+                              "\"dependencies\": [{\"importName\": \"left-pad\", \"id\": \"github:5\"}]}");
+    program run;
+    const char *plugin[] = {"--plugin", "quiet-plugin", NULL};
+    CHECK(run_install(&world, &run, plugin) == 0);
+    check_text(run.err, "", "nothing said");
+    program_free(&run);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -173,6 +211,8 @@ int main(void) {
     answers_2_without_a_catalog_or_with_one_that_is_neither_https_nor_a_path();
     answers_1_naming_what_could_not_be_installed_after_printing_the_report();
     puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed();
+    prints_each_warning_and_still_installs();
+    prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name();
     installs_from_a_relative_catalog_under_a_folder_named_outside_the_ansi_codepage();
     expect_user_path_unchanged(&guard);
     return check_summary("install_command_test");

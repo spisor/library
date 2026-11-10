@@ -546,7 +546,7 @@ static cJSON *install_verified(const install_request *request, const install_req
     return answer;
 }
 
-/** A confirmed primary other than the id asked for is where a new version comes from; a mirror never supplies one. */
+/** The id of a folder at repo_id, the repo id followed by the folder as asked for. */
 static char *joined_id(const char *repo_id, const char *folder) {
     const char *parts[2] = {repo_id, folder};
     return runtime_cache_text(parts, 2);
