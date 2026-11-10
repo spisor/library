@@ -1101,6 +1101,17 @@ static void it_keeps_an_old_unmarked_bundle_version_a_host_references(void) {
     finish_cache();
 }
 
+static void it_keys_an_abandoned_id_folder_by_its_id_when_it_checks_references_and_names_what_it_removes(void) {
+    start_cache("sweep-id-abandoned");
+    installed_bundle("github+5", "2.0.0", 0);
+    age_in_cache("bundles/github+5/2.0.0", 25);
+    record_references("claude-code", "{\"run\":{},\"next\":{\"github:5\":\"2.0.0\"}}");
+    expect_removed("[]", "referenced id key");
+    record_references("claude-code", "{\"run\":{},\"next\":{}}");
+    expect_removed("[\"github:5@2.0.0\"]", "unreferenced id key");
+    finish_cache();
+}
+
 static void it_removes_an_old_unmarked_library_version_for_one_platform(void) {
     start_cache("sweep-library-abandoned");
     installed_library("koffi", "2.0.0", "linux-x64", 1);
@@ -1460,6 +1471,7 @@ int main(void) {
     it_removes_an_unmarked_bundle_version_whose_newest_file_is_more_than_a_day_old();
     it_keeps_an_unmarked_bundle_version_while_any_one_of_its_files_is_recent();
     it_keeps_an_old_unmarked_bundle_version_a_host_references();
+    it_keys_an_abandoned_id_folder_by_its_id_when_it_checks_references_and_names_what_it_removes();
     it_removes_an_old_unmarked_library_version_for_one_platform();
     it_skips_a_reference_file_that_is_not_two_maps_of_versions();
     it_keeps_what_a_reference_file_keeps_for_rollback();

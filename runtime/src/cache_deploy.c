@@ -27,6 +27,7 @@ typedef struct deployment {
     char *resolved_plugin_directory;
     const char *identity_id;
     const char *identity_name;
+    const char *replaces;
     const char *import_name;
     cJSON *manifest;
     uint8_t *manifest_bytes;
@@ -86,6 +87,7 @@ static int read_arguments(const cJSON *argument, deployment *plan, cJSON **refus
     plan->plugin_directory = text_member(argument, "pluginDir");
     plan->identity_id = text_member(identity, "id");
     plan->identity_name = text_member(identity, "name");
+    plan->replaces = text_member(argument, "replaces");
     runtime_identity parsed;
     if (plan->directory == NULL || plan->plugin_directory == NULL || plan->identity_id == NULL ||
         plan->identity_name == NULL) {
@@ -221,7 +223,8 @@ static int is_not_another_plugin(const deployment *plan, cJSON **refusal) {
         return 1;
     }
     char *recorded = recorded_id(plan);
-    int same = recorded != NULL && strcmp(recorded, plan->identity_id) == 0;
+    int same = recorded != NULL && (strcmp(recorded, plan->identity_id) == 0 ||
+                                    (plan->replaces != NULL && strcmp(recorded, plan->replaces) == 0));
     if (!same) {
         const char *parts[5] = {plan->import_name, " is already deployed as ", recorded == NULL ? "a plugin with no readable identity" : recorded,
                                 ", and this install is ", plan->identity_id};
