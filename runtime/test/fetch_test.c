@@ -276,7 +276,7 @@ static size_t occurrences(const char *text, const char *needle) {
 }
 
 static void a_redirect_loop_is_refused(void) {
-    http_route loop = {"/loop", 302, "Location: /loop\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0};
+    http_route loop = {"/loop", 302, "Location: /loop\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0};
     http_fixture *fixture = http_fixture_start(&loop, 1);
     CHECK(fixture != NULL);
     char url[256];
@@ -487,14 +487,14 @@ static void run_against_the_server(void) {
     char cut_body[CUT_BODY_LENGTH];
     memset(cut_body, 'c', sizeof cut_body);
     const http_route routes[] = {
-        {"/file", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, ETAG, LAST_MODIFIED, 0},
-        {"/always-304", 304, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
-        {"/cut", 200, NULL, cut_body, CUT_BODY_LENGTH, 1000, NULL, NULL, 0},
-        {"/streamed", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_UNTIL_CLOSE, NULL, NULL, 0},
-        {"/stall", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 1500},
-        {"/slow", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 300},
-        {"/moved", 302, "Location: /file\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
-        {"/to-file", 302, "Location: file:///etc/hosts\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
+        {"/file", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, ETAG, LAST_MODIFIED, 0, 0},
+        {"/always-304", 304, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/cut", 200, NULL, cut_body, CUT_BODY_LENGTH, 1000, NULL, NULL, 0, 0},
+        {"/streamed", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_UNTIL_CLOSE, NULL, NULL, 0, 0},
+        {"/stall", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 1500, 0},
+        {"/slow", 200, NULL, body, BODY_LENGTH, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 300, 0},
+        {"/moved", 302, "Location: /file\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/to-file", 302, "Location: file:///etc/hosts\r\n", "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
     CHECK(server != NULL);

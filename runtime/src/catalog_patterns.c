@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "identity.h"
+
 static int is_ascii_digit(char character) {
     return character >= '0' && character <= '9';
 }
@@ -22,7 +24,7 @@ static int is_reserved_device_name(const char *key) {
     return numbered && key[3] >= '1' && key[3] <= '9' && key[4] == 0;
 }
 
-int runtime_catalog_is_item_id(const char *key) {
+static int is_item_name(const char *key) {
     size_t length = strlen(key);
     if (length == 0 || key[0] == '-' || key[length - 1] == '-' || strstr(key, "--") != NULL) {
         return 0;
@@ -33,6 +35,11 @@ int runtime_catalog_is_item_id(const char *key) {
         }
     }
     return !is_reserved_device_name(key);
+}
+
+int runtime_catalog_is_item_id(const char *key) {
+    runtime_identity identity;
+    return is_item_name(key) || runtime_identity_parse_id(key, &identity);
 }
 
 static const char *after_digits(const char *at) {

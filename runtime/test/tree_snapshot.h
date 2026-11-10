@@ -28,8 +28,12 @@ static inline void snapshot_entry(const char *directory, const char *relative, c
                                   const char *left_out, char **snapshot, size_t *length) {
     char path[2048];
     char name[2048];
-    snprintf(path, sizeof path, "%s/%s", directory, entry->name);
-    snprintf(name, sizeof name, "%s/%s", relative, entry->name);
+    int path_fits = snprintf(path, sizeof path, "%s/%s", directory, entry->name) < (int)sizeof path;
+    int name_fits = snprintf(name, sizeof name, "%s/%s", relative, entry->name) < (int)sizeof name;
+    CHECK(path_fits && name_fits);
+    if (!path_fits || !name_fits) {
+        return;
+    }
     if (left_out != NULL && strcmp(name, left_out) == 0) {
         return;
     }

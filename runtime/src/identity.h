@@ -29,6 +29,17 @@ typedef struct runtime_identity {
  */
 int runtime_identity_parse_id(const char *id, runtime_identity *parsed);
 
+typedef enum runtime_identity_folder_status {
+    RUNTIME_IDENTITY_FOLDER_NAMED,
+    RUNTIME_IDENTITY_FOLDER_INVALID,
+    RUNTIME_IDENTITY_FOLDER_AMBIGUOUS,
+    RUNTIME_IDENTITY_FOLDER_NOT_PORTABLE,
+    RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY
+} runtime_identity_folder_status;
+
+/** The folder name of id as identity.folder answers it, freed with free; NULL unless NAMED, which is the only status with a folder. */
+runtime_identity_folder_status runtime_identity_folder_name(const char *id, char **folder);
+
 /** identity.parse: {id} answers {valid: false} or {valid: true, resolver, host?, number?, path?}; number is a digit string. */
 RUNTIME_EXPORT int32_t runtime_identity_parse(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 

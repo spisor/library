@@ -69,7 +69,8 @@ static void fresh_scratch(scratch *place, const char *label) {
 }
 
 static void in_home(const scratch *place, const char *relative, char *path, size_t size) {
-    snprintf(path, size, "%s/%s", place->home, relative);
+    int fits = snprintf(path, size, "%s/%s", place->home, relative) < (int)size;
+    CHECK(fits);
 }
 
 static void write_text(const char *path, const char *text) {
@@ -573,7 +574,8 @@ static void other_spelling(const char *path, char *variant, size_t size) {
     variant[index] = '\\';
     variant[index + 1] = '\0';
 #else
-    snprintf(variant, size, "%s//", path);
+    int fits = snprintf(variant, size, "%s//", path) < (int)size;
+    CHECK(fits);
 #endif
 }
 

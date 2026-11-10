@@ -135,7 +135,7 @@ static inline char *write_proof_loader(const host_world *world, const char *vers
 static inline char *write_proof_plugin(const host_world *world) {
     char *directory = joined(world->base.root, "inputs/plugin");
     write_in(directory, "plugin.json",
-             "{\"id\": \"" PROOF_PLUGIN_ID "\", \"version\": \"1.0.0\", \"runtime\": \"native\", \"entry\": \"plugin.bin\"}");
+             "{\"importName\": \"" PROOF_PLUGIN_ID "\", \"version\": \"1.0.0\", \"runtime\": \"native\", \"entry\": \"plugin.bin\"}");
     write_in(directory, "plugin.bin", "native plugin bytes");
     return directory;
 }

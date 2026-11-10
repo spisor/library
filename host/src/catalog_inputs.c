@@ -56,14 +56,17 @@ static cJSON *read_manifest(const char *path, cJSON **refusal) {
     return manifest;
 }
 
-static int accepts_id(const cJSON *manifest, const char *path, cJSON **refusal) {
-    const cJSON *id = cJSON_GetObjectItemCaseSensitive(manifest, "id");
+static int accepts_id(const cJSON *manifest, const char *identity_member, const char *path, cJSON **refusal) {
+    const cJSON *id = cJSON_GetObjectItemCaseSensitive(manifest, identity_member);
     if (cJSON_IsString(id) && runtime_catalog_is_item_id(id->valuestring)) {
         return 1;
     }
     char *named = shown(id);
-    const char *parts[4] = {path, " names the id ", named, ", which a catalog refuses"};
-    *refusal = refused(parts, 4, "give the manifest an id of lowercase letters and digits joined by single hyphens");
+    const char *parts[6] = {path, " names the ", identity_member, " ", named, ", which a catalog refuses"};
+    const char *fix_parts[3] = {"give the manifest an ", identity_member, " of lowercase letters and digits joined by single hyphens"};
+    char *fix = runtime_cache_text(fix_parts, 3);
+    *refusal = fix == NULL ? NULL : refused(parts, 6, fix);
+    free(fix);
     free(named);
     return 0;
 }
@@ -85,8 +88,9 @@ static int accepts_version(const cJSON *manifest, const char *path, cJSON **refu
     return 0;
 }
 
-/** The manifest file_name in directory, refused unless it names an id and a version a catalog accepts. */
-static cJSON *identified_manifest(const char *directory, const char *file_name, char **path, cJSON **refusal) {
+/** The manifest file_name in directory, refused unless its identity_member and its version are ones a catalog accepts. */
+static cJSON *identified_manifest(const char *directory, const char *file_name, const char *identity_member, char **path,
+                                  cJSON **refusal) {
     *path = joined(directory, file_name);
     if (*path != NULL && !spisor_file_exists(*path)) {
         const char *parts[3] = {directory, " has no ", file_name};
@@ -97,7 +101,7 @@ static cJSON *identified_manifest(const char *directory, const char *file_name, 
         return NULL;
     }
     cJSON *manifest = *path == NULL ? NULL : read_manifest(*path, refusal);
-    if (manifest != NULL && (!accepts_id(manifest, *path, refusal) || !accepts_version(manifest, *path, refusal))) {
+    if (manifest != NULL && (!accepts_id(manifest, identity_member, *path, refusal) || !accepts_version(manifest, *path, refusal))) {
         cJSON_Delete(manifest);
         manifest = NULL;
     }
@@ -277,9 +281,10 @@ static void free_input(catalog_input *input) {
 }
 
 /** Fills id, version and the optional members every manifest may carry, then appends input; 0 when memory runs out. */
-static int add_input(catalog_inputs *inputs, catalog_input *input, const cJSON *manifest, const char *platform) {
+static int add_input(catalog_inputs *inputs, catalog_input *input, const char *id, const cJSON *manifest,
+                     const char *platform) {
     const char *install_method = host_text(manifest, "installMethod");
-    input->id = copy_of(cJSON_GetObjectItemCaseSensitive(manifest, "id")->valuestring);
+    input->id = copy_of(id);
     input->version = copy_of(cJSON_GetObjectItemCaseSensitive(manifest, "version")->valuestring);
     input->platform = copy_of(platform);
     input->install_method = install_method == NULL || install_method[0] == 0 ? NULL : copy_of(install_method);
@@ -314,13 +319,13 @@ static int add_bundled_file(cJSON *files, const char *root, const char *key, cJS
 int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
-    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, &path, refusal);
+    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, "importName", &path, refusal);
     const char *entry = manifest == NULL ? NULL : entry_of(manifest, path, refusal);
     catalog_input input = {"plugin", NULL, NULL, NULL, entry == NULL ? NULL : cJSON_CreateObject(), NULL, NULL, NULL};
     int added = input.files != NULL && add_bundled_file(input.files, root, entry, refusal) &&
                 add_module_marker(input.files, entry, 0) && add_file(input.files, PLUGIN_MANIFEST, path);
     if (added) {
-        added = add_input(inputs, &input, manifest, NULL);
+        added = add_input(inputs, &input, host_text(manifest, "importName"), manifest, NULL);
     } else {
         cJSON_Delete(input.files);
     }
@@ -378,7 +383,7 @@ static int names_runtime(const cJSON *manifest, const char *path, cJSON **refusa
 int host_read_host_directory(catalog_inputs *inputs, const char *directory, const char *platform, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
-    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, &path, refusal);
+    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, "id", &path, refusal);
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(manifest, "application");
     const char *entry = manifest == NULL || application != NULL ? NULL : entry_of(manifest, path, refusal);
     int checked = manifest != NULL && names_runtime(manifest, path, refusal) &&
@@ -391,7 +396,7 @@ int host_read_host_directory(catalog_inputs *inputs, const char *directory, cons
         added = input.application != NULL;
     }
     if (added) {
-        added = add_input(inputs, &input, manifest, platform);
+        added = add_input(inputs, &input, host_text(manifest, "id"), manifest, platform);
     } else {
         cJSON_Delete(input.files);
         cJSON_Delete(input.application);
@@ -419,13 +424,9 @@ int host_read_library_directory(catalog_inputs *inputs, const char *id, const ch
     catalog_input input = {"library", NULL, NULL, NULL, versioned ? every_file(root) : NULL, NULL, NULL, NULL};
     int added = input.files != NULL;
     if (added) {
-        cJSON_ReplaceItemInObjectCaseSensitive(manifest, "id", cJSON_CreateString(id));
-        if (!cJSON_HasObjectItem(manifest, "id")) {
-            cJSON_AddStringToObject(manifest, "id", id);
-        }
         cJSON_DeleteItemFromObjectCaseSensitive(manifest, "installMethod");
         cJSON_DeleteItemFromObjectCaseSensitive(manifest, "runtime");
-        added = add_input(inputs, &input, manifest, platform);
+        added = add_input(inputs, &input, id, manifest, platform);
     }
     cJSON_Delete(manifest);
     free(package);

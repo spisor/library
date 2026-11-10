@@ -839,6 +839,41 @@
       "id": "install",
       "functions": [
         {
+          "name": "byId",
+          "symbol": "runtime_install_by_id",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "cache": { "type": "string", "minLength": 1 },
+              "pluginDir": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 },
+              "lastKnown": { "type": "string", "minLength": 1, "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up." },
+              "recordedPrimary": { "type": "string", "minLength": 1, "description": "The primary the caller kept at an earlier install; a different one needs the user to accept it." }
+            },
+            "required": ["id", "cache", "pluginDir"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "fullName": { "type": "string" },
+              "version": { "type": "string" },
+              "commit": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 16 },
+              "primary": { "type": "string" },
+              "primaryConfirmed": { "type": "boolean" },
+              "recordedPrimary": { "type": "string" },
+              "needsUserAcceptance": { "type": "boolean" }
+            },
+            "required": ["id", "name", "fullName", "ids", "primary", "primaryConfirmed"],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "packages",
           "symbol": "runtime_install_packages",
           "kind": "json",
@@ -1986,6 +2021,33 @@
               "removed": { "type": "array", "items": { "type": "string" } }
             },
             "required": ["removed"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "deploy",
+          "symbol": "runtime_cache_deploy",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "directory": { "type": "string", "minLength": 1 },
+              "pluginDir": { "type": "string", "minLength": 1 },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 }
+                },
+                "required": ["id", "name"]
+              }
+            },
+            "required": ["directory", "pluginDir", "identity"]
+          },
+          "result": {
+            "type": "object",
+            "properties": { "importName": { "type": "string", "minLength": 1 } },
+            "required": ["importName"],
             "additionalProperties": false
           }
         }

@@ -210,23 +210,50 @@ static int is_ambiguous_local_name(const runtime_identity *parsed) {
     return 0;
 }
 
-static int32_t folder(const char *id, uint8_t **out, size_t *out_len) {
+runtime_identity_folder_status runtime_identity_folder_name(const char *id, char **folder) {
     runtime_identity parsed;
+    *folder = NULL;
     if (!runtime_identity_parse_id(id, &parsed)) {
-        return spisor_fail("the id is not valid", "send an id such as github:<number>[/<path>] or local:<name>", out, out_len);
+        return RUNTIME_IDENTITY_FOLDER_INVALID;
     }
     if (is_ambiguous_local_name(&parsed)) {
+        return RUNTIME_IDENTITY_FOLDER_AMBIGUOUS;
+    }
+    char *name = folder_name(id);
+    if (name == NULL) {
+        return RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY;
+    }
+    if (!is_portable_folder(name)) {
+        free(name);
+        return RUNTIME_IDENTITY_FOLDER_NOT_PORTABLE;
+    }
+    *folder = name;
+    return RUNTIME_IDENTITY_FOLDER_NAMED;
+}
+
+static int32_t refuse_folder(runtime_identity_folder_status status, uint8_t **out, size_t *out_len) {
+    if (status == RUNTIME_IDENTITY_FOLDER_INVALID) {
+        return spisor_fail("the id is not valid", "send an id such as github:<number>[/<path>] or local:<name>", out, out_len);
+    }
+    if (status == RUNTIME_IDENTITY_FOLDER_AMBIGUOUS) {
         return spisor_fail("the local id would share a folder with another id",
                            "use the plugin's import name: lowercase, without +, = or :", out, out_len);
     }
-    char *name = folder_name(id);
-    if (name != NULL && !is_portable_folder(name)) {
-        free(name);
-        return spisor_fail("the id cannot name a folder", "use a local name without path separators, wildcards or a trailing dot", out, out_len);
+    return spisor_fail("the id cannot name a folder", "use a local name without path separators, wildcards or a trailing dot", out, out_len);
+}
+
+static int32_t folder(const char *id, uint8_t **out, size_t *out_len) {
+    char *name = NULL;
+    runtime_identity_folder_status status = runtime_identity_folder_name(id, &name);
+    if (status == RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY) {
+        return answer(NULL, out, out_len);
     }
-    int32_t status = answer(name == NULL ? NULL : folder_answer(name), out, out_len);
+    if (status != RUNTIME_IDENTITY_FOLDER_NAMED) {
+        return refuse_folder(status, out, out_len);
+    }
+    int32_t result = answer(folder_answer(name), out, out_len);
     free(name);
-    return status;
+    return result;
 }
 
 static int32_t serve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len,
