@@ -12,17 +12,12 @@
 #include "host_service.h"
 #include "json_service.h"
 #include "marketplace_build.h"
+#include "marketplace_lookup.h"
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
-
-static const char *lookup_api_base = NULL;
-
-void host_marketplace_aim_lookups(const char *api_base) {
-    lookup_api_base = api_base;
-}
 
 static cJSON *refusal_naming(const char *first, const char *second, const char *fix) {
     const char *parts[2] = {first, second};
@@ -50,7 +45,7 @@ static int current_time(char text[RUNTIME_CATALOG_TIME_SIZE]) {
 static cJSON *build_argument(cJSON *list, const char *built) {
     cJSON *argument = cJSON_CreateObject();
     if (argument == NULL || cJSON_AddStringToObject(argument, "built", built) == NULL ||
-        (lookup_api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", lookup_api_base) == NULL) ||
+        (host_marketplace_lookup_api_base() != NULL && cJSON_AddStringToObject(argument, "apiBase", host_marketplace_lookup_api_base()) == NULL) ||
         !cJSON_AddItemToObject(argument, "list", list)) {
         cJSON_Delete(argument);
         cJSON_Delete(list);
@@ -59,7 +54,7 @@ static cJSON *build_argument(cJSON *list, const char *built) {
     return argument;
 }
 
-static cJSON *built_copy(cJSON *list, cJSON **refusal) {
+static cJSON *built_copy(cJSON *list, cJSON **skipped, cJSON **refusal) {
     char built[RUNTIME_CATALOG_TIME_SIZE];
     if (!current_time(built)) {
         cJSON_Delete(list);
@@ -68,6 +63,7 @@ static cJSON *built_copy(cJSON *list, cJSON **refusal) {
     }
     cJSON *answer = host_call(runtime_marketplace_build, build_argument(list, built), refusal);
     cJSON *copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
+    *skipped = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "skipped");
     cJSON_Delete(answer);
     return copy;
 }
@@ -84,6 +80,21 @@ static int write_copy(const cJSON *copy, const char *path) {
     free(text);
     free(pretty);
     return written;
+}
+
+static void print_skipped(const cJSON *skipped) {
+    const cJSON *row;
+    cJSON_ArrayForEach(row, skipped) {
+        char *id = host_printable(host_text(row, "id"));
+        char *reason = host_printable(host_text(row, "reason"));
+        host_write(1, "skipped ");
+        host_write(1, id == NULL ? "" : id);
+        host_write(1, ": ");
+        host_write(1, reason == NULL ? "" : reason);
+        host_write(1, "\n");
+        free(reason);
+        free(id);
+    }
 }
 
 static int print_wrote(const char *path, const cJSON *copy) {
@@ -116,7 +127,8 @@ static int build_into(const char *list_path, const char *out_path) {
     cJSON *refusal = NULL;
     char *absolute = host_absolute_path(out_path);
     cJSON *list = read_list(list_path, &refusal);
-    cJSON *copy = list == NULL ? NULL : built_copy(list, &refusal);
+    cJSON *skipped = NULL;
+    cJSON *copy = list == NULL ? NULL : built_copy(list, &skipped, &refusal);
     int code = HOST_EXIT_DONE;
     if (copy != NULL && !write_copy(copy, absolute == NULL ? out_path : absolute)) {
         refusal = refusal_naming("the copy could not be written to ", out_path, "check that --out names a writable file");
@@ -127,8 +139,10 @@ static int build_into(const char *list_path, const char *out_path) {
         code = refuse_printably(refusal);
     } else {
         code = print_wrote(out_path, copy);
+        print_skipped(skipped);
         cJSON_Delete(copy);
     }
+    cJSON_Delete(skipped);
     free(absolute);
     return code;
 }

@@ -1,5 +1,5 @@
 set(host_test_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>
-    $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook>)
+    $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook> $<TARGET_OBJECTS:host_marketplace_lookup_test_hook>)
 
 host_executable(forebay_host_test forebay-host-test ${PROJECT_SOURCE_DIR}/host/src/main.c $<TARGET_OBJECTS:host_objects>
     ${host_test_runtime_objects})
@@ -85,7 +85,7 @@ if(WIN32)
     target_link_libraries(marketplace_command_test PRIVATE Ws2_32)
 endif()
 target_include_directories(marketplace_command_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
-target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions})
+target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
 add_dependencies(marketplace_command_test forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)

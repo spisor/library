@@ -13,12 +13,6 @@ int host_command_action(int count, char **arguments);
 int host_command_catalog_build(int count, char **arguments);
 int host_command_marketplace_build(int count, char **arguments);
 
-/**
- * Aims the lookups of marketplace build at api_base, as the apiBase of identity.resolve; NULL aims them at the hosts again.
- * The runtime refuses an apiBase unless its fetch test hooks are built in, so only a test's own build is aimed.
- */
-void host_marketplace_aim_lookups(const char *api_base);
-
 /** Runs the forebay-host command line argv after the program name, answering the exit code: 0 done, 1 refused, 2 misused. */
 int host_run_command_line(int count, char **arguments);
 

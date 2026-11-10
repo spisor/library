@@ -138,21 +138,86 @@ static void a_local_id_is_refused(void) {
     cJSON_Delete(answer.tree);
 }
 
-static void an_id_below_a_repo_is_refused(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/folder\"}]}");
-    CHECK(expect_refusal(answer, "github:1/folder", "an id with a folder"));
+static void a_folder_id_builds_with_the_last_segment_as_its_name(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/tools/config_ledger\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    entry_member_is(answer, 0, "id", "github:1/tools/config_ledger");
+    entry_member_is(answer, 0, "name", "config-ledger");
+    entry_member_is(answer, 0, "fullName", "spisor/runtime");
+    entry_member_is(answer, 0, "lastKnown", "spisor/runtime");
     cJSON_Delete(answer.tree);
 }
 
-static void a_name_outside_the_grammar_needs_an_alias(void) {
-    catalog_answer refused = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"}]}");
-    CHECK(expect_refusal(refused, "github:5", "a name outside the import grammar"));
-    CHECK(strstr(text_at(refused.tree, "fix"), "alias") != NULL);
-    cJSON_Delete(refused.tree);
-    catalog_answer aliased = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\",\"alias\":\"mixed\"}]}");
-    CHECK(aliased.status == SPISOR_STATUS_SUCCESS);
-    entry_member_is(aliased, 0, "name", "mixed");
-    cJSON_Delete(aliased.tree);
+static void two_folders_of_one_repo_build(void) {
+    catalog_answer answer = build(
+        "{\"format\":1,\"entries\":[{\"id\":\"github:1/first\"},{\"id\":\"github:1/second\"},{\"id\":\"github:1\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    entry_member_is(answer, 0, "name", "first");
+    entry_member_is(answer, 1, "name", "second");
+    entry_member_is(answer, 2, "name", "runtime");
+    cJSON_Delete(answer.tree);
+}
+
+static void an_alias_replaces_a_folders_name(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/first\",\"alias\":\"chosen\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    entry_member_is(answer, 0, "name", "chosen");
+    cJSON_Delete(answer.tree);
+}
+
+static void two_folders_with_one_last_segment_clash(void) {
+    catalog_answer answer =
+        build("{\"format\":1,\"entries\":[{\"id\":\"github:1/a/same\"},{\"id\":\"github:2/b/same\"}]}");
+    CHECK(expect_refusal(answer, "github:1/a/same", "a clash between folders"));
+    cJSON_Delete(answer.tree);
+}
+
+static void a_local_folder_id_is_still_refused(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"local:tool/sub\"}]}");
+    CHECK(expect_refusal(answer, "local:tool/sub", "a local folder id"));
+    cJSON_Delete(answer.tree);
+}
+
+static void a_host_name_is_derived_into_an_import_name(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"},{\"id\":\"github:9\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    entry_member_is(answer, 0, "name", "my-runtime");
+    entry_member_is(answer, 0, "fullName", "spisor/My_Runtime");
+    entry_member_is(answer, 1, "name", "a.b-c");
+    char problem[256];
+    CHECK(runtime_marketplace_check_copy(value_at(answer.tree, "copy"), problem, sizeof problem));
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 0);
+    cJSON_Delete(answer.tree);
+}
+
+static void an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built(void) {
+    catalog_answer answer =
+        build("{\"format\":1,\"entries\":[{\"id\":\"github:2\"},{\"id\":\"github:6\"},{\"id\":\"github:10\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries");
+    CHECK(cJSON_GetArraySize(entries) == 1);
+    entry_member_is(answer, 0, "id", "github:2");
+    const cJSON *skipped = cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped");
+    CHECK(cJSON_GetArraySize(skipped) == 2);
+    check_text(text_at(cJSON_GetArrayItem(skipped, 0), "id"), "github:6", "skipped id");
+    CHECK(strstr(text_at(cJSON_GetArrayItem(skipped, 0), "reason"), "Con") != NULL);
+    check_text(text_at(cJSON_GetArrayItem(skipped, 1), "id"), "github:10", "an empty derived name");
+    cJSON_Delete(answer.tree);
+}
+
+static void an_alias_lists_an_entry_whose_name_cannot_be_derived(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:6\",\"alias\":\"console\"}]}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    entry_member_is(answer, 0, "name", "console");
+    cJSON_Delete(answer.tree);
+}
+
+static void a_clash_after_derivation_refuses_the_whole_build(void) {
+    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"},{\"id\":\"github:8\"}]}");
+    CHECK(expect_refusal(answer, "github:5", "a derived clash"));
+    CHECK(strstr(text_at(answer.tree, "message"), "github:8") != NULL);
+    CHECK(strstr(text_at(answer.tree, "message"), "my-runtime") != NULL);
+    cJSON_Delete(answer.tree);
 }
 
 static void a_list_that_breaks_the_schema_is_refused(void) {
@@ -186,7 +251,11 @@ static void run_against_the_server(void) {
     static const char old_name[] = REPOSITORY("3", "old-name", "spisor/old-name");
     static const char new_name[] = REPOSITORY("3", "new-name", "spisor/new-name");
     static const char another_runtime[] = REPOSITORY("4", "runtime", "other/runtime");
-    static const char mixed[] = REPOSITORY("5", "Mixed", "spisor/Mixed");
+    static const char mixed[] = REPOSITORY("5", "My_Runtime", "spisor/My_Runtime");
+    static const char reserved[] = REPOSITORY("6", "Con", "spisor/Con");
+    static const char clashing[] = REPOSITORY("8", "My-Runtime", "other/My-Runtime");
+    static const char dotted[] = REPOSITORY("9", "__A..B__c", "spisor/__A..B__c");
+    static const char unnamed[] = REPOSITORY("10", "___", "spisor/___");
     const http_route routes[] = {
         ROUTE("/repositories/1", 200, runtime),
         ROUTE("/repositories/2", 200, weivel),
@@ -194,6 +263,10 @@ static void run_against_the_server(void) {
         ROUTE("/repositories/3", 200, new_name),
         ROUTE("/repositories/4", 200, another_runtime),
         ROUTE("/repositories/5", 200, mixed),
+        ROUTE("/repositories/6", 200, reserved),
+        ROUTE("/repositories/8", 200, clashing),
+        ROUTE("/repositories/9", 200, dotted),
+        ROUTE("/repositories/10", 200, unnamed),
         EMPTY_ROUTE("/repositories/60", 404),
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
@@ -211,8 +284,15 @@ static void run_against_the_server(void) {
     a_duplicate_id_is_refused();
     an_id_that_does_not_resolve_is_refused_naming_it();
     a_local_id_is_refused();
-    an_id_below_a_repo_is_refused();
-    a_name_outside_the_grammar_needs_an_alias();
+    a_folder_id_builds_with_the_last_segment_as_its_name();
+    two_folders_of_one_repo_build();
+    an_alias_replaces_a_folders_name();
+    two_folders_with_one_last_segment_clash();
+    a_local_folder_id_is_still_refused();
+    a_host_name_is_derived_into_an_import_name();
+    an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built();
+    an_alias_lists_an_entry_whose_name_cannot_be_derived();
+    a_clash_after_derivation_refuses_the_whole_build();
     a_list_that_breaks_the_schema_is_refused();
     a_built_time_that_is_not_rfc_3339_is_refused();
     an_empty_list_builds_an_empty_copy();
