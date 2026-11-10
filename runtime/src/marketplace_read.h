@@ -13,7 +13,7 @@
  * marketplace.read: {source, text} or {source, destination} answers {copy}, the marketplace copy that source served,
  * checked as marketplace-copy.schema.json describes it, or refuses naming the source and how to fix it. source is
  * {id, url} as marketplace.sources answers it. With text, the body the host already fetched is read; with destination,
- * an absolute path, the url is fetched there through fetch.get within RUNTIME_MARKETPLACE_MAXIMUM_BYTES and the file is
+ * an absolute path that does not exist yet, the url, a file: or https: one, is fetched there through fetch.get within RUNTIME_MARKETPLACE_MAXIMUM_BYTES and the file is
  * removed once read.
  *
  * Refuses a body over the limit, one that is a web page, one that is no JSON, a marketplace list where a copy is

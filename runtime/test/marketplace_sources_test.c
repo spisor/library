@@ -33,6 +33,7 @@
     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
     "{\"id\":\"github:9\",\"name\":\"runtime\",\"fullName\":\"other/runtime\",\"lastKnown\":\"other/runtime\"},"     \
     "{\"id\":\"github:10\",\"name\":\"extra\",\"fullName\":\"other/extra\",\"lastKnown\":\"other/extra\"}]}"
+#define COPY_MIRROR                                                                                                     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                              "{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"mirror/runtime\",\"lastKnown\":\"mirror/runtime\"}]}"
 #define COPY_SAME_NAME                                                                                              \
     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
     "{\"id\":\"github:1\",\"name\":\"same\",\"fullName\":\"a/same\",\"lastKnown\":\"a/same\"},"                     \
@@ -94,6 +95,16 @@ static catalog_answer lookup_in(const char *name) {
     cJSON *argument = cJSON_CreateObject();
     cJSON *copies = cJSON_AddArrayToObject(argument, "copies");
     cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
+    cJSON_AddItemToArray(copies, copy_pair("other", COPY_TWO));
+    cJSON_AddStringToObject(argument, "name", name);
+    return call_catalog(runtime_marketplace_lookup, argument);
+}
+
+static catalog_answer lookup_three(const char *middle_copy, const char *name) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON *copies = cJSON_AddArrayToObject(argument, "copies");
+    cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
+    cJSON_AddItemToArray(copies, copy_pair("middle", middle_copy));
     cJSON_AddItemToArray(copies, copy_pair("other", COPY_TWO));
     cJSON_AddStringToObject(argument, "name", name);
     return call_catalog(runtime_marketplace_lookup, argument);
@@ -336,6 +347,31 @@ static void a_bare_name_in_two_marketplaces_is_ambiguous(void) {
     cJSON_Delete(answer.tree);
 }
 
+static void the_same_id_in_two_marketplaces_settles_on_the_first(void) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON *copies = cJSON_AddArrayToObject(argument, "copies");
+    cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
+    cJSON_AddItemToArray(copies, copy_pair("mirror", COPY_MIRROR));
+    cJSON_AddStringToObject(argument, "name", "runtime");
+    catalog_answer answer = call_catalog(runtime_marketplace_lookup, argument);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    check_text(text_at(answer.tree, "id"), "github:1", "id");
+    check_text(text_at(answer.tree, "marketplace"), "spisor", "first marketplace in source order");
+    CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "ambiguous") == NULL);
+    cJSON_Delete(answer.tree);
+}
+
+static void two_copies_sharing_an_id_and_a_third_with_another_are_ambiguous(void) {
+    catalog_answer answer = lookup_three(COPY_MIRROR, "runtime");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    const cJSON *ambiguous = value_at(answer.tree, "ambiguous");
+    CHECK(cJSON_GetArraySize(ambiguous) == 3);
+    check_text(cJSON_GetArrayItem(ambiguous, 0)->valuestring, "spisor/runtime", "first form");
+    check_text(cJSON_GetArrayItem(ambiguous, 1)->valuestring, "middle/runtime", "second form");
+    check_text(cJSON_GetArrayItem(ambiguous, 2)->valuestring, "other/runtime", "third form");
+    cJSON_Delete(answer.tree);
+}
+
 static void a_qualified_name_picks_its_marketplace(void) {
     catalog_answer first = lookup_in("spisor/runtime");
     check_text(text_at(first.tree, "id"), "github:1", "spisor id");
@@ -386,6 +422,31 @@ static void lookup_refuses_an_unusable_call(void) {
     cJSON_Delete(duplicate.tree);
 }
 
+static void a_destination_that_exists_is_refused_and_left_alone(void) {
+    char path[1200];
+    snprintf(path, sizeof path, "%s/existing.json", scratch);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"keep", 4) == 1);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "source", source_object("spisor", "https://example.com/m.json"));
+    cJSON_AddStringToObject(argument, "destination", path);
+    catalog_answer answer = call_catalog(runtime_marketplace_read, argument);
+    expect_refusal(answer, "already exists", "existing destination");
+    cJSON_Delete(answer.tree);
+    CHECK(spisor_file_exists(path));
+}
+
+static void a_url_that_is_not_file_or_https_is_refused_by_read(void) {
+    char destination[1200];
+    snprintf(destination, sizeof destination, "%s/never.json", scratch);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "source", source_object("spisor", "ftp://example.com/m.json"));
+    cJSON_AddStringToObject(argument, "destination", destination);
+    catalog_answer answer = call_catalog(runtime_marketplace_read, argument);
+    expect_refusal(answer, "file: or https:", "scheme");
+    CHECK(message_names(answer, "spisor"));
+    cJSON_Delete(answer.tree);
+}
+
 static void run_against_the_server(void) {
     static const char copy_one[] = COPY_ONE;
     static const char html[] = HTML_TEXT;
@@ -428,6 +489,10 @@ static void run_without_a_server(void) {
     refuses_a_provider_source_and_an_unusable_call();
     a_bare_name_in_one_marketplace_settles();
     a_bare_name_in_two_marketplaces_is_ambiguous();
+    the_same_id_in_two_marketplaces_settles_on_the_first();
+    two_copies_sharing_an_id_and_a_third_with_another_are_ambiguous();
+    a_destination_that_exists_is_refused_and_left_alone();
+    a_url_that_is_not_file_or_https_is_refused_by_read();
     a_qualified_name_picks_its_marketplace();
     a_qualified_name_searches_only_its_marketplace();
     a_marketplace_with_no_copy_answers_not_found();

@@ -30,7 +30,7 @@ static int has_scheme(const char *url, const char *scheme) {
     return url[length] != '\0';
 }
 
-static int is_usable_url(const char *url) {
+int runtime_marketplace_is_usable_url(const char *url) {
     return has_scheme(url, "file:") || has_scheme(url, "https:");
 }
 
@@ -52,7 +52,7 @@ static int finds_problem(const cJSON *entry, char *problem, size_t size) {
         snprintf(problem, size, "the source id \"%s\" is not an import name; %s", id == NULL ? "(none)" : id, ID_FIX);
     } else if (has_url == has_provider) {
         snprintf(problem, size, "the source %s must have exactly one of url and provider", id);
-    } else if (has_url && (url == NULL || !is_usable_url(url))) {
+    } else if (has_url && (url == NULL || !runtime_marketplace_is_usable_url(url))) {
         snprintf(problem, size, "the url of source %s is not a file: or https: url", id);
     } else if (has_provider && (provider == NULL || provider[0] == '\0')) {
         snprintf(problem, size, "the provider of source %s is not the name of a plugin", id);
