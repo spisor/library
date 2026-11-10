@@ -13,6 +13,7 @@
 #define USAGE                                                                                                         \
     "usage:\n"                                                                                                        \
     "  forebay-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"      \
+    "  forebay-host install --name <[marketplace/]name> [--accept <id>]\n"                                            \
     "  forebay-host status\n"                                                                                         \
     "  forebay-host update\n"                                                                                         \
     "  forebay-host remove <host-id>\n"                                                                               \
@@ -96,6 +97,25 @@ void host_print_refusal(const cJSON *refusal) {
     host_write(1, "\nfix: ");
     host_write(1, cJSON_IsString(fix) ? fix->valuestring : "close other programs, then run the command again");
     host_write(1, "\n");
+}
+
+void host_print_refusal_printably(const cJSON *refusal) {
+    const cJSON *message = cJSON_GetObjectItemCaseSensitive(refusal, "message");
+    const cJSON *fix = cJSON_GetObjectItemCaseSensitive(refusal, "fix");
+    char *safe_message = cJSON_IsString(message) ? host_printable(message->valuestring) : NULL;
+    char *safe_fix = cJSON_IsString(fix) ? host_printable(fix->valuestring) : NULL;
+    host_write(1, safe_message == NULL ? "forebay-host ran out of memory" : safe_message);
+    host_write(1, "\nfix: ");
+    host_write(1, safe_fix == NULL ? "close other programs, then run the command again" : safe_fix);
+    host_write(1, "\n");
+    free(safe_fix);
+    free(safe_message);
+}
+
+int host_refuse_printably(cJSON *refusal) {
+    host_print_refusal_printably(refusal);
+    cJSON_Delete(refusal);
+    return HOST_EXIT_REFUSED;
 }
 
 int host_refuse(cJSON *refusal) {

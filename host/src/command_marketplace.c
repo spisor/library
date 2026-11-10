@@ -109,20 +109,6 @@ static int print_wrote(const char *path, const cJSON *copy) {
     return HOST_EXIT_DONE;
 }
 
-/** The refusal with every name in it escaped for the terminal, so a name the host answered cannot move the cursor. */
-static int refuse_printably(cJSON *refusal) {
-    const cJSON *message = cJSON_GetObjectItemCaseSensitive(refusal, "message");
-    const cJSON *fix = cJSON_GetObjectItemCaseSensitive(refusal, "fix");
-    char *safe_message = cJSON_IsString(message) ? host_printable(message->valuestring) : NULL;
-    char *safe_fix = cJSON_IsString(fix) ? host_printable(fix->valuestring) : NULL;
-    cJSON *safe = safe_message == NULL || safe_fix == NULL ? NULL : runtime_refusal(safe_message, safe_fix);
-    int code = host_refuse(safe);
-    cJSON_Delete(refusal);
-    free(safe_message);
-    free(safe_fix);
-    return code;
-}
-
 static int build_into(const char *list_path, const char *out_path) {
     cJSON *refusal = NULL;
     char *absolute = host_absolute_path(out_path);
@@ -136,7 +122,7 @@ static int build_into(const char *list_path, const char *out_path) {
         copy = NULL;
     }
     if (copy == NULL) {
-        code = refuse_printably(refusal);
+        code = host_refuse_printably(refusal);
     } else {
         code = print_wrote(out_path, copy);
         print_skipped(skipped);

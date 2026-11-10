@@ -89,3 +89,14 @@ target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_
 add_dependencies(marketplace_command_test forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
+
+host_executable(install_by_name_test install_by_name_test install_by_name_test.c
+    ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
+if(WIN32)
+    target_link_libraries(install_by_name_test PRIVATE Ws2_32)
+endif()
+target_include_directories(install_by_name_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
+target_compile_definitions(install_by_name_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
+add_dependencies(install_by_name_test forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
+add_test(NAME host_install_by_name_test COMMAND install_by_name_test)
+set_tests_properties(host_install_by_name_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)

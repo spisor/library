@@ -54,6 +54,7 @@ Service), and that store may prompt the user.
 | `identity.alsoAt` | `id` | what `identity.agree` answers, after reading `.weivel/also-at.json` at the default branch of the repo and of each copy it lists; a copy that cannot be reached is left out |
 | `identity.acceptsVersion` | `recorded`, `primary` | `{ accepted, needsUserAcceptance }`; a primary that differs from the one recorded at install is accepted only by the user; pure |
 | `marketplace.build` | `list`, `built` | `{ copy, skipped }`, the generated copy of a marketplace list (`runtime/schema/marketplace.schema.json`, copied from weivel's model): each entry carries the `name`, `fullName` and `lastKnown` (the full name) `identity.resolve` answers for its id, the list's `alias` in place of the name when one is set, and its description and categories; `built`, an RFC 3339 time, comes from the caller so the same inputs build the same copy; refused, naming the ids, for a list that breaks its schema or has more than 10000 entries, a local id, an id listed twice or one that does not resolve, and two entries of one name once names are derived and aliases apply; the shape, local and duplicate refusals come before any lookup; an id may name a folder below a repo (`github:1/folder`), looked up by its repo, whose name is the folder's last segment; a name is the alias, else the repo's (or folder's) name derived as an import name (lowercased, each run of characters outside `[a-z0-9.-]` turned into one `-`, separator runs reduced to the first, `-` and `.` trimmed from both ends); an entry whose derived name is still no import name (empty, or reserved such as `con` or `package`) is left out and answered in `skipped` as `{ id, reason }` |
+| `marketplace.remember` | `state`, `marketplace`, `name`, `id`, `accept?` | `{ remembered: true }` once the id a marketplace gives a name is the one on record in `<state>/marketplace-names.json` (`{ format: 1, names: { "marketplace/name": id } }`, written atomically), recording it when there was none; `{ needsUserAcceptance: true, was, now }` and nothing recorded when another id is on record, unless `accept` is `now`, which replaces it; keyed by marketplace and name together, so one name in two marketplaces is two memories; a record that is not that shape is refused, naming the file, and left as it was |
 | `places.resolve` | `home`, `environment` | `portable`, `state`, `cache`, `secretsFile`, `forceFileStore` |
 | `config.all` | `home`, `names`, `portable`, `plugin`, `config` | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order |
 | `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
@@ -398,6 +399,18 @@ powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.js
 with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating
 the folder it lies in. A refusal writes nothing, leaves an existing copy as it was and exits 1; each skipped entry is printed with its reason and the copy is still written; a name in a message is printed with
 its control characters escaped.
+
+`forebay-host install --name <[marketplace/]name> [--accept <id>]` installs one plugin by the name a marketplace gives it,
+from the marketplaces listed under `marketplaces` in the portable `settings.json`. It reads each source's copy with
+`marketplace.read` into a fresh folder under the cache that it removes again, and a source that cannot be read is printed
+with its fix and skipped while the others are still searched; a source that names a `provider` is printed as skipped, since
+only a plugin can ask it. `marketplace.lookup` settles the name: a name found under two ids lists each
+`<marketplace>/<name>` form and installs nothing, and one found nowhere says so. `marketplace.remember` then compares the id
+with the one on record for that marketplace and name; a different one prints both ids and installs nothing until the same
+command is run again with `--accept` naming the new id. `install.byId` installs the id into the cache and deploys it into
+`<portable>/plugins`, the JSON of what it installed is printed, and `install.warnings` lists what the plugin depends on by a
+name. `--accept` also accepts a primary that the repo's copies newly name. Everything printed that came from a source, a
+copy or a refusal is printed with its control characters escaped; the command takes no `--catalog`, `--plugin` or `--application`.
 
 ## Path vectors
 
