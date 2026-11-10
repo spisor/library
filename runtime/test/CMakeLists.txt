@@ -108,6 +108,10 @@ endif()
 
 runtime_test(install_warnings_test $<TARGET_OBJECTS:runtime_secret_store>)
 
+set(SPISOR_MARKETPLACE_TEMPLATES_PATH "" CACHE PATH "Folder holding the six marketplace-template-<host> checkouts; the test skips when empty")
+runtime_test(marketplace_templates_test $<TARGET_OBJECTS:runtime_secret_store>)
+target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE_TEMPLATES_PATH="${SPISOR_MARKETPLACE_TEMPLATES_PATH}")
+
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})

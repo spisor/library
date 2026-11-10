@@ -1,0 +1,147 @@
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "check.h"
+#include "cJSON.h"
+#include "marketplace_check.h"
+#include "spisor/file.h"
+
+#define SKIP_STATUS 77
+#define COMMIT_LENGTH 40
+#define BUILD_COMMAND "forebay-host marketplace build --list marketplace.json --out marketplace.generated.json"
+
+typedef struct template_host {
+    const char *host;
+    const char *ci_file;
+    const char *publish_marker;
+} template_host;
+
+static const template_host HOSTS[] = {
+    {"github", ".github/workflows/marketplace.yml", "actions/deploy-pages"},
+    {"gitlab", ".gitlab-ci.yml", "pages: true"},
+    {"bitbucket", "bitbucket-pipelines.yml", ".bitbucket.io"},
+    {"codeberg", ".forgejo/workflows/marketplace.yml", "git push --force origin pages"},
+    {"forgejo", ".forgejo/workflows/marketplace.yml", "git push --force origin pages"},
+    {"gitea", ".gitea/workflows/marketplace.yml", "git push --force origin pages"},
+};
+#define HOST_COUNT (sizeof HOSTS / sizeof HOSTS[0])
+
+static char *read_text(const char *root, const char *host, const char *file) {
+    char path[1024];
+    snprintf(path, sizeof path, "%s/marketplace-template-%s/%s", root, host, file);
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(path, &length);
+    if (bytes == NULL) {
+        fprintf(stderr, "missing file: %s\n", path);
+        check_failures++;
+        return NULL;
+    }
+    char *text = calloc(length + 1, 1);
+    memcpy(text, bytes, length);
+    free(bytes);
+    return text;
+}
+
+static int is_hex(char character) {
+    return isdigit((unsigned char)character) || (character >= 'a' && character <= 'f');
+}
+
+static int pinned_commit_of(const char *text, char *commit) {
+    for (const char *cursor = text; *cursor != '\0'; cursor++) {
+        size_t run = 0;
+        while (is_hex(cursor[run])) {
+            run++;
+        }
+        if (run == COMMIT_LENGTH) {
+            memcpy(commit, cursor, COMMIT_LENGTH);
+            commit[COMMIT_LENGTH] = '\0';
+            return 1;
+        }
+        cursor += run;
+    }
+    return 0;
+}
+
+static void checks_the_list(const char *root, const template_host *host) {
+    char *text = read_text(root, host->host, "marketplace.json");
+    if (text == NULL) {
+        return;
+    }
+    cJSON *list = cJSON_Parse(text);
+    char problem[256] = "not json";
+    CHECK(list != NULL && runtime_marketplace_check_list(list, problem, sizeof problem));
+    if (list == NULL || !runtime_marketplace_check_list(list, problem, sizeof problem)) {
+        fprintf(stderr, "%s marketplace.json: %s\n", host->host, problem);
+    }
+    CHECK(list != NULL && cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(list, "entries")) >= 1);
+    cJSON_Delete(list);
+    free(text);
+}
+
+static void checks_the_pipeline(const char *root, const template_host *host, char *shared_commit) {
+    char *text = read_text(root, host->host, host->ci_file);
+    if (text == NULL) {
+        return;
+    }
+    char commit[COMMIT_LENGTH + 1];
+    CHECK(pinned_commit_of(text, commit));
+    if (pinned_commit_of(text, commit)) {
+        if (shared_commit[0] == '\0') {
+            memcpy(shared_commit, commit, sizeof commit);
+        }
+        check_text(commit, shared_commit, host->host);
+    }
+    CHECK(strstr(text, "github.com/spisor/library") != NULL);
+    CHECK(strstr(text, BUILD_COMMAND) != NULL);
+    if (strstr(text, host->publish_marker) == NULL) {
+        fprintf(stderr, "%s: %s does not publish (expected \"%s\")\n", host->host, host->ci_file, host->publish_marker);
+        check_failures++;
+    }
+    free(text);
+}
+
+static int count_numbered_steps(const char *text) {
+    int count = 0;
+    for (const char *line = text; line != NULL; line = strchr(line, '\n') == NULL ? NULL : strchr(line, '\n') + 1) {
+        if (line[0] == '1' + count && line[1] == '.' && line[2] == ' ') {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void checks_the_content(const char *root, const template_host *host) {
+    char *text = read_text(root, host->host, "CONTENT.md");
+    if (text == NULL) {
+        return;
+    }
+    check_failures += count_numbered_steps(text) == 5 ? 0 : 1;
+    CHECK(strstr(text, "Documentation:") != NULL && strstr(text, "https://") != NULL);
+    free(text);
+}
+
+int main(void) {
+    const char *root = SPISOR_MARKETPLACE_TEMPLATES_PATH;
+    if (root[0] == '\0') {
+        printf("skipped: configure with -DSPISOR_MARKETPLACE_TEMPLATES_PATH=<folder holding marketplace-template-*>\n");
+        return SKIP_STATUS;
+    }
+    char probe[1024];
+    snprintf(probe, sizeof probe, "%s/marketplace-template-github/.git/HEAD", root);
+    size_t length = 0;
+    uint8_t *bytes = spisor_read_file(probe, &length);
+    if (bytes == NULL) {
+        printf("skipped: no template checkouts under %s\n", root);
+        return SKIP_STATUS;
+    }
+    free(bytes);
+    char shared_commit[COMMIT_LENGTH + 1] = "";
+    for (size_t index = 0; index < HOST_COUNT; index++) {
+        checks_the_list(root, &HOSTS[index]);
+        checks_the_pipeline(root, &HOSTS[index], shared_commit);
+        checks_the_content(root, &HOSTS[index]);
+    }
+    return check_summary("marketplace_templates_test");
+}
