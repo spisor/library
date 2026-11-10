@@ -392,6 +392,10 @@ static void transfer(const fetch_order *order, url_scheme scheme, runtime_fetch_
     runtime_fetch_over_network(&request, sink, answer);
 }
 
+int runtime_fetch_plain_http_is_allowed(void) {
+    return plain_http_allowed;
+}
+
 void runtime_fetch_into_memory(const char *url, unsigned deadline_milliseconds, runtime_fetch_sink *sink,
                                runtime_fetch_answer *answer) {
     if (scheme_of(url) != SCHEME_NETWORK) {

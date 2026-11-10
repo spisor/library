@@ -345,6 +345,10 @@ static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parse
                              const cJSON *argument, cJSON **refusal) {
     const cJSON *api_base = cJSON_GetObjectItemCaseSensitive(argument, "apiBase");
     const cJSON *last_known = cJSON_GetObjectItemCaseSensitive(argument, "lastKnown");
+    if (api_base != NULL && !runtime_fetch_plain_http_is_allowed()) {
+        return refuse(refusal, "leave apiBase out: the host's own API address is used",
+                      "apiBase is only honoured by the test build");
+    }
     if (!host_shape_fits(kind, parsed)) {
         return refuse_host_shape(kind, parsed, id, refusal);
     }
