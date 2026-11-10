@@ -21,6 +21,7 @@
 #define open_for_writing(path) open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600)
 #endif
 
+#define APPLICATION_HOST "fixture-loader"
 #define MANIFEST                                                                                                    \
     "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\","                    \
     "\"dependencies\":[{\"importName\":\"left-pad\",\"name\":\"left-pad\"}]}"
@@ -49,6 +50,20 @@ static void set_variable(const char *name, const char *value) {
 #endif
 }
 
+static void register_application(void) {
+    char *home = joined(world.base.root, "app-home");
+    cJSON *registration = cJSON_CreateObject();
+    cJSON_AddStringToObject(registration, "id", APPLICATION_HOST);
+    cJSON_AddStringToObject(registration, "kind", "host");
+    cJSON_AddStringToObject(registration, "version", "1.0.0");
+    cJSON_AddStringToObject(registration, "home", home);
+    char *text = cJSON_PrintUnformatted(registration);
+    write_in(world.base.state, "hosts/" APPLICATION_HOST ".json", text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    free(home);
+}
+
 static void start_world(const char *label) {
     start_world_at(&world, "install-by-name", label);
     set_variable("SPISOR_HOME", world.base.portable);
@@ -58,6 +73,7 @@ static void start_world(const char *label) {
     set_variable("HOME", world.base.user);
     set_variable("USERPROFILE", world.base.user);
     set_variable("LOCALAPPDATA", world.base.root);
+    register_application();
 }
 
 static void list_marketplaces(const char *const *ids, const char *const *copies, size_t count) {
@@ -132,9 +148,22 @@ static command_run run_install(const char *const *arguments, int count) {
     return run;
 }
 
+static command_run install_with_flags(const char *name, const char *accept, const char *accept_primary) {
+    const char *arguments[8] = {"--name", name, "--application", APPLICATION_HOST};
+    int count = 4;
+    if (accept != NULL) {
+        arguments[count++] = "--accept";
+        arguments[count++] = accept;
+    }
+    if (accept_primary != NULL) {
+        arguments[count++] = "--accept-primary";
+        arguments[count++] = accept_primary;
+    }
+    return run_install(arguments, count);
+}
+
 static command_run install_name(const char *name, const char *accept) {
-    const char *arguments[4] = {"--name", name, "--accept", accept};
-    return run_install(arguments, accept == NULL ? 2 : 4);
+    return install_with_flags(name, accept, NULL);
 }
 
 static void free_run(command_run *run) {
@@ -144,7 +173,7 @@ static void free_run(command_run *run) {
 
 static void expect_nothing_installed(const char *folder) {
     CHECK(!exists_in(world.base.cache, folder));
-    CHECK(!exists_in(world.base.portable, "plugins/greeter.json"));
+    CHECK(!exists_in(world.base.root, "app-home/plugin/greeter.json"));
 }
 
 static int count_fetch_folders(void) {
@@ -172,7 +201,7 @@ static void installs_by_name_and_prints_the_warnings(void) {
     expect_contains(run.out, "\"name\": \"greeter\"", "the installed name");
     expect_contains(run.err, "warning: github:5: left-pad: ", "the warning for the dependency by name");
     CHECK(exists_in(world.base.cache, "bundles/github+5/1.0.0/plugin.json"));
-    CHECK(exists_in(world.base.portable, "plugins/greeter.json"));
+    CHECK(exists_in(world.base.root, "app-home/plugin/greeter.json"));
     char *remembered = remembered_text();
     expect_contains(remembered, "\"spisor/greeter\": \"github:5\"", "the name is remembered");
     free(remembered);
@@ -211,6 +240,11 @@ static void a_name_that_is_listed_nowhere_installs_nothing(void) {
     expect_contains(run.err, "absent is not listed", "says so");
     expect_nothing_installed("bundles");
     free_run(&run);
+    command_run escaped = install_name("a\x1b[2Jb", NULL);
+    CHECK(escaped.code == 1);
+    expect_contains(escaped.err, "a\\x1b[2Jb is not listed", "the name, escaped");
+    CHECK(strchr(escaped.err, '\x1b') == NULL);
+    free_run(&escaped);
     finish_world(&world);
 }
 
@@ -269,16 +303,90 @@ static void one_unreadable_source_does_not_stop_the_others_and_is_printed_escape
     finish_world(&world);
 }
 
+static void a_failed_first_install_records_nothing(void) {
+    start_world("failed");
+    list_one_marketplace(COPY_OF(ENTRY_OF("github:99", "greeter")));
+    command_run run = install_name("greeter", NULL);
+    CHECK(run.code == 1);
+    CHECK(!exists_in(world.base.state, "marketplace-names.json"));
+    free_run(&run);
+    list_one_marketplace(COPY_OF(ENTRY_OF("github:11", "greeter")));
+    command_run later = install_name("greeter", NULL);
+    CHECK(later.code == 0);
+    free_run(&later);
+    finish_world(&world);
+}
+
+static void a_bare_name_that_moves_to_another_marketplace_asks(void) {
+    start_world("moved");
+    list_one_marketplace(COPY_OF(ENTRY_OF("github:5", "greeter")));
+    command_run first = install_name("greeter", NULL);
+    CHECK(first.code == 0);
+    free_run(&first);
+    const char *ids[] = {"second"};
+    const char *copies[] = {COPY_OF(ENTRY_OF("github:11", "greeter"))};
+    list_marketplaces(ids, copies, 1);
+    command_run moved = install_name("greeter", NULL);
+    CHECK(moved.code == 1);
+    expect_contains(moved.err, "github:5", "the id it meant");
+    expect_contains(moved.err, "github:11", "the id it means now");
+    expect_contains(moved.err, "--accept github:11", "how to accept");
+    CHECK(!exists_in(world.base.cache, "bundles/github+11"));
+    free_run(&moved);
+    finish_world(&world);
+}
+
+static void a_changed_primary_asks_with_the_two_flags_kept_apart(void) {
+    start_world("primary");
+    list_one_marketplace(COPY_OF(ENTRY_OF("github:11", "greeter")));
+    write_in(world.base.cache, "identities/github+11.json",
+             "{\"ids\":[\"github:5\"],\"primary\":\"github:5\"}");
+    command_run run = install_name("greeter", NULL);
+    CHECK(run.code == 1);
+    expect_contains(run.err, "recorded as installed from github:5", "the recorded primary");
+    expect_contains(run.err, "--accept-primary github:11", "how to accept the primary");
+    CHECK(strchr(run.err, '\x1b') == NULL);
+    CHECK(!exists_in(world.base.cache, "bundles/github+11"));
+    CHECK(!exists_in(world.base.state, "marketplace-names.json"));
+    free_run(&run);
+    command_run wrong_flag = install_with_flags("greeter", "github:11", NULL);
+    CHECK(wrong_flag.code == 1);
+    CHECK(!exists_in(world.base.cache, "bundles/github+11"));
+    free_run(&wrong_flag);
+    command_run accepted = install_with_flags("greeter", NULL, "github:11");
+    CHECK(accepted.code == 0);
+    CHECK(exists_in(world.base.cache, "bundles/github+11/1.0.0/plugin.json"));
+    free_run(&accepted);
+    finish_world(&world);
+}
+
+static void accept_primary_does_not_accept_a_changed_name(void) {
+    start_world("flags");
+    write_in(world.base.state, "marketplace-names.json", "{\"format\":1,\"names\":{\"spisor/greeter\":\"github:5\"}}");
+    list_one_marketplace(COPY_OF(ENTRY_OF("github:11", "greeter")));
+    command_run run = install_with_flags("greeter", NULL, "github:11");
+    CHECK(run.code == 1);
+    expect_contains(run.err, "--accept github:11", "the name still needs its own flag");
+    CHECK(!exists_in(world.base.cache, "bundles/github+11"));
+    free_run(&run);
+    finish_world(&world);
+}
+
 static void answers_2_for_an_accept_without_a_name_and_for_a_name_with_a_catalog(void) {
     start_world("misuse");
     const char *accept_only[] = {"--accept", "github:5"};
     command_run run = run_install(accept_only, 2);
     CHECK(run.code == 2);
     free_run(&run);
-    const char *both[] = {"--name", "greeter", "--catalog", "x"};
-    run = run_install(both, 4);
+    const char *both[] = {"--name", "greeter", "--application", APPLICATION_HOST, "--catalog", "x"};
+    run = run_install(both, 6);
     CHECK(run.code == 2);
     expect_contains(run.err, "--name installs from the marketplaces", "says why");
+    free_run(&run);
+    const char *without_application[] = {"--name", "greeter"};
+    run = run_install(without_application, 2);
+    CHECK(run.code == 2);
+    expect_contains(run.err, "--name needs --application <id>", "names the missing flag");
     free_run(&run);
     finish_world(&world);
 }
@@ -313,6 +421,7 @@ static void run_against_the_server(void) {
         ROUTE("/repositories/5", 200, greeter),
         EMPTY_ROUTE("/o/greeter/HEAD/.weivel/also-at.json", 404),
         {"/repos/o/greeter/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        EMPTY_ROUTE("/repositories/99", 404),
         ROUTE("/repositories/11", 200, eleven),
         EMPTY_ROUTE("/o/eleven/HEAD/.weivel/also-at.json", 404),
         {"/repos/o/eleven/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
@@ -335,6 +444,10 @@ static void run_against_the_server(void) {
     a_name_that_is_listed_nowhere_installs_nothing();
     a_remembered_name_that_points_elsewhere_needs_the_user();
     one_unreadable_source_does_not_stop_the_others_and_is_printed_escaped();
+    a_failed_first_install_records_nothing();
+    a_bare_name_that_moves_to_another_marketplace_asks();
+    a_changed_primary_asks_with_the_two_flags_kept_apart();
+    accept_primary_does_not_accept_a_changed_name();
     answers_2_for_an_accept_without_a_name_and_for_a_name_with_a_catalog();
     host_marketplace_aim_lookups(NULL);
     free(http_fixture_stop(server));

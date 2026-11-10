@@ -22,6 +22,7 @@ typedef struct remembered_name {
     const char *name;
     const char *id;
     const char *accept;
+    int is_recording;
 } remembered_name;
 
 static cJSON *refuse(cJSON **refusal, const char *fix, const char *format, ...) {
@@ -45,11 +46,14 @@ static int reads_request(const cJSON *argument, remembered_name *request, cJSON 
     request->name = text_of(argument, "name");
     request->id = text_of(argument, "id");
     request->accept = text_of(argument, "accept");
-    if (request->state == NULL || !runtime_is_usable_home(request->state) || request->marketplace == NULL ||
-        request->name == NULL || request->id == NULL ||
-        (cJSON_GetObjectItemCaseSensitive(argument, "accept") != NULL && request->accept == NULL)) {
-        refuse(refusal, "send {state, marketplace, name, id} and, when the user accepted a change, accept",
-               "the argument carries no usable state, marketplace, name or id");
+    const cJSON *recording = cJSON_GetObjectItemCaseSensitive(argument, "record");
+    request->is_recording = recording == NULL || cJSON_IsTrue(recording);
+    if (request->state == NULL || !runtime_is_usable_home(request->state) || request->name == NULL || request->id == NULL ||
+        (cJSON_GetObjectItemCaseSensitive(argument, "marketplace") != NULL && request->marketplace == NULL) ||
+        (cJSON_GetObjectItemCaseSensitive(argument, "accept") != NULL && request->accept == NULL) ||
+        (recording != NULL && !cJSON_IsBool(recording))) {
+        refuse(refusal, "send {state, name, id} and, when they are known, marketplace, accept and record",
+               "the argument carries no usable state, name or id, or a marketplace, accept or record that is not usable");
         return 0;
     }
     return 1;
@@ -116,6 +120,14 @@ static int writes_store(const cJSON *store, const char *state, const char *path)
 }
 
 static char *qualified_name(const remembered_name *request) {
+    if (request->marketplace == NULL) {
+        size_t bare_length = strlen(request->name) + 1;
+        char *bare = malloc(bare_length);
+        if (bare != NULL) {
+            memcpy(bare, request->name, bare_length);
+        }
+        return bare;
+    }
     size_t length = strlen(request->marketplace) + strlen(request->name) + 2;
     char *key = malloc(length);
     if (key != NULL) {
@@ -127,6 +139,15 @@ static char *qualified_name(const remembered_name *request) {
 static cJSON *remembered_answer(void) {
     cJSON *answer = cJSON_CreateObject();
     if (answer == NULL || cJSON_AddTrueToObject(answer, "remembered") == NULL) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
+}
+
+static cJSON *settled_check_answer(void) {
+    cJSON *answer = cJSON_CreateObject();
+    if (answer == NULL || cJSON_AddTrueToObject(answer, "settled") == NULL) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -155,6 +176,9 @@ static cJSON *settled_answer(cJSON *store, const remembered_name *request, const
     int is_accepted = was != NULL && request->accept != NULL && strcmp(request->accept, request->id) == 0;
     if (was != NULL && !is_remembered && !is_accepted) {
         return needs_acceptance_answer(was, request->id);
+    }
+    if (!request->is_recording) {
+        return settled_check_answer();
     }
     if (!is_remembered && !(records_id(store, key, request->id) && writes_store(store, request->state, path))) {
         return refuse(refusal, "check that the state place can be written", "the record of marketplace names could not be written to %s", path);

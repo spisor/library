@@ -311,12 +311,13 @@
             "type": "object",
             "properties": {
               "state": { "type": "string", "description": "The state place; the record is marketplace-names.json in it." },
-              "marketplace": { "type": "string", "minLength": 1 },
+              "marketplace": { "type": "string", "minLength": 1, "description": "Leave out to remember the bare name." },
               "name": { "type": "string", "minLength": 1, "description": "The bare name, without its marketplace." },
               "id": { "type": "string", "minLength": 1, "description": "The id the marketplace now gives the name." },
-              "accept": { "type": "string", "description": "The new id, when the user accepted it in place of the remembered one." }
+              "accept": { "type": "string", "description": "The new id, when the user accepted it in place of the remembered one." },
+              "record": { "type": "boolean", "description": "False only checks and writes nothing; true by default." }
             },
-            "required": ["state", "marketplace", "name", "id"]
+            "required": ["state", "name", "id"]
           },
           "result": {
             "oneOf": [
@@ -324,6 +325,12 @@
                 "type": "object",
                 "properties": { "remembered": { "const": true } },
                 "required": ["remembered"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "settled": { "const": true } },
+                "required": ["settled"],
                 "additionalProperties": false
               },
               {

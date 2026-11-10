@@ -185,7 +185,8 @@ static int install_through(const host_context *context, const cJSON *sources, co
 #define OPTION_APPLICATION 2
 #define OPTION_NAME 3
 #define OPTION_ACCEPT 4
-#define OPTION_COUNT 5
+#define OPTION_ACCEPT_PRIMARY 5
+#define OPTION_COUNT 6
 
 static int installs_from_catalog(const host_option *options) {
     const char *catalog = host_last_value(&options[OPTION_CATALOG]);
@@ -220,29 +221,45 @@ static int is_given(const host_option *option) {
     return host_last_value(option) != NULL;
 }
 
-static int installs_by_name(const host_option *options) {
+static int is_by_name(const host_option *options) {
+    return is_given(&options[OPTION_NAME]) || is_given(&options[OPTION_ACCEPT]) || is_given(&options[OPTION_ACCEPT_PRIMARY]);
+}
+
+/** The misuse --name's other flags are in, or NULL when there is none. */
+static const char *by_name_misuse(const host_option *options) {
     if (!is_given(&options[OPTION_NAME])) {
-        return host_misuse("--accept <id> is only meaningful with --name <[marketplace/]name>");
+        return "--accept and --accept-primary are only meaningful with --name <[marketplace/]name>";
     }
-    if (is_given(&options[OPTION_CATALOG]) || is_given(&options[OPTION_PLUGIN]) || is_given(&options[OPTION_APPLICATION])) {
-        return host_misuse("--name installs from the marketplaces in the settings and takes no --catalog, --plugin or --application");
+    if (is_given(&options[OPTION_CATALOG]) || is_given(&options[OPTION_PLUGIN])) {
+        return "--name installs from the marketplaces in the settings and takes no --catalog or --plugin";
     }
+    if (!is_given(&options[OPTION_APPLICATION])) {
+        return "--name needs --application <id>, the registered application whose plugin folder the plugin is deployed into";
+    }
+    return NULL;
+}
+
+static int installs_by_name(const host_option *options) {
+    const char *misuse = by_name_misuse(options);
+    if (misuse != NULL) {
+        return host_misuse(misuse);
+    }
+    host_name_request request = {host_last_value(&options[OPTION_NAME]), host_last_value(&options[OPTION_APPLICATION]),
+                                 host_last_value(&options[OPTION_ACCEPT]), host_last_value(&options[OPTION_ACCEPT_PRIMARY])};
     host_context context;
     cJSON *refusal = NULL;
-    int code = host_open_context(&context, &refusal)
-                   ? host_install_by_name(&context, host_last_value(&options[OPTION_NAME]), host_last_value(&options[OPTION_ACCEPT]))
-                   : host_refuse(refusal);
+    int code = host_open_context(&context, &refusal) ? host_install_by_name(&context, &request) : host_refuse(refusal);
     host_close_context(&context);
     return code;
 }
 
 int host_command_install(int count, char **arguments) {
-    host_option options[OPTION_COUNT] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}, {"name", NULL}, {"accept", NULL}};
+    host_option options[OPTION_COUNT] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}, {"name", NULL}, {"accept", NULL}, {"accept-primary", NULL}};
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
     if (!host_parse_options(count, arguments, options, OPTION_COUNT, NULL, &problem)) {
         code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
-    } else if (is_given(&options[OPTION_NAME]) || is_given(&options[OPTION_ACCEPT])) {
+    } else if (is_by_name(options)) {
         code = installs_by_name(options);
     } else {
         code = installs_from_catalog(options);
