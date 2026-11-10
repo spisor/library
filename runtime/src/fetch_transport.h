@@ -11,9 +11,10 @@
 #define RUNTIME_FETCH_PUBLISHED_FIX "check that the catalog still publishes this file"
 #define RUNTIME_FETCH_DETAIL_SIZE 1024
 
-/** Where fetched bytes go: the partial file, the running hash and the byte count, bounded by limit when limited. */
+/** Where fetched bytes go: the partial file or a memory buffer, the running hash and the byte count, bounded by limit when limited. */
 typedef struct runtime_fetch_sink {
     FILE *file;
+    uint8_t *memory;
     runtime_sha256 hash;
     uint64_t bytes;
     uint64_t limit;
@@ -23,6 +24,9 @@ typedef struct runtime_fetch_sink {
 } runtime_fetch_sink;
 
 void runtime_fetch_sink_start(runtime_fetch_sink *sink, FILE *file, int limited, uint64_t limit);
+
+/** A sink that keeps at most capacity bytes in buffer instead of a file; more than that marks it exceeded. */
+void runtime_fetch_sink_start_memory(runtime_fetch_sink *sink, uint8_t *buffer, size_t capacity);
 
 /** Writes and hashes the bytes. 0, and nothing more taken, once they would pass the limit or cannot be written. */
 int runtime_fetch_sink_take(runtime_fetch_sink *sink, const uint8_t *bytes, size_t length);
@@ -62,6 +66,13 @@ typedef struct runtime_fetch_answer {
 } runtime_fetch_answer;
 
 void runtime_fetch_refuse(runtime_fetch_answer *answer, const char *fix, const char *format, ...);
+
+/**
+ * Fetches url into a memory sink under the same scheme rules and deadline override as fetch.get, so a
+ * lookup that needs only a short answer shares its transport and refusals.
+ */
+void runtime_fetch_into_memory(const char *url, unsigned deadline_milliseconds, runtime_fetch_sink *sink,
+                               runtime_fetch_answer *answer);
 
 /** Fetches an https url, or an http one when the request allows it, over the operating system's stack. */
 void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
