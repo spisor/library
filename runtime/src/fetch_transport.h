@@ -74,6 +74,9 @@ void runtime_fetch_refuse(runtime_fetch_answer *answer, const char *fix, const c
 void runtime_fetch_into_memory(const char *url, unsigned deadline_milliseconds, runtime_fetch_sink *sink,
                                runtime_fetch_answer *answer);
 
+/** Whether the test hook has allowed plain http; always 0 in the shipped library. */
+int runtime_fetch_plain_http_is_allowed(void);
+
 /** Fetches an https url, or an http one when the request allows it, over the operating system's stack. */
 void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
                                 runtime_fetch_answer *answer);

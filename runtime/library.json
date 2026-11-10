@@ -87,8 +87,7 @@
             "type": "object",
             "properties": {
               "id": { "type": "string" },
-              "lastKnown": { "type": "string", "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up, and accepted only with the same number." },
-              "apiBase": { "type": "string", "minLength": 1, "description": "Replaces the host's API root, so a test can reach a fixture." }
+              "lastKnown": { "type": "string", "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up, and accepted only with the same number." }
             },
             "required": ["id"]
           },

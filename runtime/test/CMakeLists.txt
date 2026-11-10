@@ -74,6 +74,10 @@ if(WIN32)
     target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
 endif()
 
+runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})
+
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})
 set_tests_properties(fetch_network_test PROPERTIES LABELS network)

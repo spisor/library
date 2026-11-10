@@ -8,7 +8,8 @@
 
 /**
  * identity.resolve: {id, lastKnown?, apiBase?} answers {name, fullName, defaultBranch?} for the repo the id names,
- * or refuses with a fix. lastKnown is an "owner/name" a previous lookup saw; apiBase replaces the host's API root.
+ * or refuses with a fix. lastKnown is an "owner/name" a previous lookup saw. apiBase replaces the host's API root,
+ * is not in library.json, and is refused unless the fetch test hook allows plain http, so only a test can aim a lookup.
  *
  * @implNote A repo is looked up by its number, which survives a rename; a number the host answers with is
  * always compared, as text, with the one asked for. Only when the host cannot answer by number (404, or 401 where

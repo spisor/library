@@ -27,6 +27,8 @@ static const char beyond_exact_integers[] = REPOSITORY("9007199254740993", "big"
 static const char named_fifty[] = REPOSITORY("50", "n50", "o/n50");
 static const char gitea_sixty[] = REPOSITORY("60", "tea", "o/tea");
 static const char no_names[] = "{\"id\":70}";
+static const char not_an_object[] = "[]";
+static char oversized_body[300 * 1024];
 
 static unsigned short server_port;
 
@@ -180,7 +182,16 @@ static void resolves_local_without_the_network(void) {
     cJSON_Delete(answer.tree);
 }
 
+static void refuses_a_body_above_the_cap(void) {
+    expect_refused_then_free(resolve("github:80", NULL), "more than a lookup reads", "oversized body");
+}
+
+static void refuses_a_body_that_is_not_an_object(void) {
+    expect_refused_then_free(resolve("github:81", NULL), "did not answer a repository", "array body");
+}
+
 static void run_against_the_server(void) {
+    memset(oversized_body, 'a', sizeof oversized_body);
     const http_route routes[] = {
         ROUTE("/repositories/7", 200, found_seven),
         ROUTE("/repositories/8", 200, renamed_eight),
@@ -198,6 +209,8 @@ static void run_against_the_server(void) {
         ROUTE("/repos/o/n50", 200, named_fifty),
         ROUTE("/api/v1/repositories/60", 200, gitea_sixty),
         ROUTE("/repositories/70", 200, no_names),
+        {"/repositories/80", 200, NULL, oversized_body, sizeof oversized_body, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0},
+        ROUTE("/repositories/81", 200, not_an_object),
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
     CHECK(server != NULL);
@@ -219,6 +232,8 @@ static void run_against_the_server(void) {
     refuses_a_number_beyond_what_a_double_holds();
     refuses_an_answer_without_names();
     refuses_a_last_known_name_that_is_not_owner_and_name();
+    refuses_a_body_above_the_cap();
+    refuses_a_body_that_is_not_an_object();
     reads_a_gitea_host_through_its_api_root();
     refuses_a_gitea_id_with_no_host();
     names_the_missing_resolver_for_an_unknown_scheme();
