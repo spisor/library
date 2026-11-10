@@ -44,4 +44,12 @@ typedef enum runtime_repo_file_status {
 runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
                                                     uint8_t **content, size_t *length, cJSON **refusal);
 
+/**
+ * Writes into url, of size bytes, the address of route below repos/<full_name> on the host id names, such as
+ * "releases/latest", under apiBase when it is given. 0 when the id has no built-in resolver, full_name is not an
+ * owner/name, or the address does not fit.
+ */
+int runtime_identity_repo_url(const char *id, const char *api_base, const char *full_name, const char *route, char *url,
+                              size_t size);
+
 #endif

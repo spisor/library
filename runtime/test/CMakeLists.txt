@@ -111,6 +111,19 @@ runtime_test(cache_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(cache_test PRIVATE ${runtime_fetch_libraries})
 
+runtime_test(cache_deploy_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog>
+    $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(cache_deploy_test PRIVATE ${runtime_fetch_libraries})
+
+runtime_test(install_by_id_test http_fixture.c $<TARGET_OBJECTS:runtime_install_by_id>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_cache>
+    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(install_by_id_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(install_by_id_test PRIVATE Ws2_32)
+endif()
+
 foreach(name updates_test boot_hint_test cache_locate_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog>
         $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>

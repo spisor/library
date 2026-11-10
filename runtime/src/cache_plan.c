@@ -8,6 +8,7 @@
 #include "cache_marker.h"
 #include "cache_place.h"
 #include "cache_refusal.h"
+#include "identity.h"
 #include "platform_key.h"
 #include "spisor/json_write.h"
 
@@ -103,18 +104,35 @@ static int is_library(const cJSON *item) {
     return cJSON_IsString(kind) && strcmp(kind->valuestring, "library") == 0;
 }
 
+/** The folder an item's versions live in: the key itself for a name, the id's folder for an id, which holds no ":". */
+static char *item_folder(const char *id, cJSON **refusal) {
+    runtime_identity identity;
+    if (!runtime_identity_parse_id(id, &identity)) {
+        return runtime_cache_text(&id, 1);
+    }
+    char *folder = NULL;
+    runtime_identity_folder_status status = runtime_identity_folder_name(id, &folder);
+    if (status != RUNTIME_IDENTITY_FOLDER_NAMED && status != RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY) {
+        const char *parts[2] = {id, " is an id that cannot name a folder"};
+        refuse(refusal, parts, 2, "use an id whose folder is portable: a local name in lowercase, without +, = or :");
+    }
+    return folder;
+}
+
 static char *version_directory(const char *cache, const char *id, const cJSON *item, const char *version,
                                const char *platform, cJSON **refusal) {
     const char *root_name = is_library(item) ? "libraries" : "bundles";
     char *root = runtime_cache_resolve(cache, &root_name, 1);
-    const char *segments[3] = {id, version, platform};
-    char *directory = root == NULL ? NULL : runtime_cache_resolve(root, segments, is_library(item) ? 3 : 2);
+    char *folder = root == NULL ? NULL : item_folder(id, refusal);
+    const char *segments[3] = {folder, version, platform};
+    char *directory = folder == NULL ? NULL : runtime_cache_resolve(root, segments, is_library(item) ? 3 : 2);
     if (directory != NULL && !runtime_cache_is_strictly_inside(root, directory)) {
         const char *parts[5] = {id, "@", version, " would be installed outside ", root};
         refuse(refusal, parts, 5, "use an item id and version the catalog schema accepts");
         free(directory);
         directory = NULL;
     }
+    free(folder);
     free(root);
     return directory;
 }

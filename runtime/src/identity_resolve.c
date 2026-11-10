@@ -462,6 +462,18 @@ static runtime_repo_file_status read_from_repository(const char *id, const char 
     return fetch_file(url, content, length);
 }
 
+int runtime_identity_repo_url(const char *id, const char *api_base, const char *full_name, const char *route, char *url,
+                              size_t size) {
+    runtime_identity parsed;
+    const resolver *kind = runtime_identity_parse_id(id, &parsed) ? resolver_named(parsed.resolver) : NULL;
+    char root[URL_SIZE / 2];
+    if (kind == NULL || !is_owner_and_name(full_name) || !build_root(kind, &parsed, api_base, root)) {
+        return 0;
+    }
+    strip_trailing_slashes(root);
+    return snprintf(url, size, "%s/repos/%s/%s", root, full_name, route) < (int)size;
+}
+
 static cJSON *resolve_repository(const char *id, const char *api_base, cJSON **refusal) {
     cJSON *argument = repository_argument(id, api_base);
     cJSON *repository = argument == NULL ? NULL : resolve(argument, refusal);

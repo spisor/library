@@ -24,7 +24,7 @@ static char *bundled_plugin(const char *id, const char *version, const char *ext
     snprintf(rest, sizeof rest, "bundled/%s/%s", id, version);
     char *directory = in_base(rest);
     char manifest[512];
-    snprintf(manifest, sizeof manifest, "{\"id\": \"%s\", \"version\": \"%s\", \"entry\": \"index.js\"%s}", id, version,
+    snprintf(manifest, sizeof manifest, "{\"importName\": \"%s\", \"version\": \"%s\", \"entry\": \"index.js\"%s}", id, version,
              extra_members == NULL ? "" : extra_members);
     write_in(directory, "plugin.json", manifest);
     write_in(directory, "index.js", "export default { activate() {} };\n");
@@ -120,6 +120,37 @@ static void lists_a_plugin_as_the_provider_of_the_install_method_its_manifest_na
     check_text(text_at(item_of(catalog, "greeter"), "installMethod"), "fake", "install method");
     cJSON_Delete(catalog);
     free(path);
+    free(directory);
+    host_free_catalog_inputs(&inputs);
+    finish_case();
+}
+
+static void keys_a_plugin_by_its_import_name_and_ignores_a_stated_id(void) {
+    start_case("import-name");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = bundled_plugin("greeter", "1.0.0", ", \"id\": \"someone-else\"");
+    CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
+    char *path = build(&inputs, &refusal);
+    cJSON *catalog = read_back(path);
+    CHECK(item_of(catalog, "greeter") != NULL);
+    CHECK(item_of(catalog, "someone-else") == NULL);
+    cJSON_Delete(catalog);
+    free(path);
+    free(directory);
+    host_free_catalog_inputs(&inputs);
+    finish_case();
+}
+
+static void refuses_a_plugin_manifest_that_names_an_id_and_no_import_name(void) {
+    start_case("no-import-name");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = in_base("bundled/greeter/1.0.0");
+    write_in(directory, "plugin.json", "{\"id\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}");
+    write_in(directory, "index.js", "export default {};\n");
+    CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
+    expect_refusal_naming(refusal, "importName", "an id alone");
     free(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
@@ -258,6 +289,27 @@ static void refuses_one_id_under_two_kinds_and_one_version_twice(void) {
     CHECK(!catalog_written());
     host_free_catalog_inputs(&twice);
     host_free_catalog_inputs(&kinds);
+    cJSON_free(files);
+    free(source);
+    finish_case();
+}
+
+static void keys_an_item_by_an_id_as_well_as_by_a_name(void) {
+    start_case("id-key");
+    char *source = source_file();
+    char *files = files_with("index.js", NULL, source);
+    catalog_inputs inputs = {NULL, 0, 0};
+    add_made_input(&inputs, "plugin", "github:12", "1.0.0", NULL, files);
+    add_made_input(&inputs, "plugin", "greeter", "1.0.0", NULL, files);
+    cJSON *refusal = NULL;
+    char *path = build(&inputs, &refusal);
+    CHECK(path != NULL);
+    cJSON *catalog = path == NULL ? NULL : read_back(path);
+    CHECK(item_of(catalog, "github:12") != NULL);
+    CHECK(item_of(catalog, "greeter") != NULL);
+    cJSON_Delete(catalog);
+    free(path);
+    host_free_catalog_inputs(&inputs);
     cJSON_free(files);
     free(source);
     finish_case();
@@ -441,7 +493,7 @@ static void refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replac
         start_case("replaced-entry");
         char *directory = in_base("replaced");
         char manifest[256];
-        snprintf(manifest, sizeof manifest, "{\"id\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"%s\"}", entries[index]);
+        snprintf(manifest, sizeof manifest, "{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"%s\"}", entries[index]);
         write_in(directory, "plugin.json", manifest);
         catalog_inputs inputs = {NULL, 0, 0};
         cJSON *refusal = NULL;
@@ -606,10 +658,13 @@ int main(void) {
     replaces_a_javascript_host_s_own_package_json_with_the_esm_marker();
     writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver();
     lists_a_plugin_as_the_provider_of_the_install_method_its_manifest_names();
+    keys_a_plugin_by_its_import_name_and_ignores_a_stated_id();
+    refuses_a_plugin_manifest_that_names_an_id_and_no_import_name();
     lists_every_copied_file_with_its_real_hash_and_size();
     places_a_per_platform_item_under_its_platform();
     installs_from_the_index_into_a_bundle_with_every_file();
     refuses_one_id_under_two_kinds_and_one_version_twice();
+    keys_an_item_by_an_id_as_well_as_by_a_name();
     refuses_a_platform_that_is_not_an_os_arch_key_before_copying_anything();
     refuses_a_file_the_installer_would_take_for_its_completion_marker_in_any_case();
     refuses_two_file_keys_that_differ_only_by_case_before_copying_anything();

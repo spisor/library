@@ -99,6 +99,11 @@ set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_patter
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
+add_library(runtime_install_by_id OBJECT src/install_by_id.c)
+target_link_libraries(runtime_install_by_id PUBLIC runtime_objects)
+set_target_properties(runtime_install_by_id PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_install_by_id)
+
 add_library(runtime_catalog OBJECT ${runtime_catalog_sources})
 target_link_libraries(runtime_catalog PUBLIC runtime_objects)
 set_target_properties(runtime_catalog PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
@@ -115,7 +120,7 @@ target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CAT
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
-    src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
+    src/cache_deploy.c src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
     src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
     src/alive_stamp.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
@@ -181,7 +186,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)

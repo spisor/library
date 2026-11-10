@@ -11,6 +11,7 @@
 #include "catalog_semver.h"
 #include "catalog_text.h"
 #include "host_context.h"
+#include "identity.h"
 #include "paths.h"
 #include "platform_key.h"
 #include "sha256.h"
@@ -65,6 +66,23 @@ static int check_files(const catalog_input *input, const char *label, cJSON **re
     return 1;
 }
 
+/** The folder an item's files live in: its id when that is a name, the id's folder, which holds no ":", when it is an id. */
+static char *folder_of(const catalog_input *input) {
+    runtime_identity identity;
+    char *folder = NULL;
+    if (runtime_identity_parse_id(input->id, &identity)) {
+        runtime_identity_folder_name(input->id, &folder);
+        return folder;
+    }
+    return runtime_cache_text((const char *const *)&input->id, 1);
+}
+
+static int names_a_folder(const catalog_input *input) {
+    char *folder = folder_of(input);
+    free(folder);
+    return folder != NULL;
+}
+
 static int check_input(const catalog_input *input, cJSON **refusal) {
     char *label = label_of(input);
     int checked = label != NULL;
@@ -76,6 +94,9 @@ static int check_input(const catalog_input *input, cJSON **refusal) {
         const char *parts[2] = {id, " is not an id a catalog accepts"};
         checked = refuse(refusal, parts, 2, "use lowercase letters and digits joined by single hyphens");
         free(id);
+    } else if (checked && !names_a_folder(input)) {
+        const char *parts[2] = {input->id, " is an id that cannot name a folder"};
+        checked = refuse(refusal, parts, 2, "use an id whose folder is portable: a local name in lowercase, without +, = or :");
     } else if (checked && !runtime_catalog_is_version(input->version)) {
         char *version = shown(input->version);
         const char *parts[4] = {input->id, " has the version ", version, ", which a catalog refuses"};
@@ -180,11 +201,11 @@ static int add_encoded(runtime_catalog_text *text, const char *value, int keep_s
     return 1;
 }
 
-/** files/<id>/<version>/[<platform>/]<key>, each segment encoded as a url's. */
-static char *url_of(const catalog_input *input, const char *key) {
+/** files/<folder>/<version>/[<platform>/]<key>, each segment encoded as a url's. */
+static char *url_of(const catalog_input *input, const char *folder, const char *key) {
     runtime_catalog_text text;
     runtime_catalog_text_start(&text);
-    const char *heads[4] = {FILES_DIRECTORY, input->id, input->version, input->platform};
+    const char *heads[4] = {FILES_DIRECTORY, folder, input->version, input->platform};
     int built = 1;
     for (size_t index = 0; built && index < 4 && heads[index] != NULL; index++) {
         built = add_encoded(&text, heads[index], 0) && runtime_catalog_text_add_character(&text, '/');
@@ -196,8 +217,8 @@ static char *url_of(const catalog_input *input, const char *key) {
     return runtime_catalog_text_finish(&text);
 }
 
-static char *destination_of(const char *out, const catalog_input *input, const char *key) {
-    const char *segments[6] = {out, FILES_DIRECTORY, input->id, input->version, input->platform == NULL ? key : input->platform,
+static char *destination_of(const char *out, const catalog_input *input, const char *folder, const char *key) {
+    const char *segments[6] = {out, FILES_DIRECTORY, folder, input->version, input->platform == NULL ? key : input->platform,
                                key};
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, input->platform == NULL ? 5 : 6);
 }
@@ -217,10 +238,11 @@ static uint8_t *bytes_of(const cJSON *file, size_t *length) {
 }
 
 /** Writes file to its place under out, answering its FileRef {url, sha256, size}. */
-static cJSON *place_file(const char *out, const catalog_input *input, const cJSON *file, cJSON **refusal) {
+static cJSON *place_file(const char *out, const catalog_input *input, const char *folder, const cJSON *file,
+                         cJSON **refusal) {
     const char *key = file->string;
     const char *source = cJSON_IsString(file) ? file->valuestring : key;
-    char *destination = destination_of(out, input, key);
+    char *destination = destination_of(out, input, folder, key);
     const char *parent_segments[2] = {destination, ".."};
     char *parent = destination == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parent_segments, 2);
     size_t length = 0;
@@ -228,7 +250,7 @@ static cJSON *place_file(const char *out, const catalog_input *input, const cJSO
     char hash[RUNTIME_SHA256_HEX_SIZE];
     int copied = bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(destination, bytes, length) == 1;
     cJSON *reference = copied ? cJSON_CreateObject() : NULL;
-    char *url = reference == NULL ? NULL : url_of(input, key);
+    char *url = reference == NULL ? NULL : url_of(input, folder, key);
     if (reference != NULL) {
         runtime_sha256 sha256;
         runtime_sha256_start(&sha256);
@@ -253,14 +275,21 @@ static cJSON *place_file(const char *out, const catalog_input *input, const cJSO
 
 static cJSON *placed_files(const char *out, const catalog_input *input, cJSON **refusal) {
     cJSON *files = cJSON_CreateObject();
-    for (const cJSON *file = files == NULL ? NULL : input->files->child; file != NULL; file = file->next) {
-        cJSON *reference = place_file(out, input, file, refusal);
+    char *folder = files == NULL ? NULL : folder_of(input);
+    for (const cJSON *file = folder == NULL ? NULL : input->files->child; file != NULL; file = file->next) {
+        cJSON *reference = place_file(out, input, folder, file, refusal);
         if (reference == NULL || !cJSON_AddItemToObject(files, file->string, reference)) {
             cJSON_Delete(reference);
             cJSON_Delete(files);
-            return NULL;
+            files = NULL;
+            break;
         }
     }
+    if (folder == NULL) {
+        cJSON_Delete(files);
+        files = NULL;
+    }
+    free(folder);
     return files;
 }
 
