@@ -85,8 +85,11 @@ static int doom_abandoned(sweep_scope *scope, const char **segments, size_t coun
         segments[count] = name->valuestring;
         if (count + 1 < depth + 2) {
             doomed = doom_abandoned(scope, segments, count + 1, depth);
-        } else if (is_abandoned(scope, segments, count + 1) && !is_referenced(scope, segments[2], segments[3])) {
-            doomed = doom(scope, segments[2], segments[3], depth == 3 ? segments[4] : NULL);
+        } else if (is_abandoned(scope, segments, count + 1)) {
+            char *key = runtime_item_key_of_folder(segments[2]);
+            doomed = key != NULL && (is_referenced(scope, key, segments[3]) ||
+                                     doom(scope, key, segments[3], depth == 3 ? segments[4] : NULL));
+            free(key);
         }
     }
     cJSON_Delete(names);

@@ -2033,6 +2033,7 @@
             "properties": {
               "directory": { "type": "string", "minLength": 1 },
               "pluginDir": { "type": "string", "minLength": 1 },
+              "replaces": { "type": "string", "minLength": 1 },
               "identity": {
                 "type": "object",
                 "properties": {

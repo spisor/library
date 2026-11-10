@@ -120,7 +120,7 @@ static char *plugin_directory(const char *id) {
     char folder[128];
     snprintf(folder, sizeof folder, "plugins-%s", id);
     for (char *at = folder; *at != '\0'; at++) {
-        *at = *at == ':' ? '-' : *at;
+        *at = *at == ':' || *at == '/' ? '-' : *at;
     }
     return in_scratch(plugin_folder != NULL ? plugin_folder : folder);
 }
@@ -270,6 +270,14 @@ static char *read_scratch(const char *relative) {
     return text;
 }
 
+static int record_primary_is(const char *record, const char *primary) {
+    cJSON *tree = record == NULL ? NULL : parsed(record);
+    const char *found = text_at(tree, "primary");
+    int matched = found != NULL && strcmp(found, primary) == 0;
+    cJSON_Delete(tree);
+    return matched;
+}
+
 static void the_first_install_records_the_set_and_the_primary(void) {
     catalog_answer answer = install_with("github:11", NULL);
     CHECK(succeeded(answer, "first install"));
@@ -347,6 +355,71 @@ static void copies_naming_different_primaries_stop_the_install(void) {
     cJSON_Delete(answer.tree);
 }
 
+static void a_folder_id_installs_from_its_primary_at_the_same_folder(void) {
+    catalog_answer answer = install_with("github:6/kernel", NULL);
+    CHECK(succeeded(answer, "folder through a mirror"));
+    check_text(text_at(answer.tree, "id"), "github:5/kernel", "installed from the primary's folder");
+    check_text(text_at(answer.tree, "primary"), "github:5", "primary is the repo");
+    CHECK(exists_in_scratch("cache/bundles/github+5=kernel/1.0.0/plugin.json"));
+    CHECK(!exists_in_scratch("cache/bundles/github+6=kernel"));
+    char *identity = read_scratch("plugins-github-6-kernel/greeter_identity.json");
+    CHECK(identity != NULL && strstr(identity, "github:5/kernel") != NULL);
+    free(identity);
+    char *record = read_scratch("cache/identities/github+6.json");
+    CHECK(record_primary_is(record, "github:5"));
+    free(record);
+    cJSON_Delete(answer.tree);
+}
+
+static void a_folder_id_installs_again(void) {
+    for (int attempt = 1; attempt <= 2; attempt++) {
+        catalog_answer answer = install_with("github:5/kernel", NULL);
+        CHECK(succeeded(answer, attempt == 1 ? "folder first" : "folder second"));
+        check_text(text_at(answer.tree, "primary"), "github:5", "primary");
+        CHECK(flag_is(answer, "needsUserAcceptance", -1));
+        cJSON_Delete(answer.tree);
+    }
+}
+
+static void a_refusal_from_the_copies_other_than_nothing_readable_stops_the_install(void) {
+    catalog_answer answer = install_with("github:15", NULL);
+    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(!exists_in_scratch("cache/bundles/github+15"));
+    CHECK(!exists_in_scratch("plugins-github-15"));
+    cJSON_Delete(answer.tree);
+}
+
+static void an_accepted_change_of_primary_replaces_the_deployed_plugin(void) {
+    catalog_answer first = install_with("github:20", NULL);
+    CHECK(succeeded(first, "before the move"));
+    check_text(text_at(first.tree, "primary"), "github:20", "first primary");
+    cJSON_Delete(first.tree);
+    char *deployed = read_scratch("plugins-github-20/greeter_identity.json");
+    CHECK(deployed != NULL && strstr(deployed, "github:20") != NULL);
+    free(deployed);
+    catalog_answer refused = install_with("github:20", NULL);
+    CHECK(succeeded(refused, "after the move, unaccepted"));
+    CHECK(flag_is(refused, "needsUserAcceptance", 1));
+    cJSON_Delete(refused.tree);
+    deployed = read_scratch("plugins-github-20/greeter_identity.json");
+    CHECK(deployed != NULL && strstr(deployed, "github:20") != NULL && strstr(deployed, "github:21") == NULL);
+    free(deployed);
+    catalog_answer accepted = install_with("github:20", "{\"acceptPrimary\":\"github:21\"}");
+    CHECK(succeeded(accepted, "after the move, accepted"));
+    check_text(text_at(accepted.tree, "id"), "github:21", "now installed from the new primary");
+    deployed = read_scratch("plugins-github-20/greeter_identity.json");
+    CHECK(deployed != NULL && strstr(deployed, "github:21") != NULL && strstr(deployed, "twentyone") != NULL);
+    free(deployed);
+    char *record = read_scratch("cache/identities/github+20.json");
+    CHECK(record_primary_is(record, "github:21"));
+    free(record);
+    cJSON_Delete(accepted.tree);
+    catalog_answer again = install_with("github:20", NULL);
+    CHECK(succeeded(again, "retry after acceptance"));
+    CHECK(flag_is(again, "needsUserAcceptance", -1));
+    cJSON_Delete(again.tree);
+}
+
 static void a_release_without_an_index_is_refused_naming_it(void) {
     catalog_answer answer = install_with("github:8", NULL);
     CHECK(expect_refusal(answer, "weivel-index.json", "no index asset"));
@@ -376,6 +449,12 @@ static void run_against_the_server(void) {
     static const char repository_twelve[] = REPOSITORY("12", "twelve");
     static const char repository_thirteen[] = REPOSITORY("13", "thirteen");
     static const char repository_fourteen[] = REPOSITORY("14", "fourteen");
+    static const char repository_fifteen[] = REPOSITORY("15", "fifteen");
+    static const char repository_twenty[] = REPOSITORY("20", "twenty");
+    static const char repository_twenty_one[] = REPOSITORY("21", "twentyone");
+    static const char twenty_before[] = "{\"primary\":\"github:20\",\"ids\":[\"github:20\"]}";
+    static const char twenty_after[] = "{\"primary\":\"github:21\",\"ids\":[\"github:20\",\"github:21\"]}";
+    static const char twenty_one_file[] = "{\"primary\":\"github:21\",\"ids\":[\"github:20\",\"github:21\"]}";
     static const char thirteen_file[] = "{\"primary\":\"github:13\",\"ids\":[\"github:13\",\"github:14\"]}";
     static const char fourteen_file[] = "{\"primary\":\"github:14\",\"ids\":[\"github:13\",\"github:14\"]}";
     static const char also_at_file[] = "{\"primary\":\"github:5\",\"ids\":[\"github:5\",\"github:6\"]}";
@@ -405,6 +484,16 @@ static void run_against_the_server(void) {
         EMPTY_ROUTE("/o/twelve/HEAD/.weivel/also-at.json", 404),
         {"/repos/o/twelve/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
         {"/repos/o/mirror/releases/latest", 200, NULL, release_json_tampered, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/repositories/15", 200, NULL, repository_fifteen, sizeof repository_fifteen - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 1},
+        EMPTY_ROUTE("/repositories/15", 404),
+        {"/repos/o/fifteen/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        ROUTE("/repositories/20", 200, repository_twenty),
+        ROUTE("/repositories/21", 200, repository_twenty_one),
+        {"/o/twenty/HEAD/.weivel/also-at.json", 200, NULL, twenty_before, sizeof twenty_before - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 1},
+        ROUTE("/o/twenty/HEAD/.weivel/also-at.json", 200, twenty_after),
+        ROUTE("/o/twentyone/HEAD/.weivel/also-at.json", 200, twenty_one_file),
+        {"/repos/o/twenty/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/repos/o/twentyone/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
         ROUTE("/repositories/13", 200, repository_thirteen),
         ROUTE("/repositories/14", 200, repository_fourteen),
         ROUTE("/o/thirteen/HEAD/.weivel/also-at.json", 200, thirteen_file),
@@ -433,6 +522,10 @@ static void run_against_the_server(void) {
     a_changed_primary_is_refused_until_the_user_accepts_it();
     a_mirror_installs_from_the_primary_and_deploys_its_name();
     copies_naming_different_primaries_stop_the_install();
+    a_folder_id_installs_from_its_primary_at_the_same_folder();
+    a_folder_id_installs_again();
+    a_refusal_from_the_copies_other_than_nothing_readable_stops_the_install();
+    an_accepted_change_of_primary_replaces_the_deployed_plugin();
     a_release_without_an_index_is_refused_naming_it();
     refuses_a_local_id_and_a_missing_argument();
     free(http_fixture_stop(server));

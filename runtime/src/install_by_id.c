@@ -29,6 +29,8 @@
 
 typedef struct install_request {
     const char *id;
+    const char *repo_id;
+    const char *replaces;
     const char *cache;
     const char *plugin_directory;
     const char *version;
@@ -103,7 +105,14 @@ static int read_request(const cJSON *argument, install_request *request, cJSON *
                request->id);
         return 0;
     }
-    return 1;
+    size_t repo_length = parsed.path.length == 0 ? strlen(request->id) : (size_t)(parsed.path.start - 1 - request->id);
+    char *repo_id = malloc(repo_length + 1);
+    if (repo_id != NULL) {
+        memcpy(repo_id, request->id, repo_length);
+        repo_id[repo_length] = '\0';
+    }
+    request->repo_id = repo_id;
+    return repo_id != NULL;
 }
 
 static void refuse_fetch(const runtime_fetch_answer *answer, const char *url, cJSON **refusal) {
@@ -160,7 +169,7 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
 
 static cJSON *resolve_argument(const install_request *request) {
     cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->id) != NULL &&
+    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->repo_id) != NULL &&
                 (request->last_known == NULL || cJSON_AddStringToObject(argument, "lastKnown", request->last_known) != NULL) &&
                 (request->api_base == NULL || cJSON_AddStringToObject(argument, "apiBase", request->api_base) != NULL);
     if (!built) {
@@ -194,7 +203,7 @@ static int has_confirmed_primary(const cJSON *set) {
 
 static cJSON *also_at_argument(const install_request *request) {
     cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->id) != NULL &&
+    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->repo_id) != NULL &&
                 (request->api_base == NULL || cJSON_AddStringToObject(argument, "apiBase", request->api_base) != NULL);
     if (!built) {
         cJSON_Delete(argument);
@@ -203,35 +212,29 @@ static cJSON *also_at_argument(const install_request *request) {
     return argument;
 }
 
-static int is_disagreement(const cJSON *refusal) {
-    const char *message = text_of(refusal, "message");
-    return message != NULL && strncmp(message, RUNTIME_PRIMARIES_DISAGREE, strlen(RUNTIME_PRIMARIES_DISAGREE)) == 0;
-}
-
 /**
- * The set the repo's copies agree on. The id alone, unconfirmed, when that cannot be read or confirmed; copies that
- * name different primaries stop the install instead. NULL with a refusal for that, or without one out of memory.
+ * The set the repo's copies agree on. The repo alone, unconfirmed, when its also-at file is unreadable or names a
+ * primary nothing confirms; any refusal, copies naming different primaries included, stops the install. NULL with a
+ * refusal for that, or without one out of memory.
  */
 static cJSON *verified_set(const install_request *request, cJSON **refusal) {
     cJSON *found_refusal = NULL;
     cJSON *found = runtime_call_or_refuse(runtime_identity_also_at, also_at_argument(request), &found_refusal);
-    if (found_refusal != NULL && is_disagreement(found_refusal)) {
+    if (found_refusal != NULL) {
         *refusal = found_refusal;
         return NULL;
     }
-    int answered = found != NULL || found_refusal != NULL;
-    cJSON_Delete(found_refusal);
     if (found != NULL && has_confirmed_primary(found)) {
         return found;
     }
     cJSON_Delete(found);
-    return answered ? unconfirmed_set(request->id) : NULL;
+    return found == NULL ? NULL : unconfirmed_set(request->repo_id);
 }
 
 /** cache/identities/<folder>.json, where the set and primary of each installed id are kept; freed with free. */
 static char *record_path(const install_request *request) {
     int unfit = 0;
-    char *folder = runtime_item_folder(request->id, &unfit);
+    char *folder = runtime_item_folder(request->repo_id, &unfit);
     const char *file_parts[2] = {folder, ".json"};
     char *file_name = folder == NULL ? NULL : runtime_cache_text(file_parts, 2);
     const char *segments[2] = {"identities", file_name};
@@ -320,7 +323,7 @@ static char *find_index_url(const install_request *request, const cJSON *reposit
     char url[URL_SIZE];
     const char *full_name = text_of(repository, "fullName");
     if (full_name == NULL ||
-        !runtime_identity_repo_url(request->id, request->api_base, full_name, "releases/latest", url, sizeof url)) {
+        !runtime_identity_repo_url(request->repo_id, request->api_base, full_name, "releases/latest", url, sizeof url)) {
         refuse(refusal, "use a shorter apiBase", "the address of the latest release of %s is not usable", request->id);
         return NULL;
     }
@@ -395,7 +398,7 @@ static int is_still_the_repository(const install_request *request, const cJSON *
     int same = again != NULL && same_repository_as(repository, again);
     if (again != NULL && !same) {
         refuse(refusal, "try the install again; if it keeps happening, check who owns the repo now",
-               "%s was %s when the install began and is %s now", request->id, text_of(repository, "fullName"),
+               "%s was %s when the install began and is %s now", request->repo_id, text_of(repository, "fullName"),
                text_of(again, "fullName"));
     }
     cJSON_Delete(again);
@@ -430,13 +433,15 @@ static int read_release_index(const install_request *request, const cJSON *repos
     return index->item != NULL && is_plugin_item(index->item, refusal);
 }
 
-static cJSON *deploy_argument(const char *directory, const char *plugin_directory, const char *id, const char *name) {
+static cJSON *deploy_argument(const char *directory, const char *plugin_directory, const char *id, const char *name,
+                              const char *replaces) {
     cJSON *argument = cJSON_CreateObject();
     cJSON *identity = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "identity");
     int built = identity != NULL && cJSON_AddStringToObject(identity, "id", id) != NULL &&
                 cJSON_AddStringToObject(identity, "name", name) != NULL &&
                 cJSON_AddStringToObject(argument, "directory", directory) != NULL &&
-                cJSON_AddStringToObject(argument, "pluginDir", plugin_directory) != NULL;
+                cJSON_AddStringToObject(argument, "pluginDir", plugin_directory) != NULL &&
+                (replaces == NULL || cJSON_AddStringToObject(argument, "replaces", replaces) != NULL);
     if (!built) {
         cJSON_Delete(argument);
         argument = NULL;
@@ -463,7 +468,8 @@ static const char *install_and_deploy(const install_request *request, const cJSO
     cJSON *deployed = directory == NULL ? NULL
                                         : runtime_call_or_refuse(runtime_cache_deploy,
                                                                  deploy_argument(directory, request->plugin_directory, request->id,
-                                                                                 text_of(repository, "name")),
+                                                                                 text_of(repository, "name"),
+                                                                                 request->replaces),
                                                                  refusal);
     cJSON_Delete(installed);
     int succeeded = deployed != NULL;
@@ -531,7 +537,7 @@ static cJSON *install_verified(const install_request *request, const install_req
         answer = version == NULL ? NULL : installed_answer(source, repository, set, &index, version);
         if (answer != NULL && !write_record(request, set)) {
             refuse(refusal, "free the cache's identities folder or point cache at a writable directory, then install again",
-                   "the primary of %s could not be recorded", request->id);
+                   "the primary of %s could not be recorded", request->repo_id);
             cJSON_Delete(answer);
             answer = NULL;
         }
@@ -541,26 +547,54 @@ static cJSON *install_verified(const install_request *request, const install_req
 }
 
 /** A confirmed primary other than the id asked for is where a new version comes from; a mirror never supplies one. */
-static install_request source_of(const install_request *request, const cJSON *set) {
+static char *joined_id(const char *repo_id, const char *folder) {
+    const char *parts[2] = {repo_id, folder};
+    return runtime_cache_text(parts, 2);
+}
+
+/** The id of the folder below a repo id as asked for, "/kernel" for github:5/kernel and "" for a repo. */
+static const char *folder_of(const install_request *request) {
+    return request->id + strlen(request->repo_id);
+}
+
+/**
+ * A confirmed primary other than the repo asked for is where a new version comes from, at the same folder; a mirror
+ * never supplies one. An accepted change of primary lets the deployed plugin of the old primary be replaced.
+ */
+static install_request source_of(const install_request *request, const cJSON *set, char *source_id, char *replaced_id) {
     install_request source = *request;
     const char *primary = text_of(set, "primary");
     if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed")) && primary != NULL &&
-        strcmp(primary, request->id) != 0) {
-        source.id = primary;
+        strcmp(primary, request->repo_id) != 0) {
+        source.repo_id = primary;
         source.last_known = NULL;
     }
+    source.id = source_id;
+    int accepted_change = request->recorded_primary != NULL && request->accept_primary != NULL && primary != NULL &&
+                          strcmp(request->recorded_primary, primary) != 0 && strcmp(request->accept_primary, primary) == 0;
+    source.replaces = accepted_change ? replaced_id : NULL;
     return source;
 }
 
 static cJSON *install_from_set(const install_request *request, const cJSON *repository, const cJSON *set,
                                cJSON **refusal) {
-    install_request source = source_of(request, set);
-    int is_mirror = strcmp(source.id, request->id) != 0;
-    cJSON *primary_repository = is_mirror ? resolve_repository(&source, refusal) : NULL;
-    cJSON *answer = is_mirror && primary_repository == NULL
-                        ? NULL
-                        : install_verified(request, &source, is_mirror ? primary_repository : repository, set, refusal);
-    cJSON_Delete(primary_repository);
+    char *source_id = joined_id(text_of(set, "primary") != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed"))
+                                    ? text_of(set, "primary")
+                                    : request->repo_id,
+                                folder_of(request));
+    char *replaced_id = request->recorded_primary == NULL ? NULL : joined_id(request->recorded_primary, folder_of(request));
+    cJSON *answer = NULL;
+    if (source_id != NULL && (request->recorded_primary == NULL || replaced_id != NULL)) {
+        install_request source = source_of(request, set, source_id, replaced_id);
+        int is_mirror = strcmp(source.repo_id, request->repo_id) != 0;
+        cJSON *primary_repository = is_mirror ? resolve_repository(&source, refusal) : NULL;
+        answer = is_mirror && primary_repository == NULL
+                     ? NULL
+                     : install_verified(request, &source, is_mirror ? primary_repository : repository, set, refusal);
+        cJSON_Delete(primary_repository);
+    }
+    free(replaced_id);
+    free(source_id);
     return answer;
 }
 
@@ -568,6 +602,7 @@ static cJSON *install_by_id(const cJSON *argument, cJSON **refusal) {
     install_request request;
     if (!read_request(argument, &request, refusal) || !read_recorded_primary(&request, refusal)) {
         free(request.recorded_primary);
+        free((char *)request.repo_id);
         return NULL;
     }
     cJSON *repository = resolve_repository(&request, refusal);
@@ -576,6 +611,7 @@ static cJSON *install_by_id(const cJSON *argument, cJSON **refusal) {
     cJSON_Delete(set);
     cJSON_Delete(repository);
     free(request.recorded_primary);
+    free((char *)request.repo_id);
     return answer;
 }
 

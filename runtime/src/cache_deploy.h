@@ -10,6 +10,8 @@
  * cache.deploy: {directory, pluginDir, identity: {id, name}} puts the plugin installed in directory where a host loads
  * it from, as pluginDir/<importName>.json, pluginDir/<importName>.js when its plugin.json names an entry, and
  * pluginDir/<importName>_identity.json holding {id, name} as the argument gives them, and answers {importName}.
+ * replaces, when given, is an id whose deployed plugin of this import name this one may replace; no other identity
+ * already deployed under the name is replaced.
  *
  * @implNote The only writer of an identity file, and it takes the identity from its argument alone: nothing a bundle
  * states is read as who the plugin is, and a bundle file named like an identity file is never copied, since only the
