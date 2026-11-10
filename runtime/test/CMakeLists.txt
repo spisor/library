@@ -74,6 +74,14 @@ if(WIN32)
     target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
 endif()
 
+runtime_test(identity_also_at_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(identity_also_at_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
+endif()
+
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})

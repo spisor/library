@@ -90,6 +90,11 @@ target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
 set_target_properties(runtime_identity_resolve PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_identity_resolve)
 
+add_library(runtime_identity_also_at OBJECT src/identity_also_at.c)
+target_link_libraries(runtime_identity_also_at PUBLIC runtime_objects)
+set_target_properties(runtime_identity_also_at PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_identity_also_at)
+
 set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
@@ -176,7 +181,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)

@@ -21,17 +21,23 @@
 /**
  * One repo host kind. Exactly one of fixed_root and host_root_format is set: a host kind with one
  * address, or one whose API root is built from the host the id names, so a new built-in host is one entry.
+ * file_route_format is where a file's raw bytes are at the default branch, from the owner/name and the file's
+ * path, under file_root, or under the API root when file_root is not set.
  */
 typedef struct resolver {
     const char *name;
     const char *fixed_root;
     const char *host_root_format;
+    const char *file_root;
+    const char *file_route_format;
 } resolver;
 
+#define GITEA_FILE_ROUTE "repos/%s/raw/%s"
+
 static const resolver resolvers[] = {
-    {"github", "https://api.github.com", NULL},
-    {"gitea", NULL, "https://%.*s/api/v1"},
-    {"forgejo", NULL, "https://%.*s/api/v1"},
+    {"github", "https://api.github.com", NULL, "https://raw.githubusercontent.com", "%s/HEAD/%s"},
+    {"gitea", NULL, "https://%.*s/api/v1", NULL, GITEA_FILE_ROUTE},
+    {"forgejo", NULL, "https://%.*s/api/v1", NULL, GITEA_FILE_ROUTE},
 };
 
 typedef struct lookup_failure {
@@ -389,6 +395,84 @@ static cJSON *resolve(const cJSON *argument, cJSON **refusal) {
     const resolver *kind = resolver_named(parsed.resolver);
     return kind == NULL ? resolve_unknown(parsed.resolver, refusal)
                         : resolve_remote(kind, &parsed, id->valuestring, argument, refusal);
+}
+
+static cJSON *repository_argument(const char *id, const char *api_base) {
+    cJSON *argument = cJSON_CreateObject();
+    if (argument == NULL || cJSON_AddStringToObject(argument, "id", id) == NULL ||
+        (api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", api_base) == NULL)) {
+        cJSON_Delete(argument);
+        return NULL;
+    }
+    return argument;
+}
+
+static int file_url(const resolver *kind, const runtime_identity *parsed, const char *api_base, const char *full_name,
+                    const char *path, char *url) {
+    char root[URL_SIZE / 2];
+    char route[URL_SIZE / 2];
+    int root_fits = api_base == NULL && kind->file_root != NULL ? snprintf(root, sizeof root, "%s", kind->file_root) < (int)sizeof root
+                                                                : build_root(kind, parsed, api_base, root);
+    if (!root_fits || snprintf(route, sizeof route, kind->file_route_format, full_name, path) >= (int)sizeof route) {
+        return 0;
+    }
+    strip_trailing_slashes(root);
+    return snprintf(url, URL_SIZE, "%s/%s", root, route) < URL_SIZE;
+}
+
+static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, size_t *length) {
+    uint8_t *body = malloc(BODY_CAPACITY);
+    if (body == NULL) {
+        return RUNTIME_REPO_FILE_OUT_OF_MEMORY;
+    }
+    runtime_fetch_sink sink;
+    runtime_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
+    runtime_fetch_answer answer;
+    memset(&answer, 0, sizeof answer);
+    runtime_fetch_into_memory(url, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    runtime_repo_file_status status = RUNTIME_REPO_FILE_UNAVAILABLE;
+    if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
+        status = RUNTIME_REPO_FILE_READ;
+    } else if (answer.outcome == RUNTIME_FETCH_STATUS && answer.status == 404) {
+        status = RUNTIME_REPO_FILE_ABSENT;
+    } else if (answer.outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
+        status = RUNTIME_REPO_FILE_TOO_LARGE;
+    }
+    free(answer.etag);
+    free(answer.last_modified);
+    if (status == RUNTIME_REPO_FILE_READ) {
+        *content = body;
+        *length = (size_t)sink.bytes;
+    } else {
+        free(body);
+    }
+    return status;
+}
+
+static runtime_repo_file_status read_from_repository(const char *id, const char *api_base, const cJSON *repository,
+                                                     const char *path, uint8_t **content, size_t *length) {
+    runtime_identity parsed;
+    const char *full_name = text_member(repository, "fullName");
+    const resolver *kind = runtime_identity_parse_id(id, &parsed) ? resolver_named(parsed.resolver) : NULL;
+    char url[URL_SIZE];
+    if (kind == NULL || full_name == NULL || !is_owner_and_name(full_name) ||
+        !file_url(kind, &parsed, api_base, full_name, path, url)) {
+        return RUNTIME_REPO_FILE_UNAVAILABLE;
+    }
+    return fetch_file(url, content, length);
+}
+
+runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
+                                                    uint8_t **content, size_t *length, cJSON **refusal) {
+    cJSON *argument = repository_argument(id, api_base);
+    cJSON *repository = argument == NULL ? NULL : resolve(argument, refusal);
+    cJSON_Delete(argument);
+    if (repository == NULL) {
+        return argument == NULL || *refusal == NULL ? RUNTIME_REPO_FILE_OUT_OF_MEMORY : RUNTIME_REPO_FILE_UNAVAILABLE;
+    }
+    runtime_repo_file_status status = read_from_repository(id, api_base, repository, path, content, length);
+    cJSON_Delete(repository);
+    return status;
 }
 
 RUNTIME_EXPORT int32_t runtime_identity_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

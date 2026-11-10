@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
 #include "export.h"
 
 /**
@@ -17,5 +18,28 @@
  * number, so a name someone else has since taken is refused. A local id has no host and answers from its own text.
  */
 RUNTIME_EXPORT int32_t runtime_identity_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
+typedef enum runtime_repo_file_status {
+    RUNTIME_REPO_FILE_READ,
+    RUNTIME_REPO_FILE_ABSENT,
+    RUNTIME_REPO_FILE_TOO_LARGE,
+    RUNTIME_REPO_FILE_UNAVAILABLE,
+    RUNTIME_REPO_FILE_OUT_OF_MEMORY
+} runtime_repo_file_status;
+
+/**
+ * Reads the file at path, from the root of the repo id names, at that repo's default branch, anonymously and within the
+ * same body limit as a lookup. READ fills *content, freed with free, and *length; ABSENT is the host saying the
+ * file is not there; TOO_LARGE is a body above the limit. UNAVAILABLE is anything else, a repo that cannot be
+ * resolved included, and then *refusal is set to the resolve refusal when that was the cause. apiBase aims the read as it aims
+ * identity.resolve.
+ *
+ * @implNote GitHub's file is read from raw.githubusercontent.com at HEAD, which is the default branch and is not
+ * counted against the API's anonymous rate limit; a Gitea or Forgejo host answers the file raw from its API root, and
+ * the default branch when no ref is given. Both measured 2026-11-10 to answer 200 anonymously for a nested path and
+ * 404 for a missing file. The owner/name comes from the lookup's own answer, so a renamed repo is read where it is now.
+ */
+runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
+                                                    uint8_t **content, size_t *length, cJSON **refusal);
 
 #endif
