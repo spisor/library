@@ -406,18 +406,18 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     list_foundation(&base);
     list_plugin(&base, "scripted", "1.0.0", NULL);
     list_library(&base, "koffi", "2.16.3");
-    list_library(&base, "apps", "0.1.2");
+    list_library(&base, "forebay-library", "0.1.2");
     list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     write_catalog(&base);
     served_build served;
     serve_runtime_build(&base, 64, &served);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"scripted\"]}", NULL), "javascript");
-    expect_installed_ids(report, "[\"apps\",\"forebay-host\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\"]", "with its host");
+    expect_installed_ids(report, "[\"forebay-host\",\"forebay-library\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
           spisor_file_exists(text_at(javascript, "executable")));
     cJSON *hint = json_in(base.cache, "hosts/javascript-host.json");
-    expect_json(hint, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"apps\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
+    expect_json(hint, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
     cJSON_Delete(hint);
     runtime_install_use_runtime_build(NULL, NULL, NULL);
     cJSON_Delete(report);
@@ -573,7 +573,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     list_plugin(&base, "scripted", "1.0.0", NULL);
     list_many_plugins(&base);
     list_library(&base, "koffi", "2.16.3");
-    list_library(&base, "apps", "0.1.2");
+    list_library(&base, "forebay-library", "0.1.2");
     list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
     cJSON *application = application_json("claude", "claude", "{}");
     list_loader(&base, "claude-loader", "1.0.0", application, "[]", 0, "[\"keeper\"]");

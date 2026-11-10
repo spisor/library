@@ -27,7 +27,7 @@ The C conventions every spisor and forebay library shares, as one static CMake t
 
 **What it is not.** It is not a library a plugin consumes: it has no declaration and no release of
 its own, and it is reached only by another library's build. It holds no product logic either; what
-an app registry means lives in `forebay/library`. `runtime`, below, is built on it and is a separate
+an app registry means lives in `forebay/forebay-library`. `runtime`, below, is built on it and is a separate
 target.
 
 ## The runtime library
