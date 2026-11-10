@@ -2,15 +2,30 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 void runtime_fetch_sink_start(runtime_fetch_sink *sink, FILE *file, int limited, uint64_t limit) {
     sink->file = file;
+    sink->memory = NULL;
     runtime_sha256_start(&sink->hash);
     sink->bytes = 0;
     sink->limit = limit;
     sink->limited = limited;
     sink->exceeded = 0;
     sink->unwritable = 0;
+}
+
+void runtime_fetch_sink_start_memory(runtime_fetch_sink *sink, uint8_t *buffer, size_t capacity) {
+    runtime_fetch_sink_start(sink, NULL, 1, capacity);
+    sink->memory = buffer;
+}
+
+static int store_bytes(runtime_fetch_sink *sink, const uint8_t *bytes, size_t length) {
+    if (sink->memory != NULL) {
+        memcpy(sink->memory + sink->bytes, bytes, length);
+        return 1;
+    }
+    return fwrite(bytes, 1, length, sink->file) == length;
 }
 
 int runtime_fetch_sink_take(runtime_fetch_sink *sink, const uint8_t *bytes, size_t length) {
@@ -21,7 +36,7 @@ int runtime_fetch_sink_take(runtime_fetch_sink *sink, const uint8_t *bytes, size
         sink->exceeded = 1;
         return 0;
     }
-    if (length > 0 && fwrite(bytes, 1, length, sink->file) != length) {
+    if (length > 0 && !store_bytes(sink, bytes, length)) {
         sink->unwritable = 1;
         return 0;
     }

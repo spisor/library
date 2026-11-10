@@ -78,6 +78,30 @@
             "required": ["folder"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "resolve",
+          "symbol": "runtime_identity_resolve",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "lastKnown": { "type": "string", "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up, and accepted only with the same number." },
+              "apiBase": { "type": "string", "minLength": 1, "description": "Replaces the host's API root, so a test can reach a fixture." }
+            },
+            "required": ["id"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "fullName": { "type": "string" },
+              "defaultBranch": { "type": "string" }
+            },
+            "required": ["name", "fullName"],
+            "additionalProperties": false
+          }
         }
       ]
     },

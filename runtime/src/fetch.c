@@ -392,6 +392,17 @@ static void transfer(const fetch_order *order, url_scheme scheme, runtime_fetch_
     runtime_fetch_over_network(&request, sink, answer);
 }
 
+void runtime_fetch_into_memory(const char *url, unsigned deadline_milliseconds, runtime_fetch_sink *sink,
+                               runtime_fetch_answer *answer) {
+    if (scheme_of(url) != SCHEME_NETWORK) {
+        runtime_fetch_refuse(answer, "serve the lookup over https", "%s is not an https url", url);
+        return;
+    }
+    runtime_fetch_request request = {url, NULL, NULL, deadline_override != 0 ? deadline_override : deadline_milliseconds,
+                                     plain_http_allowed};
+    runtime_fetch_over_network(&request, sink, answer);
+}
+
 static int32_t settle(const fetch_order *order, fetch_files *files, runtime_fetch_sink *sink,
                       const runtime_fetch_answer *answer, uint8_t **out, size_t *out_len) {
     if (answer->outcome == RUNTIME_FETCH_RECEIVED) {

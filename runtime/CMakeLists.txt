@@ -1,7 +1,7 @@
 set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256.c src/file_stream.c src/service_call.c src/identity.c)
+    src/sha256.c src/file_stream.c src/service_call.c src/identity.c src/json_service.c src/catalog_answer.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -85,7 +85,12 @@ target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
 spisor_strict_warnings(runtime_fetch_test_hooks)
 
-set(runtime_catalog_sources src/catalog.c src/catalog_answer.c src/catalog_check.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
+add_library(runtime_identity_resolve OBJECT src/identity_resolve.c)
+target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
+set_target_properties(runtime_identity_resolve PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_identity_resolve)
+
+set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
@@ -134,7 +139,7 @@ set_target_properties(runtime_processes PROPERTIES POSITION_INDEPENDENT_CODE ON 
 spisor_strict_warnings(runtime_processes)
 
 set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c src/hosts.c
-    src/hosts_register.c src/hosts_remove.c src/json_service.c src/lists.c src/loader_installed.c
+    src/hosts_register.c src/hosts_remove.c src/lists.c src/loader_installed.c
     src/loader_standard.c src/loader_application_facts.c src/entry_template.c src/on_path.c src/user_home.c)
 add_library(runtime_hosts OBJECT ${runtime_hosts_sources})
 target_link_libraries(runtime_hosts PUBLIC runtime_objects)
@@ -171,7 +176,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)
