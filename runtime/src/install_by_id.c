@@ -149,7 +149,7 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
     if (is_readable_file_url(url)) {
         runtime_fetch_file_url(url, &sink, &answer);
     } else {
-        runtime_fetch_into_memory(url, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+        runtime_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     }
     int received = answer.outcome == RUNTIME_FETCH_RECEIVED;
     if (received) {

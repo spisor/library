@@ -42,10 +42,11 @@ static int current_time(char text[RUNTIME_CATALOG_TIME_SIZE]) {
     return runtime_catalog_format_time(1000.0 * (double)time(NULL), text);
 }
 
-static cJSON *build_argument(cJSON *list, const char *built) {
+static cJSON *build_argument(cJSON *list, const char *token, const char *built) {
     cJSON *argument = cJSON_CreateObject();
     if (argument == NULL || cJSON_AddStringToObject(argument, "built", built) == NULL ||
         (host_marketplace_lookup_api_base() != NULL && cJSON_AddStringToObject(argument, "apiBase", host_marketplace_lookup_api_base()) == NULL) ||
+        (token != NULL && cJSON_AddStringToObject(argument, "token", token) == NULL) ||
         !cJSON_AddItemToObject(argument, "list", list)) {
         cJSON_Delete(argument);
         cJSON_Delete(list);
@@ -54,14 +55,14 @@ static cJSON *build_argument(cJSON *list, const char *built) {
     return argument;
 }
 
-static cJSON *built_copy(cJSON *list, cJSON **skipped, cJSON **refusal) {
+static cJSON *built_copy(cJSON *list, const char *token, cJSON **skipped, cJSON **refusal) {
     char built[RUNTIME_CATALOG_TIME_SIZE];
     if (!current_time(built)) {
         cJSON_Delete(list);
         *refusal = runtime_refusal("the current time could not be read", "check the machine's clock");
         return NULL;
     }
-    cJSON *answer = host_call(runtime_marketplace_build, build_argument(list, built), refusal);
+    cJSON *answer = host_call(runtime_marketplace_build, build_argument(list, token, built), refusal);
     cJSON *copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
     *skipped = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "skipped");
     cJSON_Delete(answer);
@@ -109,12 +110,24 @@ static int print_wrote(const char *path, const cJSON *copy) {
     return HOST_EXIT_DONE;
 }
 
-static int build_into(const char *list_path, const char *out_path) {
+/** The value of the environment variable the user named, or NULL with *refusal set; the value is never printed. */
+static const char *token_from(const char *variable, cJSON **refusal) {
+    const char *token = variable == NULL ? NULL : getenv(variable);
+    if (variable != NULL && (token == NULL || token[0] == '\0')) {
+        *refusal = refusal_naming("--token-env names a variable that is not set or is empty: ", variable,
+                                  "set the variable to an access token, or leave --token-env out");
+        return NULL;
+    }
+    return token;
+}
+
+static int build_into(const char *list_path, const char *out_path, const char *token_variable) {
     cJSON *refusal = NULL;
     char *absolute = host_absolute_path(out_path);
-    cJSON *list = read_list(list_path, &refusal);
+    const char *token = token_from(token_variable, &refusal);
+    cJSON *list = token_variable != NULL && token == NULL ? NULL : read_list(list_path, &refusal);
     cJSON *skipped = NULL;
-    cJSON *copy = list == NULL ? NULL : built_copy(list, &skipped, &refusal);
+    cJSON *copy = list == NULL ? NULL : built_copy(list, token, &skipped, &refusal);
     int code = HOST_EXIT_DONE;
     if (copy != NULL && !write_copy(copy, absolute == NULL ? out_path : absolute)) {
         refusal = refusal_naming("the copy could not be written to ", out_path, "check that --out names a writable file");
@@ -135,17 +148,17 @@ static int build_into(const char *list_path, const char *out_path) {
 
 /** marketplace build: the generated copy of the marketplace list at --list, written to --out. */
 int host_command_marketplace_build(int count, char **arguments) {
-    host_option options[2] = {{"list", NULL}, {"out", NULL}};
+    host_option options[3] = {{"list", NULL}, {"out", NULL}, {"token-env", NULL}};
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
-    if (!host_parse_options(count, arguments, options, 2, NULL, &problem)) {
+    if (!host_parse_options(count, arguments, options, 3, NULL, &problem)) {
         code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
     } else if (host_last_value(&options[0]) == NULL || host_last_value(&options[1]) == NULL) {
         code = host_misuse("--list <path> and --out <path> are both required");
     } else {
-        code = build_into(host_last_value(&options[0]), host_last_value(&options[1]));
+        code = build_into(host_last_value(&options[0]), host_last_value(&options[1]), host_last_value(&options[2]));
     }
     free(problem);
-    host_free_options(options, 2);
+    host_free_options(options, 3);
     return code;
 }

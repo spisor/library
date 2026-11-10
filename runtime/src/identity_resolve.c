@@ -17,6 +17,8 @@
 #define URL_SIZE 1024
 #define MESSAGE_SIZE 2048
 #define NUMBER_SIZE 32
+#define TOKEN_LIMIT 512
+#define AUTHORIZATION_SIZE (TOKEN_LIMIT + 16)
 
 /**
  * One repo host kind. Exactly one of fixed_root and host_root_format is set: a host kind with one
@@ -163,8 +165,12 @@ static cJSON *parse_body(const uint8_t *body, size_t length, const char *url, cJ
     return repository;
 }
 
-/** A repository answer when the host gives one; NULL with failure->status set for another HTTP status, or failure->refusal set. */
-static cJSON *lookup(const char *url, lookup_failure *failure) {
+/** A repository answer when the host gives one, sending token when it is not NULL; NULL with failure->status set for another HTTP status, or failure->refusal set. */
+static cJSON *lookup(const char *url, const char *token, lookup_failure *failure) {
+    char authorization[AUTHORIZATION_SIZE];
+    if (token != NULL) {
+        snprintf(authorization, sizeof authorization, "token %s", token);
+    }
     uint8_t *body = malloc(BODY_CAPACITY);
     if (body == NULL) {
         return NULL;
@@ -173,7 +179,7 @@ static cJSON *lookup(const char *url, lookup_failure *failure) {
     runtime_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
     runtime_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
-    runtime_fetch_into_memory(url, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    runtime_fetch_into_memory(url, token == NULL ? NULL : authorization, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     cJSON *repository = NULL;
     if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
         repository = parse_body(body, (size_t)sink.bytes, url, &failure->refusal);
@@ -247,7 +253,7 @@ static cJSON *confirm_last_known_name(const cJSON *repository, const char *asked
 
 static cJSON *refuse_rate_limited(const char *url, long status, cJSON **refusal) {
     return refuse(refusal, "wait for the host's rate limit to reset, then try again",
-                  "%s answered HTTP %ld: an anonymous caller is rate limited by this host", url, status);
+                  "%s answered HTTP %ld: the host is rate limiting this caller", url, status);
 }
 
 static cJSON *refuse_unexpected_status(const char *url, long status, cJSON **refusal) {
@@ -273,13 +279,14 @@ static cJSON *settle_name_lookup(const char *url, const lookup_failure *failure,
                                             : refuse_unexpected_status(url, failure->status, refusal);
 }
 
-static cJSON *resolve_by_last_known_name(const char *root, const char *asked, const char *last_known, cJSON **refusal) {
+static cJSON *resolve_by_last_known_name(const char *root, const char *asked, const char *last_known, const char *token,
+                                         cJSON **refusal) {
     char url[URL_SIZE];
     if (!url_for(root, "repos", last_known, url)) {
         return refuse_too_long(refusal);
     }
     lookup_failure failure = {0, NULL};
-    cJSON *repository = lookup(url, &failure);
+    cJSON *repository = lookup(url, token, &failure);
     cJSON *answer = NULL;
     if (repository != NULL) {
         answer = confirm_last_known_name(repository, asked, last_known, url, refusal);
@@ -311,20 +318,21 @@ static cJSON *settle_number_lookup(const char *url, const lookup_failure *failur
     return refuse_unexpected_status(url, failure->status, refusal);
 }
 
-static cJSON *resolve_by_number(const char *root, const char *asked, const char *last_known, cJSON **refusal) {
+static cJSON *resolve_by_number(const char *root, const char *asked, const char *last_known, const char *token,
+                                cJSON **refusal) {
     char url[URL_SIZE];
     if (!url_for(root, "repositories", asked, url)) {
         return refuse_too_long(refusal);
     }
     lookup_failure failure = {0, NULL};
-    cJSON *repository = lookup(url, &failure);
+    cJSON *repository = lookup(url, token, &failure);
     cJSON *answer = NULL;
     if (repository != NULL) {
         answer = confirm_by_number(repository, asked, url, refusal);
     } else if (failure.refusal != NULL) {
         *refusal = failure.refusal;
     } else if (last_known != NULL && cannot_be_asked_by_number(failure.status)) {
-        answer = resolve_by_last_known_name(root, asked, last_known, refusal);
+        answer = resolve_by_last_known_name(root, asked, last_known, token, refusal);
     } else if (failure.status != 0) {
         answer = settle_number_lookup(url, &failure, asked, refusal);
     }
@@ -347,10 +355,27 @@ static int host_shape_fits(const resolver *kind, const runtime_identity *parsed)
     return (kind->fixed_root != NULL) == (parsed->host.start == NULL);
 }
 
+static int is_token(const cJSON *token) {
+    if (!cJSON_IsString(token) || token->valuestring[0] == '\0' || strlen(token->valuestring) > TOKEN_LIMIT) {
+        return 0;
+    }
+    for (const unsigned char *at = (const unsigned char *)token->valuestring; *at != '\0'; at++) {
+        if (*at <= 0x20 || *at >= 0x7F) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parsed, const char *id,
                              const cJSON *argument, cJSON **refusal) {
     const cJSON *api_base = cJSON_GetObjectItemCaseSensitive(argument, "apiBase");
     const cJSON *last_known = cJSON_GetObjectItemCaseSensitive(argument, "lastKnown");
+    const cJSON *token = cJSON_GetObjectItemCaseSensitive(argument, "token");
+    if (token != NULL && !is_token(token)) {
+        return refuse(refusal, "send token as the access token itself, on one line with no spaces",
+                      "the token is not usable");
+    }
     if (api_base != NULL && !runtime_fetch_plain_http_is_allowed()) {
         return refuse(refusal, "leave apiBase out: the host's own API address is used",
                       "apiBase is only honoured by the test build");
@@ -369,7 +394,8 @@ static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parse
     strip_trailing_slashes(root);
     char *asked = copy_part(parsed->number);
     cJSON *answer = asked == NULL ? NULL
-                                  : resolve_by_number(root, asked, last_known == NULL ? NULL : last_known->valuestring, refusal);
+                                  : resolve_by_number(root, asked, last_known == NULL ? NULL : last_known->valuestring,
+                                                    token == NULL ? NULL : token->valuestring, refusal);
     free(asked);
     return answer;
 }
@@ -429,7 +455,7 @@ static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, s
     runtime_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
     runtime_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
-    runtime_fetch_into_memory(url, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    runtime_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     runtime_repo_file_status status = RUNTIME_REPO_FILE_UNAVAILABLE;
     if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
         status = RUNTIME_REPO_FILE_READ;

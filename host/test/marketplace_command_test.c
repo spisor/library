@@ -11,6 +11,9 @@
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
 #define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
 
+#define TOKEN "tok-1234567890abcdef"
+#define TOKEN_VARIABLE "SPISOR_MARKETPLACE_TEST_TOKEN"
+#define AUTHORIZATION_LINE "Authorization: token " TOKEN
 static char base_folder[1024];
 
 static char *in_base(const char *rest) {
@@ -145,6 +148,87 @@ static void the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal(void) {
     finish_case();
 }
 
+static void set_token_variable(const char *value) {
+#if defined(_WIN32)
+    _putenv_s(TOKEN_VARIABLE, value == NULL ? "" : value);
+#elif defined(__unix__) || defined(__APPLE__)
+    if (value == NULL) {
+        unsetenv(TOKEN_VARIABLE);
+    } else {
+        setenv(TOKEN_VARIABLE, value, 1);
+    }
+#endif
+}
+
+static int run_command_with_token(const char *list_path, const char *out_path) {
+    const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE};
+    return host_command_marketplace_build(6, (char **)arguments);
+}
+
+static void the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere(void) {
+    start_case("token");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\"}]}");
+    char *list = in_base("list.json");
+    char *out = in_base("copy.json");
+    set_token_variable(TOKEN);
+    CHECK(run_command_with_token(list, out) == 0);
+    set_token_variable(NULL);
+    char *content = text_in(base_folder, "copy.json");
+    CHECK(strstr(content, TOKEN) == NULL && strstr(content, "uthorization") == NULL);
+    free(content);
+    free(out);
+    free(list);
+    finish_case();
+}
+
+static void a_variable_that_is_not_set_is_refused_and_writes_nothing(void) {
+    start_case("unset-token");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    char *list = in_base("list.json");
+    char *out = in_base("fresh/copy.json");
+    set_token_variable(NULL);
+    CHECK(run_command_with_token(list, out) == 1);
+    CHECK(!exists_in(base_folder, "fresh"));
+    free(out);
+    free(list);
+    finish_case();
+}
+
+static int run_binary_with_token(const char *list_path, program *run) {
+    prepare_program(run, base_folder, "token");
+    const char *words[] = {"marketplace", "build", "--list", list_path, "--out", "unused/copy.json", "--token-env", TOKEN_VARIABLE, NULL};
+    cJSON *arguments = strings_of(words);
+    cJSON *environment = cJSON_CreateObject();
+    copy_system_variable(environment, "SystemRoot");
+    copy_system_variable(environment, "PATH");
+    cJSON_AddStringToObject(environment, TOKEN_VARIABLE, TOKEN);
+    program_start(run, FOREBAY_HOST_PATH, arguments, environment, base_folder, 1);
+    cJSON_Delete(environment);
+    cJSON_Delete(arguments);
+    return program_finish(run, 60000);
+}
+
+static void the_binary_never_prints_the_token(void) {
+    start_case("binary-token");
+    write_in(base_folder, "local.json", "{\"format\":1,\"entries\":[{\"id\":\"local:a\"}]}");
+    char *list = in_base("local.json");
+    program run;
+    CHECK(run_binary_with_token(list, &run) == 1);
+    expect_contains(run.err, "local:a is a local id", "the refusal");
+    CHECK(strstr(run.err, TOKEN) == NULL && strstr(run.out, TOKEN) == NULL);
+    program_free(&run);
+    free(list);
+    finish_case();
+}
+
+static int count_of(const char *text, const char *fragment) {
+    int count = 0;
+    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
+        count++;
+    }
+    return count;
+}
+
 static void run_against_the_server(void) {
     static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
     static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
@@ -168,8 +252,13 @@ static void run_against_the_server(void) {
     writes_the_copy_atomically_and_exits_0();
     a_skipped_entry_is_reported_and_the_copy_still_written();
     a_refusal_exits_non_zero_and_writes_nothing();
+    the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere();
+    a_variable_that_is_not_set_is_refused_and_writes_nothing();
     host_marketplace_aim_lookups(NULL);
-    free(http_fixture_stop(server));
+    char *requests = http_fixture_stop(server);
+    CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 2);
+    CHECK(requests != NULL && count_of(requests, "uthorization") == 2);
+    free(requests);
 }
 
 #if !defined(_WIN32)
@@ -191,5 +280,6 @@ int main(void) {
     answers_2_when_the_list_or_the_out_is_missing();
     prints_a_name_with_its_control_characters_escaped();
     the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal();
+    the_binary_never_prints_the_token();
     return check_summary("marketplace_command_test");
 }

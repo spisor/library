@@ -17,6 +17,7 @@ typedef struct build_request {
     const cJSON *list;
     const char *built;
     const char *api_base;
+    const char *token;
 } build_request;
 
 static void refuse_with(cJSON **refusal, const char *fix, const char *format, const char *first, const char *second,
@@ -41,11 +42,21 @@ static int read_api_base(const cJSON *argument, const char **api_base, cJSON **r
     return 1;
 }
 
+static int read_token(const cJSON *argument, const char **token, cJSON **refusal) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "token");
+    if (item != NULL && !cJSON_IsString(item)) {
+        *refusal = runtime_refusal("token is not text", "leave token out, or send the access token itself");
+        return 0;
+    }
+    *token = item == NULL ? NULL : item->valuestring;
+    return 1;
+}
+
 static int read_request(const cJSON *argument, build_request *request, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
     request->list = cJSON_GetObjectItemCaseSensitive(argument, "list");
     request->built = text_of(argument, "built");
-    if (!read_api_base(argument, &request->api_base, refusal)) {
+    if (!read_api_base(argument, &request->api_base, refusal) || !read_token(argument, &request->token, refusal)) {
         return 0;
     }
     if (request->built == NULL || !runtime_marketplace_is_built_time(request->built)) {
@@ -99,10 +110,37 @@ static int check_listed_ids(const cJSON *entries, cJSON **refusal) {
     return 1;
 }
 
-static cJSON *resolve_argument(const char *id, const char *api_base) {
+static int is_same_text(runtime_identity_part left, runtime_identity_part right) {
+    return left.length == right.length && (left.length == 0 || strncmp(left.start, right.start, left.length) == 0);
+}
+
+static int names_same_host(const runtime_identity *left, const runtime_identity *right) {
+    return is_same_text(left->resolver, right->resolver) && is_same_text(left->host, right->host);
+}
+
+/** One token belongs to one host, so a list that sends it must not name another host for it to reach. */
+static int check_token_reaches_one_host(const cJSON *entries, cJSON **refusal) {
+    runtime_identity first;
+    const char *first_id = entries->child == NULL ? NULL : text_of(entries->child, "id");
+    if (first_id == NULL || !runtime_identity_parse_id(first_id, &first)) {
+        return 1;
+    }
+    for (const cJSON *entry = entries->child->next; entry != NULL; entry = entry->next) {
+        runtime_identity parsed;
+        if (runtime_identity_parse_id(text_of(entry, "id"), &parsed) && !names_same_host(&first, &parsed)) {
+            refuse_with(refusal, "build one list for each host, so the token goes only to the host it belongs to",
+                        "%s and %s name more than one host, and a token is sent to one", first_id, text_of(entry, "id"), "");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static cJSON *resolve_argument(const char *id, const build_request *request) {
     cJSON *argument = cJSON_CreateObject();
     if (argument == NULL || cJSON_AddStringToObject(argument, "id", id) == NULL ||
-        (api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", api_base) == NULL)) {
+        (request->api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", request->api_base) == NULL) ||
+        (request->token != NULL && cJSON_AddStringToObject(argument, "token", request->token) == NULL)) {
         cJSON_Delete(argument);
         return NULL;
     }
@@ -110,9 +148,9 @@ static cJSON *resolve_argument(const char *id, const char *api_base) {
 }
 
 /** What identity.resolve answers for id, or NULL with *refusal naming id and the resolve refusal's fix. */
-static cJSON *resolved(const char *id, const char *api_base, cJSON **refusal) {
+static cJSON *resolved(const char *id, const build_request *request, cJSON **refusal) {
     cJSON *lookup_refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(id, api_base), &lookup_refusal);
+    cJSON *answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(id, request), &lookup_refusal);
     if (answer == NULL && runtime_is_refusal(lookup_refusal)) {
         const char *fix = text_of(lookup_refusal, "fix");
         refuse_with(refusal, fix != NULL ? fix : "check the id and try again", "%s cannot be looked up: %s", id,
@@ -242,11 +280,11 @@ typedef struct entry_result {
 } entry_result;
 
 /** The copy of one list entry as its repository is now; a name that is no import name skips it, a refusal or failure fails it. */
-static entry_result copied_entry(const cJSON *entry, const char *api_base, cJSON *skipped, cJSON **refusal) {
+static entry_result copied_entry(const cJSON *entry, const build_request *request, cJSON *skipped, cJSON **refusal) {
     entry_result result = {ENTRY_FAILED, NULL};
     const char *id = text_of(entry, "id");
     char *repository_id = repository_id_of(id);
-    cJSON *answer = repository_id == NULL ? NULL : resolved(repository_id, api_base, refusal);
+    cJSON *answer = repository_id == NULL ? NULL : resolved(repository_id, request, refusal);
     const char *folder = folder_name_of(id);
     const char *source_name = answer == NULL ? NULL : (folder != NULL ? folder : text_of(answer, "name"));
     const char *full_name = answer == NULL ? NULL : text_of(answer, "fullName");
@@ -269,10 +307,10 @@ static int adds_copied_entry(cJSON *copied, cJSON *copy, cJSON **refusal) {
     return check_name_is_free(copied, copy, refusal) && cJSON_AddItemToArray(copied, copy);
 }
 
-static cJSON *copied_entries(const cJSON *entries, const char *api_base, cJSON *skipped, cJSON **refusal) {
+static cJSON *copied_entries(const cJSON *entries, const build_request *request, cJSON *skipped, cJSON **refusal) {
     cJSON *copied = cJSON_CreateArray();
     for (const cJSON *entry = entries->child; copied != NULL && entry != NULL; entry = entry->next) {
-        entry_result result = copied_entry(entry, api_base, skipped, refusal);
+        entry_result result = copied_entry(entry, request, skipped, refusal);
         if (result.outcome == ENTRY_SKIPPED) {
             continue;
         }
@@ -316,11 +354,11 @@ static cJSON *build(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     const cJSON *entries = cJSON_GetObjectItemCaseSensitive(request.list, "entries");
-    if (!check_listed_ids(entries, refusal)) {
+    if (!check_listed_ids(entries, refusal) || (request.token != NULL && !check_token_reaches_one_host(entries, refusal))) {
         return NULL;
     }
     cJSON *skipped = cJSON_CreateArray();
-    cJSON *copied = skipped == NULL ? NULL : copied_entries(entries, request.api_base, skipped, refusal);
+    cJSON *copied = skipped == NULL ? NULL : copied_entries(entries, &request, skipped, refusal);
     if (copied == NULL) {
         cJSON_Delete(skipped);
         return NULL;

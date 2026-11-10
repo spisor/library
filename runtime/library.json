@@ -87,7 +87,8 @@
             "type": "object",
             "properties": {
               "id": { "type": "string" },
-              "lastKnown": { "type": "string", "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up, and accepted only with the same number." }
+              "lastKnown": { "type": "string", "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up, and accepted only with the same number." },
+              "token": { "type": "string", "description": "An access token for the host the id names, sent to that host only, for a host that wants one to look a repository up by number." }
             },
             "required": ["id"]
           },
@@ -177,7 +178,8 @@
             "type": "object",
             "properties": {
               "list": { "type": "object", "description": "A marketplace list as marketplace.schema.json describes it." },
-              "built": { "type": "string", "description": "The RFC 3339 time the copy states, from the caller so the same inputs build the same copy." }
+              "built": { "type": "string", "description": "The RFC 3339 time the copy states, from the caller so the same inputs build the same copy." },
+              "token": { "type": "string", "description": "An access token sent to the host the list's ids name and to no other; refused for a list that names more than one host." }
             },
             "required": ["list", "built"]
           },

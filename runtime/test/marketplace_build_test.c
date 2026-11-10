@@ -245,6 +245,77 @@ static void an_empty_list_builds_an_empty_copy(void) {
     cJSON_Delete(answer.tree);
 }
 
+#define TOKEN "tok-1234567890abcdef"
+#define AUTHORIZATION_LINE "Authorization: token " TOKEN
+static catalog_answer build_with_token(const char *list_json, const char *token) {
+    char api_base[128];
+    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "list", parsed(list_json));
+    cJSON_AddStringToObject(argument, "built", BUILT);
+    cJSON_AddStringToObject(argument, "apiBase", api_base);
+    cJSON_AddStringToObject(argument, "token", token);
+    return call_catalog(runtime_marketplace_build, argument);
+}
+
+static int count_of(const char *text, const char *fragment) {
+    int count = 0;
+    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
+        count++;
+    }
+    return count;
+}
+
+static void a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal(void) {
+    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
+    static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
+    const http_route routes[] = {ROUTE("/repositories/1", 200, runtime), ROUTE("/repositories/2", 200, weivel),
+                                 EMPTY_ROUTE("/repositories/60", 404)};
+    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
+    CHECK(server != NULL);
+    if (server == NULL) {
+        return;
+    }
+    server_port = http_fixture_port(server);
+    catalog_answer built = build_with_token(
+        "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\"}]}", TOKEN);
+    CHECK(built.status == SPISOR_STATUS_SUCCESS);
+    char *printed = cJSON_PrintUnformatted(built.tree);
+    CHECK(strstr(printed, TOKEN) == NULL);
+    cJSON_free(printed);
+    cJSON_Delete(built.tree);
+    catalog_answer refused =
+        build_with_token("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:1\"}]}", TOKEN);
+    CHECK(expect_refusal(refused, "twice", "a refusal with a token"));
+    printed = cJSON_PrintUnformatted(refused.tree);
+    CHECK(strstr(printed, TOKEN) == NULL);
+    cJSON_free(printed);
+    cJSON_Delete(refused.tree);
+    char *requests = http_fixture_stop(server);
+    CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 2 && count_of(requests, "GET /repositories/") == 2);
+    free(requests);
+}
+
+static void a_token_is_refused_for_a_list_naming_two_hosts_before_any_lookup(void) {
+    const http_route routes[] = {EMPTY_ROUTE("/repositories/1", 404)};
+    http_fixture *server = http_fixture_start(routes, 1);
+    CHECK(server != NULL);
+    if (server == NULL) {
+        return;
+    }
+    server_port = http_fixture_port(server);
+    const char *lists[] = {"{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"gitea@codeberg.org:3\"}]}",
+                           "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"},{\"id\":\"gitea@gitea.example:4\"}]}"};
+    for (size_t index = 0; index < 2; index++) {
+        catalog_answer answer = build_with_token(lists[index], TOKEN);
+        CHECK(expect_refusal(answer, "more than one host", lists[index]));
+        cJSON_Delete(answer.tree);
+    }
+    char *requests = http_fixture_stop(server);
+    CHECK(requests != NULL && requests[0] == 0);
+    free(requests);
+}
+
 static void run_against_the_server(void) {
     static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
     static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
@@ -453,6 +524,8 @@ int main(void) {
     run_against_the_server();
     a_list_over_the_limit_is_refused_before_any_lookup();
     a_refusal_that_needs_no_lookup_makes_none();
+    a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal();
+    a_token_is_refused_for_a_list_naming_two_hosts_before_any_lookup();
     the_list_checker_follows_the_schema();
     the_copy_checker_follows_the_schema();
     the_time_and_full_name_checks_follow_their_patterns();

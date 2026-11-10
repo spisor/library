@@ -22,7 +22,7 @@
     "  forebay-host hook <loader-id> <event>\n"                                                                       \
     "  forebay-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                    \
     "[--library <id>=<directory>@<platform>]... --out <directory>\n"                                                  \
-    "  forebay-host marketplace build --list <path> --out <path>\n"
+    "  forebay-host marketplace build --list <path> --out <path> [--token-env <variable>]\n"
 
 #if defined(_WIN32)
 

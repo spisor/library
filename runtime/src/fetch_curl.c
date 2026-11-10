@@ -33,6 +33,7 @@ enum {
     CURLOPT_FOLLOWLOCATION = 52,
     CURLOPT_MAXREDIRS = 68,
     CURLOPT_NOSIGNAL = 99,
+    CURLOPT_UNRESTRICTED_AUTH = 105,
     CURLOPT_TIMEOUT_MS = 155,
     CURLOPT_CONNECTTIMEOUT_MS = 156,
     CURLOPT_PROTOCOLS = 181,
@@ -240,12 +241,12 @@ static size_t take_body(char *bytes, size_t size, size_t count, void *context) {
     return runtime_fetch_sink_take(state->sink, (const uint8_t *)bytes, length) ? length : 0;
 }
 
-static curl_list *conditional_headers(const curl_api *api, const runtime_fetch_request *request, int *built) {
+static curl_list *request_headers(const curl_api *api, const runtime_fetch_request *request, int *built) {
     curl_list *headers = NULL;
     *built = 1;
-    const char *names[2] = {"If-None-Match: ", "If-Modified-Since: "};
-    const char *values[2] = {request->etag, request->last_modified};
-    for (size_t index = 0; index < 2 && *built; index++) {
+    const char *names[3] = {"If-None-Match: ", "If-Modified-Since: ", "Authorization: "};
+    const char *values[3] = {request->etag, request->last_modified, request->authorization};
+    for (size_t index = 0; index < 3 && *built; index++) {
         if (values[index] == NULL) {
             continue;
         }
@@ -274,6 +275,7 @@ static int configure(const curl_api *api, curl_handle *curl, const runtime_fetch
            api->easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, protocols) == CURLE_OK &&
            api->easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
            api->easy_setopt(curl, CURLOPT_MAXREDIRS, MAXIMUM_REDIRECTS) == CURLE_OK &&
+           api->easy_setopt(curl, CURLOPT_UNRESTRICTED_AUTH, 0L) == CURLE_OK &&
            api->easy_setopt(curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
            api->easy_setopt(curl, CURLOPT_NOPROGRESS, 1L) == CURLE_OK &&
            api->easy_setopt(curl, CURLOPT_TIMEOUT_MS, deadline) == CURLE_OK &&
@@ -333,7 +335,7 @@ static void settle(const curl_api *api, const runtime_fetch_request *request, in
 static void perform(const curl_api *api, curl_handle *curl, const runtime_fetch_request *request, transfer *state) {
     char error_buffer[ERROR_BUFFER_SIZE] = "";
     int built = 0;
-    curl_list *headers = conditional_headers(api, request, &built);
+    curl_list *headers = request_headers(api, request, &built);
     if (!built || !configure(api, curl, request, state, headers, error_buffer)) {
         runtime_fetch_refuse(state->answer, "report this as a defect in the runtime library",
                              "libcurl refused the options for %s", request->url);
