@@ -92,6 +92,13 @@ if(WIN32)
     target_link_libraries(marketplace_build_test PRIVATE Ws2_32)
 endif()
 
+runtime_test(marketplace_sources_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_reading>
+    $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(marketplace_sources_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(marketplace_sources_test PRIVATE Ws2_32)
+endif()
+
 runtime_test(install_warnings_test $<TARGET_OBJECTS:runtime_secret_store>)
 
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>
