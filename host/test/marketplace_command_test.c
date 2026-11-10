@@ -3,6 +3,7 @@
 #include "fetch_hooks.h"
 #include "host_commands.h"
 #include "host_output.h"
+#include "marketplace_lookup.h"
 #include "http_fixture.h"
 #include "marketplace_check.h"
 
@@ -57,6 +58,20 @@ static void writes_the_copy_atomically_and_exits_0(void) {
     CHECK(run_command(list, out) == 0);
     CHECK(count_files_in(published) == 1);
     free(published);
+    cJSON_Delete(copy);
+    free(out);
+    free(list);
+    finish_case();
+}
+
+static void a_skipped_entry_is_reported_and_the_copy_still_written(void) {
+    start_case("skipped");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:2\"},{\"id\":\"github:6\"}]}");
+    char *list = in_base("list.json");
+    char *out = in_base("copy.json");
+    CHECK(run_command(list, out) == 0);
+    cJSON *copy = json_in(base_folder, "copy.json");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(copy, "entries")) == 1);
     cJSON_Delete(copy);
     free(out);
     free(list);
@@ -133,12 +148,14 @@ static void the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal(void) {
 static void run_against_the_server(void) {
     static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
     static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
+    static const char reserved[] = REPOSITORY("6", "Con", "spisor/Con");
     static const char another_runtime[] = REPOSITORY("4", "runtime", "other/runtime");
     const http_route routes[] = {
         ROUTE("/repositories/1", 200, runtime),
         ROUTE("/repositories/2", 200, weivel),
         ROUTE("/repositories/4", 200, another_runtime),
-        {"/repositories/60", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        ROUTE("/repositories/6", 200, reserved),
+    {"/repositories/60", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
     CHECK(server != NULL);
@@ -149,6 +166,7 @@ static void run_against_the_server(void) {
     snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
     host_marketplace_aim_lookups(api_base);
     writes_the_copy_atomically_and_exits_0();
+    a_skipped_entry_is_reported_and_the_copy_still_written();
     a_refusal_exits_non_zero_and_writes_nothing();
     host_marketplace_aim_lookups(NULL);
     free(http_fixture_stop(server));

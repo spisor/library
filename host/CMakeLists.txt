@@ -18,6 +18,15 @@ target_include_directories(host_objects PUBLIC src ${PROJECT_SOURCE_DIR}/runtime
 target_link_libraries(host_objects PUBLIC runtime_objects)
 spisor_strict_warnings(host_objects)
 
+add_library(host_marketplace_lookup OBJECT src/marketplace_lookup.c)
+target_include_directories(host_marketplace_lookup PRIVATE src)
+spisor_strict_warnings(host_marketplace_lookup)
+
+add_library(host_marketplace_lookup_test_hook OBJECT src/marketplace_lookup.c)
+target_include_directories(host_marketplace_lookup_test_hook PRIVATE src)
+target_compile_definitions(host_marketplace_lookup_test_hook PRIVATE HOST_MARKETPLACE_TEST_HOOK)
+spisor_strict_warnings(host_marketplace_lookup_test_hook)
+
 add_library(host_ready_timeout OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout PRIVATE src)
 spisor_strict_warnings(host_ready_timeout)
@@ -33,7 +42,7 @@ set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARG
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts>)
 set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry>
-    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout>)
+    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>)
 
 function(host_executable target output_name)
     add_executable(${target} ${ARGN})

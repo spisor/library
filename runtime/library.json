@@ -183,8 +183,15 @@
           },
           "result": {
             "type": "object",
-            "properties": { "copy": { "type": "object", "description": "The generated copy, as marketplace-copy.schema.json describes it." } },
-            "required": ["copy"],
+            "properties": {
+              "copy": { "type": "object", "description": "The generated copy, as marketplace-copy.schema.json describes it." },
+              "skipped": {
+                "type": "array",
+                "description": "Entries left out because the repo name cannot be made an import name.",
+                "items": { "type": "object", "properties": { "id": { "type": "string" }, "reason": { "type": "string" } }, "required": ["id", "reason"] }
+              }
+            },
+            "required": ["copy", "skipped"],
             "additionalProperties": false
           }
         }

@@ -7,20 +7,23 @@
 #include "export.h"
 
 /**
- * marketplace.build: {list, built, apiBase?} answers {copy}, the generated copy of a marketplace list that
- * marketplace.schema.json describes: each entry carries the name, fullName and lastKnown identity.resolve answers
- * for its id, the list's alias in place of the name when one is set, and the list's description and categories.
- * built is the RFC 3339 time the copy states, taken from the caller so the same list and answers build the same
- * copy. apiBase is honoured only as identity.resolve honours it.
+ * marketplace.build: {list, built, apiBase?} answers {copy, skipped}, the generated copy of a marketplace list that
+ * marketplace.schema.json describes. Each entry carries the fullName and lastKnown (the same) that identity.resolve
+ * answers for the repo its id names, and a name: the list's alias when one is set, otherwise the repo's name, or the
+ * last segment of the folder when the id names a folder below the repo, derived as an import name. The list's
+ * description and categories are carried. built is the RFC 3339 time the copy states, taken from the caller so the
+ * same list and answers build the same copy. apiBase is honoured only as identity.resolve honours it.
  *
- * Refuses, with a fix, a list that breaks its schema, a built that is not RFC 3339, an id that is local, below a repo,
- * listed twice or that does not resolve, a repo name that is no import name and has no alias, and two entries
- * of one name once aliases apply, naming both ids. The shape, local, below-a-repo and duplicate refusals come before
- * any lookup.
+ * A name is derived by lowercasing it, turning each run of characters outside [a-z0-9.-] into one "-", reducing every
+ * run of separators to its first and trimming "-" and "." at both ends. An entry whose derived name is still no import
+ * name (empty, or reserved such as "con" or "package") is left out of the copy and listed in skipped as {id, reason}.
  *
- * @implNote Names are compared as written, since an import name is lowercase. A repo name outside the import name
- * grammar is refused rather than altered, because the copy schema holds a name to that grammar and an altered name
- * would not be the repo's.
+ * Refuses, with a fix, a list that breaks its schema, a built that is not RFC 3339, an id that is local, listed twice
+ * or that does not resolve, and two entries of one name once names are derived and aliases apply, naming both ids.
+ * The shape, local and duplicate refusals come before any lookup.
+ *
+ * @implNote Names are compared as written, since an import name is lowercase. A repo is looked up by the id up to its
+ * folder, so a renamed repo never changes the list.
  */
 RUNTIME_EXPORT int32_t runtime_marketplace_build(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
