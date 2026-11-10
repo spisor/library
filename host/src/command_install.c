@@ -9,6 +9,7 @@
 #include "host_options.h"
 #include "host_output.h"
 #include "install_ecosystem.h"
+#include "install_warning_report.h"
 #include "terminal_question.h"
 
 #define CHOICE_REFUSAL_PREFIX "the choice"
@@ -158,6 +159,7 @@ static int install_through(const host_context *context, const cJSON *sources, co
         return host_refuse(refusal);
     }
     host_print_json(report);
+    host_print_install_warnings(context, report);
     cJSON *placed = place_boot_stub(context);
     const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
     int code = placed != NULL ? host_refuse(placed) : HOST_EXIT_DONE;
