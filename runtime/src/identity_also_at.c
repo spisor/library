@@ -77,23 +77,26 @@ static int is_counted_copy(const cJSON *file, const char *id) {
     return is_well_formed(file) && lists(file, id);
 }
 
-static cJSON *answer_of(const cJSON *ids, const char *primary, int primary_confirmed, int start_file_malformed) {
+typedef enum start_file_state { START_FILE_USABLE, START_FILE_MALFORMED, START_FILE_UNAVAILABLE } start_file_state;
+
+static cJSON *answer_of(const cJSON *ids, const char *primary, int primary_confirmed, start_file_state state) {
     cJSON *answer = cJSON_CreateObject();
     if (answer == NULL || cJSON_AddItemToObject(answer, "ids", cJSON_Duplicate(ids, 1)) == 0 ||
         cJSON_AddStringToObject(answer, "primary", primary) == NULL ||
         cJSON_AddBoolToObject(answer, "primaryConfirmed", primary_confirmed) == NULL ||
-        (start_file_malformed && cJSON_AddTrueToObject(answer, "startFileMalformed") == NULL)) {
+        (state == START_FILE_MALFORMED && cJSON_AddTrueToObject(answer, "startFileMalformed") == NULL) ||
+        (state == START_FILE_UNAVAILABLE && cJSON_AddTrueToObject(answer, "startFileUnavailable") == NULL)) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-static cJSON *only_this_copy(const char *id, int start_file_malformed) {
+static cJSON *only_this_copy(const char *id, start_file_state state) {
     cJSON *ids = cJSON_CreateArray();
     cJSON *answer = NULL;
     if (ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(id)) != 0) {
-        answer = answer_of(ids, id, 1, start_file_malformed);
+        answer = answer_of(ids, id, state != START_FILE_UNAVAILABLE, state);
     }
     cJSON_Delete(ids);
     return answer;
@@ -144,13 +147,16 @@ static cJSON *counted_ids(const char *id, const cJSON *start_file, const cJSON *
 static cJSON *agree_on(const char *id, const cJSON *files, cJSON **refusal) {
     const cJSON *start_file = cJSON_GetObjectItemCaseSensitive(files, id);
     if (start_file == NULL || cJSON_IsNull(start_file)) {
-        return only_this_copy(id, 0);
+        return only_this_copy(id, START_FILE_USABLE);
+    }
+    if (cJSON_IsFalse(start_file)) {
+        return only_this_copy(id, START_FILE_UNAVAILABLE);
     }
     if (!is_well_formed(start_file)) {
-        return only_this_copy(id, 1);
+        return only_this_copy(id, START_FILE_MALFORMED);
     }
     cJSON *ids = counted_ids(id, start_file, files, refusal);
-    cJSON *answer = ids == NULL ? NULL : answer_of(ids, primary_of(start_file), contains(ids, primary_of(start_file)), 0);
+    cJSON *answer = ids == NULL ? NULL : answer_of(ids, primary_of(start_file), contains(ids, primary_of(start_file)), START_FILE_USABLE);
     cJSON_Delete(ids);
     return answer;
 }
@@ -185,8 +191,8 @@ static cJSON *parsed_file(const uint8_t *content, size_t length) {
 }
 
 /**
- * The also-at file of one copy as a files map entry: its parsed content, a marker when it does not parse, or null
- * when it is absent or cannot be reached. NULL when memory ran out, or with *refusal set when the id could not be
+ * The also-at file of one copy as a files map entry: its parsed content, a marker when it does not parse, null
+ * when the host says it is absent, or false when the read failed any other way. NULL when memory ran out, or with *refusal set when the id could not be
  * resolved, which only the id we started from treats as more than an unreachable copy.
  */
 static cJSON *read_copy(const char *id, const char *api_base, cJSON **refusal) {
@@ -198,8 +204,10 @@ static cJSON *read_copy(const char *id, const char *api_base, cJSON **refusal) {
         file = parsed_file(content, length);
     } else if (status == RUNTIME_REPO_FILE_TOO_LARGE) {
         file = unparseable_file();
-    } else if (status != RUNTIME_REPO_FILE_OUT_OF_MEMORY) {
+    } else if (status == RUNTIME_REPO_FILE_ABSENT) {
         file = cJSON_CreateNull();
+    } else if (status == RUNTIME_REPO_FILE_UNAVAILABLE) {
+        file = cJSON_CreateFalse();
     }
     free(content);
     return file;

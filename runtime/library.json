@@ -123,7 +123,8 @@
               "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 16 },
               "primary": { "type": "string" },
               "primaryConfirmed": { "type": "boolean" },
-              "startFileMalformed": { "type": "boolean" }
+              "startFileMalformed": { "type": "boolean" },
+              "startFileUnavailable": { "type": "boolean" }
             },
             "required": ["ids", "primary", "primaryConfirmed"],
             "additionalProperties": false
@@ -140,7 +141,8 @@
               "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 16 },
               "primary": { "type": "string" },
               "primaryConfirmed": { "type": "boolean" },
-              "startFileMalformed": { "type": "boolean" }
+              "startFileMalformed": { "type": "boolean" },
+              "startFileUnavailable": { "type": "boolean" }
             },
             "required": ["ids", "primary", "primaryConfirmed"],
             "additionalProperties": false

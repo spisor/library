@@ -175,6 +175,27 @@ static void an_id_outside_the_grammar_is_left_out(void) {
     cJSON_Delete(answer.tree);
 }
 
+static void a_start_file_that_could_not_be_read_is_not_a_confirmed_primary(void) {
+    catalog_answer answer = agree("github:1", "{\"github:1\":false}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ids_are(answer, "[\"github:1\"]"));
+    CHECK(primary_is(answer, "github:1"));
+    CHECK(flag_is(answer, "primaryConfirmed", 0));
+    CHECK(flag_is(answer, "startFileUnavailable", 1));
+    CHECK(flag_is(answer, "startFileMalformed", -1));
+    cJSON_Delete(answer.tree);
+}
+
+static void a_listed_copy_that_could_not_be_read_is_left_out(void) {
+    catalog_answer answer = agree("github:1",
+                                  "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]},"
+                                  "\"github:2\":false}");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ids_are(answer, "[\"github:1\"]"));
+    CHECK(flag_is(answer, "startFileUnavailable", -1));
+    cJSON_Delete(answer.tree);
+}
+
 static void a_malformed_start_file_is_reported_in_the_answer(void) {
     const char *malformed[] = {"{\"github:1\":{\"primary\":\"nonsense\",\"ids\":[\"github:1\"]}}",
                                "{\"github:1\":{\"primary\":\"github:1\"}}",
@@ -308,6 +329,33 @@ static void reports_a_malformed_file_of_the_id_itself(void) {
     }
 }
 
+static void says_so_when_the_start_copy_answers_a_server_error(void) {
+    catalog_answer answer = also_at("github:80");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ids_are(answer, "[\"github:80\"]"));
+    CHECK(flag_is(answer, "primaryConfirmed", 0));
+    CHECK(flag_is(answer, "startFileUnavailable", 1));
+    cJSON_Delete(answer.tree);
+}
+
+static void leaves_out_a_listed_copy_that_answers_a_server_error(void) {
+    catalog_answer answer = also_at("github:81");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ids_are(answer, "[\"github:81\"]"));
+    CHECK(flag_is(answer, "primaryConfirmed", 1));
+    CHECK(flag_is(answer, "startFileUnavailable", -1));
+    cJSON_Delete(answer.tree);
+}
+
+static void does_not_keep_a_file_when_the_name_changed_hands_during_the_read(void) {
+    catalog_answer answer = also_at("github:90");
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ids_are(answer, "[\"github:90\"]"));
+    CHECK(flag_is(answer, "startFileUnavailable", 1));
+    CHECK(flag_is(answer, "primaryConfirmed", 0));
+    cJSON_Delete(answer.tree);
+}
+
 static void refuses_when_the_id_itself_cannot_be_resolved(void) {
     catalog_answer answer = also_at("github:60");
     CHECK(expect_refusal(answer, "not found", "unresolvable start"));
@@ -362,6 +410,13 @@ static void run_against_the_server(void) {
     static const char gitea_seventy_one[] = REPOSITORY("71", "tea71", "o/tea71");
     static const char gitea_seventy_file[] =
         "{\"primary\":\"gitea@git.example.com:70\",\"ids\":[\"gitea@git.example.com:70\",\"gitea@git.example.com:71\"]}";
+    static const char repository_eighty[] = REPOSITORY("80", "n80", "o/n80");
+    static const char repository_eighty_one[] = REPOSITORY("81", "n81", "o/n81");
+    static const char repository_eighty_two[] = REPOSITORY("82", "n82", "o/n82");
+    static const char repository_ninety[] = REPOSITORY("90", "n90", "o/n90");
+    static const char repository_ninety_taken[] = REPOSITORY("90", "taken", "o/taken");
+    static const char eighty_one_file[] = "{\"primary\":\"github:81\",\"ids\":[\"github:81\",\"github:82\"]}";
+    static const char ninety_file[] = "{\"primary\":\"github:90\",\"ids\":[\"github:90\"]}";
     const http_route routes[] = {
         ROUTE("/repositories/1", 200, repository_one),
         ROUTE("/repositories/2", 200, repository_two),
@@ -389,6 +444,15 @@ static void run_against_the_server(void) {
         FILE_ROUTE("n50", fifty_file),
         FILE_ROUTE("n51", fifty_one_file),
         EMPTY_ROUTE("/repositories/60", 404),
+        ROUTE("/repositories/80", 200, repository_eighty),
+        EMPTY_ROUTE("/o/n80/HEAD/.weivel/also-at.json", 500),
+        ROUTE("/repositories/81", 200, repository_eighty_one),
+        ROUTE("/repositories/82", 200, repository_eighty_two),
+        FILE_ROUTE("n81", eighty_one_file),
+        EMPTY_ROUTE("/o/n82/HEAD/.weivel/also-at.json", 500),
+        {"/repositories/90", 200, NULL, repository_ninety, sizeof repository_ninety - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 1},
+        ROUTE("/repositories/90", 200, repository_ninety_taken),
+        FILE_ROUTE("n90", ninety_file),
         ROUTE("/api/v1/repositories/70", 200, gitea_seventy),
         ROUTE("/api/v1/repositories/71", 200, gitea_seventy_one),
         ROUTE("/api/v1/repos/o/tea70/raw/.weivel/also-at.json", 200, gitea_seventy_file),
@@ -406,6 +470,9 @@ static void run_against_the_server(void) {
     does_not_follow_ids_beyond_the_set_its_own_file_lists();
     answers_only_the_id_when_it_has_no_file();
     reports_a_malformed_file_of_the_id_itself();
+    says_so_when_the_start_copy_answers_a_server_error();
+    leaves_out_a_listed_copy_that_answers_a_server_error();
+    does_not_keep_a_file_when_the_name_changed_hands_during_the_read();
     refuses_when_the_id_itself_cannot_be_resolved();
     reads_a_gitea_copy_from_its_raw_file_route();
     free(http_fixture_stop(server));
@@ -437,6 +504,8 @@ int main(void) {
     a_primary_that_could_not_be_confirmed_says_so();
     disagreeing_primaries_are_refused_with_a_fix();
     an_id_outside_the_grammar_is_left_out();
+    a_start_file_that_could_not_be_read_is_not_a_confirmed_primary();
+    a_listed_copy_that_could_not_be_read_is_left_out();
     a_malformed_start_file_is_reported_in_the_answer();
     a_malformed_file_on_another_copy_leaves_only_that_copy_out();
     a_file_listing_more_than_sixteen_ids_is_malformed();

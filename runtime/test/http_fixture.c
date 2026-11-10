@@ -37,6 +37,7 @@ typedef int fixture_socket;
 struct http_fixture {
     const http_route *routes;
     size_t route_count;
+    unsigned served[HTTP_ROUTE_LIMITED_COUNT];
     int is_proxy;
     fixture_socket listener;
     unsigned short port;
@@ -126,7 +127,12 @@ static int header_equals(const char *head, const char *name, const char *expecte
     return 0;
 }
 
-static const http_route *route_for(const http_fixture *fixture, const char *head) {
+static int is_exhausted(const http_fixture *fixture, size_t index) {
+    return index < HTTP_ROUTE_LIMITED_COUNT && fixture->routes[index].answer_limit > 0 &&
+           fixture->served[index] >= fixture->routes[index].answer_limit;
+}
+
+static const http_route *route_for(http_fixture *fixture, const char *head) {
     const char *path = strchr(head, ' ');
     if (path == NULL) {
         return NULL;
@@ -134,7 +140,11 @@ static const http_route *route_for(const http_fixture *fixture, const char *head
     path++;
     for (size_t index = 0; index < fixture->route_count; index++) {
         size_t length = strlen(fixture->routes[index].path);
-        if (strncmp(path, fixture->routes[index].path, length) == 0 && path[length] == ' ') {
+        if (strncmp(path, fixture->routes[index].path, length) == 0 && path[length] == ' ' &&
+            !is_exhausted(fixture, index)) {
+            if (index < HTTP_ROUTE_LIMITED_COUNT) {
+                fixture->served[index]++;
+            }
             return &fixture->routes[index];
         }
     }

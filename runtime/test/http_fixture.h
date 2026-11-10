@@ -5,13 +5,15 @@
 
 #define HTTP_ROUTE_BODY_LENGTH (-1LL)
 #define HTTP_ROUTE_UNTIL_CLOSE (-2LL)
+#define HTTP_ROUTE_LIMITED_COUNT 128
 
 /**
  * How the fixture answers a GET of path. declared_length is the Content-Length it sends:
  * HTTP_ROUTE_BODY_LENGTH sends the body's own, HTTP_ROUTE_UNTIL_CLOSE sends none and ends the body by
  * closing, and any larger number makes the answer end early, as a connection cut mid-body does. A
  * request whose If-None-Match equals etag, or whose If-Modified-Since equals last_modified, is answered
- * 304 with no body.
+ * 304 with no body. A route with an answer_limit above zero answers that many requests and is then skipped, so a
+ * later route with the same path answers next; at most HTTP_ROUTE_LIMITED_COUNT routes can be limited.
  */
 typedef struct http_route {
     const char *path;
@@ -23,6 +25,7 @@ typedef struct http_route {
     const char *etag;
     const char *last_modified;
     unsigned stall_milliseconds;
+    unsigned answer_limit;
 } http_route;
 
 typedef struct http_fixture http_fixture;
