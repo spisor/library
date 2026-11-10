@@ -201,6 +201,36 @@ static void prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name(void)
     finish_world(&world);
 }
 
+static void prints_a_manifest_s_control_characters_as_visible_escapes(void) {
+    host_world world;
+    start_install_world(&world, "spoofed");
+    list_plugin_with_manifest(&world, "spoof-plugin",
+                              "{\"id\": \"spoof-plugin\", \"version\": \"1.0.0\", \"dependencies\": "
+                              "[{\"importName\": \"pad\", \"name\": \"a\\u001b[2Kb\\r\\nc\\u0085d\"}]}");
+    program run;
+    const char *plugin[] = {"--plugin", "spoof-plugin", NULL};
+    CHECK(run_install(&world, &run, plugin) == 0);
+    expect_contains(run.err, "warning: spoof-plugin: a\\x1b[2Kb\\x0d\\x0ac\\u0085d:", "escaped on one line");
+    CHECK(strchr(run.err, 0x1b) == NULL);
+    CHECK(strstr(run.err, "\xc2\x85") == NULL);
+    CHECK(strstr(run.err, "b\r") == NULL);
+    program_free(&run);
+    finish_world(&world);
+}
+
+static void says_when_a_manifest_could_not_be_checked(void) {
+    host_world world;
+    start_install_world(&world, "unchecked");
+    list_plugin_with_manifest(&world, "odd-plugin",
+                              "// kept for the maintainers\n{\"id\": \"odd-plugin\", \"version\": \"1.0.0\"}");
+    program run;
+    const char *plugin[] = {"--plugin", "odd-plugin", NULL};
+    CHECK(run_install(&world, &run, plugin) == 0);
+    expect_contains(run.err, "warning: odd-plugin: could not check this plugin's manifest", "said");
+    program_free(&run);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -213,6 +243,8 @@ int main(void) {
     puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed();
     prints_each_warning_and_still_installs();
     prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name();
+    prints_a_manifest_s_control_characters_as_visible_escapes();
+    says_when_a_manifest_could_not_be_checked();
     installs_from_a_relative_catalog_under_a_folder_named_outside_the_ansi_codepage();
     expect_user_path_unchanged(&guard);
     return check_summary("install_command_test");

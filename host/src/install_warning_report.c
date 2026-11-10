@@ -1,5 +1,6 @@
 #include "install_warning_report.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,6 +10,8 @@
 #include "install_warnings.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
+
+#define MANIFEST_FILE "plugin.json"
 
 static int adds_version(cJSON *plugins, const char *id, size_t id_length, const char *version) {
     char *name = malloc(id_length + 1);
@@ -80,11 +83,51 @@ static cJSON *manifest_at(const char *path) {
     return manifest;
 }
 
-static void print_warning(const char *plugin_id, const cJSON *warning) {
-    const char *parts[] = {"warning: ", plugin_id, ": ", host_text(warning, "subject"), ": ", host_text(warning, "detail"), "\n"};
-    for (size_t index = 0; index < sizeof parts / sizeof parts[0]; index++) {
-        host_write(1, parts[index] == NULL ? "" : parts[index]);
+/**
+ * text as it may be printed on a terminal: every byte below 0x20, 0x7F and the UTF-8 form of each of U+0080 to
+ * U+009F becomes a visible \\xNN or \\u00NN, so a manifest cannot move the cursor or hide the line. NULL when
+ * memory runs out.
+ */
+static char *printable(const char *text) {
+    size_t length = strlen(text);
+    char *escaped = malloc(length * 6 + 1);
+    size_t used = 0;
+    for (size_t index = 0; escaped != NULL && index < length; index++) {
+        unsigned char byte = (unsigned char)text[index];
+        int is_c1 = byte == 0xC2 && index + 1 < length && (unsigned char)text[index + 1] >= 0x80 &&
+                    (unsigned char)text[index + 1] <= 0x9F;
+        if (is_c1) {
+            used += (size_t)snprintf(escaped + used, 7, "\\u00%02x", (unsigned)(unsigned char)text[++index]);
+        } else if (byte < 0x20 || byte == 0x7F) {
+            used += (size_t)snprintf(escaped + used, 5, "\\x%02x", (unsigned)byte);
+        } else {
+            escaped[used++] = (char)byte;
+        }
     }
+    if (escaped != NULL) {
+        escaped[used] = 0;
+    }
+    return escaped;
+}
+
+static void print_line(const char *plugin_id, const char *subject, const char *detail) {
+    char *safe_plugin = printable(plugin_id == NULL ? "" : plugin_id);
+    char *safe_subject = subject == NULL ? NULL : printable(subject);
+    host_write(1, "warning: ");
+    host_write(1, safe_plugin == NULL ? "" : safe_plugin);
+    host_write(1, ": ");
+    if (safe_subject != NULL) {
+        host_write(1, safe_subject);
+        host_write(1, ": ");
+    }
+    host_write(1, detail);
+    host_write(1, "\n");
+    free(safe_subject);
+    free(safe_plugin);
+}
+
+static void print_unchecked(const char *plugin_id) {
+    print_line(plugin_id, NULL, "could not check this plugin's manifest");
 }
 
 static void print_warnings_of(const char *plugin_id, cJSON *manifest) {
@@ -97,9 +140,12 @@ static void print_warnings_of(const char *plugin_id, cJSON *manifest) {
         cJSON_Delete(argument);
         cJSON_Delete(manifest);
     }
+    if (answer == NULL) {
+        print_unchecked(plugin_id);
+    }
     const cJSON *warning;
     cJSON_ArrayForEach(warning, cJSON_GetObjectItemCaseSensitive(answer, "warnings")) {
-        print_warning(plugin_id, warning);
+        print_line(plugin_id, host_text(warning, "subject"), host_text(warning, "detail"));
     }
     cJSON_Delete(answer);
     cJSON_Delete(refusal);
@@ -112,8 +158,16 @@ void host_print_install_warnings(const host_context *context, const cJSON *repor
     cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(located, "located")) {
         const char *manifest_path = host_text(item, "manifest");
         cJSON *manifest = manifest_path == NULL ? NULL : manifest_at(manifest_path);
-        if (manifest != NULL) {
+        if (manifest == NULL) {
+            print_unchecked(host_text(item, "id"));
+        } else {
             print_warnings_of(host_text(item, "id"), manifest);
+        }
+    }
+    cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(located, "problems")) {
+        const char *file = host_text(item, "file");
+        if (file != NULL && strcmp(file, MANIFEST_FILE) == 0) {
+            print_unchecked(host_text(item, "id"));
         }
     }
     cJSON_Delete(located);
