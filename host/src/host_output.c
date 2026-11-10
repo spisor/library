@@ -20,7 +20,8 @@
     "  forebay-host background <host-id>\n"                                                                           \
     "  forebay-host hook <loader-id> <event>\n"                                                                       \
     "  forebay-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                    \
-    "[--library <id>=<directory>@<platform>]... --out <directory>\n"
+    "[--library <id>=<directory>@<platform>]... --out <directory>\n"                                                  \
+    "  forebay-host marketplace build --list <path> --out <path>\n"
 
 #if defined(_WIN32)
 
@@ -63,6 +64,29 @@ void host_print_json(const cJSON *value) {
         host_write(0, "\n");
     }
     free(text);
+}
+
+
+char *host_printable(const char *text) {
+    size_t length = strlen(text);
+    char *escaped = malloc(length * 6 + 1);
+    size_t used = 0;
+    for (size_t index = 0; escaped != NULL && index < length; index++) {
+        unsigned char byte = (unsigned char)text[index];
+        int is_c1 = byte == 0xC2 && index + 1 < length && (unsigned char)text[index + 1] >= 0x80 &&
+                    (unsigned char)text[index + 1] <= 0x9F;
+        if (is_c1) {
+            used += (size_t)snprintf(escaped + used, 7, "\\u00%02x", (unsigned)(unsigned char)text[++index]);
+        } else if (byte < 0x20 || byte == 0x7F) {
+            used += (size_t)snprintf(escaped + used, 5, "\\x%02x", (unsigned)byte);
+        } else {
+            escaped[used++] = (char)byte;
+        }
+    }
+    if (escaped != NULL) {
+        escaped[used] = 0;
+    }
+    return escaped;
 }
 
 void host_print_refusal(const cJSON *refusal) {

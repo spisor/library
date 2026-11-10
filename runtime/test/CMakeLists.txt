@@ -82,6 +82,16 @@ if(WIN32)
     target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
 endif()
 
+runtime_test(marketplace_build_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_build>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(marketplace_build_test PRIVATE ${runtime_fetch_libraries})
+target_compile_definitions(marketplace_build_test PRIVATE
+    RUNTIME_MARKETPLACE_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace.schema.json"
+    RUNTIME_MARKETPLACE_COPY_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace-copy.schema.json")
+if(WIN32)
+    target_link_libraries(marketplace_build_test PRIVATE Ws2_32)
+endif()
+
 runtime_test(install_warnings_test $<TARGET_OBJECTS:runtime_secret_store>)
 
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>

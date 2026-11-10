@@ -83,36 +83,9 @@ static cJSON *manifest_at(const char *path) {
     return manifest;
 }
 
-/**
- * text as it may be printed on a terminal: every byte below 0x20, 0x7F and the UTF-8 form of each of U+0080 to
- * U+009F becomes a visible \\xNN or \\u00NN, so a manifest cannot move the cursor or hide the line. NULL when
- * memory runs out.
- */
-static char *printable(const char *text) {
-    size_t length = strlen(text);
-    char *escaped = malloc(length * 6 + 1);
-    size_t used = 0;
-    for (size_t index = 0; escaped != NULL && index < length; index++) {
-        unsigned char byte = (unsigned char)text[index];
-        int is_c1 = byte == 0xC2 && index + 1 < length && (unsigned char)text[index + 1] >= 0x80 &&
-                    (unsigned char)text[index + 1] <= 0x9F;
-        if (is_c1) {
-            used += (size_t)snprintf(escaped + used, 7, "\\u00%02x", (unsigned)(unsigned char)text[++index]);
-        } else if (byte < 0x20 || byte == 0x7F) {
-            used += (size_t)snprintf(escaped + used, 5, "\\x%02x", (unsigned)byte);
-        } else {
-            escaped[used++] = (char)byte;
-        }
-    }
-    if (escaped != NULL) {
-        escaped[used] = 0;
-    }
-    return escaped;
-}
-
 static void print_line(const char *plugin_id, const char *subject, const char *detail) {
-    char *safe_plugin = printable(plugin_id == NULL ? "" : plugin_id);
-    char *safe_subject = subject == NULL ? NULL : printable(subject);
+    char *safe_plugin = host_printable(plugin_id == NULL ? "" : plugin_id);
+    char *safe_subject = subject == NULL ? NULL : host_printable(subject);
     host_write(1, "warning: ");
     host_write(1, safe_plugin == NULL ? "" : safe_plugin);
     host_write(1, ": ");

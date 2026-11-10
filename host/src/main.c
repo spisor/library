@@ -48,6 +48,9 @@ int host_run_command_line(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[0], "catalog") == 0 && strcmp(arguments[1], "build") == 0) {
         return host_command_catalog_build(count - 2, arguments + 2);
     }
+    if (count >= 2 && strcmp(arguments[0], "marketplace") == 0 && strcmp(arguments[1], "build") == 0) {
+        return host_command_marketplace_build(count - 2, arguments + 2);
+    }
     for (size_t index = 0; count >= 1 && index < sizeof COMMANDS / sizeof COMMANDS[0]; index++) {
         if (strcmp(arguments[0], COMMANDS[index].name) == 0) {
             return COMMANDS[index].run(count - 1, arguments + 1);

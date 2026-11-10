@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://weivel.github.io/model/marketplace.schema.json",
+  "title": "weivel marketplace list",
+  "description": "A marketplace as its owner writes it: a list of repository ids with an optional alias, description and categories. It holds no name of a repository, so renaming one changes nothing here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "entries"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Pointer at the published schema, for an editor's completion and validation.",
+      "type": "string"
+    },
+    "format": {
+      "description": "The version of this document's shape.",
+      "const": 1,
+      "fix": "set \"format\" to 1"
+    },
+    "title": {
+      "description": "What this marketplace is called, for a surface to show.",
+      "type": "string",
+      "fix": "write a short name"
+    },
+    "entries": {
+      "description": "The entries, in the order a surface lists them. A repeated id is accepted here and refused when a copy is built.",
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "description": "One listed repository.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "description": "The repository identity of the listed repository, which survives a rename.",
+            "type": "string",
+            "pattern": "^(local:[^/\\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\\.{1,2}(/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
+            "fix": "write the id as a repository id, for example \"github:123\" or \"gitea@git.example.com:12/runtime\""
+          },
+          "alias": {
+            "description": "The name this marketplace calls the entry by, set only to settle a clash with another entry of the same name.",
+            "type": "string",
+            "pattern": "^(?!package(?![\\s\\S]))(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\\.]|(?![\\s\\S])))[a-z0-9]+([-.][a-z0-9]+)*(?![\\s\\S])",
+            "fix": "use lowercase words joined by single hyphens or dots, for example \"config-ledger\" or \"api.http\""
+          },
+          "description": {
+            "description": "A short line saying what the entry is.",
+            "type": "string",
+            "fix": "write one short sentence"
+          },
+          "categories": {
+            "description": "Topics this entry is filed under, each written as an import name.",
+            "type": "array",
+            "items": {
+              "description": "One category.",
+              "type": "string",
+              "pattern": "^(?!package(?![\\s\\S]))(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\\.]|(?![\\s\\S])))[a-z0-9]+([-.][a-z0-9]+)*(?![\\s\\S])",
+              "fix": "use lowercase words joined by single hyphens or dots, for example \"config-ledger\" or \"api.http\""
+            },
+            "uniqueItems": true,
+            "fix": "list categories as lowercase hyphenated words, for example [\"ai-provider\"]"
+          }
+        }
+      },
+      "fix": "list at most 10000 entries"
+    }
+  }
+}
