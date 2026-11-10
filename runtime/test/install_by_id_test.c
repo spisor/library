@@ -27,7 +27,7 @@
 
 static unsigned short server_port;
 static char scratch[1024];
-static const char *plugin_folder = "plugins";
+static const char *plugin_folder = NULL;
 static char release_json_good[1600];
 static char release_json_tampered[1600];
 static const char release_json_without_index[] = "{\"assets\":[{\"name\":\"other.zip\",\"browser_download_url\":\"https://example.test/other.zip\"}]}";
@@ -115,13 +115,19 @@ static char *cache_directory(void) {
     return in_scratch("cache");
 }
 
-static char *plugin_directory(void) {
-    return in_scratch(plugin_folder);
+/** Each id deploys into a folder of its own, since a plugin directory holds one plugin per import name. */
+static char *plugin_directory(const char *id) {
+    char folder[128];
+    snprintf(folder, sizeof folder, "plugins-%s", id);
+    for (char *at = folder; *at != '\0'; at++) {
+        *at = *at == ':' ? '-' : *at;
+    }
+    return in_scratch(plugin_folder != NULL ? plugin_folder : folder);
 }
 
 static catalog_answer install_with(const char *id, const char *extra_json) {
     char *cache = cache_directory();
-    char *plugins = plugin_directory();
+    char *plugins = plugin_directory(id);
     char api_base[128];
     snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
     cJSON *argument = extra_json == NULL ? cJSON_CreateObject() : parsed(extra_json);
@@ -188,9 +194,9 @@ static void installs_from_the_release_index_and_checks_digests(void) {
     free(index_path);
     CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/plugin.json"));
     CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/dist/index.js"));
-    CHECK(exists_in_scratch("plugins/greeter.json"));
-    CHECK(exists_in_scratch("plugins/greeter.js"));
-    CHECK(exists_in_scratch("plugins/greeter_identity.json"));
+    CHECK(exists_in_scratch("plugins-github-5/greeter.json"));
+    CHECK(exists_in_scratch("plugins-github-5/greeter.js"));
+    CHECK(exists_in_scratch("plugins-github-5/greeter_identity.json"));
     cJSON_Delete(answer.tree);
 }
 
@@ -234,7 +240,7 @@ static void a_tampered_file_is_refused_and_nothing_is_deployed(void) {
     CHECK(!exists_in_scratch("cache/bundles/github+10/1.0.0/.installed.json"));
     CHECK(!exists_in_scratch("plugins-tampered"));
     cJSON_Delete(answer.tree);
-    plugin_folder = "plugins";
+    plugin_folder = NULL;
 }
 
 static void a_name_taken_during_the_install_is_refused_and_nothing_is_installed(void) {
@@ -243,7 +249,7 @@ static void a_name_taken_during_the_install_is_refused_and_nothing_is_installed(
     CHECK(expect_refusal(answer, "when the install began", "taken name"));
     CHECK(!exists_in_scratch("cache/bundles/github+9"));
     CHECK(!exists_in_scratch("plugins-taken"));
-    plugin_folder = "plugins";
+    plugin_folder = NULL;
 }
 
 static void an_unreadable_start_file_installs_and_says_the_primary_is_unconfirmed(void) {
