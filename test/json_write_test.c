@@ -56,7 +56,19 @@ static void matches_every_vector(void) {
     cJSON_Delete(vectors);
 }
 
+static void terminal_form_escapes_delete_and_the_c1_controls_only(void) {
+    cJSON *value = cJSON_CreateString("a\xc2\x9b" "b\x7f" "c\xc2\xa0" "d\xc3\xa9");
+    char *terminal = spisor_json_stringify_for_terminal(value);
+    check_text(terminal, "\"a\\u009bb\\u007fc\xc2\xa0" "d\xc3\xa9\"", "terminal form");
+    char *file = spisor_json_stringify_pretty(value);
+    check_text(file, "\"a\xc2\x9b" "b\x7f" "c\xc2\xa0" "d\xc3\xa9\"", "file form is unchanged");
+    free(file);
+    free(terminal);
+    cJSON_Delete(value);
+}
+
 int main(void) {
     matches_every_vector();
+    terminal_form_escapes_delete_and_the_c1_controls_only();
     return check_summary("json_write_test");
 }

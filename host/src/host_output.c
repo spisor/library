@@ -22,7 +22,7 @@
     "  forebay-host hook <loader-id> <event>\n"                                                                       \
     "  forebay-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                    \
     "[--library <id>=<directory>@<platform>]... --out <directory>\n"                                                  \
-    "  forebay-host marketplace build --list <path> --out <path>\n"
+    "  forebay-host marketplace build --list <path> --out <path> [--token-env <variable>]\n"
 
 #if defined(_WIN32)
 
@@ -59,7 +59,7 @@ void host_write(int to_error, const char *text) {
 #endif
 
 void host_print_json(const cJSON *value) {
-    char *text = spisor_json_stringify_pretty(value);
+    char *text = spisor_json_stringify_for_terminal(value);
     if (text != NULL) {
         host_write(0, text);
         host_write(0, "\n");

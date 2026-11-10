@@ -20,6 +20,14 @@ extern "C" {
 char *spisor_json_stringify_pretty(const cJSON *value);
 
 /**
+ * spisor_json_stringify_pretty for a terminal: a string also has 0x7F and U+0080 to U+009F written as \u00NN, since a
+ * terminal acts on them. Freed with free; NULL only when memory runs out.
+ *
+ * @implNote JSON written to a file keeps those characters as they are, so only what is printed differs.
+ */
+char *spisor_json_stringify_for_terminal(const cJSON *value);
+
+/**
  * The members of object in the order JavaScript enumerates them, the order spisor_json_stringify_pretty
  * writes. Freed with free; NULL with *count 0 for an empty object or for NULL, and NULL
  * with *count nonzero when memory runs out.

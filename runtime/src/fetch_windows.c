@@ -160,9 +160,11 @@ static int open_handles(const runtime_fetch_request *request, const url_parts *p
     return handles->request != NULL && disable_redirects(handles->request);
 }
 
-static wchar_t *conditional_headers(const runtime_fetch_request *request) {
-    size_t size = 64 + (request->etag == NULL ? 0 : strlen(request->etag)) +
-                  (request->last_modified == NULL ? 0 : strlen(request->last_modified));
+static wchar_t *request_headers(const runtime_fetch_request *request, int is_authorized) {
+    const char *authorization = is_authorized ? request->authorization : NULL;
+    size_t size = 96 + (request->etag == NULL ? 0 : strlen(request->etag)) +
+                  (request->last_modified == NULL ? 0 : strlen(request->last_modified)) +
+                  (authorization == NULL ? 0 : strlen(authorization));
     char *headers = malloc(size);
     if (headers == NULL) {
         return NULL;
@@ -173,15 +175,18 @@ static wchar_t *conditional_headers(const runtime_fetch_request *request) {
         length += snprintf(headers + length, size - (size_t)length, "If-None-Match: %s\r\n", request->etag);
     }
     if (request->last_modified != NULL) {
-        snprintf(headers + length, size - (size_t)length, "If-Modified-Since: %s\r\n", request->last_modified);
+        length += snprintf(headers + length, size - (size_t)length, "If-Modified-Since: %s\r\n", request->last_modified);
+    }
+    if (authorization != NULL) {
+        snprintf(headers + length, size - (size_t)length, "Authorization: %s\r\n", authorization);
     }
     wchar_t *wide = to_wide(headers);
     free(headers);
     return wide;
 }
 
-static int send_request(const runtime_fetch_request *request, HINTERNET handle) {
-    wchar_t *headers = conditional_headers(request);
+static int send_request(const runtime_fetch_request *request, HINTERNET handle, int is_authorized) {
+    wchar_t *headers = request_headers(request, is_authorized);
     if (headers == NULL) {
         return 0;
     }
@@ -311,11 +316,12 @@ typedef enum hop_outcome {
     HOP_REDIRECTED
 } hop_outcome;
 
-static hop_outcome take_hop(const runtime_fetch_request *request, const url_parts *parts, ULONGLONG deadline,
-                            runtime_fetch_sink *sink, runtime_fetch_answer *answer, wchar_t **next) {
+static hop_outcome take_hop(const runtime_fetch_request *request, const url_parts *parts, int is_authorized,
+                            ULONGLONG deadline, runtime_fetch_sink *sink, runtime_fetch_answer *answer,
+                            wchar_t **next) {
     winhttp_handles handles;
     hop_outcome outcome = HOP_ANSWERED;
-    if (!open_handles(request, parts, &handles) || !send_request(request, handles.request)) {
+    if (!open_handles(request, parts, &handles) || !send_request(request, handles.request, is_authorized)) {
         refuse_error(request, GetLastError(), answer);
     } else if (is_redirect(status_of(handles.request))) {
         *next = redirect_target(handles.request, parts->wide_url);
@@ -331,8 +337,22 @@ static void refuse_redirect(const runtime_fetch_request *request, runtime_fetch_
     runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected to a url it may not follow", request->url);
 }
 
-void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
-                                runtime_fetch_answer *answer) {
+typedef struct origin {
+    wchar_t *host;
+    INTERNET_PORT port;
+} origin;
+
+static void remember_origin(origin *known, const url_parts *parts) {
+    known->host = copy_wide(parts->host, wcslen(parts->host));
+    known->port = parts->port;
+}
+
+static int is_origin(const origin *known, const url_parts *parts) {
+    return known->host != NULL && known->port == parts->port && _wcsicmp(known->host, parts->host) == 0;
+}
+
+static void take_hops(const runtime_fetch_request *request, origin *first, runtime_fetch_sink *sink,
+                      runtime_fetch_answer *answer) {
     ULONGLONG deadline = GetTickCount64() + request->deadline_milliseconds;
     wchar_t *current = to_wide(request->url);
     for (int hop = 0; hop <= MAXIMUM_REDIRECTS; hop++) {
@@ -348,7 +368,10 @@ void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fe
             return;
         }
         current = NULL;
-        hop_outcome outcome = take_hop(request, &parts, deadline, sink, answer, &current);
+        if (hop == 0) {
+            remember_origin(first, &parts);
+        }
+        hop_outcome outcome = take_hop(request, &parts, is_origin(first, &parts), deadline, sink, answer, &current);
         free_parts(&parts);
         if (outcome == HOP_ANSWERED) {
             return;
@@ -361,4 +384,11 @@ void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fe
     free(current);
     runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected more than %d times", request->url,
                          MAXIMUM_REDIRECTS);
+}
+
+void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
+                                runtime_fetch_answer *answer) {
+    origin first = {NULL, 0};
+    take_hops(request, &first, sink, answer);
+    free(first.host);
 }

@@ -242,6 +242,81 @@ static void run_against_the_server(void) {
     free(http_fixture_stop(server));
 }
 
+#define TOKEN "tok-1234567890abcdef"
+#define AUTHORIZATION_LINE "Authorization: token " TOKEN
+
+static cJSON *resolve_argument_at(unsigned short port, const char *id, const char *token) {
+    char api_base[128];
+    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)port);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "id", id);
+    cJSON_AddStringToObject(argument, "apiBase", api_base);
+    if (token != NULL) {
+        cJSON_AddStringToObject(argument, "token", token);
+    }
+    return argument;
+}
+
+static int count_of(const char *text, const char *fragment) {
+    int count = 0;
+    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
+        count++;
+    }
+    return count;
+}
+
+static void sends_the_token_only_when_given_and_never_to_another_host(void) {
+    static const char owned[] = REPOSITORY("100", "mine", "o/mine");
+    static const char elsewhere[] = REPOSITORY("101", "far", "o/far");
+    http_fixture *other = NULL;
+    char moved[256] = "";
+    const http_route other_routes[] = {ROUTE("/repositories/101", 200, elsewhere)};
+    other = http_fixture_start(other_routes, 1);
+    CHECK(other != NULL);
+    if (other == NULL) {
+        return;
+    }
+    snprintf(moved, sizeof moved, "Location: http://localhost:%u/repositories/101\r\n", (unsigned)http_fixture_port(other));
+    const http_route routes[] = {
+        ROUTE("/repositories/100", 200, owned),
+        {"/repositories/101", 302, moved, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        EMPTY_ROUTE("/repositories/102", 404),
+    };
+    http_fixture *named = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
+    CHECK(named != NULL);
+    if (named == NULL) {
+        free(http_fixture_stop(other));
+        return;
+    }
+    unsigned short port = http_fixture_port(named);
+    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:100", TOKEN)), "o/mine", "with a token");
+    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:100", NULL)), "o/mine", "without a token");
+    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:101", TOKEN)), "o/far", "a redirect");
+    catalog_answer refused = call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:102", TOKEN));
+    CHECK(expect_refusal(refused, "not found", "a refusal with a token"));
+    char *printed = cJSON_PrintUnformatted(refused.tree);
+    CHECK(strstr(printed, TOKEN) == NULL);
+    cJSON_free(printed);
+    cJSON_Delete(refused.tree);
+    char *named_requests = http_fixture_stop(named);
+    char *other_requests = http_fixture_stop(other);
+    CHECK(count_of(named_requests, AUTHORIZATION_LINE) == 3);
+    CHECK(count_of(named_requests, "uthorization") == 3);
+    CHECK(strstr(other_requests, "GET /repositories/101") != NULL);
+    CHECK(strstr(other_requests, "uthorization") == NULL);
+    free(named_requests);
+    free(other_requests);
+}
+
+static void refuses_a_token_that_is_not_one_line_without_repeating_it(void) {
+    catalog_answer answer = call_catalog(runtime_identity_resolve, resolve_argument_at(1, "github:100", "bad\r\nX: " TOKEN));
+    CHECK(expect_refusal(answer, "token", "a token with a line break"));
+    char *printed = cJSON_PrintUnformatted(answer.tree);
+    CHECK(strstr(printed, TOKEN) == NULL);
+    cJSON_free(printed);
+    cJSON_Delete(answer.tree);
+}
+
 #if !defined(_WIN32)
 static void clear_proxy_environment(void) {
     const char *names[] = {"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy",
@@ -258,5 +333,7 @@ int main(void) {
 #endif
     runtime_fetch_allow_plain_http(1);
     run_against_the_server();
+    sends_the_token_only_when_given_and_never_to_another_host();
+    refuses_a_token_that_is_not_one_line_without_repeating_it();
     return check_summary("identity_resolve_test");
 }

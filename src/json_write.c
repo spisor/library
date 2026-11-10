@@ -16,6 +16,7 @@ typedef struct text_buffer {
     size_t length;
     size_t capacity;
     int out_of_memory;
+    int escapes_terminal_controls;
 } text_buffer;
 
 static void append_bytes(text_buffer *buffer, const char *bytes, size_t count) {
@@ -69,6 +70,10 @@ static void append_control_escape(text_buffer *buffer, unsigned char byte) {
     append_bytes(buffer, escape, sizeof(escape));
 }
 
+static int is_c1_control_lead(const char *cursor) {
+    return (unsigned char)cursor[0] == 0xC2 && (unsigned char)cursor[1] >= 0x80 && (unsigned char)cursor[1] <= 0x9F;
+}
+
 static void append_quoted(text_buffer *buffer, const char *text) {
     append_bytes(buffer, "\"", 1);
     for (const char *cursor = text; *cursor != '\0'; cursor++) {
@@ -76,8 +81,10 @@ static void append_quoted(text_buffer *buffer, const char *text) {
         const char *escape = short_escape(byte);
         if (escape != NULL) {
             append_text(buffer, escape);
-        } else if (byte < 0x20) {
+        } else if (byte < 0x20 || (buffer->escapes_terminal_controls && byte == 0x7F)) {
             append_control_escape(buffer, byte);
+        } else if (buffer->escapes_terminal_controls && is_c1_control_lead(cursor)) {
+            append_control_escape(buffer, (unsigned char)*++cursor);
         } else {
             append_bytes(buffer, cursor, 1);
         }
@@ -209,12 +216,20 @@ static void append_value(text_buffer *buffer, const cJSON *value, int depth) {
     }
 }
 
-char *spisor_json_stringify_pretty(const cJSON *value) {
-    text_buffer buffer = {NULL, 0, 0, 0};
+static char *stringified(const cJSON *value, int escapes_terminal_controls) {
+    text_buffer buffer = {NULL, 0, 0, 0, escapes_terminal_controls};
     append_value(&buffer, value, 0);
     if (buffer.out_of_memory) {
         free(buffer.data);
         return NULL;
     }
     return buffer.data;
+}
+
+char *spisor_json_stringify_pretty(const cJSON *value) {
+    return stringified(value, 0);
+}
+
+char *spisor_json_stringify_for_terminal(const cJSON *value) {
+    return stringified(value, 1);
 }

@@ -40,6 +40,7 @@ typedef struct runtime_fetch_request {
     const char *last_modified;
     unsigned deadline_milliseconds;
     int allow_plain_http;
+    const char *authorization;
 } runtime_fetch_request;
 
 typedef enum runtime_fetch_outcome {
@@ -69,10 +70,15 @@ void runtime_fetch_refuse(runtime_fetch_answer *answer, const char *fix, const c
 
 /**
  * Fetches url into a memory sink under the same scheme rules and deadline override as fetch.get, so a
- * lookup that needs only a short answer shares its transport and refusals.
+ * lookup that needs only a short answer shares its transport and refusals. authorization, when not NULL, is the
+ * whole value of an Authorization header on one line.
+ *
+ * @implNote The header goes to the host and port url names and to no other: a redirect to another host is followed
+ * without it. WinHTTP follows redirects by hand here, so the check is ours; libcurl drops a custom Authorization
+ * header when a redirect changes host (7.58 and later, CURLOPT_UNRESTRICTED_AUTH left at 0).
  */
-void runtime_fetch_into_memory(const char *url, unsigned deadline_milliseconds, runtime_fetch_sink *sink,
-                               runtime_fetch_answer *answer);
+void runtime_fetch_into_memory(const char *url, const char *authorization, unsigned deadline_milliseconds,
+                               runtime_fetch_sink *sink, runtime_fetch_answer *answer);
 
 /** Whether the test hook has allowed plain http; always 0 in the shipped library. */
 int runtime_fetch_plain_http_is_allowed(void);

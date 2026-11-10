@@ -8,9 +8,11 @@
 #include "export.h"
 
 /**
- * identity.resolve: {id, lastKnown?, apiBase?} answers {name, fullName, defaultBranch?} for the repo the id names,
+ * identity.resolve: {id, lastKnown?, token?, apiBase?} answers {name, fullName, defaultBranch?} for the repo the id names,
  * or refuses with a fix. lastKnown is an "owner/name" a previous lookup saw. apiBase replaces the host's API root,
  * is not in library.json, and is refused unless the fetch test hook allows plain http, so only a test can aim a lookup.
+ * token is an access token for the host the id names, sent as "Authorization: token <token>" to that host and to no
+ * other, a redirect to another host included. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without one.
  *
  * @implNote A repo is looked up by its number, which survives a rename; a number the host answers with is
  * always compared, as text, with the one asked for. Only when the host cannot answer by number (404, or 401 where
