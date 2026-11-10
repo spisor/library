@@ -8,6 +8,7 @@
 #include "cache_marker.h"
 #include "cache_place.h"
 #include "cache_refusal.h"
+#include "identity.h"
 #include "node_json_file.h"
 #include "spisor/file.h"
 
@@ -33,8 +34,11 @@ static char *hinted_version(const char *cache, const char *host_id, cJSON **refu
 }
 
 static char *version_directory(const char *cache, const char *host_id, const char *version, cJSON **refusal) {
-    const char *versions_segments[3] = {cache, "bundles", host_id};
-    char *versions = runtime_cache_joined(versions_segments, 3);
+    int unfit = 0;
+    char *folder = runtime_item_folder(host_id, &unfit);
+    const char *versions_segments[3] = {cache, "bundles", folder};
+    char *versions = folder == NULL ? NULL : runtime_cache_joined(versions_segments, 3);
+    free(folder);
     char *directory = versions == NULL ? NULL : runtime_cache_resolve(versions, &version, 1);
     if (directory != NULL && (version[0] == 0 || !runtime_cache_is_strictly_inside(versions, directory))) {
         cJSON *name = cJSON_CreateString(version);

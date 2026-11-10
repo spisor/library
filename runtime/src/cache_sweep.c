@@ -12,6 +12,7 @@
 #include "catalog_semver.h"
 #include "directory_tree.h"
 #include "file_times.h"
+#include "identity.h"
 
 #define ABANDONED_AFTER_MILLISECONDS (24.0 * 3600000.0)
 
@@ -132,7 +133,9 @@ static char *contained(const char *root, const char *const *steps, size_t count,
 
 /** @implNote A version that cannot be removed (a file another process holds open on Windows) is skipped for the next sweep. */
 static int remove_doomed(const char *cache, const cJSON *entry) {
-    const char *steps[3] = {cJSON_GetArrayItem(entry, 0)->valuestring, cJSON_GetArrayItem(entry, 1)->valuestring,
+    int unfit = 0;
+    char *folder = runtime_item_folder(cJSON_GetArrayItem(entry, 0)->valuestring, &unfit);
+    const char *steps[3] = {folder, cJSON_GetArrayItem(entry, 1)->valuestring,
                             cJSON_GetArraySize(entry) == 3 ? cJSON_GetArrayItem(entry, 2)->valuestring : NULL};
     size_t count = steps[2] == NULL ? 2 : 3;
     const char *root_segments[2] = {cache, count == 3 ? "libraries" : "bundles"};
@@ -146,6 +149,7 @@ static int remove_doomed(const char *cache, const cJSON *entry) {
     free(directory);
     free(parent);
     free(root);
+    free(folder);
     return removed;
 }
 

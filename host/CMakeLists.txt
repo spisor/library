@@ -53,7 +53,7 @@ else()
 endif()
 set(host_boot_runtime_sources alive_stamp.c boot.c boot_hint.c boot_resolve.c cache_folders.c cache_marker.c cache_place.c cache_refusal.c
     catalog_answer.c catalog_path.c catalog_text.c directory_tree.c file_stream.c file_times.c process_alive.c host_references.c hosts_lock.c
-    json_service.c node_json_file.c platform_key.c run_records.c segment.c service_call.c sha256.c)
+    identity_parse.c json_service.c node_json_file.c platform_key.c run_records.c segment.c service_call.c sha256.c)
 list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/src/)
 
 # forebay-boot changes almost never once published, so it carries only what boot.resolve needs.

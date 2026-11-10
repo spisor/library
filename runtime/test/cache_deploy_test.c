@@ -122,7 +122,7 @@ static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
 }
 
 static void refuses_an_import_name_that_fails_the_grammar_and_writes_nothing(void) {
-    const char *refused[] = {"../x", "a/b", "A", "a\\\\b", "con", "nul.x", "com1", "a..b", "-a", "a-", "", "x y"};
+    const char *refused[] = {"../x", "a/b", "A", "package", "a\\\\b", "con", "nul.x", "com1", "a..b", "-a", "a-", "", "x y"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         start_case("bad-name");
         char manifest[256];
@@ -214,6 +214,103 @@ static void refuses_an_identity_id_outside_the_grammar_and_writes_nothing(void) 
     }
 }
 
+static void writes_the_module_marker_beside_the_plugins(void) {
+    start_case("marker");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
+    catalog_answer answer = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    expect_file("plugins/package.json", "{\"type\":\"module\"}\n", "module marker");
+    cJSON_Delete(answer.tree);
+}
+
+static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
+    start_case("replace");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
+    catalog_answer first = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(first.tree);
+    char *before = tree_snapshot(scratch, NULL);
+    catalog_answer other = deploy_with("{\"id\":\"github:6\",\"name\":\"intruder\"}");
+    CHECK(expect_refusal(other, "github:5", "names the recorded id"));
+    CHECK(text_at(other.tree, "fix") != NULL && strstr(text_at(other.tree, "fix"), "github:6") != NULL);
+    expect_nothing_written_beside_the_bundle(before, "nothing changed");
+    free(before);
+    cJSON_Delete(other.tree);
+    catalog_answer again = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(again.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(again.tree);
+}
+
+static void treats_code_with_no_readable_identity_as_another_plugin(void) {
+    start_case("orphan");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
+    write_in_scratch("plugins/greeter.js", "export default 'someone else';");
+    char *before = tree_snapshot(scratch, NULL);
+    catalog_answer answer = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(expect_refusal(answer, "greeter", "orphan code"));
+    expect_nothing_written_beside_the_bundle(before, "orphan untouched");
+    free(before);
+    cJSON_Delete(answer.tree);
+    write_in_scratch("plugins/greeter_identity.json", "not json");
+    answer = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    cJSON_Delete(answer.tree);
+}
+
+static void a_new_version_with_no_entry_removes_the_old_entry_file(void) {
+    start_case("drop-entry");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
+    catalog_answer first = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(first.tree);
+    char *entry = in_scratch("plugins/greeter.js");
+    CHECK(spisor_file_exists(entry));
+    write_bundle("{\"importName\":\"greeter\",\"api\":1}", NULL, NULL);
+    catalog_answer second = deploy_with(IDENTITY_ARGUMENT);
+    CHECK(second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(!spisor_file_exists(entry));
+    free(entry);
+    cJSON_Delete(second.tree);
+}
+
+static void refuses_an_entry_that_is_empty_or_not_text(void) {
+    const char *entries[] = {"\"\"", "5", "null", "[\"a\"]"};
+    for (size_t index = 0; index < sizeof entries / sizeof entries[0]; index++) {
+        start_case("odd-entry");
+        char manifest[256];
+        snprintf(manifest, sizeof manifest, "{\"importName\":\"greeter\",\"api\":1,\"entry\":%s}", entries[index]);
+        write_bundle(manifest, NULL, NULL);
+        char *before = tree_snapshot(scratch, NULL);
+        catalog_answer answer = deploy_with(IDENTITY_ARGUMENT);
+        CHECK(expect_refusal(answer, "entry", entries[index]));
+        expect_nothing_written_beside_the_bundle(before, entries[index]);
+        free(before);
+        cJSON_Delete(answer.tree);
+    }
+}
+
+static void refuses_a_plugin_directory_that_is_the_bundle_or_inside_it(void) {
+    const char *directories[] = {"bundle", "bundle/../bundle", "bundle/plugins"};
+    for (size_t index = 0; index < sizeof directories / sizeof directories[0]; index++) {
+        start_case("same-directory");
+        write_bundle("{\"importName\":\"greeter\",\"api\":1}", NULL, NULL);
+        char *before = tree_snapshot(scratch, NULL);
+        char *bundle = in_scratch("bundle");
+        char *plugins = in_scratch(directories[index]);
+        cJSON *argument = cJSON_CreateObject();
+        cJSON_AddStringToObject(argument, "directory", bundle);
+        cJSON_AddStringToObject(argument, "pluginDir", plugins);
+        cJSON_AddItemToObject(argument, "identity", parsed(IDENTITY_ARGUMENT));
+        catalog_answer answer = call_catalog(runtime_cache_deploy, argument);
+        CHECK(expect_refusal(answer, "pluginDir", directories[index]));
+        expect_nothing_written_beside_the_bundle(before, directories[index]);
+        free(plugins);
+        free(bundle);
+        free(before);
+        cJSON_Delete(answer.tree);
+    }
+}
+
 int main(void) {
     deploys_under_the_import_name();
     writes_no_entry_file_for_a_plugin_without_an_entry();
@@ -224,5 +321,11 @@ int main(void) {
     refuses_an_entry_that_leaves_the_bundle_or_is_named_like_an_identity_file();
     a_bundle_file_named_like_an_identity_file_is_never_copied();
     refuses_an_identity_id_outside_the_grammar_and_writes_nothing();
+    writes_the_module_marker_beside_the_plugins();
+    refuses_to_replace_another_plugin_and_changes_nothing();
+    treats_code_with_no_readable_identity_as_another_plugin();
+    a_new_version_with_no_entry_removes_the_old_entry_file();
+    refuses_an_entry_that_is_empty_or_not_text();
+    refuses_a_plugin_directory_that_is_the_bundle_or_inside_it();
     return check_summary("cache_deploy_test");
 }

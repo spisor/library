@@ -294,6 +294,41 @@ static void refuses_one_id_under_two_kinds_and_one_version_twice(void) {
     finish_case();
 }
 
+static void refuses_an_import_name_that_is_an_id_or_the_module_marker(void) {
+    const char *refused[] = {"github:5", "local:x", "package", "con.x", "A"};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
+        start_case("bad-import-name");
+        catalog_inputs inputs = {NULL, 0, 0};
+        cJSON *refusal = NULL;
+        char *directory = in_base("bundled/odd/1.0.0");
+        char manifest[256];
+        snprintf(manifest, sizeof manifest, "{\"importName\": \"%s\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}", refused[index]);
+        write_in(directory, "plugin.json", manifest);
+        write_in(directory, "index.js", "export default {};\n");
+        CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
+        expect_refusal_naming(refusal, "importName", refused[index]);
+        free(directory);
+        host_free_catalog_inputs(&inputs);
+        finish_case();
+    }
+}
+
+static void keys_a_plugin_by_a_dotted_import_name(void) {
+    start_case("dotted-name");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = bundled_plugin("api.http", "1.0.0", NULL);
+    CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
+    char *path = build(&inputs, &refusal);
+    cJSON *catalog = path == NULL ? NULL : read_back(path);
+    CHECK(item_of(catalog, "api.http") != NULL);
+    cJSON_Delete(catalog);
+    free(path);
+    free(directory);
+    host_free_catalog_inputs(&inputs);
+    finish_case();
+}
+
 static void keys_an_item_by_an_id_as_well_as_by_a_name(void) {
     start_case("id-key");
     char *source = source_file();
@@ -665,6 +700,8 @@ int main(void) {
     installs_from_the_index_into_a_bundle_with_every_file();
     refuses_one_id_under_two_kinds_and_one_version_twice();
     keys_an_item_by_an_id_as_well_as_by_a_name();
+    refuses_an_import_name_that_is_an_id_or_the_module_marker();
+    keys_a_plugin_by_a_dotted_import_name();
     refuses_a_platform_that_is_not_an_os_arch_key_before_copying_anything();
     refuses_a_file_the_installer_would_take_for_its_completion_marker_in_any_case();
     refuses_two_file_keys_that_differ_only_by_case_before_copying_anything();

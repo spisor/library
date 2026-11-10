@@ -1,7 +1,7 @@
 set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256.c src/file_stream.c src/service_call.c src/identity.c src/json_service.c src/catalog_answer.c)
+    src/sha256.c src/file_stream.c src/service_call.c src/identity.c src/identity_parse.c src/import_name.c src/json_service.c src/catalog_answer.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)

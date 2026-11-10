@@ -105,7 +105,7 @@ static cJSON *only_this_copy(const char *id, start_file_state state) {
 static cJSON *refuse_primaries(const char *first_id, const char *first_primary, const char *second_id,
                                const char *second_primary, cJSON **refusal) {
     char message[512];
-    snprintf(message, sizeof message, "the copies name different primaries: %s names %s and %s names %s", first_id,
+    snprintf(message, sizeof message, RUNTIME_PRIMARIES_DISAGREE ": %s names %s and %s names %s", first_id,
              first_primary, second_id, second_primary);
     *refusal = runtime_refusal(message, "make every copy's also-at file name the same primary, then try again");
     return NULL;

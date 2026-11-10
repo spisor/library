@@ -7,6 +7,8 @@
 
 #include "cache_deploy.h"
 #include "cache_install.h"
+#include "cache_place.h"
+#include "cache_refusal.h"
 #include "catalog_read.h"
 #include "fetch_transport.h"
 #include "identity.h"
@@ -15,6 +17,7 @@
 #include "json_service.h"
 #include "platform_key.h"
 #include "sha256.h"
+#include "spisor/file.h"
 #include "spisor/json_kind.h"
 
 #define INDEX_ASSET "weivel-index.json"
@@ -31,7 +34,8 @@ typedef struct install_request {
     const char *version;
     const char *last_known;
     const char *api_base;
-    const char *recorded_primary;
+    const char *accept_primary;
+    char *recorded_primary;
 } install_request;
 
 typedef struct release_index {
@@ -87,7 +91,7 @@ static int read_request(const cJSON *argument, install_request *request, cJSON *
         !read_optional_text(argument, "version", &request->version, refusal) ||
         !read_optional_text(argument, "lastKnown", &request->last_known, refusal) ||
         !read_optional_text(argument, "apiBase", &request->api_base, refusal) ||
-        !read_optional_text(argument, "recordedPrimary", &request->recorded_primary, refusal)) {
+        !read_optional_text(argument, "acceptPrimary", &request->accept_primary, refusal)) {
         return 0;
     }
     if (!runtime_identity_parse_id(request->id, &parsed)) {
@@ -199,17 +203,79 @@ static cJSON *also_at_argument(const install_request *request) {
     return argument;
 }
 
-/** The set the repo's copies agree on; the id alone, unconfirmed, when that cannot be read or confirmed. NULL when memory runs out. */
-static cJSON *verified_set(const install_request *request) {
-    cJSON *refusal = NULL;
-    cJSON *found = runtime_call_or_refuse(runtime_identity_also_at, also_at_argument(request), &refusal);
-    int answered = found != NULL || refusal != NULL;
-    cJSON_Delete(refusal);
+static int is_disagreement(const cJSON *refusal) {
+    const char *message = text_of(refusal, "message");
+    return message != NULL && strncmp(message, RUNTIME_PRIMARIES_DISAGREE, strlen(RUNTIME_PRIMARIES_DISAGREE)) == 0;
+}
+
+/**
+ * The set the repo's copies agree on. The id alone, unconfirmed, when that cannot be read or confirmed; copies that
+ * name different primaries stop the install instead. NULL with a refusal for that, or without one out of memory.
+ */
+static cJSON *verified_set(const install_request *request, cJSON **refusal) {
+    cJSON *found_refusal = NULL;
+    cJSON *found = runtime_call_or_refuse(runtime_identity_also_at, also_at_argument(request), &found_refusal);
+    if (found_refusal != NULL && is_disagreement(found_refusal)) {
+        *refusal = found_refusal;
+        return NULL;
+    }
+    int answered = found != NULL || found_refusal != NULL;
+    cJSON_Delete(found_refusal);
     if (found != NULL && has_confirmed_primary(found)) {
         return found;
     }
     cJSON_Delete(found);
     return answered ? unconfirmed_set(request->id) : NULL;
+}
+
+/** cache/identities/<folder>.json, where the set and primary of each installed id are kept; freed with free. */
+static char *record_path(const install_request *request) {
+    int unfit = 0;
+    char *folder = runtime_item_folder(request->id, &unfit);
+    const char *file_parts[2] = {folder, ".json"};
+    char *file_name = folder == NULL ? NULL : runtime_cache_text(file_parts, 2);
+    const char *segments[2] = {"identities", file_name};
+    char *path = file_name == NULL ? NULL : runtime_cache_resolve(request->cache, segments, 2);
+    free(file_name);
+    free(folder);
+    return path;
+}
+
+/** Reads the primary recorded for the id; 1 when there is none or it reads, 0 with a refusal when the record is unusable. */
+static int read_recorded_primary(install_request *request, cJSON **refusal) {
+    char *path = record_path(request);
+    size_t length = 0;
+    int present = path != NULL && spisor_file_exists(path);
+    uint8_t *bytes = present ? spisor_read_file(path, &length) : NULL;
+    cJSON *record = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
+    const char *primary = text_of(record, "primary");
+    if (primary != NULL) {
+        request->recorded_primary = runtime_cache_text(&primary, 1);
+    } else if (present) {
+        refuse(refusal, "delete the record so the next install records it again", "%s holds no recorded primary", path);
+    }
+    cJSON_Delete(record);
+    free(bytes);
+    free(path);
+    return !present || primary != NULL;
+}
+
+static int write_record(const install_request *request, const cJSON *set) {
+    cJSON *record = cJSON_CreateObject();
+    int built = record != NULL &&
+                cJSON_AddItemToObject(record, "ids", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(set, "ids"), 1)) &&
+                cJSON_AddStringToObject(record, "primary", text_of(set, "primary")) != NULL;
+    char *text = built ? cJSON_Print(record) : NULL;
+    char *path = text == NULL ? NULL : record_path(request);
+    const char *parent_segment[1] = {".."};
+    char *directory = path == NULL ? NULL : runtime_cache_resolve(path, parent_segment, 1);
+    int written = directory != NULL && spisor_make_directories(directory) &&
+                  spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    free(directory);
+    free(path);
+    cJSON_free(text);
+    cJSON_Delete(record);
+    return written;
 }
 
 static int needs_user_acceptance(const install_request *request, const cJSON *set, int *needed, cJSON **refusal) {
@@ -224,7 +290,8 @@ static int needs_user_acceptance(const install_request *request, const cJSON *se
     if (!built) {
         cJSON_Delete(argument);
     }
-    *needed = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(decision, "needsUserAcceptance"));
+    int accepted = request->accept_primary != NULL && strcmp(request->accept_primary, text_of(set, "primary")) == 0;
+    *needed = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(decision, "needsUserAcceptance")) && !accepted;
     int decided = decision != NULL;
     cJSON_Delete(decision);
     return decided;
@@ -447,35 +514,68 @@ static cJSON *installed_answer(const install_request *request, const cJSON *repo
     return answer;
 }
 
-static cJSON *install_verified(const install_request *request, const cJSON *repository, const cJSON *set,
-                               cJSON **refusal) {
+/** Installs from source, the repo the verified set names as primary, and records the set under the id that was asked for. */
+static cJSON *install_verified(const install_request *request, const install_request *source, const cJSON *repository,
+                               const cJSON *set, cJSON **refusal) {
     int needed = 0;
     if (!needs_user_acceptance(request, set, &needed, refusal)) {
         return NULL;
     }
     if (needed) {
-        return acceptance_answer(request, repository, set);
+        return acceptance_answer(source, repository, set);
     }
     release_index index;
     cJSON *answer = NULL;
-    if (read_release_index(request, repository, &index, refusal)) {
-        const char *version = install_and_deploy(request, repository, &index, refusal);
-        answer = version == NULL ? NULL : installed_answer(request, repository, set, &index, version);
+    if (read_release_index(source, repository, &index, refusal)) {
+        const char *version = install_and_deploy(source, repository, &index, refusal);
+        answer = version == NULL ? NULL : installed_answer(source, repository, set, &index, version);
+        if (answer != NULL && !write_record(request, set)) {
+            refuse(refusal, "free the cache's identities folder or point cache at a writable directory, then install again",
+                   "the primary of %s could not be recorded", request->id);
+            cJSON_Delete(answer);
+            answer = NULL;
+        }
     }
     cJSON_Delete(index.catalog);
     return answer;
 }
 
+/** A confirmed primary other than the id asked for is where a new version comes from; a mirror never supplies one. */
+static install_request source_of(const install_request *request, const cJSON *set) {
+    install_request source = *request;
+    const char *primary = text_of(set, "primary");
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed")) && primary != NULL &&
+        strcmp(primary, request->id) != 0) {
+        source.id = primary;
+        source.last_known = NULL;
+    }
+    return source;
+}
+
+static cJSON *install_from_set(const install_request *request, const cJSON *repository, const cJSON *set,
+                               cJSON **refusal) {
+    install_request source = source_of(request, set);
+    int is_mirror = strcmp(source.id, request->id) != 0;
+    cJSON *primary_repository = is_mirror ? resolve_repository(&source, refusal) : NULL;
+    cJSON *answer = is_mirror && primary_repository == NULL
+                        ? NULL
+                        : install_verified(request, &source, is_mirror ? primary_repository : repository, set, refusal);
+    cJSON_Delete(primary_repository);
+    return answer;
+}
+
 static cJSON *install_by_id(const cJSON *argument, cJSON **refusal) {
     install_request request;
-    if (!read_request(argument, &request, refusal)) {
+    if (!read_request(argument, &request, refusal) || !read_recorded_primary(&request, refusal)) {
+        free(request.recorded_primary);
         return NULL;
     }
     cJSON *repository = resolve_repository(&request, refusal);
-    cJSON *set = repository == NULL ? NULL : verified_set(&request);
-    cJSON *answer = set == NULL ? NULL : install_verified(&request, repository, set, refusal);
+    cJSON *set = repository == NULL ? NULL : verified_set(&request, refusal);
+    cJSON *answer = set == NULL ? NULL : install_from_set(&request, repository, set, refusal);
     cJSON_Delete(set);
     cJSON_Delete(repository);
+    free(request.recorded_primary);
     return answer;
 }
 

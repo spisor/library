@@ -8,6 +8,7 @@
 #include "catalog_text.h"
 #include "directory_tree.h"
 #include "host_context.h"
+#include "import_name.h"
 #include "loader.h"
 #include "paths.h"
 #include "spisor/file.h"
@@ -56,14 +57,15 @@ static cJSON *read_manifest(const char *path, cJSON **refusal) {
     return manifest;
 }
 
-static int accepts_id(const cJSON *manifest, const char *identity_member, const char *path, cJSON **refusal) {
+static int accepts_id(const cJSON *manifest, const char *identity_member, int (*is_acceptable)(const char *), const char *path,
+                      cJSON **refusal) {
     const cJSON *id = cJSON_GetObjectItemCaseSensitive(manifest, identity_member);
-    if (cJSON_IsString(id) && runtime_catalog_is_item_id(id->valuestring)) {
+    if (cJSON_IsString(id) && is_acceptable(id->valuestring)) {
         return 1;
     }
     char *named = shown(id);
     const char *parts[6] = {path, " names the ", identity_member, " ", named, ", which a catalog refuses"};
-    const char *fix_parts[3] = {"give the manifest an ", identity_member, " of lowercase letters and digits joined by single hyphens"};
+    const char *fix_parts[3] = {"give the manifest an ", identity_member, " of lowercase words joined by single hyphens or dots, never an id and not a Windows reserved name"};
     char *fix = runtime_cache_text(fix_parts, 3);
     *refusal = fix == NULL ? NULL : refused(parts, 6, fix);
     free(fix);
@@ -89,8 +91,8 @@ static int accepts_version(const cJSON *manifest, const char *path, cJSON **refu
 }
 
 /** The manifest file_name in directory, refused unless its identity_member and its version are ones a catalog accepts. */
-static cJSON *identified_manifest(const char *directory, const char *file_name, const char *identity_member, char **path,
-                                  cJSON **refusal) {
+static cJSON *identified_manifest(const char *directory, const char *file_name, const char *identity_member,
+                                  int (*is_acceptable)(const char *), char **path, cJSON **refusal) {
     *path = joined(directory, file_name);
     if (*path != NULL && !spisor_file_exists(*path)) {
         const char *parts[3] = {directory, " has no ", file_name};
@@ -101,7 +103,7 @@ static cJSON *identified_manifest(const char *directory, const char *file_name, 
         return NULL;
     }
     cJSON *manifest = *path == NULL ? NULL : read_manifest(*path, refusal);
-    if (manifest != NULL && (!accepts_id(manifest, identity_member, *path, refusal) || !accepts_version(manifest, *path, refusal))) {
+    if (manifest != NULL && (!accepts_id(manifest, identity_member, is_acceptable, *path, refusal) || !accepts_version(manifest, *path, refusal))) {
         cJSON_Delete(manifest);
         manifest = NULL;
     }
@@ -319,7 +321,7 @@ static int add_bundled_file(cJSON *files, const char *root, const char *key, cJS
 int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
-    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, "importName", &path, refusal);
+    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, "importName", runtime_is_import_name, &path, refusal);
     const char *entry = manifest == NULL ? NULL : entry_of(manifest, path, refusal);
     catalog_input input = {"plugin", NULL, NULL, NULL, entry == NULL ? NULL : cJSON_CreateObject(), NULL, NULL, NULL};
     int added = input.files != NULL && add_bundled_file(input.files, root, entry, refusal) &&
@@ -383,7 +385,7 @@ static int names_runtime(const cJSON *manifest, const char *path, cJSON **refusa
 int host_read_host_directory(catalog_inputs *inputs, const char *directory, const char *platform, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
-    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, "id", &path, refusal);
+    cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, "id", runtime_catalog_is_item_name, &path, refusal);
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(manifest, "application");
     const char *entry = manifest == NULL || application != NULL ? NULL : entry_of(manifest, path, refusal);
     int checked = manifest != NULL && names_runtime(manifest, path, refusal) &&

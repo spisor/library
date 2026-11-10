@@ -850,7 +850,7 @@
               "pluginDir": { "type": "string", "minLength": 1 },
               "version": { "type": "string", "minLength": 1 },
               "lastKnown": { "type": "string", "minLength": 1, "description": "The owner/name a previous lookup saw; asked only when the number cannot be looked up." },
-              "recordedPrimary": { "type": "string", "minLength": 1, "description": "The primary the caller kept at an earlier install; a different one needs the user to accept it." }
+              "acceptPrimary": { "type": "string", "minLength": 1, "description": "The new primary the user accepted; without it a primary that differs from the recorded one installs nothing." }
             },
             "required": ["id", "cache", "pluginDir"]
           },

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "identity.h"
+#include "import_name.h"
 
 static int is_ascii_digit(char character) {
     return character >= '0' && character <= '9';
@@ -13,33 +14,13 @@ static int is_ascii_letter(char character) {
     return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
 }
 
-static int is_reserved_device_name(const char *key) {
-    static const char *const names[] = {"con", "prn", "aux", "nul"};
-    for (size_t index = 0; index < sizeof names / sizeof names[0]; index++) {
-        if (strcmp(key, names[index]) == 0) {
-            return 1;
-        }
-    }
-    int numbered = strncmp(key, "com", 3) == 0 || strncmp(key, "lpt", 3) == 0;
-    return numbered && key[3] >= '1' && key[3] <= '9' && key[4] == 0;
-}
-
-static int is_item_name(const char *key) {
-    size_t length = strlen(key);
-    if (length == 0 || key[0] == '-' || key[length - 1] == '-' || strstr(key, "--") != NULL) {
-        return 0;
-    }
-    for (const char *at = key; *at != 0; at++) {
-        if (!((*at >= 'a' && *at <= 'z') || is_ascii_digit(*at) || *at == '-')) {
-            return 0;
-        }
-    }
-    return !is_reserved_device_name(key);
+int runtime_catalog_is_item_name(const char *key) {
+    return runtime_is_import_name_grammar(key);
 }
 
 int runtime_catalog_is_item_id(const char *key) {
     runtime_identity identity;
-    return is_item_name(key) || runtime_identity_parse_id(key, &identity);
+    return runtime_catalog_is_item_name(key) || runtime_identity_parse_id(key, &identity);
 }
 
 static const char *after_digits(const char *at) {
