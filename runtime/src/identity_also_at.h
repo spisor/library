@@ -7,8 +7,9 @@
 #include "export.h"
 
 /**
- * identity.agree: {id, files} answers {ids, primary, primaryConfirmed, startFileMalformed?} for the repo id names.
- * files maps a repo id to its also-at file, or to null when that copy was unreachable or has none. Pure: it reads
+ * identity.agree: {id, files} answers {ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable?} for
+ * the repo id names. files maps a repo id to its also-at file, to null when that copy has none, or to false when
+ * reading it failed. Pure: it reads
  * nothing, so a caller holding the files can ask it directly.
  *
  * @implNote This is the only place the two-sided rule lives: an id is counted only when the file of the id we
@@ -16,7 +17,9 @@
  * considered, never ids those copies list in turn, and a file listing more than 16 ids is malformed. A file that is
  * not an object, or holds an id outside the id grammar, a local id or an id with a folder, is malformed: on another
  * copy that leaves the copy out, as an unreachable one is, and on the starting id it is reported as
- * startFileMalformed and nothing beyond the id itself is counted. Counted copies naming a primary other than the
+ * startFileMalformed and nothing beyond the id itself is counted. A starting file whose read failed (false) is
+ * answered with startFileUnavailable and primaryConfirmed false, since a copy that could not be read must not
+ * present itself as the primary the way one with no file does. Counted copies naming a primary other than the
  * starting file's are refused, since the set then has no one primary; a named primary no counted copy confirms is
  * answered with primaryConfirmed false.
  */

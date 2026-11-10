@@ -38,6 +38,8 @@ typedef enum runtime_repo_file_status {
  * counted against the API's anonymous rate limit; a Gitea or Forgejo host answers the file raw from its API root, and
  * the default branch when no ref is given. Both measured 2026-11-10 to answer 200 anonymously for a nested path and
  * 404 for a missing file. The owner/name comes from the lookup's own answer, so a renamed repo is read where it is now.
+ * A file is fetched by name, so the repo is looked up by number again afterwards and the file is kept only when that
+ * answers the same owner/name: a name taken between the two would otherwise serve another repo's file.
  */
 runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
                                                     uint8_t **content, size_t *length, cJSON **refusal);

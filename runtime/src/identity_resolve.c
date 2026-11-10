@@ -462,15 +462,36 @@ static runtime_repo_file_status read_from_repository(const char *id, const char 
     return fetch_file(url, content, length);
 }
 
-runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
-                                                    uint8_t **content, size_t *length, cJSON **refusal) {
+static cJSON *resolve_repository(const char *id, const char *api_base, cJSON **refusal) {
     cJSON *argument = repository_argument(id, api_base);
     cJSON *repository = argument == NULL ? NULL : resolve(argument, refusal);
     cJSON_Delete(argument);
+    return repository;
+}
+
+static int still_names_the_same_repository(const char *id, const char *api_base, const cJSON *before) {
+    cJSON *refusal = NULL;
+    cJSON *after = resolve_repository(id, api_base, &refusal);
+    const char *before_name = text_member(before, "fullName");
+    const char *after_name = after == NULL ? NULL : text_member(after, "fullName");
+    int same = before_name != NULL && after_name != NULL && strcmp(before_name, after_name) == 0;
+    cJSON_Delete(after);
+    cJSON_Delete(refusal);
+    return same;
+}
+
+runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
+                                                    uint8_t **content, size_t *length, cJSON **refusal) {
+    cJSON *repository = resolve_repository(id, api_base, refusal);
     if (repository == NULL) {
-        return argument == NULL || *refusal == NULL ? RUNTIME_REPO_FILE_OUT_OF_MEMORY : RUNTIME_REPO_FILE_UNAVAILABLE;
+        return *refusal == NULL ? RUNTIME_REPO_FILE_OUT_OF_MEMORY : RUNTIME_REPO_FILE_UNAVAILABLE;
     }
     runtime_repo_file_status status = read_from_repository(id, api_base, repository, path, content, length);
+    if (status == RUNTIME_REPO_FILE_READ && !still_names_the_same_repository(id, api_base, repository)) {
+        free(*content);
+        *content = NULL;
+        status = RUNTIME_REPO_FILE_UNAVAILABLE;
+    }
     cJSON_Delete(repository);
     return status;
 }
