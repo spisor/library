@@ -13,7 +13,7 @@
 
 const runtime_catalog_schema_text runtime_catalog_schema_patterns[PATTERN_COUNT] = {
     [PATTERN_ITEM_ID] = {"/properties/items/propertyNames/pattern",
-                         "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])"},
+                         "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])"},
     [PATTERN_VERSION_KEY] = {ITEM "/properties/versions/propertyNames/pattern", VERSION_PATTERN},
     [PATTERN_LATEST] = {ITEM "/properties/latest/pattern", VERSION_PATTERN},
     [PATTERN_FILE_KEY] = {"/definitions/files/propertyNames/pattern",

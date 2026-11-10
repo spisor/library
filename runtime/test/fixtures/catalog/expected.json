@@ -255,7 +255,7 @@
       "fixture": "refuses-the-item-id-...json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/.."
     },
@@ -264,7 +264,7 @@
       "fixture": "refuses-the-item-id-Upper.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/Upper"
     },
@@ -273,7 +273,7 @@
       "fixture": "refuses-the-item-id-a--b.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/a--b"
     },
@@ -282,7 +282,7 @@
       "fixture": "refuses-the-item-id-con.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/con"
     },
@@ -291,7 +291,7 @@
       "fixture": "refuses-the-item-id-proto-.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/__proto__"
     },
@@ -300,7 +300,7 @@
       "fixture": "refuses-the-item-id--a.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/-a"
     },
@@ -1010,7 +1010,7 @@
       "fixture": "refuses-a-bad-item-id-before-a-bad-item.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/Bad"
     },
@@ -1070,7 +1070,7 @@
       "fixture": "refuses-an-id-item-key-with-a-dot-dot-segment.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/github:1/../x"
     },
@@ -1079,16 +1079,31 @@
       "fixture": "refuses-an-id-item-key-with-no-number.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/github:"
+    },
+    {
+      "name": "accepts a dotted item key",
+      "fixture": "accepts-a-dotted-item-key.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": true
+    },
+    {
+      "name": "refuses the item key con.x",
+      "fixture": "refuses-the-item-key-con.x.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
+      "path": "/items/con.x"
     },
     {
       "name": "refuses lpt1",
       "fixture": "refuses-lpt1.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
-      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?![\\s\\S]))(?:[a-z0-9]+(-[a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
+      "detail": "the catalog index must match pattern \"^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|(?![\\s\\S])))(?:[a-z0-9]+([-.][a-z0-9]+)*|(?:local:[^/\\s]+|[a-z][a-z0-9-]*(?:@[a-z0-9.-]+)?:[0-9]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*)(?![\\s\\S])\"",
       "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
       "path": "/items/lpt1"
     },
