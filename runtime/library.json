@@ -194,6 +194,114 @@
             "required": ["copy", "skipped"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "sources",
+          "symbol": "runtime_marketplace_sources",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "settings": { "type": "object", "description": "The merged settings; its marketplaces member lists {id, url} or {id, provider}." }
+            },
+            "required": ["settings"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    { "type": "object", "properties": { "id": { "type": "string" }, "url": { "type": "string" } }, "required": ["id", "url"], "additionalProperties": false },
+                    { "type": "object", "properties": { "id": { "type": "string" }, "provider": { "type": "string" } }, "required": ["id", "provider"], "additionalProperties": false }
+                  ]
+                }
+              },
+              "skipped": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": { "index": { "type": "integer", "minimum": 0 }, "detail": { "type": "string" } },
+                  "required": ["index", "detail"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["sources", "skipped"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "read",
+          "symbol": "runtime_marketplace_read",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "object",
+                "properties": { "id": { "type": "string" }, "url": { "type": "string" } },
+                "required": ["id", "url"]
+              },
+              "text": { "type": "string", "description": "The body the host already fetched." },
+              "destination": { "type": "string", "description": "An absolute path to fetch the url into when text is not sent; the file is removed once read." }
+            },
+            "required": ["source"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "copy": { "type": "object", "description": "The copy, as marketplace-copy.schema.json describes it." }
+            },
+            "required": ["copy"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "lookup",
+          "symbol": "runtime_marketplace_lookup",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "copies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] },
+                    "copy": { "type": "object" }
+                  },
+                  "required": ["source", "copy"]
+                }
+              },
+              "name": { "type": "string", "minLength": 1, "description": "A bare name, or marketplace/name." }
+            },
+            "required": ["copies", "name"]
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": { "id": { "type": "string" }, "marketplace": { "type": "string" } },
+                "required": ["id", "marketplace"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "ambiguous": { "type": "array", "items": { "type": "string" } } },
+                "required": ["ambiguous"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "notFound": { "const": true } },
+                "required": ["notFound"],
+                "additionalProperties": false
+              }
+            ]
+          }
         }
       ]
     },

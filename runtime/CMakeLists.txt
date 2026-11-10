@@ -109,6 +109,11 @@ target_link_libraries(runtime_marketplace_build PUBLIC runtime_objects)
 set_target_properties(runtime_marketplace_build PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_marketplace_build)
 
+add_library(runtime_marketplace_reading OBJECT src/marketplace_sources.c src/marketplace_read.c src/marketplace_name_lookup.c)
+target_link_libraries(runtime_marketplace_reading PUBLIC runtime_objects)
+set_target_properties(runtime_marketplace_reading PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_marketplace_reading)
+
 add_library(runtime_catalog OBJECT ${runtime_catalog_sources})
 target_link_libraries(runtime_catalog PUBLIC runtime_objects)
 set_target_properties(runtime_catalog PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
@@ -191,7 +196,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
     $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)
