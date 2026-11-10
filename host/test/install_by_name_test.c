@@ -5,6 +5,7 @@
 
 #include "fetch_hooks.h"
 #include "host_commands.h"
+#include "host_output.h"
 #include "http_fixture.h"
 #include "marketplace_lookup.h"
 
@@ -414,6 +415,23 @@ static void write_release(void) {
     free(index_path);
 }
 
+static void printed_json_escapes_every_control_character(void) {
+    start_world("printed-json");
+    cJSON *value = cJSON_CreateObject();
+    cJSON_AddStringToObject(value, "name", "a\xc2\x9b" "b\x7f" "c\x1b" "d");
+    start_capture();
+    host_print_json(value);
+    char *out = NULL;
+    char *err = NULL;
+    stop_capture(&out, &err);
+    expect_contains(out, "\"a\\u009bb\\u007fc\\u001bd\"", "U+009B, 0x7F and 0x1B escaped");
+    CHECK(strchr(out, '\x7f') == NULL && strstr(out, "\xc2\x9b") == NULL);
+    free(out);
+    free(err);
+    cJSON_Delete(value);
+    finish_world(&world);
+}
+
 static void run_against_the_server(void) {
     static const char greeter[] = REPOSITORY("5", "greeter");
     static const char eleven[] = REPOSITORY("11", "eleven");
@@ -449,6 +467,7 @@ static void run_against_the_server(void) {
     a_changed_primary_asks_with_the_two_flags_kept_apart();
     accept_primary_does_not_accept_a_changed_name();
     answers_2_for_an_accept_without_a_name_and_for_a_name_with_a_catalog();
+    printed_json_escapes_every_control_character();
     host_marketplace_aim_lookups(NULL);
     free(http_fixture_stop(server));
 }
