@@ -10,7 +10,8 @@
 
 #define SKIP_STATUS 77
 #define COMMIT_LENGTH 40
-#define BUILD_COMMAND "forebay-host marketplace build --list marketplace.json --out marketplace.generated.json"
+#define FETCH_PREFIX "fetch --depth 1 https://github.com/spisor/library "
+#define BUILD_COMMAND "library/build/bin/forebay-host marketplace build --list marketplace.json --out marketplace.generated.json"
 
 typedef struct template_host {
     const char *host;
@@ -39,6 +40,12 @@ static char *read_text(const char *root, const char *host, const char *file) {
         return NULL;
     }
     char *text = calloc(length + 1, 1);
+    if (text == NULL) {
+        free(bytes);
+        fprintf(stderr, "out of memory reading %s\n", path);
+        check_failures++;
+        return NULL;
+    }
     memcpy(text, bytes, length);
     free(bytes);
     return text;
@@ -49,19 +56,21 @@ static int is_hex(char character) {
 }
 
 static int pinned_commit_of(const char *text, char *commit) {
-    for (const char *cursor = text; *cursor != '\0'; cursor++) {
-        size_t run = 0;
-        while (is_hex(cursor[run])) {
-            run++;
-        }
-        if (run == COMMIT_LENGTH) {
-            memcpy(commit, cursor, COMMIT_LENGTH);
-            commit[COMMIT_LENGTH] = '\0';
-            return 1;
-        }
-        cursor += run;
+    const char *fetch = strstr(text, FETCH_PREFIX);
+    if (fetch == NULL) {
+        return 0;
     }
-    return 0;
+    const char *start = fetch + strlen(FETCH_PREFIX);
+    size_t run = 0;
+    while (is_hex(start[run])) {
+        run++;
+    }
+    if (run != COMMIT_LENGTH) {
+        return 0;
+    }
+    memcpy(commit, start, COMMIT_LENGTH);
+    commit[COMMIT_LENGTH] = '\0';
+    return 1;
 }
 
 static void checks_the_list(const char *root, const template_host *host) {
@@ -93,7 +102,6 @@ static void checks_the_pipeline(const char *root, const template_host *host, cha
         }
         check_text(commit, shared_commit, host->host);
     }
-    CHECK(strstr(text, "github.com/spisor/library") != NULL);
     CHECK(strstr(text, BUILD_COMMAND) != NULL);
     if (strstr(text, host->publish_marker) == NULL) {
         fprintf(stderr, "%s: %s does not publish (expected \"%s\")\n", host->host, host->ci_file, host->publish_marker);
@@ -117,8 +125,15 @@ static void checks_the_content(const char *root, const template_host *host) {
     if (text == NULL) {
         return;
     }
-    check_failures += count_numbered_steps(text) == 5 ? 0 : 1;
-    CHECK(strstr(text, "Documentation:") != NULL && strstr(text, "https://") != NULL);
+    int steps = count_numbered_steps(text);
+    if (steps != 5) {
+        fprintf(stderr, "%s CONTENT.md: %d numbered steps, expected 5\n", host->host, steps);
+        check_failures++;
+    }
+    if (strstr(text, "Documentation: https://") == NULL) {
+        fprintf(stderr, "%s CONTENT.md: no \"Documentation: https://\" line\n", host->host);
+        check_failures++;
+    }
     free(text);
 }
 
