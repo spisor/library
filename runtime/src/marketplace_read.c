@@ -12,6 +12,7 @@
 #include "paths.h"
 #include "json_service.h"
 #include "marketplace_check.h"
+#include "marketplace_sources.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -21,6 +22,19 @@
 #define BYTE_ORDER_MARK "\xEF\xBB\xBF"
 #define FETCH_TIMEOUT_SECONDS 30
 #define BUILD_FIX "build the copy from the list with marketplace build and serve the file it writes, not the list"
+
+/**
+ * @implNote The test build also accepts http:, which only a loopback fixture serves; the library refuses it, as the
+ * fetch it calls does.
+ */
+static int is_readable_url(const char *url) {
+#ifdef SPISOR_MARKETPLACE_TEST_HOOKS
+    if (strncmp(url, "http:", 5) == 0) {
+        return 1;
+    }
+#endif
+    return runtime_marketplace_is_usable_url(url);
+}
 
 typedef struct reading {
     const char *source_id;
@@ -57,6 +71,11 @@ static int is_source_usable(const cJSON *source, reading *order, cJSON **refusal
                "%s has no url, so this library cannot fetch it", order->source_id);
         return 0;
     }
+    if (!is_readable_url(order->url)) {
+        refuse(refusal, "give the source a file: or https: url", "the url of source %s is not a file: or https: url",
+               order->source_id);
+        return 0;
+    }
     return 1;
 }
 
@@ -66,6 +85,11 @@ static int has_way_to_read(const cJSON *argument, reading *order, cJSON **refusa
     if (order->text == NULL && (order->destination == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, order->destination))) {
         refuse(refusal, "send text, the body already fetched, or destination, an absolute path to download into",
                "the argument carries neither text nor a usable destination for %s", order->source_id);
+        return 0;
+    }
+    if (order->text == NULL && spisor_file_exists(order->destination)) {
+        refuse(refusal, "send a destination that does not exist; it is deleted once read, so only a file this call wrote",
+               "the destination for %s already exists", order->source_id);
         return 0;
     }
     return 1;

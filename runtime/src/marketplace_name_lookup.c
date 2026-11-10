@@ -154,6 +154,23 @@ static cJSON *ambiguous_answer(const match *matches, size_t count) {
     return answer;
 }
 
+static int is_repeated_id(const match *matches, size_t index) {
+    for (size_t earlier = 0; earlier < index; earlier++) {
+        if (strcmp(text_of(matches[earlier].entry, "id"), text_of(matches[index].entry, "id")) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static size_t distinct_id_count(const match *matches, size_t count) {
+    size_t distinct = 0;
+    for (size_t index = 0; index < count; index++) {
+        distinct += is_repeated_id(matches, index) ? 0 : 1;
+    }
+    return distinct;
+}
+
 static cJSON *answer_for(const match *matches, size_t count) {
     if (count == 0) {
         cJSON *answer = cJSON_CreateObject();
@@ -163,7 +180,7 @@ static cJSON *answer_for(const match *matches, size_t count) {
         }
         return answer;
     }
-    return count == 1 ? found_answer(&matches[0]) : ambiguous_answer(matches, count);
+    return distinct_id_count(matches, count) == 1 ? found_answer(&matches[0]) : ambiguous_answer(matches, count);
 }
 
 static cJSON *look_up(const cJSON *argument, cJSON **refusal) {

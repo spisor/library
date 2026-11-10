@@ -16,6 +16,9 @@
  * {index, detail}, as catalog.sources lists what it leaves out. Two sources with one id are refused, naming both, since
  * a name could not say which of them it meant.
  */
+/** Whether url is a file: or https: url with something after the scheme, the only kinds a source may name. */
+int runtime_marketplace_is_usable_url(const char *url);
+
 RUNTIME_EXPORT int32_t runtime_marketplace_sources(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif
