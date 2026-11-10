@@ -196,10 +196,28 @@ static cJSON *folder_answer(const char *folder) {
     return result;
 }
 
+/** Whether a local id's name holds a character the folder mapping or a case-insensitive file system would make ambiguous. */
+static int is_ambiguous_local_name(const runtime_identity *parsed) {
+    if (parsed->number.start != NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < parsed->path.length; index++) {
+        char character = parsed->path.start[index];
+        if (character == '+' || character == '=' || character == ':' || (character >= 'A' && character <= 'Z')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int32_t folder(const char *id, uint8_t **out, size_t *out_len) {
     runtime_identity parsed;
     if (!runtime_identity_parse_id(id, &parsed)) {
         return spisor_fail("the id is not valid", "send an id such as github:<number>[/<path>] or local:<name>", out, out_len);
+    }
+    if (is_ambiguous_local_name(&parsed)) {
+        return spisor_fail("the local id would share a folder with another id",
+                           "use the plugin's import name: lowercase, without +, = or :", out, out_len);
     }
     char *name = folder_name(id);
     if (name != NULL && !is_portable_folder(name)) {

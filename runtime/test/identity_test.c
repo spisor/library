@@ -167,6 +167,21 @@ static void a_name_a_folder_cannot_carry_is_refused_not_rewritten(void) {
     CHECK(call_with_id(runtime_identity_folder, "github:1/a.") == NULL);
 }
 
+static void a_local_id_whose_folder_would_be_shared_is_refused(void) {
+    const char *const colliding[] = {"local:a=b", "local:a+b", "local:a:b", "local:Foo", "local:fOo", "local:x/a+b"};
+    for (size_t index = 0; index < sizeof colliding / sizeof colliding[0]; index++) {
+        cJSON *answer = call_with_id(runtime_identity_folder, colliding[index]);
+        if (answer != NULL) {
+            fprintf(stderr, "%s should have no folder\n", colliding[index]);
+            check_failures++;
+        }
+        cJSON_Delete(answer);
+    }
+    expect_folder("local:a/b", "local+a=b");
+    expect_folder("local:foo", "local+foo");
+    CHECK(is_valid("local:a=b") && is_valid("local:Foo"));
+}
+
 static void a_folder_for_an_invalid_id_is_refused(void) {
     CHECK(call_with_id(runtime_identity_folder, "calendar") == NULL);
     CHECK(call_with_id(runtime_identity_folder, "github:1/..") == NULL);
@@ -184,6 +199,7 @@ int main(void) {
     a_folder_swaps_the_colon_for_a_plus_and_the_slash_for_an_equals_sign();
     no_folder_holds_a_path_separator_or_colon();
     a_name_a_folder_cannot_carry_is_refused_not_rewritten();
+    a_local_id_whose_folder_would_be_shared_is_refused();
     a_folder_for_an_invalid_id_is_refused();
     return check_summary("identity_test");
 }
