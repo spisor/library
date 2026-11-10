@@ -47,6 +47,41 @@
       ]
     },
     {
+      "id": "identity",
+      "functions": [
+        {
+          "name": "parse",
+          "symbol": "runtime_identity_parse",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] },
+          "result": {
+            "type": "object",
+            "properties": {
+              "valid": { "type": "boolean" },
+              "resolver": { "type": "string" },
+              "host": { "type": "string" },
+              "number": { "type": "string", "pattern": "^[0-9]+$" },
+              "path": { "type": "string" }
+            },
+            "required": ["valid"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "folder",
+          "symbol": "runtime_identity_folder",
+          "kind": "json",
+          "argument": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] },
+          "result": {
+            "type": "object",
+            "properties": { "folder": { "type": "string", "minLength": 1 } },
+            "required": ["folder"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
       "id": "places",
       "functions": [
         {
