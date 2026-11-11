@@ -359,19 +359,19 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "environment": { "type": "object" }
-            },
-            "required": ["home"]
+            }
           },
           "result": {
             "type": "object",
             "properties": {
+              "home": { "type": "string" },
               "portable": { "type": "string" },
               "state": { "type": "string" },
               "cache": { "type": "string" },
               "secretsFile": { "type": "string" },
               "forceFileStore": { "type": "boolean" }
             },
-            "required": ["portable", "state", "cache", "secretsFile", "forceFileStore"],
+            "required": ["home", "portable", "state", "cache", "secretsFile", "forceFileStore"],
             "additionalProperties": false
           }
         }

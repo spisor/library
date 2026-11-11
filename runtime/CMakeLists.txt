@@ -1,4 +1,4 @@
-set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c
+set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c src/user_home.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
     src/sha256.c src/file_stream.c src/service_call.c src/identity.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c)
@@ -165,7 +165,7 @@ spisor_strict_warnings(runtime_processes)
 
 set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c src/hosts.c
     src/hosts_register.c src/hosts_remove.c src/lists.c src/loader_installed.c
-    src/loader_standard.c src/loader_application_facts.c src/entry_template.c src/on_path.c src/user_home.c)
+    src/loader_standard.c src/loader_application_facts.c src/entry_template.c src/on_path.c)
 add_library(runtime_hosts OBJECT ${runtime_hosts_sources})
 target_link_libraries(runtime_hosts PUBLIC runtime_objects)
 target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)
