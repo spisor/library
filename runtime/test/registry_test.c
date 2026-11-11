@@ -26,6 +26,14 @@
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
+#ifdef _WIN32
+#define FIXTURE_HOME "C:/home/claude"
+#define NEWER_HOME "C:/home/claude-two"
+#else
+#define FIXTURE_HOME "/home/claude"
+#define NEWER_HOME "/home/claude-two"
+#endif
+
 typedef int32_t (*registry_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 typedef struct scratch {
@@ -72,7 +80,7 @@ static cJSON *registration_for(const char *id, const char *version, const char *
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", version);
-    cJSON_AddStringToObject(registration, "home", "/home/claude");
+    cJSON_AddStringToObject(registration, "home", FIXTURE_HOME);
     add_host_provenance(registration, method, version, location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 1);
     return registration;
@@ -205,7 +213,7 @@ static void register_then_get(void) {
     cJSON *fetched = get_registration(&place, "claude");
     check_text(text_at(fetched, "kind"), "host", "kind");
     check_text(text_at(fetched, "version"), "1.0.0", "version");
-    check_text(text_at(fetched, "home"), "/home/claude", "home");
+    check_text(text_at(fetched, "home"), FIXTURE_HOME, "home");
     check_text(provenance_text(fetched, "method"), "npm", "method");
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(fetched, "requiresCommand")));
     CHECK(host_file_exists(&place, "claude"));
@@ -235,7 +243,7 @@ static void re_registration_keeps_commands_and_changes_and_replaces_the_rest(voi
     add_command_and_change(&place, "claude");
 
     cJSON *newer = registration_for("claude", "2.0.0", "winget", place.cache);
-    cJSON_DeleteItemFromObjectCaseSensitive(newer, "home");
+    cJSON_ReplaceItemInObjectCaseSensitive(newer, "home", cJSON_CreateString(NEWER_HOME));
     cJSON_AddItemToObject(newer, "commands", cJSON_CreateArray());
     cJSON_AddItemToObject(newer, "changes", cJSON_CreateArray());
     CHECK(register_host(&place, newer));
@@ -244,7 +252,7 @@ static void re_registration_keeps_commands_and_changes_and_replaces_the_rest(voi
     check_text(text_at(fetched, "version"), "2.0.0", "version replaced");
     check_text(provenance_text(fetched, "method"), "winget", "provenance replaced");
     check_text(provenance_text(fetched, "location"), place.cache, "location replaced");
-    CHECK(cJSON_GetObjectItemCaseSensitive(fetched, "home") == NULL);
+    check_text(text_at(fetched, "home"), NEWER_HOME, "home replaced");
     const cJSON *commands = cJSON_GetObjectItemCaseSensitive(fetched, "commands");
     check_text(text_at(cJSON_GetArrayItem(commands, 0), "name"), "claude-weivel", "command kept");
     CHECK(cJSON_GetArraySize(commands) == 1);
@@ -482,6 +490,21 @@ static void a_provenance_without_its_platform_or_time_is_refused(void) {
     CHECK(host_file_exists(&place, "h"));
 }
 
+static void a_registration_without_a_usable_home_is_refused(void) {
+    scratch place;
+    fresh_scratch(&place, "nohome");
+    cJSON *no_home = registration_for("h", "1", "npm", place.directory);
+    cJSON_DeleteItemFromObjectCaseSensitive(no_home, "home");
+    CHECK(refusal_message_names(register_request(&place, no_home), "home"));
+    cJSON *relative_home = registration_for("h", "1", "npm", place.directory);
+    cJSON_ReplaceItemInObjectCaseSensitive(relative_home, "home", cJSON_CreateString("relative/home"));
+    CHECK(refusal_message_names(register_request(&place, relative_home), "home"));
+    cJSON *empty_home = registration_for("h", "1", "npm", place.directory);
+    cJSON_ReplaceItemInObjectCaseSensitive(empty_home, "home", cJSON_CreateString(""));
+    CHECK(refusal_message_names(register_request(&place, empty_home), "home"));
+    CHECK(!host_file_exists(&place, "h"));
+}
+
 static void unusable_places_are_refused(void) {
     scratch place;
     fresh_scratch(&place, "places");
@@ -642,6 +665,7 @@ int main(void) {
     a_bad_id_is_refused_everywhere();
     an_unusable_registration_is_refused();
     a_provenance_without_its_platform_or_time_is_refused();
+    a_registration_without_a_usable_home_is_refused();
     unusable_places_are_refused();
     an_unreadable_registration_is_reported_and_never_overwritten();
     forget_deletes_links_and_never_follows_them();

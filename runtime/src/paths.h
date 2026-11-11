@@ -40,7 +40,7 @@ int runtime_resolve_paths(const char *home, const cJSON *names, runtime_paths *p
 void runtime_free_paths(runtime_paths *paths);
 
 /**
- * Whether home can anchor the paths every service writes: not empty, and absolute by the host OS's
+ * Whether home can anchor the paths every service writes: present, not empty, and absolute by the host OS's
  * rule, so nothing ever lands under the host's current directory (rev 146).
  */
 int runtime_is_usable_home(const char *home);

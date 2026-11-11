@@ -337,7 +337,6 @@ static const char *start_defect_of(const cJSON *start) {
 
 static const char *registration_defect(const cJSON *registration) {
     const char *id = string_member(registration, "id");
-    const cJSON *home = cJSON_GetObjectItemCaseSensitive(registration, "home");
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(registration, "application");
     if (!cJSON_IsObject(registration)) {
         return "the registration is not an object";
@@ -351,8 +350,8 @@ static const char *registration_defect(const cJSON *registration) {
     if (string_member(registration, "version") == NULL || string_member(registration, "version")[0] == '\0') {
         return "the registration carries no version";
     }
-    if (home != NULL && !cJSON_IsString(home)) {
-        return "the registration's home is not a string";
+    if (!runtime_is_usable_home(string_member(registration, "home"))) {
+        return "the registration's home is missing, empty or not an absolute path";
     }
     if (application != NULL && !cJSON_IsObject(application)) {
         return "the registration's application is not an object";
@@ -369,7 +368,7 @@ static const char *registration_defect(const cJSON *registration) {
 
 static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *out_len) {
     return spisor_fail(defect,
-                       "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\"?, \"application\"?, "
+                       "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\": <absolute path>, \"application\"?, "
                        "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, \"os\", \"architecture\", "
                        "\"installedAt\": <ISO 8601 UTC>, ...}, "
                        "\"requiresCommand\", \"start\"?: {\"runtime\": \"javascript\" | \"jvm\" | \"native\", "

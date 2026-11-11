@@ -136,6 +136,7 @@ static void register_host_at(const scratch *place, const char *id, const char *l
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
+    cJSON_AddStringToObject(registration, "home", location);
     add_host_provenance(registration, "npm", "1.0.0", location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 0);
     answer result = call(runtime_registry_register, request);

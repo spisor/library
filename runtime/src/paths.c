@@ -52,7 +52,7 @@ int runtime_resolve_paths(const char *home, const cJSON *names, runtime_paths *p
 }
 
 int runtime_is_usable_home(const char *home) {
-    return home[0] != '\0' && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home);
+    return home != NULL && home[0] != '\0' && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home);
 }
 
 int32_t runtime_refuse_home(uint8_t **out, size_t *out_len) {

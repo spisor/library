@@ -30,6 +30,11 @@
 #include "service_scratch.h"
 
 #define HOST_ID "fixture-host"
+#ifdef _WIN32
+#define FIXTURE_HOME "C:/fixture/home"
+#else
+#define FIXTURE_HOME "/fixture/home"
+#endif
 
 typedef struct hosts_scratch {
     char base[1024];
@@ -81,7 +86,7 @@ static cJSON *identity_of(const char *id) {
     cJSON *identity = cJSON_CreateObject();
     cJSON_AddStringToObject(identity, "id", id);
     cJSON_AddStringToObject(identity, "version", "1.0.0");
-    cJSON_AddStringToObject(identity, "home", "/fixture/home");
+    cJSON_AddStringToObject(identity, "home", FIXTURE_HOME);
     cJSON_AddFalseToObject(identity, "requiresCommand");
     cJSON_AddArrayToObject(identity, "commands");
     return identity;
@@ -167,6 +172,24 @@ static void refuses_an_environment_with_no_user_home_before_registering_anything
     catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment);
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
     CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL && strstr(message, "HOME nor USERPROFILE") != NULL);
+    cJSON_Delete(answer.tree);
+    cJSON *registration = stored_registration(&place, HOST_ID);
+    CHECK(registration == NULL);
+    cJSON_Delete(registration);
+    free(location);
+    discard(&place);
+}
+
+static void refuses_an_identity_with_no_home_before_registering_anything(void) {
+    hosts_scratch place;
+    fresh(&place, "noidentityhome");
+    cJSON *identity = identity_of(HOST_ID);
+    cJSON_DeleteItemFromObject(identity, "home");
+    char *location = joined_path(place.base, "install");
+    catalog_answer answer =
+        register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment_of(&place));
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
+    CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL && strstr(message, "home") != NULL);
     cJSON_Delete(answer.tree);
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration == NULL);
@@ -721,6 +744,7 @@ int main(void) {
     delete_test_value();
 #endif
     refuses_an_environment_with_no_user_home_before_registering_anything();
+    refuses_an_identity_with_no_home_before_registering_anything();
     records_the_provenance_of_the_first_start();
     keeps_the_first_provenance_when_a_later_start_gives_a_later_installed_at();
     answers_the_same_command_name_on_a_second_start_and_requests_nothing_new();

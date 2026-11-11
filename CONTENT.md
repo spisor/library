@@ -125,7 +125,7 @@ Service), and that store may prompt the user.
 | `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
 | `hosts.list` | `places` (`state`) | what `registry.list` answers |
 | `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes and deleting its holders, then deleting its references, run records and boot hint and forgetting it under one hold of the registry lock |
-| `hosts.start` | `environment`, `hostId`, `layer` (`{ id, version }`), `libraries`, `session` | `{ places, identity, settings, plan, reusedRecordedRun, timers?, noColor }`, a JavaScript host's whole start sequence: the places from `environment`, the user's home among them, the registration (refused when it is missing or has no `home`, by the check the native host uses too) with `identity.version` the version the plan runs the host at, the settings, `updates.apply` with the host, layer and `libraries` as what runs and the plan it answers, the timer values for the session start alone and whether `NO_COLOR` asks for plain output; a refused session start publishes its refusal to the ready record once its places resolve |
+| `hosts.start` | `environment`, `hostId`, `layer` (`{ id, version }`), `libraries`, `session` | `{ places, identity, settings, plan, reusedRecordedRun, timers?, noColor }`, a JavaScript host's whole start sequence: the places from `environment`, the user's home among them, the registration (refused when it is missing or unusable, by the check the native host uses too) with `identity.version` the version the plan runs the host at, the settings, `updates.apply` with the host, layer and `libraries` as what runs and the plan it answers, the timer values for the session start alone and whether `NO_COLOR` asks for plain output; a refused session start publishes its refusal to the ready record once its places resolve |
 | `hosts.provenance` | `origin`, `application` (`binary`), `home`, `environment`, `now`? | an application's provenance, located at its binary on PATH, else at `home` |
 | `loader.check` | `standard` | `{ issues }`, each `{ path, detail, fix }`; none means a loader standard |
 | `loader.home` | `home`, `environment` | `{ home, source }`, where the application keeps its files |
@@ -166,8 +166,9 @@ written with the atomic replacement, so two hosts registering at once never cont
 host's own files live in `<state>/hosts/<id>/` and `<cache>/hosts/<id>/`. A host id is a portable path
 segment, trimmed as it is, else the call is refused.
 
-A registration is `{ id, kind: "host", version, home?, application?, provenance, requiresCommand,
-start?, commands, changes }`, `start` being `{ runtime, entry }`: the language runtime the host needs
+A registration is `{ id, kind: "host", version, home, application?, provenance, requiresCommand,
+start?, commands, changes }`, `home` being an absolute path, without which `register` and
+`hosts.register` refuse it, and `start` being `{ runtime, entry }`: the language runtime the host needs
 (`javascript`, `jvm` or `native`) and its entry, a relative path inside its installed bundle, which is
 what a launcher starts a background host through. `register` replaces `version`, `home`,
 `application`, `provenance`, `requiresCommand` and `start` and keeps the stored `commands` and
