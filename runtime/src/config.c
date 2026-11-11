@@ -51,7 +51,7 @@ typedef struct config_request {
     const cJSON *settings;
 } config_request;
 
-typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER, UNKNOWN_LAYER } settings_layer;
+typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER, UNKNOWN_LAYER, UNKNOWN_DECLARED_LAYER } settings_layer;
 
 typedef enum locate_status { LOCATED, UNUSABLE_NAME, UNUSABLE_ID, LOCATE_OUT_OF_MEMORY } locate_status;
 
@@ -750,7 +750,11 @@ static settings_layer default_layer(const config_request *request) {
         return APPLICATION_LAYER;
     }
     const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
-    return layer == NULL ? PORTABLE_LAYER : layer_named(layer);
+    if (layer == NULL) {
+        return PORTABLE_LAYER;
+    }
+    settings_layer named = layer_named(layer);
+    return named == UNKNOWN_LAYER ? UNKNOWN_DECLARED_LAYER : named;
 }
 
 static settings_layer layer_of(const config_request *request) {
@@ -763,6 +767,12 @@ static int32_t refuse_layer(uint8_t **out, size_t *out_len) {
                        "send layer as \"application\" or \"portable\", or leave it out for the declared or default "
                        "layer",
                        out, out_len);
+}
+
+static int32_t refuse_declared_layer(const char *key, uint8_t **out, size_t *out_len) {
+    char message[4096];
+    snprintf(message, sizeof message, "the declared layer of \"%s\" is neither application nor portable", key);
+    return spisor_fail(message, "declare the setting's layer as application or portable", out, out_len);
 }
 
 static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
@@ -863,6 +873,9 @@ static int32_t config_set(const config_request *request, uint8_t **out, size_t *
     settings_layer layer = layer_of(request);
     if (layer == UNKNOWN_LAYER) {
         return refuse_layer(out, out_len);
+    }
+    if (layer == UNKNOWN_DECLARED_LAYER) {
+        return refuse_declared_layer(key_of(request), out, out_len);
     }
     if (layer == PORTABLE_LAYER && request->portable == NULL) {
         return refuse_missing_portable_layer(out, out_len);

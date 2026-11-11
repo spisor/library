@@ -770,6 +770,19 @@ static void a_declared_key_with_no_layer_defaults_to_portable(void) {
     CHECK(spisor_file_exists(home.config_directory) == 0);
 }
 
+static void a_declared_layer_that_is_neither_is_refused_naming_the_declaration(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "declared-unknown-layer");
+    answer result = declared_set(&home, "{\"shared\":{\"layer\":\"machine\"}}", 0, NULL, "shared", "1");
+    expect_refused(&result, "unknown declared layer");
+    expect_text_member(&result, "message", "the declared layer of \"shared\" is neither application nor portable",
+                       "the declaration is named");
+    expect_text_member(&result, "fix", "declare the setting's layer as application or portable", "the declaration fix");
+    finish(&result);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
 static void an_undeclared_key_keeps_the_application_default(void) {
     scratch_home home;
     fresh_declared_home(&home, "undeclared");
@@ -980,6 +993,7 @@ int main(void) {
     portable_layer_refuses_an_unusable_id();
     a_declared_key_defaults_to_its_declared_layer();
     a_declared_key_with_no_layer_defaults_to_portable();
+    a_declared_layer_that_is_neither_is_refused_naming_the_declaration();
     an_undeclared_key_keeps_the_application_default();
     an_explicit_layer_wins_over_the_declaration();
     a_secret_setting_is_stored_as_a_secret_not_in_a_file();

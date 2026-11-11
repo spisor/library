@@ -14,6 +14,9 @@ cJSON *runtime_merge(const cJSON *defaults, const cJSON *file);
  * The value a dot path reaches through objects, and through arrays by index as JavaScript property
  * access does, or NULL when absent. The result belongs to tree.
  *
+ * @implNote It allocates nothing, so NULL always means absent: a caller deciding whether a secret is
+ * reached must never read an out-of-memory as "nothing there".
+ *
  * @implNote An array is indexed only by a canonical non-negative integer below its length, so "01",
  * "-1" and "1.0" are absent, and so is "length", which is not emulated. On an object every key is
  * an ordinary property, "length" included.
