@@ -3036,7 +3036,6 @@
           "result": {
             "type": "object",
             "properties": {
-              "home": { "type": "string" },
               "places": {
                 "type": "object",
                 "properties": {
@@ -3087,6 +3086,7 @@
               "reusedRecordedRun": { "type": "boolean" },
               "timers": {
                 "type": "object",
+                "description": "Answered to the session start alone.",
                 "properties": {
                   "recordRunMilliseconds": { "type": "number" },
                   "pruneFailuresBeforeExit": { "type": "integer" },
@@ -3097,7 +3097,7 @@
               },
               "noColor": { "type": "boolean" }
             },
-            "required": ["home", "places", "identity", "settings", "plan", "reusedRecordedRun", "timers", "noColor"],
+            "required": ["places", "identity", "settings", "plan", "reusedRecordedRun", "noColor"],
             "additionalProperties": false
           }
         }

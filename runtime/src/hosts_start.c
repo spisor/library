@@ -13,6 +13,7 @@
 #include "paths.h"
 #include "places.h"
 #include "platform_key.h"
+#include "processes_ready.h"
 #include "registry.h"
 #include "run_records.h"
 #include "spisor/json_kind.h"
@@ -138,17 +139,6 @@ static int prepare(start_context *context, cJSON **refusal) {
     return context->running != NULL;
 }
 
-static cJSON *library_ids(const cJSON *libraries) {
-    cJSON *ids = cJSON_CreateArray();
-    for (const cJSON *entry = libraries->child; ids != NULL && entry != NULL; entry = entry->next) {
-        if (!cJSON_AddItemToArray(ids, cJSON_CreateString(entry->string))) {
-            cJSON_Delete(ids);
-            ids = NULL;
-        }
-    }
-    return ids;
-}
-
 static cJSON *apply_argument(const start_context *context) {
     cJSON *argument = cJSON_CreateObject();
     cJSON *places = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "places");
@@ -156,8 +146,7 @@ static cJSON *apply_argument(const start_context *context) {
                 cJSON_AddStringToObject(places, "cache", context->cache) != NULL &&
                 cJSON_AddStringToObject(argument, "hostId", context->argument.host_id) != NULL &&
                 cJSON_AddItemReferenceToObject(argument, "settings", context->settings) &&
-                cJSON_AddItemReferenceToObject(argument, "running", context->running) &&
-                runtime_catalog_attach(argument, "libraries", library_ids(context->argument.libraries));
+                cJSON_AddItemReferenceToObject(argument, "running", context->running);
     if (!built) {
         cJSON_Delete(argument);
         return NULL;
@@ -286,6 +275,18 @@ static int carries_no_color(const cJSON *environment) {
     return runtime_environment_variable(environment, "NO_COLOR", RUNTIME_HOST_IS_WINDOWS) != NULL;
 }
 
+/** The registration's identity at the version plan runs the host at, else the one it is registered at. */
+static cJSON *running_identity(const start_context *context, const cJSON *plan) {
+    const char *planned_version = string_of(cJSON_GetObjectItemCaseSensitive(plan, "run"), context->argument.host_id);
+    cJSON *identity = cJSON_Duplicate(context->identity, 1);
+    if (identity != NULL && planned_version != NULL &&
+        !cJSON_ReplaceItemInObjectCaseSensitive(identity, "version", cJSON_CreateString(planned_version))) {
+        cJSON_Delete(identity);
+        return NULL;
+    }
+    return identity;
+}
+
 /** The answer of a start that planned plan, taking plan, which is freed when the answer cannot be built. */
 static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
     cJSON *answer = cJSON_CreateObject();
@@ -294,12 +295,11 @@ static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
         return NULL;
     }
     int built = runtime_catalog_attach(answer, "plan", plan) &&
-                cJSON_AddStringToObject(answer, "home", text_of(context->places, "home")) != NULL &&
                 runtime_catalog_attach(answer, "places", cJSON_Duplicate(context->places, 1)) &&
-                runtime_catalog_attach(answer, "identity", cJSON_Duplicate(context->identity, 1)) &&
+                runtime_catalog_attach(answer, "identity", running_identity(context, plan)) &&
                 runtime_catalog_attach(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
-                runtime_catalog_attach(answer, "timers", timers()) &&
+                (!context->argument.session || runtime_catalog_attach(answer, "timers", timers())) &&
                 cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL;
     if (!built) {
         cJSON_Delete(answer);
@@ -315,6 +315,20 @@ static void free_context(start_context *context) {
     cJSON_Delete(context->running);
 }
 
+/**
+ * Publishes a session start's refusal to its ready record, so a launch waiting on the host reads why it
+ * will not serve rather than timing out.
+ *
+ * @implNote Best effort: the start is refused either way, and a publication that fails must not hide why.
+ * A refusal before the places resolve has nowhere to publish, and a start that is not the session start
+ * has no launch waiting on it.
+ */
+static void publish_refusal(const start_context *context, const cJSON *refusal) {
+    if (context->argument.session && context->state != NULL && refusal != NULL) {
+        runtime_publish_ready_refusal(context->state, context->argument.host_id, refusal);
+    }
+}
+
 static cJSON *start_for(const cJSON *argument, cJSON **refusal) {
     start_context context;
     memset(&context, 0, sizeof context);
@@ -323,6 +337,9 @@ static cJSON *start_for(const cJSON *argument, cJSON **refusal) {
         int reused = 0;
         cJSON *plan = planned(&context, &reused, refusal);
         answer = plan == NULL ? NULL : answer_of(&context, plan, reused);
+    }
+    if (answer == NULL) {
+        publish_refusal(&context, *refusal);
     }
     free_context(&context);
     return answer;

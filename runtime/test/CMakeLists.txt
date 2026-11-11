@@ -156,8 +156,8 @@ if(WIN32)
 endif()
 
 foreach(name updates_test boot_hint_test cache_locate_test cache_id_key_test hosts_start_test)
-    runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog>
-        $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+    runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
+        $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()

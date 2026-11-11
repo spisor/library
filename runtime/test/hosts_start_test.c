@@ -1,6 +1,7 @@
 #include "updates_fixture.h"
 
 #include "hosts_start.h"
+#include "platform_key.h"
 #include "run_records.h"
 
 #define TEST_HOST "test-host"
@@ -124,7 +125,7 @@ static void a_session_start_applies_updates(void) {
     expect_member_json(started.tree, "identity", identity, "identity");
     cJSON_free(identity);
     cJSON_Delete(expected_identity);
-    check_text(text_at(started.tree, "home"), user_home, "user home");
+    check_text(text_at(value_at(started.tree, "places"), "home"), user_home, "user home");
     check_text(text_at(value_at(started.tree, "places"), "state"), state, "places state");
     check_text(text_at(value_at(started.tree, "places"), "cache"), cache, "places cache");
     check_text(text_at(value_at(started.tree, "places"), "portable"), portable, "places portable");
@@ -300,7 +301,85 @@ static void the_timers_are_the_runtimes_own(void) {
     finish_base();
 }
 
+static void a_non_session_start_answers_no_timers(void) {
+    start_world("start-no-timers");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    catalog_answer started = start_host(0);
+    expect_success(started, "no timers");
+    CHECK(value_at(started.tree, "timers") == NULL);
+    CHECK(value_at(started.tree, "home") == NULL);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+/** A library version installed for the platform this build of the runtime resolves for. */
+static void install_library_here(const char *id, const char *version) {
+    char rest[512];
+    snprintf(rest, sizeof rest, "libraries/%s/%s/%s/.installed.json", id, version, runtime_platform_key());
+    list_library(id, version, version);
+    write_in(cache, rest, "{\"files\":{}}");
+}
+
+static void a_start_writes_no_hint_for_the_registered_host(void) {
+    start_world("start-no-hint");
+    install_library_here("runtime", "0.1.0");
+    install_library_here("runtime", "0.2.0");
+    install_library_here("koffi", "2.0.0");
+    write_catalog();
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    catalog_answer started = start_host(1);
+    expect_success(started, "no hint");
+    CHECK(!exists_in(cache, "hosts/" TEST_HOST ".json"));
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void the_identity_version_is_the_one_the_plan_runs(void) {
+    start_world("start-identity-version");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    record_references(TEST_HOST, "{\"run\":{\"" TEST_HOST "\":\"1.0.0\"},\"next\":{\"" TEST_HOST "\":\"2.0.0\"}}");
+    mark_installed("bundles", TEST_HOST, "2.0.0");
+    catalog_answer started = start_host(1);
+    expect_success(started, "identity version");
+    check_text(text_at(value_at(started.tree, "plan/run"), TEST_HOST), "2.0.0", "switched run");
+    check_text(text_at(value_at(started.tree, "identity"), "version"), "2.0.0", "identity runs the switched version");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_refused_session_start_publishes_its_refusal(void) {
+    start_world("start-refusal-published");
+    catalog_answer started = start_host(1);
+    CHECK(started.status == SPISOR_STATUS_FAILURE);
+    char *path = joined(state, "processes/" TEST_HOST ".ready.json");
+    cJSON *record = read_json_file(path);
+    CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(record, "pid")) == (double)current_process_id());
+    check_text(text_at(record, "refused"), text_at(started.tree, "message"), "published refusal");
+    check_text(text_at(record, "fix"), REINSTALL_FIX, "published fix");
+    cJSON_Delete(record);
+    free(path);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_refused_non_session_start_publishes_nothing(void) {
+    start_world("start-refusal-unpublished");
+    catalog_answer started = start_host(0);
+    CHECK(started.status == SPISOR_STATUS_FAILURE);
+    CHECK(!exists_in(state, "processes/" TEST_HOST ".ready.json"));
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 int main(void) {
+    a_non_session_start_answers_no_timers();
+    a_start_writes_no_hint_for_the_registered_host();
+    the_identity_version_is_the_one_the_plan_runs();
+    a_refused_session_start_publishes_its_refusal();
+    a_refused_non_session_start_publishes_nothing();
     a_session_start_applies_updates();
     a_non_session_start_reuses_a_live_recorded_run();
     a_non_session_start_plans_afresh_when_the_recorded_run_is_dead();
