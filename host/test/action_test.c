@@ -103,6 +103,22 @@ static void refuses_a_host_that_is_not_registered(void) {
     finish_world(&world);
 }
 
+static void refuses_a_host_registered_without_a_home(void) {
+    host_world world;
+    install_launch_world(&world, "action", "homeless", 0);
+    cJSON *registration = registration_in(&world, BACKGROUND_ID);
+    cJSON_DeleteItemFromObjectCaseSensitive(registration, "home");
+    CHECK(runtime_registry_store(world.base.state, registration) == RUNTIME_REGISTRY_OK);
+    cJSON_Delete(registration);
+    program run;
+    const char *arguments[] = {BACKGROUND_ID, SESSION_PLUGIN, "render", NULL};
+    CHECK(run_action(&world, &run, arguments) == 1);
+    expect_contains(run.err, BACKGROUND_ID " is not registered in ", "the host named as not registered");
+    expect_contains(run.err, "run spisor-host install --catalog <path or url> again", "with the reinstall fix");
+    program_free(&run);
+    finish_world(&world);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -113,6 +129,7 @@ int main(void) {
     is_misused_by_a_repeated_input_name_a_missing_name_or_missing_arguments();
     runs_the_session_host_of_a_loader_that_records_no_start();
     refuses_a_host_that_is_not_registered();
+    refuses_a_host_registered_without_a_home();
     expect_user_path_unchanged(&guard);
     return check_summary("action_test");
 }

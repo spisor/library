@@ -17,9 +17,13 @@
 #include "spisor/json_kind.h"
 
 #if defined(_WIN32)
+#include <process.h>
 #include <windows.h>
+#define current_process_id() _getpid()
 #else
 #include <time.h>
+#include <unistd.h>
+#define current_process_id() getpid()
 #endif
 
 #define READY_EXTENSION ".ready.json"
@@ -113,6 +117,32 @@ static cJSON *ready_for(const runtime_processes_request *request, cJSON **refusa
     free(path);
     cJSON_Delete(record);
     return answer;
+}
+
+static cJSON *refusal_publication(const cJSON *refusal) {
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message"));
+    const char *fix = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "fix"));
+    cJSON *argument = message == NULL || fix == NULL ? NULL : cJSON_CreateObject();
+    int built = argument != NULL && cJSON_AddNumberToObject(argument, "pid", (double)current_process_id()) != NULL &&
+                cJSON_AddStringToObject(argument, "refused", message) != NULL &&
+                cJSON_AddStringToObject(argument, "fix", fix) != NULL;
+    if (!built) {
+        cJSON_Delete(argument);
+        return NULL;
+    }
+    return argument;
+}
+
+int runtime_publish_ready_refusal(const char *state, const char *host_id, const cJSON *refusal) {
+    cJSON *argument = refusal_publication(refusal);
+    runtime_processes_request request = {argument, state, host_id};
+    cJSON *publication_refused = NULL;
+    cJSON *answer = argument == NULL ? NULL : ready_for(&request, &publication_refused);
+    int published = answer != NULL;
+    cJSON_Delete(answer);
+    cJSON_Delete(publication_refused);
+    cJSON_Delete(argument);
+    return published;
 }
 
 /** The record at path, or NULL when there is none or it is not yet readable whole. */

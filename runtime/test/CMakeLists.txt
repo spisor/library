@@ -9,11 +9,12 @@ function(runtime_test name)
     set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
 
-foreach(name paths_test config_test settings_test log_test places_test install_test)
+foreach(name paths_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
 
 runtime_test(secrets_test fake_secret_backend.c)
+runtime_test(config_test fake_secret_backend.c)
 
 runtime_test(json_edit_test $<TARGET_OBJECTS:runtime_secret_store>)
 runtime_test(json_key_change_test $<TARGET_OBJECTS:runtime_secret_store>)
@@ -154,9 +155,9 @@ if(WIN32)
     target_link_libraries(install_by_id_test PRIVATE Ws2_32)
 endif()
 
-foreach(name updates_test boot_hint_test cache_locate_test cache_id_key_test)
-    runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog>
-        $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+foreach(name updates_test boot_hint_test boot_unlistable_test cache_locate_test cache_id_key_test hosts_start_test)
+    runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
+        $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()

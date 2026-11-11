@@ -10,6 +10,7 @@
 #include "cache_refusal.h"
 #include "identity.h"
 #include "node_json_file.h"
+#include "registry.h"
 #include "spisor/file.h"
 
 #define WINDOWS_PLATFORM_PREFIX "win32-"

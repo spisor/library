@@ -6,6 +6,7 @@
 #include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "host_references.h"
+#include "registry.h"
 #include "updates_request.h"
 #include "version_map.h"
 

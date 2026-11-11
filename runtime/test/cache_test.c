@@ -1160,7 +1160,8 @@ static void it_keeps_what_a_boot_hint_names_for_the_next_start(void) {
     installed_library("runtime", "0.2.0", "linux-x64", 1);
     installed_library("koffi", "1.0.0", "linux-x64", 1);
     installed_library("koffi", "2.0.0", "linux-x64", 1);
-    write_in(cache, "hosts/spisor-host.json", "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\",\"bad\":2},\"host\":\"1.0.0\"}");
+    write_in(cache, "hosts/spisor-host.json", "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"},"
+             "\"koffi\":{\"version\":\"1.0.0\",\"directory\":\"k\"}},\"host\":\"1.0.0\"}");
     write_in(cache, "hosts/broken.json", "{");
     write_in(cache, "hosts/elsewhere.txt", "{\"libraries\":{},\"host\":\"2.0.0\"}");
     expect_removed("[\"spisor-host@2.0.0\"]", "hints");

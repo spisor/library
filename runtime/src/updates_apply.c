@@ -203,16 +203,21 @@ static int hint_libraries(const runtime_updates_request *request, const start_pl
                             ? NULL
                             : runtime_updates_resolve(plan->catalog, candidates, installed, "library", refusal);
     const cJSON *resolved = cJSON_GetObjectItemCaseSensitive(resolution, "run");
-    cJSON *libraries = resolved == NULL ? NULL : booted_libraries(ids, resolved);
+    cJSON *versions = resolved == NULL ? NULL : booted_libraries(ids, resolved);
     int hinted = resolved != NULL && schedule_changed(record->references.next, running_of(request), resolved);
     char *problem = NULL;
-    if (hinted && libraries != NULL &&
-        !runtime_write_boot_hint(request->cache, request->host_id, libraries, record->version, &problem)) {
+    cJSON *libraries = hinted && versions != NULL
+                           ? runtime_boot_hint_libraries(request->cache, versions, request->platform, &problem)
+                           : NULL;
+    if (hinted && versions != NULL &&
+        (libraries == NULL ||
+         !runtime_write_boot_hint(request->cache, request->host_id, libraries, record->version, &problem))) {
         hinted = note_unrecorded(record->unrecorded, problem);
     } else {
         free(problem);
     }
     cJSON_Delete(libraries);
+    cJSON_Delete(versions);
     cJSON_Delete(resolution);
     cJSON_Delete(installed);
     cJSON_Delete(candidates);

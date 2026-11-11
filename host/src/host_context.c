@@ -170,9 +170,9 @@ cJSON *host_registration(const host_context *context, const char *id, cJSON **re
     cJSON *answer = host_call(runtime_registry_get, argument, refusal);
     cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
     cJSON_Delete(answer);
-    if (registration == NULL && answer != NULL) {
-        const char *parts[4] = {"the host ", id, " is not registered in ", context->state};
-        *refusal = host_refusal_of(parts, 4, "run spisor-host install --catalog <path or url> again");
+    if (answer != NULL && !runtime_registration_usable(registration, id, context->state, refusal)) {
+        cJSON_Delete(registration);
+        registration = NULL;
     }
     return registration;
 }

@@ -359,19 +359,19 @@
             "properties": {
               "home": { "type": "string", "minLength": 1 },
               "environment": { "type": "object" }
-            },
-            "required": ["home"]
+            }
           },
           "result": {
             "type": "object",
             "properties": {
+              "home": { "type": "string" },
               "portable": { "type": "string" },
               "state": { "type": "string" },
               "cache": { "type": "string" },
               "secretsFile": { "type": "string" },
               "forceFileStore": { "type": "boolean" }
             },
-            "required": ["portable", "state", "cache", "secretsFile", "forceFileStore"],
+            "required": ["home", "portable", "state", "cache", "secretsFile", "forceFileStore"],
             "additionalProperties": false
           }
         }
@@ -391,7 +391,25 @@
               "names": { "type": "object" },
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
-              "config": { "type": "object" }
+              "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              }
             },
             "required": ["home", "plugin"]
           },
@@ -414,6 +432,24 @@
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
               "key": { "type": "string" }
             },
             "required": ["home", "plugin", "key"]
@@ -436,6 +472,24 @@
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
               "key": { "type": "string" },
               "value": {},
               "layer": { "enum": ["application", "portable"] }
@@ -444,7 +498,7 @@
           },
           "result": {
             "type": "object",
-            "properties": { "previous": {} },
+            "properties": { "previous": {}, "secret": { "enum": [true] } },
             "additionalProperties": false
           }
         }
@@ -2475,7 +2529,19 @@
               "hint": {
                 "type": "object",
                 "properties": {
-                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "libraries": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "string" },
+                        "directory": { "type": "string" },
+                        "binary": { "type": "string" }
+                      },
+                      "required": ["version", "directory"],
+                      "additionalProperties": false
+                    }
+                  },
                   "host": { "type": "string" }
                 },
                 "required": ["libraries"],
@@ -2494,9 +2560,10 @@
             "properties": {
               "cache": { "type": "string", "minLength": 1 },
               "hostId": { "type": "string", "minLength": 1 },
-              "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+              "libraries": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
               "host": { "type": "string", "minLength": 1 },
-              "state": { "type": "string", "minLength": 1 }
+              "state": { "type": "string", "minLength": 1 },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
             },
             "required": ["cache", "hostId", "libraries"]
           },
@@ -2506,7 +2573,19 @@
               "hint": {
                 "type": "object",
                 "properties": {
-                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "libraries": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "string" },
+                        "directory": { "type": "string" },
+                        "binary": { "type": "string" }
+                      },
+                      "required": ["version", "directory"],
+                      "additionalProperties": false
+                    }
+                  },
                   "host": { "type": "string" }
                 },
                 "required": ["libraries"],
@@ -2929,6 +3008,96 @@
               "installedAt": { "type": "string" }
             },
             "required": ["method", "location", "os", "architecture", "installedAt"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "symbol": "runtime_hosts_start",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "hostId": { "type": "string", "minLength": 1 },
+              "layer": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "version": { "type": "string", "minLength": 1 }
+                },
+                "required": ["id", "version"]
+              },
+              "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+              "session": { "type": "boolean" }
+            },
+            "required": ["environment", "hostId", "layer", "libraries", "session"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "places": {
+                "type": "object",
+                "properties": {
+                  "home": { "type": "string" },
+                  "portable": { "type": "string" },
+                  "state": { "type": "string" },
+                  "cache": { "type": "string" },
+                  "secretsFile": { "type": "string" },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["home", "portable", "state", "cache", "secretsFile", "forceFileStore"],
+                "additionalProperties": false
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "version": { "type": "string" },
+                  "home": { "type": "string" },
+                  "requiresCommand": { "type": "boolean" },
+                  "application": { "type": "object" }
+                },
+                "required": ["version", "home", "requiresCommand"],
+                "additionalProperties": false
+              },
+              "settings": { "type": "object" },
+              "plan": {
+                "type": "object",
+                "description": "updates.apply's answer; a reused recorded run carries no next or rollback.",
+                "properties": {
+                  "plugins": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "run": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "next": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "rollback": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "unrecorded": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": { "message": { "type": "string" }, "fix": { "type": "string" } },
+                      "required": ["message", "fix"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "runRecord": { "type": "string" }
+                },
+                "required": ["plugins", "run", "unrecorded", "runRecord"],
+                "additionalProperties": false
+              },
+              "reusedRecordedRun": { "type": "boolean" },
+              "timers": {
+                "type": "object",
+                "description": "Answered to the session start alone.",
+                "properties": {
+                  "recordRunMilliseconds": { "type": "number" },
+                  "pruneFailuresBeforeExit": { "type": "integer" },
+                  "updateCheckMilliseconds": { "type": "number" }
+                },
+                "required": ["recordRunMilliseconds", "pruneFailuresBeforeExit", "updateCheckMilliseconds"],
+                "additionalProperties": false
+              },
+              "noColor": { "type": "boolean" }
+            },
+            "required": ["places", "identity", "settings", "plan", "reusedRecordedRun", "noColor"],
             "additionalProperties": false
           }
         }

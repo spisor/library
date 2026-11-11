@@ -1,10 +1,12 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "check.h"
 #include "places.h"
 #include "spisor/json_kind.h"
+#include "user_home.h"
 
 typedef struct expected_places {
     const char *portable;
@@ -147,8 +149,14 @@ static void expect_ends_with(const cJSON *result, const char *name, const char *
 }
 
 #if defined(_WIN32)
+#define EXPORT_HOME "C:\\u"
+#define EXPLICIT_HOME "C:\\\\x"
+#define EXPLICIT_PATH "C:\\x"
 #define EXPORT_REQUEST "{\"home\":\"C:\\\\u\",\"environment\":{\"LOCALAPPDATA\":\"C:\\\\L\"}}"
 #else
+#define EXPORT_HOME "/u"
+#define EXPLICIT_HOME "/x"
+#define EXPLICIT_PATH "/x"
 #define EXPORT_REQUEST "{\"home\":\"/u\",\"environment\":{}}"
 #endif
 
@@ -191,6 +199,104 @@ static void exported_call_refuses_an_environment_that_is_not_an_object(void) {
     }
 }
 
+static cJSON *resolve_with_derived_home(const char *environment_json, int32_t *status) {
+    cJSON *result;
+    char request[512];
+    snprintf(request, sizeof request, "{\"environment\":%s}", environment_json);
+    call_export(request, status, &result);
+    return result;
+}
+
+static void expect_derived_home(const char *environment_json) {
+    cJSON *environment = cJSON_Parse(environment_json);
+    const char *expected = runtime_user_home_of(environment);
+    int32_t status;
+    cJSON *result = resolve_with_derived_home(environment_json, &status);
+    CHECK(expected != NULL);
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    CHECK(result != NULL);
+    if (result != NULL && expected != NULL) {
+        check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "home")), expected, "home");
+    }
+    cJSON_Delete(result);
+    cJSON_Delete(environment);
+}
+
+#if defined(_WIN32)
+#define LOCAL_APP_DATA_MEMBER ",\"LOCALAPPDATA\":\"C:\\\\L\""
+#define POSIX_HOME "C:\\\\h"
+#define WINDOWS_PROFILE "C:\\\\w"
+#else
+#define LOCAL_APP_DATA_MEMBER ""
+#define POSIX_HOME "/h"
+#define WINDOWS_PROFILE "/w"
+#endif
+
+static void derives_the_home_from_home_on_posix_shapes(void) {
+    expect_derived_home("{\"HOME\":\"" POSIX_HOME "\"" LOCAL_APP_DATA_MEMBER "}");
+}
+
+static void derives_the_home_from_userprofile_on_windows(void) {
+    expect_derived_home("{\"HOME\":\"" POSIX_HOME "\",\"USERPROFILE\":\"" WINDOWS_PROFILE "\"" LOCAL_APP_DATA_MEMBER "}");
+}
+
+static void refuses_an_environment_with_no_home(void) {
+    static const char *const environments[] = {"{}", "{\"HOME\":\"\"}", "{\"HOME\":5}"};
+    for (size_t index = 0; index < sizeof environments / sizeof environments[0]; index++) {
+        int32_t status;
+        cJSON *result = resolve_with_derived_home(environments[index], &status);
+        CHECK(status == SPISOR_STATUS_FAILURE);
+        check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "message")),
+                   RUNTIME_NO_USER_HOME_MESSAGE, "message");
+        check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "fix")), RUNTIME_NO_USER_HOME_FIX,
+                   "fix");
+        cJSON_Delete(result);
+    }
+    int32_t status;
+    cJSON *result;
+    call_export("{}", &status, &result);
+    CHECK(status == SPISOR_STATUS_FAILURE);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "message")),
+               RUNTIME_NO_USER_HOME_MESSAGE, "message without environment");
+    cJSON_Delete(result);
+}
+
+static void an_empty_userprofile_with_home_set_refuses_on_windows(void) {
+    int32_t status;
+    cJSON *result = resolve_with_derived_home(
+        "{\"HOME\":\"" POSIX_HOME "\",\"USERPROFILE\":\"\"" LOCAL_APP_DATA_MEMBER "}", &status);
+#if defined(_WIN32)
+    CHECK(status == SPISOR_STATUS_FAILURE);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "message")),
+               RUNTIME_NO_USER_HOME_MESSAGE, "message");
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "fix")), RUNTIME_NO_USER_HOME_FIX, "fix");
+#else
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "home")), POSIX_HOME, "home");
+#endif
+    cJSON_Delete(result);
+}
+
+static void an_explicit_home_wins_over_the_environment(void) {
+    int32_t status;
+    cJSON *result;
+    call_export("{\"home\":\"" EXPLICIT_HOME "\",\"environment\":{\"HOME\":\"" POSIX_HOME "\",\"USERPROFILE\":\""
+                WINDOWS_PROFILE "\"" LOCAL_APP_DATA_MEMBER "}}",
+                &status, &result);
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "home")), EXPLICIT_PATH, "home");
+    cJSON_Delete(result);
+}
+
+static void answers_the_home_it_resolved(void) {
+    int32_t status;
+    cJSON *result;
+    call_export(EXPORT_REQUEST, &status, &result);
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "home")), EXPORT_HOME, "home");
+    cJSON_Delete(result);
+}
+
 int main(void) {
     linux_defaults();
     macos_defaults();
@@ -208,5 +314,11 @@ int main(void) {
     exported_call_round_trip();
     exported_call_refuses_a_relative_home();
     exported_call_refuses_an_environment_that_is_not_an_object();
+    derives_the_home_from_home_on_posix_shapes();
+    derives_the_home_from_userprofile_on_windows();
+    refuses_an_environment_with_no_home();
+    an_empty_userprofile_with_home_set_refuses_on_windows();
+    an_explicit_home_wins_over_the_environment();
+    answers_the_home_it_resolved();
     return check_summary("places_test");
 }

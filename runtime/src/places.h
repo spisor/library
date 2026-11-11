@@ -34,6 +34,13 @@ int runtime_resolve_places(int windows, int macos, const char *user_home, const 
 
 void runtime_free_places(runtime_places *places);
 
+/**
+ * The places places.resolve answers for environment with no home given, {home, portable, state, cache,
+ * secretsFile, forceFileStore}, home being the user's home environment names; NULL with *refusal set
+ * to the {message, fix} places.resolve refuses with, or with *refusal NULL when memory runs out.
+ */
+cJSON *runtime_places_of_environment(const cJSON *environment, cJSON **refusal);
+
 RUNTIME_EXPORT int32_t runtime_places_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

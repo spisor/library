@@ -10,37 +10,9 @@
 #include "paths.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
+#include "user_home.h"
 
 #define DEFAULT_PATH_EXTENSIONS ".COM;.EXE;.BAT;.CMD"
-
-static char lowered(char letter) {
-    return letter >= 'A' && letter <= 'Z' ? (char)(letter - 'A' + 'a') : letter;
-}
-
-static int names_equal_ignoring_case(const char *left, const char *right) {
-    while (*left != '\0' && lowered(*left) == lowered(*right)) {
-        left++;
-        right++;
-    }
-    return *left == '\0' && *right == '\0';
-}
-
-/**
- * The string environment holds under name, or NULL.
- *
- * @implNote Windows environment names are case-insensitive, so Path and PATH are the same variable
- * there; the first entry that matches answers, as Object.keys(environment).find does.
- */
-static const char *variable(const cJSON *environment, const char *name, int windows) {
-    const cJSON *entry;
-    cJSON_ArrayForEach(entry, environment) {
-        int matches = windows ? names_equal_ignoring_case(entry->string, name) : strcmp(entry->string, name) == 0;
-        if (matches) {
-            return cJSON_IsString(entry) ? entry->valuestring : NULL;
-        }
-    }
-    return NULL;
-}
 
 typedef struct accepted_names {
     char **names;
@@ -71,7 +43,7 @@ static int add_name(accepted_names *accepted, const char *binary, const char *ex
 }
 
 static int windows_names(const char *binary, const cJSON *environment, accepted_names *accepted) {
-    const char *extensions = variable(environment, "PATHEXT", 1);
+    const char *extensions = runtime_environment_variable(environment, "PATHEXT", 1);
     extensions = extensions == NULL || extensions[0] == '\0' ? DEFAULT_PATH_EXTENSIONS : extensions;
     int complete = 1;
     while (complete && *extensions != '\0') {
@@ -83,7 +55,7 @@ static int windows_names(const char *binary, const cJSON *environment, accepted_
 }
 
 static int names_match(int windows, const char *entry, const char *wanted) {
-    return windows ? names_equal_ignoring_case(entry, wanted) : strcmp(entry, wanted) == 0;
+    return windows ? runtime_equal_ignoring_ascii_case(entry, wanted) : strcmp(entry, wanted) == 0;
 }
 
 static char *joined(const char *directory, const char *name) {
@@ -144,7 +116,7 @@ static char *found_on(int windows, const char *search, const accepted_names *acc
 }
 
 char *runtime_find_on_path(int windows, const char *binary, const cJSON *environment) {
-    const char *search = variable(environment, "PATH", windows);
+    const char *search = runtime_environment_variable(environment, "PATH", windows);
     accepted_names accepted = {NULL, 0};
     int named = windows ? windows_names(binary, environment, &accepted) : add_name(&accepted, binary, "", 0);
     char *found = named && search != NULL ? found_on(windows, search, &accepted) : NULL;

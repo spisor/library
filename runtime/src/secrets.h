@@ -4,7 +4,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
 #include "export.h"
+
+/** Where a plugin's secrets live, as places.resolve answers secretsFile and forceFileStore. */
+typedef struct runtime_secret_place {
+    const char *secrets_file;
+    int force_file_store;
+} runtime_secret_place;
+
+/** Reads argument's "places" into place, borrowing its strings; 0 when it is absent or unusable. */
+int runtime_secret_place_of(const cJSON *argument, runtime_secret_place *place);
+
+/** The refusal every secrets function answers when its places are absent or unusable. */
+int32_t runtime_refuse_secret_places(uint8_t **out, size_t *out_len);
+
+/**
+ * secrets.get, secrets.set and secrets.delete for one entry, with the same rules, refusals and
+ * answers, taking their arguments as C values rather than a JSON call.
+ */
+int32_t runtime_get_secret(const runtime_secret_place *place, const char *plugin, const char *name, uint8_t **out,
+                           size_t *out_len);
+int32_t runtime_set_secret(const runtime_secret_place *place, const char *plugin, const char *name, const char *value,
+                           uint8_t **out, size_t *out_len);
+int32_t runtime_delete_secret(const runtime_secret_place *place, const char *plugin, const char *name, uint8_t **out,
+                              size_t *out_len);
 
 /**
  * A plugin's secrets, kept in the OS credential store or, when the store declines or is absent, in

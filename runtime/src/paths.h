@@ -45,6 +45,11 @@ void runtime_free_paths(runtime_paths *paths);
  */
 int runtime_is_usable_home(const char *home);
 
+#define RUNTIME_UNUSABLE_HOME_MESSAGE "the home is empty or not an absolute path"
+#define RUNTIME_UNUSABLE_HOME_FIX                                                                              \
+    "send the application's home as an absolute directory path; a relative one would resolve against the " \
+    "host's current directory"
+
 /** The failure object every service answers for a home runtime_is_usable_home refuses. */
 int32_t runtime_refuse_home(uint8_t **out, size_t *out_len);
 

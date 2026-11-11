@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
 #include "export.h"
 
 /**
@@ -17,6 +18,12 @@
  * a reader ignores one an earlier run left.
  */
 RUNTIME_EXPORT int32_t runtime_processes_ready(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+
+/**
+ * Publishes, as processes.ready does, that the session host host_id running as this process cannot serve,
+ * refused and fix being refusal's message and fix. 1 when the record was written.
+ */
+int runtime_publish_ready_refusal(const char *state, const char *host_id, const cJSON *refusal);
 
 /**
  * processes.awaitReady: {state, hostId, pid, timeoutMilliseconds} polls every 50 milliseconds for the

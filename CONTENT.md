@@ -58,10 +58,10 @@ Service), and that store may prompt the user.
 | `marketplace.read` | `source` (`{ id, url }`), `text` or `destination` | `{ copy }`, the marketplace copy a source served, checked against `runtime/schema/marketplace-copy.schema.json`; with `destination`, an absolute path that does not exist yet, the url is fetched there within 8 MiB and the file removed; refused, naming the source and a fix, for a body over the limit, a web page, no JSON, a marketplace list where a copy is expected (build the copy from it), a copy that breaks its schema or names two entries alike, and a source with a provider |
 | `marketplace.lookup` | `copies` (`[{ source: { id }, copy }]`), `name` | `{ id, marketplace }` for the one entry a bare name or `marketplace/name` means (the same id in several marketplaces settles on the first), `{ ambiguous: ["marketplace/name", ...] }` for a bare name found under different ids, or `{ notFound: true }`; a copy that breaks its schema and two copies from one source are refused |
 | `marketplace.remember` | `state`, `name`, `id`, `marketplace?`, `accept?`, `record?` | `{ remembered: true }` once the id given to a name is the one on record in `<state>/marketplace-names.json` (`{ format: 1, names: { "marketplace/name": id } }`, written atomically), recording it when there was none; `{ needsUserAcceptance: true, was, now }` and nothing recorded when another id is on record, unless `accept` is `now`, which replaces it; with `record: false` it only checks and answers `{ settled: true }` or the same `needsUserAcceptance`; without `marketplace` the key is the bare name; a record that is not that shape is refused, naming the file, and left as it was |
-| `places.resolve` | `home`, `environment` | `portable`, `state`, `cache`, `secretsFile`, `forceFileStore` |
-| `config.all` | `home`, `names`, `portable`, `plugin`, `config` | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order |
-| `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key` | `{ value }` of a dot path, or `{}` when absent |
-| `config.set` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `value`, `layer` | `{ previous }`, after writing the plugin's file in the `application` (default) or `portable` layer |
+| `places.resolve` | `home`?, `environment` | `home`, `portable`, `state`, `cache`, `secretsFile`, `forceFileStore`; `home` is the argument when given, else derived from the environment |
+| `config.all` | `home`, `names`, `portable`, `plugin`, `config`, `settings`?, `places`? | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order, leaving out every declared secret setting (and any key inside one) |
+| `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `settings`?, `places`? | `{ value }` of a dot path, or `{}` when absent; a declared secret setting reads from the secret store, absent when `places` is omitted, and a key above or inside a secret never reads it |
+| `config.set` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `value`, `layer`?, `settings`?, `places`? | `{ previous }`, after writing the plugin's file in the layer `layer` names, else the one the setting declares (`portable` when its declaration names none, refused naming the key when it names neither layer), else `application` for an undeclared key; `{ secret: true }` for a declared secret setting, which goes to the secret store instead (text stores, null deletes, anything else is refused); a write to a key above or inside a secret is refused |
 | `settings.all` | `home`, `names`, `portable` | `{ values }`, the ecosystem settings merged as `config.all` merges a plugin's |
 | `settings.set` | `home`, `names`, `portable`, `key`, `value`, `layer` | `{ previous }`, after writing one key into the `application` (default) or `portable` layer, under a lock so two writers lose no update |
 | `log.write` | `home`, `names`, `portable`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
@@ -110,8 +110,8 @@ Service), and that store may prompt the user.
 | `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, spisor-host first lending its catalog sources, and `install.application` updating each application an install method installed |
 | `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback; a host with no registration is refused |
 | `updates.recorded` | `places`, `hostId` | `{ run }`, what the host's last start recorded running, empty when it recorded nothing; a references file that cannot be read is refused; nothing is switched or recorded |
-| `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
-| `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
+| `boot.read` | `cache`, `hostId` | `{ hint? }`, `{ libraries: { <id>: { version, directory, binary? } }, host? }`, what the next start boots; `directory` is the installed folder and `binary` is set only for a folder holding `library.json`, which must hold exactly one file with the platform's shared-library suffix |
+| `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state`, `platform`? | `{ hint }`, after recording what the next start boots, each library's absolute folder on `platform` (this machine's by default) and, for a declared library, its one binary; refused naming the folder when a declared one holds no binary, more than one, or cannot be listed |
 | `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
 | `boot.place` | `cache` | `{ placed, path }`, after copying the spisor-boot the hinted spisor-host version carries to `cache/boot` when none is there; never replaces one |
 | `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
@@ -125,6 +125,7 @@ Service), and that store may prompt the user.
 | `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
 | `hosts.list` | `places` (`state`) | what `registry.list` answers |
 | `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes and deleting its holders, then deleting its references, run records and boot hint and forgetting it under one hold of the registry lock |
+| `hosts.start` | `environment`, `hostId`, `layer` (`{ id, version }`), `libraries`, `session` | `{ places, identity, settings, plan, reusedRecordedRun, timers?, noColor }`, a JavaScript host's whole start sequence: the places from `environment`, the user's home among them, the registration (refused when it is missing or has no `home`, by the check the native host uses too) with `identity.version` the version the plan runs the host at, the settings, `updates.apply` with the host, layer and `libraries` as what runs and the plan it answers, the timer values for the session start alone and whether `NO_COLOR` asks for plain output; a refused session start publishes its refusal to the ready record once its places resolve |
 | `hosts.provenance` | `origin`, `application` (`binary`), `home`, `environment`, `now`? | an application's provenance, located at its binary on PATH, else at `home` |
 | `loader.check` | `standard` | `{ issues }`, each `{ path, detail, fix }`; none means a loader standard |
 | `loader.home` | `home`, `environment` | `{ home, source }`, where the application keeps its files |
@@ -143,7 +144,8 @@ Service), and that store may prompt the user.
 ### The places
 
 `places.resolve` answers four places for the OS, from the user's home and an `environment` the host
-passes (it reads no process state). An override is used only when it is a non-empty absolute path
+passes (it reads no process state). Without a `home` argument the user's home is derived from that
+environment (`USERPROFILE` on Windows, else `HOME`) and answered as `home`. An override is used only when it is a non-empty absolute path
 and is ignored otherwise.
 
 | place | Windows | macOS | Linux |
@@ -306,7 +308,7 @@ The portable place holds `settings.json` (the ecosystem settings, which `log.wri
 that folder is the plugin's `portable` path from `paths.resolve`, beside its `pluginCache` folder in
 the cache place. `config` reads defaults, then the portable file, then the application file, later
 winning and objects merging key by key. `config.set` writes the application file unless `layer` is
-`"portable"`. A host with no portable layer omits `portable` and a portable write is refused. An
+`"portable"`, or, when no `layer` is given, unless the key is declared: a declared key goes to the layer its declaration names, and to the portable one when it names none. A host with no portable layer omits `portable` and a portable write is refused. An
 unreadable file is never overwritten, and a write through a symlinked portable file changes the
 target and leaves the link.
 
