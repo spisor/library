@@ -9,6 +9,7 @@
 #include "changes.h"
 #include "entry_template.h"
 #include "install_support.h"
+#include "install_run.h"
 #include "json_service.h"
 #include "loader_issues.h"
 #include "paths.h"
@@ -64,7 +65,7 @@ static int start_context(entry_context *context, const entry_loader *loader) {
     context->hint = joined(hint_segments, 3);
     context->bundles = joined(bundle_segments, 3);
     runtime_entry_values values = {loader->home, context->entry_root, loader->id, context->boot,
-                                   RUNTIME_BOOTED_HOST_ID, context->hint, context->bundles};
+                                   RUNTIME_ECOSYSTEM_HOST_ID, context->hint, context->bundles};
     context->values = values;
     return context->entries != NULL && context->entry_root != NULL && context->boot != NULL && context->hint != NULL &&
            context->bundles != NULL;

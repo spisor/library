@@ -30,7 +30,7 @@ RUNTIME_EXPORT int32_t runtime_updates_apply(const uint8_t *in, size_t in_len, u
  * updates.check: {places, hostId, now, settings?, defaults?, problems?, platform?} checks every catalog
  * source the settings name, at most once per updates.intervalHours (24 by default) for an https one;
  * schedules as next in hostId's references every damaged version problems names, every newer version of a
- * plugin the settings choose, and the version hostId and forebay-host are held to; installs each; switches
+ * plugin the settings choose, and the version hostId and spisor-host are held to; installs each; switches
  * the boot hint of a host it switches to once that is installed; sweeps the cache; and answers {checked,
  * fetched, refused, removed}.
  *
@@ -61,7 +61,7 @@ RUNTIME_EXPORT int32_t runtime_updates_rollback(const uint8_t *in, size_t in_len
 RUNTIME_EXPORT int32_t runtime_updates_recorded(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 /**
- * updates.run: {places, now} runs updates.check for every registered host, forebay-host first with the
+ * updates.run: {places, now} runs updates.check for every registered host, spisor-host first with the
  * catalog sources its settings record lent to every other check, and install.application with operation
  * update for each loader whose application an install method installed; answers {checks, applications,
  * refused}, each refusal carrying the id it was for.

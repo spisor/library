@@ -26,7 +26,7 @@ extern char **environ;
 
 /**
  * A host written in C over runtime's services and nothing else, answering install, status, update and
- * remove by calling the services forebay-host's commands call, so the proof compares two thin callers of
+ * remove by calling the services spisor-host's commands call, so the proof compares two thin callers of
  * one implementation.
  */
 typedef struct c_host {
@@ -104,7 +104,7 @@ static void print_json(const cJSON *value) {
     free(text);
 }
 
-/** Writes the refusal as forebay-host does and answers 1. */
+/** Writes the refusal as spisor-host does and answers 1. */
 static int refuse(cJSON *refusal) {
     const char *message = text_of(refusal, "message");
     const char *fix = text_of(refusal, "fix");

@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #endif
 
+#include "boot.h"
 #include "boot_hint.h"
 #include "cache.h"
 #include "catalog_time.h"
@@ -42,14 +43,14 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     start_install_base(&base, "ecosystem", "first");
     list_ecosystem(&base);
     cJSON *report = install_defaults(&base, "");
-    expect_installed_ids(report, "[\"announcer\",\"forebay-host\",\"runtime\",\"viewer\"]", "installed");
+    expect_installed_ids(report, "[\"announcer\",\"runtime\",\"spisor-host\",\"viewer\"]", "installed");
     expect_member(report, "cached", "[]", "cached");
     expect_member(report, "unavailable", "[]", "unavailable");
     expect_member(report, "enabled", "[\"announcer\",\"viewer\"]", "enabled");
     CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
     char library[256];
     snprintf(library, sizeof library, "libraries/runtime/0.1.0/%s/library.bin", runtime_platform_key());
-    CHECK(exists_in(base.cache, library) && exists_in(base.cache, "bundles/forebay-host/1.0.0/host.json"));
+    CHECK(exists_in(base.cache, library) && exists_in(base.cache, "bundles/spisor-host/1.0.0/host.json"));
     cJSON *settings = ecosystem_settings(&base, 1, 1);
     expect_member(settings, "plugins", "{\"announcer\":{\"enabled\":true},\"viewer\":{\"enabled\":true}}", "plugins");
     char *index = index_path_of(&base);
@@ -60,10 +61,10 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     char expected[2048];
     snprintf(expected, sizeof expected, "{\"sources\":[%s]}", source_json);
     expect_member(settings, "catalog", expected, "catalog sources");
-    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
+    cJSON *references = json_in(base.state, "bundles/spisor-host.json");
     expect_member(references, "run",
-                  "{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\"}", "run");
-    cJSON *hint = json_in(base.cache, "hosts/forebay-host.json");
+                  "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\"}", "run");
+    cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
     expect_json(hint, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "boot hint");
     cJSON_Delete(hint);
     cJSON_Delete(references);
@@ -83,7 +84,7 @@ static void reports_everything_cached_on_a_second_run(void) {
     cJSON *report = install_defaults(&base, "");
     expect_member(report, "installed", "[]", "nothing fetched");
     expect_member(report, "enabled", "[]", "nothing enabled");
-    expect_member(report, "cached", "[\"forebay-host@1.0.0\",\"runtime@0.1.0\",\"announcer@1.0.0\",\"viewer@1.0.0\"]",
+    expect_member(report, "cached", "[\"spisor-host@1.0.0\",\"runtime@0.1.0\",\"announcer@1.0.0\",\"viewer@1.0.0\"]",
                   "all cached");
     cJSON_Delete(report);
     finish_install_base(&base);
@@ -109,7 +110,7 @@ static void reports_an_item_with_no_build_for_this_platform_and_installs_the_res
     start_install_base(&base, "ecosystem", "foreign");
     list_ecosystem(&base);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"announcer\", \"viewer\", \"rival\"]}", NULL), "foreign");
-    expect_installed_ids(report, "[\"announcer\",\"forebay-host\",\"runtime\",\"viewer\"]", "rest installed");
+    expect_installed_ids(report, "[\"announcer\",\"runtime\",\"spisor-host\",\"viewer\"]", "rest installed");
     const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
     CHECK(cJSON_GetArraySize(unavailable) == 1);
     char expected[128];
@@ -134,7 +135,7 @@ static void honours_a_pin_on_the_runtime_and_records_it_for_the_next_start(void)
     set_portable(&base, "plugins.runtime.pin", cJSON_CreateString("0.0.9"));
     cJSON *report = install_defaults(&base, "");
     expect_member(report, "installed", "[{\"id\":\"runtime\",\"version\":\"0.0.9\"}]", "pinned runtime");
-    cJSON *hint = json_in(base.cache, "hosts/forebay-host.json");
+    cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
     expect_member(hint, "libraries", "{\"runtime\":\"0.0.9\"}", "hinted runtime");
     cJSON_Delete(hint);
     cJSON_Delete(report);
@@ -175,9 +176,9 @@ static void keeps_the_versions_the_host_scheduled_for_its_next_start(void) {
     install_base base;
     start_install_base(&base, "ecosystem", "next");
     list_ecosystem(&base);
-    write_in(base.state, "bundles/forebay-host.json", "{\"run\": {}, \"next\": {\"viewer\": \"2.0.0\"}}");
+    write_in(base.state, "bundles/spisor-host.json", "{\"run\": {}, \"next\": {\"viewer\": \"2.0.0\"}}");
     cJSON_Delete(install_defaults(&base, ""));
-    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
+    cJSON *references = json_in(base.state, "bundles/spisor-host.json");
     expect_member(references, "next", "{\"viewer\":\"2.0.0\"}", "next kept");
     cJSON_Delete(references);
     finish_install_base(&base);
@@ -190,8 +191,8 @@ static void records_as_run_only_what_this_install_installed(void) {
     cJSON_Delete(install_defaults(&base, ""));
     set_portable(&base, "plugins.viewer.enabled", cJSON_CreateFalse());
     cJSON_Delete(install_defaults(&base, ""));
-    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
-    expect_member(references, "run", "{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\"}",
+    cJSON *references = json_in(base.state, "bundles/spisor-host.json");
+    expect_member(references, "run", "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\"}",
                   "a disabled plugin leaves run");
     cJSON_Delete(references);
     finish_install_base(&base);
@@ -244,23 +245,76 @@ static void registers_the_host_at_install_keeping_its_provenance_on_a_later_inst
     list_ecosystem(&base);
     double before = runtime_now_milliseconds();
     cJSON_Delete(install_defaults(&base, ""));
-    cJSON *registration = json_in(base.state, "hosts/forebay-host.json");
+    cJSON *registration = json_in(base.state, "hosts/spisor-host.json");
     const cJSON *provenance = cJSON_GetObjectItemCaseSensitive(registration, "provenance");
     check_text(text_at(provenance, "method"), "catalog", "provenance method");
     check_text(text_at(provenance, "version"), "1.0.0", "provenance version");
-    char *location = joined(base.cache, "bundles/forebay-host/1.0.0");
+    char *location = joined(base.cache, "bundles/spisor-host/1.0.0");
     check_text(text_at(provenance, "location"), location, "provenance location");
     double installed_at = 0;
     CHECK(runtime_catalog_parse_time(text_at(provenance, "installedAt"), &installed_at));
     CHECK(installed_at >= before - 1000 && installed_at <= runtime_now_milliseconds());
     cJSON_Delete(install_defaults(&base, ""));
-    cJSON *again = json_in(base.state, "hosts/forebay-host.json");
+    cJSON *again = json_in(base.state, "hosts/spisor-host.json");
     char *first = cJSON_PrintUnformatted(provenance);
     expect_json(cJSON_GetObjectItemCaseSensitive(again, "provenance"), first, "provenance kept");
     cJSON_free(first);
     cJSON_Delete(again);
     free(location);
     cJSON_Delete(registration);
+    finish_install_base(&base);
+}
+
+#if defined(_WIN32)
+#define EXECUTABLE_SUFFIX ".exe"
+#else
+#define EXECUTABLE_SUFFIX ""
+#endif
+
+#define OLD_HOST_FILE "bundles/forebay-host/1.0.0/host.json"
+#define OLD_STUB_FILE "boot/forebay-boot" EXECUTABLE_SUFFIX
+#define OLD_FILE_CONTENT "left by an earlier install"
+
+/** The ecosystem catalog, its host build carrying the host executable and the boot stub for this platform. */
+static void list_ecosystem_carrying_the_boot_stub(install_base *base) {
+    list_foundation(base);
+    cJSON *versions = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(base->items, "spisor-host"), "versions");
+    cJSON *files = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(versions, "1.0.0"), "files");
+    char executable[128];
+    snprintf(executable, sizeof executable, "%s/spisor-host" EXECUTABLE_SUFFIX, runtime_platform_key());
+    cJSON_AddItemToObject(files, executable, served_reference(base, "spisor-host", "1.0.0", executable, "host"));
+    char stub[128];
+    snprintf(stub, sizeof stub, "%s/spisor-boot" EXECUTABLE_SUFFIX, runtime_platform_key());
+    cJSON_AddItemToObject(files, stub, served_reference(base, "spisor-host", "1.0.0", stub, "stub"));
+    list_plugin(base, "announcer", "1.0.0", "native");
+    list_plugin(base, "viewer", "1.0.0", "native");
+    write_catalog(base);
+}
+
+static void installs_beside_a_cache_laid_out_under_the_old_names(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "old-names");
+    list_ecosystem_carrying_the_boot_stub(&base);
+    write_in(base.cache, OLD_HOST_FILE, OLD_FILE_CONTENT);
+    write_in(base.cache, OLD_STUB_FILE, OLD_FILE_CONTENT);
+    cJSON_Delete(install_defaults(&base, ""));
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "cache", base.cache);
+    catalog_answer placed = call_catalog(runtime_boot_place, argument);
+    CHECK(placed.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(placed.tree, "placed")));
+    char *stub = text_in(base.cache, "boot/spisor-boot" EXECUTABLE_SUFFIX);
+    check_text(stub, "stub", "spisor-boot placed");
+    cJSON *registration = json_in(base.state, "hosts/spisor-host.json");
+    CHECK(registration != NULL);
+    char *old_host = text_in(base.cache, OLD_HOST_FILE);
+    char *old_stub = text_in(base.cache, OLD_STUB_FILE);
+    check_text(old_host, OLD_FILE_CONTENT, "old host bundle untouched");
+    check_text(old_stub, OLD_FILE_CONTENT, "old boot stub untouched");
+    free(old_stub);
+    free(old_host);
+    cJSON_Delete(registration);
+    free(stub);
+    cJSON_Delete(placed.tree);
     finish_install_base(&base);
 }
 
@@ -412,7 +466,7 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     served_build served;
     serve_runtime_build(&base, 64, &served);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"scripted\"]}", NULL), "javascript");
-    expect_installed_ids(report, "[\"forebay-host\",\"forebay-library\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\"]", "with its host");
+    expect_installed_ids(report, "[\"forebay-library\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\",\"spisor-host\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
           spisor_file_exists(text_at(javascript, "executable")));
@@ -601,7 +655,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(hosts.tree, "hosts")) == 3);
     expect_json(cJSON_GetObjectItemCaseSensitive(hosts.tree, "unreadable"), "[]", "no unreadable registration");
     cJSON_Delete(hosts.tree);
-    const char *versions[8] = {"bundles/forebay-host/1.0.0", "bundles/announcer/1.0.0", "bundles/viewer/1.0.0",
+    const char *versions[8] = {"bundles/spisor-host/1.0.0", "bundles/announcer/1.0.0", "bundles/viewer/1.0.0",
                                "bundles/scripted/1.0.0", "bundles/javascript-host/1.0.0", "bundles/claude-loader/1.0.0",
                                "bundles/keeper/1.0.0", NULL};
     for (size_t index = 0; versions[index] != NULL; index++) {
@@ -622,9 +676,9 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
         }
     }
     CHECK(cJSON_GetArraySize(value_at(settings, "catalog/sources")) == 1);
-    cJSON *references = json_in(base.state, "bundles/forebay-host.json");
+    cJSON *references = json_in(base.state, "bundles/spisor-host.json");
     const cJSON *run = cJSON_GetObjectItemCaseSensitive(references, "run");
-    CHECK(cJSON_HasObjectItem(run, "forebay-host") && cJSON_HasObjectItem(run, "scripted") &&
+    CHECK(cJSON_HasObjectItem(run, "spisor-host") && cJSON_HasObjectItem(run, "scripted") &&
           (cJSON_HasObjectItem(run, "announcer") || cJSON_HasObjectItem(run, "viewer")));
     cJSON_Delete(settings);
     cJSON_Delete(references);
@@ -659,6 +713,7 @@ int main(int argc, char **argv) {
     records_a_local_source_in_the_application_layer_never_the_portable_one();
     appends_a_source_not_yet_listed_and_never_replaces_the_ones_that_are();
     registers_the_host_at_install_keeping_its_provenance_on_a_later_install();
+    installs_beside_a_cache_laid_out_under_the_old_names();
     records_an_https_source_in_the_portable_layer_even_when_its_check_fails();
     refuses_a_source_that_is_neither_local_nor_https();
     acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item();

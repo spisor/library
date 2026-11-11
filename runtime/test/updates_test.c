@@ -10,7 +10,7 @@
 #endif
 
 #define LOADER "fixture-loader"
-#define FOREBAY_HOST "forebay-host"
+#define SPISOR_HOST "spisor-host"
 #define TEST_HOST "test-host"
 
 static cJSON *no_settings(void) {
@@ -179,9 +179,9 @@ static void it_records_the_host_s_own_references_beside_its_plugins(void) {
     record_references(TEST_HOST, "{\"run\":{},\"next\":{\"runtime\":\"0.0.9\"}}");
     catalog_answer started =
         apply_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"),
-                   "{\"running\":{\"forebay-host\":\"0.1.0\",\"runtime\":\"0.1.0\"}}");
+                   "{\"running\":{\"spisor-host\":\"0.1.0\",\"runtime\":\"0.1.0\"}}");
     expect_references(TEST_HOST,
-                      "{\"run\":{\"forebay-host\":\"0.1.0\",\"runtime\":\"0.1.0\",\"a\":\"1.0.0\"},\"next\":{\"runtime\":"
+                      "{\"run\":{\"spisor-host\":\"0.1.0\",\"runtime\":\"0.1.0\",\"a\":\"1.0.0\"},\"next\":{\"runtime\":"
                       "\"0.0.9\"}}",
                       "own references");
     remove_run_record(started);
@@ -230,8 +230,8 @@ static void install_libraries(void) {
 }
 
 static catalog_answer apply_booted(void) {
-    return apply_with(FOREBAY_HOST, no_settings(),
-                      "{\"running\":{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},"
+    return apply_with(SPISOR_HOST, no_settings(),
+                      "{\"running\":{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},"
                       "\"libraries\":[\"runtime\",\"koffi\"]}");
 }
 
@@ -241,11 +241,11 @@ static void it_keeps_what_runs_now_and_schedules_the_libraries_the_next_start_lo
     write_catalog();
     catalog_answer started = apply_booted();
     expect_success(started, "libraries");
-    expect_references(FOREBAY_HOST,
-                      "{\"run\":{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},\"next\":{"
+    expect_references(SPISOR_HOST,
+                      "{\"run\":{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},\"next\":{"
                       "\"runtime\":\"0.2.0\"}}",
                       "libraries references");
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
+    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
                 "libraries hint");
     remove_run_record(started);
     cJSON_Delete(started.tree);
@@ -258,10 +258,10 @@ static void it_keeps_the_versions_the_host_already_scheduled_for_its_next_start(
     cJSON_ReplaceItemInObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog_items, "runtime"), "latest",
                                            cJSON_CreateString("0.1.0"));
     write_catalog();
-    record_references(FOREBAY_HOST, "{\"run\":{},\"next\":{\"viewer\":\"2.0.0\"}}");
+    record_references(SPISOR_HOST, "{\"run\":{},\"next\":{\"viewer\":\"2.0.0\"}}");
     catalog_answer started = apply_booted();
     expect_member_json(started.tree, "next", "{\"viewer\":\"2.0.0\"}", "kept answer");
-    expect_member_json(started.tree, "run", "{\"forebay-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}",
+    expect_member_json(started.tree, "run", "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}",
                        "kept run");
     remove_run_record(started);
     cJSON_Delete(started.tree);
@@ -272,16 +272,16 @@ static void it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_
     start_base("libraries-host-hint");
     install_libraries();
     write_catalog();
-    record_references(FOREBAY_HOST, "{\"run\":{},\"next\":{\"forebay-host\":\"2.0.0\"}}");
+    record_references(SPISOR_HOST, "{\"run\":{},\"next\":{\"spisor-host\":\"2.0.0\"}}");
     catalog_answer waiting = apply_booted();
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
+    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
                 "not installed yet");
     remove_run_record(waiting);
     cJSON_Delete(waiting.tree);
 
-    mark_installed("bundles", FOREBAY_HOST, "2.0.0");
+    mark_installed("bundles", SPISOR_HOST, "2.0.0");
     catalog_answer installed = apply_booted();
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"2.0.0\"}",
+    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"2.0.0\"}",
                 "installed intact");
     remove_run_record(installed);
     cJSON_Delete(installed.tree);
@@ -295,7 +295,7 @@ static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_install
     write_catalog();
     catalog_answer started = apply_booted();
     expect_success(started, "missing library");
-    CHECK(!exists_in(cache, "hosts/" FOREBAY_HOST ".json"));
+    CHECK(!exists_in(cache, "hosts/" SPISOR_HOST ".json"));
     remove_run_record(started);
     cJSON_Delete(started.tree);
     finish_base();
@@ -304,35 +304,35 @@ static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_install
 static void list_both_hosts(void) {
     list_host(LOADER, "1.0.0", "2.0.0");
     list_host(LOADER, "2.0.0", "2.0.0");
-    list_host(FOREBAY_HOST, "1.0.0", "2.0.0");
-    list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "1.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "2.0.0", "2.0.0");
     write_catalog();
     install_listed(LOADER, "1.0.0");
-    install_listed(FOREBAY_HOST, "1.0.0");
-    write_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"1.0.0\"}");
-    record_references(LOADER, "{\"run\":{\"" LOADER "\":\"1.0.0\",\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{}}");
+    install_listed(SPISOR_HOST, "1.0.0");
+    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"1.0.0\"}");
+    record_references(LOADER, "{\"run\":{\"" LOADER "\":\"1.0.0\",\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{}}");
 }
 
-static void it_schedules_a_newer_loader_and_forebay_host_for_the_next_start_which_then_runs_both(void) {
+static void it_schedules_a_newer_loader_and_spisor_host_for_the_next_start_which_then_runs_both(void) {
     start_base("host-updates");
     list_both_hosts();
     catalog_answer checked = check_with(LOADER, no_settings(), "{}");
     expect_success(checked, "host updates check");
-    expect_member_json(checked.tree, "fetched", "[\"" LOADER "@2.0.0\",\"" FOREBAY_HOST "@2.0.0\"]", "both fetched");
+    expect_member_json(checked.tree, "fetched", "[\"" LOADER "@2.0.0\",\"" SPISOR_HOST "@2.0.0\"]", "both fetched");
     expect_member_json(checked.tree, "refused", "[]", "none refused");
     cJSON_Delete(checked.tree);
     runtime_host_references recorded = runtime_read_host_references(state, LOADER);
-    expect_json(recorded.next, "{\"" LOADER "\":\"2.0.0\",\"" FOREBAY_HOST "\":\"2.0.0\"}", "both scheduled");
+    expect_json(recorded.next, "{\"" LOADER "\":\"2.0.0\",\"" SPISOR_HOST "\":\"2.0.0\"}", "both scheduled");
     runtime_free_host_references(&recorded);
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"2.0.0\"}",
-                "forebay-host hinted, its libraries kept");
+    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"2.0.0\"}",
+                "spisor-host hinted, its libraries kept");
 
     catalog_answer started = apply_plain(LOADER, "{}");
     check_text(text_at(value_at(started.tree, "run"), LOADER), "2.0.0", "the next start runs the new loader");
     remove_run_record(started);
     cJSON_Delete(started.tree);
-    catalog_answer resolved = resolve_boot(FOREBAY_HOST, NULL);
-    expect_executable(resolved, FOREBAY_HOST, "2.0.0", "every command boots the new forebay-host");
+    catalog_answer resolved = resolve_boot(SPISOR_HOST, NULL);
+    expect_executable(resolved, SPISOR_HOST, "2.0.0", "every command boots the new spisor-host");
     cJSON_Delete(resolved.tree);
     finish_base();
 }
@@ -341,10 +341,10 @@ static void it_holds_a_host_to_its_pin(void) {
     start_base("host-pin");
     list_both_hosts();
     catalog_answer checked = check_with(LOADER, settings_with("{\"plugins\":{\"" LOADER "\":{\"pin\":\"1.0.0\"}}}"), "{}");
-    expect_member_json(checked.tree, "fetched", "[\"" FOREBAY_HOST "@2.0.0\"]", "pinned fetched");
+    expect_member_json(checked.tree, "fetched", "[\"" SPISOR_HOST "@2.0.0\"]", "pinned fetched");
     cJSON_Delete(checked.tree);
     runtime_host_references recorded = runtime_read_host_references(state, LOADER);
-    expect_json(recorded.next, "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "pinned scheduled");
+    expect_json(recorded.next, "{\"" SPISOR_HOST "\":\"2.0.0\"}", "pinned scheduled");
     runtime_free_host_references(&recorded);
     finish_base();
 }
@@ -530,29 +530,29 @@ static void it_loses_no_next_write_when_two_checks_of_one_host_run_at_once(void)
 
 static void it_runs_the_scheduled_version_after_apply_and_a_sweep_keeps_what_the_hint_and_rollback_name(void) {
     start_base("focus-four");
-    list_host(FOREBAY_HOST, "1.0.0", "1.0.0");
+    list_host(SPISOR_HOST, "1.0.0", "1.0.0");
     write_catalog();
-    install_listed(FOREBAY_HOST, "1.0.0");
-    write_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{}}");
-    catalog_answer before = resolve_boot(FOREBAY_HOST, "[\"status\"]");
-    expect_executable(before, FOREBAY_HOST, "1.0.0", "A runs");
+    install_listed(SPISOR_HOST, "1.0.0");
+    write_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{}}");
+    catalog_answer before = resolve_boot(SPISOR_HOST, "[\"status\"]");
+    expect_executable(before, SPISOR_HOST, "1.0.0", "A runs");
     cJSON_Delete(before.tree);
 
-    list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "2.0.0", "2.0.0");
     write_catalog();
-    cJSON_Delete(check_with(FOREBAY_HOST, no_settings(), "{}").tree);
-    catalog_answer started = apply_with(FOREBAY_HOST, no_settings(), "{\"libraries\":[]}");
-    expect_member_json(started.tree, "run", "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "B runs");
-    expect_member_json(started.tree, "rollback", "{\"" FOREBAY_HOST "\":\"1.0.0\"}", "A kept for rollback");
+    cJSON_Delete(check_with(SPISOR_HOST, no_settings(), "{}").tree);
+    catalog_answer started = apply_with(SPISOR_HOST, no_settings(), "{\"libraries\":[]}");
+    expect_member_json(started.tree, "run", "{\"" SPISOR_HOST "\":\"2.0.0\"}", "B runs");
+    expect_member_json(started.tree, "rollback", "{\"" SPISOR_HOST "\":\"1.0.0\"}", "A kept for rollback");
     remove_run_record(started);
     cJSON_Delete(started.tree);
-    catalog_answer after = resolve_boot(FOREBAY_HOST, "[\"status\"]");
-    expect_executable(after, FOREBAY_HOST, "2.0.0", "B boots");
+    catalog_answer after = resolve_boot(SPISOR_HOST, "[\"status\"]");
+    expect_executable(after, SPISOR_HOST, "2.0.0", "B boots");
     cJSON_Delete(after.tree);
 
     cJSON_Delete(sweep_cache().tree);
-    CHECK(folder_exists("bundles/" FOREBAY_HOST "/1.0.0") && folder_exists("bundles/" FOREBAY_HOST "/2.0.0"));
+    CHECK(folder_exists("bundles/" SPISOR_HOST "/1.0.0") && folder_exists("bundles/" SPISOR_HOST "/2.0.0"));
     finish_base();
 }
 
@@ -562,7 +562,7 @@ typedef struct concurrent_apply {
 } concurrent_apply;
 
 static void apply_concurrently(concurrent_apply *job) {
-    job->answer = apply_unregistered(FOREBAY_HOST, no_settings(), "{\"libraries\":[]}");
+    job->answer = apply_unregistered(SPISOR_HOST, no_settings(), "{\"libraries\":[]}");
 }
 
 #if defined(_WIN32)
@@ -606,29 +606,29 @@ static int carries_rollback(catalog_answer answer) {
 static void it_converges_two_starts_of_one_host_that_race_on_its_scheduled_version(void) {
     for (int round = 0; round < 12; round++) {
         start_base("concurrent-applies");
-        list_host(FOREBAY_HOST, "1.0.0", "1.0.0");
-        list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+        list_host(SPISOR_HOST, "1.0.0", "1.0.0");
+        list_host(SPISOR_HOST, "2.0.0", "2.0.0");
         write_catalog();
-        install_listed(FOREBAY_HOST, "1.0.0");
-        install_listed(FOREBAY_HOST, "2.0.0");
-        write_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-        record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{\"" FOREBAY_HOST "\":\"2.0.0\"}}");
-        register_host(FOREBAY_HOST);
+        install_listed(SPISOR_HOST, "1.0.0");
+        install_listed(SPISOR_HOST, "2.0.0");
+        write_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
+        record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{\"" SPISOR_HOST "\":\"2.0.0\"}}");
+        register_host(SPISOR_HOST);
         concurrent_apply jobs[2] = {{{0, NULL}}, {{0, NULL}}};
         run_two_applies(jobs);
         CHECK(expect_success(jobs[0].answer, "first start") && expect_success(jobs[1].answer, "second start"));
-        expect_member_json(jobs[0].answer.tree, "run", "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "the first runs B");
-        expect_member_json(jobs[1].answer.tree, "run", "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "the second runs B");
+        expect_member_json(jobs[0].answer.tree, "run", "{\"" SPISOR_HOST "\":\"2.0.0\"}", "the first runs B");
+        expect_member_json(jobs[1].answer.tree, "run", "{\"" SPISOR_HOST "\":\"2.0.0\"}", "the second runs B");
         CHECK(carries_rollback(jobs[0].answer) != carries_rollback(jobs[1].answer));
-        runtime_host_references recorded = runtime_read_host_references(state, FOREBAY_HOST);
-        expect_json(recorded.run, "{\"" FOREBAY_HOST "\":\"2.0.0\"}", "one recorded run");
+        runtime_host_references recorded = runtime_read_host_references(state, SPISOR_HOST);
+        expect_json(recorded.run, "{\"" SPISOR_HOST "\":\"2.0.0\"}", "one recorded run");
         expect_json(recorded.next, "{}", "the scheduled version consumed once");
         runtime_free_host_references(&recorded);
-        expect_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"2.0.0\"}", "one boot hint naming B");
+        expect_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"2.0.0\"}", "one boot hint naming B");
         cJSON_Delete(sweep_cache().tree);
-        CHECK(folder_exists("bundles/" FOREBAY_HOST "/2.0.0"));
-        catalog_answer booted = resolve_boot(FOREBAY_HOST, "[\"status\"]");
-        expect_executable(booted, FOREBAY_HOST, "2.0.0", "B boots after the sweep");
+        CHECK(folder_exists("bundles/" SPISOR_HOST "/2.0.0"));
+        catalog_answer booted = resolve_boot(SPISOR_HOST, "[\"status\"]");
+        expect_executable(booted, SPISOR_HOST, "2.0.0", "B boots after the sweep");
         cJSON_Delete(booted.tree);
         remove_run_record(jobs[0].answer);
         remove_run_record(jobs[1].answer);
@@ -642,46 +642,46 @@ static void it_converges_two_starts_of_one_host_that_race_on_its_scheduled_versi
 
 static void it_rolls_a_switched_host_back_to_the_version_it_switched_from(void) {
     start_base("rollback");
-    list_host(FOREBAY_HOST, "1.0.0", "2.0.0");
-    list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "1.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "2.0.0", "2.0.0");
     write_catalog();
-    install_listed(FOREBAY_HOST, "1.0.0");
-    install_listed(FOREBAY_HOST, "2.0.0");
-    write_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"2.0.0\"}");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+    install_listed(SPISOR_HOST, "1.0.0");
+    install_listed(SPISOR_HOST, "2.0.0");
+    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"2.0.0\"}");
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
-    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
     expect_success(rolled, "rollback");
-    expect_member_json(rolled.tree, "run", "{\"" FOREBAY_HOST "\":\"1.0.0\"}", "rolled run");
-    expect_references(FOREBAY_HOST,
-                      "{\"run\":{\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
-                      "\":\"2.0.0\"},\"rolledBackFrom\":{\"" FOREBAY_HOST "\":\"2.0.0\"}}",
+    expect_member_json(rolled.tree, "run", "{\"" SPISOR_HOST "\":\"1.0.0\"}", "rolled run");
+    expect_references(SPISOR_HOST,
+                      "{\"run\":{\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
+                      "\":\"2.0.0\"},\"rolledBackFrom\":{\"" SPISOR_HOST "\":\"2.0.0\"}}",
                       "rolled references");
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "rolled hint");
+    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "rolled hint");
     cJSON_Delete(rolled.tree);
-    catalog_answer resolved = resolve_boot(FOREBAY_HOST, NULL);
-    expect_executable(resolved, FOREBAY_HOST, "1.0.0", "rolled boots");
+    catalog_answer resolved = resolve_boot(SPISOR_HOST, NULL);
+    expect_executable(resolved, SPISOR_HOST, "1.0.0", "rolled boots");
     cJSON_Delete(resolved.tree);
     finish_base();
 }
 
 static void it_refuses_a_rollback_no_switch_kept_a_version_for(void) {
     start_base("rollback-none");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{}}");
-    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
-    expect_refusal(rolled, "no version of forebay-host is kept for rollback", "no rollback");
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{}}");
+    catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
+    expect_refusal(rolled, "no version of spisor-host is kept for rollback", "no rollback");
     cJSON_Delete(rolled.tree);
     finish_base();
 }
 
 static void it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intact(void) {
     start_base("rollback-gone");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
-    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
     expect_refusal(rolled, "is not installed intact", "rollback gone");
-    expect_references(FOREBAY_HOST,
-                      "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+    expect_references(SPISOR_HOST,
+                      "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                       "\":\"1.0.0\"}}",
                       "nothing changed");
     cJSON_Delete(rolled.tree);
@@ -718,13 +718,13 @@ static void it_starts_a_scheduled_version_on_its_sizes_without_hashing_it(void) 
 
 static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_not_their_hashes(void) {
     start_base("rollback-hashed");
-    list_plugin(FOREBAY_HOST, "1.0.0", "2.0.0");
+    list_plugin(SPISOR_HOST, "1.0.0", "2.0.0");
     write_catalog();
-    install_listed(FOREBAY_HOST, "1.0.0");
-    damage_keeping_sizes(FOREBAY_HOST, "1.0.0", "plugin.json");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+    install_listed(SPISOR_HOST, "1.0.0");
+    damage_keeping_sizes(SPISOR_HOST, "1.0.0", "plugin.json");
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
-    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
     expect_refusal(rolled, "is not installed intact", "hashed before the lock");
     cJSON_Delete(rolled.tree);
     finish_base();
@@ -800,40 +800,40 @@ static void it_lets_a_start_finish_while_a_check_s_download_is_stalled(void) {
     finish_base();
 }
 
-static void install_both_forebay_hosts(void) {
-    list_host(FOREBAY_HOST, "1.0.0", "2.0.0");
-    list_host(FOREBAY_HOST, "2.0.0", "2.0.0");
+static void install_both_spisor_hosts(void) {
+    list_host(SPISOR_HOST, "1.0.0", "2.0.0");
+    list_host(SPISOR_HOST, "2.0.0", "2.0.0");
     write_catalog();
-    install_listed(FOREBAY_HOST, "1.0.0");
-    install_listed(FOREBAY_HOST, "2.0.0");
-    write_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"2.0.0\"}");
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
+    install_listed(SPISOR_HOST, "1.0.0");
+    install_listed(SPISOR_HOST, "2.0.0");
+    write_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"2.0.0\"}");
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
 }
 
 static void it_holds_a_rollback_until_the_catalog_moves_past_the_version_rolled_away_from(void) {
     start_base("rollback-holds");
-    install_both_forebay_hosts();
-    cJSON_Delete(rollback_of(FOREBAY_HOST, FOREBAY_HOST).tree);
-    catalog_answer held = check_with(FOREBAY_HOST, no_settings(), "{}");
+    install_both_spisor_hosts();
+    cJSON_Delete(rollback_of(SPISOR_HOST, SPISOR_HOST).tree);
+    catalog_answer held = check_with(SPISOR_HOST, no_settings(), "{}");
     expect_member_json(held.tree, "fetched", "[]", "nothing scheduled back");
     cJSON_Delete(held.tree);
-    expect_references(FOREBAY_HOST,
-                      "{\"run\":{\"" FOREBAY_HOST "\":\"1.0.0\"},\"next\":{},\"rollback\":{\"" FOREBAY_HOST
-                      "\":\"2.0.0\"},\"rolledBackFrom\":{\"" FOREBAY_HOST "\":\"2.0.0\"}}",
+    expect_references(SPISOR_HOST,
+                      "{\"run\":{\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
+                      "\":\"2.0.0\"},\"rolledBackFrom\":{\"" SPISOR_HOST "\":\"2.0.0\"}}",
                       "the rollback holds");
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}", "the hint holds");
+    expect_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}", "the hint holds");
 
-    list_host(FOREBAY_HOST, "3.0.0", "3.0.0");
+    list_host(SPISOR_HOST, "3.0.0", "3.0.0");
     write_catalog();
-    catalog_answer moved = check_with(FOREBAY_HOST, no_settings(), "{}");
-    expect_member_json(moved.tree, "fetched", "[\"" FOREBAY_HOST "@3.0.0\"]", "a newer latest is scheduled");
+    catalog_answer moved = check_with(SPISOR_HOST, no_settings(), "{}");
+    expect_member_json(moved.tree, "fetched", "[\"" SPISOR_HOST "@3.0.0\"]", "a newer latest is scheduled");
     cJSON_Delete(moved.tree);
-    runtime_host_references recorded = runtime_read_host_references(state, FOREBAY_HOST);
-    expect_json(recorded.next, "{\"" FOREBAY_HOST "\":\"3.0.0\"}", "scheduled");
+    runtime_host_references recorded = runtime_read_host_references(state, SPISOR_HOST);
+    expect_json(recorded.next, "{\"" SPISOR_HOST "\":\"3.0.0\"}", "scheduled");
     CHECK(recorded.rolled_back_from == NULL);
     runtime_free_host_references(&recorded);
-    expect_hint(FOREBAY_HOST, "{\"libraries\":{},\"host\":\"3.0.0\"}", "hinted once the catalog moved");
+    expect_hint(SPISOR_HOST, "{\"libraries\":{},\"host\":\"3.0.0\"}", "hinted once the catalog moved");
     finish_base();
 }
 
@@ -869,7 +869,7 @@ static void it_reports_a_hint_it_could_not_write_and_still_starts(void) {
     start_base("hint-unwritable");
     install_libraries();
     write_catalog();
-    char *blocker = joined(cache, "hosts/" FOREBAY_HOST ".json");
+    char *blocker = joined(cache, "hosts/" SPISOR_HOST ".json");
     CHECK(spisor_make_directories(blocker) == 1);
     free(blocker);
     double started_at = runtime_now_milliseconds();
@@ -919,14 +919,14 @@ static void it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from
 
 static void it_drops_a_next_naming_the_version_a_rollback_moves_away_from(void) {
     start_base("rollback-drops-next");
-    install_both_forebay_hosts();
-    record_references(FOREBAY_HOST, "{\"run\":{\"" FOREBAY_HOST "\":\"2.0.0\"},\"next\":{\"" FOREBAY_HOST
-                                    "\":\"2.0.0\"},\"rollback\":{\"" FOREBAY_HOST "\":\"1.0.0\"}}");
-    catalog_answer rolled = rollback_of(FOREBAY_HOST, FOREBAY_HOST);
+    install_both_spisor_hosts();
+    record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{\"" SPISOR_HOST
+                                    "\":\"2.0.0\"},\"rollback\":{\"" SPISOR_HOST "\":\"1.0.0\"}}");
+    catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
     expect_member_json(rolled.tree, "next", "{}", "next no longer names the version rolled away from");
     cJSON_Delete(rolled.tree);
-    catalog_answer started = apply_with(FOREBAY_HOST, no_settings(), "{}");
-    expect_member_json(started.tree, "run", "{\"" FOREBAY_HOST "\":\"1.0.0\"}", "the next start stays rolled back");
+    catalog_answer started = apply_with(SPISOR_HOST, no_settings(), "{}");
+    expect_member_json(started.tree, "run", "{\"" SPISOR_HOST "\":\"1.0.0\"}", "the next start stays rolled back");
     remove_run_record(started);
     cJSON_Delete(started.tree);
     finish_base();
@@ -934,13 +934,13 @@ static void it_drops_a_next_naming_the_version_a_rollback_moves_away_from(void) 
 
 static void it_never_schedules_under_the_lock_a_version_a_rollback_moved_away_from(void) {
     start_base("locked-schedule-filters");
-    install_both_forebay_hosts();
-    cJSON_Delete(rollback_of(FOREBAY_HOST, FOREBAY_HOST).tree);
-    catalog_answer checked = check_with(FOREBAY_HOST, no_settings(),
-                                        "{\"problems\":[{\"id\":\"" FOREBAY_HOST "\",\"version\":\"2.0.0\"}]}");
+    install_both_spisor_hosts();
+    cJSON_Delete(rollback_of(SPISOR_HOST, SPISOR_HOST).tree);
+    catalog_answer checked = check_with(SPISOR_HOST, no_settings(),
+                                        "{\"problems\":[{\"id\":\"" SPISOR_HOST "\",\"version\":\"2.0.0\"}]}");
     expect_success(checked, "repair check");
     cJSON_Delete(checked.tree);
-    runtime_host_references recorded = runtime_read_host_references(state, FOREBAY_HOST);
+    runtime_host_references recorded = runtime_read_host_references(state, SPISOR_HOST);
     expect_json(recorded.next, "{}", "a repair of the rolled-away version is not scheduled to run");
     runtime_free_host_references(&recorded);
     finish_base();
@@ -995,7 +995,7 @@ int main(void) {
     it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_is_installed_intact();
     it_writes_no_hint_while_a_library_the_host_boots_with_is_not_installed();
 
-    it_schedules_a_newer_loader_and_forebay_host_for_the_next_start_which_then_runs_both();
+    it_schedules_a_newer_loader_and_spisor_host_for_the_next_start_which_then_runs_both();
     it_holds_a_host_to_its_pin();
 
     it_records_a_version_it_could_not_install_as_refused_and_finishes();

@@ -3,12 +3,12 @@
 
 #include "cJSON.h"
 
-/** What a forebay-host command exits with: done, refused, or misused. */
+/** What a spisor-host command exits with: done, refused, or misused. */
 #define HOST_EXIT_DONE 0
 #define HOST_EXIT_REFUSED 1
 #define HOST_EXIT_MISUSED 2
 
-#define HOST_REINSTALL_FIX "run forebay-host install --catalog <path or url> again"
+#define HOST_REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
 
 /**
  * Writes the UTF-8 text to standard output, or to standard error when to_error is set.

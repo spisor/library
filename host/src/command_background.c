@@ -24,7 +24,7 @@ static void stamp(void *context) {
 
 /**
  * @implNote On Windows this process waits for the layer for as long as it runs, so it records the
- * forebay-host version it runs as a launch does; on POSIX execv leaves no forebay-host behind to record.
+ * spisor-host version it runs as a launch does; on POSIX execv leaves no spisor-host behind to record.
  */
 static int run_background(const host_context *context, const char *id) {
     cJSON *refusal = NULL;

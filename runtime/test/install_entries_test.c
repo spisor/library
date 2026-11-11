@@ -223,7 +223,7 @@ static void writes_the_declared_files_with_every_placeholder_filled(void) {
     char *boot_json = cJSON_PrintUnformatted(quoted);
     char expected[2048];
     snprintf(expected, sizeof expected,
-             "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":%s,\"args\":[\"forebay-host\","
+             "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":%s,\"args\":[\"spisor-host\","
              "\"hook\",\"" LOADER_ID "\",\"session-start\"],\"timeout\":30}]}]}}",
              boot_json);
     cJSON *hooks = json_in(root, "hooks/hooks.json");

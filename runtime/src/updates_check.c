@@ -11,6 +11,7 @@
 #include "cache_sweep.h"
 #include "catalog_answer.h"
 #include "host_references.h"
+#include "install_run.h"
 #include "plugin_choices.h"
 #include "updates_catalog.h"
 #include "updates_request.h"
@@ -159,7 +160,7 @@ static int add_unstartable_targets(cJSON *targets, const char *cache, const cJSO
 static cJSON *kept_hosts(const runtime_updates_request *request) {
     cJSON *ids = cJSON_CreateArray();
     int built = ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(request->host_id)) &&
-                cJSON_AddItemToArray(ids, cJSON_CreateString(RUNTIME_FOREBAY_HOST_ID));
+                cJSON_AddItemToArray(ids, cJSON_CreateString(RUNTIME_ECOSYSTEM_HOST_ID));
     cJSON *hosts = built ? runtime_pinned_candidates(ids, settings_of(request)) : NULL;
     cJSON_Delete(ids);
     return hosts;

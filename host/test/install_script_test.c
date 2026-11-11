@@ -7,10 +7,10 @@
 #include <unistd.h>
 #endif
 
-#define HOST_VERSION FOREBAY_HOST_VERSION
+#define HOST_VERSION SPISOR_HOST_VERSION
 #define SCRIPT_TIMEOUT 300000
-#define HOST_EXECUTABLE "forebay-host" EXECUTABLE_ENDING
-#define BOOT_EXECUTABLE "forebay-boot" EXECUTABLE_ENDING
+#define HOST_EXECUTABLE "spisor-host" EXECUTABLE_ENDING
+#define BOOT_EXECUTABLE "spisor-boot" EXECUTABLE_ENDING
 #define LAUNCHER_EXECUTABLE "runtime-launcher.exe"
 #define SPACED_KEY "docs/read me.txt"
 #define SPACED_CONTENT "a key with a space, served percent-encoded"
@@ -47,12 +47,12 @@ static char *platform_key_of(const char *name) {
 }
 
 static char *version_directory(const host_world *world) {
-    return joined(world->base.cache, "bundles/forebay-host/" HOST_VERSION);
+    return joined(world->base.cache, "bundles/spisor-host/" HOST_VERSION);
 }
 
 static char *cached_file(const host_world *world, const char *name) {
     char rest[512];
-    snprintf(rest, sizeof rest, "bundles/forebay-host/" HOST_VERSION "/%s/%s", runtime_platform_key(), name);
+    snprintf(rest, sizeof rest, "bundles/spisor-host/" HOST_VERSION "/%s/%s", runtime_platform_key(), name);
     return joined(world->base.cache, rest);
 }
 
@@ -67,15 +67,15 @@ static char *staged_copy(const host_world *world, const char *name) {
     return stage;
 }
 
-static char *stage_forebay_host(const host_world *world) {
-    char *stage = staged_copy(world, "forebay-host");
+static char *stage_spisor_host(const host_world *world) {
+    char *stage = staged_copy(world, "spisor-host");
     write_in(stage, SPACED_KEY, SPACED_CONTENT);
     return stage;
 }
 
-/** A local catalog of forebay-host and the runtime library for this platform, written by catalog build. */
+/** A local catalog of spisor-host and the runtime library for this platform, written by catalog build. */
 static void build_catalog(host_world *world) {
-    char *host = stage_forebay_host(world);
+    char *host = stage_spisor_host(world);
     char *library = staged_copy(world, "runtime");
     char host_argument[1200];
     char library_argument[1200];
@@ -234,42 +234,42 @@ static void start_script_world(host_world *world, const char *label) {
     build_catalog(world);
 }
 
-static void fetches_forebay_host_for_this_platform_and_runs_its_install(void) {
+static void fetches_spisor_host_for_this_platform_and_runs_its_install(void) {
     host_world world;
     start_script_world(&world, "fresh");
     program run;
     CHECK(install(&world, &run, NULL) == 0);
     char fetched[256];
-    snprintf(fetched, sizeof fetched, "fetching forebay-host " HOST_VERSION " %s/" HOST_EXECUTABLE, runtime_platform_key());
+    snprintf(fetched, sizeof fetched, "fetching spisor-host " HOST_VERSION " %s/" HOST_EXECUTABLE, runtime_platform_key());
     expect_contains(run.err, fetched, "names what it fetched");
     char *executable = cached_file(&world, HOST_EXECUTABLE);
     char *boot = cached_file(&world, BOOT_EXECUTABLE);
-    CHECK(has_same_bytes(executable, FOREBAY_HOST_PATH));
-    CHECK(has_same_bytes(boot, FOREBAY_BOOT_PATH));
+    CHECK(has_same_bytes(executable, SPISOR_HOST_PATH));
+    CHECK(has_same_bytes(boot, SPISOR_BOOT_PATH));
 #if defined(_WIN32)
     char *launcher = cached_file(&world, LAUNCHER_EXECUTABLE);
     CHECK(has_same_bytes(launcher, RUNTIME_LAUNCHER_PATH));
     free(launcher);
 #endif
-    CHECK(exists_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/.installed.json"));
-    char *spaced_text = text_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/" SPACED_KEY);
+    CHECK(exists_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/.installed.json"));
+    char *spaced_text = text_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/" SPACED_KEY);
     check_text(spaced_text, SPACED_CONTENT, "a key with a space is fetched from its percent-encoded url");
     free(spaced_text);
     char *stub = runtime_boot_stub_path(world.base.cache);
-    CHECK(has_same_bytes(stub, FOREBAY_BOOT_PATH));
+    CHECK(has_same_bytes(stub, SPISOR_BOOT_PATH));
     cJSON *library = json_in(STAGED_BUNDLES_PATH, "runtime/library.json");
     char marker[256];
     snprintf(marker, sizeof marker, "libraries/runtime/%s/%s/.installed.json", text_at(library, "version"), runtime_platform_key());
     cJSON_Delete(library);
     CHECK(exists_in(world.base.cache, marker));
-    cJSON *registration = registration_in(&world, "forebay-host");
+    cJSON *registration = registration_in(&world, "spisor-host");
     check_text(text_at(registration, "version"), HOST_VERSION, "registered at the catalog's version");
     cJSON_Delete(registration);
     program status;
-    const char *arguments[] = {"forebay-host", "status", NULL};
+    const char *arguments[] = {"spisor-host", "status", NULL};
     world_start(&world, &status, stub, arguments, NULL, 1);
     CHECK(program_finish(&status, 120000) == 0);
-    expect_contains(status.out, "\"hosts\"", "forebay-boot runs the installed forebay-host");
+    expect_contains(status.out, "\"hosts\"", "spisor-boot runs the installed spisor-host");
     program_free(&status);
     free(stub);
     free(boot);
@@ -308,7 +308,7 @@ static void fetches_nothing_on_a_second_run(void) {
     finish_world(&world);
 }
 
-static void fetches_forebay_host_again_when_its_bytes_changed(void) {
+static void fetches_spisor_host_again_when_its_bytes_changed(void) {
     host_world world;
     start_script_world(&world, "changed");
     program first;
@@ -324,9 +324,9 @@ static void fetches_forebay_host_again_when_its_bytes_changed(void) {
     program second;
     CHECK(install(&world, &second, NULL) == 0);
     char fetched[256];
-    snprintf(fetched, sizeof fetched, "fetching forebay-host " HOST_VERSION " %s/" HOST_EXECUTABLE, runtime_platform_key());
+    snprintf(fetched, sizeof fetched, "fetching spisor-host " HOST_VERSION " %s/" HOST_EXECUTABLE, runtime_platform_key());
     expect_contains(second.err, fetched, "fetched again");
-    CHECK(has_same_bytes(executable, FOREBAY_HOST_PATH));
+    CHECK(has_same_bytes(executable, SPISOR_HOST_PATH));
     program_free(&second);
     program_free(&first);
     free(bytes);
@@ -345,7 +345,7 @@ static void installs_from_a_catalog_index_that_starts_with_a_byte_order_mark(voi
     program run;
     const char *arguments[] = {index, NULL};
     CHECK(run_script(&world, &run, arguments, 1) == 0);
-    cJSON *registration = registration_in(&world, "forebay-host");
+    cJSON *registration = registration_in(&world, "spisor-host");
     check_text(text_at(registration, "version"), HOST_VERSION, "installed");
     cJSON_Delete(registration);
     program_free(&run);
@@ -389,7 +389,7 @@ typedef struct hostile_catalog {
 
 static cJSON *platform_files(cJSON *catalog) {
     cJSON *version = cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog, "items"), "forebay-host"),
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog, "items"), "spisor-host"),
                                          "versions"),
         HOST_VERSION);
     cJSON *platform = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(version, "platforms"), runtime_platform_key());
@@ -423,7 +423,7 @@ static void without_the_executable(host_world *world, cJSON *files) {
     remove_key(files, HOST_EXECUTABLE);
 }
 
-static void without_forebay_boot(host_world *world, cJSON *files) {
+static void without_spisor_boot(host_world *world, cJSON *files) {
     (void)world;
     remove_key(files, BOOT_EXECUTABLE);
 }
@@ -485,7 +485,7 @@ static void with_a_file_that_cannot_be_fetched(host_world *world, cJSON *files) 
 
 static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(FOREBAY_HOST_PATH, &length);
+    uint8_t *bytes = spisor_read_file(SPISOR_HOST_PATH, &length);
     char *path = joined(world->base.catalog, "cut-short/" HOST_EXECUTABLE);
     char *parent = joined(path, "..");
     CHECK(bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(path, bytes, length / 2) == 1);
@@ -523,12 +523,12 @@ static void with_a_size_that_is_not_a_whole_number(host_world *world, cJSON *fil
 }
 
 static const hostile_catalog HOSTILE_CATALOGS[] = {
-    {"a forebay-host that lists no executable for this platform", without_the_executable, "without %s/" HOST_EXECUTABLE},
-    {"a forebay-host that lists no forebay-boot", without_forebay_boot, "without %s/" BOOT_EXECUTABLE},
+    {"a spisor-host that lists no executable for this platform", without_the_executable, "without %s/" HOST_EXECUTABLE},
+    {"a spisor-host that lists no spisor-boot", without_spisor_boot, "without %s/" BOOT_EXECUTABLE},
 #if defined(_WIN32)
-    {"a forebay-host that lists no runtime-launcher.exe", without_runtime_launcher, "without %s/" LAUNCHER_EXECUTABLE},
+    {"a spisor-host that lists no runtime-launcher.exe", without_runtime_launcher, "without %s/" LAUNCHER_EXECUTABLE},
 #endif
-    {"a forebay-host with no build for this platform", without_this_platform, "lists no forebay-host " HOST_VERSION " build for %s"},
+    {"a spisor-host with no build for this platform", without_this_platform, "lists no spisor-host " HOST_VERSION " build for %s"},
     {"a file key that climbs out of the version", with_a_key_that_climbs_out, "file \"../escape\" with a name, url"},
     {"a file url outside the catalog's directory", with_a_url_outside_the_catalog_directory, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
     {"an absolute file url outside the catalog's directory", with_a_file_url_outside_the_catalog_directory, "file \"%s/" HOST_EXECUTABLE "\" with a name, url"},
@@ -555,7 +555,7 @@ static char *hostile_index(host_world *world, const hostile_catalog *hostile, si
     return joined(world->base.catalog, name);
 }
 
-/** The fake application where an earlier forebay-host would be, so running it leaves install.started behind. */
+/** The fake application where an earlier spisor-host would be, so running it leaves install.started behind. */
 static void plant_stale_host(host_world *world) {
     char *stale = cached_file(world, HOST_EXECUTABLE);
     copy_file(FAKE_APPLICATION_PATH, stale);
@@ -597,7 +597,7 @@ static void expect_no_strays(const host_world *world, const char *label) {
     free(version);
 }
 
-/** Rewrites every forebay-host file url of the catalog as the absolute file url catalog.read also accepts. */
+/** Rewrites every spisor-host file url of the catalog as the absolute file url catalog.read also accepts. */
 static void make_urls_absolute(const host_world *world, cJSON *files) {
     for (cJSON *file = files == NULL ? NULL : files->child; file != NULL; file = file->next) {
         char *url = file_url_under(world->base.catalog, text_at(file, "url"));
@@ -612,7 +612,7 @@ static void installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_di
     cJSON *catalog = json_in(world.base.catalog, "catalog.json");
     make_urls_absolute(&world, platform_files(catalog));
     cJSON *version = cJSON_GetArrayItem(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog, "items"), "forebay-host"), "versions"), 0);
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog, "items"), "spisor-host"), "versions"), 0);
     make_urls_absolute(&world, cJSON_GetObjectItemCaseSensitive(version, "files"));
     char *text = cJSON_Print(catalog);
     write_in(world.base.catalog, "absolute.json", text);
@@ -627,7 +627,7 @@ static void installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_di
         check_failures++;
     }
     char *executable = cached_file(&world, HOST_EXECUTABLE);
-    CHECK(has_same_bytes(executable, FOREBAY_HOST_PATH));
+    CHECK(has_same_bytes(executable, SPISOR_HOST_PATH));
     free(executable);
     program_free(&run);
     free(index);
@@ -654,9 +654,9 @@ static void refuses_each_hostile_catalog_and_runs_nothing(void) {
         expect_contains(run.err, refusal, hostile->name);
         expect_contains(run.err, "fix: ", hostile->name);
         CHECK(!exists_in(world.signals, "install.started"));
-        CHECK(!exists_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/.installed.json"));
+        CHECK(!exists_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/.installed.json"));
         CHECK(!exists_in(world.base.cache, "libraries"));
-        CHECK(!exists_in(world.base.cache, "bundles/forebay-host/escape"));
+        CHECK(!exists_in(world.base.cache, "bundles/spisor-host/escape"));
         expect_no_strays(&world, hostile->name);
         program_free(&run);
         free(index);
@@ -686,8 +686,8 @@ static void print_running_programs(void) {
     }
 }
 
-/** A forebay-host.exe whose listed bytes are no program, so the call that starts it fails in PowerShell itself. */
-static void answers_1_when_forebay_host_cannot_be_started(void) {
+/** A spisor-host.exe whose listed bytes are no program, so the call that starts it fails in PowerShell itself. */
+static void answers_1_when_spisor_host_cannot_be_started(void) {
     host_world world;
     start_script_world(&world, "not-a-program");
     const char *bytes = "not a program";
@@ -710,13 +710,13 @@ static void answers_1_when_forebay_host_cannot_be_started(void) {
     start_script(&world, &run, arguments, 1, trace);
     int finished = program_wait(&run, SHORT_SCRIPT_TIMEOUT);
     if (!finished) {
-        fprintf(stderr, "a forebay-host that cannot start is still running after %d ms; the processes left:\n", SHORT_SCRIPT_TIMEOUT);
+        fprintf(stderr, "a spisor-host that cannot start is still running after %d ms; the processes left:\n", SHORT_SCRIPT_TIMEOUT);
         print_running_programs();
     }
     int code = program_finish(&run, 1);
     if (code != 1) {
         char *traced = read_text_file(trace);
-        fprintf(stderr, "a forebay-host that cannot start answered %d:\n%s\n%s\ntrace:\n%s\n", code, run.out, run.err, traced);
+        fprintf(stderr, "a spisor-host that cannot start answered %d:\n%s\n%s\ntrace:\n%s\n", code, run.out, run.err, traced);
         free(traced);
         check_failures++;
     }
@@ -773,7 +773,7 @@ static void installs_from_a_local_catalog_without_curl(void) {
         fprintf(stderr, "the script answered %d without curl:\n%s\n%s\n", code, run.out, run.err);
         check_failures++;
     }
-    CHECK(exists_in(world.base.cache, "bundles/forebay-host/" HOST_VERSION "/.installed.json"));
+    CHECK(exists_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/.installed.json"));
     program_free(&run);
     free(index);
     finish_world(&world);
@@ -880,10 +880,10 @@ int main(void) {
     guard_user_path(&guard);
     both_scripts_check_the_patterns_the_catalog_schema_holds();
     both_scripts_hold_nothing_outside_printable_ascii();
-    fetches_forebay_host_for_this_platform_and_runs_its_install();
+    fetches_spisor_host_for_this_platform_and_runs_its_install();
     passes_its_arguments_to_install_and_answers_its_exit_code();
     fetches_nothing_on_a_second_run();
-    fetches_forebay_host_again_when_its_bytes_changed();
+    fetches_spisor_host_again_when_its_bytes_changed();
     installs_from_a_catalog_index_that_starts_with_a_byte_order_mark();
     refuses_with_the_fix_when_no_catalog_is_given_and_writes_nothing();
     refuses_a_catalog_that_is_neither_an_https_url_nor_a_local_path();
@@ -891,7 +891,7 @@ int main(void) {
     installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_directory();
 #if defined(_WIN32)
     leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_invoke_expression();
-    answers_1_when_forebay_host_cannot_be_started();
+    answers_1_when_spisor_host_cannot_be_started();
 #else
     names_curl_as_the_one_thing_to_install_when_it_is_missing();
     installs_from_a_local_catalog_without_curl();

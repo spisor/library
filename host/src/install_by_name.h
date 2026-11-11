@@ -3,7 +3,7 @@
 
 #include "host_context.h"
 
-/** What `forebay-host install --name` was asked; every member but accepted_name_id and accepted_primary is required. */
+/** What `spisor-host install --name` was asked; every member but accepted_name_id and accepted_primary is required. */
 typedef struct host_name_request {
     const char *name;
     const char *application;

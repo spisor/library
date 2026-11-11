@@ -16,7 +16,7 @@ static const char *VALID_STANDARD =
     " \"home\": {\"envOverride\": \"CLAUDE_CONFIG_DIR\", \"candidates\": [\"~/.claude\"]},"
     " \"packages\": {\"npm\": \"@anthropic-ai/claude-code\", \"winget\": {\"name\": \"Anthropic.ClaudeCode\","
     " \"source\": \"winget\"}}},"
-    " \"pathCommands\": {\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"],"
+    " \"pathCommands\": {\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"spisor-host\"],"
     " \"plugins\": [\"proxy\"]}";
 
 static cJSON *valid_standard(void) {
@@ -124,7 +124,7 @@ static void refuses_a_package_neither_a_name_nor_an_object_with_one_naming_its_m
 static void refuses_a_minimum_outside_zero_and_one_and_a_background_that_is_no_list(void) {
     cJSON *standard = valid_standard();
     cJSON_ReplaceItemInObject(standard, "pathCommands", parsed("{\"requested\": [\"claude\"], \"minimum\": 2}"));
-    cJSON_ReplaceItemInObject(standard, "background", cJSON_CreateString("forebay-host"));
+    cJSON_ReplaceItemInObject(standard, "background", cJSON_CreateString("spisor-host"));
     check_paths(standard, "/pathCommands/minimum,/background", "minimum and background");
 }
 

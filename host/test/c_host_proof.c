@@ -4,7 +4,7 @@
 
 #define STEP_COUNT 5
 
-static const char *const STEP_NAMES[STEP_COUNT] = {"install", "status", "update", ("remove " LOADER_ID), "remove forebay-host"};
+static const char *const STEP_NAMES[STEP_COUNT] = {"install", "status", "update", ("remove " LOADER_ID), "remove spisor-host"};
 static const char *const FIRST_LOADER[] = {"1.0.0", NULL};
 static const char *const BOTH_LOADERS[] = {"1.0.0", "1.1.0", NULL};
 
@@ -17,7 +17,7 @@ typedef struct lifecycle_trees {
     char *status;
 } lifecycle_trees;
 
-/** How one host is asked for each step: the executable and whether it takes forebay-host's flags. */
+/** How one host is asked for each step: the executable and whether it takes spisor-host's flags. */
 typedef struct host_under_proof {
     const char *name;
     char *executable;
@@ -111,9 +111,9 @@ static int run_step(host_world *world, const host_under_proof *host, program *ru
     const char *status[] = {"status", NULL};
     const char *update[] = {"update", NULL};
     const char *remove_loader[] = {"remove", LOADER_ID, NULL};
-    const char *remove_forebay_host[] = {"remove", "forebay-host", NULL};
+    const char *remove_spisor_host[] = {"remove", "spisor-host", NULL};
     const char *const *arguments[STEP_COUNT] = {host->takes_flags ? flagged_install : plain_install, status, update, remove_loader,
-                                                remove_forebay_host};
+                                                remove_spisor_host};
     if (step == 2) {
         build_proof_catalog(world, BOTH_LOADERS);
     }
@@ -185,17 +185,17 @@ static void print_around(const char *label, const char *tree, size_t length, siz
     fprintf(stderr, "--- %s, bytes %zu to %zu:\n%.*s\n", label, start, end, (int)(end - start), tree + start);
 }
 
-static void expect_same_trees(const lifecycle_trees *c_host, const lifecycle_trees *forebay_host) {
+static void expect_same_trees(const lifecycle_trees *c_host, const lifecycle_trees *spisor_host) {
     for (int step = 0; step < STEP_COUNT; step++) {
         size_t c_length = c_host->length[step];
-        size_t forebay_length = forebay_host->length[step];
-        if (c_length == forebay_length && memcmp(c_host->tree[step], forebay_host->tree[step], c_length) == 0) {
+        size_t forebay_length = spisor_host->length[step];
+        if (c_length == forebay_length && memcmp(c_host->tree[step], spisor_host->tree[step], c_length) == 0) {
             continue;
         }
-        size_t at = first_difference(c_host->tree[step], c_length, forebay_host->tree[step], forebay_length);
-        fprintf(stderr, "after %s the c host's tree differs from forebay-host's at byte %zu\n", STEP_NAMES[step], at);
+        size_t at = first_difference(c_host->tree[step], c_length, spisor_host->tree[step], forebay_length);
+        fprintf(stderr, "after %s the c host's tree differs from spisor-host's at byte %zu\n", STEP_NAMES[step], at);
         print_around("c host", c_host->tree[step], c_length, at);
-        print_around("forebay-host", forebay_host->tree[step], forebay_length, at);
+        print_around("spisor-host", spisor_host->tree[step], forebay_length, at);
         check_failures++;
     }
 }
@@ -215,27 +215,27 @@ static void prepare_proof_world(host_world *world) {
 
 /**
  * A host in C, linking runtime and calling its services in-process with no JavaScript runtime on its PATH,
- * leaves after install, status, update and each remove the tree the native forebay-host leaves for the same
+ * leaves after install, status, update and each remove the tree the native spisor-host leaves for the same
  * local catalog, prints the same status, and both leave the user's home as they found it.
  */
-static void a_host_in_c_leaves_the_tree_forebay_host_leaves_with_no_javascript_runtime(void) {
+static void a_host_in_c_leaves_the_tree_spisor_host_leaves_with_no_javascript_runtime(void) {
     host_world world;
     prepare_proof_world(&world);
     host_under_proof c_host = {"the c host", copy_text(C_HOST_PATH), 0};
-    host_under_proof forebay_host = {"forebay-host", staged_forebay_host(), 1};
+    host_under_proof spisor_host = {"spisor-host", staged_spisor_host(), 1};
     lifecycle_trees c_trees;
     lifecycle_trees forebay_trees;
     memset(&c_trees, 0, sizeof c_trees);
     memset(&forebay_trees, 0, sizeof forebay_trees);
     run_lifecycle(&world, &c_host, &c_trees);
-    run_lifecycle(&world, &forebay_host, &forebay_trees);
+    run_lifecycle(&world, &spisor_host, &forebay_trees);
     expect_same_trees(&c_trees, &forebay_trees);
     check_text(c_trees.status, forebay_trees.status == NULL ? "" : forebay_trees.status, "the same status");
     expect_home_restored(&c_trees, c_host.name);
-    expect_home_restored(&forebay_trees, forebay_host.name);
+    expect_home_restored(&forebay_trees, spisor_host.name);
     free_trees(&forebay_trees);
     free_trees(&c_trees);
-    free(forebay_host.executable);
+    free(spisor_host.executable);
     free(c_host.executable);
     finish_world(&world);
 }
@@ -243,7 +243,7 @@ static void a_host_in_c_leaves_the_tree_forebay_host_leaves_with_no_javascript_r
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
-    a_host_in_c_leaves_the_tree_forebay_host_leaves_with_no_javascript_runtime();
+    a_host_in_c_leaves_the_tree_spisor_host_leaves_with_no_javascript_runtime();
     expect_user_path_unchanged(&guard);
     return check_summary("c_host_proof");
 }

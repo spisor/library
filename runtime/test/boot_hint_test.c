@@ -6,7 +6,7 @@
 #include <time.h>
 #endif
 
-#define HOST "forebay-host"
+#define HOST "spisor-host"
 #define LIBRARIES "{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"
 
 static catalog_answer read_hint(const char *host) {
@@ -37,7 +37,7 @@ static void it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back(voi
     catalog_answer written = write_hint_through_boot(HOST, LIBRARIES, "1.0.0");
     expect_success(written, "round trip write");
     cJSON_Delete(written.tree);
-    expect_text_in(cache, "hosts/forebay-host.json",
+    expect_text_in(cache, "hosts/spisor-host.json",
                    "{\n  \"libraries\": {\n    \"runtime\": \"0.1.0\",\n    \"koffi\": \"2.0.0\"\n  },\n  \"host\": "
                    "\"1.0.0\"\n}\n",
                    "round trip text");
@@ -106,7 +106,7 @@ static void it_resolves_the_executable_of_the_version_the_hint_names_with_the_ar
 
 static void it_names_the_windows_executable_with_its_extension(void) {
     start_base("resolve-windows");
-    list_version(HOST, "host", "1.0.0", "1.0.0", "win32-x64/forebay-host.exe", NULL);
+    list_version(HOST, "host", "1.0.0", "1.0.0", "win32-x64/spisor-host.exe", NULL);
     install_listed(HOST, "1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
     cJSON *argument = cJSON_CreateObject();
@@ -116,7 +116,7 @@ static void it_names_the_windows_executable_with_its_extension(void) {
     catalog_answer resolved = call_catalog(runtime_boot_resolve, argument);
     expect_success(resolved, "windows");
     const char *executable = text_at(resolved.tree, "executable");
-    CHECK(executable != NULL && strstr(executable, "forebay-host.exe") != NULL && spisor_file_exists(executable));
+    CHECK(executable != NULL && strstr(executable, "spisor-host.exe") != NULL && spisor_file_exists(executable));
     cJSON_Delete(resolved.tree);
     finish_base();
 }
@@ -133,7 +133,7 @@ static void it_refuses_with_the_reinstall_fix_when_there_is_no_hint(void) {
     start_base("resolve-no-hint");
     install_host("1.0.0");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "no host version is recorded for forebay-host", "no hint");
+    expect_refusal(resolved, "no host version is recorded for spisor-host", "no hint");
     expect_fix(resolved, REINSTALL_FIX, "no hint fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -165,10 +165,10 @@ static void it_refuses_a_host_bundle_whose_file_no_longer_has_its_recorded_size(
     start_base("resolve-resized");
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    write_in(cache, "bundles/forebay-host/1.0.0/" PLATFORM "/forebay-host", "resized");
+    write_in(cache, "bundles/spisor-host/1.0.0/" PLATFORM "/spisor-host", "resized");
     catalog_answer resolved = resolve_boot(HOST, NULL);
     expect_refusal(resolved, "was not started", "resized");
-    expect_refusal(resolved, "has 7 bytes, but its install recorded 18", "resized size");
+    expect_refusal(resolved, "has 7 bytes, but its install recorded 17", "resized size");
     expect_fix(resolved, REINSTALL_FIX, "resized fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -179,7 +179,7 @@ static void it_starts_a_host_bundle_whose_file_kept_its_size_without_hashing_it(
     start_base("resolve-same-size");
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    write_in(cache, "bundles/forebay-host/1.0.0/" PLATFORM "/forebay-host", "forebay-host@9.9.9");
+    write_in(cache, "bundles/spisor-host/1.0.0/" PLATFORM "/spisor-host", "spisor-host@9.9.9");
     catalog_answer resolved = resolve_boot(HOST, NULL);
     expect_success(resolved, "same size");
     expect_executable(resolved, HOST, "1.0.0", "same size executable");
@@ -192,13 +192,13 @@ static void it_refuses_a_host_bundle_whose_marker_records_no_sizes(void) {
     start_base("resolve-no-sizes");
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    char *recorded = text_in(cache, "bundles/forebay-host/1.0.0/.installed.json");
+    char *recorded = text_in(cache, "bundles/spisor-host/1.0.0/.installed.json");
     cJSON *marker = recorded == NULL ? NULL : spisor_parse_json((const uint8_t *)recorded, strlen(recorded));
     free(recorded);
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");
     char *text = cJSON_PrintUnformatted(marker);
-    write_in(cache, "bundles/forebay-host/1.0.0/.installed.json", text);
+    write_in(cache, "bundles/spisor-host/1.0.0/.installed.json", text);
     cJSON_free(text);
     cJSON_Delete(marker);
     catalog_answer resolved = resolve_boot(HOST, NULL);
@@ -243,8 +243,8 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     catalog_answer swept = sweep_cache();
     expect_success(swept, "sweep");
     cJSON_Delete(swept.tree);
-    CHECK(exists_in(cache, "bundles/forebay-host/2.0.0/" PLATFORM "/forebay-host"));
-    CHECK(!exists_in(cache, "bundles/forebay-host/1.0.0"));
+    CHECK(exists_in(cache, "bundles/spisor-host/2.0.0/" PLATFORM "/spisor-host"));
+    CHECK(!exists_in(cache, "bundles/spisor-host/1.0.0"));
     CHECK(exists_in(cache, "libraries/runtime/0.1.0/" PLATFORM));
     CHECK(exists_in(cache, "libraries/koffi/2.0.0/" PLATFORM));
     catalog_answer resolved = resolve_boot(HOST, NULL);

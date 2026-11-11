@@ -17,8 +17,11 @@ typedef struct runtime_install_run {
     cJSON *required_plugins;
 } runtime_install_run;
 
-/** The id ecosystem installs run under and record their references for. */
-#define RUNTIME_ECOSYSTEM_HOST_ID "forebay-host"
+/**
+ * The id ecosystem installs run under and record their references for, and the host spisor-boot runs
+ * for every command a loader holds and every entry an application starts.
+ */
+#define RUNTIME_ECOSYSTEM_HOST_ID "spisor-host"
 
 /**
  * Settles every catalog application into the report's applications, one row each, installing through a

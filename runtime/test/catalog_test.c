@@ -237,7 +237,7 @@ static void every_path_becomes_the_file_url_node_writes(void) {
     cJSON_Delete(recorded);
 }
 
-static void every_pair_folds_as_forebay_host_folded(void) {
+static void every_pair_folds_as_spisor_host_folded(void) {
     char path[1024];
     snprintf(path, sizeof path, "%s/folds.json", FIXTURES);
     cJSON *recorded = read_json_file(path);
@@ -440,7 +440,7 @@ int main(void) {
     it_refuses_an_unusable_argument();
     every_url_resolves_as_node_does();
     every_path_becomes_the_file_url_node_writes();
-    every_pair_folds_as_forebay_host_folded();
+    every_pair_folds_as_spisor_host_folded();
     it_names_the_earliest_folded_pair();
     the_checker_holds_what_the_schema_says();
     return check_summary("catalog_test");

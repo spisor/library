@@ -110,7 +110,7 @@ int host_command_catalog_build(int count, char **arguments) {
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
     if (!host_parse_options(count, arguments, options, 4, NULL, &problem)) {
-        code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
+        code = host_misuse(problem == NULL ? "spisor-host ran out of memory" : problem);
     } else if (host_last_value(&options[3]) == NULL) {
         code = host_misuse("--out <directory> is required");
     } else {

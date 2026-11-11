@@ -12,17 +12,17 @@
 
 #define USAGE                                                                                                         \
     "usage:\n"                                                                                                        \
-    "  forebay-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"      \
-    "  forebay-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]\n"                                            \
-    "  forebay-host status\n"                                                                                         \
-    "  forebay-host update\n"                                                                                         \
-    "  forebay-host remove <host-id>\n"                                                                               \
-    "  forebay-host launch <loader-id> [arguments for the application]...\n"                                          \
-    "  forebay-host background <host-id>\n"                                                                           \
-    "  forebay-host hook <loader-id> <event>\n"                                                                       \
-    "  forebay-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                    \
+    "  spisor-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"       \
+    "  spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]\n"                                             \
+    "  spisor-host status\n"                                                                                          \
+    "  spisor-host update\n"                                                                                          \
+    "  spisor-host remove <host-id>\n"                                                                                \
+    "  spisor-host launch <loader-id> [arguments for the application]...\n"                                           \
+    "  spisor-host background <host-id>\n"                                                                            \
+    "  spisor-host hook <loader-id> <event>\n"                                                                        \
+    "  spisor-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                     \
     "[--library <id>=<directory>@<platform>]... --out <directory>\n"                                                  \
-    "  forebay-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]\n"
+    "  spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]\n"
 
 #if defined(_WIN32)
 
@@ -93,7 +93,7 @@ char *host_printable(const char *text) {
 void host_print_refusal(const cJSON *refusal) {
     const cJSON *message = cJSON_GetObjectItemCaseSensitive(refusal, "message");
     const cJSON *fix = cJSON_GetObjectItemCaseSensitive(refusal, "fix");
-    host_write(1, cJSON_IsString(message) ? message->valuestring : "forebay-host ran out of memory");
+    host_write(1, cJSON_IsString(message) ? message->valuestring : "spisor-host ran out of memory");
     host_write(1, "\nfix: ");
     host_write(1, cJSON_IsString(fix) ? fix->valuestring : "close other programs, then run the command again");
     host_write(1, "\n");
@@ -104,7 +104,7 @@ void host_print_refusal_printably(const cJSON *refusal) {
     const cJSON *fix = cJSON_GetObjectItemCaseSensitive(refusal, "fix");
     char *safe_message = cJSON_IsString(message) ? host_printable(message->valuestring) : NULL;
     char *safe_fix = cJSON_IsString(fix) ? host_printable(fix->valuestring) : NULL;
-    host_write(1, safe_message == NULL ? "forebay-host ran out of memory" : safe_message);
+    host_write(1, safe_message == NULL ? "spisor-host ran out of memory" : safe_message);
     host_write(1, "\nfix: ");
     host_write(1, safe_fix == NULL ? "close other programs, then run the command again" : safe_fix);
     host_write(1, "\n");

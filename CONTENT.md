@@ -85,9 +85,9 @@ Service), and that store may prompt the user.
 | `install.detect` | `places` (`portable`, `cache`), `item`, `manifestPackages` | `{ detections }`, one per built-in method the item's package mapping names, read from each package manager's own records; launches nothing |
 | `install.entry` | `places`, `loader` | `{ written: true, sequences }` after writing the entry that starts the loader's host inside its application, every write through `changes.apply`, or `{ written: false, message, fix }` for an application it writes none for |
 | `install.runtime` | `cache`, `platform`, `environment` | `{ name, version, executable, fetched, source }`, a Node on PATH of major 20 or later (`path`), else the pinned one fetched by hash into `<cache>/runtimes` (`acquired`), recorded in `<cache>/runtimes/javascript.json` |
-| `install.ecosystem` | `places`, `sources`, `environment`, `choices`, `defaults`, `requested`, `platform` | `{ installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }`, after installing `forebay-host`, `runtime`, the plugins and every loader whose application is present or chosen; an item that cannot be installed is reported and the rest still install |
+| `install.ecosystem` | `places`, `sources`, `environment`, `choices`, `defaults`, `requested`, `platform` | `{ installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }`, after installing `spisor-host`, `runtime`, the plugins and every loader whose application is present or chosen; an item that cannot be installed is reported and the rest still install |
 | `install.byId` | `id`, `cache`, `pluginDir`, `version?`, `lastKnown?`, `acceptPrimary?` | `{ id, name, fullName, version, commit, sha256, ids, primary, primaryConfirmed }`, after installing the plugin a repo id names from the `weivel-index.json` of its latest release, digests checked, and deploying it; `{ ..., needsUserAcceptance: true }` and no install when the primary recorded in `<cache>/identities` differs from the verified one and `acceptPrimary` does not name it; a version comes only from the primary |
-| `install.warnings` | `manifest` | `{ warnings }`, each `{ kind, subject, detail }`: `named-dependency` for a `dependencies` entry with a `name` and no `id`, `unbound-service` for a consumed service whose id contains `:` and names no `provider`; a dependency by id and a bare (shared) service id are never reported; `detail` says why, that a rename can break it and whoever takes the name can replace it; pure, and `forebay-host install` prints each as a warning and still installs |
+| `install.warnings` | `manifest` | `{ warnings }`, each `{ kind, subject, detail }`: `named-dependency` for a `dependencies` entry with a `name` and no `id`, `unbound-service` for a consumed service whose id contains `:` and names no `provider`; a dependency by id and a bare (shared) service id are never reported; `detail` says why, that a rename can break it and whoever takes the name can replace it; pure, and `spisor-host install` prints each as a warning and still installs |
 | `install.application` | `places`, `loader`, `operation` | `{ operation, version? }`, after updating or removing the loader's application through the method that installed it; refused for one found on PATH or installed by no recorded method |
 | `install.registerLoader` | `places`, `environment`, `id`, `version` | what `hosts.register` answers, after registering the installed loader version as install does, with no catalog read |
 | `fetch.get` | `url`, `destination`, `sha256`, `etag`, `lastModified`, `maxBytes`, `timeoutSeconds` | `{ outcome: "stored", sha256, bytes, etag?, lastModified? }`, or `{ outcome: "not-modified" }` on a 304; the bytes reach `destination` only complete and verified, through the OS's own HTTPS stack |
@@ -107,13 +107,13 @@ Service), and that store may prompt the user.
 | `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
 | `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed; a host with no registration is refused |
 | `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback; a host with no registration is refused |
-| `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, forebay-host first lending its catalog sources, and `install.application` updating each application an install method installed |
+| `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, spisor-host first lending its catalog sources, and `install.application` updating each application an install method installed |
 | `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback; a host with no registration is refused |
 | `updates.recorded` | `places`, `hostId` | `{ run }`, what the host's last start recorded running, empty when it recorded nothing; a references file that cannot be read is refused; nothing is switched or recorded |
 | `boot.read` | `cache`, `hostId` | `{ hint? }`, the libraries and host version the next start boots |
 | `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state` | `{ hint }`, after recording what the next start boots |
 | `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
-| `boot.place` | `cache` | `{ placed, path }`, after copying the forebay-boot the hinted forebay-host version carries to `cache/boot` when none is there; never replaces one |
+| `boot.place` | `cache` | `{ placed, path }`, after copying the spisor-boot the hinted spisor-host version carries to `cache/boot` when none is there; never replaces one |
 | `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
 | `processes.release` | `state`, `hostId`, `holder` | `{ holders }`, the holders left; the host stops itself at its next prune |
 | `processes.prune` | `state`, `hostId`, `self`, `now`, `checkMilliseconds` | `{ exit }`, true when no holder is alive or another process is the host |
@@ -382,23 +382,23 @@ reads itself (a registry file, say) instead of calling cJSON directly. It reads 
 ## The one command
 
 `install/install.sh` (macOS and Linux) and `install/install.ps1` (Windows) are what the one command
-runs. Each reads the catalog it is given, fetches the latest `forebay-host` build for this platform
-(the `forebay-host` executable, `forebay-boot`, and on Windows `runtime-launcher.exe`) into
-`<cache>/bundles/forebay-host/<version>/`, every file checked against its size and SHA-256, and runs
-that `forebay-host install --catalog=<catalog>` with the rest of its arguments, which installs
+runs. Each reads the catalog it is given, fetches the latest `spisor-host` build for this platform
+(the `spisor-host` executable, `spisor-boot`, and on Windows `runtime-launcher.exe`) into
+`<cache>/bundles/spisor-host/<version>/`, every file checked against its size and SHA-256, and runs
+that `spisor-host install --catalog=<catalog>` with the rest of its arguments, which installs
 everything else. A file already there with its hash is not fetched again. They need only what each
 OS ships: curl, `sha256sum` or `shasum`, and awk on macOS and Linux (a Linux without curl is told to
 install it), PowerShell on Windows.
 
 No catalog is published yet, so a run without one is refused. Pass a local one built by
-`forebay-host catalog build`:
+`spisor-host catalog build`:
 
 ```
 sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
 
-`forebay-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
+`spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
 it lies in. `--out` may not be the list itself. A copy already at `--out` is the previous copy: an entry whose repository cannot
 be looked up is carried over from it unchanged, or, when it has none, printed as skipped with its reason, and the copy is
@@ -412,7 +412,7 @@ Gitea, Forgejo and Codeberg answer 401 to a lookup by number without a token. A 
 copy as it was and exits 1; a name in a message is printed with its control characters escaped, and the JSON the commands
 print has 0x7F and U+0080 to U+009F escaped as well.
 
-`forebay-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]` installs one
+`spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]` installs one
 plugin by the name a marketplace gives it, from the marketplaces listed under `marketplaces` in the portable `settings.json`,
 into the `plugin` folder (from `paths.resolve`) of the home of the registered application `--application` names; without
 `--application` it is refused. No host runs a plugin deployed this way yet, since hosts move to deployed plugins in plan four.

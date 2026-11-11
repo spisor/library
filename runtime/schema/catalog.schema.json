@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://forebay.github.io/host/catalog.schema.json",
+  "$id": "https://spisor.github.io/library/catalog.schema.json",
   "title": "Catalog index",
   "description": "Lists each item's versions with file URLs, hashes and kinds. A marketplace is another catalog index.",
   "type": "object",

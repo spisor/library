@@ -18,7 +18,7 @@ static void finish_case(void) {
     CHECK(runtime_remove_tree(base_folder) == 1);
 }
 
-/** A directory forebay-host bundle would write for plugin id at version, with extra manifest members. */
+/** A directory spisor-host bundle would write for plugin id at version, with extra manifest members. */
 static char *bundled_plugin(const char *id, const char *version, const char *extra_members) {
     char rest[256];
     snprintf(rest, sizeof rest, "bundled/%s/%s", id, version);
@@ -434,7 +434,7 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
 #define STANDARD_MEMBERS                                                                                              \
     "\"application\": {\"id\": \"claude-code\", \"label\": \"Claude Code\", \"binary\": \"claude\", \"home\": "       \
     "{\"candidates\": [\"~/.claude\"]}, \"packages\": {\"npm\": \"@anthropic-ai/claude-code\"}}, \"pathCommands\": "  \
-    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"forebay-host\"], \"plugins\": []"
+    "{\"requested\": [\"claude\"], \"minimum\": 0}, \"background\": [\"spisor-host\"], \"plugins\": []"
 
 static char *loader_directory(const char *application_override) {
     char *directory = in_base("loader");
@@ -607,7 +607,7 @@ static int run_build(const char *const *arguments, program *run) {
     cJSON *environment = cJSON_CreateObject();
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "PATH");
-    program_start(run, FOREBAY_HOST_PATH, list, environment, base_folder, 1);
+    program_start(run, SPISOR_HOST_PATH, list, environment, base_folder, 1);
     cJSON_Delete(environment);
     cJSON_Delete(list);
     return program_finish(run, 60000);
@@ -617,8 +617,8 @@ static void builds_a_catalog_from_plugin_host_and_library_directories(void) {
     start_case("command");
     char *plugin = bundled_plugin("greeter", "1.0.0", NULL);
     char *host = in_base("host");
-    write_in(host, "host.json", "{\"id\": \"forebay-host\", \"version\": \"0.1.0\", \"runtime\": \"native\", \"entry\": \"linux-x64/forebay-host\"}");
-    write_in(host, "linux-x64/forebay-host", "native executable");
+    write_in(host, "host.json", "{\"id\": \"spisor-host\", \"version\": \"0.1.0\", \"runtime\": \"native\", \"entry\": \"linux-x64/spisor-host\"}");
+    write_in(host, "linux-x64/spisor-host", "native executable");
     char *library = library_directory();
     char library_argument[2048];
     snprintf(library_argument, sizeof library_argument, "koffi=%s@linux-x64", library);
@@ -637,11 +637,11 @@ static void builds_a_catalog_from_plugin_host_and_library_directories(void) {
     char *index = joined(out, "catalog.json");
     cJSON *catalog = read_back(index);
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(catalog, "items");
-    CHECK(cJSON_GetArraySize(items) == 4 && item_of(catalog, "greeter") != NULL && item_of(catalog, "forebay-host") != NULL &&
+    CHECK(cJSON_GetArraySize(items) == 4 && item_of(catalog, "greeter") != NULL && item_of(catalog, "spisor-host") != NULL &&
           item_of(catalog, "koffi") != NULL && item_of(catalog, "native-host") != NULL);
     const cJSON *host_files = cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item_of(catalog, "forebay-host"), "versions"), "0.1.0"), "files");
-    CHECK(cJSON_HasObjectItem(host_files, "host.json") && cJSON_HasObjectItem(host_files, "linux-x64/forebay-host"));
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item_of(catalog, "spisor-host"), "versions"), "0.1.0"), "files");
+    CHECK(cJSON_HasObjectItem(host_files, "host.json") && cJSON_HasObjectItem(host_files, "linux-x64/spisor-host"));
     const cJSON *native_platform = cJSON_GetObjectItemCaseSensitive(
         cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item_of(catalog, "native-host"), "versions"), "0.2.0"),
                                          "platforms"),
@@ -663,7 +663,7 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
     program unknown;
     const char *publish[] = {"publish", NULL};
     CHECK(run_build(publish, &unknown) == 2);
-    expect_contains(unknown.err, "forebay-host catalog build", "the usage");
+    expect_contains(unknown.err, "spisor-host catalog build", "the usage");
     program no_out;
     const char *without[] = {"catalog", "build", NULL};
     CHECK(run_build(without, &no_out) == 2);

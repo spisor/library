@@ -11,7 +11,7 @@
 cJSON *runtime_install_catalog_provenance(const char *cache, const char *id, const char *version, cJSON **refusal);
 
 /**
- * Registers a host that loads into no application, such as a background host or forebay-host itself:
+ * Registers a host that loads into no application, such as a background host or spisor-host itself:
  * no commands, its home its own folder state/home/<id>, start when not NULL. Answers 1, or 0 with
  * *refusal set, or with none when memory runs out.
  *

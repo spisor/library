@@ -32,7 +32,7 @@ typedef struct catalog_inputs {
     size_t capacity;
 } catalog_inputs;
 
-/** Adds a directory forebay-host bundle wrote: its plugin.json, the entry it names and that entry's module marker. */
+/** Adds a directory spisor-host bundle wrote: its plugin.json, the entry it names and that entry's module marker. */
 int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJSON **refusal);
 
 /**

@@ -129,7 +129,7 @@ static int run_binary(const char *list_path, program *run) {
     cJSON *environment = cJSON_CreateObject();
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "PATH");
-    program_start(run, FOREBAY_HOST_PATH, arguments, environment, base_folder, 1);
+    program_start(run, SPISOR_HOST_PATH, arguments, environment, base_folder, 1);
     cJSON_Delete(environment);
     cJSON_Delete(arguments);
     return program_finish(run, 60000);
@@ -315,7 +315,7 @@ static int run_binary_with_token(const char *list_path, program *run) {
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "PATH");
     cJSON_AddStringToObject(environment, TOKEN_VARIABLE, TOKEN);
-    program_start(run, FOREBAY_HOST_PATH, arguments, environment, base_folder, 1);
+    program_start(run, SPISOR_HOST_PATH, arguments, environment, base_folder, 1);
     cJSON_Delete(environment);
     cJSON_Delete(arguments);
     return program_finish(run, 60000);

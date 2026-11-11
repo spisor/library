@@ -29,7 +29,7 @@ static cJSON *refused(const char *first, const char *second, const char *third) 
  * cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists at its
  * recorded size.
  *
- * @implNote Sizes only, as forebay-boot checks at every start: hashing is for install, update and status,
+ * @implNote Sizes only, as spisor-boot checks at every start: hashing is for install, update and status,
  * so a start never waits on it.
  */
 static char *installed_version(const host_context *context, const char *id, const char *version, cJSON **refusal) {

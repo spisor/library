@@ -95,7 +95,7 @@ static int refuse_not_found(const char *name) {
 
 static int refuse_changed_name(const char *label, const char *was, const char *now, const char *application) {
     const char *parts[5] = {label, " was ", was, " when it was first installed, and it now means ", now};
-    const char *fix_parts[8] = {"check that ", now, " is the plugin you mean, then run forebay-host install --name ", label,
+    const char *fix_parts[8] = {"check that ", now, " is the plugin you mean, then run spisor-host install --name ", label,
                                 " --application ", application, " --accept ", now};
     return refuse_with_fix_parts(parts, 5, fix_parts, 8);
 }
@@ -104,7 +104,7 @@ static int refuse_changed_primary(const char *name, const char *application, con
     const char *primary = host_text(answer, "primary");
     const char *parts[5] = {name, " is recorded as installed from ", host_text(answer, "recordedPrimary"),
                             ", and its repo's copies now name this as the primary: ", primary};
-    const char *fix_parts[8] = {"check that ", primary, " is the plugin you mean, then run forebay-host install --name ", name,
+    const char *fix_parts[8] = {"check that ", primary, " is the plugin you mean, then run spisor-host install --name ", name,
                                 " --application ", application, " --accept-primary ", primary};
     return refuse_with_fix_parts(parts, 5, fix_parts, 8);
 }

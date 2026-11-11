@@ -1,14 +1,14 @@
 set(host_test_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>
     $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook> $<TARGET_OBJECTS:host_marketplace_lookup_test_hook>)
 
-host_executable(forebay_host_test forebay-host-test ${PROJECT_SOURCE_DIR}/host/src/main.c $<TARGET_OBJECTS:host_objects>
+host_executable(spisor_host_test spisor-host-test ${PROJECT_SOURCE_DIR}/host/src/main.c $<TARGET_OBJECTS:host_objects>
     ${host_test_runtime_objects})
 if(WIN32)
-    add_dependencies(forebay_host_test runtime_launcher)
+    add_dependencies(spisor_host_test runtime_launcher)
 endif()
 
-set(host_test_bundles $<TARGET_FILE_DIR:forebay_host_test>/test-bundles)
-stage_bundles(forebay_host_test_bundles forebay_host_test ${host_test_bundles})
+set(host_test_bundles $<TARGET_FILE_DIR:spisor_host_test>/test-bundles)
+stage_bundles(spisor_host_test_bundles spisor_host_test ${host_test_bundles})
 
 add_executable(fake_application fake_application.c)
 target_link_libraries(fake_application PRIVATE spisor_cjson)
@@ -33,10 +33,10 @@ spisor_strict_warnings(javascript_trap)
 host_executable(layer_fixture layer-fixture layer_fixture.c $<TARGET_OBJECTS:host_objects> ${host_test_runtime_objects})
 
 set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}"
-    FOREBAY_HOST_PATH="$<TARGET_FILE:forebay_host_test>" FOREBAY_BOOT_PATH="$<TARGET_FILE:forebay_boot>"
+    SPISOR_HOST_PATH="$<TARGET_FILE:spisor_host_test>" SPISOR_BOOT_PATH="$<TARGET_FILE:spisor_boot>"
     FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>"
     C_HOST_PATH="$<TARGET_FILE:c_host>" JAVASCRIPT_TRAP_PATH="$<TARGET_FILE:javascript_trap>"
-    STAGED_BUNDLES_PATH="${host_test_bundles}" FOREBAY_HOST_VERSION="${FOREBAY_HOST_VERSION}" BUILD_TYPE="$<CONFIG>")
+    STAGED_BUNDLES_PATH="${host_test_bundles}" SPISOR_HOST_VERSION="${SPISOR_HOST_VERSION}" BUILD_TYPE="$<CONFIG>")
 if(WIN32)
     list(APPEND host_test_fixture_definitions RUNTIME_LAUNCHER_PATH="$<TARGET_FILE:runtime_launcher>")
 endif()
@@ -45,7 +45,7 @@ function(host_test name)
     host_executable(${name} ${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:host_objects> ${host_test_runtime_objects})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
     target_compile_definitions(${name} PRIVATE ${host_test_fixture_definitions})
-    add_dependencies(${name} forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
+    add_dependencies(${name} spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
     add_test(NAME host_${name} COMMAND ${name})
     set_tests_properties(host_${name} PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
 endfunction()
@@ -86,7 +86,7 @@ if(WIN32)
 endif()
 target_include_directories(marketplace_command_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
 target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
-add_dependencies(marketplace_command_test forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
+add_dependencies(marketplace_command_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
 
@@ -97,6 +97,6 @@ if(WIN32)
 endif()
 target_include_directories(install_by_name_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
 target_compile_definitions(install_by_name_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
-add_dependencies(install_by_name_test forebay_host_test forebay_boot fake_application layer_fixture forebay_host_test_bundles)
+add_dependencies(install_by_name_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_install_by_name_test COMMAND install_by_name_test)
 set_tests_properties(host_install_by_name_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
