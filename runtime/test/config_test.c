@@ -868,6 +868,61 @@ static void all_leaves_out_a_secret_setting_even_when_a_file_holds_it(void) {
     finish(&all);
 }
 
+static answer declared_get(const scratch_home *home, const char *key) {
+    cJSON *request = declared_request(home, SECRET_SETTINGS, 1);
+    cJSON_AddStringToObject(request, "key", key);
+    return call_with(runtime_config_get, request);
+}
+
+static void get_of_a_parent_leaves_out_a_secret_below_it(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-parent-get");
+    write_settings_file(&home, "p", "{\"nested\":{\"key\":\"leak\",\"keep\":2}}");
+    answer result = declared_get(&home, "nested");
+    expect_member(&result, "value", "{\"keep\":2}", "a parent's value leaves out the secret below it");
+    finish(&result);
+}
+
+static void get_of_a_key_below_a_secret_is_absent(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-child-get");
+    write_settings_file(&home, "p", "{\"nested\":{\"key\":{\"part\":\"leak\"}}}");
+    answer result = declared_get(&home, "nested.key.part");
+    expect_whole_answer(&result, "{}", "a key inside a secret reads as absent");
+    finish(&result);
+}
+
+static void set_of_a_parent_refuses_a_value_reaching_a_secret(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-parent-set");
+    answer reaching = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested", "{\"key\":\"s3cret\",\"keep\":1}");
+    expect_refused(&reaching, "a parent value reaching a secret");
+    expect_text_member(&reaching, "message", "config.set(\"nested\"): nested.key is a secret setting; set it on its own",
+                       "the parent refusal wording");
+    expect_text_member(&reaching, "fix", "set the secret setting by its own key", "the parent refusal fix");
+    finish(&reaching);
+    answer inside = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested.key.part", "\"s3cret\"");
+    expect_refused(&inside, "a key inside a secret");
+    expect_text_member(&inside, "message",
+                       "config.set(\"nested.key.part\"): nested.key is a secret setting; set it on its own",
+                       "the inside refusal wording");
+    finish(&inside);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+    answer clear = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested", "{\"keep\":1}");
+    CHECK(clear.status == SPISOR_STATUS_SUCCESS);
+    finish(&clear);
+    expect_file(&home, "p", "{\n  \"nested\": {\n    \"keep\": 1\n  }\n}\n", "a parent value clear of secrets is set");
+}
+
+static void the_previous_of_a_parent_leaves_out_a_secret_below_it(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-parent-previous");
+    write_settings_file(&home, "p", "{\"nested\":{\"key\":\"leak\",\"keep\":2}}");
+    answer result = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested", "{\"keep\":3}");
+    expect_member(&result, "previous", "{\"keep\":2}", "a parent's previous leaves out the secret below it");
+    finish(&result);
+}
+
 static void settings_set_keeps_the_application_default(void) {
     scratch_home home;
     char path[1200];
@@ -933,6 +988,10 @@ int main(void) {
     a_secret_setting_without_a_store_is_refused();
     get_reads_a_secret_setting_from_the_store();
     all_leaves_out_a_secret_setting_even_when_a_file_holds_it();
+    get_of_a_parent_leaves_out_a_secret_below_it();
+    get_of_a_key_below_a_secret_is_absent();
+    set_of_a_parent_refuses_a_value_reaching_a_secret();
+    the_previous_of_a_parent_leaves_out_a_secret_below_it();
     settings_set_keeps_the_application_default();
     return summary_with_links("config_test");
 }

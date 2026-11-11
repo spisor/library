@@ -363,7 +363,9 @@ static int has_places(const config_request *request) {
 static int remove_at(cJSON *tree, const char *key) {
     const char *last_dot = strrchr(key, '.');
     if (last_dot == NULL) {
-        cJSON_DeleteItemFromObjectCaseSensitive(tree, key);
+        if (cJSON_IsObject(tree)) {
+            cJSON_DeleteItemFromObjectCaseSensitive(tree, key);
+        }
         return 1;
     }
     char *parent_key = copy_text(key);
@@ -379,14 +381,49 @@ static int remove_at(cJSON *tree, const char *key) {
     return 1;
 }
 
-static int remove_secret_settings(const config_request *request, cJSON *merged) {
+/** The rest of path after key and a dot, or NULL when path does not lie below key. */
+static const char *path_below(const char *path, const char *key) {
+    size_t length = strlen(key);
+    return strncmp(path, key, length) == 0 && path[length] == '.' ? path + length + 1 : NULL;
+}
+
+/** Removes from tree, the value at key or the whole tree when key is NULL, every declared secret below it. */
+static int remove_secrets_below(const config_request *request, const char *key, cJSON *tree) {
     const cJSON *declaration;
     cJSON_ArrayForEach(declaration, request->settings) {
-        if (is_secret_declaration(declaration) && !remove_at(merged, declaration->string)) {
+        const char *below = key == NULL ? declaration->string : path_below(declaration->string, key);
+        if (below != NULL && is_secret_declaration(declaration) && !remove_at(tree, below)) {
             return 0;
         }
     }
     return 1;
+}
+
+/** The declared secret key that key lies inside, NULL when none. */
+static const char *secret_above(const config_request *request, const char *key) {
+    const cJSON *declaration;
+    cJSON_ArrayForEach(declaration, request->settings) {
+        if (is_secret_declaration(declaration) && path_below(key, declaration->string) != NULL) {
+            return declaration->string;
+        }
+    }
+    return NULL;
+}
+
+/** The declared secret key a set of value at key would write into, NULL when none. */
+static const char *secret_reached(const config_request *request, const char *key, const cJSON *value) {
+    const char *above = secret_above(request, key);
+    const cJSON *declaration;
+    if (above != NULL) {
+        return above;
+    }
+    cJSON_ArrayForEach(declaration, request->settings) {
+        const char *below = path_below(declaration->string, key);
+        if (below != NULL && is_secret_declaration(declaration) && runtime_walk(value, below) != NULL) {
+            return declaration->string;
+        }
+    }
+    return NULL;
 }
 
 static int32_t config_all(const config_request *request, uint8_t **out, size_t *out_len) {
@@ -397,18 +434,26 @@ static int32_t config_all(const config_request *request, uint8_t **out, size_t *
     }
     cJSON *merged = merged_from_disk(defaults_of(request), &targets);
     free_targets(&targets);
-    if (merged == NULL || !remove_secret_settings(request, merged)) {
+    if (merged == NULL || !remove_secrets_below(request, NULL, merged)) {
         cJSON_Delete(merged);
         return out_of_memory(out, out_len);
     }
     return answer_member("values", merged, out, out_len);
 }
 
-/** A copy of the value at key in merged, NULL when absent; *failed is set when memory ran out. */
-static cJSON *copy_at(const cJSON *merged, const char *key, int *failed) {
-    const cJSON *found = runtime_walk(merged, key);
+/**
+ * A copy of the value at key in merged without the declared secrets below it, NULL when absent or
+ * inside a declared secret; *failed is set when memory ran out.
+ */
+static cJSON *copy_at(const config_request *request, const cJSON *merged, const char *key, int *failed) {
+    const cJSON *found = secret_above(request, key) == NULL ? runtime_walk(merged, key) : NULL;
     cJSON *copy = found == NULL ? NULL : cJSON_Duplicate(found, 1);
     *failed = found != NULL && copy == NULL;
+    if (copy != NULL && !remove_secrets_below(request, key, copy)) {
+        cJSON_Delete(copy);
+        copy = NULL;
+        *failed = 1;
+    }
     return copy;
 }
 
@@ -422,7 +467,7 @@ static cJSON *value_at(const config_request *request, const config_targets *targ
         *failed = 1;
         return NULL;
     }
-    cJSON *copy = copy_at(merged, key, failed);
+    cJSON *copy = copy_at(request, merged, key, failed);
     cJSON_Delete(merged);
     return copy;
 }
@@ -586,7 +631,7 @@ static cJSON *previous_value(const config_request *request, const layer_files *f
         *failed = 1;
         return NULL;
     }
-    cJSON *previous = copy_at(merged, key, failed);
+    cJSON *previous = copy_at(request, merged, key, failed);
     cJSON_Delete(merged);
     return previous;
 }
@@ -727,6 +772,12 @@ static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
                        out, out_len);
 }
 
+static int32_t refuse_reaching_secret(const char *key, const char *secret, uint8_t **out, size_t *out_len) {
+    char message[4096];
+    snprintf(message, sizeof message, "config.set(\"%s\"): %s is a secret setting; set it on its own", key, secret);
+    return spisor_fail(message, "set the secret setting by its own key", out, out_len);
+}
+
 static int32_t set_in_targets(const config_request *request, const config_targets *targets, settings_layer layer,
                               uint8_t **out, size_t *out_len) {
     const char *key = key_of(request);
@@ -736,6 +787,10 @@ static int32_t set_in_targets(const config_request *request, const config_target
     }
     if (value == NULL) {
         return refuse_missing_value(out, out_len);
+    }
+    const char *secret = secret_reached(request, key, value);
+    if (secret != NULL) {
+        return refuse_reaching_secret(key, secret, out, out_len);
     }
     return store_after_previous(request, targets, layer, key, value, out, out_len);
 }

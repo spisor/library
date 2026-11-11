@@ -138,6 +138,7 @@ static char *checked_entry(const char *plugin, const char *name, int32_t *status
     return entry;
 }
 
+/** The entry the request's plugin and name name, as checked_entry answers it. */
 static char *requested_entry(const secret_request *request, int32_t *status, uint8_t **out, size_t *out_len) {
     return checked_entry(string_member(request->argument, "plugin"), string_member(request->argument, "name"), status,
                          out, out_len);
