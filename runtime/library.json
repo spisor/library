@@ -391,7 +391,25 @@
               "names": { "type": "object" },
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
-              "config": { "type": "object" }
+              "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              }
             },
             "required": ["home", "plugin"]
           },
@@ -414,6 +432,24 @@
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
               "key": { "type": "string" }
             },
             "required": ["home", "plugin", "key"]
@@ -436,6 +472,24 @@
               "portable": { "type": "string", "minLength": 1 },
               "plugin": { "type": "string" },
               "config": { "type": "object" },
+              "settings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "layer": { "enum": ["application", "portable"] }
+                  }
+                }
+              },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "secretsFile": { "type": "string", "minLength": 1 },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["secretsFile", "forceFileStore"]
+              },
               "key": { "type": "string" },
               "value": {},
               "layer": { "enum": ["application", "portable"] }
@@ -444,7 +498,7 @@
           },
           "result": {
             "type": "object",
-            "properties": { "previous": {} },
+            "properties": { "previous": {}, "secret": { "enum": [true] } },
             "additionalProperties": false
           }
         }

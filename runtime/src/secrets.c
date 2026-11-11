@@ -123,10 +123,8 @@ static int32_t refuse_name(uint8_t **out, size_t *out_len) {
                        out, out_len);
 }
 
-/** The entry this request names, freed with free; NULL with the refusal already written to out. */
-static char *requested_entry(const secret_request *request, int32_t *status, uint8_t **out, size_t *out_len) {
-    const char *plugin = string_member(request->argument, "plugin");
-    const char *name = string_member(request->argument, "name");
+/** The entry plugin and name name, freed with free; NULL with the refusal already written to out. */
+static char *checked_entry(const char *plugin, const char *name, int32_t *status, uint8_t **out, size_t *out_len) {
     if (!is_usable_plugin(plugin)) {
         *status = refuse_plugin(out, out_len);
         return NULL;
@@ -138,6 +136,11 @@ static char *requested_entry(const secret_request *request, int32_t *status, uin
     char *entry = entry_name(plugin, name);
     *status = entry != NULL ? SPISOR_STATUS_SUCCESS : out_of_memory(out, out_len);
     return entry;
+}
+
+static char *requested_entry(const secret_request *request, int32_t *status, uint8_t **out, size_t *out_len) {
+    return checked_entry(string_member(request->argument, "plugin"), string_member(request->argument, "name"), status,
+                         out, out_len);
 }
 
 static int is_over_cap(const char *value) {
@@ -198,17 +201,22 @@ static int32_t get_from_store(const secret_request *request, const char *entry, 
     return status;
 }
 
+static int32_t get_entry(const secret_request *request, const char *entry, uint8_t **out, size_t *out_len) {
+    runtime_secret_file_answer file;
+    char *value = runtime_get_file_secret(request->secrets_file, entry, &file);
+    int32_t status = value != NULL ? answer_string("value", value, out, out_len)
+                                   : get_from_store(request, entry, file, out, out_len);
+    free(value);
+    return status;
+}
+
 static int32_t secrets_get(const secret_request *request, uint8_t **out, size_t *out_len) {
     int32_t status;
     char *entry = requested_entry(request, &status, out, out_len);
     if (entry == NULL) {
         return status;
     }
-    runtime_secret_file_answer file;
-    char *value = runtime_get_file_secret(request->secrets_file, entry, &file);
-    status = value != NULL ? answer_string("value", value, out, out_len)
-                           : get_from_store(request, entry, file, out, out_len);
-    free(value);
+    status = get_entry(request, entry, out, out_len);
     free(entry);
     return status;
 }
@@ -278,13 +286,18 @@ static int32_t refuse_over_cap(uint8_t **out, size_t *out_len) {
                        out_len);
 }
 
+static int32_t store_text(const secret_request *request, const char *entry, const char *value, uint8_t **out,
+                          size_t *out_len) {
+    return is_over_cap(value) ? refuse_over_cap(out, out_len) : store_or_file(request, entry, value, out, out_len);
+}
+
 static int32_t store_value(const secret_request *request, const char *entry, uint8_t **out, size_t *out_len) {
     const char *value = string_member(request->argument, "value");
     if (value == NULL) {
         return spisor_fail("the argument carries no string value", "send {\"value\": \"<secret>\"}, a UTF-8 string",
                            out, out_len);
     }
-    return is_over_cap(value) ? refuse_over_cap(out, out_len) : store_or_file(request, entry, value, out, out_len);
+    return store_text(request, entry, value, out, out_len);
 }
 
 static int32_t secrets_set(const secret_request *request, uint8_t **out, size_t *out_len) {
@@ -308,16 +321,20 @@ static int32_t remove_from_file(const secret_request *request, const char *entry
                                             : refuse_file(request->secrets_file, file, out, out_len);
 }
 
+static int32_t delete_entry(const secret_request *request, const char *entry, uint8_t **out, size_t *out_len) {
+    runtime_secret_answer store =
+        request->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_delete(entry);
+    return store_kept_it(store) ? refuse_store("remove", store, out, out_len)
+                                : remove_from_file(request, entry, out, out_len);
+}
+
 static int32_t secrets_delete(const secret_request *request, uint8_t **out, size_t *out_len) {
     int32_t status;
     char *entry = requested_entry(request, &status, out, out_len);
     if (entry == NULL) {
         return status;
     }
-    runtime_secret_answer store =
-        request->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_delete(entry);
-    status = store_kept_it(store) ? refuse_store("remove", store, out, out_len)
-                                  : remove_from_file(request, entry, out, out_len);
+    status = delete_entry(request, entry, out, out_len);
     free(entry);
     return status;
 }
@@ -373,14 +390,14 @@ static int32_t secrets_reconcile(const secret_request *request, uint8_t **out, s
                                                    : refuse_file(request->secrets_file, result.file, out, out_len);
 }
 
-static int32_t refuse_places(uint8_t **out, size_t *out_len) {
+int32_t runtime_refuse_secret_places(uint8_t **out, size_t *out_len) {
     return spisor_fail("the argument carries no usable places",
                        "send {\"places\": {\"secretsFile\": \"<absolute path>\", \"forceFileStore\": <boolean>}} as "
                        "places.resolve answers them",
                        out, out_len);
 }
 
-static int read_places(const cJSON *argument, secret_request *request) {
+int runtime_secret_place_of(const cJSON *argument, runtime_secret_place *place) {
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
     const char *secrets_file = string_member(places, "secretsFile");
     const cJSON *force = cJSON_GetObjectItemCaseSensitive(places, "forceFileStore");
@@ -388,10 +405,52 @@ static int read_places(const cJSON *argument, secret_request *request) {
         !cJSON_IsBool(force)) {
         return 0;
     }
-    request->secrets_file = secrets_file;
-    request->force_file_store = cJSON_IsTrue(force);
+    place->secrets_file = secrets_file;
+    place->force_file_store = cJSON_IsTrue(force);
+    return 1;
+}
+
+static int read_places(const cJSON *argument, secret_request *request) {
+    runtime_secret_place place;
+    if (!runtime_secret_place_of(argument, &place)) {
+        return 0;
+    }
+    request->secrets_file = place.secrets_file;
+    request->force_file_store = place.force_file_store;
     request->argument = argument;
     return 1;
+}
+
+typedef enum entry_action { GET_ENTRY, SET_ENTRY, DELETE_ENTRY } entry_action;
+
+static int32_t act_on_entry(const runtime_secret_place *place, const char *plugin, const char *name,
+                            entry_action action, const char *value, uint8_t **out, size_t *out_len) {
+    secret_request request = {place->secrets_file, place->force_file_store, NULL};
+    int32_t status;
+    char *entry = checked_entry(plugin, name, &status, out, out_len);
+    if (entry == NULL) {
+        return status;
+    }
+    status = action == GET_ENTRY   ? get_entry(&request, entry, out, out_len)
+             : action == SET_ENTRY ? store_text(&request, entry, value, out, out_len)
+                                   : delete_entry(&request, entry, out, out_len);
+    free(entry);
+    return status;
+}
+
+int32_t runtime_get_secret(const runtime_secret_place *place, const char *plugin, const char *name, uint8_t **out,
+                           size_t *out_len) {
+    return act_on_entry(place, plugin, name, GET_ENTRY, NULL, out, out_len);
+}
+
+int32_t runtime_set_secret(const runtime_secret_place *place, const char *plugin, const char *name, const char *value,
+                           uint8_t **out, size_t *out_len) {
+    return act_on_entry(place, plugin, name, SET_ENTRY, value, out, out_len);
+}
+
+int32_t runtime_delete_secret(const runtime_secret_place *place, const char *plugin, const char *name, uint8_t **out,
+                              size_t *out_len) {
+    return act_on_entry(place, plugin, name, DELETE_ENTRY, NULL, out, out_len);
 }
 
 static int32_t dispatch(const uint8_t *in, size_t in_len, secret_operation operation, uint8_t **out, size_t *out_len) {
@@ -401,7 +460,8 @@ static int32_t dispatch(const uint8_t *in, size_t in_len, secret_operation opera
         return status;
     }
     secret_request request;
-    status = read_places(call.argument, &request) ? operation(&request, out, out_len) : refuse_places(out, out_len);
+    status = read_places(call.argument, &request) ? operation(&request, out, out_len)
+                                                  : runtime_refuse_secret_places(out, out_len);
     spisor_discard_call(&call);
     return status;
 }

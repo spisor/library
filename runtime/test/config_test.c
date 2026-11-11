@@ -18,6 +18,7 @@
 #include "check.h"
 #include "scratch_directory.h"
 #include "config.h"
+#include "fake_secret_backend.h"
 #include "merge.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -708,6 +709,183 @@ static void portable_layer_refuses_an_unusable_id(void) {
     CHECK(spisor_file_exists(home.portable) == 0);
 }
 
+#define SECRET_SETTINGS "{\"token\":{\"type\":\"secret\"},\"nested.key\":{\"type\":\"secret\"}}"
+
+static cJSON *declared_request(const scratch_home *home, const char *settings_json, int with_places) {
+    cJSON *request = portable_request(home, "p", NULL);
+    cJSON_AddItemToObject(request, "settings", cJSON_Parse(settings_json));
+    if (with_places) {
+        char secrets_file[1200];
+        snprintf(secrets_file, sizeof secrets_file, "%s/state/secrets.json", home->path);
+        cJSON *places = cJSON_AddObjectToObject(request, "places");
+        cJSON_AddStringToObject(places, "secretsFile", secrets_file);
+        cJSON_AddBoolToObject(places, "forceFileStore", 0);
+    }
+    return request;
+}
+
+static answer declared_set(const scratch_home *home, const char *settings_json, int with_places, const char *layer,
+                           const char *key, const char *value_json) {
+    return layered_set(declared_request(home, settings_json, with_places), layer, key, value_json);
+}
+
+static void fresh_declared_home(scratch_home *home, const char *label) {
+    fresh_home(home, label);
+    fake_store_reset();
+}
+
+static void expect_whole_answer(const answer *result, const char *expected_json, const char *label) {
+    CHECK(result->status == SPISOR_STATUS_SUCCESS);
+    char *actual = result->tree == NULL ? NULL : cJSON_PrintUnformatted(result->tree);
+    check_text(actual, expected_json, label);
+    free(actual);
+}
+
+static void expect_text_member(const answer *result, const char *member, const char *expected, const char *label) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(result->tree, member);
+    check_text(cJSON_IsString(item) ? item->valuestring : NULL, expected, label);
+}
+
+static void a_declared_key_defaults_to_its_declared_layer(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "declared-layer");
+    const char *settings = "{\"shared\":{\"layer\":\"portable\"},\"local\":{\"layer\":\"application\"}}";
+    answer shared = declared_set(&home, settings, 0, NULL, "shared", "1");
+    CHECK(shared.status == SPISOR_STATUS_SUCCESS);
+    finish(&shared);
+    answer local = declared_set(&home, settings, 0, NULL, "local", "2");
+    CHECK(local.status == SPISOR_STATUS_SUCCESS);
+    finish(&local);
+    expect_portable_file(&home, "p", "{\n  \"shared\": 1\n}\n", "a key declared portable goes to the portable layer");
+    expect_file(&home, "p", "{\n  \"local\": 2\n}\n", "a key declared application goes to the application layer");
+}
+
+static void a_declared_key_with_no_layer_defaults_to_portable(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "declared-no-layer");
+    answer result = declared_set(&home, "{\"shared\":{\"type\":\"string\"}}", 0, NULL, "shared", "1");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_portable_file(&home, "p", "{\n  \"shared\": 1\n}\n", "a declared key with no layer is portable");
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void an_undeclared_key_keeps_the_application_default(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "undeclared");
+    answer result = declared_set(&home, "{\"shared\":{}}", 0, NULL, "other", "1");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_file(&home, "p", "{\n  \"other\": 1\n}\n", "an undeclared key stays in the application layer");
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void an_explicit_layer_wins_over_the_declaration(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "explicit-layer");
+    answer result = declared_set(&home, "{\"shared\":{\"layer\":\"portable\"}}", 0, "application", "shared", "1");
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_file(&home, "p", "{\n  \"shared\": 1\n}\n", "the explicit layer wins");
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void a_secret_setting_is_stored_as_a_secret_not_in_a_file(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-set");
+    write_settings_file(&home, "p", "{\"token\":\"old\"}");
+    answer result = declared_set(&home, SECRET_SETTINGS, 1, NULL, "token", "\"s3cret\"");
+    expect_whole_answer(&result, "{\"secret\":true}", "a secret set answers secret and no previous value");
+    finish(&result);
+    check_text(fake_store_value("spisor/p/token"), "s3cret", "the secret is in the store");
+    expect_file(&home, "p", "{\"token\":\"old\"}", "the application file is untouched");
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void null_deletes_a_secret_setting(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-null");
+    fake_store_seed("spisor/p/token", "s3cret");
+    answer result = declared_set(&home, SECRET_SETTINGS, 1, NULL, "token", "null");
+    expect_whole_answer(&result, "{\"secret\":true}", "a secret delete answers secret");
+    finish(&result);
+    CHECK(fake_store_value("spisor/p/token") == NULL);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void a_secret_setting_refuses_a_number(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-number");
+    answer result = declared_set(&home, SECRET_SETTINGS, 1, NULL, "token", "5");
+    expect_refused(&result, "a number for a secret setting");
+    expect_text_member(&result, "message", "config.set(\"token\"): a secret setting takes text or null",
+                       "the number refusal wording");
+    finish(&result);
+    CHECK(fake_store_entry_count() == 0);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void a_secret_setting_without_a_store_is_refused(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-no-store");
+    answer result = declared_set(&home, SECRET_SETTINGS, 0, NULL, "token", "\"s3cret\"");
+    expect_refused(&result, "a secret setting without a store");
+    expect_text_member(&result, "message",
+                       "config.set(\"token\"): the setting is a secret and this host has no secret store",
+                       "the no store refusal wording");
+    expect_text_member(&result, "fix", "start the host with a secret store", "the no store fix");
+    finish(&result);
+    CHECK(fake_store_entry_count() == 0);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_file_exists(home.portable) == 0);
+}
+
+static void get_reads_a_secret_setting_from_the_store(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-get");
+    fake_store_seed("spisor/p/token", "s3cret");
+    write_settings_file(&home, "p", "{\"token\":\"from-the-file\"}");
+    cJSON *request = declared_request(&home, SECRET_SETTINGS, 1);
+    cJSON_AddStringToObject(request, "key", "token");
+    answer result = call_with(runtime_config_get, request);
+    expect_whole_answer(&result, "{\"value\":\"s3cret\"}", "get answers the stored secret");
+    finish(&result);
+    fake_store_reset();
+    request = declared_request(&home, SECRET_SETTINGS, 1);
+    cJSON_AddStringToObject(request, "key", "token");
+    answer absent = call_with(runtime_config_get, request);
+    expect_whole_answer(&absent, "{}", "get of an unset secret answers no value, never the file's");
+    finish(&absent);
+}
+
+static void all_leaves_out_a_secret_setting_even_when_a_file_holds_it(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-all");
+    write_settings_file(&home, "p", "{\"token\":\"leak\",\"x\":1,\"nested\":{\"key\":\"leak\",\"keep\":2}}");
+    write_portable_file(&home, "p", "{\"token\":\"portable-leak\"}");
+    answer all = call_with(runtime_config_all, declared_request(&home, SECRET_SETTINGS, 1));
+    expect_member(&all, "values", "{\"x\":1,\"nested\":{\"keep\":2}}", "all leaves every secret setting out");
+    finish(&all);
+}
+
+static void settings_set_keeps_the_application_default(void) {
+    scratch_home home;
+    char path[1200];
+    fresh_declared_home(&home, "settings-default");
+    cJSON *request = cJSON_CreateObject();
+    cJSON_AddStringToObject(request, "home", home.path);
+    cJSON_AddStringToObject(request, "portable", home.portable);
+    cJSON_AddItemToObject(request, "settings", cJSON_Parse("{\"shared\":{\"layer\":\"portable\"}}"));
+    cJSON_AddStringToObject(request, "key", "shared");
+    cJSON_AddItemToObject(request, "value", cJSON_Parse("1"));
+    answer result = call_with(runtime_settings_set, request);
+    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    finish(&result);
+    expect_file(&home, "settings", "{\n  \"shared\": 1\n}\n", "settings.set writes the application layer");
+    snprintf(path, sizeof path, "%s/settings.json", home.portable);
+    CHECK(spisor_file_exists(path) == 0);
+}
+
 int main(void) {
     name_rules();
     deep_merge_agrees();
@@ -745,5 +923,16 @@ int main(void) {
     portable_set_through_a_link_to_a_malformed_file_is_refused();
     portable_folder_is_the_manifest_id();
     portable_layer_refuses_an_unusable_id();
+    a_declared_key_defaults_to_its_declared_layer();
+    a_declared_key_with_no_layer_defaults_to_portable();
+    an_undeclared_key_keeps_the_application_default();
+    an_explicit_layer_wins_over_the_declaration();
+    a_secret_setting_is_stored_as_a_secret_not_in_a_file();
+    null_deletes_a_secret_setting();
+    a_secret_setting_refuses_a_number();
+    a_secret_setting_without_a_store_is_refused();
+    get_reads_a_secret_setting_from_the_store();
+    all_leaves_out_a_secret_setting_even_when_a_file_holds_it();
+    settings_set_keeps_the_application_default();
     return summary_with_links("config_test");
 }

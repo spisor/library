@@ -11,6 +11,7 @@
 #include "hosts_lock.h"
 #include "merge.h"
 #include "paths.h"
+#include "secrets.h"
 #include "segment.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
@@ -47,6 +48,7 @@ typedef struct config_request {
     const cJSON *names;
     const cJSON *config;
     const cJSON *argument;
+    const cJSON *settings;
 } config_request;
 
 typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER, UNKNOWN_LAYER } settings_layer;
@@ -244,7 +246,7 @@ static char *detached_file(config_target *target) {
 }
 
 char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key) {
-    config_request request = {home, portable, NULL, NULL, NULL, NULL};
+    config_request request = {home, portable, NULL, NULL, NULL, NULL, NULL};
     config_targets targets;
     if (locate_targets(&request, &targets) != LOCATED) {
         return NULL;
@@ -264,7 +266,7 @@ static const cJSON *defaults_of(const config_request *request) {
 
 cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *portable, const char *plugin,
                              const cJSON *config, int *failed) {
-    config_request request = {home, portable, plugin, names, config, NULL};
+    config_request request = {home, portable, plugin, names, config, NULL, NULL};
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -276,7 +278,7 @@ cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *p
 }
 
 cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed) {
-    config_request request = {home, portable, NULL, names, NULL, NULL};
+    config_request request = {home, portable, NULL, names, NULL, NULL, NULL};
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -344,6 +346,49 @@ static int32_t refuse_key(uint8_t **out, size_t *out_len) {
                        "send {\"key\": \"a.b\"} with one or more dot separated, non-empty segments", out, out_len);
 }
 
+static int is_secret_declaration(const cJSON *declaration) {
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(declaration, "type");
+    return cJSON_IsString(type) && strcmp(type->valuestring, "secret") == 0;
+}
+
+static int is_secret_setting(const config_request *request, const char *key) {
+    return key != NULL && is_secret_declaration(cJSON_GetObjectItemCaseSensitive(request->settings, key));
+}
+
+static int has_places(const config_request *request) {
+    return cJSON_GetObjectItemCaseSensitive(request->argument, "places") != NULL;
+}
+
+/** Removes the value at a dot path from tree; 0 when memory ran out. */
+static int remove_at(cJSON *tree, const char *key) {
+    const char *last_dot = strrchr(key, '.');
+    if (last_dot == NULL) {
+        cJSON_DeleteItemFromObjectCaseSensitive(tree, key);
+        return 1;
+    }
+    char *parent_key = copy_text(key);
+    if (parent_key == NULL) {
+        return 0;
+    }
+    parent_key[last_dot - key] = '\0';
+    cJSON *parent = (cJSON *)runtime_walk(tree, parent_key);
+    if (cJSON_IsObject(parent)) {
+        cJSON_DeleteItemFromObjectCaseSensitive(parent, last_dot + 1);
+    }
+    free(parent_key);
+    return 1;
+}
+
+static int remove_secret_settings(const config_request *request, cJSON *merged) {
+    const cJSON *declaration;
+    cJSON_ArrayForEach(declaration, request->settings) {
+        if (is_secret_declaration(declaration) && !remove_at(merged, declaration->string)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int32_t config_all(const config_request *request, uint8_t **out, size_t *out_len) {
     config_targets targets;
     int32_t status = locate_or_fail(request, &targets, out, out_len);
@@ -352,7 +397,11 @@ static int32_t config_all(const config_request *request, uint8_t **out, size_t *
     }
     cJSON *merged = merged_from_disk(defaults_of(request), &targets);
     free_targets(&targets);
-    return merged == NULL ? out_of_memory(out, out_len) : answer_member("values", merged, out, out_len);
+    if (merged == NULL || !remove_secret_settings(request, merged)) {
+        cJSON_Delete(merged);
+        return out_of_memory(out, out_len);
+    }
+    return answer_member("values", merged, out, out_len);
 }
 
 /** A copy of the value at key in merged, NULL when absent; *failed is set when memory ran out. */
@@ -378,7 +427,21 @@ static cJSON *value_at(const config_request *request, const config_targets *targ
     return copy;
 }
 
+static int32_t get_secret_setting(const config_request *request, const char *key, uint8_t **out, size_t *out_len) {
+    runtime_secret_place place;
+    if (!has_places(request)) {
+        return answer_member("value", NULL, out, out_len);
+    }
+    if (!runtime_secret_place_of(request->argument, &place)) {
+        return runtime_refuse_secret_places(out, out_len);
+    }
+    return runtime_get_secret(&place, request->plugin, key, out, out_len);
+}
+
 static int32_t config_get(const config_request *request, uint8_t **out, size_t *out_len) {
+    if (is_secret_setting(request, key_of(request))) {
+        return get_secret_setting(request, key_of(request), out, out_len);
+    }
     config_targets targets;
     int32_t status = locate_or_fail(request, &targets, out, out_len);
     if (status != SPISOR_STATUS_SUCCESS) {
@@ -626,11 +689,7 @@ static int32_t store_after_previous(const config_request *request, const config_
     return status;
 }
 
-static settings_layer layer_of(const config_request *request) {
-    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(request->argument, "layer");
-    if (layer == NULL) {
-        return APPLICATION_LAYER;
-    }
+static settings_layer layer_named(const cJSON *layer) {
     if (!cJSON_IsString(layer)) {
         return UNKNOWN_LAYER;
     }
@@ -639,9 +698,26 @@ static settings_layer layer_of(const config_request *request) {
                                                           : UNKNOWN_LAYER;
 }
 
+/** A declared key takes its declared layer, or portable when it declares none; an undeclared key the application. */
+static settings_layer default_layer(const config_request *request) {
+    const cJSON *declaration = cJSON_GetObjectItemCaseSensitive(request->settings, key_of(request));
+    if (declaration == NULL) {
+        return APPLICATION_LAYER;
+    }
+    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
+    return layer == NULL ? PORTABLE_LAYER : layer_named(layer);
+}
+
+static settings_layer layer_of(const config_request *request) {
+    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(request->argument, "layer");
+    return layer == NULL ? default_layer(request) : layer_named(layer);
+}
+
 static int32_t refuse_layer(uint8_t **out, size_t *out_len) {
     return spisor_fail("the argument names no known layer",
-                       "send layer as \"application\" (the default) or \"portable\"", out, out_len);
+                       "send layer as \"application\" or \"portable\", or leave it out for the declared or default "
+                       "layer",
+                       out, out_len);
 }
 
 static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
@@ -664,7 +740,71 @@ static int32_t set_in_targets(const config_request *request, const config_target
     return store_after_previous(request, targets, layer, key, value, out, out_len);
 }
 
+static int32_t refuse_secret_without_store(const char *key, uint8_t **out, size_t *out_len) {
+    char message[2048];
+    snprintf(message, sizeof message, "config.set(\"%s\"): the setting is a secret and this host has no secret store",
+             key);
+    return spisor_fail(message, "start the host with a secret store", out, out_len);
+}
+
+static int32_t refuse_secret_value(const char *key, uint8_t **out, size_t *out_len) {
+    char message[2048];
+    snprintf(message, sizeof message, "config.set(\"%s\"): a secret setting takes text or null", key);
+    return spisor_fail(message, "send the value as a string, or null to remove the secret", out, out_len);
+}
+
+/** Replaces the secrets service's answer with the one a secret setting gives, which never carries a value. */
+static int32_t answer_secret(int32_t status, uint8_t **out, size_t *out_len) {
+    if (status != SPISOR_STATUS_SUCCESS) {
+        return status;
+    }
+    spisor_release(*out);
+    cJSON *result = cJSON_CreateObject();
+    if (result == NULL || cJSON_AddTrueToObject(result, "secret") == NULL) {
+        cJSON_Delete(result);
+        return out_of_memory(out, out_len);
+    }
+    status = spisor_succeed(result, out, out_len);
+    cJSON_Delete(result);
+    return status;
+}
+
+static int32_t write_secret_setting(const runtime_secret_place *place, const config_request *request, const char *key,
+                                    const cJSON *value, uint8_t **out, size_t *out_len) {
+    if (cJSON_IsNull(value)) {
+        return answer_secret(runtime_delete_secret(place, request->plugin, key, out, out_len), out, out_len);
+    }
+    if (cJSON_IsString(value)) {
+        return answer_secret(runtime_set_secret(place, request->plugin, key, value->valuestring, out, out_len), out,
+                             out_len);
+    }
+    return refuse_secret_value(key, out, out_len);
+}
+
+/**
+ * Stores a setting the plugin declares secret through the secrets service, never in a settings file.
+ *
+ * @implNote The previous value is never answered, so a secret cannot leave through the answer of a set.
+ */
+static int32_t set_secret_setting(const config_request *request, const char *key, uint8_t **out, size_t *out_len) {
+    const cJSON *value = cJSON_GetObjectItemCaseSensitive(request->argument, "value");
+    runtime_secret_place place;
+    if (value == NULL) {
+        return refuse_missing_value(out, out_len);
+    }
+    if (!has_places(request)) {
+        return refuse_secret_without_store(key, out, out_len);
+    }
+    if (!runtime_secret_place_of(request->argument, &place)) {
+        return runtime_refuse_secret_places(out, out_len);
+    }
+    return write_secret_setting(&place, request, key, value, out, out_len);
+}
+
 static int32_t config_set(const config_request *request, uint8_t **out, size_t *out_len) {
+    if (is_secret_setting(request, key_of(request))) {
+        return set_secret_setting(request, key_of(request), out, out_len);
+    }
     settings_layer layer = layer_of(request);
     if (layer == UNKNOWN_LAYER) {
         return refuse_layer(out, out_len);
@@ -705,7 +845,7 @@ static int32_t run_ecosystem_operation(const spisor_call *call, config_operation
         return runtime_refuse_portable(out, out_len);
     }
     config_request request = {home->valuestring, portable, NULL, optional_object(call->argument, "names"), NULL,
-                              call->argument};
+                              call->argument, NULL};
     return operation(&request, out, out_len);
 }
 
@@ -722,8 +862,13 @@ static int32_t run_operation(const spisor_call *call, config_operation operation
     if (!runtime_portable_argument(call->argument, &portable)) {
         return runtime_refuse_portable(out, out_len);
     }
-    config_request request = {home->valuestring, portable, plugin->valuestring, optional_object(call->argument, "names"),
-                              optional_object(call->argument, "config"), call->argument};
+    config_request request = {home->valuestring,
+                              portable,
+                              plugin->valuestring,
+                              optional_object(call->argument, "names"),
+                              optional_object(call->argument, "config"),
+                              call->argument,
+                              optional_object(call->argument, "settings")};
     return operation(&request, out, out_len);
 }
 
