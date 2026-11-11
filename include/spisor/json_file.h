@@ -17,7 +17,7 @@ typedef enum spisor_json_file_state {
 } spisor_json_file_state;
 
 /**
- * Removes every line that holds only whitespace and a // comment (basekit's readJson regex, with
+ * Removes every line that holds only whitespace and a // comment (the TypeScript read-json regex, with
  * the multiline flag) from well-formed UTF-8, freed with free; NULL only when memory runs out.
  * The result is NUL terminated one past stripped_length.
  *
@@ -27,7 +27,7 @@ typedef enum spisor_json_file_state {
 char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripped_length);
 
 /**
- * basekit's readJson without the fallback: the file read as Node reads UTF-8, whole-line comments
+ * the TypeScript read-json without the fallback: the file read as Node reads UTF-8, whole-line comments
  * stripped, then JSON.parse. The tree comes back with PARSED. NULL comes back with ABSENT only when
  * the path genuinely does not exist, or UNREADABLE when something exists but cannot be read (a
  * directory, say) or is not JSON, or when the OS would not say whether anything exists (a parent

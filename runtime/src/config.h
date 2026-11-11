@@ -12,7 +12,7 @@
  * plugin id, then trimmed and checked as a portable path segment. Freed with free; NULL when the
  * result is not a usable segment or memory runs out. config may be NULL.
  *
- * @implNote The emptiness test is before trimming, as basekit's || is, so a name of spaces is
+ * @implNote The emptiness test is before trimming, as the TypeScript || it replaced is, so a name of spaces is
  * refused rather than falling back to the id.
  */
 char *runtime_config_name(const char *plugin, const cJSON *config);
