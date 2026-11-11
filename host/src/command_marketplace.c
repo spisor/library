@@ -10,6 +10,7 @@
 #include "host_options.h"
 #include "host_output.h"
 #include "host_service.h"
+#include "identity_resolve.h"
 #include "json_service.h"
 #include "marketplace_build.h"
 #include "marketplace_lookup.h"
@@ -42,11 +43,12 @@ static int current_time(char text[RUNTIME_CATALOG_TIME_SIZE]) {
     return runtime_catalog_format_time(1000.0 * (double)time(NULL), text);
 }
 
-/** What marketplace.build is asked: the list, the copy it replaces when there is one, and the token. All are borrowed. */
+/** What marketplace.build is asked: the list, the copy it replaces when there is one, and the token with the host it is for. All are borrowed. */
 typedef struct build_inputs {
     const cJSON *list;
     const cJSON *previous;
     const char *token;
+    const char *token_host;
 } build_inputs;
 
 static int adds_text(cJSON *argument, const char *member, const char *text) {
@@ -61,7 +63,8 @@ static cJSON *build_argument(const build_inputs *inputs, const char *built) {
     cJSON *argument = cJSON_CreateObject();
     int is_built = argument != NULL && cJSON_AddStringToObject(argument, "built", built) != NULL &&
                    adds_text(argument, "apiBase", host_marketplace_lookup_api_base()) &&
-                   adds_text(argument, "token", inputs->token) && adds_copy_of(argument, "list", inputs->list) &&
+                   adds_text(argument, "token", inputs->token) && adds_text(argument, "tokenHost", inputs->token_host) &&
+                   adds_copy_of(argument, "list", inputs->list) &&
                    adds_copy_of(argument, "previous", inputs->previous);
     if (!is_built) {
         cJSON_Delete(argument);
@@ -149,6 +152,11 @@ static const char *token_from(const char *variable, cJSON **refusal) {
                                   "set the variable to an access token, or leave --token-env out");
         return NULL;
     }
+    if (variable != NULL && !runtime_identity_is_token_text(token)) {
+        *refusal = refusal_naming("--token-env names a variable that holds no usable token: ", variable,
+                                  "set the variable to the access token itself, on one line with no spaces");
+        return NULL;
+    }
     return token;
 }
 
@@ -169,6 +177,7 @@ typedef struct build_paths {
     const char *list;
     const char *out;
     const char *token_variable;
+    const char *token_host;
 } build_paths;
 
 static int write_or_refuse(const cJSON *copy, const char *out_path, cJSON **refusal) {
@@ -184,8 +193,9 @@ static int write_or_refuse(const cJSON *copy, const char *out_path, cJSON **refu
 /** The copy built from the paths' files, written to --out, or NULL with *refusal set; *skipped is what was left out. */
 static cJSON *built_and_written(const build_paths *paths, cJSON **skipped, cJSON **refusal) {
     char *absolute = host_absolute_path(paths->out);
-    build_inputs inputs = {NULL, NULL, NULL};
+    build_inputs inputs = {NULL, NULL, NULL, NULL};
     inputs.token = token_from(paths->token_variable, refusal);
+    inputs.token_host = paths->token_host;
     int has_token = paths->token_variable == NULL || inputs.token != NULL;
     cJSON *list = has_token ? read_list(paths->list, refusal) : NULL;
     cJSON *previous = list == NULL ? NULL : read_previous(absolute == NULL ? paths->out : absolute, refusal);
@@ -226,18 +236,21 @@ static int build_into(const build_paths *paths) {
 
 /** marketplace build: the generated copy of the marketplace list at --list, written to --out. */
 int host_command_marketplace_build(int count, char **arguments) {
-    host_option options[3] = {{"list", NULL}, {"out", NULL}, {"token-env", NULL}};
+    host_option options[4] = {{"list", NULL}, {"out", NULL}, {"token-env", NULL}, {"token-host", NULL}};
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
-    if (!host_parse_options(count, arguments, options, 3, NULL, &problem)) {
+    if (!host_parse_options(count, arguments, options, 4, NULL, &problem)) {
         code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
     } else if (host_last_value(&options[0]) == NULL || host_last_value(&options[1]) == NULL) {
         code = host_misuse("--list <path> and --out <path> are both required");
+    } else if (host_last_value(&options[2]) != NULL && host_last_value(&options[3]) == NULL) {
+        code = host_misuse("--token-env needs --token-host <host>: github.com for github ids, or the instance host");
     } else {
-        build_paths paths = {host_last_value(&options[0]), host_last_value(&options[1]), host_last_value(&options[2])};
+        build_paths paths = {host_last_value(&options[0]), host_last_value(&options[1]), host_last_value(&options[2]),
+                             host_last_value(&options[3])};
         code = build_into(&paths);
     }
     free(problem);
-    host_free_options(options, 3);
+    host_free_options(options, 4);
     return code;
 }

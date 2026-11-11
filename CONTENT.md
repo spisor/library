@@ -398,13 +398,16 @@ sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
 
-`forebay-host marketplace build --list <path> --out <path> [--token-env <variable>]` builds the generated copy of a marketplace
+`forebay-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
 it lies in. `--out` may not be the list itself. A copy already at `--out` is the previous copy: an entry whose repository cannot
 be looked up is carried over from it unchanged, or, when it has none, printed as skipped with its reason, and the copy is
 still written. `--token-env` names an environment variable holding an access token, which `identity.resolve` sends as an
 authorization header only to the host the ids name (never to another host, a redirect included) and which is never printed or
-written; a variable that is unset or empty is refused, and so is a list that names more than one host while a token is given.
+written. `--token-host` is required with `--token-env` and names the one host the token is for, `github.com` for github ids or the
+instance host for gitea and forgejo ids; a variable that is unset, empty or not usable as a token is refused, and so is a list
+holding an id on another host, before any lookup. A build in which every lookup is answered 401 or 403 is refused, naming the host,
+and writes nothing.
 Gitea, Forgejo and Codeberg answer 401 to a lookup by number without a token. A refusal writes nothing, leaves an existing
 copy as it was and exits 1; a name in a message is printed with its control characters escaped, and the JSON the commands
 print has 0x7F and U+0080 to U+009F escaped as well.

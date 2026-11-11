@@ -46,6 +46,15 @@ typedef enum runtime_repo_file_status {
 runtime_repo_file_status runtime_identity_read_file(const char *id, const char *api_base, const char *path,
                                                     uint8_t **content, size_t *length, cJSON **refusal);
 
+/** What a lookup refusal says just before the HTTP status the host answered, so a caller can read the status back. */
+#define RUNTIME_IDENTITY_STATUS_MARKER "answered HTTP "
+
+/** The HTTP status a lookup refusal says the host answered, or 0 when the refusal is not about a status. */
+long runtime_identity_refusal_status(const cJSON *refusal);
+
+/** Whether text can be sent as an access token: one to 512 printable ASCII characters with no space. */
+int runtime_identity_is_token_text(const char *text);
+
 /**
  * Writes into url, of size bytes, the address of route below repos/<full_name> on the host id names, such as
  * "releases/latest", under apiBase when it is given. 0 when the id has no built-in resolver, full_name is not an

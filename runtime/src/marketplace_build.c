@@ -12,12 +12,14 @@
 #include "marketplace_check.h"
 
 #define MESSAGE_SIZE 1024
+#define GITHUB_HOST "github.com"
 
 typedef struct build_request {
     const cJSON *list;
     const char *built;
     const char *api_base;
     const char *token;
+    const char *token_host;
     const cJSON *previous;
 } build_request;
 
@@ -53,6 +55,32 @@ static int read_token(const cJSON *argument, const char **token, cJSON **refusal
     return 1;
 }
 
+static int read_token_host(const cJSON *argument, const char **token_host, cJSON **refusal) {
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "tokenHost");
+    if (item != NULL && (!cJSON_IsString(item) || item->valuestring[0] == '\0')) {
+        *refusal = runtime_refusal("tokenHost is not a host name", "send the host the token belongs to, such as github.com");
+        return 0;
+    }
+    *token_host = item == NULL ? NULL : item->valuestring;
+    return 1;
+}
+
+static int check_token_is_usable(const build_request *request, cJSON **refusal) {
+    if (request->token == NULL) {
+        return 1;
+    }
+    if (request->token_host == NULL) {
+        *refusal = runtime_refusal("a token was sent with no tokenHost",
+                                   "send tokenHost: github.com for github ids, or the instance host for gitea@ and forgejo@ ids");
+        return 0;
+    }
+    if (!runtime_identity_is_token_text(request->token)) {
+        *refusal = runtime_refusal("the token is not usable", "send token as the access token itself, on one line with no spaces");
+        return 0;
+    }
+    return 1;
+}
+
 static int read_previous(const cJSON *argument, const cJSON **previous, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
     *previous = cJSON_GetObjectItemCaseSensitive(argument, "previous");
@@ -69,6 +97,7 @@ static int read_request(const cJSON *argument, build_request *request, cJSON **r
     request->list = cJSON_GetObjectItemCaseSensitive(argument, "list");
     request->built = text_of(argument, "built");
     if (!read_api_base(argument, &request->api_base, refusal) || !read_token(argument, &request->token, refusal) ||
+        !read_token_host(argument, &request->token_host, refusal) || !check_token_is_usable(request, refusal) ||
         !read_previous(argument, &request->previous, refusal)) {
         return 0;
     }
@@ -123,26 +152,35 @@ static int check_listed_ids(const cJSON *entries, cJSON **refusal) {
     return 1;
 }
 
-static int is_same_text(runtime_identity_part left, runtime_identity_part right) {
-    return left.length == right.length && (left.length == 0 || strncmp(left.start, right.start, left.length) == 0);
-}
-
-static int names_same_host(const runtime_identity *left, const runtime_identity *right) {
-    return is_same_text(left->resolver, right->resolver) && is_same_text(left->host, right->host);
-}
-
-/** One token belongs to one host, so a list that sends it must not name another host for it to reach. */
-static int check_token_reaches_one_host(const cJSON *entries, cJSON **refusal) {
-    runtime_identity first;
-    const char *first_id = entries->child == NULL ? NULL : text_of(entries->child, "id");
-    if (first_id == NULL || !runtime_identity_parse_id(first_id, &first)) {
-        return 1;
+static int equals_ignoring_case(const char *text, const char *start, size_t length) {
+    if (strlen(text) != length) {
+        return 0;
     }
-    for (const cJSON *entry = entries->child->next; entry != NULL; entry = entry->next) {
+    for (size_t index = 0; index < length; index++) {
+        if (tolower((unsigned char)text[index]) != tolower((unsigned char)start[index])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int is_github_id(const runtime_identity *parsed) {
+    return parsed->resolver.length == 6 && strncmp(parsed->resolver.start, "github", 6) == 0;
+}
+
+/** A github id names no host, so it is on github.com; any other id is on the instance it carries. */
+static int is_on_host(const runtime_identity *parsed, const char *host) {
+    return is_github_id(parsed) ? equals_ignoring_case(host, GITHUB_HOST, strlen(GITHUB_HOST))
+                                : equals_ignoring_case(host, parsed->host.start, parsed->host.length);
+}
+
+/** One token belongs to one host, so a list that sends it must name no other host for it to reach. */
+static int check_ids_are_on_token_host(const cJSON *entries, const char *token_host, cJSON **refusal) {
+    for (const cJSON *entry = entries->child; entry != NULL; entry = entry->next) {
         runtime_identity parsed;
-        if (runtime_identity_parse_id(text_of(entry, "id"), &parsed) && !names_same_host(&first, &parsed)) {
-            refuse_with(refusal, "build one list for each host, so the token goes only to the host it belongs to",
-                        "%s and %s name more than one host, and a token is sent to one", first_id, text_of(entry, "id"), "");
+        if (runtime_identity_parse_id(text_of(entry, "id"), &parsed) && !is_on_host(&parsed, token_host)) {
+            refuse_with(refusal, "list only ids on the token's host, or build this list without a token",
+                        "%s is not on %s, the one host the token is sent to", text_of(entry, "id"), token_host, "");
             return 0;
         }
     }
@@ -167,14 +205,16 @@ static cJSON *resolve_argument(const char *id, const build_request *request) {
 typedef struct lookup_result {
     cJSON *answer;
     char reason[MESSAGE_SIZE];
+    long status;
 } lookup_result;
 
 static lookup_result resolved(const char *repository_id, const build_request *request) {
-    lookup_result result = {NULL, ""};
+    lookup_result result = {NULL, "", 0};
     cJSON *lookup_refusal = NULL;
     result.answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(repository_id, request), &lookup_refusal);
     if (result.answer == NULL && runtime_is_refusal(lookup_refusal)) {
         snprintf(result.reason, sizeof result.reason, "it cannot be looked up: %s", text_of(lookup_refusal, "message"));
+        result.status = runtime_identity_refusal_status(lookup_refusal);
     }
     cJSON_Delete(lookup_refusal);
     return result;
@@ -286,6 +326,7 @@ typedef enum entry_outcome { ENTRY_COPIED, ENTRY_SKIPPED, ENTRY_FAILED } entry_o
 typedef struct entry_result {
     entry_outcome outcome;
     cJSON *copy;
+    int was_refused_authorization;
 } entry_result;
 
 static const cJSON *previous_entry_of(const cJSON *previous, const char *id) {
@@ -301,7 +342,7 @@ static const cJSON *previous_entry_of(const cJSON *previous, const char *id) {
 
 /** An entry whose repository could not be looked up: the previous copy's entry unchanged when it has one, otherwise skipped. */
 static entry_result left_unlooked(const build_request *request, const cJSON *entry, const char *reason, cJSON *skipped) {
-    entry_result result = {ENTRY_FAILED, NULL};
+    entry_result result = {ENTRY_FAILED, NULL, 0};
     const char *id = text_of(entry, "id");
     const cJSON *kept = previous_entry_of(request->previous, id);
     if (kept != NULL) {
@@ -322,7 +363,7 @@ static int adds_skipped_for_name(cJSON *skipped, const char *id, const char *sou
 
 /** The copy of one entry from what its repository answered; a name that is no import name skips it. */
 static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *skipped) {
-    entry_result result = {ENTRY_FAILED, NULL};
+    entry_result result = {ENTRY_FAILED, NULL, 0};
     const char *id = text_of(entry, "id");
     const char *folder = folder_name_of(id);
     const char *source_name = folder != NULL ? folder : text_of(answer, "name");
@@ -340,9 +381,9 @@ static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *
 
 /** The copy of one list entry as its repository is now; one that cannot be looked up is carried over or skipped. */
 static entry_result copied_entry(const build_request *request, const cJSON *entry, cJSON *skipped) {
-    entry_result result = {ENTRY_FAILED, NULL};
+    entry_result result = {ENTRY_FAILED, NULL, 0};
     char *repository_id = repository_id_of(text_of(entry, "id"));
-    lookup_result found = {NULL, ""};
+    lookup_result found = {NULL, "", 0};
     if (repository_id != NULL) {
         found = resolved(repository_id, request);
     }
@@ -357,6 +398,7 @@ static entry_result copied_entry(const build_request *request, const cJSON *entr
     } else if (found.reason[0] != '\0') {
         result = left_unlooked(request, entry, found.reason, skipped);
     }
+    result.was_refused_authorization = found.status == 401 || found.status == 403;
     cJSON_Delete(found.answer);
     free(repository_id);
     return result;
@@ -366,10 +408,41 @@ static int adds_copied_entry(cJSON *copied, cJSON *copy, cJSON **refusal) {
     return check_name_is_free(copied, copy, refusal) && cJSON_AddItemToArray(copied, copy);
 }
 
+typedef struct authorization_tally {
+    int looked_up;
+    int refused;
+    const cJSON *first_refused;
+} authorization_tally;
+
+static void tally_lookup(authorization_tally *tally, const cJSON *entry, const entry_result *result) {
+    tally->looked_up++;
+    if (result->was_refused_authorization) {
+        tally->first_refused = tally->first_refused == NULL ? entry : tally->first_refused;
+        tally->refused++;
+    }
+}
+
+/** Every lookup refused for authorization leaves nothing true to publish, which an empty or carried-over copy would hide. */
+static int check_some_lookup_was_allowed(const authorization_tally *tally, cJSON **refusal) {
+    if (tally->looked_up == 0 || tally->refused != tally->looked_up) {
+        return 1;
+    }
+    runtime_identity parsed;
+    char host[MESSAGE_SIZE / 2] = GITHUB_HOST;
+    if (runtime_identity_parse_id(text_of(tally->first_refused, "id"), &parsed) && !is_github_id(&parsed)) {
+        snprintf(host, sizeof host, "%.*s", (int)parsed.host.length, parsed.host.start);
+    }
+    refuse_with(refusal, "check that the access token is valid and not revoked, or build without a token; nothing was written",
+                "%s answered HTTP 401 or 403 to every lookup", host, "", "");
+    return 0;
+}
+
 static cJSON *copied_entries(const build_request *request, const cJSON *entries, cJSON *skipped, cJSON **refusal) {
     cJSON *copied = cJSON_CreateArray();
+    authorization_tally tally = {0, 0, NULL};
     for (const cJSON *entry = entries->child; copied != NULL && entry != NULL; entry = entry->next) {
         entry_result result = copied_entry(request, entry, skipped);
+        tally_lookup(&tally, entry, &result);
         if (result.outcome == ENTRY_SKIPPED) {
             continue;
         }
@@ -378,6 +451,10 @@ static cJSON *copied_entries(const build_request *request, const cJSON *entries,
             cJSON_Delete(copied);
             return NULL;
         }
+    }
+    if (copied != NULL && !check_some_lookup_was_allowed(&tally, refusal)) {
+        cJSON_Delete(copied);
+        return NULL;
     }
     return copied;
 }
@@ -413,7 +490,7 @@ static cJSON *build(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     const cJSON *entries = cJSON_GetObjectItemCaseSensitive(request.list, "entries");
-    if (!check_listed_ids(entries, refusal) || (request.token != NULL && !check_token_reaches_one_host(entries, refusal))) {
+    if (!check_listed_ids(entries, refusal) || (request.token != NULL && !check_ids_are_on_token_host(entries, request.token_host, refusal))) {
         return NULL;
     }
     cJSON *skipped = cJSON_CreateArray();
