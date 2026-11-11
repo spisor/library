@@ -36,7 +36,7 @@
 #endif
 
 #define PLATFORM "linux-x64"
-#define REINSTALL_FIX "run forebay-host install --catalog <path or url> again"
+#define REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
 
 static char scratch[1024];
 static char cache[1400];

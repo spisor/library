@@ -202,7 +202,7 @@ static int is_logging_disabled(const cJSON *merged) {
     return cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(merged, "logging"));
 }
 
-/** Unreadable settings leave console logging off and colour on, as basekit's readJson fallback did. */
+/** Unreadable settings leave console logging off and colour on, as the TypeScript read-json fallback did. */
 static console_style read_console_style(const log_entry *entry) {
     console_style style = {0, 1};
     int failed;

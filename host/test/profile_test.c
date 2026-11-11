@@ -54,7 +54,7 @@ static void launch_through_the_command(host_world *world) {
 }
 
 static void remove_every_host(host_world *world) {
-    const char *ids[] = {LOADER_ID, BACKGROUND_ID, "forebay-host"};
+    const char *ids[] = {LOADER_ID, BACKGROUND_ID, "spisor-host"};
     for (size_t index = 0; index < 3; index++) {
         program run;
         const char *arguments[] = {"remove", ids[index], NULL};

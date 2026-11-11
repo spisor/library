@@ -367,7 +367,7 @@ static int only_the_manifest(const cJSON *files, const char *root, cJSON **refus
     if (others > 0) {
         const char *parts[4] = {root, " is a loader bundle, which holds only " HOST_MANIFEST ", but it also holds ",
                                 listed == NULL ? "" : listed, ""};
-        *refusal = refused(parts, 4, "bundle the loader with forebay-host bundle-loader into an empty directory");
+        *refusal = refused(parts, 4, "bundle the loader with spisor-host bundle-loader into an empty directory");
     }
     free(listed);
     return others == 0;

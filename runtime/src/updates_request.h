@@ -4,8 +4,6 @@
 #include "cJSON.h"
 #include "hosts_lock.h"
 
-#define RUNTIME_FOREBAY_HOST_ID "forebay-host"
-
 /** One updates call: its argument, the places it acts in, the host it acts for and the platform key. */
 typedef struct runtime_updates_request {
     const cJSON *argument;

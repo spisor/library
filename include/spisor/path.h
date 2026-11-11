@@ -18,7 +18,7 @@ char *spisor_path_join(int windows, const char *const *segments, size_t count);
 
 int spisor_path_is_absolute(int windows, const char *path);
 
-/** basekit's expandHome: "~", "~/rest" and "~\\rest" resolve against home; anything else is copied. */
+/** The TypeScript expandHome: "~", "~/rest" and "~\\rest" resolve against home; anything else is copied. */
 char *spisor_expand_home(int windows, const char *path, const char *home);
 
 #ifdef __cplusplus

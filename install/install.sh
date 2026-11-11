@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-HOST_ID='forebay-host'
+HOST_ID='spisor-host'
 
-# Prints forebay-host's latest version, then key, url, sha256 and size per file of this platform's build,
+# Prints spisor-host's latest version, then key, url, sha256 and size per file of this platform's build,
 # checked as catalog.schema.json's patterns check them, rewritten without the lookaheads awk lacks.
 LIST_HOST_FILES='
 function refuse(detail, fix) {
@@ -232,18 +232,18 @@ function resolved(url) {
 function add_files(path,    position, key) {
   for (position = 1; position <= members[path]; position++) {
     key = member[path, position]
-    if (key in listed) refuse("the catalog lists the " host " file \"" key "\" both for every platform and for " platform, "install from a catalog built by forebay-host catalog build")
+    if (key in listed) refuse("the catalog lists the " host " file \"" key "\" both for every platform and for " platform, "install from a catalog built by spisor-host catalog build")
     listed[key] = path SUBSEP key
     order[++file_count] = key
   }
 }
 function check_file(key, reference,    folded, url) {
   folded = tolower(key)
-  if (folded in seen) refuse("the catalog lists the " host " files " seen[folded] " and " key ", which differ only by case and would install into one file", "install from a catalog built by forebay-host catalog build")
+  if (folded in seen) refuse("the catalog lists the " host " files " seen[folded] " and " key ", which differ only by case and would install into one file", "install from a catalog built by spisor-host catalog build")
   seen[folded] = key
   url = resolved(text_at(reference SUBSEP "url"))
   if (!is_file_key(key) || folded == ".installed.json" || url == "" || !is_sha256(text_at(reference SUBSEP "sha256")) || kind[reference SUBSEP "size"] != "number" || value[reference SUBSEP "size"] !~ /^(0|[1-9][0-9]*)$/) {
-    refuse("the catalog lists the " host " file \"" key "\" with a name, url, sha256 or size the installer refuses", "install from a catalog built by forebay-host catalog build")
+    refuse("the catalog lists the " host " file \"" key "\" with a name, url, sha256 or size the installer refuses", "install from a catalog built by spisor-host catalog build")
   }
   return key "\t" url "\t" value[reference SUBSEP "sha256"] "\t" value[reference SUBSEP "size"]
 }
@@ -379,7 +379,7 @@ remove_temporaries() {
 
 read_catalog_index() {
   if [ "$REMOTE" = 1 ]; then
-    INDEX=$(mktemp "${TMPDIR:-/tmp}/forebay-catalog.XXXXXX")
+    INDEX=$(mktemp "${TMPDIR:-/tmp}/spisor-catalog.XXXXXX")
     curl -fsSL --proto '=https' --proto-redir '=https' -o "$INDEX" "$CATALOG" || refuse "could not fetch the catalog $CATALOG" 'check the network connection and the url, then run this again'
   else
     INDEX=$CATALOG
@@ -407,7 +407,7 @@ fetch_verified() {
 fetch_host() {
   read_catalog_index
   listing=$(INDEX_FILE=$INDEX CATALOG=$CATALOG LC_ALL=C awk -v remote="$REMOTE" -v directory="${CATALOG_ROOT:-}" -v host="$HOST_ID" -v platform="$PLATFORM" \
-    -v required="$PLATFORM/$HOST_ID $PLATFORM/forebay-boot" "$LIST_HOST_FILES")
+    -v required="$PLATFORM/$HOST_ID $PLATFORM/spisor-boot" "$LIST_HOST_FILES")
   newline='
 '
   tab=$(printf '\t')
@@ -424,7 +424,7 @@ fetch_host() {
   done <<EOF
 $files
 EOF
-  chmod 755 "$VERSION_DIRECTORY/$PLATFORM/$HOST_ID" "$VERSION_DIRECTORY/$PLATFORM/forebay-boot"
+  chmod 755 "$VERSION_DIRECTORY/$PLATFORM/$HOST_ID" "$VERSION_DIRECTORY/$PLATFORM/spisor-boot"
 }
 
 # Everything runs from main, called on the last line, so a download cut short runs nothing at all.

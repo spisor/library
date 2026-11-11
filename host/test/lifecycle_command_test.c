@@ -21,7 +21,7 @@ static void reports_every_registered_host_and_what_the_cache_holds(void) {
     const char *arguments[] = {"status", NULL};
     CHECK(run_command(&world, &run, arguments) == 0);
     cJSON *status = parsed(run.out);
-    CHECK(lists_host(status, "forebay-host") && lists_host(status, LOADER_ID) && lists_host(status, BACKGROUND_ID));
+    CHECK(lists_host(status, "spisor-host") && lists_host(status, LOADER_ID) && lists_host(status, BACKGROUND_ID));
     expect_json(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(status, "installed"),
                                                                                    "bundles"),
                                                  LOADER_ID),
@@ -50,7 +50,7 @@ static void checks_every_host_for_updates_and_updates_an_application_through_its
     CHECK(run_command(&world, &run, arguments) == 0);
     cJSON *summary = parsed(run.out);
     const cJSON *checks = cJSON_GetObjectItemCaseSensitive(summary, "checks");
-    CHECK(cJSON_HasObjectItem(checks, "forebay-host") && cJSON_HasObjectItem(checks, LOADER_ID) &&
+    CHECK(cJSON_HasObjectItem(checks, "spisor-host") && cJSON_HasObjectItem(checks, LOADER_ID) &&
           cJSON_HasObjectItem(checks, BACKGROUND_ID));
     CHECK(exists_in(world.base.cache, "bundles/" LOADER_ID "/1.1.0"));
     check_text(text_at(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(summary, "applications"), LOADER_ID),
@@ -148,7 +148,7 @@ static void records_a_host_whose_settings_are_refused_under_refused_and_checks_t
     CHECK(run_command(&world, &run, arguments) == 1);
     cJSON *summary = parsed(run.out);
     const cJSON *checks = cJSON_GetObjectItemCaseSensitive(summary, "checks");
-    CHECK(cJSON_HasObjectItem(checks, "forebay-host"));
+    CHECK(cJSON_HasObjectItem(checks, "spisor-host"));
     CHECK(!cJSON_HasObjectItem(checks, LOADER_ID));
     const cJSON *refused = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(summary, "refused"), 0);
     check_text(text_at(refused, "id"), LOADER_ID, "the loader is refused");
@@ -159,10 +159,10 @@ static void records_a_host_whose_settings_are_refused_under_refused_and_checks_t
     finish_world(&world);
 }
 
-static void refuses_the_whole_update_when_forebay_host_s_settings_are_refused(void) {
+static void refuses_the_whole_update_when_spisor_host_s_settings_are_refused(void) {
     host_world world;
     install_launch_world(&world, "lifecycle", "ecosystem-settings", 0);
-    break_home_of(&world, "forebay-host");
+    break_home_of(&world, "spisor-host");
     program run;
     const char *arguments[] = {"update", NULL};
     CHECK(run_command(&world, &run, arguments) == 1);
@@ -181,7 +181,7 @@ int main(void) {
     removes_a_host_its_registration_and_its_references_and_sweeps_what_nothing_needs();
     reports_a_marker_that_records_no_sizes_and_update_repairs_it();
     records_a_host_whose_settings_are_refused_under_refused_and_checks_the_rest();
-    refuses_the_whole_update_when_forebay_host_s_settings_are_refused();
+    refuses_the_whole_update_when_spisor_host_s_settings_are_refused();
     expect_user_path_unchanged(&guard);
     return check_summary("lifecycle_command_test");
 }

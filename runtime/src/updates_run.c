@@ -4,6 +4,7 @@
 #include "config.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
+#include "install_run.h"
 #include "json_service.h"
 #include "updates.h"
 
@@ -31,7 +32,7 @@ static cJSON *places_call(const update_run *run) {
     return call;
 }
 
-/** The registrations hosts.list answers, forebay-host first, so the catalog check it makes serves the rest. */
+/** The registrations hosts.list answers, spisor-host first, so the catalog check it makes serves the rest. */
 static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
     cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(run), refusal);
     cJSON *registrations = listed == NULL ? NULL : cJSON_CreateArray();
@@ -40,7 +41,7 @@ static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
         cJSON_ArrayForEach(row, cJSON_GetObjectItemCaseSensitive(listed, "hosts")) {
             const cJSON *registration = cJSON_GetObjectItemCaseSensitive(row, "registration");
             const char *id = text_of(registration, "id");
-            if (id != NULL && (strcmp(id, RUNTIME_BOOTED_HOST_ID) == 0) == (pass == 0)) {
+            if (id != NULL && (strcmp(id, RUNTIME_ECOSYSTEM_HOST_ID) == 0) == (pass == 0)) {
                 cJSON_AddItemToArray(registrations, cJSON_Duplicate(registration, 1));
             }
         }
@@ -62,9 +63,9 @@ static cJSON *settings_of(const update_run *run, const char *home, cJSON **refus
 
 /**
  * The updates.check call for registration: its own settings, which choose its plugins and pins, with the
- * catalog sources of ecosystem, forebay-host's settings.
+ * catalog sources of ecosystem, spisor-host's settings.
  *
- * @implNote install records a local catalog source in forebay-host's own layer, which no other host reads,
+ * @implNote install records a local catalog source in spisor-host's own layer, which no other host reads,
  * so without this a loader would check no catalog at all.
  */
 static cJSON *check_call(const update_run *run, const cJSON *registration, const cJSON *ecosystem, cJSON **refusal) {
@@ -146,7 +147,7 @@ static cJSON *run_updates(const cJSON *argument, cJSON **refusal) {
     update_run run = {places, now, summary_of()};
     cJSON *registrations = run.summary == NULL ? NULL : registrations_of(&run, refusal);
     const cJSON *first = cJSON_GetArrayItem(registrations, 0);
-    int ecosystem_first = first != NULL && strcmp(text_of(first, "id"), RUNTIME_BOOTED_HOST_ID) == 0;
+    int ecosystem_first = first != NULL && strcmp(text_of(first, "id"), RUNTIME_ECOSYSTEM_HOST_ID) == 0;
     cJSON *ecosystem = registrations == NULL ? NULL
                        : ecosystem_first ? settings_of(&run, text_of(first, "home"), refusal)
                                          : cJSON_CreateObject();

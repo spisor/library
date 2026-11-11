@@ -1053,7 +1053,7 @@ static void it_sweeps_library_versions_per_platform_like_bundles(void) {
         installed_library("runtime", versions[index], "linux-x64", 1);
     }
     installed_library("runtime", "0.1.0", "win32-x64", 1);
-    record_references("forebay-host", "{\"run\":{\"runtime\":\"0.2.0\"},\"next\":{}}");
+    record_references("spisor-host", "{\"run\":{\"runtime\":\"0.2.0\"},\"next\":{}}");
     expect_removed("[\"runtime@0.1.0 for linux-x64\",\"runtime@0.3.0 for linux-x64\"]", "libraries");
     CHECK(!library_present("runtime", "0.1.0", "linux-x64") && library_present("runtime", "0.2.0", "linux-x64") &&
           !library_present("runtime", "0.3.0", "linux-x64") && library_present("runtime", "0.4.0", "linux-x64"));
@@ -1153,17 +1153,17 @@ static void it_keeps_what_a_reference_file_keeps_for_rollback(void) {
 
 static void it_keeps_what_a_boot_hint_names_for_the_next_start(void) {
     start_cache("sweep-hints");
-    installed_bundle("forebay-host", "1.0.0", 1);
-    installed_bundle("forebay-host", "2.0.0", 1);
-    installed_bundle("forebay-host", "3.0.0", 1);
+    installed_bundle("spisor-host", "1.0.0", 1);
+    installed_bundle("spisor-host", "2.0.0", 1);
+    installed_bundle("spisor-host", "3.0.0", 1);
     installed_library("runtime", "0.1.0", "linux-x64", 1);
     installed_library("runtime", "0.2.0", "linux-x64", 1);
     installed_library("koffi", "1.0.0", "linux-x64", 1);
     installed_library("koffi", "2.0.0", "linux-x64", 1);
-    write_in(cache, "hosts/forebay-host.json", "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\",\"bad\":2},\"host\":\"1.0.0\"}");
+    write_in(cache, "hosts/spisor-host.json", "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\",\"bad\":2},\"host\":\"1.0.0\"}");
     write_in(cache, "hosts/broken.json", "{");
     write_in(cache, "hosts/elsewhere.txt", "{\"libraries\":{},\"host\":\"2.0.0\"}");
-    expect_removed("[\"forebay-host@2.0.0\"]", "hints");
+    expect_removed("[\"spisor-host@2.0.0\"]", "hints");
     CHECK(library_present("runtime", "0.1.0", "linux-x64") && library_present("koffi", "1.0.0", "linux-x64"));
     finish_cache();
 }

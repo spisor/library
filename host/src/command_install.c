@@ -119,7 +119,7 @@ static int merge_asked(cJSON *choices, const cJSON *report) {
     return chosen;
 }
 
-/** boot.place for the context's cache: NULL when forebay-boot is in place, else its refusal. */
+/** boot.place for the context's cache: NULL when spisor-boot is in place, else its refusal. */
 static cJSON *place_boot_stub(const host_context *context) {
     cJSON *argument = cJSON_CreateObject();
     if (argument != NULL && cJSON_AddStringToObject(argument, "cache", context->cache) == NULL) {
@@ -130,7 +130,7 @@ static cJSON *place_boot_stub(const host_context *context) {
     cJSON *placed = host_call(runtime_boot_place, argument, &refusal);
     cJSON_Delete(placed);
     if (placed == NULL && refusal == NULL) {
-        const char *parts[1] = {"forebay-host ran out of memory"};
+        const char *parts[1] = {"spisor-host ran out of memory"};
         refusal = host_refusal_of(parts, 1, "close other programs, then run install again");
     }
     return placed == NULL ? refusal : NULL;
@@ -202,7 +202,7 @@ static int installs_from_catalog(const host_option *options) {
         problem = runtime_cache_text(parts, 3);
         code = host_misuse(problem == NULL ? catalog : problem);
     } else if (choices == NULL) {
-        code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
+        code = host_misuse(problem == NULL ? "spisor-host ran out of memory" : problem);
     } else {
         host_context context;
         cJSON *refusal = NULL;
@@ -258,7 +258,7 @@ int host_command_install(int count, char **arguments) {
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
     if (!host_parse_options(count, arguments, options, OPTION_COUNT, NULL, &problem)) {
-        code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
+        code = host_misuse(problem == NULL ? "spisor-host ran out of memory" : problem);
     } else if (is_by_name(options)) {
         code = installs_by_name(options);
     } else {

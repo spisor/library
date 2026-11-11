@@ -495,7 +495,7 @@ static void keeps_the_first_install_s_provenance_on_a_second_install(void) {
     finish_install_base(&base);
 }
 
-static void requests_each_command_running_forebay_boot_with_launch(void) {
+static void requests_each_command_running_spisor_boot_with_launch(void) {
     install_base base;
     start_install_base(&base, "applications", "commands");
     list_claude(&base, "{}", "[\"cc\"]", "[]");
@@ -516,7 +516,7 @@ static void requests_each_command_running_forebay_boot_with_launch(void) {
         shim = is_shim ? text_in(path, "") : NULL;
     }
     char *boot = runtime_boot_stub_path(base.cache);
-    CHECK(shim != NULL && strstr(shim, boot) != NULL && strstr(shim, "forebay-host") != NULL &&
+    CHECK(shim != NULL && strstr(shim, boot) != NULL && strstr(shim, "spisor-host") != NULL &&
           strstr(shim, "launch") != NULL && strstr(shim, LOADER_ID) != NULL);
     free(boot);
     free(shim);
@@ -732,7 +732,7 @@ int main(void) {
     writes_each_entry_reports_one_without_and_removing_the_loader_takes_it_away();
     brings_the_javascript_host_for_an_entry_declaring_it_runs_there_whatever_the_application_is();
     keeps_the_first_install_s_provenance_on_a_second_install();
-    requests_each_command_running_forebay_boot_with_launch();
+    requests_each_command_running_spisor_boot_with_launch();
     records_one_shape_for_an_application_installed_through_a_method_and_found_through_it();
     records_method_path_and_the_binary_s_path_for_an_application_found_only_on_path();
     updates_through_the_recorded_method_and_refreshes_the_recorded_version();

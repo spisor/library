@@ -240,7 +240,7 @@ int host_command_marketplace_build(int count, char **arguments) {
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
     if (!host_parse_options(count, arguments, options, 4, NULL, &problem)) {
-        code = host_misuse(problem == NULL ? "forebay-host ran out of memory" : problem);
+        code = host_misuse(problem == NULL ? "spisor-host ran out of memory" : problem);
     } else if (host_last_value(&options[0]) == NULL || host_last_value(&options[1]) == NULL) {
         code = host_misuse("--list <path> and --out <path> are both required");
     } else if (host_last_value(&options[2]) != NULL && host_last_value(&options[3]) == NULL) {

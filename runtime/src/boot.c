@@ -10,7 +10,7 @@
 #include "platform_key.h"
 #include "spisor/json_kind.h"
 
-#define HOST_ID_FIRST_FIX "pass the host id first: forebay-boot <host-id> <arguments>"
+#define HOST_ID_FIRST_FIX "pass the host id first: spisor-boot <host-id> <arguments>"
 
 typedef int32_t (*boot_service)(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
                                 size_t *out_len);

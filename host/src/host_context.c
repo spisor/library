@@ -172,7 +172,7 @@ cJSON *host_registration(const host_context *context, const char *id, cJSON **re
     cJSON_Delete(answer);
     if (registration == NULL && answer != NULL) {
         const char *parts[4] = {"the host ", id, " is not registered in ", context->state};
-        *refusal = host_refusal_of(parts, 4, "run forebay-host install --catalog <path or url> again");
+        *refusal = host_refusal_of(parts, 4, "run spisor-host install --catalog <path or url> again");
     }
     return registration;
 }

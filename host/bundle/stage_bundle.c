@@ -23,7 +23,7 @@
 #endif
 
 #define USAGE                                                                                                         \
-    "usage: stage-bundle host <directory> <version> <forebay-host> <forebay-boot> [<runtime-launcher>]\n"              \
+    "usage: stage-bundle host <directory> <version> <spisor-host> <spisor-boot> [<runtime-launcher>]\n"                \
     "       stage-bundle library <directory> <library.json> <library binary>\n"
 
 static char *joined(const char *base, const char *rest) {
@@ -65,9 +65,9 @@ static int start_empty(const char *directory) {
 /** host.json as catalog build reads a native host: its id, version, runtime and this platform's executable as entry. */
 static int write_host_manifest(const char *directory, const char *version) {
     char entry[256];
-    snprintf(entry, sizeof entry, "%s/forebay-host" EXECUTABLE_ENDING, runtime_platform_key());
+    snprintf(entry, sizeof entry, "%s/spisor-host" EXECUTABLE_ENDING, runtime_platform_key());
     cJSON *manifest = cJSON_CreateObject();
-    cJSON_AddStringToObject(manifest, "id", "forebay-host");
+    cJSON_AddStringToObject(manifest, "id", "spisor-host");
     cJSON_AddStringToObject(manifest, "version", version);
     cJSON_AddStringToObject(manifest, "runtime", "native");
     cJSON_AddStringToObject(manifest, "entry", entry);
@@ -80,7 +80,7 @@ static int write_host_manifest(const char *directory, const char *version) {
     return written;
 }
 
-/** forebay-host's bundle: host.json and <platform>/ holding forebay-host, forebay-boot and, on Windows, runtime-launcher.exe. */
+/** spisor-host's bundle: host.json and <platform>/ holding spisor-host, spisor-boot and, on Windows, runtime-launcher.exe. */
 static int stage_host(int count, char **arguments) {
     if (count < 6 || count > 7) {
         fputs(USAGE, stderr);
@@ -90,8 +90,8 @@ static int stage_host(int count, char **arguments) {
     char *platform = joined(directory, runtime_platform_key());
     int staged = platform != NULL && start_empty(directory) && spisor_make_directories(platform) == 1 &&
                  write_host_manifest(directory, arguments[3]) &&
-                 copy_into(arguments[4], platform, "forebay-host" EXECUTABLE_ENDING) &&
-                 copy_into(arguments[5], platform, "forebay-boot" EXECUTABLE_ENDING) &&
+                 copy_into(arguments[4], platform, "spisor-host" EXECUTABLE_ENDING) &&
+                 copy_into(arguments[5], platform, "spisor-boot" EXECUTABLE_ENDING) &&
                  (count == 6 || copy_into(arguments[6], platform, "runtime-launcher.exe"));
     free(platform);
     return staged ? 0 : 1;

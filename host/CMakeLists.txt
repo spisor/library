@@ -54,7 +54,7 @@ function(host_executable target output_name)
     spisor_strict_warnings(${target})
 endfunction()
 
-host_executable(forebay_host forebay-host src/main.c $<TARGET_OBJECTS:host_objects> ${host_runtime_objects})
+host_executable(spisor_host spisor-host src/main.c $<TARGET_OBJECTS:host_objects> ${host_runtime_objects})
 
 if(WIN32)
     set(host_boot_platform_sources src/child_windows.c src/host_arguments.c ${PROJECT_SOURCE_DIR}/runtime/src/command_line_windows.c
@@ -67,20 +67,20 @@ set(host_boot_runtime_sources alive_stamp.c boot.c boot_hint.c boot_resolve.c ca
     identity_parse.c json_service.c node_json_file.c platform_key.c run_records.c segment.c service_call.c sha256.c)
 list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/src/)
 
-# forebay-boot changes almost never once published, so it carries only what boot.resolve needs.
-add_executable(forebay_boot src/boot_main.c src/host_output.c src/host_service.c src/own_executable.c src/windows_command.c
+# spisor-boot changes almost never once published, so it carries only what boot.resolve needs.
+add_executable(spisor_boot src/boot_main.c src/host_output.c src/host_service.c src/own_executable.c src/windows_command.c
     ${host_boot_platform_sources} ${host_boot_runtime_sources})
-target_link_libraries(forebay_boot PRIVATE spisor_library)
-target_include_directories(forebay_boot PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
+target_link_libraries(spisor_boot PRIVATE spisor_library)
+target_include_directories(spisor_boot PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
     ${PROJECT_SOURCE_DIR}/src)
-set_target_properties(forebay_boot PROPERTIES OUTPUT_NAME forebay-boot)
-spisor_strict_warnings(forebay_boot)
+set_target_properties(spisor_boot PROPERTIES OUTPUT_NAME spisor-boot)
+spisor_strict_warnings(spisor_boot)
 
 if(WIN32)
-    add_dependencies(forebay_host runtime_launcher)
+    add_dependencies(spisor_host runtime_launcher)
 endif()
 
-set(FOREBAY_HOST_VERSION 0.1.0)
+set(SPISOR_HOST_VERSION 0.1.0)
 
 if(WIN32)
     set(stage_bundle_platform_sources src/host_arguments.c)
@@ -96,20 +96,20 @@ set_target_properties(stage_bundle PROPERTIES OUTPUT_NAME stage-bundle)
 spisor_strict_warnings(stage_bundle)
 
 function(stage_bundles target executable directory)
-    set(host_files $<TARGET_FILE:${executable}> $<TARGET_FILE:forebay_boot>)
+    set(host_files $<TARGET_FILE:${executable}> $<TARGET_FILE:spisor_boot>)
     if(WIN32)
         list(APPEND host_files $<TARGET_FILE:runtime_launcher>)
     endif()
     add_custom_target(${target} ALL
-        COMMAND stage_bundle host ${directory}/forebay-host ${FOREBAY_HOST_VERSION} ${host_files}
+        COMMAND stage_bundle host ${directory}/spisor-host ${SPISOR_HOST_VERSION} ${host_files}
         COMMAND stage_bundle library ${directory}/runtime ${PROJECT_SOURCE_DIR}/runtime/library.json $<TARGET_FILE:runtime>
         VERBATIM)
-    add_dependencies(${target} stage_bundle ${executable} forebay_boot runtime)
+    add_dependencies(${target} stage_bundle ${executable} spisor_boot runtime)
     if(WIN32)
         add_dependencies(${target} runtime_launcher)
     endif()
 endfunction()
 
-stage_bundles(forebay_host_bundles forebay_host $<TARGET_FILE_DIR:forebay_host>/bundles)
+stage_bundles(spisor_host_bundles spisor_host $<TARGET_FILE_DIR:spisor_host>/bundles)
 
 add_subdirectory(test)

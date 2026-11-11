@@ -33,7 +33,7 @@ static int answer(const char *loader_id, const char *event, cJSON **refusal) {
  * starts no process at all.
  *
  * @implNote Silent on success and exiting 0 whatever happens, because the application runs this as it
- * starts: Claude Code reads a SessionStart hook's stdout as context, and a spisor problem must never stop
+ * starts: an application reads a start hook's stdout as context, and a spisor problem must never stop
  * the application starting. A refusal is written to stderr with its fix.
  */
 int host_command_hook(int count, char **arguments) {

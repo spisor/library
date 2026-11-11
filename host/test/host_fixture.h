@@ -406,9 +406,9 @@ static inline void world_start(host_world *world, program *run, const char *exec
     world_start_in(world, run, executable, arguments, path, detached, world->base.root);
 }
 
-/** Runs forebay-host's test build with the NULL-ended arguments to its end; its exit code. */
+/** Runs spisor-host's test build with the NULL-ended arguments to its end; its exit code. */
 static inline int world_run(host_world *world, program *run, const char *const *arguments, const char *path) {
-    world_start(world, run, FOREBAY_HOST_PATH, arguments, path, 1);
+    world_start(world, run, SPISOR_HOST_PATH, arguments, path, 1);
     return program_finish(run, 120000);
 }
 
@@ -434,17 +434,17 @@ static inline void list_platform_copy(install_base *base, cJSON *item, const cha
     cJSON_AddItemToObject(files, key, served_copy(base, id, version, key, source));
 }
 
-/** forebay-host at version as the one command would publish it: its executable, forebay-boot and the launcher shims copy. */
-static inline void list_native_forebay_host(install_base *base, const char *version) {
-    cJSON *item = catalog_item(base, "forebay-host", "host", "native", version);
+/** spisor-host at version as the one command would publish it: its executable, spisor-boot and the launcher shims copy. */
+static inline void list_native_spisor_host(install_base *base, const char *version) {
+    cJSON *item = catalog_item(base, "spisor-host", "host", "native", version);
     char key[256];
-    snprintf(key, sizeof key, "%s/forebay-host" EXECUTABLE_ENDING, runtime_platform_key());
-    list_platform_copy(base, item, "forebay-host", version, key, FOREBAY_HOST_PATH);
-    snprintf(key, sizeof key, "%s/forebay-boot" EXECUTABLE_ENDING, runtime_platform_key());
-    list_platform_copy(base, item, "forebay-host", version, key, FOREBAY_BOOT_PATH);
+    snprintf(key, sizeof key, "%s/spisor-host" EXECUTABLE_ENDING, runtime_platform_key());
+    list_platform_copy(base, item, "spisor-host", version, key, SPISOR_HOST_PATH);
+    snprintf(key, sizeof key, "%s/spisor-boot" EXECUTABLE_ENDING, runtime_platform_key());
+    list_platform_copy(base, item, "spisor-host", version, key, SPISOR_BOOT_PATH);
 #if defined(_WIN32)
     snprintf(key, sizeof key, "%s/runtime-launcher.exe", runtime_platform_key());
-    list_platform_copy(base, item, "forebay-host", version, key, RUNTIME_LAUNCHER_PATH);
+    list_platform_copy(base, item, "spisor-host", version, key, RUNTIME_LAUNCHER_PATH);
 #endif
 }
 
@@ -460,13 +460,13 @@ static inline void list_native_background(install_base *base, const char *id, in
 }
 
 /**
- * The launch ecosystem: forebay-host, the runtime, the fixture loader for application, served by the fake
+ * The launch ecosystem: spisor-host, the runtime, the fixture loader for application, served by the fake
  * application's binary, naming commands and the background host.
  */
 static inline void list_launch_catalog_requiring(host_world *world, const char *application, const char *commands_json,
                                                   int javascript_plugin, const char *plugins_json) {
     install_base *base = &world->base;
-    list_native_forebay_host(base, "1.0.0");
+    list_native_spisor_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
     int declares_entry = strcmp(application, APPLICATION_ID) != 0;
     list_loader_requiring(base, LOADER_ID, "1.0.0",
@@ -506,7 +506,7 @@ static inline char *install_fake_node(const host_world *world) {
     return folder;
 }
 
-/** forebay-host install --catalog <catalog> with extra arguments, the NULL-ended rest; its exit code. */
+/** spisor-host install --catalog <catalog> with extra arguments, the NULL-ended rest; its exit code. */
 static inline int world_install(host_world *world, const char *const *extra, const char *path) {
     char *index = index_path_of(&world->base);
     const char *arguments[16] = {"install", "--catalog", index};
@@ -692,7 +692,7 @@ static inline void launch(host_world *world, program *launcher, const char *cons
         arguments[count++] = *application_arguments;
     }
     arguments[count] = NULL;
-    world_start(world, launcher, FOREBAY_HOST_PATH, arguments, path, 0);
+    world_start(world, launcher, SPISOR_HOST_PATH, arguments, path, 0);
 }
 
 static inline long started_pid(const cJSON *start) {

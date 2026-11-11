@@ -20,7 +20,7 @@
 
 extern char **environ;
 
-#define START_FIX "install the application again, or run forebay-host install --catalog <path or url>"
+#define START_FIX "install the application again, or run spisor-host install --catalog <path or url>"
 
 static volatile sig_atomic_t running_child = 0;
 static volatile sig_atomic_t terminate_pending = 0;

@@ -5,6 +5,7 @@
 
 #include "boot_stub.h"
 #include "host_output.h"
+#include "install_run.h"
 #include "cache_place.h"
 #include "own_executable.h"
 #include "paths.h"
@@ -65,16 +66,16 @@ static char *final_path(const char *path) {
 #endif
 
 static void report(const char *executable, const char *problem) {
-    host_write(1, "spisor cannot keep the forebay-host version it runs from a sweep: ");
+    host_write(1, "spisor cannot keep the spisor-host version it runs from a sweep: ");
     host_write(1, executable);
     host_write(1, problem);
-    host_write(1, "\nfix: run forebay-host from <cache>/bundles/forebay-host/<version>/, as forebay-boot does\n");
+    host_write(1, "\nfix: run spisor-host from <cache>/bundles/spisor-host/<version>/, as spisor-boot does\n");
 }
 
-/** The version segment of the executable below cache/bundles/forebay-host, freed with free; NULL outside it. */
+/** The version segment of the executable below cache/bundles/spisor-host, freed with free; NULL outside it. */
 static char *own_version(const host_context *context) {
     char *executable = host_own_executable();
-    const char *segments[2] = {"bundles", RUNTIME_BOOTED_HOST_ID};
+    const char *segments[2] = {"bundles", RUNTIME_ECOSYSTEM_HOST_ID};
     char *joined = runtime_cache_resolve(context->cache, segments, 2);
     char *folder = joined == NULL ? NULL : final_path(joined);
     char *resolved = executable == NULL ? NULL : final_path(executable);
@@ -103,10 +104,10 @@ static char *own_version(const host_context *context) {
 static cJSON *run_call(const own_run *run, const char *version) {
     cJSON *call = cJSON_CreateObject();
     int built = call != NULL && cJSON_AddStringToObject(call, "state", run->context->state) != NULL &&
-                cJSON_AddStringToObject(call, "hostId", RUNTIME_BOOTED_HOST_ID) != NULL &&
+                cJSON_AddStringToObject(call, "hostId", RUNTIME_ECOSYSTEM_HOST_ID) != NULL &&
                 cJSON_AddNumberToObject(call, "checkMilliseconds", HOST_OWN_RUN_INTERVAL_MILLISECONDS) != NULL;
     cJSON *ran = built ? cJSON_AddObjectToObject(call, "run") : NULL;
-    built = ran != NULL && (version == NULL || cJSON_AddStringToObject(ran, RUNTIME_BOOTED_HOST_ID, version) != NULL) &&
+    built = ran != NULL && (version == NULL || cJSON_AddStringToObject(ran, RUNTIME_ECOSYSTEM_HOST_ID, version) != NULL) &&
             (run->record == NULL || cJSON_AddStringToObject(call, "record", run->record) != NULL);
     if (!built) {
         cJSON_Delete(call);
@@ -152,7 +153,7 @@ void host_finish_own_run(own_run *run) {
     }
     cJSON *call = cJSON_CreateObject();
     if (call != NULL && (cJSON_AddStringToObject(call, "state", run->context->state) == NULL ||
-                         cJSON_AddStringToObject(call, "hostId", RUNTIME_BOOTED_HOST_ID) == NULL ||
+                         cJSON_AddStringToObject(call, "hostId", RUNTIME_ECOSYSTEM_HOST_ID) == NULL ||
                          cJSON_AddStringToObject(call, "record", run->record) == NULL)) {
         cJSON_Delete(call);
         call = NULL;

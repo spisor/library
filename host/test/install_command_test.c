@@ -127,16 +127,16 @@ static void answers_1_naming_what_could_not_be_installed_after_printing_the_repo
     finish_world(&world);
 }
 
-static void puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed(void) {
+static void puts_spisor_boot_into_the_cache_from_the_spisor_host_build_it_installed(void) {
     host_world world;
     start_install_world(&world, "boot-stub");
     install_fake_application(&world);
     program run;
     CHECK(run_install(&world, &run, NULL) == 0);
-    char *stub = joined(world.base.cache, "boot/forebay-boot" EXECUTABLE_ENDING);
+    char *stub = joined(world.base.cache, "boot/spisor-boot" EXECUTABLE_ENDING);
     char stub_hash[RUNTIME_SHA256_HEX_SIZE];
     char built_hash[RUNTIME_SHA256_HEX_SIZE];
-    CHECK(spisor_sha256_file(stub, stub_hash) && spisor_sha256_file(FOREBAY_BOOT_PATH, built_hash) &&
+    CHECK(spisor_sha256_file(stub, stub_hash) && spisor_sha256_file(SPISOR_BOOT_PATH, built_hash) &&
           strcmp(stub_hash, built_hash) == 0);
     free(stub);
     program_free(&run);
@@ -152,10 +152,10 @@ static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_an
     list_launch_catalog(&world, "[]", 0);
     program run;
     const char *arguments[] = {"install", "--catalog", "catalog/catalog.json", NULL};
-    world_start_in(&world, &run, FOREBAY_HOST_PATH, arguments, NULL, 1, folder);
+    world_start_in(&world, &run, SPISOR_HOST_PATH, arguments, NULL, 1, folder);
     CHECK(program_finish(&run, 120000) == 0);
     check_text(run.err, "", "nothing refused");
-    cJSON *registration = registration_in(&world, "forebay-host");
+    cJSON *registration = registration_in(&world, "spisor-host");
     CHECK(registration != NULL);
     cJSON_Delete(registration);
     program_free(&run);
@@ -240,7 +240,7 @@ int main(void) {
     answers_2_for_an_application_flag_that_is_not_id_equals_method_or_names_one_twice();
     answers_2_without_a_catalog_or_with_one_that_is_neither_https_nor_a_path();
     answers_1_naming_what_could_not_be_installed_after_printing_the_report();
-    puts_forebay_boot_into_the_cache_from_the_forebay_host_build_it_installed();
+    puts_spisor_boot_into_the_cache_from_the_spisor_host_build_it_installed();
     prints_each_warning_and_still_installs();
     prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name();
     prints_a_manifest_s_control_characters_as_visible_escapes();

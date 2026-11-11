@@ -3,7 +3,7 @@
 
 #include "cJSON.h"
 
-#define RUNTIME_REINSTALL_FIX "run forebay-host install --catalog <path or url> again"
+#define RUNTIME_REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
 
 /**
  * {executable, version, directory} for the version host_id's boot hint names in cache, for platform;

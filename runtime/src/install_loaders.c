@@ -159,7 +159,7 @@ static cJSON *command_of(const runtime_install_run *run, const char *loader_id, 
     cJSON *arguments = command == NULL ? NULL : cJSON_AddArrayToObject(command, "arguments");
     int built = arguments != NULL && cJSON_AddStringToObject(command, "name", name) != NULL &&
                 cJSON_AddStringToObject(command, "target", boot) != NULL &&
-                runtime_install_add_text(arguments, RUNTIME_BOOTED_HOST_ID) && runtime_install_add_text(arguments, "launch") &&
+                runtime_install_add_text(arguments, RUNTIME_ECOSYSTEM_HOST_ID) && runtime_install_add_text(arguments, "launch") &&
                 runtime_install_add_text(arguments, loader_id);
     free(boot);
     if (!built) {
@@ -314,7 +314,7 @@ static cJSON *unlisted_plugin_refusal(const catalog_loader *loader, const char *
     const char *parts[5] = {"the loader ", loader->id, " cannot run without the plugin ", plugin, ", which no catalog lists"};
     char *message = runtime_cache_text(parts, 5);
     cJSON *refusal = message == NULL ? NULL
-                                     : runtime_refusal(message, "add a catalog that lists the plugin with forebay-host install "
+                                     : runtime_refusal(message, "add a catalog that lists the plugin with spisor-host install "
                                                                 "--catalog <path or url>, then install again");
     free(message);
     return refusal;

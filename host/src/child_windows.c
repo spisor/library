@@ -11,7 +11,7 @@
 #include "windows_command.h"
 #include "windows_process.h"
 
-#define START_FIX "install the application again, or run forebay-host install --catalog <path or url>"
+#define START_FIX "install the application again, or run spisor-host install --catalog <path or url>"
 #define DEFAULT_COMMAND_SHELL L"cmd.exe"
 
 /** The command shell environment names under ComSpec, matched ignoring case, else this process's own, else cmd.exe. */

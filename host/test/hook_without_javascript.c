@@ -6,7 +6,7 @@
 #define HOOK_BUDGET_MILLISECONDS 200.0
 /**
  * The hook starts with a hidden console of its own, as Node's spawn with windowsHide starts one on Windows;
- * not detached, which would hand forebay-host a new console of its own and time that instead.
+ * not detached, which would hand spisor-host a new console of its own and time that instead.
  */
 #define DETACHED 0
 
@@ -50,12 +50,12 @@ static void install_claude_code_loader(host_world *world) {
     prepare_user(world);
     build_proof_catalog(world, ONE_LOADER);
     char *index = index_path_of(&world->base);
-    char *forebay_host = staged_forebay_host();
+    char *spisor_host = staged_spisor_host();
     const char *arguments[] = {"install", "--catalog", index, NULL};
     program run;
-    CHECK(proof_run(world, &run, forebay_host, arguments, world->bin) == 0);
+    CHECK(proof_run(world, &run, spisor_host, arguments, world->bin) == 0);
     program_free(&run);
-    free(forebay_host);
+    free(spisor_host);
     free(index);
 }
 
@@ -116,7 +116,7 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
     session_hook hook;
     read_session_hook(&world, &hook);
     char *boot = runtime_boot_stub_path(world.base.cache);
-    check_text(hook.command, boot, "the hook runs forebay-boot");
+    check_text(hook.command, boot, "the hook runs spisor-boot");
     char *machine_path = environment_value("PATH");
     char *path = path_without_javascript(machine_path);
     free(machine_path);

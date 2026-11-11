@@ -37,7 +37,7 @@ static char *application_binary(const host_context *context, const cJSON *standa
         size_t length = strlen(label) * 2 + strlen(binary) * 2 + 128;
         char *fix = malloc(length);
         if (fix != NULL) {
-            snprintf(fix, length, "install %s so %s is on the PATH, or run forebay-host install --catalog <path or url> to install it",
+            snprintf(fix, length, "install %s so %s is on the PATH, or run spisor-host install --catalog <path or url> to install it",
                      label, binary);
         }
         *refusal = fix == NULL ? NULL : host_refusal_of(parts, 5, fix);

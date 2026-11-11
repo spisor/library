@@ -285,9 +285,9 @@ static inline void list_loader(install_base *base, const char *loader_id, const 
     list_loader_requiring(base, loader_id, version, application, commands_json, minimum, background_json, "[]");
 }
 
-/** The foundation every ecosystem catalog carries: forebay-host and the runtime library. */
+/** The foundation every ecosystem catalog carries: spisor-host and the runtime library. */
 static inline void list_foundation(install_base *base) {
-    list_host(base, "forebay-host", "1.0.0", "native", NULL);
+    list_host(base, "spisor-host", "1.0.0", "native", NULL);
     list_library(base, "runtime", "0.1.0");
 }
 
@@ -371,9 +371,9 @@ static inline void expect_installed_ids(const cJSON *report, const char *expecte
     cJSON_Delete(ids);
 }
 
-/** The merged ecosystem settings of forebay-host's home and the portable place. */
+/** The merged ecosystem settings of spisor-host's home and the portable place. */
 static inline cJSON *ecosystem_settings(const install_base *base, int application, int portable) {
-    char *home = joined(base->state, "home/forebay-host");
+    char *home = joined(base->state, "home/spisor-host");
     char *no_home = joined(base->root, "no-home");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "home", application ? home : no_home);
@@ -390,7 +390,7 @@ static inline cJSON *ecosystem_settings(const install_base *base, int applicatio
 }
 
 static inline void set_portable(const install_base *base, const char *key, cJSON *value) {
-    char *home = joined(base->state, "home/forebay-host");
+    char *home = joined(base->state, "home/spisor-host");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "home", home);
     cJSON_AddStringToObject(argument, "portable", base->portable);

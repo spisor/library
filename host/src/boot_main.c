@@ -19,10 +19,10 @@
 #include "host_arguments.h"
 #endif
 
-#define NO_HOST_FIX "pass the host id first: forebay-boot <host-id> <arguments>"
+#define NO_HOST_FIX "pass the host id first: spisor-boot <host-id> <arguments>"
 
 /**
- * The cache this stub boots from: it lives at <cache>/boot/forebay-boot, so the cache is two folders up.
+ * The cache this stub boots from: it lives at <cache>/boot/spisor-boot, so the cache is two folders up.
  *
  * @implNote Read from where the stub lies rather than from the environment, so a command shim run under
  * another SPISOR_CACHE still boots the version its own install recorded.

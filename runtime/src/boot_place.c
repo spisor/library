@@ -8,6 +8,7 @@
 #include "boot_resolve.h"
 #include "boot_stub.h"
 #include "cache_refusal.h"
+#include "install_run.h"
 #include "json_service.h"
 #include "paths.h"
 #include "platform_key.h"
@@ -18,25 +19,19 @@
 #include <sys/stat.h>
 #endif
 
-#if defined(_WIN32)
-#define STUB_FILE "forebay-boot.exe"
-#else
-#define STUB_FILE "forebay-boot"
-#endif
-
 #define PLACEMENT_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
 
 static char *joined(const char *const *segments, size_t count) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
 }
 
-/** The forebay-boot the hinted forebay-host build carries, or NULL when there is none. */
+/** The spisor-boot the hinted spisor-host build carries, or NULL when there is none. */
 static char *carried_stub(const char *cache) {
     cJSON *refusal = NULL;
-    cJSON *resolved = runtime_resolve_booted_host(cache, RUNTIME_BOOTED_HOST_ID, runtime_platform_key(), &refusal);
+    cJSON *resolved = runtime_resolve_booted_host(cache, RUNTIME_ECOSYSTEM_HOST_ID, runtime_platform_key(), &refusal);
     cJSON_Delete(refusal);
     const char *segments[3] = {cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(resolved, "directory")),
-                               runtime_platform_key(), STUB_FILE};
+                               runtime_platform_key(), RUNTIME_BOOT_STUB_NAME};
     char *carried = segments[0] == NULL ? NULL : joined(segments, 3);
     cJSON_Delete(resolved);
     if (carried != NULL && !spisor_file_exists(carried)) {
@@ -80,7 +75,7 @@ static cJSON *place(const cJSON *argument, cJSON **refusal) {
     char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(cache);
     cJSON *answer = NULL;
     if (carried != NULL && !copy_runnable(carried, stub)) {
-        const char *parts[2] = {"forebay-boot could not be put at ", stub};
+        const char *parts[2] = {"spisor-boot could not be put at ", stub};
         *refusal = runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
     } else if (stub != NULL) {
         answer = placement(stub, carried != NULL);

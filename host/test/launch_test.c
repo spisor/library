@@ -230,7 +230,7 @@ static void runs_the_application_when_the_loader_cannot_be_registered_again_sayi
     start_world_at(&world, "launch", "unregistrable");
     install_fake_application(&world);
     install_base *base = &world.base;
-    list_native_forebay_host(base, "1.0.0");
+    list_native_spisor_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
     list_loader(base, LOADER_ID, "1.0.0", application_json(APPLICATION_ID, APPLICATION_ID, "{}"), "[\"fx\"]", 1,
                 "[\"" BACKGROUND_ID "\"]");
@@ -405,7 +405,7 @@ static void refuses_a_launch_naming_the_required_plugin_that_is_not_installed(vo
     char *folder = joined(world.base.cache, "bundles/" SESSION_PLUGIN);
     CHECK(runtime_remove_tree(folder) == 1);
     free(folder);
-    expect_refused_launch(&world, "missing", SESSION_PLUGIN, "run forebay-host install --catalog <path or url> again");
+    expect_refused_launch(&world, "missing", SESSION_PLUGIN, "run spisor-host install --catalog <path or url> again");
     char *node = joined(world.base.root, "node-bin");
     char path[4096];
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world.bin, node);
@@ -608,7 +608,7 @@ static void refuses_a_background_host_that_records_no_start_before_anything_star
     start_world_at(&world, "launch", "no-start");
     install_fake_application(&world);
     install_base *base = &world.base;
-    list_native_forebay_host(base, "1.0.0");
+    list_native_spisor_host(base, "1.0.0");
     list_library(base, "runtime", "0.1.0");
     list_loader(base, LOADER_ID, "1.0.0", application_json(APPLICATION_ID, APPLICATION_ID, "{}"), "[]", 0,
                 "[\"" BACKGROUND_ID "\"]");

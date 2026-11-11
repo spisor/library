@@ -6,7 +6,7 @@ $FileKeyPattern = '^[^/\\:]*[^/\\:. ](?:/[^/\\:]*[^/\\:. ])*(?![\s\S])'
 $VersionPattern = '^(?![\s\S]*\.\.)[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]*[0-9A-Za-z-])?(\+[0-9A-Za-z.-]*[0-9A-Za-z-])?(?![\s\S])'
 $Sha256Pattern = '^[0-9a-f]{64}(?![\s\S])'
 
-$HostId = 'forebay-host'
+$HostId = 'spisor-host'
 $InstallMarker = '.installed.json'
 
 <#
@@ -61,7 +61,7 @@ function Get-PlatformKey {
 }
 
 function Get-RequiredFiles([string]$Platform) {
-    return @("$Platform/$HostId.exe", "$Platform/forebay-boot.exe", "$Platform/runtime-launcher.exe")
+    return @("$Platform/$HostId.exe", "$Platform/spisor-boot.exe", "$Platform/runtime-launcher.exe")
 }
 
 function Resolve-Catalog([string]$Catalog) {
@@ -239,7 +239,7 @@ function Get-BuildFiles($Entry, [string]$Version, [string]$Platform) {
         if (-not (Test-Map $files)) { continue }
         foreach ($key in $files.Keys) {
             if ($listed.Contains($key)) {
-                Stop-Install "the catalog lists the $HostId file `"$key`" both for every platform and for $Platform" 'install from a catalog built by forebay-host catalog build'
+                Stop-Install "the catalog lists the $HostId file `"$key`" both for every platform and for $Platform" 'install from a catalog built by spisor-host catalog build'
             }
             $listed[$key] = $files[$key]
         }
@@ -318,7 +318,7 @@ function Get-HostFiles([string]$Catalog, [string]$Platform) {
     foreach ($key in $listed.Keys) {
         $folded = $key.Normalize().ToLowerInvariant()
         if ($seen.ContainsKey($folded)) {
-            Stop-Install "the catalog lists the $HostId files $($seen[$folded]) and $key, which differ only by case and would install into one file" 'install from a catalog built by forebay-host catalog build'
+            Stop-Install "the catalog lists the $HostId files $($seen[$folded]) and $key, which differ only by case and would install into one file" 'install from a catalog built by spisor-host catalog build'
         }
         $seen[$folded] = $key
         $reference = $listed[$key]
@@ -327,7 +327,7 @@ function Get-HostFiles([string]$Catalog, [string]$Platform) {
         $source = Resolve-Source $Catalog (Get-Field $reference 'url')
         $usable = ($key -cmatch $FileKeyPattern) -and ($folded -cne $InstallMarker) -and ($null -ne $source) -and ($sha256 -is [string]) -and ($sha256 -cmatch $Sha256Pattern) -and ($size -is [int] -or $size -is [long]) -and ($size -ge 0)
         if (-not $usable) {
-            Stop-Install "the catalog lists the $HostId file `"$key`" with a name, url, sha256 or size the installer refuses" 'install from a catalog built by forebay-host catalog build'
+            Stop-Install "the catalog lists the $HostId file `"$key`" with a name, url, sha256 or size the installer refuses" 'install from a catalog built by spisor-host catalog build'
         }
         $files += @{ Key = $key; Local = $source.Local; Source = $source.Source; Sha256 = $sha256; Size = $size }
     }
@@ -347,7 +347,7 @@ function Install-HostBuild([string]$Cache, [string]$Catalog, [string]$Platform) 
     $executable = Join-Path $directory "$Platform\$HostId.exe"
     Write-InstallTrace "fetched $HostId $($listing.Version)"
     if ([System.Environment]::OSVersion.Platform -eq 'Win32NT' -and -not (Test-WindowsImage $executable)) {
-        Stop-Install "$executable is not a Windows program" 'run this again; if it repeats, report the forebay-host build for this platform'
+        Stop-Install "$executable is not a Windows program" 'run this again; if it repeats, report the spisor-host build for this platform'
     }
     return $executable
 }
@@ -392,7 +392,7 @@ file that is no program to ShellExecute, whose "Open with" dialog blocks a headl
 ArgumentList exists only on .NET Core; Windows PowerShell gets one command line quoted as
 CommandLineToArgvW reads it.
 #>
-function Invoke-ForebayHost([string]$Executable, [string[]]$Arguments) {
+function Invoke-SpisorHost([string]$Executable, [string[]]$Arguments) {
     $start = New-Object System.Diagnostics.ProcessStartInfo
     $start.FileName = $Executable
     $start.UseShellExecute = $false
@@ -432,9 +432,9 @@ if ($null -eq $prepared) {
 } else {
     $code = 1
     try {
-        $code = Invoke-ForebayHost $prepared.Executable (@('install', "--catalog=$($prepared.Catalog)") + @($prepared.Rest))
+        $code = Invoke-SpisorHost $prepared.Executable (@('install', "--catalog=$($prepared.Catalog)") + @($prepared.Rest))
     } catch {
-        [Console]::Error.WriteLine("$($prepared.Executable) could not be started: $($_.Exception.Message)`nfix: run this again; if it repeats, report the forebay-host build for this platform")
+        [Console]::Error.WriteLine("$($prepared.Executable) could not be started: $($_.Exception.Message)`nfix: run this again; if it repeats, report the spisor-host build for this platform")
     }
     Complete-Install $code
 }
