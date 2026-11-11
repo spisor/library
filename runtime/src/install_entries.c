@@ -10,6 +10,7 @@
 #include "entry_template.h"
 #include "install_support.h"
 #include "json_service.h"
+#include "loader_issues.h"
 #include "paths.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
@@ -304,10 +305,51 @@ static int read_loader(const cJSON *places, const cJSON *loader, entry_loader *r
            read->application != NULL && read->home != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->home);
 }
 
+static char *with_issue(char *message, const cJSON *issue) {
+    const char *parts[6] = {message, " (", runtime_install_text(issue, "path"), ": ", runtime_install_text(issue, "detail"), ")"};
+    char *extended = runtime_cache_text(parts, 6);
+    free(message);
+    return extended;
+}
+
+static char *issues_message(const cJSON *issues) {
+    char *message = runtime_catalog_copy("the application's facts are unusable");
+    const cJSON *issue;
+    cJSON_ArrayForEach(issue, issues) {
+        message = message == NULL ? NULL : with_issue(message, issue);
+    }
+    return message;
+}
+
+static cJSON *application_facts_refusal(const cJSON *issues) {
+    char *message = issues_message(issues);
+    cJSON *refusal = message == NULL ? NULL : runtime_refusal(message, runtime_install_text(issues->child, "fix"));
+    free(message);
+    return refusal;
+}
+
+/** @implNote A loader standard that skipped loader.check can still reach this call directly. */
+static int application_facts_usable(const cJSON *loader, cJSON **refusal) {
+    issue_list list = {cJSON_CreateArray(), 1};
+    list.complete = list.issues != NULL;
+    if (list.complete) {
+        runtime_loader_check_application_facts(&list, cJSON_GetObjectItemCaseSensitive(loader, "application"));
+    }
+    int usable = list.complete && list.issues->child == NULL;
+    if (list.complete && !usable) {
+        *refusal = application_facts_refusal(list.issues);
+    }
+    cJSON_Delete(list.issues);
+    return usable;
+}
+
 cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **refusal) {
     entry_loader read;
     if (!read_loader(places, loader, &read)) {
         *refusal = runtime_refusal("the argument carries no usable places or loader", ENTRY_FIX);
+        return NULL;
+    }
+    if (!application_facts_usable(loader, refusal)) {
         return NULL;
     }
     if (read.entry == NULL) {

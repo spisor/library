@@ -369,6 +369,31 @@ static void answers_not_written_for_an_application_declaring_no_entry(void) {
     finish_install_base(&base);
 }
 
+static void refuses_an_entry_whose_application_facts_were_never_checked(void) {
+    install_base base;
+    start_install_base(&base, "entries", "unchecked");
+    char *home = home_of(&base, "unchecked");
+    register_loader(&base, "unchecked", home);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "places", places_of(&base));
+    cJSON *loader = cJSON_AddObjectToObject(argument, "loader");
+    cJSON_AddStringToObject(loader, "id", LOADER_ID);
+    cJSON *described = cJSON_AddObjectToObject(loader, "application");
+    cJSON_AddStringToObject(described, "id", "unchecked");
+    cJSON_AddStringToObject(described, "label", "unchecked");
+    cJSON_AddItemToObject(described, "entry", declared_entry("sample"));
+    cJSON *proxy = cJSON_AddObjectToObject(described, "proxy");
+    cJSON_AddNumberToObject(proxy, "placeholder", 5);
+    cJSON_AddStringToObject(loader, "home", home);
+    catalog_answer answer = call_catalog(runtime_install_entry_json, argument);
+    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(text_at(answer.tree, "message") != NULL && strstr(text_at(answer.tree, "message"), "/application/proxy/placeholder") != NULL);
+    cJSON_Delete(answer.tree);
+    CHECK(!spisor_file_exists(home));
+    free(home);
+    finish_install_base(&base);
+}
+
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -380,6 +405,7 @@ int main(void) {
     writes_one_declared_text_file_gone_with_the_directory_it_created();
     keeps_a_plugin_directory_the_user_already_had();
     answers_not_written_for_an_application_declaring_no_entry();
+    refuses_an_entry_whose_application_facts_were_never_checked();
     expect_user_path_unchanged(&guard);
     return check_summary("install_entries_test");
 }
