@@ -13,7 +13,7 @@
 #define FETCH_PREFIX "fetch --depth 1 https://github.com/spisor/library "
 #define TOKEN_HOST_OPTION "--token-host"
 #define TOKEN_ENV_OPTION "--token-env"
-#define INSTANCE_TOKEN_OPTIONS "--token-env LOOKUP_TOKEN --token-host \"${SERVER_URL#*://}\""
+#define INSTANCE_TOKEN_OPTIONS "--token-env LOOKUP_TOKEN --token-host \"$instance\""
 #define OPTIONAL_TOKEN_OPTIONS "--token-env MARKETPLACE_LOOKUP_TOKEN --token-host github.com"
 #define BUILD_COMMAND "library/build/bin/forebay-host marketplace build --list marketplace.json --out marketplace.generated.json"
 

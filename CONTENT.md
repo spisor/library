@@ -406,8 +406,8 @@ still written. `--token-env` names an environment variable holding an access tok
 authorization header only to the host the ids name (never to another host, a redirect included) and which is never printed or
 written. `--token-host` is required with `--token-env` and names the one host the token is for, `github.com` for github ids or the
 instance host for gitea and forgejo ids; a variable that is unset, empty or not usable as a token is refused, and so is a list
-holding an id on another host, before any lookup. A build in which every lookup is answered 401 or 403 is refused, naming the host,
-and writes nothing.
+holding an id on another host, before any lookup. A list with entries whose copy would hold none (every lookup refused, rate limited, not found or lost to the
+network) is refused with the reasons seen and writes nothing; an empty list still writes an empty copy.
 Gitea, Forgejo and Codeberg answer 401 to a lookup by number without a token. A refusal writes nothing, leaves an existing
 copy as it was and exits 1; a name in a message is printed with its control characters escaped, and the JSON the commands
 print has 0x7F and U+0080 to U+009F escaped as well.

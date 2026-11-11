@@ -23,8 +23,10 @@
  * skipped with the reason. token is the access token identity.resolve sends to the host the ids name, and only there;
  * it is never written into the copy or a refusal. tokenHost, required with token, is the one host it belongs to:
  * github.com for github ids, or the instance host for gitea and forgejo ids, and a list holding an id on any other
- * host is refused before any lookup. A token that is not usable is refused the same way. When every entry looked up is
- * answered 401 or 403, the build is refused naming the host, whether or not previous holds those entries.
+ * host is refused before any lookup. A token that is not usable is refused the same way.
+ *
+ * A list with at least one entry whose copy would hold none is refused, writing nothing, with the reasons seen
+ * (rate limiting, not found, a network failure, an unusable name); an empty list builds an empty copy.
  *
  * Refuses, with a fix, a list that breaks its schema, a built that is not RFC 3339, a previous that is not a copy, an
  * id that is local or listed twice, and two entries of one name once names are derived and aliases apply, naming both

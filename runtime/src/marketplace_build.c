@@ -168,10 +168,12 @@ static int is_github_id(const runtime_identity *parsed) {
     return parsed->resolver.length == 6 && strncmp(parsed->resolver.start, "github", 6) == 0;
 }
 
-/** A github id names no host, so it is on github.com; any other id is on the instance it carries. */
+/** The host an id carries, or github.com for a github id that carries none; an id with neither is on no host. */
 static int is_on_host(const runtime_identity *parsed, const char *host) {
-    return is_github_id(parsed) ? equals_ignoring_case(host, GITHUB_HOST, strlen(GITHUB_HOST))
-                                : equals_ignoring_case(host, parsed->host.start, parsed->host.length);
+    if (parsed->host.start != NULL) {
+        return equals_ignoring_case(host, parsed->host.start, parsed->host.length);
+    }
+    return is_github_id(parsed) && equals_ignoring_case(host, GITHUB_HOST, strlen(GITHUB_HOST));
 }
 
 /** One token belongs to one host, so a list that sends it must name no other host for it to reach. */
@@ -326,7 +328,7 @@ typedef enum entry_outcome { ENTRY_COPIED, ENTRY_SKIPPED, ENTRY_FAILED } entry_o
 typedef struct entry_result {
     entry_outcome outcome;
     cJSON *copy;
-    int was_refused_authorization;
+    int was_rate_limited;
 } entry_result;
 
 static const cJSON *previous_entry_of(const cJSON *previous, const char *id) {
@@ -398,7 +400,7 @@ static entry_result copied_entry(const build_request *request, const cJSON *entr
     } else if (found.reason[0] != '\0') {
         result = left_unlooked(request, entry, found.reason, skipped);
     }
-    result.was_refused_authorization = found.status == 401 || found.status == 403;
+    result.was_rate_limited = found.status == 429 || found.status == 403;
     cJSON_Delete(found.answer);
     free(repository_id);
     return result;
@@ -408,41 +410,35 @@ static int adds_copied_entry(cJSON *copied, cJSON *copy, cJSON **refusal) {
     return check_name_is_free(copied, copy, refusal) && cJSON_AddItemToArray(copied, copy);
 }
 
-typedef struct authorization_tally {
-    int looked_up;
-    int refused;
-    const cJSON *first_refused;
-} authorization_tally;
+#define REASONS_NAMED 3
 
-static void tally_lookup(authorization_tally *tally, const cJSON *entry, const entry_result *result) {
-    tally->looked_up++;
-    if (result->was_refused_authorization) {
-        tally->first_refused = tally->first_refused == NULL ? entry : tally->first_refused;
-        tally->refused++;
-    }
+static void append_reason(char *message, size_t size, const cJSON *row, int position) {
+    size_t used = strlen(message);
+    snprintf(message + used, size - used, "%s%s: %s", position == 0 ? "" : "; ", text_of(row, "id"), text_of(row, "reason"));
 }
 
-/** Every lookup refused for authorization leaves nothing true to publish, which an empty or carried-over copy would hide. */
-static int check_some_lookup_was_allowed(const authorization_tally *tally, cJSON **refusal) {
-    if (tally->looked_up == 0 || tally->refused != tally->looked_up) {
-        return 1;
+/** A list with entries whose copy holds none is refused with the reasons seen, since an empty copy would be published as true. */
+static void refuse_empty_copy(const cJSON *skipped, int is_every_entry_rate_limited, cJSON **refusal) {
+    char message[MESSAGE_SIZE] = "no listed repository could be built: ";
+    int position = 0;
+    for (const cJSON *row = skipped->child; row != NULL && position < REASONS_NAMED; row = row->next) {
+        append_reason(message, sizeof message, row, position++);
     }
-    runtime_identity parsed;
-    char host[MESSAGE_SIZE / 2] = GITHUB_HOST;
-    if (runtime_identity_parse_id(text_of(tally->first_refused, "id"), &parsed) && !is_github_id(&parsed)) {
-        snprintf(host, sizeof host, "%.*s", (int)parsed.host.length, parsed.host.start);
+    if (cJSON_GetArraySize(skipped) > REASONS_NAMED) {
+        size_t used = strlen(message);
+        snprintf(message + used, sizeof message - used, "; and %d more", cJSON_GetArraySize(skipped) - REASONS_NAMED);
     }
-    refuse_with(refusal, "check that the access token is valid and not revoked, or build without a token; nothing was written",
-                "%s answered HTTP 401 or 403 to every lookup", host, "", "");
-    return 0;
+    *refusal = runtime_refusal(message, is_every_entry_rate_limited
+                                            ? "the host is rate limiting this caller: wait for its limit to reset, or send an access token; nothing was written"
+                                            : "fix the reasons named, or remove the ids that no longer resolve from the list; nothing was written");
 }
 
 static cJSON *copied_entries(const build_request *request, const cJSON *entries, cJSON *skipped, cJSON **refusal) {
     cJSON *copied = cJSON_CreateArray();
-    authorization_tally tally = {0, 0, NULL};
+    int rate_limited_count = 0;
     for (const cJSON *entry = entries->child; copied != NULL && entry != NULL; entry = entry->next) {
         entry_result result = copied_entry(request, entry, skipped);
-        tally_lookup(&tally, entry, &result);
+        rate_limited_count += result.was_rate_limited;
         if (result.outcome == ENTRY_SKIPPED) {
             continue;
         }
@@ -452,7 +448,8 @@ static cJSON *copied_entries(const build_request *request, const cJSON *entries,
             return NULL;
         }
     }
-    if (copied != NULL && !check_some_lookup_was_allowed(&tally, refusal)) {
+    if (copied != NULL && entries->child != NULL && cJSON_GetArraySize(copied) == 0) {
+        refuse_empty_copy(skipped, rate_limited_count == cJSON_GetArraySize(entries), refusal);
         cJSON_Delete(copied);
         return NULL;
     }
