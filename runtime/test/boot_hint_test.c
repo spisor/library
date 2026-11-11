@@ -212,7 +212,11 @@ static void it_reads_back_what_it_wrote(void) {
     place_library("runtime", "0.1.0", "win32-x64", runtime_files, 2);
     place_library("koffi", "2.16.3", "win32-x64", koffi_files, 1);
     catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\"}", "1.0.0", "win32-x64");
-    expect_success(written, "read back write");
+    if (!expect_success(written, "read back write")) {
+        cJSON_Delete(written.tree);
+        finish_base();
+        return;
+    }
     catalog_answer read = read_hint(HOST);
     char *expected = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(written.tree, "hint"));
     CHECK(value_at(written.tree, "hint/libraries/runtime/binary") != NULL);
