@@ -261,6 +261,22 @@ static void refuses_an_environment_with_no_home(void) {
     cJSON_Delete(result);
 }
 
+static void an_empty_userprofile_with_home_set_refuses_on_windows(void) {
+    int32_t status;
+    cJSON *result = resolve_with_derived_home(
+        "{\"HOME\":\"" POSIX_HOME "\",\"USERPROFILE\":\"\"" LOCAL_APP_DATA_MEMBER "}", &status);
+#if defined(_WIN32)
+    CHECK(status == SPISOR_STATUS_FAILURE);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "message")),
+               RUNTIME_NO_USER_HOME_MESSAGE, "message");
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "fix")), RUNTIME_NO_USER_HOME_FIX, "fix");
+#else
+    CHECK(status == SPISOR_STATUS_SUCCESS);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result, "home")), POSIX_HOME, "home");
+#endif
+    cJSON_Delete(result);
+}
+
 static void an_explicit_home_wins_over_the_environment(void) {
     int32_t status;
     cJSON *result;
@@ -301,6 +317,7 @@ int main(void) {
     derives_the_home_from_home_on_posix_shapes();
     derives_the_home_from_userprofile_on_windows();
     refuses_an_environment_with_no_home();
+    an_empty_userprofile_with_home_set_refuses_on_windows();
     an_explicit_home_wins_over_the_environment();
     answers_the_home_it_resolved();
     return check_summary("places_test");
