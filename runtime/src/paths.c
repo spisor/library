@@ -56,10 +56,7 @@ int runtime_is_usable_home(const char *home) {
 }
 
 int32_t runtime_refuse_home(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the home is empty or not an absolute path",
-                       "send the application's home as an absolute directory path; a relative one would resolve "
-                       "against the host's current directory",
-                       out, out_len);
+    return spisor_fail(RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX, out, out_len);
 }
 
 int runtime_portable_argument(const cJSON *argument, const char **portable) {

@@ -119,10 +119,6 @@ static char *plugin_directory_of(const host_context *context, const char *applic
     cJSON *registration = host_registration(context, application, refusal);
     const char *home = host_text(registration, "home");
     char *directory = NULL;
-    if (registration != NULL && home == NULL) {
-        const char *parts[3] = {"the application ", application, " is registered without a home to deploy a plugin into"};
-        *refusal = host_refusal_of(parts, 3, "start the application once so that it registers its home, then run the command again");
-    }
     cJSON *argument = home == NULL ? NULL : cJSON_CreateObject();
     if (argument != NULL && cJSON_AddStringToObject(argument, "home", home) != NULL) {
         cJSON *paths = host_call(runtime_paths_resolve, argument, refusal);

@@ -29,7 +29,10 @@ cJSON *host_process_environment(void);
 /** A new argument {places: {portable, state, cache}} for context; NULL when memory runs out. */
 cJSON *host_places_argument(const host_context *context);
 
-/** The registration of host id, or NULL with *refusal set naming it as not registered. */
+/**
+ * The registration of host id once runtime_registration_usable accepts it, or NULL with *refusal set naming
+ * it as not registered.
+ */
 cJSON *host_registration(const host_context *context, const char *id, cJSON **refusal);
 
 /** The ecosystem settings host id reads, its home's layer over the portable one: settings.all's values. */

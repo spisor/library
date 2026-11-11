@@ -34,6 +34,19 @@ runtime_registry_answer runtime_registry_load(const char *state, const char *id,
  */
 runtime_registry_answer runtime_registry_store(const char *state, const cJSON *registration);
 
+/**
+ * Whether registration, host id's in state, can start the host: it carries a string version and a string
+ * home. 0 with *refusal set naming id as not registered in state with the reinstall fix, or with *refusal
+ * NULL when memory runs out; a NULL registration is refused the same way.
+ */
+int runtime_registration_usable(const cJSON *registration, const char *id, const char *state, cJSON **refusal);
+
+/**
+ * Host id's registration in state, freed with cJSON_Delete, once runtime_registration_usable accepts it;
+ * NULL with *refusal set when it is not, or cannot be read, and with *refusal NULL when memory runs out.
+ */
+cJSON *runtime_usable_registration(const char *state, const char *id, cJSON **refusal);
+
 RUNTIME_EXPORT int32_t runtime_registry_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 /**
  * registry.register, except that a provenance the host's stored registration already carries is kept in

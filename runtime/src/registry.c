@@ -4,9 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "boot_resolve.h"
 #include "directory_tree.h"
 #include "hosts_lock.h"
 #include "file_presence.h"
+#include "json_service.h"
 #include "paths.h"
 #include "segment.h"
 #include "spisor/file.h"
@@ -161,13 +163,54 @@ runtime_registry_answer runtime_registry_store(const char *state, const cJSON *r
     return written ? RUNTIME_REGISTRY_OK : RUNTIME_REGISTRY_UNWRITABLE;
 }
 
-static int32_t refuse_unreadable(const char *state, const char *id, uint8_t **out, size_t *out_len) {
+#define UNREADABLE_MESSAGE "the host's registration is not a readable JSON object for that id"
+
+static void unreadable_fix(const char *state, const char *id, char *fix, size_t size) {
     char *path = registration_path(state, id);
-    char fix[2048];
-    snprintf(fix, sizeof fix, "repair %s so it holds the host's registration as one JSON object, or remove it; it was left unchanged",
+    snprintf(fix, size, "repair %s so it holds the host's registration as one JSON object, or remove it; it was left unchanged",
              path != NULL ? path : "the registration file");
     free(path);
-    return spisor_fail("the host's registration is not a readable JSON object for that id", fix, out, out_len);
+}
+
+static int32_t refuse_unreadable(const char *state, const char *id, uint8_t **out, size_t *out_len) {
+    char fix[2048];
+    unreadable_fix(state, id, fix, sizeof fix);
+    return spisor_fail(UNREADABLE_MESSAGE, fix, out, out_len);
+}
+
+int runtime_registration_usable(const cJSON *registration, const char *id, const char *state, cJSON **refusal) {
+    if (cJSON_IsString(cJSON_GetObjectItemCaseSensitive(registration, "version")) &&
+        cJSON_IsString(cJSON_GetObjectItemCaseSensitive(registration, "home"))) {
+        return 1;
+    }
+    const char *format = "the host %s is not registered in %s";
+    size_t size = strlen(format) + strlen(id) + strlen(state) + 1;
+    char *message = malloc(size);
+    if (message != NULL) {
+        snprintf(message, size, format, id, state);
+        *refusal = runtime_refusal(message, RUNTIME_REINSTALL_FIX);
+    }
+    free(message);
+    return 0;
+}
+
+cJSON *runtime_usable_registration(const char *state, const char *id, cJSON **refusal) {
+    cJSON *registration = NULL;
+    runtime_registry_answer loaded = runtime_registry_load(state, id, &registration);
+    if (loaded == RUNTIME_REGISTRY_UNREADABLE) {
+        char fix[2048];
+        unreadable_fix(state, id, fix, sizeof fix);
+        *refusal = runtime_refusal(UNREADABLE_MESSAGE, fix);
+        return NULL;
+    }
+    if (loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        return NULL;
+    }
+    if (!runtime_registration_usable(registration, id, state, refusal)) {
+        cJSON_Delete(registration);
+        return NULL;
+    }
+    return registration;
 }
 
 static int32_t refuse_id(uint8_t **out, size_t *out_len) {

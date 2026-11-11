@@ -3010,6 +3010,96 @@
             "required": ["method", "location", "os", "architecture", "installedAt"],
             "additionalProperties": false
           }
+        },
+        {
+          "name": "start",
+          "symbol": "runtime_hosts_start",
+          "kind": "json",
+          "argument": {
+            "type": "object",
+            "properties": {
+              "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+              "hostId": { "type": "string", "minLength": 1 },
+              "layer": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "version": { "type": "string", "minLength": 1 }
+                },
+                "required": ["id", "version"]
+              },
+              "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+              "session": { "type": "boolean" }
+            },
+            "required": ["environment", "hostId", "layer", "libraries", "session"]
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "home": { "type": "string" },
+              "places": {
+                "type": "object",
+                "properties": {
+                  "home": { "type": "string" },
+                  "portable": { "type": "string" },
+                  "state": { "type": "string" },
+                  "cache": { "type": "string" },
+                  "secretsFile": { "type": "string" },
+                  "forceFileStore": { "type": "boolean" }
+                },
+                "required": ["home", "portable", "state", "cache", "secretsFile", "forceFileStore"],
+                "additionalProperties": false
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "version": { "type": "string" },
+                  "home": { "type": "string" },
+                  "requiresCommand": { "type": "boolean" },
+                  "application": { "type": "object" }
+                },
+                "required": ["version", "home", "requiresCommand"],
+                "additionalProperties": false
+              },
+              "settings": { "type": "object" },
+              "plan": {
+                "type": "object",
+                "description": "updates.apply's answer; a reused recorded run carries no next or rollback.",
+                "properties": {
+                  "plugins": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "run": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "next": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "rollback": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "unrecorded": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": { "message": { "type": "string" }, "fix": { "type": "string" } },
+                      "required": ["message", "fix"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "runRecord": { "type": "string" }
+                },
+                "required": ["plugins", "run", "unrecorded", "runRecord"],
+                "additionalProperties": false
+              },
+              "reusedRecordedRun": { "type": "boolean" },
+              "timers": {
+                "type": "object",
+                "properties": {
+                  "recordRunMilliseconds": { "type": "number" },
+                  "pruneFailuresBeforeExit": { "type": "integer" },
+                  "updateCheckMilliseconds": { "type": "number" }
+                },
+                "required": ["recordRunMilliseconds", "pruneFailuresBeforeExit", "updateCheckMilliseconds"],
+                "additionalProperties": false
+              },
+              "noColor": { "type": "boolean" }
+            },
+            "required": ["home", "places", "identity", "settings", "plan", "reusedRecordedRun", "timers", "noColor"],
+            "additionalProperties": false
+          }
         }
       ]
     },
