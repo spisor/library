@@ -7,7 +7,7 @@
 #include "export.h"
 
 /**
- * marketplace.build: {list, built, token?, previous?, apiBase?} answers {copy, skipped}, the generated copy of a marketplace list that
+ * marketplace.build: {list, built, token?, tokenHost?, previous?, apiBase?} answers {copy, skipped}, the generated copy of a marketplace list that
  * marketplace.schema.json describes. Each entry carries the fullName and lastKnown (the same) that identity.resolve
  * answers for the repo its id names, and a name: the list's alias when one is set, otherwise the repo's name, or the
  * last segment of the folder when the id names a folder below the repo, derived as an import name. The list's
@@ -21,12 +21,14 @@
  * An entry whose repository cannot be looked up does not stop the build: when previous, the copy this build replaces,
  * has an entry of that id, that entry is carried over unchanged, and otherwise the entry is left out and listed in
  * skipped with the reason. token is the access token identity.resolve sends to the host the ids name, and only there;
- * it is never written into the copy or a refusal, and it is refused for a list that names more than one host, since
- * one token belongs to one host.
+ * it is never written into the copy or a refusal. tokenHost, required with token, is the one host it belongs to:
+ * github.com for github ids, or the instance host for gitea and forgejo ids, and a list holding an id on any other
+ * host is refused before any lookup. A token that is not usable is refused the same way. When every entry looked up is
+ * answered 401 or 403, the build is refused naming the host, whether or not previous holds those entries.
  *
  * Refuses, with a fix, a list that breaks its schema, a built that is not RFC 3339, a previous that is not a copy, an
  * id that is local or listed twice, and two entries of one name once names are derived and aliases apply, naming both
- * ids. The shape, local, duplicate and host refusals come before any lookup.
+ * ids. The shape, local, duplicate, token and host refusals come before any lookup.
  *
  * @implNote Names are compared as written, since an import name is lowercase. A repo is looked up by the id up to its
  * folder, so a renamed repo never changes the list.

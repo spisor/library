@@ -11,21 +11,27 @@
 #define SKIP_STATUS 77
 #define COMMIT_LENGTH 40
 #define FETCH_PREFIX "fetch --depth 1 https://github.com/spisor/library "
+#define TOKEN_HOST_OPTION "--token-host"
+#define TOKEN_ENV_OPTION "--token-env"
+#define INSTANCE_TOKEN_OPTIONS "--token-env LOOKUP_TOKEN --token-host \"${SERVER_URL#*://}\""
+#define OPTIONAL_TOKEN_OPTIONS "--token-env MARKETPLACE_LOOKUP_TOKEN --token-host github.com"
 #define BUILD_COMMAND "library/build/bin/forebay-host marketplace build --list marketplace.json --out marketplace.generated.json"
 
 typedef struct template_host {
     const char *host;
     const char *ci_file;
     const char *publish_marker;
+    const char *token_options;
+    int minimum_entries;
 } template_host;
 
 static const template_host HOSTS[] = {
-    {"github", ".github/workflows/marketplace.yml", "actions/deploy-pages"},
-    {"gitlab", ".gitlab-ci.yml", "pages: true"},
-    {"bitbucket", "bitbucket-pipelines.yml", ".bitbucket.io"},
-    {"codeberg", ".forgejo/workflows/marketplace.yml", "git push --force origin pages"},
-    {"forgejo", ".forgejo/workflows/marketplace.yml", "git push --force origin pages"},
-    {"gitea", ".gitea/workflows/marketplace.yml", "git push --force origin pages"},
+    {"github", ".github/workflows/marketplace.yml", "actions/deploy-pages", "--token-env GITHUB_TOKEN --token-host github.com", 1},
+    {"gitlab", ".gitlab-ci.yml", "pages: true", OPTIONAL_TOKEN_OPTIONS, 1},
+    {"bitbucket", "bitbucket-pipelines.yml", ".bitbucket.io", OPTIONAL_TOKEN_OPTIONS, 1},
+    {"codeberg", ".forgejo/workflows/marketplace.yml", "git push --force origin pages", INSTANCE_TOKEN_OPTIONS, 1},
+    {"forgejo", ".forgejo/workflows/marketplace.yml", "git push --force origin pages", INSTANCE_TOKEN_OPTIONS, 0},
+    {"gitea", ".gitea/workflows/marketplace.yml", "git push --force origin pages", INSTANCE_TOKEN_OPTIONS, 0},
 };
 #define HOST_COUNT (sizeof HOSTS / sizeof HOSTS[0])
 
@@ -84,9 +90,30 @@ static void checks_the_list(const char *root, const template_host *host) {
     if (list == NULL || !runtime_marketplace_check_list(list, problem, sizeof problem)) {
         fprintf(stderr, "%s marketplace.json: %s\n", host->host, problem);
     }
-    CHECK(list != NULL && cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(list, "entries")) >= 1);
+    CHECK(list != NULL && cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(list, "entries")) >= host->minimum_entries);
     cJSON_Delete(list);
     free(text);
+}
+
+static int count_of(const char *text, const char *fragment) {
+    int count = 0;
+    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
+        count++;
+    }
+    return count;
+}
+
+static void checks_the_token_goes_to_one_named_host(const template_host *host, const char *text) {
+    if (strstr(text, host->token_options) == NULL || count_of(text, TOKEN_HOST_OPTION) != 1 ||
+        count_of(text, TOKEN_ENV_OPTION) != 1) {
+        fprintf(stderr, "%s: %s must pass exactly \"%s\" and no other token option\n", host->host, host->ci_file,
+                host->token_options);
+        check_failures++;
+    }
+    if (strstr(text, "grep") != NULL) {
+        fprintf(stderr, "%s: %s decides the token with grep\n", host->host, host->ci_file);
+        check_failures++;
+    }
 }
 
 static void checks_the_pipeline(const char *root, const template_host *host, char *shared_commit) {
@@ -128,6 +155,12 @@ static void checks_the_content(const char *root, const template_host *host) {
     int steps = count_numbered_steps(text);
     if (steps != 5) {
         fprintf(stderr, "%s CONTENT.md: %d numbered steps, expected 5\n", host->host, steps);
+        check_failures++;
+    }
+    if (strstr(text, "The token goes only to ") == NULL || strstr(text, "without a token") == NULL ||
+        strstr(text, "last copy") != NULL) {
+        fprintf(stderr, "%s CONTENT.md: must name the token's host, say another host builds without a token, and not promise a last copy\n",
+                host->host);
         check_failures++;
     }
     if (strstr(text, "Documentation: https://") == NULL) {

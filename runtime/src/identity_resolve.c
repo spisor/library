@@ -253,11 +253,12 @@ static cJSON *confirm_last_known_name(const cJSON *repository, const char *asked
 
 static cJSON *refuse_rate_limited(const char *url, long status, cJSON **refusal) {
     return refuse(refusal, "wait for the host's rate limit to reset, then try again",
-                  "%s answered HTTP %ld: the host is rate limiting this caller", url, status);
+                  "%s " RUNTIME_IDENTITY_STATUS_MARKER "%ld: the host is rate limiting this caller", url, status);
 }
 
 static cJSON *refuse_unexpected_status(const char *url, long status, cJSON **refusal) {
-    return refuse(refusal, "check that the host is the repo host the id names", "%s answered HTTP %ld", url, status);
+    return refuse(refusal, "check that the host is the repo host the id names",
+                  "%s " RUNTIME_IDENTITY_STATUS_MARKER "%ld", url, status);
 }
 
 static int url_for(const char *root, const char *route, const char *subject, char *url) {
@@ -313,7 +314,7 @@ static cJSON *settle_number_lookup(const char *url, const lookup_failure *failur
     }
     if (failure->status == 401) {
         return refuse(refusal, "give the repository's last known owner/name so its number can be confirmed from it",
-                      "%s wants a token to look a repository up by number", url);
+                      "%s " RUNTIME_IDENTITY_STATUS_MARKER "401: it wants a token to look a repository up by number", url);
     }
     return refuse_unexpected_status(url, failure->status, refusal);
 }
@@ -355,16 +356,26 @@ static int host_shape_fits(const resolver *kind, const runtime_identity *parsed)
     return (kind->fixed_root != NULL) == (parsed->host.start == NULL);
 }
 
-static int is_token(const cJSON *token) {
-    if (!cJSON_IsString(token) || token->valuestring[0] == '\0' || strlen(token->valuestring) > TOKEN_LIMIT) {
+int runtime_identity_is_token_text(const char *text) {
+    if (text == NULL || text[0] == '\0' || strlen(text) > TOKEN_LIMIT) {
         return 0;
     }
-    for (const unsigned char *at = (const unsigned char *)token->valuestring; *at != '\0'; at++) {
+    for (const unsigned char *at = (const unsigned char *)text; *at != '\0'; at++) {
         if (*at <= 0x20 || *at >= 0x7F) {
             return 0;
         }
     }
     return 1;
+}
+
+static int is_token(const cJSON *token) {
+    return cJSON_IsString(token) && runtime_identity_is_token_text(token->valuestring);
+}
+
+long runtime_identity_refusal_status(const cJSON *refusal) {
+    const cJSON *message = cJSON_GetObjectItemCaseSensitive(refusal, "message");
+    const char *marker = cJSON_IsString(message) ? strstr(message->valuestring, RUNTIME_IDENTITY_STATUS_MARKER) : NULL;
+    return marker == NULL ? 0 : strtol(marker + strlen(RUNTIME_IDENTITY_STATUS_MARKER), NULL, 10);
 }
 
 static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parsed, const char *id,

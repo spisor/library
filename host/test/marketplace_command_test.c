@@ -163,6 +163,11 @@ static void set_token_variable(const char *value) {
 }
 
 static int run_command_with_token(const char *list_path, const char *out_path) {
+    const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE, "--token-host", "github.com"};
+    return host_command_marketplace_build(8, (char **)arguments);
+}
+
+static int run_command_with_token_and_no_host(const char *list_path, const char *out_path) {
     const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE};
     return host_command_marketplace_build(6, (char **)arguments);
 }
@@ -255,9 +260,56 @@ static void a_variable_that_is_not_set_is_refused_and_writes_nothing(void) {
     finish_case();
 }
 
+static void a_token_without_its_host_is_refused_and_writes_nothing(void) {
+    start_case("token-no-host");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    char *list = in_base("list.json");
+    char *out = in_base("fresh/copy.json");
+    set_token_variable(TOKEN);
+    CHECK(run_command_with_token_and_no_host(list, out) == 2);
+    set_token_variable(NULL);
+    CHECK(!exists_in(base_folder, "fresh"));
+    free(out);
+    free(list);
+    finish_case();
+}
+
+static void an_unusable_token_is_refused_and_writes_nothing(void) {
+    start_case("unusable-token");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    char *list = in_base("list.json");
+    char *out = in_base("fresh/copy.json");
+    set_token_variable(TOKEN "\n");
+    CHECK(run_command_with_token(list, out) == 1);
+    set_token_variable(NULL);
+    CHECK(!exists_in(base_folder, "fresh"));
+    free(out);
+    free(list);
+    finish_case();
+}
+
+static void a_build_where_every_lookup_is_refused_authorization_writes_nothing(void) {
+    start_case("refused-authorization");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:70\"}]}");
+    write_in(base_folder, "carried/copy.json", KEPT_COPY);
+    char *list = in_base("list.json");
+    char *carried = in_base("carried/copy.json");
+    char *fresh = in_base("fresh/copy.json");
+    CHECK(run_command(list, carried) == 1);
+    CHECK(run_command(list, fresh) == 1);
+    char *content = text_in(base_folder, "carried/copy.json");
+    CHECK(strcmp(content, KEPT_COPY) == 0);
+    free(content);
+    CHECK(!exists_in(base_folder, "fresh"));
+    free(fresh);
+    free(carried);
+    free(list);
+    finish_case();
+}
+
 static int run_binary_with_token(const char *list_path, program *run) {
     prepare_program(run, base_folder, "token");
-    const char *words[] = {"marketplace", "build", "--list", list_path, "--out", "unused/copy.json", "--token-env", TOKEN_VARIABLE, NULL};
+    const char *words[] = {"marketplace", "build", "--list", list_path, "--out", "unused/copy.json", "--token-env", TOKEN_VARIABLE, "--token-host", "github.com", NULL};
     cJSON *arguments = strings_of(words);
     cJSON *environment = cJSON_CreateObject();
     copy_system_variable(environment, "SystemRoot");
@@ -300,6 +352,7 @@ static void run_against_the_server(void) {
         ROUTE("/repositories/2", 200, weivel),
         ROUTE("/repositories/4", 200, another_runtime),
         ROUTE("/repositories/6", 200, reserved),
+    {"/repositories/70", 401, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
     {"/repositories/60", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
@@ -318,6 +371,9 @@ static void run_against_the_server(void) {
     out_that_is_the_list_is_refused_and_the_list_left_alone();
     the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere();
     a_variable_that_is_not_set_is_refused_and_writes_nothing();
+    a_token_without_its_host_is_refused_and_writes_nothing();
+    an_unusable_token_is_refused_and_writes_nothing();
+    a_build_where_every_lookup_is_refused_authorization_writes_nothing();
     host_marketplace_aim_lookups(NULL);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 2);
