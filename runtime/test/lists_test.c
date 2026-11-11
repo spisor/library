@@ -129,6 +129,7 @@ static void register_claude_host(const lists_scratch *place) {
     cJSON_AddItemToObject(registration, "application",
                           parsed("{\"id\": \"claude\", \"label\": \"claude label\", \"binary\": \"claude\","
                                  " \"home\": {\"candidates\": [\"~/.x\"]}, \"packages\": {}}"));
+    cJSON_AddStringToObject(registration, "home", place->base);
     add_host_provenance(registration, "test", "1.0.0", place->base);
     cJSON_AddFalseToObject(registration, "requiresCommand");
     catalog_answer answer = call_catalog(runtime_registry_register, request);

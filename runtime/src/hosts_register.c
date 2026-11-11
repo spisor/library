@@ -10,7 +10,7 @@
 #include "user_home.h"
 
 #define IDENTITY_FIX                                                                                                \
-    "send {\"identity\": {\"id\", \"version\", \"home\"?, \"application\"?, \"requiresCommand\", \"commands\": "    \
+    "send {\"identity\": {\"id\", \"version\", \"home\": <absolute path>, \"application\"?, \"requiresCommand\", \"commands\": "    \
     "[{\"name\", \"target\", \"arguments\"}], \"start\"?: {\"runtime\", \"entry\"}}, \"provenance\": {...}, "        \
     "\"environment\": {<name>: <value>}}"
 

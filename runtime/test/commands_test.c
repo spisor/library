@@ -108,6 +108,7 @@ static void register_host(const scratch *place, const char *id, int requires_com
     cJSON_AddStringToObject(registration, "id", id);
     cJSON_AddStringToObject(registration, "kind", "host");
     cJSON_AddStringToObject(registration, "version", "1.0.0");
+    cJSON_AddStringToObject(registration, "home", place->directory);
     add_host_provenance(registration, "npm", "1.0.0", place->directory);
     cJSON_AddBoolToObject(registration, "requiresCommand", requires_command);
     answer result = call(runtime_registry_register, request);
