@@ -135,12 +135,17 @@ typedef struct binary_search {
     size_t count;
 } binary_search;
 
-/** The files directly inside directory that end in suffix: how many, and the first one's name. 0 when memory runs out. */
-static int search_binaries(const char *directory, const char *suffix, binary_search *search) {
+/**
+ * The files directly inside directory that end in suffix: how many, and the first one's name. 0 with
+ * *problem naming directory when it cannot be listed, and with *problem NULL when memory runs out.
+ */
+static int search_binaries(const char *directory, const char *suffix, binary_search *search, char **problem) {
     search->first_name = NULL;
     search->count = 0;
     runtime_directory_listing listing;
     if (!runtime_list_directory(directory, &listing)) {
+        const char *parts[2] = {"could not list ", directory};
+        *problem = runtime_cache_text(parts, 2);
         return 0;
     }
     int searched = 1;
@@ -164,11 +169,14 @@ static int is_declared_library(const char *directory) {
     return declared;
 }
 
-/** Adds the one binary of the declared library in directory to entry; 0 with *problem set when it holds none or several. */
+/**
+ * Adds the one binary of the declared library in directory to entry; 0 with *problem set when it holds none
+ * or several, or cannot be listed.
+ */
 static int add_binary(cJSON *entry, const char *directory, const char *platform, char **problem) {
     const char *suffix = binary_suffix(platform);
     binary_search search;
-    int searched = search_binaries(directory, suffix, &search);
+    int searched = search_binaries(directory, suffix, &search, problem);
     if (searched && search.count != 1) {
         const char *parts[5] = {"the library folder ", directory,
                                 search.count == 0 ? " holds no " : " holds more than one ", suffix,
