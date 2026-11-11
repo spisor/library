@@ -130,6 +130,7 @@ static void checks_the_pipeline(const char *root, const template_host *host, cha
         check_text(commit, shared_commit, host->host);
     }
     CHECK(strstr(text, BUILD_COMMAND) != NULL);
+    checks_the_token_goes_to_one_named_host(host, text);
     if (strstr(text, host->publish_marker) == NULL) {
         fprintf(stderr, "%s: %s does not publish (expected \"%s\")\n", host->host, host->ci_file, host->publish_marker);
         check_failures++;
