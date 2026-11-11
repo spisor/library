@@ -306,13 +306,11 @@ static void an_id_that_does_not_resolve_is_carried_over_from_the_previous_copy(v
     cJSON_Delete(answer.tree);
 }
 
-static void a_previous_copy_without_the_entry_leaves_it_skipped(void) {
+static void a_previous_copy_without_the_entry_leaves_a_list_of_only_it_refused(void) {
     catalog_answer answer = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:60\"}]}", NULL, NULL,
         PREVIOUS_COPY("{\"id\":\"github:2\",\"name\":\"weivel\",\"fullName\":\"spisor/weivel\",\"lastKnown\":\"spisor/weivel\"}"));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 0);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 1);
+    CHECK(expect_refusal(answer, "github:60", "nothing could be built"));
     cJSON_Delete(answer.tree);
 }
 
@@ -375,11 +373,12 @@ static void a_token_is_refused_for_an_id_on_another_host_before_any_lookup(void)
     }
     const char *lists[] = {"{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"gitea@codeberg.org:3\"}]}",
                            "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"},{\"id\":\"gitea@gitea.example:4\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"}]}"};
-    const char *hosts[] = {"github.com", "codeberg.org", "github.com"};
-    for (size_t index = 0; index < 3; index++) {
+                           "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"}]}",
+                           "{\"format\":1,\"entries\":[{\"id\":\"github@codeberg.org:5\"}]}"};
+    const char *hosts[] = {"github.com", "codeberg.org", "github.com", "github.com"};
+    for (size_t index = 0; index < 4; index++) {
         catalog_answer answer = build_with_options(lists[index], TOKEN, hosts[index], NULL);
-        CHECK(expect_refusal(answer, "gitea@", lists[index]));
+        CHECK(expect_refusal(answer, "@", lists[index]));
         CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
         cJSON_Delete(answer.tree);
     }
@@ -432,26 +431,63 @@ static void an_unusable_token_refuses_the_whole_build_without_naming_it(void) {
     expect_no_request(server);
 }
 
-static void a_build_where_every_lookup_is_refused_authorization_writes_nothing(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/70", 401), EMPTY_ROUTE("/repositories/71", 403)};
-    http_fixture *server = start_server(routes, 2);
+static const char *const FAILING_IDS[] = {"github:70", "github:71", "github:72", "github:73", "github:74"};
+static const char *const FAILURE_NAMES[] = {"401", "403", "429", "not found", "500"};
+
+static char *list_of_one(const char *id) {
+    char *list = malloc(128);
+    snprintf(list, 128, "{\"format\":1,\"entries\":[{\"id\":\"%s\"}]}", id);
+    return list;
+}
+
+static void a_list_whose_every_entry_fails_to_look_up_is_refused_naming_the_reason(void) {
+    const http_route routes[] = {EMPTY_ROUTE("/repositories/70", 401), EMPTY_ROUTE("/repositories/71", 403),
+                                 EMPTY_ROUTE("/repositories/72", 429), EMPTY_ROUTE("/repositories/73", 404),
+                                 EMPTY_ROUTE("/repositories/74", 500)};
+    http_fixture *server = start_server(routes, 5);
     if (server == NULL) {
         return;
     }
-    const char *list = "{\"format\":1,\"entries\":[{\"id\":\"github:70\"},{\"id\":\"github:71\"}]}";
-    catalog_answer revoked = build_with_options(list, TOKEN, "github.com", NULL);
-    CHECK(expect_refusal(revoked, "github.com", "every entry refused"));
-    CHECK(contains(text_at(revoked.tree, "message"), "401") || contains(text_at(revoked.tree, "message"), "403"));
-    CHECK(!contains(text_at(revoked.tree, "message"), TOKEN) && !contains(text_at(revoked.tree, "fix"), TOKEN));
-    cJSON_Delete(revoked.tree);
+    for (size_t index = 0; index < 5; index++) {
+        char *list = list_of_one(FAILING_IDS[index]);
+        catalog_answer answer = build_with_options(list, TOKEN, "github.com", NULL);
+        CHECK(expect_refusal(answer, FAILING_IDS[index], FAILURE_NAMES[index]));
+        CHECK(contains(text_at(answer.tree, "message"), FAILURE_NAMES[index]) || strcmp(FAILURE_NAMES[index], "not found") == 0);
+        CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
+        CHECK(strcmp(FAILING_IDS[index], "github:72") != 0 || contains(text_at(answer.tree, "fix"), "rate limiting"));
+        CHECK(strcmp(FAILING_IDS[index], "github:70") != 0 || !contains(text_at(answer.tree, "fix"), "rate limiting"));
+        cJSON_Delete(answer.tree);
+        free(list);
+    }
+    catalog_answer not_found = build("{\"format\":1,\"entries\":[{\"id\":\"github:73\"}]}");
+    CHECK(expect_refusal(not_found, "not found", "an anonymous build of only a missing repo"));
+    cJSON_Delete(not_found.tree);
+    free(http_fixture_stop(server));
+}
+
+static void a_list_whose_every_entry_is_lost_to_the_network_is_refused(void) {
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "list", parsed("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}"));
+    cJSON_AddStringToObject(argument, "built", BUILT);
+    cJSON_AddStringToObject(argument, "apiBase", "http://127.0.0.1:1");
+    catalog_answer answer = call_catalog(runtime_marketplace_build, argument);
+    CHECK(expect_refusal(answer, "github:1", "an unreachable host"));
+    CHECK(contains(text_at(answer.tree, "message"), "cannot be looked up"));
+    cJSON_Delete(answer.tree);
+}
+
+static void a_previous_copy_holding_the_failed_entry_still_writes_it(void) {
+    const http_route routes[] = {EMPTY_ROUTE("/repositories/70", 401)};
+    http_fixture *server = start_server(routes, 1);
+    if (server == NULL) {
+        return;
+    }
     catalog_answer carried = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:70\"}]}", TOKEN, "github.com",
         PREVIOUS_COPY("{\"id\":\"github:70\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\"}"));
-    CHECK(expect_refusal(carried, "github.com", "a previous copy does not make the failure a success"));
+    CHECK(carried.status == SPISOR_STATUS_SUCCESS);
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(carried.tree, "copy"), "entries")) == 1);
     cJSON_Delete(carried.tree);
-    catalog_answer anonymous = build(list);
-    CHECK(expect_refusal(anonymous, "github.com", "every entry refused without a token"));
-    cJSON_Delete(anonymous.tree);
     free(http_fixture_stop(server));
 }
 
@@ -510,7 +546,7 @@ static void run_against_the_server(void) {
     a_duplicate_id_is_refused();
     an_id_that_does_not_resolve_is_skipped_and_the_rest_built();
     an_id_that_does_not_resolve_is_carried_over_from_the_previous_copy();
-    a_previous_copy_without_the_entry_leaves_it_skipped();
+    a_previous_copy_without_the_entry_leaves_a_list_of_only_it_refused();
     a_previous_that_is_not_a_copy_is_refused();
     a_local_id_is_refused();
     a_folder_id_builds_with_the_last_segment_as_its_name();
@@ -687,7 +723,9 @@ int main(void) {
     a_token_goes_to_an_instance_host_the_ids_name();
     a_token_without_its_host_is_refused_before_any_lookup();
     an_unusable_token_refuses_the_whole_build_without_naming_it();
-    a_build_where_every_lookup_is_refused_authorization_writes_nothing();
+    a_list_whose_every_entry_fails_to_look_up_is_refused_naming_the_reason();
+    a_list_whose_every_entry_is_lost_to_the_network_is_refused();
+    a_previous_copy_holding_the_failed_entry_still_writes_it();
     one_success_beside_a_refused_lookup_still_writes_and_skips();
     the_list_checker_follows_the_schema();
     the_copy_checker_follows_the_schema();
