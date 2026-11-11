@@ -8,6 +8,7 @@
 #include "host_references.h"
 #include "hosts_lock.h"
 #include "platform_key.h"
+#include "registry.h"
 #include "spisor/json_kind.h"
 
 #define HOST_ID_FIRST_FIX "pass the host id first: spisor-boot <host-id> <arguments>"

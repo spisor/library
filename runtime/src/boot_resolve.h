@@ -3,8 +3,6 @@
 
 #include "cJSON.h"
 
-#define RUNTIME_REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
-
 /**
  * {executable, version, directory} for the version host_id's boot hint names in cache, for platform;
  * NULL with *refusal set to its {message, fix}, or with *refusal NULL when memory runs out.

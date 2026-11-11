@@ -7,6 +7,8 @@
 #include "cJSON.h"
 #include "export.h"
 
+#define RUNTIME_REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
+
 typedef enum runtime_registry_answer {
     RUNTIME_REGISTRY_OK,
     RUNTIME_REGISTRY_ABSENT,

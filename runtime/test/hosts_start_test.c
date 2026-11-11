@@ -239,6 +239,54 @@ static void no_color_is_set_by_an_empty_no_color(void) {
     finish_base();
 }
 
+static void no_color_ignores_case_on_windows(void) {
+    start_world("start-no-color-case");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    cJSON *environment = environment_json();
+    cJSON_AddStringToObject(environment, "no_color", "1");
+    catalog_answer started = start_host_in(environment, 1);
+    expect_success(started, "lowercase no color");
+    CHECK(cJSON_IsTrue(value_at(started.tree, "noColor")) == RUNTIME_HOST_IS_WINDOWS);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(void) {
+    start_world("start-plugin-case");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    cJSON *run = parsed(RECORDED_RUN);
+    cJSON_AddStringToObject(run, "Koffi", "3.0.0");
+    char *text = cJSON_PrintUnformatted(run);
+    char references[1024];
+    snprintf(references, sizeof references, "{\"run\":%s,\"next\":{}}", text);
+    record_references(TEST_HOST, references);
+    free(runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
+    catalog_answer started = start_host(0);
+    expect_success(started, "plugin case");
+    expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Koffi\":\"3.0.0\"}", "case kept");
+    cJSON_free(text);
+    cJSON_Delete(run);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorded_run(void) {
+    start_world("start-host-case");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    record_a_previous_start();
+    cJSON *other = parsed("{\"Test-Host\":\"1.0.0\"}");
+    free(runtime_record_run(state, "other-host", other, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
+    cJSON_Delete(other);
+    catalog_answer started = start_host(0);
+    expect_success(started, "host case");
+    CHECK(is_false_at(started.tree, "reusedRecordedRun"));
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 static void the_timers_are_the_runtimes_own(void) {
     start_world("start-timers");
     register_test_host("1.0.0");
@@ -262,5 +310,8 @@ int main(void) {
     the_settings_come_from_the_registrations_home();
     no_color_is_set_by_an_empty_no_color();
     the_timers_are_the_runtimes_own();
+    no_color_ignores_case_on_windows();
+    a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept();
+    a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorded_run();
     return check_summary("hosts_start_test");
 }

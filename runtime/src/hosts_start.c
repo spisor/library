@@ -17,6 +17,7 @@
 #include "run_records.h"
 #include "spisor/json_kind.h"
 #include "updates_request.h"
+#include "user_home.h"
 #include "version_map.h"
 
 #define WRITABLE_STATE_FIX "check that SPISOR_STATE names a writable folder, then try again"
@@ -192,7 +193,7 @@ static int runs_live(const char *state, const char *host_id) {
     }
     int live = 0;
     for (const cJSON *run = runs->child; !live && run != NULL; run = run->next) {
-        live = cJSON_HasObjectItem(run, host_id);
+        live = cJSON_GetObjectItemCaseSensitive(run, host_id) != NULL;
     }
     cJSON_Delete(runs);
     return live;
@@ -207,7 +208,7 @@ static cJSON *unwritable_run_record(const char *host_id) {
 static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
     cJSON *plugins = cJSON_CreateObject();
     for (const cJSON *entry = run->child; plugins != NULL && entry != NULL; entry = entry->next) {
-        if (!cJSON_HasObjectItem(running, entry->string) && !runtime_map_set(plugins, entry->string, entry->valuestring)) {
+        if (cJSON_GetObjectItemCaseSensitive(running, entry->string) == NULL && !runtime_map_set(plugins, entry->string, entry->valuestring)) {
             cJSON_Delete(plugins);
             plugins = NULL;
         }
@@ -280,18 +281,26 @@ static cJSON *timers(void) {
     return timers;
 }
 
+/** Whether environment names NO_COLOR at all, empty included, as the OS matches variable names. */
+static int carries_no_color(const cJSON *environment) {
+    return runtime_environment_variable(environment, "NO_COLOR", RUNTIME_HOST_IS_WINDOWS) != NULL;
+}
+
+/** The answer of a start that planned plan, taking plan, which is freed when the answer cannot be built. */
 static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
     cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && cJSON_AddStringToObject(answer, "home", text_of(context->places, "home")) != NULL &&
+    if (answer == NULL) {
+        cJSON_Delete(plan);
+        return NULL;
+    }
+    int built = runtime_catalog_attach(answer, "plan", plan) &&
+                cJSON_AddStringToObject(answer, "home", text_of(context->places, "home")) != NULL &&
                 runtime_catalog_attach(answer, "places", cJSON_Duplicate(context->places, 1)) &&
                 runtime_catalog_attach(answer, "identity", cJSON_Duplicate(context->identity, 1)) &&
                 runtime_catalog_attach(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
-                runtime_catalog_attach(answer, "plan", plan) &&
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
                 runtime_catalog_attach(answer, "timers", timers()) &&
-                cJSON_AddBoolToObject(answer, "noColor",
-                                      cJSON_GetObjectItemCaseSensitive(context->argument.environment, "NO_COLOR") != NULL) !=
-                    NULL;
+                cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL;
     if (!built) {
         cJSON_Delete(answer);
         return NULL;

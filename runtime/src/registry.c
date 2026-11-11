@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "boot_resolve.h"
 #include "directory_tree.h"
 #include "hosts_lock.h"
 #include "file_presence.h"

@@ -20,4 +20,15 @@ const char *runtime_user_home_of(const cJSON *environment);
 /** The string environment names under name, matched exactly; NULL when absent or no string. */
 const char *runtime_environment_text(const cJSON *environment, const char *name);
 
+/** Whether left and right are equal when ASCII letters are compared ignoring case, as Windows compares names. */
+int runtime_equal_ignoring_ascii_case(const char *left, const char *right);
+
+/**
+ * The string environment holds under name as the OS named by windows matches variable names, or NULL.
+ *
+ * @implNote Windows environment names are case-insensitive, so Path and PATH are the same variable
+ * there; the first entry that matches answers, as Object.keys(environment).find does.
+ */
+const char *runtime_environment_variable(const cJSON *environment, const char *name, int windows);
+
 #endif
