@@ -76,16 +76,29 @@ static int32_t read_hint(const cJSON *argument, const char *cache, const char *h
     return runtime_catalog_answer(answer, out, out_len);
 }
 
-static int32_t write_hint(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
-                          size_t *out_len) {
-    const cJSON *libraries = cJSON_GetObjectItemCaseSensitive(argument, "libraries");
+static const char *platform_member(const cJSON *argument) {
+    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
+    if (platform == NULL) {
+        return runtime_platform_key();
+    }
+    return cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring) ? platform->valuestring : NULL;
+}
+
+static int is_version_map(const cJSON *value) {
+    if (!cJSON_IsObject(value)) {
+        return 0;
+    }
+    for (const cJSON *entry = value->child; entry != NULL; entry = entry->next) {
+        if (!cJSON_IsString(entry) || entry->valuestring[0] == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int32_t write_resolved_hint(const cJSON *argument, const char *cache, const char *host_id,
+                                   const cJSON *libraries, uint8_t **out, size_t *out_len) {
     const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
-    if (!cJSON_IsObject(libraries)) {
-        return runtime_catalog_refuse_argument("libraries", "an object of library id to version", out, out_len);
-    }
-    if (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0)) {
-        return runtime_catalog_refuse_argument("host", "the host bundle version, or leave it out", out, out_len);
-    }
     const char *state = nonempty_text(argument, "state");
     spisor_lock *guard = state == NULL ? NULL : runtime_hosts_lock(state);
     if (state != NULL && guard == NULL) {
@@ -101,12 +114,29 @@ static int32_t write_hint(const cJSON *argument, const char *cache, const char *
     return status;
 }
 
-static const char *platform_member(const cJSON *argument) {
-    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
-    if (platform == NULL) {
-        return runtime_platform_key();
+static int32_t write_hint(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
+                          size_t *out_len) {
+    const cJSON *versions = cJSON_GetObjectItemCaseSensitive(argument, "libraries");
+    const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
+    const char *platform = platform_member(argument);
+    if (!is_version_map(versions)) {
+        return runtime_catalog_refuse_argument("libraries", "an object of library id to version", out, out_len);
     }
-    return cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring) ? platform->valuestring : NULL;
+    if (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0)) {
+        return runtime_catalog_refuse_argument("host", "the host bundle version, or leave it out", out, out_len);
+    }
+    if (platform == NULL) {
+        return runtime_catalog_refuse_argument("platform", "a platform key such as linux-x64, or leave it out", out,
+                                               out_len);
+    }
+    char *problem = NULL;
+    cJSON *libraries = runtime_boot_hint_libraries(cache, versions, platform, &problem);
+    if (libraries == NULL) {
+        return refuse_problem(problem, RUNTIME_REINSTALL_FIX, out, out_len);
+    }
+    int32_t status = write_resolved_hint(argument, cache, host_id, libraries, out, out_len);
+    cJSON_Delete(libraries);
+    return status;
 }
 
 static int is_string_array(const cJSON *value) {

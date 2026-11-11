@@ -267,6 +267,7 @@ static cJSON *hint_call(const ecosystem *install, const char *host_id, const cha
     int built = versions != NULL && cJSON_AddStringToObject(call, "cache", install->run.cache) != NULL &&
                 cJSON_AddStringToObject(call, "hostId", host_id) != NULL &&
                 cJSON_AddStringToObject(call, "state", install->run.state) != NULL &&
+                cJSON_AddStringToObject(call, "platform", install->run.platform) != NULL &&
                 runtime_install_copy_into(call, "host", cJSON_GetObjectItemCaseSensitive(install->running, host_id));
     for (size_t index = 0; built && index < count; index++) {
         built = runtime_install_copy_into(versions, libraries[index], cJSON_GetObjectItemCaseSensitive(install->running, libraries[index]));

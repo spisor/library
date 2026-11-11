@@ -2529,7 +2529,19 @@
               "hint": {
                 "type": "object",
                 "properties": {
-                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "libraries": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "string" },
+                        "directory": { "type": "string" },
+                        "binary": { "type": "string" }
+                      },
+                      "required": ["version", "directory"],
+                      "additionalProperties": false
+                    }
+                  },
                   "host": { "type": "string" }
                 },
                 "required": ["libraries"],
@@ -2548,9 +2560,10 @@
             "properties": {
               "cache": { "type": "string", "minLength": 1 },
               "hostId": { "type": "string", "minLength": 1 },
-              "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+              "libraries": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
               "host": { "type": "string", "minLength": 1 },
-              "state": { "type": "string", "minLength": 1 }
+              "state": { "type": "string", "minLength": 1 },
+              "platform": { "type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+$" }
             },
             "required": ["cache", "hostId", "libraries"]
           },
@@ -2560,7 +2573,19 @@
               "hint": {
                 "type": "object",
                 "properties": {
-                  "libraries": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "libraries": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "string" },
+                        "directory": { "type": "string" },
+                        "binary": { "type": "string" }
+                      },
+                      "required": ["version", "directory"],
+                      "additionalProperties": false
+                    }
+                  },
                   "host": { "type": "string" }
                 },
                 "required": ["libraries"],

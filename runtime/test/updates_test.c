@@ -245,7 +245,7 @@ static void it_keeps_what_runs_now_and_schedules_the_libraries_the_next_start_lo
                       "{\"run\":{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},\"next\":{"
                       "\"runtime\":\"0.2.0\"}}",
                       "libraries references");
-    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
                 "libraries hint");
     remove_run_record(started);
     cJSON_Delete(started.tree);
@@ -274,14 +274,14 @@ static void it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_
     write_catalog();
     record_references(SPISOR_HOST, "{\"run\":{},\"next\":{\"spisor-host\":\"2.0.0\"}}");
     catalog_answer waiting = apply_booted();
-    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}",
                 "not installed yet");
     remove_run_record(waiting);
     cJSON_Delete(waiting.tree);
 
     mark_installed("bundles", SPISOR_HOST, "2.0.0");
     catalog_answer installed = apply_booted();
-    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"2.0.0\"}",
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"2.0.0\"}",
                 "installed intact");
     remove_run_record(installed);
     cJSON_Delete(installed.tree);
@@ -309,7 +309,8 @@ static void list_both_hosts(void) {
     write_catalog();
     install_listed(LOADER, "1.0.0");
     install_listed(SPISOR_HOST, "1.0.0");
-    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"1.0.0\"}");
+    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"},"
+                            "\"koffi\":{\"version\":\"1.0.0\",\"directory\":\"k\"}},\"host\":\"1.0.0\"}");
     record_references(LOADER, "{\"run\":{\"" LOADER "\":\"1.0.0\",\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{}}");
 }
 
@@ -324,7 +325,7 @@ static void it_schedules_a_newer_loader_and_spisor_host_for_the_next_start_which
     runtime_host_references recorded = runtime_read_host_references(state, LOADER);
     expect_json(recorded.next, "{\"" LOADER "\":\"2.0.0\",\"" SPISOR_HOST "\":\"2.0.0\"}", "both scheduled");
     runtime_free_host_references(&recorded);
-    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"2.0.0\"}",
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"1.0.0\"},\"host\":\"2.0.0\"}",
                 "spisor-host hinted, its libraries kept");
 
     catalog_answer started = apply_plain(LOADER, "{}");
@@ -647,7 +648,7 @@ static void it_rolls_a_switched_host_back_to_the_version_it_switched_from(void) 
     write_catalog();
     install_listed(SPISOR_HOST, "1.0.0");
     install_listed(SPISOR_HOST, "2.0.0");
-    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"2.0.0\"}");
+    write_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"}},\"host\":\"2.0.0\"}");
     record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
     catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
@@ -657,7 +658,7 @@ static void it_rolls_a_switched_host_back_to_the_version_it_switched_from(void) 
                       "{\"run\":{\"" SPISOR_HOST "\":\"1.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                       "\":\"2.0.0\"},\"rolledBackFrom\":{\"" SPISOR_HOST "\":\"2.0.0\"}}",
                       "rolled references");
-    expect_hint(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "rolled hint");
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "rolled hint");
     cJSON_Delete(rolled.tree);
     catalog_answer resolved = resolve_boot(SPISOR_HOST, NULL);
     expect_executable(resolved, SPISOR_HOST, "1.0.0", "rolled boots");

@@ -28,6 +28,15 @@ static int add_version_map(cJSON *referenced, const cJSON *versions) {
     return added;
 }
 
+static int add_hinted_libraries(cJSON *referenced, const cJSON *libraries) {
+    int added = 1;
+    for (const cJSON *library = libraries->child; added && library != NULL; library = library->next) {
+        const cJSON *version = cJSON_GetObjectItemCaseSensitive(library, "version");
+        added = add_reference(referenced, library->string, version->valuestring);
+    }
+    return added;
+}
+
 static cJSON *read_entry(const char *folder, const char *name) {
     const char *segments[2] = {folder, name};
     char *path = runtime_cache_joined(segments, 2);
@@ -44,7 +53,7 @@ static int add_hint(cJSON *referenced, const char *hosts, const char *name) {
     int added = 1;
     if (hint != NULL) {
         const cJSON *host = cJSON_GetObjectItemCaseSensitive(hint, "host");
-        added = add_version_map(referenced, cJSON_GetObjectItemCaseSensitive(hint, "libraries"));
+        added = add_hinted_libraries(referenced, cJSON_GetObjectItemCaseSensitive(hint, "libraries"));
         if (added && cJSON_IsString(host)) {
             char *id = malloc(id_length + 1);
             added = id != NULL;

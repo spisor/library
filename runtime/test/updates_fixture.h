@@ -15,6 +15,7 @@
 #include "catalog_url.h"
 #include "check.h"
 #include "directory_tree.h"
+#include "hint_fixture.h"
 #include "host_references.h"
 #include "hosts.h"
 #include "paths.h"
@@ -280,6 +281,19 @@ static inline void expect_hint(const char *host, const char *expected_json, cons
     char rest[512];
     snprintf(rest, sizeof rest, "hosts/%s.json", host);
     expect_json_in(cache, rest, expected_json, label);
+}
+
+/** Whether host's hint names the libraries at the versions expected_json pins, with its host, whatever their folders. */
+static inline void expect_hinted_versions(const char *host, const char *expected_json, const char *label) {
+    char rest[512];
+    snprintf(rest, sizeof rest, "hosts/%s.json", host);
+    char *text = text_in(cache, rest);
+    cJSON *recorded = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    cJSON *versions = hinted_versions(recorded);
+    expect_json(versions, expected_json, label);
+    cJSON_Delete(versions);
+    cJSON_Delete(recorded);
+    free(text);
 }
 
 /** Registers host with the least a registration holds, unless it is registered or no plain file name. */

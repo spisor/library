@@ -1,6 +1,9 @@
 #include "updates_fixture.h"
 
+#include "cache_place.h"
 #include "hosts_lock.h"
+#include "platform_key.h"
+#include "spisor/json_write.h"
 
 #if !defined(_WIN32)
 #include <time.h>
@@ -8,6 +11,7 @@
 
 #define HOST "spisor-host"
 #define LIBRARIES "{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"
+#define DECLARATION "library.json"
 
 static catalog_answer read_hint(const char *host) {
     cJSON *argument = cJSON_CreateObject();
@@ -16,7 +20,8 @@ static catalog_answer read_hint(const char *host) {
     return call_catalog(runtime_boot_read, argument);
 }
 
-static catalog_answer write_hint_through_boot(const char *host, const char *libraries_json, const char *version) {
+static catalog_answer write_hint_on(const char *host, const char *libraries_json, const char *version,
+                                    const char *platform) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "hostId", host);
@@ -24,7 +29,68 @@ static catalog_answer write_hint_through_boot(const char *host, const char *libr
     if (version != NULL) {
         cJSON_AddStringToObject(argument, "host", version);
     }
+    if (platform != NULL) {
+        cJSON_AddStringToObject(argument, "platform", platform);
+    }
     return call_catalog(runtime_boot_write, argument);
+}
+
+static catalog_answer write_hint_through_boot(const char *host, const char *libraries_json, const char *version) {
+    return write_hint_on(host, libraries_json, version, NULL);
+}
+
+static char *library_folder(const char *id, const char *version, const char *platform) {
+    const char *segments[4] = {"libraries", id, version, platform};
+    return runtime_cache_resolve(cache, segments, 4);
+}
+
+static void place_library(const char *id, const char *version, const char *platform, const char *const *files,
+                          size_t count) {
+    char *folder = library_folder(id, version, platform);
+    for (size_t index = 0; index < count; index++) {
+        write_in(folder, files[index], files[index]);
+    }
+    free(folder);
+}
+
+/** The entry a hint records for id at version on platform: its folder, and binary_name inside it unless NULL. */
+static cJSON *hinted_entry(const char *id, const char *version, const char *platform, const char *binary_name) {
+    char *folder = library_folder(id, version, platform);
+    cJSON *entry = cJSON_CreateObject();
+    cJSON_AddStringToObject(entry, "version", version);
+    cJSON_AddStringToObject(entry, "directory", folder);
+    if (binary_name != NULL) {
+        const char *segments[2] = {folder, binary_name};
+        char *binary = runtime_cache_resolve(cache, segments, 2);
+        cJSON_AddStringToObject(entry, "binary", binary);
+        free(binary);
+    }
+    free(folder);
+    return entry;
+}
+
+/** The hint a write of versions_json on this machine's platform records, with no library declared, as JSON text. */
+static char *undeclared_hint(const char *versions_json, const char *host) {
+    cJSON *versions = parsed(versions_json);
+    cJSON *hint = cJSON_CreateObject();
+    cJSON *libraries = cJSON_AddObjectToObject(hint, "libraries");
+    for (const cJSON *entry = versions->child; entry != NULL; entry = entry->next) {
+        cJSON_AddItemToObject(libraries, entry->string,
+                              hinted_entry(entry->string, entry->valuestring, runtime_platform_key(), NULL));
+    }
+    if (host != NULL) {
+        cJSON_AddStringToObject(hint, "host", host);
+    }
+    char *text = cJSON_PrintUnformatted(hint);
+    cJSON_Delete(hint);
+    cJSON_Delete(versions);
+    return text;
+}
+
+static void expect_entry(const cJSON *tree, const char *id, const cJSON *expected, const char *label) {
+    char *text = cJSON_PrintUnformatted(expected);
+    expect_json(value_at(tree, id), text, label);
+    cJSON_free(text);
 }
 
 static void install_host(const char *version) {
@@ -37,13 +103,19 @@ static void it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back(voi
     catalog_answer written = write_hint_through_boot(HOST, LIBRARIES, "1.0.0");
     expect_success(written, "round trip write");
     cJSON_Delete(written.tree);
-    expect_text_in(cache, "hosts/spisor-host.json",
-                   "{\n  \"libraries\": {\n    \"runtime\": \"0.1.0\",\n    \"koffi\": \"2.0.0\"\n  },\n  \"host\": "
-                   "\"1.0.0\"\n}\n",
-                   "round trip text");
+    char *expected = undeclared_hint(LIBRARIES, "1.0.0");
+    cJSON *expected_tree = parsed(expected);
+    char *pretty = spisor_json_stringify_pretty(expected_tree);
+    char *text = malloc(strlen(pretty) + 2);
+    snprintf(text, strlen(pretty) + 2, "%s\n", pretty);
+    expect_text_in(cache, "hosts/spisor-host.json", text, "round trip text");
     catalog_answer read = read_hint(HOST);
-    expect_member_json(read.tree, "hint", "{\"libraries\":" LIBRARIES ",\"host\":\"1.0.0\"}", "round trip read");
+    expect_member_json(read.tree, "hint", expected, "round trip read");
     cJSON_Delete(read.tree);
+    free(text);
+    free(pretty);
+    cJSON_Delete(expected_tree);
+    cJSON_free(expected);
     finish_base();
 }
 
@@ -51,7 +123,112 @@ static void it_keeps_the_recorded_host_version_when_a_write_names_none(void) {
     start_base("hint-keeps-host");
     cJSON_Delete(write_hint_through_boot(HOST, LIBRARIES, "1.0.0").tree);
     cJSON_Delete(write_hint_through_boot(HOST, "{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"}", NULL).tree);
-    expect_hint(HOST, "{\"libraries\":{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"},\"host\":\"1.0.0\"}", "keeps host");
+    char *expected = undeclared_hint("{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"}", "1.0.0");
+    expect_hint(HOST, expected, "keeps host");
+    cJSON_free(expected);
+    finish_base();
+}
+
+static void it_records_the_binary_of_each_hinted_library(void) {
+    start_base("hint-binaries");
+    const char *runtime_files[2] = {DECLARATION, "libruntime.so"};
+    const char *forebay_files[2] = {DECLARATION, "libforebay.so"};
+    place_library("runtime", "0.1.0", "linux-x64", runtime_files, 2);
+    place_library("forebay-library", "0.1.2", "linux-x64", forebay_files, 2);
+    catalog_answer written =
+        write_hint_on(HOST, "{\"runtime\":\"0.1.0\",\"forebay-library\":\"0.1.2\"}", "1.0.0", "linux-x64");
+    expect_success(written, "binaries write");
+    cJSON *runtime = hinted_entry("runtime", "0.1.0", "linux-x64", "libruntime.so");
+    cJSON *forebay = hinted_entry("forebay-library", "0.1.2", "linux-x64", "libforebay.so");
+    expect_entry(written.tree, "hint/libraries/runtime", runtime, "runtime binary");
+    expect_entry(written.tree, "hint/libraries/forebay-library", forebay, "forebay binary");
+    cJSON_Delete(forebay);
+    cJSON_Delete(runtime);
+    cJSON_Delete(written.tree);
+    finish_base();
+}
+
+static void expect_binary_on(const char *platform, const char *binary_name) {
+    const char *files[4] = {DECLARATION, "runtime.dll", "libruntime.dylib", "libruntime.so"};
+    place_library("runtime", "0.1.0", platform, files, 4);
+    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", NULL, platform);
+    expect_success(written, platform);
+    cJSON *expected = hinted_entry("runtime", "0.1.0", platform, binary_name);
+    expect_entry(written.tree, "hint/libraries/runtime", expected, platform);
+    cJSON_Delete(expected);
+    cJSON_Delete(written.tree);
+}
+
+static void it_names_the_binary_by_the_platform_suffix(void) {
+    start_base("hint-suffix");
+    expect_binary_on("win32-x64", "runtime.dll");
+    expect_binary_on("darwin-arm64", "libruntime.dylib");
+    expect_binary_on("linux-x64", "libruntime.so");
+    finish_base();
+}
+
+static void expect_refused_folder(const char *const *files, size_t count, const char *label) {
+    place_library("runtime", "0.1.0", "linux-x64", files, count);
+    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", "1.0.0", "linux-x64");
+    char *folder = library_folder("runtime", "0.1.0", "linux-x64");
+    expect_refusal(written, folder, label);
+    expect_fix(written, REINSTALL_FIX, label);
+    CHECK(!exists_in(cache, "hosts/spisor-host.json"));
+    cJSON_Delete(written.tree);
+    free(folder);
+}
+
+static void it_refuses_a_library_folder_with_no_binary(void) {
+    start_base("hint-no-binary");
+    const char *files[3] = {DECLARATION, "runtime.dll", "notes.txt"};
+    expect_refused_folder(files, 3, "no binary");
+    finish_base();
+}
+
+static void it_refuses_a_library_folder_with_two_binaries(void) {
+    start_base("hint-two-binaries");
+    const char *files[3] = {DECLARATION, "libruntime.so", "libhelper.so"};
+    expect_refused_folder(files, 3, "two binaries");
+    finish_base();
+}
+
+static void it_records_only_the_directory_of_a_library_with_no_declaration(void) {
+    start_base("hint-undeclared");
+    const char *files[2] = {"lib/native.node", "package.json"};
+    place_library("koffi", "2.16.3", "linux-x64", files, 2);
+    catalog_answer written = write_hint_on(HOST, "{\"koffi\":\"2.16.3\"}", "1.0.0", "linux-x64");
+    expect_success(written, "undeclared write");
+    cJSON *expected = hinted_entry("koffi", "2.16.3", "linux-x64", NULL);
+    expect_entry(written.tree, "hint/libraries/koffi", expected, "directory only");
+    cJSON_Delete(expected);
+    cJSON_Delete(written.tree);
+    finish_base();
+}
+
+static void it_reads_back_what_it_wrote(void) {
+    start_base("hint-read-back");
+    const char *runtime_files[2] = {DECLARATION, "runtime.dll"};
+    const char *koffi_files[1] = {"lib/native.node"};
+    place_library("runtime", "0.1.0", "win32-x64", runtime_files, 2);
+    place_library("koffi", "2.16.3", "win32-x64", koffi_files, 1);
+    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\"}", "1.0.0", "win32-x64");
+    expect_success(written, "read back write");
+    catalog_answer read = read_hint(HOST);
+    char *expected = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(written.tree, "hint"));
+    CHECK(value_at(written.tree, "hint/libraries/runtime/binary") != NULL);
+    expect_member_json(read.tree, "hint", expected, "read back");
+    expect_hint(HOST, expected, "read back file");
+    cJSON_free(expected);
+    cJSON_Delete(read.tree);
+    cJSON_Delete(written.tree);
+    finish_base();
+}
+
+static void it_refuses_a_platform_that_is_no_platform_key(void) {
+    start_base("hint-bad-platform");
+    catalog_answer written = write_hint_on(HOST, LIBRARIES, "1.0.0", "Linux_x64");
+    expect_refusal(written, "platform", "bad platform");
+    cJSON_Delete(written.tree);
     finish_base();
 }
 
@@ -72,11 +249,33 @@ static void it_reads_no_hint_when_there_is_none_or_it_is_not_readable_json(void)
     finish_base();
 }
 
-static void it_reads_only_the_string_entries_of_the_libraries_and_a_string_host(void) {
-    start_base("hint-strings");
-    write_hint(HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"bad\":2},\"host\":3}");
+static void expect_no_hint_in(const char *recorded, const char *label) {
+    write_hint(HOST, recorded);
     catalog_answer read = read_hint(HOST);
-    expect_member_json(read.tree, "hint", "{\"libraries\":{\"runtime\":\"0.1.0\"}}", "strings only");
+    expect_success(read, label);
+    if (read.tree == NULL || cJSON_GetObjectItemCaseSensitive(read.tree, "hint") != NULL) {
+        fprintf(stderr, "%s: expected no hint\n", label);
+        check_failures++;
+    }
+    cJSON_Delete(read.tree);
+}
+
+static void it_reads_a_hint_whose_library_entry_is_not_a_version_and_directory_as_no_hint(void) {
+    start_base("hint-entry-shape");
+    expect_no_hint_in("{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "a version string");
+    expect_no_hint_in("{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\"}}}", "no directory");
+    expect_no_hint_in("{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"d\",\"binary\":2}}}",
+                      "a binary that is no text");
+    expect_no_hint_in("{\"libraries\":[]}", "libraries no object");
+    finish_base();
+}
+
+static void it_reads_a_host_that_is_no_text_as_none(void) {
+    start_base("hint-host-shape");
+    write_hint(HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"d\"}},\"host\":3}");
+    catalog_answer read = read_hint(HOST);
+    expect_member_json(read.tree, "hint", "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"d\"}}}",
+                       "host dropped");
     cJSON_Delete(read.tree);
     finish_base();
 }
@@ -238,7 +437,8 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     mark_installed("libraries", "runtime", "0.1.0");
     mark_installed("libraries", "runtime", "0.2.0");
     mark_installed("libraries", "koffi", "2.0.0");
-    write_hint(HOST, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"},\"host\":\"2.0.0\"}");
+    write_hint(HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"},"
+                     "\"koffi\":{\"version\":\"2.0.0\",\"directory\":\"k\"}},\"host\":\"2.0.0\"}");
     record_references(HOST, "{\"run\":{},\"next\":{}}");
     catalog_answer swept = sweep_cache();
     expect_success(swept, "sweep");
@@ -311,7 +511,9 @@ static void it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free(vo
 #endif
     expect_success(job.answer, "locked write");
     cJSON_Delete(job.answer.tree);
-    expect_hint(HOST, "{\"libraries\":" LIBRARIES ",\"host\":\"1.0.0\"}", "written once the lock was free");
+    char *expected = undeclared_hint(LIBRARIES, "1.0.0");
+    expect_hint(HOST, expected, "written once the lock was free");
+    cJSON_free(expected);
     finish_base();
 }
 
@@ -319,7 +521,15 @@ int main(void) {
     it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back();
     it_keeps_the_recorded_host_version_when_a_write_names_none();
     it_reads_no_hint_when_there_is_none_or_it_is_not_readable_json();
-    it_reads_only_the_string_entries_of_the_libraries_and_a_string_host();
+    it_reads_a_hint_whose_library_entry_is_not_a_version_and_directory_as_no_hint();
+    it_reads_a_host_that_is_no_text_as_none();
+    it_records_the_binary_of_each_hinted_library();
+    it_names_the_binary_by_the_platform_suffix();
+    it_refuses_a_library_folder_with_no_binary();
+    it_refuses_a_library_folder_with_two_binaries();
+    it_records_only_the_directory_of_a_library_with_no_declaration();
+    it_reads_back_what_it_wrote();
+    it_refuses_a_platform_that_is_no_platform_key();
     it_refuses_a_host_id_that_would_record_its_libraries_outside_the_hosts_folder();
 
     it_resolves_the_executable_of_the_version_the_hint_names_with_the_arguments();

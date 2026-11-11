@@ -7,6 +7,7 @@
 
 #include "boot.h"
 #include "boot_hint.h"
+#include "hint_fixture.h"
 #include "cache.h"
 #include "catalog_time.h"
 #include "child_process.h"
@@ -65,7 +66,9 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     expect_member(references, "run",
                   "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\"}", "run");
     cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
-    expect_json(hint, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "boot hint");
+    cJSON *versions = hinted_versions(hint);
+    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "boot hint");
+    cJSON_Delete(versions);
     cJSON_Delete(hint);
     cJSON_Delete(references);
     cJSON_free(source_json);
@@ -136,7 +139,9 @@ static void honours_a_pin_on_the_runtime_and_records_it_for_the_next_start(void)
     cJSON *report = install_defaults(&base, "");
     expect_member(report, "installed", "[{\"id\":\"runtime\",\"version\":\"0.0.9\"}]", "pinned runtime");
     cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
-    expect_member(hint, "libraries", "{\"runtime\":\"0.0.9\"}", "hinted runtime");
+    cJSON *versions = hinted_versions(hint);
+    expect_member(versions, "libraries", "{\"runtime\":\"0.0.9\"}", "hinted runtime");
+    cJSON_Delete(versions);
     cJSON_Delete(hint);
     cJSON_Delete(report);
     finish_install_base(&base);
@@ -471,7 +476,9 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
           spisor_file_exists(text_at(javascript, "executable")));
     cJSON *hint = json_in(base.cache, "hosts/javascript-host.json");
-    expect_json(hint, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
+    cJSON *versions = hinted_versions(hint);
+    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
+    cJSON_Delete(versions);
     cJSON_Delete(hint);
     runtime_install_use_runtime_build(NULL, NULL, NULL);
     cJSON_Delete(report);
