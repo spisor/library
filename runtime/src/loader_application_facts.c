@@ -69,6 +69,35 @@ static void check_own_login(issue_list *list, const cJSON *own_login) {
     check_state_file(list, member(own_login, "stateFile"));
 }
 
+#define TIER_PLACEHOLDER "{{TIER}}"
+
+static void check_model_variable(issue_list *list, const cJSON *variables, const char *name, int names_a_tier) {
+    const cJSON *declared = member(variables, name);
+    if (declared == NULL) {
+        return;
+    }
+    char path[PATH_LIMIT];
+    snprintf(path, sizeof path, "/application/proxy/modelVariables/%s", name);
+    if (!is_text(declared)) {
+        runtime_loader_add_issue(list, path, "the variable name is not a non-empty string", "declare the variable name, or leave the member out");
+    } else if (names_a_tier && strstr(declared->valuestring, TIER_PLACEHOLDER) == NULL) {
+        runtime_loader_add_issue(list, path, "the variable name does not stand for a tier", "include " TIER_PLACEHOLDER " where the tier key in upper case goes");
+    }
+}
+
+static void check_model_variables(issue_list *list, const cJSON *variables) {
+    if (variables == NULL) {
+        return;
+    }
+    if (!cJSON_IsObject(variables)) {
+        runtime_loader_add_issue(list, "/application/proxy/modelVariables", "modelVariables is not an object", "declare tierModel, tierModelName and model as needed, or leave modelVariables out");
+        return;
+    }
+    check_model_variable(list, variables, "tierModel", 1);
+    check_model_variable(list, variables, "tierModelName", 1);
+    check_model_variable(list, variables, "model", 0);
+}
+
 static void check_proxy(issue_list *list, const cJSON *proxy) {
     if (proxy == NULL) {
         return;
@@ -86,6 +115,7 @@ static void check_proxy(issue_list *list, const cJSON *proxy) {
         runtime_loader_add_issue(list, "/application/proxy/placeholder", "placeholder is not an object", "declare {variable, value}");
     }
     check_own_login(list, member(proxy, "ownLogin"));
+    check_model_variables(list, member(proxy, "modelVariables"));
 }
 
 static int starts_at_a_root(const char *text) {

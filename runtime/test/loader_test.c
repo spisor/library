@@ -455,7 +455,9 @@ static void refuses_an_installed_bundle_that_carries_no_standard(void) {
 static const char *VALID_FACTS =
     "{\"proxy\": {\"baseUrlVariable\": \"ACME_URL\", \"placeholder\": {\"variable\": \"ACME_TOKEN\", \"value\": \"none\"},"
     " \"ownLogin\": {\"variables\": [\"ACME_KEY\"], \"stateFile\": {\"directoryVariable\": \"ACME_DIR\","
-    " \"name\": \".acme.json\", \"member\": \"account\"}}},"
+    " \"name\": \".acme.json\", \"member\": \"account\"}},"
+    " \"modelVariables\": {\"tierModel\": \"ACME_{{TIER}}_MODEL\", \"tierModelName\": \"ACME_{{TIER}}_NAME\","
+    " \"model\": \"ACME_MODEL\"}},"
     " \"entry\": {\"runsOnJavascriptHost\": false, \"directories\": [\"{{entryRoot}}\", \"{{home}}\"],"
     " \"files\": [{\"path\": \"{{entryRoot}}/a.json\", \"json\": {\"command\": \"{{boot}}\"}},"
     " {\"path\": \"{{home}}/b.js\", \"text\": \"const a = {{json:hint}}; `${a}`\"}],"
@@ -586,6 +588,54 @@ static void accepts_own_login_with_no_state_file(void) {
     check_paths(standard, "", "an own login with no state file");
 }
 
+static void accepts_declared_model_variables(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON *variables = cJSON_GetObjectItemCaseSensitive(proxy_of(standard), "modelVariables");
+    CHECK(cJSON_IsObject(variables));
+    check_paths(standard, "", "declared model variables");
+}
+
+static void accepts_a_proxy_declaring_no_model_variables(void) {
+    cJSON *standard = standard_with_facts();
+    cJSON_DeleteItemFromObject(proxy_of(standard), "modelVariables");
+    check_paths(standard, "", "a proxy with no model variables");
+    cJSON *partial = standard_with_facts();
+    cJSON *variables = cJSON_GetObjectItemCaseSensitive(proxy_of(partial), "modelVariables");
+    cJSON_DeleteItemFromObject(variables, "tierModel");
+    cJSON_DeleteItemFromObject(variables, "tierModelName");
+    check_paths(partial, "", "a proxy declaring only the default model variable");
+}
+
+static void refuses_a_tier_model_variable_without_the_tier_placeholder(void) {
+    const char *members[] = {"tierModel", "tierModelName"};
+    for (size_t index = 0; index < 2; index++) {
+        cJSON *standard = standard_with_facts();
+        cJSON_ReplaceItemInObject(cJSON_GetObjectItemCaseSensitive(proxy_of(standard), "modelVariables"), members[index],
+                                  cJSON_CreateString("ACME_FIXED"));
+        char expected[96];
+        snprintf(expected, sizeof expected, "/application/proxy/modelVariables/%s", members[index]);
+        cJSON *issues = issues_of(standard);
+        const cJSON *issue = cJSON_GetArrayItem(issues, 0);
+        const char *path = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(issue, "path"));
+        const char *fix = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(issue, "fix"));
+        CHECK(cJSON_GetArraySize(issues) == 1 && path != NULL && strcmp(path, expected) == 0);
+        CHECK(fix != NULL && strstr(fix, "{{TIER}}") != NULL);
+        cJSON_Delete(issues);
+    }
+}
+
+static void refuses_a_blank_model_variable(void) {
+    const char *members[] = {"tierModel", "tierModelName", "model"};
+    for (size_t index = 0; index < 3; index++) {
+        cJSON *standard = standard_with_facts();
+        cJSON_ReplaceItemInObject(cJSON_GetObjectItemCaseSensitive(proxy_of(standard), "modelVariables"), members[index],
+                                  cJSON_CreateString(""));
+        char expected[96];
+        snprintf(expected, sizeof expected, "/application/proxy/modelVariables/%s", members[index]);
+        check_paths(standard, expected, "a blank model variable");
+    }
+}
+
 int main(void) {
     accepts_declared_proxy_and_entry_facts();
     accepts_an_application_declaring_neither_proxy_nor_entry();
@@ -599,6 +649,10 @@ int main(void) {
     refuses_an_entry_with_no_javascript_host_answer();
     refuses_blank_proxy_names_naming_each();
     accepts_own_login_with_no_state_file();
+    accepts_declared_model_variables();
+    accepts_a_proxy_declaring_no_model_variables();
+    refuses_a_tier_model_variable_without_the_tier_placeholder();
+    refuses_a_blank_model_variable();
     accepts_a_complete_standard();
     refuses_an_application_with_no_binary_naming_the_member();
     refuses_a_candidate_neither_home_rooted_nor_absolute_naming_its_index();
