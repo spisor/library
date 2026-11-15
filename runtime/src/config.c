@@ -11,8 +11,10 @@
 #include "hosts_lock.h"
 #include "merge.h"
 #include "paths.h"
+#include "runtime/config.h"
 #include "secrets.h"
 #include "segment.h"
+#include "value_tree.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
 #include "spisor/json_kind.h"
@@ -320,6 +322,26 @@ static int32_t locate_or_fail(const config_request *request, config_targets *tar
     return status == LOCATED ? SPISOR_STATUS_SUCCESS : out_of_memory(out, out_len);
 }
 
+#if defined(_MSC_VER)
+#define CONFIG_THREAD_LOCAL __declspec(thread)
+#else
+#define CONFIG_THREAD_LOCAL _Thread_local
+#endif
+
+/** @implNote Spike only: the definition takes the answer tree here instead of the printed answer. */
+static CONFIG_THREAD_LOCAL cJSON **captured_answer = NULL;
+
+/** Answers result, which it takes, as printed JSON, or into captured_answer while a definition call runs. */
+static int32_t config_succeed(cJSON *result, uint8_t **out, size_t *out_len) {
+    if (captured_answer != NULL) {
+        *captured_answer = result;
+        return SPISOR_STATUS_SUCCESS;
+    }
+    int32_t status = spisor_succeed(result, out, out_len);
+    cJSON_Delete(result);
+    return status;
+}
+
 static int32_t answer_member(const char *member, cJSON *value, uint8_t **out, size_t *out_len) {
     cJSON *result = cJSON_CreateObject();
     if (result == NULL || (value != NULL && !cJSON_AddItemToObject(result, member, value))) {
@@ -327,9 +349,7 @@ static int32_t answer_member(const char *member, cJSON *value, uint8_t **out, si
         cJSON_Delete(result);
         return out_of_memory(out, out_len);
     }
-    int32_t status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+    return config_succeed(result, out, out_len);
 }
 
 static int has_empty_segment(const char *key) {
@@ -829,9 +849,7 @@ static int32_t answer_secret(int32_t status, uint8_t **out, size_t *out_len) {
         cJSON_Delete(result);
         return out_of_memory(out, out_len);
     }
-    status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+    return config_succeed(result, out, out_len);
 }
 
 static int32_t write_secret_setting(const runtime_secret_place *place, const config_request *request, const char *key,
@@ -981,4 +999,212 @@ RUNTIME_EXPORT int32_t runtime_settings_all(const uint8_t *in, size_t in_len, ui
 
 RUNTIME_EXPORT int32_t runtime_settings_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
     return dispatch_ecosystem(in, in_len, config_set, out, out_len);
+}
+
+typedef struct typed_set_trees {
+    cJSON *argument;
+    cJSON *names;
+    cJSON *config;
+    cJSON *settings;
+} typed_set_trees;
+
+static void free_typed_set_trees(typed_set_trees *trees) {
+    cJSON_Delete(trees->argument);
+    cJSON_Delete(trees->names);
+    cJSON_Delete(trees->config);
+    cJSON_Delete(trees->settings);
+}
+
+static const char *const layer_names[] = {NULL, "application", "portable"};
+
+static int has_room(uint32_t size, size_t first_shape) {
+    return size >= first_shape;
+}
+
+static spisor_status typed_refusal(spisor_refusal *refusal, const char *detail, const char *fix, spisor_status status) {
+    if (refusal == NULL || !has_room(refusal->size, sizeof(spisor_refusal)) || refusal->storage != NULL) {
+        return status;
+    }
+    size_t detail_length = strlen(detail) + 1;
+    size_t fix_length = fix == NULL ? 0 : strlen(fix) + 1;
+    char *storage = malloc(detail_length + fix_length);
+    if (storage == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    memcpy(storage, detail, detail_length);
+    if (fix != NULL) {
+        memcpy(storage + detail_length, fix, fix_length);
+    }
+    refusal->detail = storage;
+    refusal->fix = fix == NULL ? NULL : storage + detail_length;
+    refusal->storage = storage;
+    return status;
+}
+
+static cJSON *optional_value_tree(const spisor_value *value, int *malformed) {
+    *malformed = 0;
+    return value == NULL ? NULL : runtime_tree_of_value(value, malformed);
+}
+
+static int add_declaration(cJSON *tree, const runtime_setting_declaration *declaration) {
+    cJSON *entry = cJSON_CreateObject();
+    int built = entry != NULL &&
+                (declaration->type == NULL || cJSON_AddStringToObject(entry, "type", declaration->type) != NULL) &&
+                (declaration->layer == RUNTIME_LAYER_DECLARED ||
+                 cJSON_AddStringToObject(entry, "layer", layer_names[declaration->layer]) != NULL);
+    if (!built || !cJSON_AddItemToObject(tree, declaration->key, entry)) {
+        cJSON_Delete(entry);
+        return 0;
+    }
+    return 1;
+}
+
+static cJSON *declarations_tree(const runtime_config_set_argument *argument) {
+    cJSON *tree = cJSON_CreateObject();
+    for (size_t index = 0; tree != NULL && index < argument->setting_count; index++) {
+        if (!add_declaration(tree, &argument->settings[index])) {
+            cJSON_Delete(tree);
+            return NULL;
+        }
+    }
+    return tree;
+}
+
+static int add_places(cJSON *argument, const runtime_secret_places *places) {
+    cJSON *tree = cJSON_AddObjectToObject(argument, "places");
+    return tree != NULL && cJSON_AddStringToObject(tree, "secretsFile", places->secrets_file) != NULL &&
+           cJSON_AddBoolToObject(tree, "forceFileStore", places->force_file_store != 0) != NULL;
+}
+
+/** The trees config_set reads, from the typed argument; 0 with *malformed set for a value that is no value. */
+static int typed_set_trees_of(const runtime_config_set_argument *argument, typed_set_trees *trees, int *malformed) {
+    int names_malformed = 0;
+    int config_malformed = 0;
+    memset(trees, 0, sizeof *trees);
+    trees->argument = cJSON_CreateObject();
+    cJSON *value = runtime_tree_of_value(argument->value, malformed);
+    if (value == NULL || trees->argument == NULL || !cJSON_AddItemToObject(trees->argument, "value", value)) {
+        cJSON_Delete(value);
+        return 0;
+    }
+    trees->names = optional_value_tree(argument->names, &names_malformed);
+    trees->config = optional_value_tree(argument->config, &config_malformed);
+    trees->settings = argument->settings == NULL ? NULL : declarations_tree(argument);
+    *malformed = names_malformed || config_malformed;
+    return !*malformed && (argument->names == NULL || trees->names != NULL) &&
+           (argument->config == NULL || trees->config != NULL) &&
+           (argument->settings == NULL || trees->settings != NULL) &&
+           cJSON_AddStringToObject(trees->argument, "key", argument->key) != NULL &&
+           (argument->layer == RUNTIME_LAYER_DECLARED ||
+            cJSON_AddStringToObject(trees->argument, "layer", layer_names[argument->layer]) != NULL) &&
+           (argument->places == NULL || add_places(trees->argument, argument->places));
+}
+
+static int is_typed_set_whole(const runtime_config_set_argument *argument) {
+    return argument->home != NULL && argument->plugin != NULL && argument->key != NULL && argument->value != NULL &&
+           argument->layer <= RUNTIME_LAYER_PORTABLE && (argument->setting_count == 0 || argument->settings != NULL) &&
+           (argument->places == NULL || argument->places->secrets_file != NULL);
+}
+
+static spisor_status typed_set_answer(cJSON *answered, runtime_config_set_answer *answer) {
+    cJSON *previous = cJSON_DetachItemFromObjectCaseSensitive(answered, "previous");
+    answer->secret = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "secret")) ? 1 : 0;
+    cJSON_Delete(answered);
+    if (previous == NULL) {
+        return SPISOR_OK;
+    }
+    answer->storage = runtime_value_of_tree(previous, &answer->previous);
+    return answer->storage == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+}
+
+static spisor_status typed_set_failure(int32_t status, uint8_t *out, size_t out_len, spisor_refusal *refusal) {
+    if (status == SPISOR_STATUS_OUT_OF_MEMORY || out == NULL) {
+        spisor_release(out);
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    cJSON *failure = spisor_parse_json(out, out_len);
+    spisor_release(out);
+    const cJSON *message = cJSON_GetObjectItemCaseSensitive(failure, "message");
+    const cJSON *fix = cJSON_GetObjectItemCaseSensitive(failure, "fix");
+    spisor_status answered =
+        typed_refusal(refusal, cJSON_IsString(message) ? message->valuestring : "config.set refused",
+                      cJSON_IsString(fix) ? fix->valuestring : NULL, SPISOR_REFUSED);
+    cJSON_Delete(failure);
+    return answered;
+}
+
+static spisor_status typed_set_over(const runtime_config_set_argument *argument, const typed_set_trees *trees,
+                                    runtime_config_set_answer *answer, spisor_refusal *refusal) {
+    if (!runtime_is_usable_home(argument->home)) {
+        return typed_refusal(refusal, "the home is not a usable directory", "pass an absolute home directory",
+                             SPISOR_MALFORMED);
+    }
+    config_request request = {argument->home,   argument->portable, argument->plugin, trees->names,
+                              trees->config,    trees->argument,    trees->settings};
+    cJSON *answered = NULL;
+    uint8_t *out = NULL;
+    size_t out_len = 0;
+    captured_answer = &answered;
+    int32_t status = config_set(&request, &out, &out_len);
+    captured_answer = NULL;
+    if (answered == NULL) {
+        return typed_set_failure(status, out, out_len, refusal);
+    }
+    return typed_set_answer(answered, answer);
+}
+
+static void clear_answer(runtime_config_set_answer *answer) {
+    uint32_t size = answer->size;
+    memset(answer, 0, sizeof *answer);
+    answer->size = size;
+}
+
+static spisor_status typed_set(void *context, const runtime_config_set_argument *argument,
+                               runtime_config_set_answer *answer, spisor_refusal *refusal) {
+    (void)context;
+    if (argument == NULL || !has_room(argument->size, sizeof(*argument)) || answer == NULL ||
+        !has_room(answer->size, sizeof(*answer)) || answer->storage != NULL || !is_typed_set_whole(argument)) {
+        return typed_refusal(refusal, "the set argument is not whole",
+                             "fill runtime_config_set_argument as it documents", SPISOR_MALFORMED);
+    }
+    clear_answer(answer);
+    typed_set_trees trees;
+    int malformed = 0;
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    if (typed_set_trees_of(argument, &trees, &malformed)) {
+        status = typed_set_over(argument, &trees, answer, refusal);
+    } else if (malformed) {
+        status = typed_refusal(refusal, "a value is no value", "send every value as a spisor_value of a known kind",
+                               SPISOR_MALFORMED);
+    }
+    free_typed_set_trees(&trees);
+    return status;
+}
+
+static void typed_release_set(void *context, runtime_config_set_answer *answer) {
+    (void)context;
+    if (answer == NULL || !has_room(answer->size, sizeof(*answer))) {
+        return;
+    }
+    runtime_value_storage_free(answer->storage);
+    clear_answer(answer);
+}
+
+static void typed_release_refusal(void *context, spisor_refusal *refusal) {
+    (void)context;
+    if (refusal == NULL || !has_room(refusal->size, sizeof(*refusal))) {
+        return;
+    }
+    free(refusal->storage);
+    refusal->detail = NULL;
+    refusal->fix = NULL;
+    refusal->storage = NULL;
+}
+
+static const runtime_config_definition config_definition = {
+    sizeof(runtime_config_definition), NULL, typed_set, typed_release_set, typed_release_refusal,
+};
+
+RUNTIME_DEFINITION_API const runtime_config_definition *runtime_config_definition_of(void) {
+    return &config_definition;
 }
