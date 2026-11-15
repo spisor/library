@@ -330,6 +330,149 @@
         "java"
       ],
       "because": "spec 3: config.name is trimmed like every other name, so \" p \" names config/p.json, where basekit used the untrimmed name and wrote config/ p .json"
+    },
+    {
+      "case": "comment-lines",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "config-name-declared",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "config-name-trimmed",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "crlf-settings",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "integer-like-keys",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "lone-surrogate",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "portable-absent-config",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "previous-with-default",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "refuse-malformed",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "refuse-non-object-path",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "renamed-config-directory",
+      "files": {
+        "settings/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "set-nests-new-path",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
+    },
+    {
+      "case": "set-twice",
+      "files": {
+        "config/.settings.lock": ""
+      },
+      "implementations": [
+        "typescript",
+        "java"
+      ],
+      "because": "rev 163 ruling Y: a set is a read-modify-write under an OS file lock on .settings.lock in the settings folder, so two concurrent writers keep every key, and the empty lock file stays after the unlock (spisor/lock.h), where basekit took no lock and left no file"
     }
   ]
 }
