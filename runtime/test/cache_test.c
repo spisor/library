@@ -449,6 +449,10 @@ static void it_installs_a_plugin_s_files_into_its_bundle_version_directory(void)
     finish_cache();
 }
 
+/**
+ * @implNote The sizes are `sizeof` and not `strlen` because MSVC 19.44 at /O2 passes a folded `strlen` of a literal to
+ * a variadic call as a 32-bit store into a 64-bit slot, so `%zu` read stack garbage above 55 (see S-87).
+ */
 static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_size(void) {
     start_cache("marker");
     cJSON *item = plugin_item();
@@ -463,7 +467,7 @@ static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_
     snprintf(expected, sizeof expected,
              "{\n  \"files\": {\n    \"plugin.json\": \"%s\",\n    \"dist/index.js\": \"%s\"\n  },\n  \"sizes\": {\n"
              "    \"plugin.json\": %zu,\n    \"dist/index.js\": %zu\n  }\n}\n",
-             plugin_sha256, index_sha256, strlen(PLUGIN_JSON), strlen(INDEX_JS));
+             plugin_sha256, index_sha256, sizeof PLUGIN_JSON - 1, sizeof INDEX_JS - 1);
     expect_file_text(cache, "bundles/a/1.0.0/.installed.json", expected, "marker text");
     finish_cache();
 }
