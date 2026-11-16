@@ -257,7 +257,7 @@ static void refuses_a_body_over_the_limit_naming_the_source(void) {
     url_on_server("/huge.json", url, sizeof url);
     catalog_answer fetched = read_fetched("spisor", url);
     expect_refusal(fetched, "spisor", "huge fetched names the source");
-    CHECK(message_names(fetched, "maxBytes"));
+    CHECK(message_names(fetched, "max_bytes"));
     cJSON_Delete(fetched.tree);
     char *huge = spaces_over_the_limit();
     CHECK(huge != NULL);

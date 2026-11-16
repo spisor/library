@@ -16,6 +16,7 @@
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/config.h"
+#include "runtime/fetch.h"
 #include "runtime/identity.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
@@ -190,6 +191,38 @@ static spisor_status agree_on_copies(void) {
     return status;
 }
 
+/** The file: url of a path, every byte but the plain ones percent-encoded. */
+static void file_url_of(const char *path, char *url, size_t capacity) {
+    size_t length = (size_t)snprintf(url, capacity, path[0] == '/' ? "file://" : "file:///");
+    for (const unsigned char *at = (const unsigned char *)path; *at != 0 && length + 4 < capacity; at++) {
+        unsigned char character = *at == '\\' ? '/' : *at;
+        int plain = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                    (character >= '0' && character <= '9') || strchr("/-._~:", character) != NULL;
+        length += (size_t)(plain ? snprintf(url + length, capacity - length, "%c", character)
+                                 : snprintf(url + length, capacity - length, "%%%02X", character));
+    }
+}
+
+static spisor_status fetch_a_file(void) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
+    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char source[1400];
+    char url[4200];
+    char destination[1400];
+    spisor_status status;
+    snprintf(source, sizeof source, "%s/settings.json", place.config_directory);
+    snprintf(destination, sizeof destination, "%s/fetched/settings.json", place.base);
+    file_url_of(source, url, sizeof url);
+    argument.url = url;
+    argument.destination = destination;
+    status = fetch->get(fetch->context, &argument, &answer, &refusal);
+    fetch->release_answer(fetch->context, &answer);
+    fetch->release_refusal(fetch->context, &refusal);
+    return status;
+}
+
 /** Whether log's write left no line behind: no logs folder under the home at all. */
 static int appended_nothing(void) {
     char logs[1200];
@@ -263,6 +296,7 @@ int main(void) {
     every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
     every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
     every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
+    every_failure_answers_out_of_memory("fetch's get", fetch_a_file, NULL);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

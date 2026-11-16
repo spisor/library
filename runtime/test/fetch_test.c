@@ -8,14 +8,14 @@
 #include <string.h>
 
 #include "check.h"
+#include "definition_fixture.h"
 #include "directory_tree.h"
-#include "fetch.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
+#include "runtime/fetch.h"
 #include "scratch_directory.h"
 #include "sha256.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -34,9 +34,11 @@
 #define LAST_MODIFIED "Wed, 21 Oct 2015 07:28:00 GMT"
 #define WRONG_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
 
+/** One get's status, answer and refusal; each check below releases what it was given. */
 typedef struct answer {
-    int32_t status;
-    cJSON *tree;
+    spisor_status status;
+    runtime_fetch_get_answer answer;
+    spisor_refusal refusal;
 } answer;
 
 static char body[BODY_LENGTH];
@@ -81,22 +83,35 @@ static cJSON *request_for_path(const char *path) {
     return request;
 }
 
-static answer get(cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = runtime_fetch_get((const uint8_t *)text, strlen(text), &out, &out_len);
-    free(text);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    return result;
-}
-
 static const char *text_of(const cJSON *tree, const char *member) {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(tree, member);
     return cJSON_IsString(item) ? item->valuestring : NULL;
+}
+
+/** Gets what a request, written as a test's JSON, describes, deleting the request. */
+static answer get(cJSON *request) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
+    const cJSON *max_bytes = cJSON_GetObjectItemCaseSensitive(request, "maxBytes");
+    const cJSON *timeout = cJSON_GetObjectItemCaseSensitive(request, "timeoutSeconds");
+    answer result = {SPISOR_OK, SPISOR_INIT(runtime_fetch_get_answer), SPISOR_INIT(spisor_refusal)};
+    argument.url = text_of(request, "url");
+    argument.destination = text_of(request, "destination");
+    argument.sha256 = text_of(request, "sha256");
+    argument.etag = text_of(request, "etag");
+    argument.last_modified = text_of(request, "lastModified");
+    argument.limited = max_bytes != NULL ? 1 : 0;
+    argument.max_bytes = max_bytes != NULL ? (uint64_t)max_bytes->valuedouble : 0;
+    argument.timeout_seconds = timeout != NULL ? timeout->valuedouble : 0;
+    result.status = fetch->get(fetch->context, &argument, &result.answer, &result.refusal);
+    cJSON_Delete(request);
+    return result;
+}
+
+static void release(answer *result) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    fetch->release_answer(fetch->context, &result->answer);
+    fetch->release_refusal(fetch->context, &result->refusal);
 }
 
 static int has_no_partial_file(void) {
@@ -128,28 +143,30 @@ static void expect_nothing_stored(const char *label) {
     }
 }
 
+static void expect_refused_as(answer result, spisor_status expected, const char *fragment, const char *label) {
+    check_refused(result.status, expected, &result.refusal, fragment, label);
+    CHECK(result.answer.storage == NULL && result.answer.outcome == 0);
+    release(&result);
+}
+
 static void expect_refused(answer result, const char *fragment, const char *label) {
-    const char *message = text_of(result.tree, "message");
-    if (result.status != SPISOR_STATUS_FAILURE || message == NULL || strstr(message, fragment) == NULL ||
-        text_of(result.tree, "fix") == NULL) {
-        fprintf(stderr, "%s: expected a refusal naming \"%s\", got status %d and \"%s\"\n", label, fragment,
-                (int)result.status, message == NULL ? "(none)" : message);
-        check_failures++;
-    }
-    cJSON_Delete(result.tree);
+    expect_refused_as(result, SPISOR_REFUSED, fragment, label);
+}
+
+static void expect_malformed(answer result, const char *fragment, const char *label) {
+    expect_refused_as(result, SPISOR_MALFORMED, fragment, label);
 }
 
 static void expect_stored_body(answer result, const char *label) {
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
-    check_text(text_of(result.tree, "outcome"), "stored", label);
-    check_text(text_of(result.tree, "sha256"), body_sha256, label);
-    const cJSON *bytes = cJSON_GetObjectItemCaseSensitive(result.tree, "bytes");
-    CHECK(cJSON_IsNumber(bytes) && bytes->valuedouble == BODY_LENGTH);
+    CHECK(result.status == SPISOR_OK);
+    CHECK(result.answer.outcome == RUNTIME_FETCH_GET_STORED);
+    check_text(result.answer.sha256, body_sha256, label);
+    CHECK(result.answer.bytes == BODY_LENGTH);
     char stored_sha256[RUNTIME_SHA256_HEX_SIZE] = "";
     CHECK(spisor_sha256_file(destination, stored_sha256) == 1);
     check_text(stored_sha256, body_sha256, label);
     CHECK(has_no_partial_file());
-    cJSON_Delete(result.tree);
+    release(&result);
 }
 
 static void remove_destination(void) {
@@ -160,8 +177,8 @@ static void a_200_stores_the_file_with_its_hash_and_validators(void) {
     cJSON *request = request_for_path("/file");
     cJSON_AddStringToObject(request, "sha256", body_sha256);
     answer result = get(request);
-    check_text(text_of(result.tree, "etag"), ETAG, "etag");
-    check_text(text_of(result.tree, "lastModified"), LAST_MODIFIED, "lastModified");
+    check_text(result.answer.etag, ETAG, "etag");
+    check_text(result.answer.last_modified, LAST_MODIFIED, "last_modified");
     expect_stored_body(result, "200");
     remove_destination();
 }
@@ -177,10 +194,11 @@ static void a_304_against_the_sent_etag_stores_nothing(void) {
     cJSON *request = request_for_path("/file");
     cJSON_AddStringToObject(request, "etag", ETAG);
     answer result = get(request);
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
-    check_text(text_of(result.tree, "outcome"), "not-modified", "304 etag");
-    CHECK(cJSON_GetArraySize(result.tree) == 1);
-    cJSON_Delete(result.tree);
+    CHECK(result.status == SPISOR_OK);
+    CHECK(result.answer.outcome == RUNTIME_FETCH_GET_NOT_MODIFIED);
+    CHECK(result.answer.sha256 == NULL && result.answer.bytes == 0 && result.answer.etag == NULL &&
+          result.answer.last_modified == NULL);
+    release(&result);
     expect_nothing_stored("304 etag");
 }
 
@@ -188,9 +206,9 @@ static void a_304_against_the_sent_last_modified_stores_nothing(void) {
     cJSON *request = request_for_path("/file");
     cJSON_AddStringToObject(request, "lastModified", LAST_MODIFIED);
     answer result = get(request);
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
-    check_text(text_of(result.tree, "outcome"), "not-modified", "304 last modified");
-    cJSON_Delete(result.tree);
+    CHECK(result.status == SPISOR_OK);
+    CHECK(result.answer.outcome == RUNTIME_FETCH_GET_NOT_MODIFIED);
+    release(&result);
     expect_nothing_stored("304 last modified");
 }
 
@@ -251,8 +269,11 @@ static void a_fetch_outliving_its_timeout_is_refused(void) {
     expect_refused(get(request), "did not finish within 1000 ms", "timeoutSeconds");
     expect_nothing_stored("timeoutSeconds");
     cJSON *unusable = request_for_path("/stall");
-    cJSON_AddNumberToObject(unusable, "timeoutSeconds", 0);
-    expect_refused(get(unusable), "timeoutSeconds", "timeoutSeconds zero");
+    cJSON_AddNumberToObject(unusable, "timeoutSeconds", -1);
+    expect_malformed(get(unusable), "timeout_seconds", "a negative timeout");
+    unusable = request_for_path("/stall");
+    cJSON_AddNumberToObject(unusable, "timeoutSeconds", 86401);
+    expect_malformed(get(unusable), "timeout_seconds", "a timeout over a day");
 }
 
 static void a_fetch_outliving_its_deadline_is_refused(void) {
@@ -374,7 +395,7 @@ static void a_file_url_is_copied_through_the_same_verification(void) {
     cJSON *request = request_for(url);
     cJSON_AddStringToObject(request, "sha256", body_sha256);
     answer result = get(request);
-    CHECK(cJSON_GetObjectItemCaseSensitive(result.tree, "etag") == NULL);
+    CHECK(result.answer.etag == NULL);
     expect_stored_body(result, "file url");
     remove_destination();
     request = request_for(url);
@@ -422,20 +443,20 @@ static void any_other_scheme_is_refused(void) {
 static void an_unusable_argument_is_refused(void) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddStringToObject(request, "destination", destination);
-    expect_refused(get(request), "url", "no url");
+    expect_malformed(get(request), "url", "no url");
     request = cJSON_CreateObject();
     cJSON_AddStringToObject(request, "url", "https://example.com/x");
     cJSON_AddStringToObject(request, "destination", "relative/file.bin");
-    expect_refused(get(request), "destination", "relative destination");
+    expect_malformed(get(request), "destination", "relative destination");
     request = request_for_path("/file");
     cJSON_AddStringToObject(request, "sha256", "ABC");
-    expect_refused(get(request), "sha256", "bad sha256");
-    request = request_for_path("/file");
-    cJSON_AddNumberToObject(request, "maxBytes", -1);
-    expect_refused(get(request), "maxBytes", "negative maxBytes");
+    expect_malformed(get(request), "sha256", "bad sha256");
     request = request_for_path("/file");
     cJSON_AddStringToObject(request, "etag", "\"one\"\r\nX-Injected: 1");
-    expect_refused(get(request), "etag", "etag with a line break");
+    expect_malformed(get(request), "etag", "etag with a line break");
+    request = request_for_path("/file");
+    cJSON_AddStringToObject(request, "lastModified", "Wed\n");
+    expect_malformed(get(request), "last_modified", "last_modified with a line break");
     expect_nothing_stored("unusable argument");
 }
 
@@ -474,10 +495,9 @@ static void clear_proxy_environment(void) {
 static void a_linux_without_libcurl_is_refused_naming_the_package(void) {
     runtime_fetch_curl_use_library("libspisor-no-such-curl.so.4");
     answer result = get(request_for_path("/file"));
-    CHECK(result.status == SPISOR_STATUS_FAILURE);
-    check_text(text_of(result.tree, "fix"), "install the libcurl package (libcurl4 on Debian and Ubuntu)",
-               "libcurl fix");
-    cJSON_Delete(result.tree);
+    CHECK(result.status == SPISOR_REFUSED);
+    check_text(result.refusal.fix, "install the libcurl package (libcurl4 on Debian and Ubuntu)", "libcurl fix");
+    release(&result);
     runtime_fetch_curl_use_library(NULL);
     expect_nothing_stored("no libcurl");
 }

@@ -8,10 +8,9 @@
 
 #include "cache_refusal.h"
 #include "directory_tree.h"
-#include "fetch.h"
-#include "service_call.h"
+#include "json_service.h"
+#include "runtime/fetch.h"
 #include "sha256.h"
-#include "spisor/json_kind.h"
 
 #define CORRUPT_FILE_FIX "never use it: ask the catalog's publisher to correct the file or its entry"
 
@@ -36,54 +35,41 @@ static int holds(const char *destination, const file_reference *reference) {
            strcmp(actual, reference->sha256) == 0;
 }
 
-static cJSON *fetch_order(const char *destination, const file_reference *reference) {
-    cJSON *order = cJSON_CreateObject();
-    int built = order != NULL && cJSON_AddStringToObject(order, "url", reference->url) != NULL &&
-                cJSON_AddStringToObject(order, "destination", destination) != NULL &&
-                cJSON_AddStringToObject(order, "sha256", reference->sha256) != NULL &&
-                cJSON_AddNumberToObject(order, "maxBytes", (double)reference->size) != NULL;
-    if (!built) {
-        cJSON_Delete(order);
-        return NULL;
-    }
-    return order;
+/** Fetches the reference into destination, its answer in `answer` and its refusal in `refusal`. */
+static spisor_status fetched(const char *destination, const file_reference *reference,
+                             runtime_fetch_get_answer *answer, spisor_refusal *refusal) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
+    argument.url = reference->url;
+    argument.destination = destination;
+    argument.sha256 = reference->sha256;
+    argument.limited = 1;
+    argument.max_bytes = reference->size;
+    return fetch->get(fetch->context, &argument, answer, refusal);
 }
 
-/** fetch.get's answer, parsed, with its status in *status; NULL when memory runs out. */
-static cJSON *fetched(const char *destination, const file_reference *reference, int32_t *status) {
-    cJSON *order = fetch_order(destination, reference);
-    cJSON *answer = runtime_call_service(runtime_fetch_get, order, status);
-    cJSON_Delete(order);
-    return answer;
-}
-
-static cJSON *wrong_length(const file_reference *reference, double served) {
+static cJSON *wrong_length(const file_reference *reference, uint64_t served) {
     char served_text[32];
     char size_text[32];
-    snprintf(served_text, sizeof served_text, "%.0f", served);
+    snprintf(served_text, sizeof served_text, "%" PRIu64, served);
     snprintf(size_text, sizeof size_text, "%" PRIu64, reference->size);
     const char *parts[7] = {reference->url, " served ", served_text, " bytes, but the catalog says ", size_text,
                             " with SHA-256 ", reference->sha256};
     return runtime_cache_refusal(parts, 7, CORRUPT_FILE_FIX);
 }
 
-static runtime_cache_stored settle(cJSON *answer, int32_t status, const char *destination,
+static runtime_cache_stored settle(spisor_status status, const runtime_fetch_get_answer *answer,
+                                   const spisor_refusal *fetch_refusal, const char *destination,
                                    const file_reference *reference, cJSON **refusal) {
-    if (answer == NULL) {
-        return RUNTIME_CACHE_OUT_OF_MEMORY;
+    if (status != SPISOR_OK) {
+        *refusal = runtime_refusal_of(fetch_refusal);
+        return *refusal == NULL ? RUNTIME_CACHE_OUT_OF_MEMORY : RUNTIME_CACHE_REFUSED;
     }
-    if (status != SPISOR_STATUS_SUCCESS) {
-        *refusal = answer;
-        return RUNTIME_CACHE_REFUSED;
-    }
-    const cJSON *bytes = cJSON_GetObjectItemCaseSensitive(answer, "bytes");
-    double served = cJSON_IsNumber(bytes) ? bytes->valuedouble : -1;
-    cJSON_Delete(answer);
-    if (served == (double)reference->size) {
+    if (answer->bytes == reference->size) {
         return RUNTIME_CACHE_FETCHED;
     }
     runtime_remove_file_entry(destination);
-    *refusal = wrong_length(reference, served);
+    *refusal = wrong_length(reference, answer->bytes);
     return *refusal == NULL ? RUNTIME_CACHE_OUT_OF_MEMORY : RUNTIME_CACHE_REFUSED;
 }
 
@@ -93,7 +79,12 @@ runtime_cache_stored runtime_cache_store_file(const cJSON *reference, const char
     if (holds(destination, &read)) {
         return RUNTIME_CACHE_CACHED;
     }
-    int32_t status = SPISOR_STATUS_OUT_OF_MEMORY;
-    cJSON *answer = fetched(destination, &read, &status);
-    return settle(answer, status, destination, &read, refusal);
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    spisor_refusal fetch_refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status = fetched(destination, &read, &answer, &fetch_refusal);
+    runtime_cache_stored stored = settle(status, &answer, &fetch_refusal, destination, &read, refusal);
+    fetch->release_answer(fetch->context, &answer);
+    fetch->release_refusal(fetch->context, &fetch_refusal);
+    return stored;
 }

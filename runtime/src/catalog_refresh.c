@@ -15,7 +15,7 @@
 #include "catalog_text.h"
 #include "catalog_time.h"
 #include "directory_tree.h"
-#include "fetch.h"
+#include "runtime/fetch.h"
 #include "paths.h"
 #include "service_call.h"
 #include "spisor/file.h"
@@ -178,20 +178,21 @@ static char *download_path(const char *state_path) {
     return path;
 }
 
-static cJSON *fetch_answer(const char *url, const char *destination, const char *etag, int32_t *status) {
+static spisor_status fetch_answer(const char *url, const char *destination, const char *etag,
+                                  runtime_fetch_get_answer *answer, spisor_refusal *refusal) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
     char *requested = requested_url(url);
-    cJSON *request = cJSON_CreateObject();
-    int built = requested != NULL && request != NULL && cJSON_AddStringToObject(request, "url", requested) != NULL &&
-                cJSON_AddStringToObject(request, "destination", destination) != NULL &&
-                cJSON_AddNumberToObject(request, "timeoutSeconds", INDEX_TIMEOUT_SECONDS) != NULL &&
-                (etag == NULL || cJSON_AddStringToObject(request, "etag", etag) != NULL);
-    free(requested);
-    cJSON *answer = built ? runtime_call_service(runtime_fetch_get, request, status) : NULL;
-    if (!built) {
-        *status = SPISOR_STATUS_OUT_OF_MEMORY;
+    if (requested == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
     }
-    cJSON_Delete(request);
-    return answer;
+    argument.url = requested;
+    argument.destination = destination;
+    argument.etag = etag;
+    argument.timeout_seconds = INDEX_TIMEOUT_SECONDS;
+    spisor_status status = fetch->get(fetch->context, &argument, answer, refusal);
+    free(requested);
+    return status;
 }
 
 static cJSON *settle_not_modified(const check_order *order) {
@@ -205,7 +206,7 @@ static cJSON *settle_not_modified(const check_order *order) {
     return answer_kind("unchanged");
 }
 
-static cJSON *settle_stored(const check_order *order, const cJSON *answer, const char *download) {
+static cJSON *settle_stored(const check_order *order, const runtime_fetch_get_answer *answer, const char *download) {
     size_t length;
     uint8_t *bytes = spisor_read_file(download, &length);
     runtime_remove_file_entry(download);
@@ -213,24 +214,20 @@ static cJSON *settle_stored(const check_order *order, const cJSON *answer, const
         return answer_failed(order->location, " could not be checked: ", "the downloaded index could not be read");
     }
     size_t skipped = length >= 3 && memcmp(bytes, BYTE_ORDER_MARK, 3) == 0 ? 3 : 0;
-    const cJSON *etag = cJSON_GetObjectItemCaseSensitive(answer, "etag");
-    cJSON *result = accept_index(order, cJSON_IsString(etag) ? etag->valuestring : NULL, (char *)bytes + skipped,
-                           length - skipped);
+    cJSON *result = accept_index(order, (char *)answer->etag, (char *)bytes + skipped, length - skipped);
     free(bytes);
     return result;
 }
 
-static cJSON *settle_fetch(const check_order *order, const cJSON *answer, int32_t status, const char *download) {
-    const char *outcome = runtime_catalog_text_member(answer, "outcome");
-    if (status == SPISOR_STATUS_SUCCESS && outcome != NULL && strcmp(outcome, "not-modified") == 0) {
+static cJSON *settle_fetch(const check_order *order, spisor_status status, const runtime_fetch_get_answer *answer,
+                           const spisor_refusal *refusal, const char *download) {
+    if (status == SPISOR_OK && answer->outcome == RUNTIME_FETCH_GET_NOT_MODIFIED) {
         return settle_not_modified(order);
     }
-    if (status == SPISOR_STATUS_SUCCESS && outcome != NULL && strcmp(outcome, "stored") == 0) {
+    if (status == SPISOR_OK) {
         return settle_stored(order, answer, download);
     }
-    const char *message = runtime_catalog_text_member(answer, "message");
-    return answer_failed(order->location, " could not be checked: ",
-                         message != NULL ? message : "the request ran out of memory");
+    return answer_failed(order->location, " could not be checked: ", refusal->detail);
 }
 
 static cJSON *check_https(const check_order *order) {
@@ -246,10 +243,13 @@ static cJSON *check_https(const check_order *order) {
         return NULL;
     }
     const char *etag = order->previous.index == NULL ? NULL : order->previous.etag;
-    int32_t status;
-    cJSON *answer = fetch_answer(order->location, download, etag, &status);
-    cJSON *result = status == SPISOR_STATUS_OUT_OF_MEMORY ? NULL : settle_fetch(order, answer, status, download);
-    cJSON_Delete(answer);
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status = fetch_answer(order->location, download, etag, &answer, &refusal);
+    cJSON *result = status == SPISOR_OUT_OF_MEMORY ? NULL : settle_fetch(order, status, &answer, &refusal, download);
+    fetch->release_answer(fetch->context, &answer);
+    fetch->release_refusal(fetch->context, &refusal);
     free(download);
     return result;
 }

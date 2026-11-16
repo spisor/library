@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
-#include "fetch.h"
+#include "runtime/fetch.h"
 #include "import_name.h"
 #include "paths.h"
 #include "json_service.h"
@@ -95,36 +95,39 @@ static int has_way_to_read(const cJSON *argument, reading *order, cJSON **refusa
     return 1;
 }
 
-static cJSON *fetch_request(const reading *order) {
-    cJSON *request = cJSON_CreateObject();
-    if (request == NULL || cJSON_AddStringToObject(request, "url", order->url) == NULL ||
-        cJSON_AddStringToObject(request, "destination", order->destination) == NULL ||
-        cJSON_AddNumberToObject(request, "maxBytes", RUNTIME_MARKETPLACE_MAXIMUM_BYTES) == NULL ||
-        cJSON_AddNumberToObject(request, "timeoutSeconds", FETCH_TIMEOUT_SECONDS) == NULL) {
-        cJSON_Delete(request);
-        return NULL;
+static void refuse_fetch(const reading *order, const spisor_refusal *fetch_refusal, cJSON **refusal) {
+    refuse(refusal, fetch_refusal->fix != NULL ? fetch_refusal->fix : "check the url and try again",
+           "%s could not be fetched: %s", order->source_id, fetch_refusal->detail);
+}
+
+/** Fetches the copy to its destination; 1 once stored, else 0 with *refusal set, or with none out of memory. */
+static int fetch_copy(const reading *order, cJSON **refusal) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
+    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    spisor_refusal fetch_refusal = SPISOR_INIT(spisor_refusal);
+    argument.url = order->url;
+    argument.destination = order->destination;
+    argument.limited = 1;
+    argument.max_bytes = RUNTIME_MARKETPLACE_MAXIMUM_BYTES;
+    argument.timeout_seconds = FETCH_TIMEOUT_SECONDS;
+    spisor_status status = fetch->get(fetch->context, &argument, &answer, &fetch_refusal);
+    if (status != SPISOR_OK && fetch_refusal.detail != NULL) {
+        refuse_fetch(order, &fetch_refusal, refusal);
     }
-    return request;
+    fetch->release_answer(fetch->context, &answer);
+    fetch->release_refusal(fetch->context, &fetch_refusal);
+    return status == SPISOR_OK;
 }
 
-static void refuse_fetch(const reading *order, const cJSON *fetch_refusal, cJSON **refusal) {
-    const char *fix = text_of(fetch_refusal, "fix");
-    refuse(refusal, fix != NULL ? fix : "check the url and try again", "%s could not be fetched: %s", order->source_id,
-           text_of(fetch_refusal, "message"));
-}
-
-/** The bytes fetch.get stored at the destination, freed with free; NULL with *refusal set, or with none when memory ran out. */
+/**
+ * The bytes fetch's get stored at the destination, freed with free; NULL with *refusal set, or with none when memory
+ * ran out.
+ */
 static char *fetched_text(const reading *order, size_t *length, cJSON **refusal) {
-    cJSON *fetch_refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_fetch_get, fetch_request(order), &fetch_refusal);
-    if (answer == NULL) {
-        if (runtime_is_refusal(fetch_refusal)) {
-            refuse_fetch(order, fetch_refusal, refusal);
-        }
-        cJSON_Delete(fetch_refusal);
+    if (!fetch_copy(order, refusal)) {
         return NULL;
     }
-    cJSON_Delete(answer);
     char *bytes = (char *)spisor_read_file(order->destination, length);
     runtime_remove_file_entry(order->destination);
     if (bytes == NULL) {

@@ -11,7 +11,7 @@
 #include "cache_refusal.h"
 #include "catalog_text.h"
 #include "directory_tree.h"
-#include "fetch.h"
+#include "runtime/fetch.h"
 #include "followed_entry.h"
 #include "file_times.h"
 #include "install_support.h"
@@ -243,16 +243,21 @@ static int is_unpacked(const acquisition *runtime, const runtime_layout *layout)
     return unpacked;
 }
 
-static cJSON *fetch_call(const acquisition *runtime) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || cJSON_AddStringToObject(call, "url", runtime->build.url) == NULL ||
-        cJSON_AddStringToObject(call, "destination", runtime->staged.archive) == NULL ||
-        cJSON_AddStringToObject(call, "sha256", runtime->build.sha256) == NULL ||
-        cJSON_AddNumberToObject(call, "timeoutSeconds", DOWNLOAD_SECONDS) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
+/** Fetches the runtime's archive; NULL once stored, else the refusal, NULL too when memory ran out. */
+static cJSON *fetch_archive(const acquisition *runtime, int *stored) {
+    const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
+    runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
+    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.url = runtime->build.url;
+    argument.destination = runtime->staged.archive;
+    argument.sha256 = runtime->build.sha256;
+    argument.timeout_seconds = DOWNLOAD_SECONDS;
+    *stored = fetch->get(fetch->context, &argument, &answer, &refusal) == SPISOR_OK;
+    cJSON *refused = *stored ? NULL : runtime_refusal_of(&refusal);
+    fetch->release_answer(fetch->context, &answer);
+    fetch->release_refusal(fetch->context, &refusal);
+    return refused;
 }
 
 /** The OS's own tar: System32's bsdtar on Windows, /usr/bin/tar or /bin/tar elsewhere; NULL when there is none. */
@@ -357,10 +362,9 @@ static cJSON *build_staged(const acquisition *runtime) {
     if (!runtime_remove_tree(runtime->staged.directory) || spisor_make_directories(runtime->staged.directory) != 1) {
         return refused("the runtime's staging folder could not be made: ", runtime->staged.directory, CACHE_FIX);
     }
-    cJSON *refusal = NULL;
-    cJSON *stored = runtime_call_or_refuse(runtime_fetch_get, fetch_call(runtime), &refusal);
-    cJSON_Delete(stored);
-    if (stored == NULL) {
+    int stored = 0;
+    cJSON *refusal = fetch_archive(runtime, &stored);
+    if (!stored) {
         return refusal != NULL ? refusal : runtime_refusal("the runtime archive could not be fetched", AGAIN_FIX);
     }
     refusal = unpack(runtime);
