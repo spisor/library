@@ -25,6 +25,7 @@
 #endif
 
 #include "changes.h"
+#include "changes_call.h"
 #include "check.h"
 #include "commands.h"
 #include "directory_tree.h"
@@ -342,11 +343,11 @@ static int user_entry_is(const scratch *place, const char *host, const char *nam
 }
 
 static int reverse_host(const scratch *place, const char *host) {
-    answer result = call(runtime_changes_reverse_json, host_request(place, host));
-    int clean = result.status == SPISOR_STATUS_SUCCESS &&
+    changes_result result = changes_reverse_call(place->state, host);
+    int clean = result.status == SPISOR_OK &&
                 cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(result.tree, "drifted")) == 0;
     if (!clean) {
-        report("reverse", &result);
+        fprintf(stderr, "reverse: status %d %s\n", (int)result.status, result.detail);
     }
     cJSON_Delete(result.tree);
     return clean;

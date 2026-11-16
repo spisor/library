@@ -33,7 +33,7 @@ runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON 
 runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *record, runtime_change_note *note);
 
 /** As runtime_change_is_on_disk, for a path-entry. */
-int runtime_path_entry_is_on_disk(const cJSON *record);
+runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record);
 
 /** As runtime_change_reverse, for a path-entry. */
 runtime_change_reversal runtime_path_entry_reverse(const cJSON *record, int held, runtime_change_note *note);

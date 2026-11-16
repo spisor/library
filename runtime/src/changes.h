@@ -6,13 +6,13 @@
 
 #include "cJSON.h"
 #include "change_kinds.h"
-#include "export.h"
 
 typedef enum runtime_changes_answer {
     RUNTIME_CHANGES_RECORDED,
     RUNTIME_CHANGES_UNNEEDED,
     RUNTIME_CHANGES_REFUSED,
-    RUNTIME_CHANGES_FAILED
+    RUNTIME_CHANGES_FAILED,
+    RUNTIME_CHANGES_OUT_OF_MEMORY
 } runtime_changes_answer;
 
 typedef struct runtime_changes_outcome {
@@ -29,9 +29,11 @@ typedef struct runtime_changes_outcome {
  * unreversed record of the same change (runtime_change_repeats), which is then answered, not repeated;
  * a file this host already holds that is asked for with new content is rewritten in place under that
  * record and answered the same way. REFUSED and FAILED carry the reason, and then nothing is changed
- * or recorded, with one exception: when a child of a family (a profile-line of a path-entry) cannot be
- * performed, the children already performed are undone, and a child whose undo also failed stays
- * recorded as applied, under its new parent, so the line it left on disk is still reversible.
+ * or recorded; OUT_OF_MEMORY changes nothing either, though once the pending record was stored the
+ * number it took is not handed out again; with one exception: when a child of a family (a profile-line
+ * of a path-entry) cannot be performed, the children already performed are undone, and a child whose
+ * undo also failed stays recorded as applied, under its new parent, so the line it left on disk is
+ * still reversible.
  * state must be absolute and host must be registered. Paths are stored in the normal form of
  * runtime_change_normalized. The whole apply holds runtime_hosts_lock, so the caller must not hold it.
  * A path-entry on Windows writes the user's Path value under HKCU\Environment, the one change made
@@ -59,9 +61,10 @@ runtime_change_reversal runtime_changes_reverse_entry(const char *state, const c
 
 /**
  * Settles every pending record in registration against the disk, under runtime_hosts_lock held by
- * the caller. Answers 1 when it changed anything.
+ * the caller. Answers 1 when it changed anything; when memory runs out it sets *out_of_memory and
+ * answers 0, the registration then to be discarded rather than stored.
  */
-int runtime_changes_settle_pending(cJSON *registration);
+int runtime_changes_settle_pending(cJSON *registration, int *out_of_memory);
 
 typedef struct runtime_changes_holders {
     cJSON *holder;
@@ -85,13 +88,26 @@ typedef int32_t (*runtime_changes_handler)(const char *state, const char *host, 
 int32_t runtime_changes_serve(const uint8_t *in, size_t in_len, runtime_changes_handler handler, uint8_t **out,
                               size_t *out_len);
 
-/** The JSON function changes.apply: { places: { state }, host, change } answering { recorded, sequence? }. */
-RUNTIME_EXPORT int32_t runtime_changes_apply_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+/** A JSON operation's handler for one host's request, after runtime_changes_serve_request read its place and host. */
+typedef cJSON *(*runtime_changes_request_handler)(const char *state, const char *host, const cJSON *argument,
+                                                  cJSON **refusal);
 
 /**
- * The JSON function changes.reverse: { places: { state }, host } answering { reversed, drifted }.
- * Defined in change_reversal.c.
+ * Refuses a request without an absolute places.state or a host, and hands the rest to handler: its answer, or NULL
+ * with *refusal set, or with it NULL when memory ran out.
  */
-RUNTIME_EXPORT int32_t runtime_changes_reverse_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_changes_serve_request(const cJSON *argument, runtime_changes_request_handler handler, cJSON **refusal);
+
+/**
+ * changes' apply over a JSON argument { places: { state }, host, change }: { recorded, sequence? }, or NULL with
+ * *refusal set, or with it NULL when memory ran out.
+ */
+cJSON *runtime_changes_apply_request(const cJSON *argument, cJSON **refusal);
+
+/**
+ * changes' reverse over a JSON argument { places: { state }, host }: { reversed, drifted }, as
+ * runtime_changes_apply_request answers. Defined in change_reversal.c.
+ */
+cJSON *runtime_changes_reverse_request(const cJSON *argument, cJSON **refusal);
 
 #endif

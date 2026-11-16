@@ -22,6 +22,7 @@
 #endif
 
 #include "changes.h"
+#include "changes_call.h"
 #include "check.h"
 #include "commands.h"
 #include "directory_tree.h"
@@ -189,18 +190,23 @@ static int deletes(const scratch *place, const char *host, const char *name) {
 }
 
 static int sets_application_key(const scratch *place, const char *host) {
-    cJSON *request = host_request(place, host);
-    cJSON *change = cJSON_AddObjectToObject(request, "change");
+    cJSON *change = cJSON_CreateObject();
     cJSON_AddStringToObject(change, "kind", "json-key");
     cJSON_AddStringToObject(change, "file", place->config);
     cJSON_AddItemToObject(change, "key", cJSON_Parse("[\"commands\",\"oc\"]"));
     cJSON_AddItemToObject(change, "value", cJSON_Parse("{\"enabled\":true}"));
-    return succeeds(call(runtime_changes_apply_json, request), "json-key");
+    changes_result result = changes_apply_call(place->state, host, change);
+    int applied = result.status == SPISOR_OK;
+    if (!applied) {
+        fprintf(stderr, "json-key: status %d %s\n", (int)result.status, result.detail);
+    }
+    cJSON_Delete(result.tree);
+    return applied;
 }
 
 static int reverses_cleanly(const scratch *place, const char *host) {
-    answer result = call(runtime_changes_reverse_json, host_request(place, host));
-    int clean = result.status == SPISOR_STATUS_SUCCESS &&
+    changes_result result = changes_reverse_call(place->state, host);
+    int clean = result.status == SPISOR_OK &&
                 cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(result.tree, "drifted")) == 0;
     cJSON_Delete(result.tree);
     return clean;

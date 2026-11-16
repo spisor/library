@@ -197,34 +197,40 @@ static int replace_with_value(const char *text, size_t length, json_span root, j
     return done;
 }
 
-int json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON *value, json_edit_text *edited) {
+static json_edit_outcome done_or_out_of_memory(int done) {
+    return done ? JSON_EDIT_DONE : JSON_EDIT_OUT_OF_MEMORY;
+}
+
+json_edit_outcome json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON *value,
+                                json_edit_text *edited) {
     json_span root;
     if (!document_root(text, length, &root)) {
-        return 0;
+        return JSON_EDIT_MALFORMED;
     }
     json_span object = root;
     for (int depth = 0; depth <= last_depth(key); depth++) {
         member_place place = {0};
         place_answer answer = locate_member(text, object, segment_at(key, depth), &place);
         if (answer == PLACE_MALFORMED) {
-            return 0;
+            return JSON_EDIT_MALFORMED;
         }
         if (answer == PLACE_ABSENT) {
             cJSON *nested = nested_value(key, depth, value);
             int done = nested != NULL && insert_member(text, length, root, object, segment_at(key, depth), nested,
                                                        edited);
             cJSON_Delete(nested);
-            return done;
+            return done_or_out_of_memory(done);
         }
         if (depth == last_depth(key)) {
-            return replace_with_value(text, length, root, object, place.found.value, value, edited);
+            return done_or_out_of_memory(
+                replace_with_value(text, length, root, object, place.found.value, value, edited));
         }
         if (!is_object(text, place.found.value)) {
-            return 0;
+            return JSON_EDIT_MALFORMED;
         }
         object = place.found.value;
     }
-    return 0;
+    return JSON_EDIT_MALFORMED;
 }
 
 static int is_blank(const char *text, size_t start, size_t end) {

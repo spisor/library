@@ -7,6 +7,7 @@
 #include "change_kinds.h"
 #include "directory_tree.h"
 #include "hosts_lock.h"
+#include "json_service.h"
 #include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
@@ -54,28 +55,32 @@ static int is_pending(const cJSON *entry) {
     return state != NULL && strcmp(state, "pending") == 0;
 }
 
-static int set_text(cJSON *object, const char *member, const char *text) {
-    cJSON *value = cJSON_CreateString(text);
-    int set = value != NULL && cJSON_ReplaceItemInObjectCaseSensitive(object, member, value);
-    if (value != NULL && !set) {
-        cJSON_Delete(value);
-    }
-    return set;
+/**
+ * Marks an entry applied in place.
+ *
+ * @implNote "applied" is as long as the "pending" it overwrites, so cJSON_SetValuestring copies it into the same
+ * buffer and allocates nothing: an apply that has written its pending record cannot then run out of memory marking it.
+ */
+static void mark_applied(cJSON *entry) {
+    cJSON_SetValuestring(cJSON_GetObjectItemCaseSensitive(entry, "state"), "applied");
 }
 
-int runtime_changes_settle_pending(cJSON *registration) {
+int runtime_changes_settle_pending(cJSON *registration, int *out_of_memory) {
     cJSON *changes = changes_of(registration);
     int changed = 0;
     cJSON *entry = changes == NULL ? NULL : changes->child;
-    while (entry != NULL) {
+    *out_of_memory = 0;
+    while (entry != NULL && !*out_of_memory) {
         cJSON *next = entry->next;
         if (is_pending(entry)) {
-            if (runtime_change_is_on_disk(entry)) {
-                set_text(entry, "state", "applied");
-            } else {
+            runtime_change_presence presence = runtime_change_is_on_disk(entry);
+            *out_of_memory = presence == RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY;
+            if (presence == RUNTIME_CHANGE_PRESENT) {
+                mark_applied(entry);
+            } else if (presence == RUNTIME_CHANGE_ABSENT) {
                 cJSON_Delete(cJSON_DetachItemViaPointer(changes, entry));
             }
-            changed = 1;
+            changed = !*out_of_memory;
         }
         entry = next;
     }
@@ -183,7 +188,7 @@ static runtime_changes_outcome refusal_of_load(runtime_registry_answer loaded, c
     case RUNTIME_REGISTRY_INVALID:
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the host id is not a portable path segment");
     default:
-        return outcome_of(RUNTIME_CHANGES_FAILED, "memory ran out");
+        return outcome_of(RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
     }
 }
 
@@ -241,10 +246,17 @@ static void conclude_unwritable(apply_session *session) {
     conclude(session, RUNTIME_CHANGES_FAILED, reason);
 }
 
+static runtime_changes_answer answer_of_step(runtime_change_step step) {
+    if (step == RUNTIME_CHANGE_REFUSED) {
+        return RUNTIME_CHANGES_REFUSED;
+    }
+    return step == RUNTIME_CHANGE_OUT_OF_MEMORY ? RUNTIME_CHANGES_OUT_OF_MEMORY : RUNTIME_CHANGES_FAILED;
+}
+
 static void withdraw(apply_session *session, cJSON *entry, runtime_change_step step, const char *reason) {
     cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
     store(session);
-    conclude(session, step == RUNTIME_CHANGE_REFUSED ? RUNTIME_CHANGES_REFUSED : RUNTIME_CHANGES_FAILED, reason);
+    conclude(session, answer_of_step(step), reason);
 }
 
 /**
@@ -258,7 +270,7 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
         withdraw(session, entry, step, note.detail);
         return;
     }
-    set_text(entry, "state", "applied");
+    mark_applied(entry);
     store(session);
     conclude(session, RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
@@ -279,7 +291,7 @@ static void record_and_perform(apply_session *session, cJSON *record) {
     if (entry == NULL || !set_counter(session->registration, sequence + 1) ||
         !cJSON_AddItemToArray(changes_of(session->registration), entry)) {
         cJSON_Delete(entry);
-        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return;
     }
     if (!store(session)) {
@@ -294,7 +306,7 @@ static int ensure_changes_list(cJSON *registration) {
 }
 
 static void conclude_step(apply_session *session, runtime_change_step step, const char *reason) {
-    conclude(session, step == RUNTIME_CHANGE_REFUSED ? RUNTIME_CHANGES_REFUSED : RUNTIME_CHANGES_FAILED, reason);
+    conclude(session, answer_of_step(step), reason);
 }
 
 static long sequence_of(const cJSON *entry) {
@@ -335,7 +347,7 @@ static runtime_change_step prepare_child(apply_session *session, const cJSON *ch
         runtime_changes_find_holder(session->state, session->host, session->registration, child);
     if (holders.failed) {
         snprintf(note->detail, sizeof note->detail, "memory ran out");
-        return RUNTIME_CHANGE_FAILED;
+        return RUNTIME_CHANGE_OUT_OF_MEMORY;
     }
     cJSON *record = NULL;
     runtime_change_step step = runtime_change_prepare(child, holders.holder, &record, note);
@@ -359,7 +371,7 @@ static int prepare_children(apply_session *session, const cJSON *children, prepa
     prepared->count = 0;
     prepared->items = calloc((size_t)cJSON_GetArraySize(children) + 1, sizeof *prepared->items);
     if (prepared->items == NULL) {
-        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return 0;
     }
     const cJSON *child;
@@ -369,7 +381,7 @@ static int prepare_children(apply_session *session, const cJSON *children, prepa
         }
         runtime_change_note note = {""};
         runtime_change_step step = prepare_child(session, child, prepared, &note);
-        if (step == RUNTIME_CHANGE_REFUSED || step == RUNTIME_CHANGE_FAILED) {
+        if (step != RUNTIME_CHANGE_DONE && step != RUNTIME_CHANGE_UNNEEDED) {
             conclude_step(session, step, note.detail);
             return 0;
         }
@@ -401,7 +413,7 @@ static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_
     for (size_t index = 0; index < prepared->count; index++) {
         prepared_child *item = &prepared->items[index];
         if (item->entry != NULL && item->undo_failed) {
-            set_text(item->entry, "state", "applied");
+            mark_applied(item->entry);
             kept = 1;
         } else if (item->entry != NULL) {
             cJSON_Delete(cJSON_DetachItemViaPointer(changes, item->entry));
@@ -409,7 +421,7 @@ static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_
         item->entry = NULL;
     }
     if (new_parent != NULL && kept) {
-        set_text(new_parent, "state", "applied");
+        mark_applied(new_parent);
     } else if (new_parent != NULL) {
         cJSON_Delete(cJSON_DetachItemViaPointer(changes, new_parent));
     }
@@ -431,10 +443,10 @@ static void undo_performed(prepared_children *prepared, size_t performed) {
 
 static void mark_family_applied(cJSON *new_parent, prepared_children *prepared) {
     if (new_parent != NULL) {
-        set_text(new_parent, "state", "applied");
+        mark_applied(new_parent);
     }
     for (size_t index = 0; index < prepared->count; index++) {
-        set_text(prepared->items[index].entry, "state", "applied");
+        mark_applied(prepared->items[index].entry);
     }
 }
 
@@ -473,13 +485,13 @@ static void record_family(apply_session *session, cJSON *parent_record, long exi
         new_parent = pending_entry(next, text_of(session->change, "kind"), parent_record);
         if (new_parent == NULL || !cJSON_AddItemToArray(changes_of(session->registration), new_parent)) {
             cJSON_Delete(new_parent);
-            conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+            conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
             return;
         }
     }
     if (!add_child_entries(session, parent_sequence, first_child, prepared) ||
         !set_counter(session->registration, first_child + (long)prepared->count)) {
-        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return;
     }
     if (!store(session)) {
@@ -568,7 +580,7 @@ static void apply_single(apply_session *session) {
     runtime_changes_holders holders =
         runtime_changes_find_holder(session->state, session->host, session->registration, session->change);
     if (holders.failed) {
-        conclude(session, RUNTIME_CHANGES_FAILED, "memory ran out");
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return;
     }
     cJSON *record = NULL;
@@ -600,14 +612,17 @@ static void prepare_and_apply(apply_session *session) {
 
 static runtime_changes_outcome apply_locked(const char *state, const char *host, const cJSON *change) {
     apply_session session = {state, host, change, NULL, {RUNTIME_CHANGES_FAILED, 0, ""}};
+    int out_of_memory = 0;
     runtime_registry_answer loaded = runtime_registry_load(state, host, &session.registration);
     if (loaded != RUNTIME_REGISTRY_OK) {
         return refusal_of_load(loaded, host);
     }
     if (!ensure_changes_list(session.registration)) {
-        conclude(&session, RUNTIME_CHANGES_FAILED, "memory ran out");
-    } else if (runtime_changes_settle_pending(session.registration) && !store(&session)) {
+        conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+    } else if (runtime_changes_settle_pending(session.registration, &out_of_memory) && !store(&session)) {
         conclude_unwritable(&session);
+    } else if (out_of_memory) {
+        conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
     } else {
         prepare_and_apply(&session);
     }
@@ -629,7 +644,7 @@ runtime_changes_outcome runtime_changes_apply_held(const char *state, const char
     }
     cJSON *normal = runtime_change_normalized(change);
     if (normal == NULL) {
-        return outcome_of(RUNTIME_CHANGES_FAILED, "memory ran out");
+        return outcome_of(RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
     }
     runtime_changes_outcome outcome = apply_locked(state, host, normal);
     cJSON_Delete(normal);
@@ -670,6 +685,10 @@ runtime_change_reversal runtime_changes_reverse_entry(const char *state, const c
         return RUNTIME_CHANGE_NOT_REVERSED;
     }
     runtime_change_reversal reversal = runtime_change_reverse(entry, held, note);
+    if (reversal == RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY) {
+        *failed = 1;
+        return RUNTIME_CHANGE_NOT_REVERSED;
+    }
     if (reversal != RUNTIME_CHANGE_NOT_REVERSED && !mark_reversed(entry, reversal == RUNTIME_CHANGE_DRIFTED)) {
         *failed = 1;
         snprintf(note->detail, sizeof note->detail, "memory ran out");
@@ -702,37 +721,45 @@ int32_t runtime_changes_serve(const uint8_t *in, size_t in_len, runtime_changes_
     return status;
 }
 
-static int32_t answer_recorded(const runtime_changes_outcome *outcome, uint8_t **out, size_t *out_len) {
+cJSON *runtime_changes_serve_request(const cJSON *argument, runtime_changes_request_handler handler, cJSON **refusal) {
+    const char *state = text_of(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
+    const char *host = text_of(argument, "host");
+    *refusal = NULL;
+    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
+        *refusal = runtime_refusal("the argument carries no usable places or host",
+                                   "send {\"places\": {\"state\": \"<absolute directory>\"}, \"host\": \"<host id>\"}");
+        return NULL;
+    }
+    return handler(state, host, argument, refusal);
+}
+
+static cJSON *answer_recorded(const runtime_changes_outcome *outcome) {
     cJSON *result = cJSON_CreateObject();
     int complete = result != NULL &&
                    cJSON_AddBoolToObject(result, "recorded", outcome->answer == RUNTIME_CHANGES_RECORDED) != NULL &&
                    (outcome->sequence <= 0 ||
                     cJSON_AddNumberToObject(result, "sequence", (double)outcome->sequence) != NULL);
-    int32_t status = SPISOR_STATUS_OUT_OF_MEMORY;
-    if (complete) {
-        status = spisor_succeed(result, out, out_len);
-    } else {
-        *out = NULL;
-        *out_len = 0;
+    if (!complete) {
+        cJSON_Delete(result);
+        return NULL;
     }
-    cJSON_Delete(result);
-    return status;
+    return result;
 }
 
-static int32_t apply_request(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                             size_t *out_len) {
+static cJSON *apply_handler(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
     runtime_changes_outcome outcome =
         runtime_changes_apply(state, host, cJSON_GetObjectItemCaseSensitive(argument, "change"));
     if (outcome.answer == RUNTIME_CHANGES_REFUSED) {
-        return spisor_fail(outcome.reason, "nothing was changed or recorded", out, out_len);
+        *refusal = runtime_refusal(outcome.reason, "nothing was changed or recorded");
+        return NULL;
     }
     if (outcome.answer == RUNTIME_CHANGES_FAILED) {
-        return spisor_fail(outcome.reason, "nothing was recorded; fix the cause and apply the change again", out,
-                           out_len);
+        *refusal = runtime_refusal(outcome.reason, "nothing was recorded; fix the cause and apply the change again");
+        return NULL;
     }
-    return answer_recorded(&outcome, out, out_len);
+    return outcome.answer == RUNTIME_CHANGES_OUT_OF_MEMORY ? NULL : answer_recorded(&outcome);
 }
 
-RUNTIME_EXPORT int32_t runtime_changes_apply_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_changes_serve(in, in_len, apply_request, out, out_len);
+cJSON *runtime_changes_apply_request(const cJSON *argument, cJSON **refusal) {
+    return runtime_changes_serve_request(argument, apply_handler, refusal);
 }

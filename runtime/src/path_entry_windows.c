@@ -341,15 +341,15 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
     return done ? RUNTIME_CHANGE_DONE : fail(note, "the directory could not be added to the user's Path", directory);
 }
 
-int runtime_path_entry_is_on_disk(const cJSON *record) {
+runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
     HKEY key;
     path_value value;
     if (!read_environment(&key, &value)) {
-        return 0;
+        return RUNTIME_CHANGE_ABSENT;
     }
     int on_disk = holds_directory(&value, text_of(record, "directory"));
     close_environment(key, &value);
-    return on_disk;
+    return on_disk ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
 }
 
 static int remove_entry(HKEY key, const path_value *value, const cJSON *record) {

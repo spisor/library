@@ -244,7 +244,7 @@ static cJSON *apply_call(const entry_loader *loader, const cJSON *change) {
 static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
     cJSON *sequences = cJSON_CreateArray();
     for (const cJSON *change = sequences == NULL ? NULL : changes->child; change != NULL; change = change->next) {
-        cJSON *answer = runtime_call_or_refuse(runtime_changes_apply_json, apply_call(loader, change), refusal);
+        cJSON *answer = runtime_call_operation(runtime_changes_apply_request, apply_call(loader, change), refusal);
         const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(answer, "sequence");
         int kept = answer != NULL && (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "recorded")) ||
                                       !cJSON_IsNumber(sequence) ||
