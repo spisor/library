@@ -10,14 +10,23 @@ typedef enum runtime_change_step {
     RUNTIME_CHANGE_DONE,
     RUNTIME_CHANGE_UNNEEDED,
     RUNTIME_CHANGE_REFUSED,
-    RUNTIME_CHANGE_FAILED
+    RUNTIME_CHANGE_FAILED,
+    RUNTIME_CHANGE_OUT_OF_MEMORY
 } runtime_change_step;
 
 typedef enum runtime_change_reversal {
     RUNTIME_CHANGE_REVERSED,
     RUNTIME_CHANGE_DRIFTED,
-    RUNTIME_CHANGE_NOT_REVERSED
+    RUNTIME_CHANGE_NOT_REVERSED,
+    RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY
 } runtime_change_reversal;
+
+/** Whether a record's effect is on the disk, or memory ran out finding out. */
+typedef enum runtime_change_presence {
+    RUNTIME_CHANGE_ABSENT,
+    RUNTIME_CHANGE_PRESENT,
+    RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY
+} runtime_change_presence;
 
 /** Why a step refused or failed, or what drifted; static text or a message written into detail. */
 typedef struct runtime_change_note {
@@ -123,7 +132,7 @@ runtime_change_step runtime_change_prepare(const cJSON *change, const cJSON *hol
 runtime_change_step runtime_change_perform(const cJSON *change, cJSON *record, runtime_change_note *note);
 
 /** Whether a record left pending by an interrupted apply has its effect on the disk. */
-int runtime_change_is_on_disk(const cJSON *record);
+runtime_change_presence runtime_change_is_on_disk(const cJSON *record);
 
 /**
  * Undoes record. held is non-zero while another unreversed record holds the same target, and the

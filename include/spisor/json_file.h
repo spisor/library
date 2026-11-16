@@ -41,9 +41,10 @@ cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state);
 
 /**
  * spisor_read_json_file over bytes already read: decoded as Node decodes UTF-8, whole-line comments
- * stripped, then JSON.parse. NULL when they are not JSON or memory runs out.
+ * stripped, then JSON.parse. The tree comes back with PARSED; NULL with UNREADABLE when they are not JSON, and with
+ * OUT_OF_MEMORY when memory ran out decoding, stripping or parsing them.
  */
-cJSON *spisor_parse_json_text(const uint8_t *bytes, size_t length);
+cJSON *spisor_parse_json_text(const uint8_t *bytes, size_t length, spisor_json_file_state *state);
 
 #ifdef __cplusplus
 }

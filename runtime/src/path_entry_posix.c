@@ -16,7 +16,7 @@ static const char *text_of(const cJSON *object, const char *member) {
 
 static runtime_change_step out_of_memory(runtime_change_note *note) {
     snprintf(note->detail, sizeof note->detail, "memory ran out");
-    return RUNTIME_CHANGE_FAILED;
+    return RUNTIME_CHANGE_OUT_OF_MEMORY;
 }
 
 /**
@@ -124,15 +124,17 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
     return RUNTIME_CHANGE_DONE;
 }
 
-int runtime_path_entry_is_on_disk(const cJSON *record) {
+runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
     cJSON *children = profile_lines(record, NULL);
-    int on_disk = 0;
+    runtime_change_presence presence = children == NULL ? RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY : RUNTIME_CHANGE_ABSENT;
     const cJSON *child;
     cJSON_ArrayForEach(child, children) {
-        on_disk = on_disk || runtime_change_is_on_disk(child);
+        if (presence == RUNTIME_CHANGE_ABSENT) {
+            presence = runtime_change_is_on_disk(child);
+        }
     }
     cJSON_Delete(children);
-    return on_disk;
+    return presence;
 }
 
 /**

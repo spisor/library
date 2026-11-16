@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "runtime/changes.h"
 #include "runtime/config.h"
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
@@ -445,6 +446,55 @@ static void print_registry_layouts(void) {
     SIZE(runtime_registry_definition);
 }
 
+static void print_changes_layouts(void) {
+    FIELD(runtime_change, size);
+    FIELD(runtime_change, kind);
+    FIELD(runtime_change, path);
+    FIELD(runtime_change, content);
+    FIELD(runtime_change, executable);
+    FIELD(runtime_change, file);
+    FIELD(runtime_change, key);
+    FIELD(runtime_change, key_count);
+    FIELD(runtime_change, value);
+    FIELD(runtime_change, create);
+    FIELD(runtime_change, line);
+    FIELD(runtime_change, directory);
+    FIELD(runtime_change, home);
+    FIELD(runtime_change, source);
+    FIELD(runtime_change, shell);
+    SIZE(runtime_change);
+    FIELD(runtime_changes_apply_argument, size);
+    FIELD(runtime_changes_apply_argument, state);
+    FIELD(runtime_changes_apply_argument, host);
+    FIELD(runtime_changes_apply_argument, change);
+    SIZE(runtime_changes_apply_argument);
+    FIELD(runtime_changes_apply_answer, size);
+    FIELD(runtime_changes_apply_answer, recorded);
+    FIELD(runtime_changes_apply_answer, sequence);
+    SIZE(runtime_changes_apply_answer);
+    FIELD(runtime_changes_reverse_argument, size);
+    FIELD(runtime_changes_reverse_argument, state);
+    FIELD(runtime_changes_reverse_argument, host);
+    SIZE(runtime_changes_reverse_argument);
+    FIELD(runtime_change_drift, sequence);
+    FIELD(runtime_change_drift, kind);
+    FIELD(runtime_change_drift, detail);
+    SIZE(runtime_change_drift);
+    FIELD(runtime_changes_reverse_answer, size);
+    FIELD(runtime_changes_reverse_answer, reversed);
+    FIELD(runtime_changes_reverse_answer, drifted);
+    FIELD(runtime_changes_reverse_answer, drifted_count);
+    FIELD(runtime_changes_reverse_answer, storage);
+    SIZE(runtime_changes_reverse_answer);
+    FIELD(runtime_changes_definition, size);
+    FIELD(runtime_changes_definition, context);
+    FIELD(runtime_changes_definition, apply);
+    FIELD(runtime_changes_definition, reverse);
+    FIELD(runtime_changes_definition, release_reverse_answer);
+    FIELD(runtime_changes_definition, release_refusal);
+    SIZE(runtime_changes_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -459,5 +509,6 @@ int main(void) {
     print_fetch_layouts();
     print_detect_layouts();
     print_registry_layouts();
+    print_changes_layouts();
     return 0;
 }

@@ -20,6 +20,7 @@
 
 #include "change_reversal_hooks.h"
 #include "changes.h"
+#include "changes_call.h"
 #include "check.h"
 #include "host_provenance.h"
 #include "registry_call.h"
@@ -32,7 +33,6 @@
 #include "spisor/json_kind.h"
 #include "tree_snapshot.h"
 
-typedef int32_t (*changes_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 typedef struct scratch {
     char directory[1024];
@@ -41,10 +41,7 @@ typedef struct scratch {
     char cache[1100];
 } scratch;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-} answer;
+typedef changes_result answer;
 
 static const char *const claude_json_before = "{\n"
                                               "  \"theme\": \"dark\",\n"
@@ -117,19 +114,6 @@ static cJSON *places_for(const scratch *place) {
     return places;
 }
 
-static answer call(changes_export function, cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    free(text);
-    return result;
-}
-
 static void register_host_at(const scratch *place, const char *id, const char *location) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_for(place));
@@ -149,24 +133,15 @@ static void register_host(const scratch *place, const char *id) {
     register_host_at(place, id, place->directory);
 }
 
-static cJSON *host_request(const scratch *place, const char *host) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "places", places_for(place));
-    cJSON_AddStringToObject(request, "host", host);
-    return request;
-}
-
 static answer apply_change(const scratch *place, const char *host, cJSON *change) {
-    cJSON *request = host_request(place, host);
-    cJSON_AddItemToObject(request, "change", change);
-    return call(runtime_changes_apply_json, request);
+    return changes_apply_call(place->state, host, change);
 }
 
 /** The sequence apply recorded, or -1 when it refused or recorded nothing. */
 static long applied_sequence(const scratch *place, const char *host, cJSON *change) {
     answer result = apply_change(place, host, change);
     const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(result.tree, "sequence");
-    long recorded = result.status == SPISOR_STATUS_SUCCESS &&
+    long recorded = result.status == SPISOR_OK &&
                             cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded")) &&
                             cJSON_IsNumber(sequence)
                         ? (long)sequence->valuedouble
@@ -180,17 +155,28 @@ static long applied_sequence(const scratch *place, const char *host, cJSON *chan
     return recorded;
 }
 
-static int apply_refused(const scratch *place, const char *host, cJSON *change) {
+/** Whether apply answered `expected` with a refusal, the change recorded and made nowhere. */
+static int apply_refused_as(const scratch *place, const char *host, cJSON *change, spisor_status expected) {
     answer result = apply_change(place, host, change);
-    int refused = result.status == SPISOR_STATUS_FAILURE &&
-                  cJSON_IsString(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
+    int refused = result.status == expected && result.detail[0] != '\0' && result.fix[0] != '\0';
+    if (!refused) {
+        fprintf(stderr, "expected status %d, got %d \"%s\"\n", (int)expected, (int)result.status, result.detail);
+    }
     cJSON_Delete(result.tree);
     return refused;
 }
 
+static int apply_refused(const scratch *place, const char *host, cJSON *change) {
+    return apply_refused_as(place, host, change, SPISOR_REFUSED);
+}
+
+static int apply_malformed(const scratch *place, const char *host, cJSON *change) {
+    return apply_refused_as(place, host, change, SPISOR_MALFORMED);
+}
+
 static int apply_unneeded(const scratch *place, const char *host, cJSON *change) {
     answer result = apply_change(place, host, change);
-    int unneeded = result.status == SPISOR_STATUS_SUCCESS &&
+    int unneeded = result.status == SPISOR_OK &&
                    cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded")) &&
                    cJSON_GetObjectItemCaseSensitive(result.tree, "sequence") == NULL;
     cJSON_Delete(result.tree);
@@ -199,8 +185,8 @@ static int apply_unneeded(const scratch *place, const char *host, cJSON *change)
 
 /** The answer of reverse, freed with cJSON_Delete; NULL when it did not succeed. */
 static cJSON *reverse_host(const scratch *place, const char *host) {
-    answer result = call(runtime_changes_reverse_json, host_request(place, host));
-    if (result.status != SPISOR_STATUS_SUCCESS) {
+    answer result = changes_reverse_call(place->state, host);
+    if (result.status != SPISOR_OK) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "reverse failed: status %d %s\n", (int)result.status, text == NULL ? "" : text);
         free(text);
@@ -527,10 +513,10 @@ static void refusals_change_nothing(void) {
     cJSON *relative = cJSON_CreateObject();
     cJSON_AddStringToObject(relative, "kind", "directory");
     cJSON_AddStringToObject(relative, "path", "relative/tools");
-    CHECK(apply_refused(&place, "alpha", relative));
+    CHECK(apply_malformed(&place, "alpha", relative));
     cJSON *unknown = path_change("registry-key", &place, "anything");
-    CHECK(apply_refused(&place, "alpha", unknown));
-    CHECK(apply_refused(&place, "alpha", profile_line_change(&place, ".bashrc", "two\nlines")));
+    CHECK(apply_malformed(&place, "alpha", unknown));
+    CHECK(apply_malformed(&place, "alpha", profile_line_change(&place, ".bashrc", "two\nlines")));
     CHECK(apply_refused(&place, "alpha", profile_line_change(&place, ".missing-profile", path_line)));
     CHECK(apply_refused(&place, "alpha", file_change(&place, "no-such-directory/file", "x", 0)));
     CHECK(apply_refused(&place, "nobody", directory_change(&place, "tools")));
@@ -767,7 +753,7 @@ static void registering_while_applying_never_drops_a_record(void) {
 static int answered_existing(const scratch *place, const char *host, cJSON *change, long expected) {
     answer result = apply_change(place, host, change);
     const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(result.tree, "sequence");
-    int answered = result.status == SPISOR_STATUS_SUCCESS &&
+    int answered = result.status == SPISOR_OK &&
                    cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(result.tree, "recorded")) &&
                    cJSON_IsNumber(sequence) && (long)sequence->valuedouble == expected;
     if (!answered) {

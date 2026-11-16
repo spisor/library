@@ -17,7 +17,7 @@ static void expect_set(const char *text, const char *key_json, const char *value
     cJSON *key = parsed(key_json);
     cJSON *value = parsed(value_json);
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
-    int done = json_edit_set(text, strlen(text), key, value, &edited);
+    int done = json_edit_set(text, strlen(text), key, value, &edited) == JSON_EDIT_DONE;
     if (expected == NULL) {
         CHECK(!done);
     } else if (done) {
@@ -48,7 +48,7 @@ static void expect_round_trip(const char *text, const char *key_json, const char
     cJSON *value = parsed(value_json);
     json_edit_text set = {NULL, 0, {0, 0, 0}};
     json_edit_text removed = {NULL, 0, {0, 0, 0}};
-    CHECK(json_edit_set(text, strlen(text), key, value, &set));
+    CHECK(json_edit_set(text, strlen(text), key, value, &set) == JSON_EDIT_DONE);
     CHECK(set.bytes != NULL && json_edit_remove(set.bytes, set.length, key, created_from, &removed));
     check_text(removed.bytes, text, label);
     free(set.bytes);

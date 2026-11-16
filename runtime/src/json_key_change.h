@@ -24,7 +24,7 @@ runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record
 runtime_change_step runtime_json_key_perform(const cJSON *change, cJSON *record, runtime_change_note *note);
 
 /** As runtime_change_is_on_disk, for a json-key. */
-int runtime_json_key_is_on_disk(const cJSON *record);
+runtime_change_presence runtime_json_key_is_on_disk(const cJSON *record);
 
 /**
  * As runtime_change_reverse, for a json-key. A file still holding exactly the bytes the change wrote

@@ -116,7 +116,7 @@ static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, 
 }
 
 static cJSON *remove_host(const removal *request, cJSON **refusal) {
-    cJSON *answer = runtime_call_or_refuse(runtime_changes_reverse_json, host_request(request, "host"), refusal);
+    cJSON *answer = runtime_call_operation(runtime_changes_reverse_request, host_request(request, "host"), refusal);
     if (answer == NULL) {
         return NULL;
     }

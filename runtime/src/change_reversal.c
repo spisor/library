@@ -4,8 +4,8 @@
 #include "change_kinds.h"
 #include "changes.h"
 #include "hosts_lock.h"
+#include "json_service.h"
 #include "registry.h"
-#include "spisor/json_kind.h"
 
 #ifdef SPISOR_CHANGES_TEST_HOOKS
 #include "change_reversal_hooks.h"
@@ -41,10 +41,16 @@ typedef struct reversal_session {
     int finished;
 } reversal_session;
 
-static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    return SPISOR_STATUS_OUT_OF_MEMORY;
+/** A step's stop for memory running out: 0, with no refusal. */
+static int out_of_memory(cJSON **refusal) {
+    *refusal = NULL;
+    return 0;
+}
+
+/** A step's stop with a refusal, which is NULL when memory ran out building it: 0. */
+static int fail(const char *message, const char *fix, cJSON **refusal) {
+    *refusal = runtime_refusal(message, fix);
+    return 0;
 }
 
 static double sequence_of(const cJSON *entry) {
@@ -78,98 +84,92 @@ static int add_drift(cJSON *drifted, const cJSON *entry, const char *detail) {
     return 0;
 }
 
-static int32_t refuse_unwritable(const reversal_session *session, uint8_t **out, size_t *out_len) {
+static int refuse_unwritable(const reversal_session *session, cJSON **refusal) {
     char message[1024];
     snprintf(message, sizeof message, "the registration of host %s could not be written under %s", session->host,
              session->state);
-    return spisor_fail(message, "make the registry writable and reverse again; what was reversed stays marked", out,
-                       out_len);
+    return fail(message, "make the registry writable and reverse again; what was reversed stays marked", refusal);
 }
 
-static int32_t refuse_stuck(const cJSON *entry, const char *detail, uint8_t **out, size_t *out_len) {
+static int refuse_stuck(const cJSON *entry, const char *detail, cJSON **refusal) {
     char message[1400];
     snprintf(message, sizeof message, "change %.0f could not be reversed: %s", sequence_of(entry), detail);
-    return spisor_fail(message, "fix the cause and reverse again; the newer changes stay reversed and none is "
-                                "reversed twice",
-                       out, out_len);
+    return fail(message, "fix the cause and reverse again; the newer changes stay reversed and none is reversed twice",
+                refusal);
 }
 
-/** Reverses one change and stores its mark; answers SUCCESS to go on, anything else to stop with *out filled. */
-static int32_t reverse_one(reversal_session *session, cJSON *entry, uint8_t **out, size_t *out_len) {
+/** Reverses one change and stores its mark; answers 1 to go on, 0 to stop with *refusal set or not. */
+static int reverse_one(reversal_session *session, cJSON *entry, cJSON **refusal) {
     int failed = 0;
     runtime_change_note note = {""};
     runtime_change_reversal reversal =
         runtime_changes_reverse_entry(session->state, session->host, session->registration, entry, &note, &failed);
     if (failed) {
-        return out_of_memory(out, out_len);
+        return out_of_memory(refusal);
     }
     if (reversal == RUNTIME_CHANGE_NOT_REVERSED) {
-        return refuse_stuck(entry, note.detail, out, out_len);
+        return refuse_stuck(entry, note.detail, refusal);
     }
     if (reversal == RUNTIME_CHANGE_DRIFTED && !add_drift(session->drifted, entry, note.detail)) {
-        return out_of_memory(out, out_len);
+        return out_of_memory(refusal);
     }
     if (runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
-        return refuse_unwritable(session, out, out_len);
+        return refuse_unwritable(session, refusal);
     }
     session->reversed++;
-    return SPISOR_STATUS_SUCCESS;
+    return 1;
 }
 
-static int32_t answer_reversed(const reversal_session *session, cJSON *result, uint8_t **out, size_t *out_len) {
-    if (cJSON_AddNumberToObject(result, "reversed", session->reversed) == NULL) {
-        return out_of_memory(out, out_len);
-    }
-    return spisor_succeed(result, out, out_len);
-}
-
-static int32_t refuse_unreadable(const char *host, uint8_t **out, size_t *out_len) {
+static int refuse_unreadable(const char *host, cJSON **refusal) {
     char message[512];
     snprintf(message, sizeof message, "the registration of host %s is not readable", host);
-    return spisor_fail(message, "repair or restore it; nothing more was reversed", out, out_len);
+    return fail(message, "repair or restore it; nothing more was reversed", refusal);
 }
 
-static int32_t refuse_load(runtime_registry_answer loaded, const char *host, uint8_t **out, size_t *out_len) {
+static int refuse_load(runtime_registry_answer loaded, const char *host, cJSON **refusal) {
     if (loaded == RUNTIME_REGISTRY_INVALID) {
-        return spisor_fail("the host id is not a portable path segment", "send the id the host registered with",
-                           out, out_len);
+        return fail("the host id is not a portable path segment", "send the id the host registered with", refusal);
     }
     if (loaded == RUNTIME_REGISTRY_UNREADABLE) {
-        return refuse_unreadable(host, out, out_len);
+        return refuse_unreadable(host, refusal);
     }
-    return out_of_memory(out, out_len);
+    return out_of_memory(refusal);
 }
 
-static int32_t finish(reversal_session *session, int settled, uint8_t **out, size_t *out_len) {
+static int finish(reversal_session *session, int settled, cJSON **refusal) {
     session->finished = 1;
     if (settled && runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
-        return refuse_unwritable(session, out, out_len);
+        return refuse_unwritable(session, refusal);
     }
-    return SPISOR_STATUS_SUCCESS;
+    return 1;
 }
 
 /** One step under the lock: read the registration afresh, settle it, reverse its newest change and store. */
-static int32_t reverse_step(reversal_session *session, uint8_t **out, size_t *out_len) {
+static int reverse_step(reversal_session *session, cJSON **refusal) {
+    int out_of_memory_settling = 0;
     runtime_registry_answer loaded = runtime_registry_load(session->state, session->host, &session->registration);
     if (loaded == RUNTIME_REGISTRY_ABSENT) {
         session->finished = 1;
-        return SPISOR_STATUS_SUCCESS;
+        return 1;
     }
     if (loaded != RUNTIME_REGISTRY_OK) {
-        return refuse_load(loaded, session->host, out, out_len);
+        return refuse_load(loaded, session->host, refusal);
     }
-    int settled = runtime_changes_settle_pending(session->registration);
+    int settled = runtime_changes_settle_pending(session->registration, &out_of_memory_settling);
+    if (out_of_memory_settling) {
+        return out_of_memory(refusal);
+    }
     cJSON *entry = newest_unreversed(session->registration);
     if (entry == NULL || !may_reverse_another()) {
-        return finish(session, settled, out, out_len);
+        return finish(session, settled, refusal);
     }
-    return reverse_one(session, entry, out, out_len);
+    return reverse_one(session, entry, refusal);
 }
 
-static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len) {
+static int refuse_unlocked(const char *state, cJSON **refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s/hosts/.lock can be created, opened and locked", state);
-    return spisor_fail("the registry lock could not be taken", fix, out, out_len);
+    return fail("the registry lock could not be taken", fix, refusal);
 }
 
 /**
@@ -177,34 +177,36 @@ static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len
  * reverse between two steps; each step reads every registration afresh under the lock, so its
  * holder check, its act on the disk and its store are one atomic step.
  */
-static int32_t reverse_all(reversal_session *session, cJSON *result, uint8_t **out, size_t *out_len) {
-    int32_t status = SPISOR_STATUS_SUCCESS;
-    while (status == SPISOR_STATUS_SUCCESS && !session->finished) {
+static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal) {
+    int going_on = 1;
+    while (going_on && !session->finished) {
         spisor_lock *guard = runtime_hosts_lock(session->state);
         if (guard == NULL) {
-            return refuse_unlocked(session->state, out, out_len);
+            return refuse_unlocked(session->state, refusal);
         }
-        status = reverse_step(session, out, out_len);
+        going_on = reverse_step(session, refusal);
         spisor_unlock(guard);
         cJSON_Delete(session->registration);
         session->registration = NULL;
     }
-    return status == SPISOR_STATUS_SUCCESS ? answer_reversed(session, result, out, out_len) : status;
+    if (!going_on) {
+        return 0;
+    }
+    return cJSON_AddNumberToObject(result, "reversed", session->reversed) != NULL || out_of_memory(refusal);
 }
 
-static int32_t reverse_host(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                            size_t *out_len) {
+static cJSON *reverse_host(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
     (void)argument;
     reversal_session session = {state, host, NULL, NULL, 0, 0};
     cJSON *result = cJSON_CreateObject();
     session.drifted = result == NULL ? NULL : cJSON_AddArrayToObject(result, "drifted");
-    int32_t status =
-        session.drifted == NULL ? out_of_memory(out, out_len) : reverse_all(&session, result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+    if (session.drifted == NULL || !reverse_all(&session, result, refusal)) {
+        cJSON_Delete(result);
+        return NULL;
+    }
+    return result;
 }
 
-RUNTIME_EXPORT int32_t runtime_changes_reverse_json(const uint8_t *in, size_t in_len, uint8_t **out,
-                                                    size_t *out_len) {
-    return runtime_changes_serve(in, in_len, reverse_host, out, out_len);
+cJSON *runtime_changes_reverse_request(const cJSON *argument, cJSON **refusal) {
+    return runtime_changes_serve_request(argument, reverse_host, refusal);
 }

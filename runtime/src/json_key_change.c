@@ -35,7 +35,7 @@ static runtime_change_step fail(runtime_change_note *note, const char *reason, c
 
 static runtime_change_step out_of_memory(runtime_change_note *note) {
     write_note(note, "memory ran out");
-    return RUNTIME_CHANGE_FAILED;
+    return RUNTIME_CHANGE_OUT_OF_MEMORY;
 }
 
 static const char *text_of(const cJSON *object, const char *member) {
@@ -126,9 +126,14 @@ static file_bytes read_bytes(const char *path) {
     return read;
 }
 
-/** The JSON object the bytes hold, read as spisor_read_json_file reads a file; NULL when they hold none. */
-static cJSON *object_in(const file_bytes *bytes) {
-    cJSON *root = spisor_parse_json_text((const uint8_t *)bytes->bytes, bytes->length);
+/**
+ * The JSON object the bytes hold, read as spisor_read_json_file reads a file; NULL when they hold none, with
+ * *out_of_memory set when memory ran out finding out.
+ */
+static cJSON *object_in(const file_bytes *bytes, int *out_of_memory) {
+    spisor_json_file_state state;
+    cJSON *root = spisor_parse_json_text((const uint8_t *)bytes->bytes, bytes->length, &state);
+    *out_of_memory = state == SPISOR_JSON_FILE_OUT_OF_MEMORY;
     if (!cJSON_IsObject(root)) {
         cJSON_Delete(root);
         return NULL;
@@ -224,7 +229,11 @@ static runtime_change_step describe_edit(const cJSON *change, cJSON *root, const
     if (missing_from == -2) {
         return refuse(note, "a key on the path is not an object, so the key cannot be set", path);
     }
-    if (!json_edit_set(before->bytes, before->length, key_of(change), value_of(change), edited)) {
+    json_edit_outcome outcome = json_edit_set(before->bytes, before->length, key_of(change), value_of(change), edited);
+    if (outcome == JSON_EDIT_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
+    if (outcome != JSON_EDIT_DONE) {
         return refuse(note, unreadable_object, path);
     }
     return set_what_was_there(record, root, change, missing_from) && set_inverse(record, before, edited)
@@ -275,7 +284,11 @@ static runtime_change_step record_edit(const cJSON *change, cJSON *root, const f
 
 static runtime_change_step prepare_existing(const cJSON *change, const file_bytes *before, cJSON **record,
                                             runtime_change_note *note) {
-    cJSON *root = object_in(before);
+    int out_of_memory_reading = 0;
+    cJSON *root = object_in(before, &out_of_memory_reading);
+    if (out_of_memory_reading) {
+        return out_of_memory(note);
+    }
     if (root == NULL) {
         return refuse(note, unreadable_object, text_of(change, "file"));
     }
@@ -325,7 +338,11 @@ static runtime_change_step perform_created(const cJSON *change, cJSON *record, r
 static runtime_change_step perform_edit(const cJSON *change, cJSON *record, const file_bytes *current,
                                         runtime_change_note *note) {
     const char *path = text_of(change, "file");
-    cJSON *root = object_in(current);
+    int out_of_memory_reading = 0;
+    cJSON *root = object_in(current, &out_of_memory_reading);
+    if (out_of_memory_reading) {
+        return out_of_memory(note);
+    }
     if (root == NULL) {
         return refuse(note, unreadable_object, path);
     }
@@ -352,13 +369,16 @@ runtime_change_step runtime_json_key_perform(const cJSON *change, cJSON *record,
     return step;
 }
 
-int runtime_json_key_is_on_disk(const cJSON *record) {
+runtime_change_presence runtime_json_key_is_on_disk(const cJSON *record) {
     spisor_json_file_state state;
     cJSON *root = spisor_read_json_file(text_of(record, "file"), &state);
     const cJSON *current = root == NULL ? NULL : value_at(root, key_of(record));
     int on_disk = current != NULL && cJSON_Compare(current, value_of(record), 1);
     cJSON_Delete(root);
-    return on_disk;
+    if (state == SPISOR_JSON_FILE_OUT_OF_MEMORY) {
+        return RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY;
+    }
+    return on_disk ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
 }
 
 static void key_text(const cJSON *key, char *text, size_t size) {
@@ -436,7 +456,7 @@ static int restore_previous(const cJSON *record, const file_bytes *current, json
                                        edited);
     }
     return json_edit_set(current->bytes, current->length, key_of(record),
-                         cJSON_GetObjectItemCaseSensitive(record, "previous"), edited);
+                         cJSON_GetObjectItemCaseSensitive(record, "previous"), edited) == JSON_EDIT_DONE;
 }
 
 static int created_from(const cJSON *record) {
@@ -468,7 +488,12 @@ static runtime_change_reversal undo_member(const cJSON *record, const file_bytes
 
 static runtime_change_reversal reverse_drifted_file(const cJSON *record, const file_bytes *current,
                                                     runtime_change_note *note) {
-    cJSON *root = object_in(current);
+    int out_of_memory_reading = 0;
+    cJSON *root = object_in(current, &out_of_memory_reading);
+    if (out_of_memory_reading) {
+        write_note(note, "memory ran out");
+        return RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY;
+    }
     if (root == NULL) {
         return drifted_key(record, "is in a file that is no longer readable JSON", note);
     }

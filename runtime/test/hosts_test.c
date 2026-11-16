@@ -17,6 +17,7 @@
 #include "catalog_call.h"
 #include "catalog_time.h"
 #include "changes.h"
+#include "changes_call.h"
 #include "check.h"
 #include "commands.h"
 #include "file_times.h"
@@ -133,11 +134,8 @@ static cJSON *stored_registration(const hosts_scratch *place, const char *id) {
 }
 
 static void reverse_host(const hosts_scratch *place, const char *id) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "places", places_of(place));
-    cJSON_AddStringToObject(request, "host", id);
-    catalog_answer answer = call_catalog(runtime_changes_reverse_json, request);
-    cJSON_Delete(answer.tree);
+    changes_result result = changes_reverse_call(place->state, id);
+    cJSON_Delete(result.tree);
 }
 
 static void discard(hosts_scratch *place) {

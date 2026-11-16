@@ -20,15 +20,18 @@ typedef struct json_edit_text {
     json_edit_splice splice;
 } json_edit_text;
 
+typedef enum json_edit_outcome { JSON_EDIT_DONE, JSON_EDIT_MALFORMED, JSON_EDIT_OUT_OF_MEMORY } json_edit_outcome;
+
 /**
  * text with the member at key (an array of strings) set to value, every other byte kept: a present
  * member has only its value's bytes replaced; an absent one is added as the last member of its
- * object, inside any missing objects on the way, in the object's own style (json_style.h). 0 when
- * the text is malformed, a key on the way is not an object, or memory runs out.
+ * object, inside any missing objects on the way, in the object's own style (json_style.h). MALFORMED
+ * when the text is malformed or a key on the way is not an object.
  *
  * @implNote A key the text holds twice is the LAST one, the member JSON.parse keeps.
  */
-int json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON *value, json_edit_text *edited);
+json_edit_outcome json_edit_set(const char *text, size_t length, const cJSON *key, const cJSON *value,
+                                json_edit_text *edited);
 
 /**
  * text without the member at key, then without each object from key's depth created_from on that is

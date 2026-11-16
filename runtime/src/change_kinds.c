@@ -263,7 +263,7 @@ cJSON *runtime_change_record_with(const cJSON *change, const char *const *member
 
 static runtime_change_step out_of_memory(runtime_change_note *note) {
     write_note(note, "memory ran out");
-    return RUNTIME_CHANGE_FAILED;
+    return RUNTIME_CHANGE_OUT_OF_MEMORY;
 }
 
 void runtime_change_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
@@ -702,12 +702,16 @@ runtime_change_step runtime_change_perform(const cJSON *change, cJSON *record, r
     return perform_profile_line(change, record, note);
 }
 
-int runtime_change_is_on_disk(const cJSON *record) {
+static runtime_change_presence presence_of(int on_disk) {
+    return on_disk ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
+}
+
+runtime_change_presence runtime_change_is_on_disk(const cJSON *record) {
     if (is_kind(record, "file")) {
-        return runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_OTHER;
+        return presence_of(runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_OTHER);
     }
     if (is_kind(record, "directory")) {
-        return runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_DIRECTORY;
+        return presence_of(runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_DIRECTORY);
     }
     if (is_kind(record, "json-key")) {
         return runtime_json_key_is_on_disk(record);
@@ -715,7 +719,7 @@ int runtime_change_is_on_disk(const cJSON *record) {
     if (is_kind(record, "path-entry")) {
         return runtime_path_entry_is_on_disk(record);
     }
-    return is_kind(record, "profile-line") && has_line(text_of(record, "file"), text_of(record, "line"));
+    return presence_of(is_kind(record, "profile-line") && has_line(text_of(record, "file"), text_of(record, "line")));
 }
 
 runtime_change_reversal runtime_change_reverse(const cJSON *record, int held, runtime_change_note *note) {

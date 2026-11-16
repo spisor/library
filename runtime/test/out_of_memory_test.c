@@ -16,6 +16,7 @@
 #include "check.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
+#include "runtime/changes.h"
 #include "runtime/config.h"
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
@@ -27,6 +28,7 @@
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 #include "scratch_directory.h"
+#include "registry.h"
 #include "spisor/file.h"
 
 /**
@@ -42,6 +44,7 @@
 #endif
 
 #define START "2026-10-27T19:00:00.000Z"
+#define CHANGED_FILE "{\"a\":{\"b\":1},\"logging\":true}"
 #define TIME "2026-10-27T19:34:53.123Z"
 
 typedef struct scratch {
@@ -71,10 +74,27 @@ static void write_text(const char *directory, const char *name, const char *text
 /** The files every operation reads, written afresh before each attempt so no attempt sees another's writes. */
 static void fresh_files(void) {
     start_empty_directory(place.base);
-    write_text(place.config_directory, "p.json", "{\"a\":{\"b\":1},\"logging\":true}");
+    write_text(place.config_directory, "p.json", CHANGED_FILE);
     write_text(place.config_directory, "settings.json", "{\"logConsole\":true,\"ui\":{\"size\":2}}");
     write_text(place.portable, "settings.json", "{\"ui\":{\"theme\":\"dark\"}}");
     write_text(place.programs, "probe", "");
+    char record[2400];
+    char hosts[1300];
+    snprintf(hosts, sizeof hosts, "%s/hosts", place.state);
+    snprintf(record, sizeof record,
+             "{\"id\":\"changer\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[],\"changes\":[]}",
+             place.home, place.home);
+    write_text(hosts, "changer.json", record);
+    snprintf(record, sizeof record,
+             "{\"id\":\"settler\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[],\"changes\":["
+             "{\"sequence\":1,\"kind\":\"json-key\",\"state\":\"pending\",\"reversed\":false,"
+             "\"file\":\"%s/p.json\",\"key\":[\"a\",\"b\"],\"value\":1}],\"nextSequence\":2}",
+             place.home, place.home, place.config_directory);
+    write_text(hosts, "settler.json", record);
 #ifndef _WIN32
     char probe[1300];
     snprintf(probe, sizeof probe, "%s/probe", place.programs);
@@ -282,6 +302,73 @@ static spisor_status register_a_host(void) {
     return status;
 }
 
+static spisor_status apply_a_change_as(const char *host) {
+    const runtime_changes_definition *changes = runtime_changes_definition_of();
+    const char *const key[] = {"a", "c"};
+    char file[1300];
+    runtime_change change = SPISOR_INIT(runtime_change);
+    runtime_changes_apply_argument argument = SPISOR_INIT(runtime_changes_apply_argument);
+    runtime_changes_apply_answer answer = SPISOR_INIT(runtime_changes_apply_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    snprintf(file, sizeof file, "%s/p.json", place.config_directory);
+    change.kind = RUNTIME_CHANGE_KIND_JSON_KEY;
+    change.file = file;
+    change.key = key;
+    change.key_count = 2;
+    change.value = &value.root;
+    argument.state = place.state;
+    argument.host = host;
+    argument.change = &change;
+    status = changes->apply(changes->context, &argument, &answer, &refusal);
+    changes->release_refusal(changes->context, &refusal);
+    return status;
+}
+
+static spisor_status apply_a_change(void) {
+    return apply_a_change_as("changer");
+}
+
+/** An apply that first settles a pending record against the file, reading it to find whether its key is there. */
+static spisor_status apply_after_settling(void) {
+    return apply_a_change_as("settler");
+}
+
+/** Whether host's registration holds at most `count` changes. */
+static int holds_at_most(const char *host, int count) {
+    cJSON *registration = NULL;
+    CHECK(runtime_registry_load(place.state, host, &registration) == RUNTIME_REGISTRY_OK);
+    int held = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(registration, "changes")) <= count;
+    cJSON_Delete(registration);
+    return held;
+}
+
+/** Whether the file still holds what it held before the apply. */
+static int file_unchanged(void) {
+    char file[1300];
+    size_t length = 0;
+    snprintf(file, sizeof file, "%s/p.json", place.config_directory);
+    uint8_t *bytes = spisor_read_file(file, &length);
+    int unchanged = bytes != NULL && length == strlen(CHANGED_FILE) && memcmp(bytes, CHANGED_FILE, length) == 0;
+    free(bytes);
+    return unchanged;
+}
+
+/** Whether an apply after settling recorded no change of its own, the file as it was. */
+static int settled_and_changed_nothing(void) {
+    return file_unchanged() && holds_at_most("settler", 1);
+}
+
+/**
+ * Whether an apply changed nothing: the file as it was and no change recorded.
+ *
+ * @implNote Not the registration's bytes: once the pending record was written, its number is never handed out again,
+ * so the counter may have moved.
+ */
+static int changed_nothing(void) {
+    return file_unchanged() && holds_at_most("changer", 0);
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -367,6 +454,9 @@ int main(void) {
     every_failure_answers_out_of_memory("fetch's get", fetch_a_file, NULL);
     every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
     every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
+    every_failure_answers_out_of_memory("changes' apply", apply_a_change, changed_nothing);
+    every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
+                                        settled_and_changed_nothing);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
