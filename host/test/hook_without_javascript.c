@@ -4,6 +4,11 @@
 
 #define TIMED_RUNS 7
 #define HOOK_BUDGET_MILLISECONDS 200.0
+#ifdef SPISOR_SANITIZED
+#define HOOK_BUDGET_HOLDS 0
+#else
+#define HOOK_BUDGET_HOLDS 1
+#endif
 /**
  * The hook starts with a hidden console of its own, as Node's spawn with windowsHide starts one on Windows;
  * not detached, which would hand spisor-host a new console of its own and time that instead.
@@ -109,6 +114,9 @@ static int compare_milliseconds(const void *left, const void *right) {
  * With every JavaScript runtime taken off the machine's PATH, the hook registers, records
  * and exits 0 within the budget; the median of several runs is held to it, so one slow process start on a
  * busy runner does not decide it.
+ *
+ * @implNote A sanitized build only reports the time: the sanitizers' own cost is not the hook's, and the budget holds
+ * in every unsanitized Debug and Release build.
  */
 static void a_session_start_with_no_javascript_on_path_registers_records_and_finishes_within_its_budget(void) {
     host_world world;
@@ -133,7 +141,7 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
         printf(" %.1f", runs[index]);
     }
     printf("\n");
-    if (median > HOOK_BUDGET_MILLISECONDS) {
+    if (HOOK_BUDGET_HOLDS && median > HOOK_BUDGET_MILLISECONDS) {
         fprintf(stderr, "the hook's median %.1f ms on %s, %s build, is over its %.0f ms budget; runs:", median, runtime_platform_key(),
                 BUILD_TYPE, HOOK_BUDGET_MILLISECONDS);
         for (int index = 0; index < TIMED_RUNS; index++) {

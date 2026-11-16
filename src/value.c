@@ -62,6 +62,9 @@ static int compare_addresses(const void *left, const void *right) {
 }
 
 static int holds_a_node_twice(reached_nodes *reached) {
+    if (reached->count < 2) {
+        return 0;
+    }
     qsort((void *)reached->nodes, reached->count, sizeof *reached->nodes, compare_addresses);
     for (size_t index = 1; index < reached->count; index++) {
         if (reached->nodes[index] == reached->nodes[index - 1]) {

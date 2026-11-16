@@ -246,7 +246,7 @@ static void a_tampered_file_is_refused_and_nothing_is_deployed(void) {
 static void a_name_taken_during_the_install_is_refused_and_nothing_is_installed(void) {
     plugin_folder = "plugins-taken";
     catalog_answer answer = install_with("github:9", NULL);
-    CHECK(expect_refusal(answer, "when the install began", "taken name"));
+    CHECK(expect_refusal_released(answer, "when the install began", "taken name"));
     CHECK(!exists_in_scratch("cache/bundles/github+9"));
     CHECK(!exists_in_scratch("plugins-taken"));
     plugin_folder = NULL;

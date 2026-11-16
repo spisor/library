@@ -503,6 +503,16 @@ static void enter_install_base(install_base *base, const char *root) {
     base->items = NULL;
 }
 
+/** Frees what enter_install_base made, leaving the folders to the process that created them. */
+static void leave_install_base(install_base *base) {
+    free(base->portable);
+    free(base->state);
+    free(base->cache);
+    free(base->user);
+    free(base->path);
+    free(base->catalog);
+}
+
 /** The child half of the concurrent test: one install requesting the comma-separated plugins, from the served build. */
 static int run_child_install(const char *root, const char *requested, const char *url, const char *sha256) {
     install_base base;
@@ -527,6 +537,7 @@ static int run_child_install(const char *root, const char *requested, const char
         cJSON_free(printed);
     }
     cJSON_Delete(answer.tree);
+    leave_install_base(&base);
     return succeeded ? 0 : 1;
 }
 

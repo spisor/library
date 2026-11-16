@@ -134,7 +134,7 @@ static void refuses_an_argument_without_what_it_needs(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "arguments");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", scratch);
-    expect_refusal(call_catalog(runtime_marketplace_remember, argument), "name", "no name");
+    expect_refusal_released(call_catalog(runtime_marketplace_remember, argument), "name", "no name");
 }
 
 static int is_settled(const catalog_answer answer) {

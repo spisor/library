@@ -54,7 +54,9 @@ static void text_append(text *buffer, const char *bytes, size_t length) {
     if (buffer->failed) {
         return;
     }
-    memcpy(buffer->data + buffer->length, bytes, length);
+    if (length > 0) {
+        memcpy(buffer->data + buffer->length, bytes, length);
+    }
     buffer->length += length;
     buffer->data[buffer->length] = '\0';
 }

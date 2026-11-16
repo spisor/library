@@ -86,4 +86,11 @@ static inline int expect_refusal(catalog_answer answer, const char *fragment, co
     return matched;
 }
 
+/** expect_refusal on an answer no caller keeps, releasing its tree. */
+static inline int expect_refusal_released(catalog_answer answer, const char *fragment, const char *label) {
+    int matched = expect_refusal(answer, fragment, label);
+    cJSON_Delete(answer.tree);
+    return matched;
+}
+
 #endif

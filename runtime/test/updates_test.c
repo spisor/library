@@ -733,9 +733,9 @@ static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_
 
 static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     start_base("escape-id");
-    expect_refusal(apply_plain("../escape", "{}"), "outside", "apply escape");
-    expect_refusal(check_with("../escape", no_settings(), "{}"), "outside", "check escape");
-    expect_refusal(rollback_of("../escape", "a"), "outside", "rollback escape");
+    expect_refusal_released(apply_plain("../escape", "{}"), "outside", "apply escape");
+    expect_refusal_released(check_with("../escape", no_settings(), "{}"), "outside", "check escape");
+    expect_refusal_released(rollback_of("../escape", "a"), "outside", "rollback escape");
     finish_base();
 }
 

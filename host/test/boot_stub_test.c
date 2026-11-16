@@ -1,5 +1,7 @@
 #include "host_fixture.h"
 
+#include "holders.h"
+#include "holders_lock.h"
 #include "processes.h"
 
 static char *stub_of(const host_world *world) {
@@ -194,12 +196,29 @@ static int records_no_spisor_host(const void *context) {
     return !records_spisor_host(context);
 }
 
-/** Holds the background host for this test's own pid, with no host process recorded yet, as a launcher would. */
+/**
+ * Holds the background host for this test's own pid, with no host process recorded yet, as a launcher would.
+ *
+ * @implNote Written under the holders lock the background host takes for its own read and write of the record, so
+ * a release cannot be lost to the host rewriting the holders it read just before.
+ */
 static void hold_for_this_test(const host_world *world, int held) {
     char text[256];
+    char *problem = NULL;
+    char *folder = runtime_processes_folder(world->base.state);
+    CHECK(folder != NULL && spisor_make_directories(folder) == 1);
+    free(folder);
+    char *lock = runtime_holders_path(world->base.state, BACKGROUND_ID, ".lock", &problem);
+    runtime_holders_guard *guard = lock == NULL ? NULL : runtime_lock_holders(lock);
+    CHECK(guard != NULL);
     snprintf(text, sizeof text, "{\"pid\":null,\"aliveAt\":null,\"checkMilliseconds\":%d,\"holders\":[%.0d]}",
              INTERVAL_MILLISECONDS, held ? (int)fixture_process_id() : 0);
     write_in(world->base.state, "processes/" BACKGROUND_ID ".json", text);
+    if (guard != NULL) {
+        runtime_unlock_holders(guard);
+    }
+    free(lock);
+    free(problem);
 }
 
 static void records_the_spisor_host_version_a_background_command_runs_while_its_layer_runs(void) {

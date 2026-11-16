@@ -121,7 +121,8 @@ static void it_skips_an_unknown_kind_and_reports_it(void) {
 }
 
 static void it_refuses_settings_that_are_not_an_object(void) {
-    expect_refusal(call_catalog(runtime_catalog_sources, parsed("{\"settings\":[]}")), "settings", "settings array");
+    expect_refusal_released(call_catalog(runtime_catalog_sources, parsed("{\"settings\":[]}")), "settings",
+                            "settings array");
 }
 
 static catalog_answer merged(const char *catalogs_json) {
@@ -165,8 +166,8 @@ static void it_merges_ids_in_the_order_javascript_enumerates_them(void) {
 }
 
 static void it_refuses_catalogs_it_cannot_merge(void) {
-    expect_refusal(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1}}]"), "catalogs", "no items");
-    expect_refusal(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":1,\"items\":{}}}]"), "catalogs",
+    expect_refusal_released(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1}}]"), "catalogs", "no items");
+    expect_refusal_released(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":1,\"items\":{}}}]"), "catalogs",
                    "bad source");
 }
 
