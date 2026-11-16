@@ -10,7 +10,23 @@ jobs:
     uses: intisy/workflows/.github/workflows/test.yml@main
     with:
       toolchains: cmake
-      runners: '["ubuntu-latest","windows-latest","macos-latest"]'
+      runners: '["windows-latest"]'
       cmake_configure: '-S . -B build'
       cmake_build: '--build build --config Debug'
       cmake_test: 'ctest --test-dir build --output-on-failure -C Debug'
+  sanitized:
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      toolchains: cmake
+      runners: '["ubuntu-latest","macos-latest"]'
+      cmake_configure: '-S . -B build -DCMAKE_BUILD_TYPE=Debug -DSPISOR_SANITIZE=ON'
+      cmake_build: '--build build --config Debug'
+      cmake_test: 'ctest --test-dir build --output-on-failure -C Debug'
+  release:
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      toolchains: cmake
+      runners: '["ubuntu-latest","windows-latest","macos-latest"]'
+      cmake_configure: '-S . -B build -DCMAKE_BUILD_TYPE=Release'
+      cmake_build: '--build build --config Release'
+      cmake_test: 'ctest --test-dir build --output-on-failure -C Release'

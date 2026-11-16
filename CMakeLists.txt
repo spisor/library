@@ -11,6 +11,7 @@ if(MSVC)
     add_link_options(/Brepro)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sanitizers.cmake)
 
 add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
