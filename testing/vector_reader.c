@@ -6,7 +6,7 @@
 
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
-#include "spisor/json_value.h"
+#include "json_value.h"
 
 typedef struct status_name {
     const char *name;

@@ -1,4 +1,4 @@
-#include "spisor/json_value.h"
+#include "json_value.h"
 
 #include <string.h>
 
@@ -114,9 +114,10 @@ spisor_status spisor_value_of_json(const cJSON *json, spisor_value_tree *tree) {
         return status;
     }
     fill(json, &root, &cursor);
-    if (spisor_value_check(&root) != SPISOR_OK) {
+    status = spisor_value_check(&root);
+    if (status != SPISOR_OK) {
         spisor_memory_release(storage);
-        return SPISOR_MALFORMED;
+        return status;
     }
     value_tree_adopt(tree, &root, storage);
     return SPISOR_OK;

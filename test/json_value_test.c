@@ -3,7 +3,7 @@
 #include "allocation.h"
 #include "check.h"
 #include "spisor/json_kind.h"
-#include "spisor/json_value.h"
+#include "json_value.h"
 
 static cJSON *parsed(const char *text) {
     return spisor_parse_json((const uint8_t *)text, strlen(text));
@@ -108,10 +108,10 @@ static void a_tree_that_is_not_empty_is_refused(void) {
 
 static void every_failed_allocation_leaves_the_tree_empty(void) {
     cJSON *json = parsed("{\"a\":[1,{\"b\":\"text\"}],\"c\":null}");
-    for (uint64_t nth = 1; nth < 1000; nth++) {
+    for (uint64_t attempt = 1; attempt < 1000; attempt++) {
         spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
         spisor_status status;
-        spisor_memory_fail_at(nth);
+        spisor_memory_fail_at(attempt);
         status = spisor_value_of_json(json, &tree);
         if (!spisor_memory_failed()) {
             spisor_memory_fail_at(0);
@@ -121,7 +121,7 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
             cJSON_Delete(json);
             return;
         }
-        CHECK(spisor_memory_attempts() == nth);
+        CHECK(spisor_memory_attempts() == attempt);
         spisor_memory_fail_at(0);
         CHECK(status == SPISOR_OUT_OF_MEMORY);
         CHECK(tree.root.kind == SPISOR_VALUE_NONE && tree.storage == NULL);

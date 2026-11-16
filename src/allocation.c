@@ -41,8 +41,8 @@ void spisor_memory_release(void *block) {
     free(block);
 }
 
-void spisor_memory_fail_at(uint64_t nth) {
-    countdown = nth;
+void spisor_memory_fail_at(uint64_t attempt) {
+    countdown = attempt;
     attempts = 0;
     failed = 0;
 }

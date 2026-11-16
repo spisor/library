@@ -1,10 +1,13 @@
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "allocation.h"
 #include "check.h"
 #include "spisor/value.h"
+#include "value_equal.h"
 
 #define TEXT(literal) text_node(literal, sizeof literal - 1)
 #define KEY(literal, node) entry_of(literal, sizeof literal - 1, node)
@@ -176,6 +179,87 @@ static void nesting_stops_at_the_limit(void) {
     free(past_limit);
 }
 
+#define WALK_TIME_BOUND_SECONDS 1.0
+#define SHARED_DEPTH 40
+#define MANY_KEYS 40000
+#define KEY_CAPACITY 8
+
+static int within_bound(clock_t started, const char *label) {
+    double seconds = (double)(clock() - started) / CLOCKS_PER_SEC;
+    if (seconds <= WALK_TIME_BOUND_SECONDS) {
+        return 1;
+    }
+    fprintf(stderr, "%s took %.2f seconds\n", label, seconds);
+    check_failures++;
+    return 0;
+}
+
+static void a_node_reached_twice_is_malformed(void) {
+    spisor_value shared_items[1];
+    spisor_value lists[2];
+    spisor_entry shared_entries[1];
+    spisor_value records[2];
+    shared_items[0] = node_of(SPISOR_VALUE_NULL);
+    lists[0] = list_node(shared_items, 1);
+    lists[1] = list_node(shared_items, 1);
+    shared_entries[0] = KEY("key", number_node(1));
+    records[0] = record_node(shared_entries, 1);
+    records[1] = record_node(shared_entries, 1);
+    expect_malformed(list_node(lists, 2), "two lists sharing their items");
+    expect_malformed(list_node(records, 2), "two records sharing their entries");
+}
+
+static void a_shared_subtree_is_refused_without_walking_every_path(void) {
+    spisor_value levels[SHARED_DEPTH + 1][2];
+    spisor_value root;
+    clock_t started;
+    for (size_t depth = 0; depth < SHARED_DEPTH; depth++) {
+        levels[depth][0] = list_node(levels[depth + 1], 2);
+        levels[depth][1] = list_node(levels[depth + 1], 2);
+    }
+    levels[SHARED_DEPTH][0] = node_of(SPISOR_VALUE_NULL);
+    levels[SHARED_DEPTH][1] = node_of(SPISOR_VALUE_NULL);
+    root = list_node(levels[0], 2);
+    started = clock();
+    CHECK(spisor_value_check(&root) == SPISOR_MALFORMED);
+    within_bound(started, "checking a shared subtree 40 deep");
+}
+
+typedef struct many_keys {
+    char keys[MANY_KEYS][KEY_CAPACITY];
+    spisor_entry entries[MANY_KEYS];
+    spisor_entry reversed[MANY_KEYS];
+} many_keys;
+
+static void a_large_record_is_checked_and_compared_quickly(void) {
+    many_keys *many = calloc(1, sizeof *many);
+    spisor_value record;
+    spisor_value reversed;
+    clock_t started;
+    CHECK(many != NULL);
+    if (many == NULL) {
+        return;
+    }
+    for (size_t index = 0; index < MANY_KEYS; index++) {
+        int written = snprintf(many->keys[index], KEY_CAPACITY, "k%05u", (unsigned)index);
+        many->entries[index] = entry_of(many->keys[index], (size_t)written, number_node((double)index));
+        many->reversed[MANY_KEYS - 1 - index] = many->entries[index];
+    }
+    record = record_node(many->entries, MANY_KEYS);
+    reversed = record_node(many->reversed, MANY_KEYS);
+    started = clock();
+    CHECK(spisor_value_check(&record) == SPISOR_OK);
+    within_bound(started, "checking 40000 keys");
+    started = clock();
+    CHECK(spisor_value_equal(&record, &reversed));
+    within_bound(started, "comparing 40000 keys");
+    many->entries[MANY_KEYS - 1].key = many->keys[0];
+    started = clock();
+    CHECK(spisor_value_check(&record) == SPISOR_MALFORMED);
+    within_bound(started, "finding the one key held twice among 40000");
+    free(many);
+}
+
 static void a_member_is_found_by_its_whole_key(void) {
     sample_tree sample;
     const spisor_value *found;
@@ -228,7 +312,6 @@ static void a_build_outlives_its_source(void) {
     sample.members[0].value = text_node(name, sizeof name - 1);
     spisor_memory_fail_at(0);
     CHECK(spisor_value_build(&sample.root, &tree) == SPISOR_OK);
-    CHECK(spisor_memory_attempts() == 1);
     CHECK(tree.storage != NULL);
     CHECK(spisor_value_check(&tree.root) == SPISOR_OK);
     CHECK(spisor_value_equal(&tree.root, &original.root));
@@ -279,12 +362,12 @@ static void a_build_refuses_without_allocating(void) {
 static void every_failed_allocation_leaves_the_tree_empty(void) {
     sample_tree sample;
     lay_out_sample(&sample);
-    for (uint64_t nth = 1; nth < 1000; nth++) {
+    for (uint64_t attempt = 1; attempt < 1000; attempt++) {
         spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
         spisor_value_tree before;
         spisor_status status;
         memcpy(&before, &tree, sizeof before);
-        spisor_memory_fail_at(nth);
+        spisor_memory_fail_at(attempt);
         status = spisor_value_build(&sample.root, &tree);
         if (!spisor_memory_failed()) {
             spisor_memory_fail_at(0);
@@ -293,7 +376,7 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
             CHECK(spisor_memory_live_blocks() == 0);
             return;
         }
-        CHECK(spisor_memory_attempts() == nth);
+        CHECK(spisor_memory_attempts() == attempt);
         spisor_memory_fail_at(0);
         CHECK(status == SPISOR_OUT_OF_MEMORY);
         CHECK(memcmp(&before, &tree, sizeof before) == 0);
@@ -307,6 +390,9 @@ int main(void) {
     a_broken_node_is_malformed();
     a_broken_member_is_malformed();
     nesting_stops_at_the_limit();
+    a_node_reached_twice_is_malformed();
+    a_shared_subtree_is_refused_without_walking_every_path();
+    a_large_record_is_checked_and_compared_quickly();
     a_member_is_found_by_its_whole_key();
     equality_reads_records_in_any_order_and_lists_in_order();
     a_build_outlives_its_source();

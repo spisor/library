@@ -15,9 +15,10 @@ add_test(NAME public_headers_are_ascii
 
 foreach(name status_test value_test json_value_test)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE spisor_library_testing)
+    target_link_libraries(${name} PRIVATE spisor_library_testing spisor_vector_reader)
     spisor_strict_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES TIMEOUT 120)
 endforeach()
 
 add_executable(vector_reader_test vector_reader_test.c)

@@ -70,9 +70,11 @@ typedef struct spisor_value_tree {
 
 /**
  * Walks the whole tree and answers whether it keeps every rule of spisor_value and spisor_entry, within
- * SPISOR_VALUE_DEPTH_LIMIT.
+ * SPISOR_VALUE_DEPTH_LIMIT. Every node must be reached exactly once, so a node shared by two parents or reached
+ * through a cycle is MALFORMED, found in O(n log n).
  *
- * @return OK; MALFORMED at the first rule broken, and for a NULL value.
+ * @return OK; MALFORMED at the first rule broken, and for a NULL value; OUT_OF_MEMORY when the walk cannot hold the
+ * nodes it has reached.
  */
 spisor_status spisor_value_check(const spisor_value *value);
 
@@ -82,12 +84,6 @@ spisor_status spisor_value_check(const spisor_value *value);
  * @return the member's value; NULL when `record` is not a record or holds no such key.
  */
 const spisor_value *spisor_value_member(const spisor_value *record, const char *key, size_t key_length);
-
-/**
- * Whether two well-formed trees hold the same value: the same kinds, booleans, numbers and texts, lists item by item
- * in order, and records with the same keys each holding the same value, in any order, since each key is there once.
- */
-int spisor_value_equal(const spisor_value *left, const spisor_value *right);
 
 /**
  * Copies a well-formed tree into an empty one, every node and text in one allocation, so the copy outlives `source`.
