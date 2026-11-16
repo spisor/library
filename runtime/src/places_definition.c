@@ -5,7 +5,6 @@
 
 #include "definition_support.h"
 #include "json_service.h"
-#include "json_allocation.h"
 #include "paths.h"
 #include "places.h"
 #include "user_home.h"
@@ -87,7 +86,6 @@ static const runtime_places_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_places_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }
 

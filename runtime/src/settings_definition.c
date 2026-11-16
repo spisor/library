@@ -3,7 +3,6 @@
 #include "config.h"
 #include "config_conversion.h"
 #include "definition_support.h"
-#include "json_allocation.h"
 
 #define SCOPE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_settings_scope, portable)
 
@@ -64,6 +63,5 @@ static const runtime_settings_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_settings_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }

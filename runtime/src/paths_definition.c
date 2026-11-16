@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "definition_support.h"
-#include "json_allocation.h"
 #include "json_value.h"
 #include "paths.h"
 #include "segment.h"
@@ -137,6 +136,5 @@ static const runtime_paths_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_paths_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }

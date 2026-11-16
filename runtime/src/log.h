@@ -30,13 +30,20 @@ typedef struct runtime_log_request {
     int no_color;
 } runtime_log_request;
 
+/** The console line a write answers, NULL when none is due, in a block freed with runtime_release_storage. */
+typedef struct runtime_log_console {
+    const char *line;
+    void *storage;
+} runtime_log_console;
+
 /**
- * Appends the line and answers the console line due, freed with free, or NULL when none is, with the rules, statuses
- * and refusals include/runtime/log.h documents.
+ * Appends the line and answers the console line due, with the rules, statuses and refusals include/runtime/log.h
+ * documents. Only an OK answer fills `console`.
  *
  * @implNote A failed append answers a refusal only when no console line is due, so an error is never lost to its own
  * unwritable log, as the TypeScript printed before it wrote.
  */
-spisor_status runtime_write_log(const runtime_log_request *entry, char **console, spisor_refusal *refusal);
+spisor_status runtime_write_log(const runtime_log_request *entry, runtime_log_console *console,
+                                spisor_refusal *refusal);
 
 #endif

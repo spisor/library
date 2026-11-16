@@ -1017,15 +1017,15 @@ static void a_get_without_its_argument_shape_is_malformed(void) {
     config->release_refusal(config->context, &refusal);
 }
 
-static void get_and_all_refuse_a_file_holding_a_number_no_value_carries(void) {
+static void a_file_holding_a_number_no_value_carries_reads_as_unreadable(void) {
     scratch_home home;
     fresh_home(&home, "non-finite");
     write_settings_file(&home, "p", "{\"a\":1e999,\"b\":1}");
-    answer got = get_key(&home, "p", NULL, "b");
-    CHECK(got.status == SPISOR_REFUSED);
+    answer got = get_key(&home, "p", "{\"defaults\":{\"b\":2}}", "b");
+    expect_member(&got, "value", "2", "the file contributes nothing to get");
     finish(&got);
     answer all = call_with(CONFIG_ALL, request_for(&home, "p", NULL, NULL));
-    CHECK(all.status == SPISOR_REFUSED);
+    expect_member(&all, "values", "{}", "the file contributes nothing to all");
     finish(&all);
     answer set = set_key(&home, "p", NULL, NULL, "a", "5");
     CHECK(set.status == SPISOR_REFUSED);
@@ -1052,7 +1052,7 @@ int main(void) {
     hand_edit_seen();
     merge_and_walk_units();
     refuses_missing_arguments();
-    get_and_all_refuse_a_file_holding_a_number_no_value_carries();
+    a_file_holding_a_number_no_value_carries_reads_as_unreadable();
     releasing_a_tree_overwrites_its_texts_as_a_secret_needs();
     a_get_without_its_argument_shape_is_malformed();
     the_definitions_are_static_structs();

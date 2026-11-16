@@ -7,6 +7,7 @@
 #include "spisor/javascript.h"
 #include "spisor/json_kind.h"
 
+#include "allocation.h"
 #include "file_presence.h"
 #include "file_reading.h"
 #include "json_parse.h"
@@ -43,8 +44,7 @@ static size_t comment_match_end(const char *text, size_t length, size_t index) {
     return line_feed == NULL ? length : (size_t)(line_feed - text);
 }
 
-char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripped_length) {
-    char *kept = malloc(length + 1);
+static char *strip_into(const char *text, size_t length, size_t *stripped_length, char *kept) {
     if (kept == NULL) {
         return NULL;
     }
@@ -67,22 +67,30 @@ char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripp
     return kept;
 }
 
+char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripped_length) {
+    return strip_into(text, length, stripped_length, malloc(length + 1));
+}
+
+char *spisor_strip_comment_lines_reading(const char *text, size_t length, size_t *stripped_length) {
+    return strip_into(text, length, stripped_length, spisor_memory_allocate(length + 1));
+}
+
 static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_file_state *state) {
     size_t decoded_length = 0;
-    uint8_t *decoded = spisor_decode_utf8_lossy(bytes, length, &decoded_length);
+    uint8_t *decoded = spisor_decode_utf8_lossy_reading(bytes, length, &decoded_length);
     int out_of_memory = 0;
     *state = SPISOR_JSON_FILE_OUT_OF_MEMORY;
     if (decoded == NULL) {
         return NULL;
     }
     size_t text_length = 0;
-    char *text = spisor_strip_comment_lines((const char *)decoded, decoded_length, &text_length);
-    free(decoded);
+    char *text = spisor_strip_comment_lines_reading((const char *)decoded, decoded_length, &text_length);
+    spisor_memory_release(decoded);
     if (text == NULL) {
         return NULL;
     }
     cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)text, text_length, &out_of_memory);
-    free(text);
+    spisor_memory_release(text);
     if (parsed != NULL) {
         *state = SPISOR_JSON_FILE_PARSED;
     } else if (!out_of_memory) {
@@ -105,7 +113,7 @@ cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state) {
         return NULL;
     }
     cJSON *parsed = parse_stripped(bytes, length, state);
-    free(bytes);
+    spisor_memory_release(bytes);
     return parsed;
 }
 
