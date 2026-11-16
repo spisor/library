@@ -26,6 +26,7 @@ add_library(host_marketplace_lookup_test_hook OBJECT src/marketplace_lookup.c)
 target_include_directories(host_marketplace_lookup_test_hook PRIVATE src)
 target_compile_definitions(host_marketplace_lookup_test_hook PRIVATE HOST_MARKETPLACE_TEST_HOOK)
 spisor_strict_warnings(host_marketplace_lookup_test_hook)
+set_target_properties(host_marketplace_lookup_test_hook PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 add_library(host_ready_timeout OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout PRIVATE src)
@@ -35,6 +36,7 @@ add_library(host_ready_timeout_test_hook OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout_test_hook PRIVATE src)
 target_compile_definitions(host_ready_timeout_test_hook PRIVATE HOST_READY_TIMEOUT_TEST_HOOK)
 spisor_strict_warnings(host_ready_timeout_test_hook)
+set_target_properties(host_ready_timeout_test_hook PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
@@ -47,7 +49,7 @@ set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime
 
 function(host_executable target output_name)
     add_executable(${target} ${ARGN})
-    target_link_libraries(${target} PRIVATE runtime_objects ${runtime_executable_libraries})
+    target_link_libraries(${target} PRIVATE runtime_objects spisor_allocator ${runtime_executable_libraries})
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
         ${PROJECT_SOURCE_DIR}/src)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME ${output_name})
@@ -70,7 +72,7 @@ list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/s
 # spisor-boot changes almost never once published, so it carries only what boot.resolve needs.
 add_executable(spisor_boot src/boot_main.c src/host_output.c src/host_service.c src/own_executable.c src/windows_command.c
     ${host_boot_platform_sources} ${host_boot_runtime_sources})
-target_link_libraries(spisor_boot PRIVATE spisor_library)
+target_link_libraries(spisor_boot PRIVATE spisor_library spisor_allocator)
 target_include_directories(spisor_boot PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
     ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(spisor_boot PROPERTIES OUTPUT_NAME spisor-boot)
@@ -89,7 +91,7 @@ else()
 endif()
 add_executable(stage_bundle bundle/stage_bundle.c ${stage_bundle_platform_sources}
     ${PROJECT_SOURCE_DIR}/runtime/src/directory_tree.c ${PROJECT_SOURCE_DIR}/runtime/src/platform_key.c)
-target_link_libraries(stage_bundle PRIVATE spisor_library)
+target_link_libraries(stage_bundle PRIVATE spisor_library spisor_allocator)
 target_include_directories(stage_bundle PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
     ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(stage_bundle PROPERTIES OUTPUT_NAME stage-bundle)

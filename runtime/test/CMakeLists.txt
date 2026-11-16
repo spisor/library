@@ -1,6 +1,6 @@
-function(runtime_test name)
+function(runtime_test_with_allocator name allocator)
     add_executable(${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
-    target_link_libraries(${name} PRIVATE runtime_objects ${runtime_secret_store_libraries}
+    target_link_libraries(${name} PRIVATE runtime_objects ${allocator} ${runtime_secret_store_libraries}
         ${runtime_path_entry_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
     spisor_strict_warnings(${name})
@@ -8,6 +8,16 @@ function(runtime_test name)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
+
+function(runtime_test name)
+    runtime_test_with_allocator(${name} spisor_allocator ${ARGN})
+endfunction()
+
+runtime_test_with_allocator(reader_with_counting_allocator_test spisor_allocator_counting
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(reader_with_counting_allocator_test PRIVATE spisor_vector_reader)
+target_compile_definitions(reader_with_counting_allocator_test PRIVATE
+    SPISOR_VECTOR_READER_VECTOR_PATH="${PROJECT_SOURCE_DIR}/test/vectors/vector-reader.json")
 
 foreach(name paths_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)

@@ -385,6 +385,39 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
     CHECK(0);
 }
 
+#define WIDE_LIST 300
+
+static void every_failed_allocation_past_the_first_growth_leaves_the_tree_empty(void) {
+    spisor_value items[WIDE_LIST];
+    spisor_value wide;
+    for (size_t index = 0; index < WIDE_LIST; index++) {
+        items[index] = number_node((double)index);
+    }
+    wide = list_node(items, WIDE_LIST);
+    for (uint64_t attempt = 1; attempt < 1000; attempt++) {
+        spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+        spisor_value_tree before;
+        spisor_status status;
+        memcpy(&before, &tree, sizeof before);
+        spisor_memory_fail_at(attempt);
+        status = spisor_value_build(&wide, &tree);
+        if (!spisor_memory_failed()) {
+            spisor_memory_fail_at(0);
+            CHECK(status == SPISOR_OK);
+            CHECK(attempt > 3);
+            spisor_value_release(&tree);
+            CHECK(spisor_memory_live_blocks() == 0);
+            return;
+        }
+        CHECK(spisor_memory_attempts() == attempt);
+        spisor_memory_fail_at(0);
+        CHECK(status == SPISOR_OUT_OF_MEMORY);
+        CHECK(memcmp(&before, &tree, sizeof before) == 0);
+        CHECK(spisor_memory_live_blocks() == 0);
+    }
+    CHECK(0);
+}
+
 int main(void) {
     every_kind_is_well_formed();
     a_broken_node_is_malformed();
@@ -399,5 +432,6 @@ int main(void) {
     a_scalar_builds_without_a_block();
     a_build_refuses_without_allocating();
     every_failed_allocation_leaves_the_tree_empty();
+    every_failed_allocation_past_the_first_growth_leaves_the_tree_empty();
     return check_summary("value_test");
 }

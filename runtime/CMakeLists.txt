@@ -15,6 +15,7 @@ target_include_directories(runtime_objects_config_test_hooks PRIVATE ${PROJECT_S
 target_link_libraries(runtime_objects_config_test_hooks PUBLIC spisor_library)
 target_compile_definitions(runtime_objects_config_test_hooks PRIVATE SPISOR_CONFIG_TEST_HOOKS)
 spisor_strict_warnings(runtime_objects_config_test_hooks)
+set_target_properties(runtime_objects_config_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 add_library(runtime_change_reversal OBJECT src/change_reversal.c)
 target_link_libraries(runtime_change_reversal PUBLIC runtime_objects)
@@ -25,6 +26,7 @@ add_library(runtime_change_reversal_test_hooks OBJECT src/change_reversal.c)
 target_link_libraries(runtime_change_reversal_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_change_reversal_test_hooks PRIVATE SPISOR_CHANGES_TEST_HOOKS)
 spisor_strict_warnings(runtime_change_reversal_test_hooks)
+set_target_properties(runtime_change_reversal_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 if(WIN32)
     set(runtime_path_entry_source src/path_entry_windows.c)
@@ -42,6 +44,7 @@ add_library(runtime_path_entry_test_hooks OBJECT ${runtime_path_entry_source})
 target_link_libraries(runtime_path_entry_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_path_entry_test_hooks PRIVATE SPISOR_PATH_ENTRY_TEST_HOOKS)
 spisor_strict_warnings(runtime_path_entry_test_hooks)
+set_target_properties(runtime_path_entry_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 if(WIN32)
     set(runtime_secret_store_source src/secret_windows.c)
@@ -64,6 +67,7 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(runtime_secret_store_test_hooks PUBLIC src)
     target_compile_definitions(runtime_secret_store_test_hooks PRIVATE SPISOR_SECRET_TEST_HOOKS)
     spisor_strict_warnings(runtime_secret_store_test_hooks)
+    set_target_properties(runtime_secret_store_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 endif()
 
 if(WIN32)
@@ -84,6 +88,7 @@ add_library(runtime_fetch_test_hooks OBJECT ${runtime_fetch_sources})
 target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
 spisor_strict_warnings(runtime_fetch_test_hooks)
+set_target_properties(runtime_fetch_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 add_library(runtime_identity_resolve OBJECT src/identity_resolve.c)
 target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
@@ -118,6 +123,7 @@ add_library(runtime_marketplace_reading_test_hooks OBJECT src/marketplace_source
 target_link_libraries(runtime_marketplace_reading_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_marketplace_reading_test_hooks PRIVATE SPISOR_MARKETPLACE_TEST_HOOKS)
 spisor_strict_warnings(runtime_marketplace_reading_test_hooks)
+set_target_properties(runtime_marketplace_reading_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 add_library(runtime_catalog OBJECT ${runtime_catalog_sources})
 target_link_libraries(runtime_catalog PUBLIC runtime_objects)
@@ -133,6 +139,7 @@ add_library(runtime_catalog_refresh_test_hooks OBJECT src/catalog_refresh.c)
 target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
+set_target_properties(runtime_catalog_refresh_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
     src/cache_deploy.c src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
@@ -195,6 +202,7 @@ target_link_libraries(runtime_install_test_hooks PUBLIC runtime_objects)
 target_include_directories(runtime_install_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(runtime_install_test_hooks PRIVATE SPISOR_INSTALL_TEST_HOOKS)
 spisor_strict_warnings(runtime_install_test_hooks)
+set_target_properties(runtime_install_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -205,7 +213,7 @@ add_library(runtime SHARED src/release.c $<TARGET_OBJECTS:runtime_objects> $<TAR
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
 target_include_directories(runtime PRIVATE src)
-target_link_libraries(runtime PRIVATE spisor_library ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
+target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
