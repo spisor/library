@@ -19,41 +19,28 @@
  */
 #define NO_HOME "portable-layer-only"
 
-static cJSON *settings_call(const runtime_install_settings *settings, int application, int portable) {
-    const char *segments[2] = {settings->state, NO_HOME};
-    char *no_home = application ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    cJSON *call = application || no_home != NULL ? cJSON_CreateObject() : NULL;
-    if (call != NULL && (cJSON_AddStringToObject(call, "home", application ? settings->home : no_home) == NULL ||
-                         (portable && cJSON_AddStringToObject(call, "portable", settings->portable) == NULL))) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    free(no_home);
-    return call;
-}
-
 cJSON *runtime_install_settings_values(const runtime_install_settings *settings, int application, int portable,
                                        cJSON **refusal) {
-    cJSON *answer = runtime_call_or_refuse(runtime_settings_all, settings_call(settings, application, portable), refusal);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer, "values");
-    cJSON_Delete(answer);
+    const char *segments[2] = {settings->state, NO_HOME};
+    char *no_home = application ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    cJSON *values = NULL;
+    *refusal = NULL;
+    if (application || no_home != NULL) {
+        values = runtime_ecosystem_settings_values(application ? settings->home : no_home,
+                                                   portable ? settings->portable : NULL, refusal);
+    }
+    free(no_home);
     return values;
 }
 
 int runtime_install_settings_set(const runtime_install_settings *settings, const char *key, cJSON *value,
                                  const char *layer, cJSON **refusal) {
-    cJSON *call = settings_call(settings, 1, 1);
-    if (call == NULL || cJSON_AddStringToObject(call, "key", key) == NULL || !cJSON_AddItemToObject(call, "value", value) ||
-        cJSON_AddStringToObject(call, "layer", layer) == NULL) {
-        if (call == NULL || cJSON_GetObjectItemCaseSensitive(call, "value") == NULL) {
-            cJSON_Delete(value);
-        }
-        cJSON_Delete(call);
-        return 0;
-    }
-    cJSON *answer = runtime_call_or_refuse(runtime_settings_set, call, refusal);
-    cJSON_Delete(answer);
-    return answer != NULL;
+    uint32_t chosen = strcmp(layer, "portable") == 0 ? RUNTIME_SETTINGS_LAYER_PORTABLE
+                                                     : RUNTIME_SETTINGS_LAYER_APPLICATION;
+    int written = value != NULL &&
+                  runtime_set_ecosystem_setting(settings->home, settings->portable, key, value, chosen, refusal);
+    cJSON_Delete(value);
+    return written;
 }
 
 int runtime_install_plugin_enabled(const cJSON *values, const char *id) {

@@ -57,15 +57,6 @@ static void it_reads_local_and_https_sources_in_order(void) {
     cJSON_Delete(answer.tree);
 }
 
-static int32_t settings_call(catalog_function function, const char *home, const char *portable, cJSON *argument,
-                             cJSON **tree) {
-    cJSON_AddStringToObject(argument, "home", home);
-    cJSON_AddStringToObject(argument, "portable", portable);
-    catalog_answer answer = call_catalog(function, argument);
-    *tree = answer.tree;
-    return answer.status;
-}
-
 static void it_reads_the_sources_a_real_settings_round_trip_stores(void) {
     char base[1024];
     char home[1100];
@@ -75,18 +66,15 @@ static void it_reads_the_sources_a_real_settings_round_trip_stores(void) {
     snprintf(portable, sizeof portable, "%s/portable", base);
     start_empty_directory(base);
     const char *sources = "[{\"kind\":\"https\",\"url\":\"https://e.com/index.json\"}]";
-    cJSON *set = cJSON_CreateObject();
-    cJSON_AddStringToObject(set, "key", "catalog.sources");
-    cJSON_AddItemToObject(set, "value", parsed(sources));
-    cJSON_AddStringToObject(set, "layer", "portable");
-    cJSON *ignored;
-    CHECK(settings_call(runtime_settings_set, home, portable, set, &ignored) == SPISOR_STATUS_SUCCESS);
-    cJSON_Delete(ignored);
-    cJSON *all;
-    CHECK(settings_call(runtime_settings_all, home, portable, cJSON_CreateObject(), &all) == SPISOR_STATUS_SUCCESS);
+    cJSON *value = parsed(sources);
+    cJSON *refusal = NULL;
+    CHECK(runtime_set_ecosystem_setting(home, portable, "catalog.sources", value, RUNTIME_SETTINGS_LAYER_PORTABLE,
+                                        &refusal) == 1);
+    cJSON_Delete(value);
+    cJSON *all = runtime_ecosystem_settings_values(home, portable, &refusal);
+    CHECK(all != NULL && refusal == NULL);
     cJSON *argument = cJSON_CreateObject();
-    cJSON_AddItemToObject(argument, "settings", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(all, "values"), 1));
-    cJSON_Delete(all);
+    cJSON_AddItemToObject(argument, "settings", all);
     catalog_answer answer = call_catalog(runtime_catalog_sources, argument);
     expect_json(value_at(answer.tree, "sources"), sources, "round trip");
     cJSON_Delete(answer.tree);

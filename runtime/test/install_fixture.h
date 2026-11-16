@@ -380,27 +380,25 @@ static inline cJSON *ecosystem_settings(const install_base *base, int applicatio
     if (portable) {
         cJSON_AddStringToObject(argument, "portable", base->portable);
     }
+    cJSON *refusal = NULL;
+    cJSON *values = runtime_ecosystem_settings_values(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "home")),
+                                                      cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "portable")),
+                                                      &refusal);
+    CHECK(values != NULL && refusal == NULL);
+    cJSON_Delete(refusal);
+    cJSON_Delete(argument);
     free(no_home);
     free(home);
-    catalog_answer answer = call_catalog(runtime_settings_all, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "values");
-    cJSON_Delete(answer.tree);
     return values;
 }
 
 static inline void set_portable(const install_base *base, const char *key, cJSON *value) {
     char *home = joined(base->state, "home/spisor-host");
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "home", home);
-    cJSON_AddStringToObject(argument, "portable", base->portable);
-    cJSON_AddStringToObject(argument, "key", key);
-    cJSON_AddItemToObject(argument, "value", value);
-    cJSON_AddStringToObject(argument, "layer", "portable");
+    cJSON *refusal = NULL;
+    CHECK(runtime_set_ecosystem_setting(home, base->portable, key, value, RUNTIME_SETTINGS_LAYER_PORTABLE, &refusal) == 1);
+    cJSON_Delete(refusal);
+    cJSON_Delete(value);
     free(home);
-    catalog_answer answer = call_catalog(runtime_settings_set, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON_Delete(answer.tree);
 }
 
 #if defined(_WIN32)
