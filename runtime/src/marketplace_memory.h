@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
+#include "cJSON.h"
 
 /**
  * marketplace.remember: {state, name, id, marketplace?, accept?, record?} answers {remembered: true} once the id a name
@@ -22,6 +22,6 @@
  * lists for a name is the only thing standing between a user and a name that was quietly pointed somewhere else. The
  * bare key catches a name that moves to another marketplace, which no qualified key can see.
  */
-RUNTIME_EXPORT int32_t runtime_marketplace_remember(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_marketplace_remember_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

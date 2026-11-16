@@ -180,13 +180,23 @@ static cJSON *settled_answer(cJSON *store, const remembered_name *request, const
     if (!request->is_recording) {
         return settled_check_answer();
     }
-    if (!is_remembered && !(records_id(store, key, request->id) && writes_store(store, request->state, path))) {
-        return refuse(refusal, "check that the state place can be written", "the record of marketplace names could not be written to %s", path);
+    cJSON *answer = remembered_answer();
+    if (answer == NULL || is_remembered) {
+        return answer;
     }
-    return remembered_answer();
+    if (!records_id(store, key, request->id)) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    if (!writes_store(store, request->state, path)) {
+        cJSON_Delete(answer);
+        return refuse(refusal, "check that the state place can be written",
+                      "the record of marketplace names could not be written to %s", path);
+    }
+    return answer;
 }
 
-static cJSON *remember(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_marketplace_remember_operation(const cJSON *argument, cJSON **refusal) {
     remembered_name request;
     if (!reads_request(argument, &request, refusal)) {
         return NULL;
@@ -199,8 +209,4 @@ static cJSON *remember(const cJSON *argument, cJSON **refusal) {
     free(key);
     free(path);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_marketplace_remember(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, remember);
 }

@@ -121,13 +121,17 @@ target_link_libraries(runtime_marketplace_build PUBLIC runtime_objects)
 set_target_properties(runtime_marketplace_build PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_marketplace_build)
 
-add_library(runtime_marketplace_reading OBJECT src/marketplace_sources.c src/marketplace_read.c src/marketplace_name_lookup.c src/marketplace_memory.c)
+add_library(runtime_marketplace_reading OBJECT src/marketplace_sources.c src/marketplace_read.c src/marketplace_name_lookup.c src/marketplace_memory.c
+    src/marketplace_definition.c)
 target_link_libraries(runtime_marketplace_reading PUBLIC runtime_objects)
+target_include_directories(runtime_marketplace_reading PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_marketplace_reading PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_marketplace_reading)
 
-add_library(runtime_marketplace_reading_test_hooks OBJECT src/marketplace_sources.c src/marketplace_read.c src/marketplace_name_lookup.c src/marketplace_memory.c)
+add_library(runtime_marketplace_reading_test_hooks OBJECT src/marketplace_sources.c src/marketplace_read.c src/marketplace_name_lookup.c src/marketplace_memory.c
+    src/marketplace_definition.c)
 target_link_libraries(runtime_marketplace_reading_test_hooks PUBLIC runtime_objects)
+target_include_directories(runtime_marketplace_reading_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(runtime_marketplace_reading_test_hooks PRIVATE SPISOR_MARKETPLACE_TEST_HOOKS)
 spisor_strict_warnings(runtime_marketplace_reading_test_hooks)
 set_target_properties(runtime_marketplace_reading_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)

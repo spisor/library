@@ -8,6 +8,7 @@
 
 #include "catalog_call.h"
 #include "check.h"
+#include "marketplace_call.h"
 #include "marketplace_memory.h"
 #include "service_scratch.h"
 #include "spisor/file.h"
@@ -30,7 +31,7 @@ static catalog_answer remember(const char *marketplace, const char *name, const 
     if (accept != NULL) {
         cJSON_AddStringToObject(argument, "accept", accept);
     }
-    return call_catalog(runtime_marketplace_remember, argument);
+    return marketplace_call(MARKETPLACE_REMEMBER, argument);
 }
 
 static char *store_text(void) {
@@ -123,6 +124,7 @@ static void a_corrupt_store_is_refused_not_overwritten(void) {
         write_store(corrupt[index]);
         catalog_answer answer = remember("spisor", "runtime", "github:1", NULL);
         CHECK(expect_refusal(answer, "marketplace-names.json", "a corrupt store"));
+        CHECK(marketplace_last_status == SPISOR_REFUSED);
         char *text = store_text();
         check_text(text, corrupt[index], "the store is left as it was");
         free(text);
@@ -134,7 +136,8 @@ static void refuses_an_argument_without_what_it_needs(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "arguments");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", scratch);
-    expect_refusal_released(call_catalog(runtime_marketplace_remember, argument), "name", "no name");
+    expect_refusal_released(marketplace_call(MARKETPLACE_REMEMBER, argument), "name", "no name");
+    CHECK(marketplace_last_status == SPISOR_MALFORMED);
 }
 
 static int is_settled(const catalog_answer answer) {

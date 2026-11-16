@@ -483,7 +483,7 @@ static cJSON *answer_of(cJSON *copy, cJSON *skipped) {
     return answer;
 }
 
-static cJSON *build(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_marketplace_build_operation(const cJSON *argument, cJSON **refusal) {
     build_request request;
     if (!read_request(argument, &request, refusal)) {
         return NULL;
@@ -499,8 +499,4 @@ static cJSON *build(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return answer_of(copy_of(&request, copied), skipped);
-}
-
-RUNTIME_EXPORT int32_t runtime_marketplace_build(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, build);
 }

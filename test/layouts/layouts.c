@@ -8,6 +8,7 @@
 #include "runtime/identity.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
+#include "runtime/marketplace.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/registry.h"
@@ -574,6 +575,98 @@ static void print_lists_layouts(void) {
     SIZE(runtime_lists_definition);
 }
 
+static void print_marketplace_layouts(void) {
+    FIELD(runtime_marketplace_build_argument, size);
+    FIELD(runtime_marketplace_build_argument, list);
+    FIELD(runtime_marketplace_build_argument, built);
+    FIELD(runtime_marketplace_build_argument, previous);
+    FIELD(runtime_marketplace_build_argument, token);
+    FIELD(runtime_marketplace_build_argument, token_host);
+    FIELD(runtime_marketplace_build_argument, api_base);
+    SIZE(runtime_marketplace_build_argument);
+    FIELD(runtime_marketplace_skipped_entry, id);
+    FIELD(runtime_marketplace_skipped_entry, reason);
+    SIZE(runtime_marketplace_skipped_entry);
+    FIELD(runtime_marketplace_build_answer, size);
+    FIELD(runtime_marketplace_build_answer, copy);
+    FIELD(runtime_marketplace_build_answer, skipped);
+    FIELD(runtime_marketplace_build_answer, skipped_count);
+    FIELD(runtime_marketplace_build_answer, storage);
+    SIZE(runtime_marketplace_build_answer);
+    FIELD(runtime_marketplace_sources_argument, size);
+    FIELD(runtime_marketplace_sources_argument, settings);
+    SIZE(runtime_marketplace_sources_argument);
+    FIELD(runtime_marketplace_source, id);
+    FIELD(runtime_marketplace_source, kind);
+    FIELD(runtime_marketplace_source, url);
+    FIELD(runtime_marketplace_source, provider);
+    SIZE(runtime_marketplace_source);
+    FIELD(runtime_marketplace_skipped_source, index);
+    FIELD(runtime_marketplace_skipped_source, detail);
+    SIZE(runtime_marketplace_skipped_source);
+    FIELD(runtime_marketplace_sources_answer, size);
+    FIELD(runtime_marketplace_sources_answer, sources);
+    FIELD(runtime_marketplace_sources_answer, source_count);
+    FIELD(runtime_marketplace_sources_answer, skipped);
+    FIELD(runtime_marketplace_sources_answer, skipped_count);
+    FIELD(runtime_marketplace_sources_answer, storage);
+    SIZE(runtime_marketplace_sources_answer);
+    FIELD(runtime_marketplace_read_argument, size);
+    FIELD(runtime_marketplace_read_argument, id);
+    FIELD(runtime_marketplace_read_argument, url);
+    FIELD(runtime_marketplace_read_argument, text);
+    FIELD(runtime_marketplace_read_argument, destination);
+    SIZE(runtime_marketplace_read_argument);
+    FIELD(runtime_marketplace_copy_answer, size);
+    FIELD(runtime_marketplace_copy_answer, copy);
+    FIELD(runtime_marketplace_copy_answer, storage);
+    SIZE(runtime_marketplace_copy_answer);
+    FIELD(runtime_marketplace_copy, source);
+    FIELD(runtime_marketplace_copy, copy);
+    SIZE(runtime_marketplace_copy);
+    FIELD(runtime_marketplace_lookup_argument, size);
+    FIELD(runtime_marketplace_lookup_argument, copies);
+    FIELD(runtime_marketplace_lookup_argument, copy_count);
+    FIELD(runtime_marketplace_lookup_argument, name);
+    SIZE(runtime_marketplace_lookup_argument);
+    FIELD(runtime_marketplace_lookup_answer, size);
+    FIELD(runtime_marketplace_lookup_answer, match);
+    FIELD(runtime_marketplace_lookup_answer, id);
+    FIELD(runtime_marketplace_lookup_answer, marketplace);
+    FIELD(runtime_marketplace_lookup_answer, ambiguous);
+    FIELD(runtime_marketplace_lookup_answer, ambiguous_count);
+    FIELD(runtime_marketplace_lookup_answer, storage);
+    SIZE(runtime_marketplace_lookup_answer);
+    FIELD(runtime_marketplace_remember_argument, size);
+    FIELD(runtime_marketplace_remember_argument, state);
+    FIELD(runtime_marketplace_remember_argument, marketplace);
+    FIELD(runtime_marketplace_remember_argument, name);
+    FIELD(runtime_marketplace_remember_argument, id);
+    FIELD(runtime_marketplace_remember_argument, accept);
+    FIELD(runtime_marketplace_remember_argument, check_only);
+    SIZE(runtime_marketplace_remember_argument);
+    FIELD(runtime_marketplace_remember_answer, size);
+    FIELD(runtime_marketplace_remember_answer, memory);
+    FIELD(runtime_marketplace_remember_answer, was);
+    FIELD(runtime_marketplace_remember_answer, now);
+    FIELD(runtime_marketplace_remember_answer, storage);
+    SIZE(runtime_marketplace_remember_answer);
+    FIELD(runtime_marketplace_definition, size);
+    FIELD(runtime_marketplace_definition, context);
+    FIELD(runtime_marketplace_definition, build);
+    FIELD(runtime_marketplace_definition, sources);
+    FIELD(runtime_marketplace_definition, read);
+    FIELD(runtime_marketplace_definition, lookup);
+    FIELD(runtime_marketplace_definition, remember);
+    FIELD(runtime_marketplace_definition, release_build_answer);
+    FIELD(runtime_marketplace_definition, release_sources_answer);
+    FIELD(runtime_marketplace_definition, release_copy_answer);
+    FIELD(runtime_marketplace_definition, release_lookup_answer);
+    FIELD(runtime_marketplace_definition, release_remember_answer);
+    FIELD(runtime_marketplace_definition, release_refusal);
+    SIZE(runtime_marketplace_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -591,5 +684,6 @@ int main(void) {
     print_changes_layouts();
     print_commands_layouts();
     print_lists_layouts();
+    print_marketplace_layouts();
     return 0;
 }
