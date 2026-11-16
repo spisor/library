@@ -6,6 +6,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
@@ -536,6 +537,43 @@ static void print_commands_layouts(void) {
     SIZE(runtime_commands_definition);
 }
 
+static void print_lists_layouts(void) {
+    FIELD(runtime_lists_plugins_argument, size);
+    FIELD(runtime_lists_plugins_argument, installed);
+    FIELD(runtime_lists_plugins_argument, detected);
+    FIELD(runtime_lists_plugins_argument, available);
+    SIZE(runtime_lists_plugins_argument);
+    FIELD(runtime_list_detection, item);
+    FIELD(runtime_list_detection, installed);
+    FIELD(runtime_list_detection, refused);
+    SIZE(runtime_list_detection);
+    FIELD(runtime_lists_applications_argument, size);
+    FIELD(runtime_lists_applications_argument, items);
+    FIELD(runtime_lists_applications_argument, state);
+    FIELD(runtime_lists_applications_argument, environment);
+    FIELD(runtime_lists_applications_argument, environment_count);
+    FIELD(runtime_lists_applications_argument, detections);
+    FIELD(runtime_lists_applications_argument, detection_count);
+    SIZE(runtime_lists_applications_argument);
+    FIELD(runtime_list_item, id);
+    FIELD(runtime_list_item, state);
+    FIELD(runtime_list_item, label);
+    FIELD(runtime_list_item, row);
+    SIZE(runtime_list_item);
+    FIELD(runtime_list, size);
+    FIELD(runtime_list, items);
+    FIELD(runtime_list, item_count);
+    FIELD(runtime_list, storage);
+    SIZE(runtime_list);
+    FIELD(runtime_lists_definition, size);
+    FIELD(runtime_lists_definition, context);
+    FIELD(runtime_lists_definition, plugins);
+    FIELD(runtime_lists_definition, applications);
+    FIELD(runtime_lists_definition, release_list);
+    FIELD(runtime_lists_definition, release_refusal);
+    SIZE(runtime_lists_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -552,5 +590,6 @@ int main(void) {
     print_registry_layouts();
     print_changes_layouts();
     print_commands_layouts();
+    print_lists_layouts();
     return 0;
 }

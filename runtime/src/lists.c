@@ -7,7 +7,6 @@
 #include "on_path.h"
 #include "paths.h"
 #include "registry.h"
-#include "spisor/json_kind.h"
 
 static const char *const STATES[3] = {"installed", "detected", "available"};
 
@@ -107,7 +106,7 @@ static cJSON *items_answer(cJSON *items) {
     return answer;
 }
 
-static cJSON *plugins_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_lists_plugins_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *installed = cJSON_GetObjectItemCaseSensitive(argument, "installed");
     const cJSON *detected = cJSON_GetObjectItemCaseSensitive(argument, "detected");
     const cJSON *available = cJSON_GetObjectItemCaseSensitive(argument, "available");
@@ -120,14 +119,12 @@ static cJSON *plugins_for(const cJSON *argument, cJSON **refusal) {
     return items_answer(runtime_three_state_list(installed, detected, available));
 }
 
-RUNTIME_EXPORT int32_t runtime_lists_plugins(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, plugins_for);
-}
-
 /** The registered hosts' application ids, as an array of rows { id }; NULL with *refusal when the registry is unreadable. */
 static cJSON *registered_rows(const cJSON *places, cJSON **refusal) {
     cJSON *request = cJSON_CreateObject();
-    if (request != NULL && !cJSON_AddItemToObject(request, "places", cJSON_Duplicate(places, 1))) {
+    cJSON *copy = request == NULL ? NULL : cJSON_Duplicate(places, 1);
+    if (copy == NULL || !cJSON_AddItemToObject(request, "places", copy)) {
+        cJSON_Delete(copy);
         cJSON_Delete(request);
         request = NULL;
     }
@@ -136,11 +133,15 @@ static cJSON *registered_rows(const cJSON *places, cJSON **refusal) {
     const cJSON *hosts = rows == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(listed, "hosts");
     const cJSON *entry;
     cJSON_ArrayForEach(entry, hosts) {
-        const cJSON *application = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(entry, "registration"), "application");
+        const cJSON *registration = cJSON_GetObjectItemCaseSensitive(entry, "registration");
+        const cJSON *application = cJSON_GetObjectItemCaseSensitive(registration, "application");
         const char *id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(application, "id"));
-        cJSON *row = id == NULL ? NULL : cJSON_CreateObject();
-        if (row != NULL && (cJSON_AddStringToObject(row, "id", id) == NULL || !cJSON_AddItemToArray(rows, row))) {
+        cJSON *row = id == NULL || rows == NULL ? NULL : cJSON_CreateObject();
+        if (id != NULL && rows != NULL &&
+            (row == NULL || cJSON_AddStringToObject(row, "id", id) == NULL || !cJSON_AddItemToArray(rows, row))) {
             cJSON_Delete(row);
+            cJSON_Delete(rows);
+            rows = NULL;
         }
     }
     cJSON_Delete(listed);
@@ -161,15 +162,17 @@ static int reports_package_installed(const cJSON *detections, const char *id) {
     return 0;
 }
 
-static int is_detected(const cJSON *application, const cJSON *environment, const cJSON *detections) {
+/** Whether the application is detected, in *detected; 0 when memory ran out searching the PATH. */
+static int find_detected(const cJSON *application, const cJSON *environment, const cJSON *detections, int *detected) {
     const char *binary = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(application, "binary"));
     char *found = NULL;
+    runtime_on_path_status searched = RUNTIME_ON_PATH_ABSENT;
     if (binary != NULL) {
-        runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment, &found);
+        searched = runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment, &found);
     }
-    int detected = found != NULL || reports_package_installed(detections, id_of(application));
+    *detected = found != NULL || reports_package_installed(detections, id_of(application));
     free(found);
-    return detected;
+    return searched != RUNTIME_ON_PATH_OUT_OF_MEMORY;
 }
 
 static int add_row(cJSON *rows, const cJSON *application) {
@@ -192,11 +195,13 @@ typedef struct application_groups {
 
 static int sort_application(application_groups *groups, const cJSON *registered, const cJSON *application,
                             const cJSON *environment, const cJSON *detections) {
+    int detected = 0;
     int complete = add_row(groups->available, application);
     if (complete && is_listed(registered, id_of(application))) {
         complete = add_row(groups->installed, application);
     }
-    if (complete && is_detected(application, environment, detections)) {
+    complete = complete && find_detected(application, environment, detections, &detected);
+    if (complete && detected) {
         complete = add_row(groups->detected, application);
     }
     return complete;
@@ -235,7 +240,7 @@ static cJSON *refuse_applications(cJSON **refusal) {
     return NULL;
 }
 
-static cJSON *applications_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_lists_applications_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "catalog"), "items");
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
@@ -247,8 +252,4 @@ static cJSON *applications_for(const cJSON *argument, cJSON **refusal) {
     cJSON *answer = registered == NULL ? NULL : items_answer(application_rows(items, registered, environment, detections));
     cJSON_Delete(registered);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_lists_applications(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, applications_for);
 }

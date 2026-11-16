@@ -17,6 +17,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
@@ -47,6 +48,7 @@ static void take_every_definition(void) {
         runtime_registry_definition_of();
         runtime_changes_definition_of();
         runtime_commands_definition_of();
+        runtime_lists_definition_of();
     }
 }
 

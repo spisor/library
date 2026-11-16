@@ -75,7 +75,7 @@ static cJSON *host_screen(cJSON *node) {
 }
 
 static cJSON *plugin_list_for(const cJSON *argument, cJSON **refusal) {
-    cJSON *listed = runtime_call_or_refuse(runtime_lists_plugins, cJSON_Duplicate(argument, 1), refusal);
+    cJSON *listed = runtime_call_operation(runtime_lists_plugins_operation, cJSON_Duplicate(argument, 1), refusal);
     cJSON *items = listed == NULL ? NULL : runtime_ui_presented_items(cJSON_GetObjectItemCaseSensitive(listed, "items"));
     cJSON_Delete(listed);
     return items == NULL ? NULL : host_screen(table_node(items));

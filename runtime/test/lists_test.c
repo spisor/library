@@ -8,22 +8,68 @@
 
 #include "catalog_call.h"
 #include "check.h"
+#include "definition_fixture.h"
 #include "host_provenance.h"
-#include "lists.h"
+#include "json_value.h"
 #include "registry.h"
 #include "registry_call.h"
+#include "runtime/lists.h"
 #include "service_scratch.h"
 
-/** The rows lists.plugins answers for the three groups, given as JSON text. */
+static const char *const STATE_NAMES[] = {"(none)", "installed", "detected", "available"};
+
+static const runtime_lists_definition *lists(void) {
+    return runtime_lists_definition_of();
+}
+
+/** The list as JSON a test compares: each row as the caller gave it, or its id and label, with its state. */
+static cJSON *list_json(const runtime_list *list) {
+    cJSON *rows = cJSON_CreateArray();
+    for (size_t index = 0; index < list->item_count; index++) {
+        const runtime_list_item *item = &list->items[index];
+        cJSON *row = NULL;
+        if (item->row != NULL) {
+            CHECK(spisor_json_of_value(item->row, &row) == SPISOR_OK);
+        } else {
+            row = cJSON_CreateObject();
+            cJSON_AddStringToObject(row, "id", item->id);
+            if (item->label != NULL) {
+                cJSON_AddStringToObject(row, "label", item->label);
+            }
+        }
+        CHECK(item->id != NULL && strcmp(item->id, cJSON_GetStringValue(cJSON_GetObjectItem(row, "id"))) == 0);
+        cJSON_AddStringToObject(row, "state", STATE_NAMES[item->state <= 3 ? item->state : 0]);
+        cJSON_AddItemToArray(rows, row);
+    }
+    return rows;
+}
+
+/** What plugins answers for the three groups, given as JSON text, with its refusal. */
+static spisor_status plugins_through(const char *installed, const char *detected, const char *available,
+                                     runtime_list *answer, spisor_refusal *refusal) {
+    spisor_value_tree groups[3] = {SPISOR_INIT(spisor_value_tree), SPISOR_INIT(spisor_value_tree),
+                                   SPISOR_INIT(spisor_value_tree)};
+    runtime_lists_plugins_argument argument = SPISOR_INIT(runtime_lists_plugins_argument);
+    CHECK(value_of_text(installed, &groups[0]) && value_of_text(detected, &groups[1]) &&
+          value_of_text(available, &groups[2]));
+    argument.installed = &groups[0].root;
+    argument.detected = &groups[1].root;
+    argument.available = &groups[2].root;
+    spisor_status status = lists()->plugins(lists()->context, &argument, answer, refusal);
+    for (size_t index = 0; index < 3; index++) {
+        spisor_value_release(&groups[index]);
+    }
+    return status;
+}
+
+/** The rows plugins answers for the three groups, given as JSON text. */
 static cJSON *plugin_rows(const char *installed, const char *detected, const char *available) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "installed", parsed(installed));
-    cJSON_AddItemToObject(request, "detected", parsed(detected));
-    cJSON_AddItemToObject(request, "available", parsed(available));
-    catalog_answer answer = call_catalog(runtime_lists_plugins, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON *items = cJSON_DetachItemFromObject(answer.tree, "items");
-    cJSON_Delete(answer.tree);
+    runtime_list answer = SPISOR_INIT(runtime_list);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    CHECK(plugins_through(installed, detected, available, &answer, &refusal) == SPISOR_OK);
+    cJSON *items = list_json(&answer);
+    lists()->release_list(lists()->context, &answer);
+    lists()->release_refusal(lists()->context, &refusal);
     return items;
 }
 
@@ -81,13 +127,12 @@ static void answers_an_enabled_plugin_installed_a_detected_one_detected_and_the_
 static void refuses_a_group_that_is_no_list_of_rows_with_an_id(void) {
     const char *groups[] = {"{}", "[{\"label\": \"x\"}]", "[\"a\"]"};
     for (size_t index = 0; index < sizeof groups / sizeof groups[0]; index++) {
-        cJSON *request = cJSON_CreateObject();
-        cJSON_AddItemToObject(request, "installed", parsed("[]"));
-        cJSON_AddItemToObject(request, "detected", parsed(groups[index]));
-        cJSON_AddItemToObject(request, "available", parsed("[]"));
-        catalog_answer answer = call_catalog(runtime_lists_plugins, request);
-        CHECK(answer.status == SPISOR_STATUS_FAILURE);
-        cJSON_Delete(answer.tree);
+        runtime_list answer = SPISOR_INIT(runtime_list);
+        spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+        check_refused(plugins_through("[]", groups[index], "[]", &answer, &refusal), SPISOR_MALFORMED, &refusal,
+                      "list of rows", groups[index]);
+        CHECK(answer.storage == NULL);
+        lists()->release_refusal(lists()->context, &refusal);
     }
 }
 
@@ -138,16 +183,48 @@ static void register_claude_host(const lists_scratch *place) {
     cJSON_Delete(result.tree);
 }
 
+/** What applications answers for the catalog, the environment and the detections, each written as test data. */
+static spisor_status applications_through(const char *state, const char *catalog, cJSON *environment,
+                                          const char *detections_json, runtime_list *answer, spisor_refusal *refusal) {
+    cJSON *catalog_json = parsed(catalog);
+    cJSON *detections = parsed(detections_json);
+    spisor_value_tree items = SPISOR_INIT(spisor_value_tree);
+    runtime_variable *variables = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *variables);
+    runtime_list_detection *read = calloc((size_t)cJSON_GetArraySize(detections) + 1, sizeof *read);
+    runtime_lists_applications_argument argument = SPISOR_INIT(runtime_lists_applications_argument);
+    const cJSON *member;
+    CHECK(spisor_vector_value(catalog_json, "items", &items));
+    cJSON_ArrayForEach(member, environment) {
+        variables[argument.environment_count].name = member->string;
+        variables[argument.environment_count++].value = cJSON_GetStringValue(member);
+    }
+    cJSON_ArrayForEach(member, detections) {
+        runtime_list_detection *detection = &read[argument.detection_count++];
+        detection->item = cJSON_GetStringValue(cJSON_GetObjectItem(member, "item"));
+        detection->installed = cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(member, "answer"), "installed"));
+        detection->refused = cJSON_GetStringValue(cJSON_GetObjectItem(member, "refused"));
+    }
+    argument.items = &items.root;
+    argument.state = state;
+    argument.environment = variables;
+    argument.detections = read;
+    spisor_status status = lists()->applications(lists()->context, &argument, answer, refusal);
+    spisor_value_release(&items);
+    free(variables);
+    free(read);
+    cJSON_Delete(detections);
+    cJSON_Delete(environment);
+    cJSON_Delete(catalog_json);
+    return status;
+}
+
 static cJSON *application_rows(const lists_scratch *place, cJSON *environment, const char *detections) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "catalog", parsed(CATALOG));
-    cJSON_AddStringToObject(cJSON_AddObjectToObject(request, "places"), "state", place->state);
-    cJSON_AddItemToObject(request, "environment", environment);
-    cJSON_AddItemToObject(request, "detections", parsed(detections));
-    catalog_answer answer = call_catalog(runtime_lists_applications, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON *items = cJSON_DetachItemFromObject(answer.tree, "items");
-    cJSON_Delete(answer.tree);
+    runtime_list answer = SPISOR_INIT(runtime_list);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    CHECK(applications_through(place->state, CATALOG, environment, detections, &answer, &refusal) == SPISOR_OK);
+    cJSON *items = list_json(&answer);
+    lists()->release_list(lists()->context, &answer);
+    lists()->release_refusal(lists()->context, &refusal);
     return items;
 }
 
@@ -244,25 +321,23 @@ static void never_detects_from_a_refused_method(void) {
     discard(&place);
 }
 
-static void refuses_a_catalog_or_detections_of_the_wrong_shape(void) {
+static void refuses_items_that_are_no_record_or_a_detection_without_its_item(void) {
     lists_scratch place;
     fresh(&place, "shape");
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "catalog", parsed("{\"format\": 1}"));
-    cJSON_AddStringToObject(cJSON_AddObjectToObject(request, "places"), "state", place.state);
-    cJSON_AddItemToObject(request, "environment", path_environment(""));
-    cJSON_AddItemToObject(request, "detections", parsed("[]"));
-    catalog_answer answer = call_catalog(runtime_lists_applications, request);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
-    cJSON_Delete(answer.tree);
-    request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "catalog", parsed(CATALOG));
-    cJSON_AddStringToObject(cJSON_AddObjectToObject(request, "places"), "state", place.state);
-    cJSON_AddItemToObject(request, "environment", path_environment(""));
-    cJSON_AddItemToObject(request, "detections", parsed("{}"));
-    answer = call_catalog(runtime_lists_applications, request);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
-    cJSON_Delete(answer.tree);
+    runtime_list answer = SPISOR_INIT(runtime_list);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    check_refused(applications_through(place.state, "{\"format\": 1, \"items\": [1]}", path_environment(""), "[]",
+                                       &answer, &refusal),
+                  SPISOR_MALFORMED, &refusal, "not a record", "items that are a list");
+    lists()->release_refusal(lists()->context, &refusal);
+    check_refused(applications_through(place.state, CATALOG, path_environment(""), "[{\"method\": \"npm\"}]", &answer,
+                                       &refusal),
+                  SPISOR_MALFORMED, &refusal, "detection", "a detection without its item");
+    lists()->release_refusal(lists()->context, &refusal);
+    check_refused(applications_through("relative/state", CATALOG, path_environment(""), "[]", &answer, &refusal),
+                  SPISOR_MALFORMED, &refusal, "state", "a relative state place");
+    lists()->release_refusal(lists()->context, &refusal);
+    CHECK(answer.storage == NULL);
     discard(&place);
 }
 
@@ -278,6 +353,6 @@ int main(void) {
     detects_a_binary_on_path_without_launching_anything();
     ignores_a_method_answer_about_another_item_or_reporting_not_installed();
     never_detects_from_a_refused_method();
-    refuses_a_catalog_or_detections_of_the_wrong_shape();
+    refuses_items_that_are_no_record_or_a_detection_without_its_item();
     return check_summary("lists_test");
 }

@@ -66,7 +66,7 @@ static cJSON *states_of(const runtime_install_run *run, const cJSON *detections,
         cJSON_Delete(call);
         return NULL;
     }
-    return runtime_call_or_refuse(runtime_lists_applications, call, refusal);
+    return runtime_call_operation(runtime_lists_applications_operation, call, refusal);
 }
 
 static const char *state_of(const cJSON *states, const char *id) {
