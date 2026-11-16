@@ -165,6 +165,7 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
         return SPISOR_OUT_OF_MEMORY;
     }
     found = runtime_identity_lookup(call, &found_refusal);
+    runtime_overwrite_json_texts(call);
     cJSON_Delete(call);
     status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_repository(found, answer);
     cJSON_Delete(found);
