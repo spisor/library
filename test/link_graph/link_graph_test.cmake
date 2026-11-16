@@ -9,13 +9,18 @@ set(root "${WORK}/${SCENARIO}")
 file(REMOVE_RECURSE "${root}")
 file(MAKE_DIRECTORY "${root}/source/test")
 
-set(preamble "cmake_minimum_required(VERSION 3.15)\nproject(probe NONE)\ninclude(\"${LINK_GRAPH}\")\n")
+set(preamble "cmake_minimum_required(VERSION 3.19)\nproject(probe NONE)\ninclude(\"${LINK_GRAPH}\")\n")
 set(preamble "${preamble}add_library(reader STATIC reader.c)\nset_target_properties(reader PROPERTIES SPISOR_TEST_ONLY TRUE)\n")
-set(closing "add_subdirectory(test)\nspisor_refuse_test_only_links(\"\${CMAKE_CURRENT_SOURCE_DIR}\")\nmessage(FATAL_ERROR \"the link graph passed\")\n")
+set(closing "add_subdirectory(test)\nspisor_refuse_test_only_links(\"\${CMAKE_CURRENT_SOURCE_DIR}\")\n")
+set(passed "cmake_language(DEFER CALL message FATAL_ERROR \"the link graph passed\")\n")
+
+function(probe_then body test_body after)
+    file(WRITE "${root}/source/CMakeLists.txt" "${preamble}${body}\n${closing}${after}\n${passed}")
+    file(WRITE "${root}/source/test/CMakeLists.txt" "${test_body}\n")
+endfunction()
 
 function(probe body test_body)
-    file(WRITE "${root}/source/CMakeLists.txt" "${preamble}${body}\n${closing}")
-    file(WRITE "${root}/source/test/CMakeLists.txt" "${test_body}\n")
+    probe_then("${body}" "${test_body}" "")
 endfunction()
 
 function(expect must_match)
@@ -126,6 +131,10 @@ elseif(SCENARIO STREQUAL "link_graph_refuses_a_test_hook_definition_on_a_shipped
 elseif(SCENARIO STREQUAL "link_graph_refuses_a_test_definition_on_a_shipped_allocator")
     probe("add_library(counting OBJECT counting.c)\ntarget_compile_definitions(counting PUBLIC SPISOR_TESTING=1)\nset_target_properties(counting PROPERTIES SPISOR_TEST_ONLY TRUE)\nadd_library(allocator OBJECT allocator.c)\ntarget_compile_definitions(allocator PRIVATE SPISOR_TESTING)" "")
     expect("allocator is shipped and carries the test-only definition SPISOR_TESTING \\(through allocator\\)")
+elseif(SCENARIO STREQUAL "link_graph_sees_what_is_set_after_its_call")
+    probe_then("add_library(counting OBJECT counting.c)\ntarget_compile_definitions(counting PUBLIC SPISOR_TESTING)\nset_target_properties(counting PROPERTIES SPISOR_TEST_ONLY TRUE)\nadd_library(allocator OBJECT allocator.c)" ""
+        "target_compile_definitions(allocator PRIVATE SPISOR_TESTING)")
+    expect("allocator is shipped and carries the test-only definition SPISOR_TESTING")
 else()
     message(FATAL_ERROR "unknown SCENARIO '${SCENARIO}'")
 endif()
