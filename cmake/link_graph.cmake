@@ -1,6 +1,7 @@
-# spisor_refuse_test_only_links(<root directory>) fails the configure when a shipped target reaches a test-only one. A
-# project that adds this repository with add_subdirectory includes this file and calls it at its own end with its own
-# root, so its targets are checked against every test-only target of the whole tree.
+# spisor_refuse_test_only_links(<root directory>) fails the configure when a shipped target reaches a test-only one. It
+# defers the check to the end of the top-level directory, so it sees every target and property the whole configure
+# sets, including what is set after the call. A project that adds this repository with add_subdirectory calls it too,
+# with its own root, so its targets are checked against every test-only target of the whole tree.
 #
 # A target is test-only when it carries the SPISOR_TEST_ONLY property. A target is shipped when it is not test-only and
 # is defined outside every directory named `test` below the root. A shipped target is refused when, at any depth of
@@ -307,7 +308,7 @@ function(spisor_link_graph_allocator_offences targets out)
     set(${out} "${offences}" PARENT_SCOPE)
 endfunction()
 
-function(spisor_refuse_test_only_links root)
+function(spisor_link_graph_check root)
     spisor_link_graph_targets("${root}" targets)
     set(test_only "")
     foreach(target IN LISTS targets)
@@ -332,4 +333,8 @@ function(spisor_refuse_test_only_links root)
         string(REPLACE ";" "\n" report "${offenders}")
         message(FATAL_ERROR "${report}")
     endif()
+endfunction()
+
+function(spisor_refuse_test_only_links root)
+    cmake_language(EVAL CODE "cmake_language(DEFER DIRECTORY [[${CMAKE_SOURCE_DIR}]] CALL spisor_link_graph_check [[${root}]])")
 endfunction()

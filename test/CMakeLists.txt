@@ -57,7 +57,8 @@ foreach(scenario
         link_graph_refuses_a_test_source_behind_a_condition
         link_graph_refuses_a_source_from_a_test_directory
         link_graph_refuses_a_test_hook_definition_on_a_shipped_target
-        link_graph_refuses_a_test_definition_on_a_shipped_allocator)
+        link_graph_refuses_a_test_definition_on_a_shipped_allocator
+        link_graph_sees_what_is_set_after_its_call)
     add_test(NAME ${scenario}
         COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
             -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"
