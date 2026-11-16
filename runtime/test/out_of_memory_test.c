@@ -7,6 +7,7 @@
 #include <process.h>
 #define CURRENT_PROCESS_ID _getpid()
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #define CURRENT_PROCESS_ID getpid()
 #endif
@@ -16,6 +17,7 @@
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/config.h"
+#include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
 #include "runtime/log.h"
@@ -47,6 +49,7 @@ typedef struct scratch {
     char portable[1100];
     char secrets_file[1200];
     char config_directory[1200];
+    char programs[1200];
 } scratch;
 
 static scratch place;
@@ -69,6 +72,12 @@ static void fresh_files(void) {
     write_text(place.config_directory, "p.json", "{\"a\":{\"b\":1},\"logging\":true}");
     write_text(place.config_directory, "settings.json", "{\"logConsole\":true,\"ui\":{\"size\":2}}");
     write_text(place.portable, "settings.json", "{\"ui\":{\"theme\":\"dark\"}}");
+    write_text(place.programs, "probe", "");
+#ifndef _WIN32
+    char probe[1300];
+    snprintf(probe, sizeof probe, "%s/probe", place.programs);
+    CHECK(chmod(probe, 0755) == 0);
+#endif
 }
 
 typedef spisor_status (*operation)(void);
@@ -223,6 +232,22 @@ static spisor_status fetch_a_file(void) {
     return status;
 }
 
+static spisor_status find_on_path(void) {
+    const runtime_detect_definition *detect = runtime_detect_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_detect_on_path_argument argument = SPISOR_INIT(runtime_detect_on_path_argument);
+    runtime_detect_on_path_answer answer = SPISOR_INIT(runtime_detect_on_path_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.binary = "probe";
+    argument.environment = environment;
+    argument.environment_count = 2;
+    status = detect->on_path(detect->context, &argument, &answer, &refusal);
+    detect->release_answer(detect->context, &answer);
+    detect->release_refusal(detect->context, &refusal);
+    return status;
+}
+
 /** Whether log's write left no line behind: no logs folder under the home at all. */
 static int appended_nothing(void) {
     char logs[1200];
@@ -283,6 +308,7 @@ int main(void) {
     snprintf(place.portable, sizeof place.portable, "%s/portable", place.base);
     snprintf(place.secrets_file, sizeof place.secrets_file, "%s/state/secrets.json", place.base);
     snprintf(place.config_directory, sizeof place.config_directory, "%s/config", place.home);
+    snprintf(place.programs, sizeof place.programs, "%s/programs", place.base);
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
@@ -297,6 +323,7 @@ int main(void) {
     every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
     every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
     every_failure_answers_out_of_memory("fetch's get", fetch_a_file, NULL);
+    every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

@@ -30,8 +30,11 @@ static char *application_binary(const host_context *context, const cJSON *standa
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(standard, "application");
     const char *binary = host_text(application, "binary");
     const char *label = host_text(application, "label");
-    char *found = binary == NULL ? NULL : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, context->environment);
-    if (found == NULL && binary != NULL) {
+    char *found = NULL;
+    runtime_on_path_status searched = binary == NULL ? RUNTIME_ON_PATH_ABSENT
+                                                     : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary,
+                                                                            context->environment, &found);
+    if (searched == RUNTIME_ON_PATH_ABSENT && binary != NULL) {
         label = label == NULL ? binary : label;
         const char *parts[5] = {"the ", label, " binary ", binary, " is not on the PATH"};
         size_t length = strlen(label) * 2 + strlen(binary) * 2 + 128;

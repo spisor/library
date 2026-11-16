@@ -6,9 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "catalog_call.h"
 #include "check.h"
+#include "definition_fixture.h"
 #include "on_path.h"
+#include "runtime/detect.h"
 #include "service_scratch.h"
 
 typedef struct path_scratch {
@@ -47,7 +48,10 @@ static char *search_of(const path_scratch *place, char separator) {
 
 /** What runtime_find_on_path answers for binary, the environment freed. */
 static char *found(int windows, const char *binary, cJSON *environment) {
-    char *answer = runtime_find_on_path(windows, binary, environment);
+    char *answer = NULL;
+    runtime_on_path_status status = runtime_find_on_path(windows, binary, environment, &answer);
+    CHECK((status == RUNTIME_ON_PATH_FOUND) == (answer != NULL));
+    CHECK(status != RUNTIME_ON_PATH_OUT_OF_MEMORY);
     cJSON_Delete(environment);
     return answer;
 }
@@ -186,15 +190,33 @@ static void windows_takes_the_bare_name_too(void) {
     discard(&place);
 }
 
-static cJSON *on_path_request(const char *search) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON_AddStringToObject(request, "binary", "claude");
-    cJSON *environment = cJSON_AddObjectToObject(request, "environment");
-    cJSON_AddStringToObject(environment, "PATH", search);
-#if defined(_WIN32)
-    cJSON_AddStringToObject(environment, "PATHEXT", ".EXE;.CMD");
-#endif
-    return request;
+/** One on_path call's status, answer and refusal, released by release_call. */
+typedef struct on_path_call {
+    spisor_status status;
+    runtime_detect_on_path_answer answer;
+    spisor_refusal refusal;
+} on_path_call;
+
+static on_path_call on_path_through(const char *binary, const runtime_variable *environment, size_t count) {
+    const runtime_detect_definition *detect = runtime_detect_definition_of();
+    runtime_detect_on_path_argument argument = SPISOR_INIT(runtime_detect_on_path_argument);
+    on_path_call call = {SPISOR_OK, SPISOR_INIT(runtime_detect_on_path_answer), SPISOR_INIT(spisor_refusal)};
+    argument.binary = binary;
+    argument.environment = environment;
+    argument.environment_count = count;
+    call.status = detect->on_path(detect->context, &argument, &call.answer, &call.refusal);
+    return call;
+}
+
+static on_path_call on_path(const char *search) {
+    runtime_variable environment[] = {{"PATH", search}, {"PATHEXT", ".EXE;.CMD"}};
+    return on_path_through("claude", environment, 2);
+}
+
+static void release_call(on_path_call *call) {
+    const runtime_detect_definition *detect = runtime_detect_definition_of();
+    detect->release_answer(detect->context, &call->answer);
+    detect->release_refusal(detect->context, &call->refusal);
 }
 
 #if defined(_WIN32)
@@ -213,32 +235,40 @@ static void the_service_finds_the_binary_and_launches_nothing(void) {
     char program[2048];
     snprintf(program, sizeof program, MARKING_PROGRAM_FORMAT, marker);
     char *binary = touch_file(place.first, MARKING_PROGRAM_NAME, program, 0755);
-    catalog_answer answer = call_catalog(runtime_detect_on_path, on_path_request(place.first));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "path")), binary, "the found path");
+    on_path_call call = on_path(place.first);
+    CHECK(call.status == SPISOR_OK);
+    check_text(call.answer.path, binary, "the found path");
     CHECK(!spisor_file_exists(marker));
-    cJSON_Delete(answer.tree);
-    answer = call_catalog(runtime_detect_on_path, on_path_request(place.second));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && answer.tree != NULL &&
-          cJSON_GetObjectItemCaseSensitive(answer.tree, "path") == NULL);
-    cJSON_Delete(answer.tree);
+    release_call(&call);
+    CHECK(call.answer.path == NULL && call.answer.storage == NULL);
+    call = on_path(place.second);
+    CHECK(call.status == SPISOR_NONE && call.answer.path == NULL && call.answer.storage == NULL);
+    release_call(&call);
     free(binary);
     free(marker);
     discard(&place);
 }
 
-static void the_service_refuses_an_argument_without_a_binary_or_an_environment(void) {
-    cJSON *request = on_path_request("x");
-    cJSON_DeleteItemFromObject(request, "binary");
-    catalog_answer answer = call_catalog(runtime_detect_on_path, request);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE &&
-          cJSON_IsString(cJSON_GetObjectItemCaseSensitive(answer.tree, "fix")));
-    cJSON_Delete(answer.tree);
-    request = on_path_request("x");
-    cJSON_ReplaceItemInObject(request, "environment", cJSON_CreateString("PATH"));
-    answer = call_catalog(runtime_detect_on_path, request);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
-    cJSON_Delete(answer.tree);
+static void the_service_refuses_an_argument_without_a_binary_or_a_whole_environment(void) {
+    runtime_variable unnamed[] = {{NULL, "x"}};
+    on_path_call call = on_path_through(NULL, NULL, 0);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "binary", "no binary");
+    release_call(&call);
+    call = on_path_through("", NULL, 0);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "binary", "an empty binary");
+    release_call(&call);
+    call = on_path_through("claude", unnamed, 1);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "environment variable", "a variable without a name");
+    release_call(&call);
+    call = on_path_through("claude", NULL, 1);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "environment variable", "a count without variables");
+    release_call(&call);
+}
+
+static void the_service_reads_no_path_as_nothing_found(void) {
+    on_path_call call = on_path_through("claude", NULL, 0);
+    CHECK(call.status == SPISOR_NONE);
+    release_call(&call);
 }
 
 int main(void) {
@@ -256,6 +286,7 @@ int main(void) {
     windows_prefers_a_pathext_match_over_the_bare_name_in_pathext_order();
     windows_takes_the_bare_name_too();
     the_service_finds_the_binary_and_launches_nothing();
-    the_service_refuses_an_argument_without_a_binary_or_an_environment();
+    the_service_refuses_an_argument_without_a_binary_or_a_whole_environment();
+    the_service_reads_no_path_as_nothing_found();
     return check_summary("detect_test");
 }

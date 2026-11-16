@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/config.h"
+#include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
 #include "runtime/log.h"
@@ -356,6 +357,24 @@ static void print_fetch_layouts(void) {
     SIZE(runtime_fetch_definition);
 }
 
+static void print_detect_layouts(void) {
+    FIELD(runtime_detect_on_path_argument, size);
+    FIELD(runtime_detect_on_path_argument, binary);
+    FIELD(runtime_detect_on_path_argument, environment);
+    FIELD(runtime_detect_on_path_argument, environment_count);
+    SIZE(runtime_detect_on_path_argument);
+    FIELD(runtime_detect_on_path_answer, size);
+    FIELD(runtime_detect_on_path_answer, path);
+    FIELD(runtime_detect_on_path_answer, storage);
+    SIZE(runtime_detect_on_path_answer);
+    FIELD(runtime_detect_definition, size);
+    FIELD(runtime_detect_definition, context);
+    FIELD(runtime_detect_definition, on_path);
+    FIELD(runtime_detect_definition, release_answer);
+    FIELD(runtime_detect_definition, release_refusal);
+    SIZE(runtime_detect_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -368,5 +387,6 @@ int main(void) {
     print_log_layouts();
     print_identity_layouts();
     print_fetch_layouts();
+    print_detect_layouts();
     return 0;
 }

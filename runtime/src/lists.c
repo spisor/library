@@ -163,7 +163,10 @@ static int reports_package_installed(const cJSON *detections, const char *id) {
 
 static int is_detected(const cJSON *application, const cJSON *environment, const cJSON *detections) {
     const char *binary = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(application, "binary"));
-    char *found = binary == NULL ? NULL : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment);
+    char *found = NULL;
+    if (binary != NULL) {
+        runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment, &found);
+    }
     int detected = found != NULL || reports_package_installed(detections, id_of(application));
     free(found);
     return detected;

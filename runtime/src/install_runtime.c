@@ -533,7 +533,10 @@ static char *reported_version(const char *executable) {
  * @implNote Found by detect's PATH rules and run once, only here at install, never by detection.
  */
 static cJSON *runtime_on_path(const cJSON *environment) {
-    char *executable = environment == NULL ? NULL : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME, environment);
+    char *executable = NULL;
+    if (environment != NULL) {
+        runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME, environment, &executable);
+    }
     char *version = executable == NULL ? NULL : reported_version(executable);
     cJSON *answer = version != NULL && major_of(version) >= COMPATIBLE_MAJOR ? answer_of(version, executable, 0, "path")
                                                                             : NULL;

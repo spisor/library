@@ -3,12 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "catalog_answer.h"
+#include "answer_storage.h"
+#include "definition_support.h"
 #include "directory_tree.h"
 #include "followed_entry.h"
-#include "json_service.h"
 #include "paths.h"
-#include "spisor/json_kind.h"
+#include "runtime/detect.h"
 #include "spisor/path.h"
 #include "user_home.h"
 
@@ -64,13 +64,17 @@ static char *joined(const char *directory, const char *name) {
 }
 
 static char *matching_file(int windows, const char *directory, const runtime_directory_listing *listing,
-                           const char *wanted) {
+                           const char *wanted, int *out_of_memory) {
     for (size_t index = 0; index < listing->count; index++) {
         if (listing->entries[index].is_directory || !names_match(windows, listing->entries[index].name, wanted)) {
             continue;
         }
         char *path = joined(directory, listing->entries[index].name);
-        if (path == NULL || runtime_is_followed_file(path, !windows)) {
+        if (path == NULL) {
+            *out_of_memory = 1;
+            return NULL;
+        }
+        if (runtime_is_followed_file(path, !windows)) {
             return path;
         }
         free(path);
@@ -78,14 +82,14 @@ static char *matching_file(int windows, const char *directory, const runtime_dir
     return NULL;
 }
 
-static char *found_in(int windows, const char *directory, const accepted_names *accepted) {
+static char *found_in(int windows, const char *directory, const accepted_names *accepted, int *out_of_memory) {
     runtime_directory_listing listing;
     if (!runtime_list_directory(directory, &listing)) {
         return NULL;
     }
     char *found = NULL;
-    for (size_t index = 0; found == NULL && index < accepted->count; index++) {
-        found = matching_file(windows, directory, &listing, accepted->names[index]);
+    for (size_t index = 0; found == NULL && !*out_of_memory && index < accepted->count; index++) {
+        found = matching_file(windows, directory, &listing, accepted->names[index], out_of_memory);
     }
     runtime_free_directory_listing(&listing);
     return found;
@@ -101,47 +105,90 @@ static char *directory_of(const char *start, size_t length) {
 }
 
 /** @implNote The separator is ";" whenever the rules or this OS are Windows, as Node's path.delimiter is. */
-static char *found_on(int windows, const char *search, const accepted_names *accepted) {
+static char *found_on(int windows, const char *search, const accepted_names *accepted, int *out_of_memory) {
     char separator = windows || RUNTIME_HOST_IS_WINDOWS ? ';' : ':';
     char *found = NULL;
-    while (found == NULL && *search != '\0') {
+    while (found == NULL && !*out_of_memory && *search != '\0') {
         const char *end = strchr(search, separator);
         size_t length = end == NULL ? strlen(search) : (size_t)(end - search);
         char *directory = length == 0 ? NULL : directory_of(search, length);
-        found = directory == NULL ? NULL : found_in(windows, directory, accepted);
+        *out_of_memory = length != 0 && directory == NULL;
+        found = directory == NULL ? NULL : found_in(windows, directory, accepted, out_of_memory);
         free(directory);
         search = end == NULL ? search + length : end + 1;
     }
     return found;
 }
 
-char *runtime_find_on_path(int windows, const char *binary, const cJSON *environment) {
+runtime_on_path_status runtime_find_on_path(int windows, const char *binary, const cJSON *environment,
+                                            char **found) {
     const char *search = runtime_environment_variable(environment, "PATH", windows);
     accepted_names accepted = {NULL, 0};
+    int out_of_memory = 0;
     int named = windows ? windows_names(binary, environment, &accepted) : add_name(&accepted, binary, "", 0);
-    char *found = named && search != NULL ? found_on(windows, search, &accepted) : NULL;
+    *found = named && search != NULL ? found_on(windows, search, &accepted, &out_of_memory) : NULL;
     free_names(&accepted);
-    return found;
+    if (!named || out_of_memory) {
+        return RUNTIME_ON_PATH_OUT_OF_MEMORY;
+    }
+    return *found == NULL ? RUNTIME_ON_PATH_ABSENT : RUNTIME_ON_PATH_FOUND;
 }
 
-static cJSON *on_path_for(const cJSON *argument, cJSON **refusal) {
-    const char *binary = runtime_catalog_text_member(argument, "binary");
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    if (binary == NULL || binary[0] == '\0' || !cJSON_IsObject(environment)) {
-        *refusal = runtime_refusal("the argument carries no usable binary or environment",
-                                   "send {\"binary\": \"<command name>\", \"environment\": {<name>: <value>}}");
-        return NULL;
-    }
-    cJSON *answer = cJSON_CreateObject();
-    char *found = answer == NULL ? NULL : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment);
-    if (found != NULL && cJSON_AddStringToObject(answer, "path", found) == NULL) {
-        cJSON_Delete(answer);
-        answer = NULL;
-    }
+#define ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_detect_on_path_argument, environment_count)
+#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_detect_on_path_answer, storage)
+
+static spisor_status answer_found(char *found, runtime_detect_on_path_answer *answer) {
+    int copied = runtime_storage_copy(&answer->storage, found, &answer->path);
     free(found);
-    return answer;
+    if (!copied) {
+        runtime_release_stored_answer(answer, ANSWER_SHAPE);
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return SPISOR_OK;
 }
 
-RUNTIME_EXPORT int32_t runtime_detect_on_path(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, on_path_for);
+static spisor_status search_path(const char *binary, const cJSON *environment, runtime_detect_on_path_answer *answer) {
+    char *found = NULL;
+    runtime_on_path_status searched = runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment, &found);
+    if (searched == RUNTIME_ON_PATH_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return searched == RUNTIME_ON_PATH_ABSENT ? SPISOR_NONE : answer_found(found, answer);
+}
+
+static spisor_status on_path(void *context, const runtime_detect_on_path_argument *argument,
+                             runtime_detect_on_path_answer *answer, spisor_refusal *refusal) {
+    cJSON *environment = NULL;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, ARGUMENT_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "detect's on_path");
+    }
+    if (argument->binary == NULL || argument->binary[0] == '\0') {
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no binary",
+                                 "send binary as a command name, such as \"claude\"");
+    }
+    status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
+    if (status == SPISOR_MALFORMED) {
+        return runtime_refuse_environment(refusal);
+    }
+    if (status == SPISOR_OK) {
+        status = search_path(argument->binary, environment, answer);
+    }
+    cJSON_Delete(environment);
+    return status;
+}
+
+static void release_answer(void *context, runtime_detect_on_path_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, ANSWER_SHAPE);
+}
+
+static const runtime_detect_definition definition = {
+    sizeof(runtime_detect_definition), NULL, on_path, release_answer, runtime_release_refusal,
+};
+
+RUNTIME_DEFINITION_API const void *runtime_detect_definition_of(void) {
+    return &definition;
 }
