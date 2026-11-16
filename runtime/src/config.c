@@ -235,7 +235,7 @@ static char *detached_file(config_target *target) {
 }
 
 char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key) {
-    runtime_config_request request = {home, portable, NULL, NULL, NULL, NULL, NULL};
+    runtime_config_request request = runtime_config_request_of(home, portable);
     config_targets targets;
     if (locate_targets(&request, &targets) != LOCATED) {
         return NULL;
@@ -249,13 +249,25 @@ char *runtime_ecosystem_settings_file_holding(const char *home, const char *port
     return file;
 }
 
+runtime_config_request runtime_config_request_of(const char *home, const char *portable) {
+    runtime_config_request request;
+    memset(&request, 0, sizeof request);
+    request.home = home;
+    request.portable = portable;
+    request.layer = RUNTIME_SETTINGS_LAYER_DEFAULT;
+    return request;
+}
+
 static const cJSON *defaults_of(const runtime_config_request *request) {
     return optional_object(request->config, "defaults");
 }
 
 cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *portable, const char *plugin,
                              const cJSON *config, int *failed) {
-    runtime_config_request request = {home, portable, plugin, names, config, NULL, NULL};
+    runtime_config_request request = runtime_config_request_of(home, portable);
+    request.plugin = plugin;
+    request.names = names;
+    request.config = config;
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -267,7 +279,8 @@ cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *p
 }
 
 cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed) {
-    runtime_config_request request = {home, portable, NULL, names, NULL, NULL, NULL};
+    runtime_config_request request = runtime_config_request_of(home, portable);
+    request.names = names;
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -845,24 +858,20 @@ static cJSON *refusal_json(spisor_status status, spisor_refusal *refusal) {
 }
 
 cJSON *runtime_ecosystem_settings_values(const char *home, const char *portable, cJSON **refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(home, portable);
     spisor_refusal refused = SPISOR_INIT(spisor_refusal);
     cJSON *values = NULL;
-    request.home = home;
-    request.portable = portable;
     *refusal = refusal_json(runtime_config_all_values(&request, &values, &refused), &refused);
     return values;
 }
 
 int runtime_set_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
                                   uint32_t layer, cJSON **refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(home, portable);
     spisor_refusal refused = SPISOR_INIT(spisor_refusal);
     cJSON *previous = NULL;
     int secret = 0;
     spisor_status status;
-    request.home = home;
-    request.portable = portable;
     request.key = key;
     request.value = value;
     request.layer = layer;

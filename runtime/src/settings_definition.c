@@ -12,7 +12,7 @@ static int is_whole_scope(const runtime_settings_scope *scope) {
 
 static spisor_status all(void *context, const runtime_settings_scope *scope, spisor_value_tree *values,
                          spisor_refusal *refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(NULL, NULL);
     cJSON *names = NULL;
     cJSON *merged = NULL;
     spisor_status status;
@@ -34,7 +34,7 @@ static spisor_status all(void *context, const runtime_settings_scope *scope, spi
 
 static spisor_status set(void *context, const runtime_settings_scope *scope, const runtime_settings_change *change,
                          spisor_value_tree *previous, spisor_refusal *refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(NULL, NULL);
     cJSON *names = NULL;
     cJSON *value = NULL;
     cJSON *held = NULL;
