@@ -30,6 +30,13 @@ target_link_libraries(out_of_memory_test PRIVATE spisor_vector_reader)
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 600)
 
+runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_secret_store>)
+target_include_directories(json_hooks_race_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(json_hooks_race_test PRIVATE Threads::Threads)
+endif()
+
 runtime_test(secrets_test fake_secret_backend.c)
 target_link_libraries(secrets_test PRIVATE spisor_vector_reader)
 target_link_libraries(log_test PRIVATE spisor_vector_reader)

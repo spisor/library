@@ -5,6 +5,7 @@
 
 #include "spisor/file.h"
 
+#include "allocation.h"
 #include "file_presence.h"
 #include "file_reading.h"
 #include "file_replacement.h"
@@ -245,18 +246,44 @@ static char *write_target_of(const char *path) {
 }
 #endif
 
-static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *outcome) {
+/** Where a read allocates: malloc for spisor_read_file's callers, the binary's allocator for the JSON reader. */
+typedef struct read_memory {
+    void *(*allocate)(size_t bytes);
+    void (*release)(void *block);
+} read_memory;
+
+static void *plain_allocate(size_t bytes) {
+    return malloc(bytes);
+}
+
+static void plain_release(void *block) {
+    free(block);
+}
+
+static const read_memory PLAIN_MEMORY = {plain_allocate, plain_release};
+static const read_memory LIBRARY_MEMORY = {spisor_memory_allocate, spisor_memory_release};
+
+static uint8_t *grown_block(const read_memory *memory, uint8_t *bytes, size_t used, size_t capacity) {
+    uint8_t *grown = memory->allocate(capacity);
+    if (grown != NULL) {
+        memcpy(grown, bytes, used);
+    }
+    return grown;
+}
+
+static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *outcome, const read_memory *memory) {
     size_t capacity = 4096;
     size_t used = 0;
-    uint8_t *bytes = malloc(capacity);
+    uint8_t *bytes = memory->allocate(capacity);
     *outcome = bytes == NULL ? SPISOR_READ_OUT_OF_MEMORY : SPISOR_READ_FAILED;
     while (bytes != NULL) {
         if (used + 1 >= capacity) {
-            uint8_t *grown = realloc(bytes, capacity * 2);
+            uint8_t *grown = grown_block(memory, bytes, used, capacity * 2);
             if (grown == NULL) {
                 *outcome = SPISOR_READ_OUT_OF_MEMORY;
                 break;
             }
+            memory->release(bytes);
             bytes = grown;
             capacity *= 2;
         }
@@ -272,11 +299,11 @@ static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *out
             return bytes;
         }
     }
-    free(bytes);
+    memory->release(bytes);
     return NULL;
 }
 
-uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
+static uint8_t *read_with(const char *path, size_t *length, spisor_read_outcome *outcome, const read_memory *memory) {
     *outcome = SPISOR_READ_FAILED;
     if (path[0] == '\0' || is_directory(path)) {
         return NULL;
@@ -285,14 +312,18 @@ uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_rea
     if (file == NULL) {
         return NULL;
     }
-    uint8_t *bytes = read_stream(file, length, outcome);
+    uint8_t *bytes = read_stream(file, length, outcome, memory);
     fclose(file);
     return bytes;
 }
 
+uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
+    return read_with(path, length, outcome, &LIBRARY_MEMORY);
+}
+
 uint8_t *spisor_read_file(const char *path, size_t *length) {
     spisor_read_outcome outcome;
-    return spisor_read_file_reporting(path, length, &outcome);
+    return read_with(path, length, &outcome, &PLAIN_MEMORY);
 }
 
 static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {

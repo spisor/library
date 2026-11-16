@@ -46,7 +46,6 @@ static int unknown_command(int count, char **arguments) {
 }
 
 int host_run_command_line(int count, char **arguments) {
-    spisor_json_use_library_allocator();
     if (count >= 2 && strcmp(arguments[0], "catalog") == 0 && strcmp(arguments[1], "build") == 0) {
         return host_command_catalog_build(count - 2, arguments + 2);
     }
@@ -64,6 +63,7 @@ int host_run_command_line(int count, char **arguments) {
 #if defined(_WIN32)
 
 int wmain(int count, wchar_t **wide) {
+    spisor_json_use_library_allocator();
     char **arguments = host_utf8_arguments(count, wide);
     if (arguments == NULL) {
         return host_misuse("an argument is not valid text");
@@ -76,6 +76,7 @@ int wmain(int count, wchar_t **wide) {
 #else
 
 int main(int count, char **arguments) {
+    spisor_json_use_library_allocator();
     return host_run_command_line(count - 1, arguments + 1);
 }
 

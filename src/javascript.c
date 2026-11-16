@@ -1,5 +1,8 @@
 #include "spisor/javascript.h"
 
+#include "allocation.h"
+#include "file_reading.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,8 +87,7 @@ static size_t encode(uint32_t code_point, uint8_t *out) {
     return 4;
 }
 
-uint8_t *spisor_decode_utf8_lossy(const uint8_t *bytes, size_t length, size_t *out_length) {
-    uint8_t *decoded = malloc(length * 3 + 1);
+static uint8_t *decode_into(const uint8_t *bytes, size_t length, size_t *out_length, uint8_t *decoded) {
     if (decoded == NULL) {
         return NULL;
     }
@@ -97,6 +99,14 @@ uint8_t *spisor_decode_utf8_lossy(const uint8_t *bytes, size_t length, size_t *o
     decoded[written] = '\0';
     *out_length = written;
     return decoded;
+}
+
+uint8_t *spisor_decode_utf8_lossy(const uint8_t *bytes, size_t length, size_t *out_length) {
+    return decode_into(bytes, length, out_length, malloc(length * 3 + 1));
+}
+
+uint8_t *spisor_decode_utf8_lossy_reading(const uint8_t *bytes, size_t length, size_t *out_length) {
+    return decode_into(bytes, length, out_length, spisor_memory_allocate(length * 3 + 1));
 }
 
 uint32_t spisor_utf8_next(const char *text, size_t *index) {

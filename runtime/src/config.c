@@ -178,7 +178,6 @@ static locate_status locate_targets(const runtime_config_request *request, confi
 typedef struct settings_file {
     spisor_json_file_state state;
     cJSON *tree;
-    const char *path;
 } settings_file;
 
 typedef struct layer_files {
@@ -186,11 +185,34 @@ typedef struct layer_files {
     settings_file application;
 } layer_files;
 
+/** Whether a number below node is not finite, as a parsed 1e999 is, which no value tree can carry. */
+static int holds_non_finite_number(const cJSON *node) {
+    const cJSON *child;
+    if (cJSON_IsNumber(node)) {
+        return !isfinite(node->valuedouble);
+    }
+    cJSON_ArrayForEach(child, node) {
+        if (holds_non_finite_number(child)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * One layer's file. A file holding a number no value tree carries reads as unreadable, so a read ignores it and a set
+ * refuses to overwrite it, as it does any file that is not one readable JSON object.
+ */
 static settings_file read_settings_file(const char *file_path) {
-    settings_file file = {SPISOR_JSON_FILE_ABSENT, NULL, file_path};
+    settings_file file = {SPISOR_JSON_FILE_ABSENT, NULL};
     if (file_path != NULL) {
         file.state = SPISOR_JSON_FILE_UNREADABLE;
         file.tree = spisor_read_json_file(file_path, &file.state);
+    }
+    if (file.state == SPISOR_JSON_FILE_PARSED && holds_non_finite_number(file.tree)) {
+        cJSON_Delete(file.tree);
+        file.tree = NULL;
+        file.state = SPISOR_JSON_FILE_UNREADABLE;
     }
     return file;
 }
@@ -218,41 +240,9 @@ static int ran_out_reading(const layer_files *files) {
            files->application.state == SPISOR_JSON_FILE_OUT_OF_MEMORY;
 }
 
-/** The first number below node that is not finite, which a parsed 1e999 is and no value tree can carry. */
-static const cJSON *non_finite_number(const cJSON *node) {
-    const cJSON *child;
-    if (cJSON_IsNumber(node)) {
-        return isfinite(node->valuedouble) ? NULL : node;
-    }
-    cJSON_ArrayForEach(child, node) {
-        if (non_finite_number(child) != NULL) {
-            return child;
-        }
-    }
-    return NULL;
-}
-
-static spisor_status refuse_non_finite(const char *file_path, spisor_refusal *refusal) {
-    char fix[2048];
-    snprintf(fix, sizeof fix,
-             "%s holds a number that is not finite, such as 1e999; write it as a finite number or remove it, then "
-             "try again; it was left unchanged",
-             file_path);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings file holds a number no value can carry", fix);
-}
-
-/** Whether the layers read whole and hold only what a value tree carries; OUT_OF_MEMORY or the refusal otherwise. */
-static spisor_status check_layers(const layer_files *files, spisor_refusal *refusal) {
-    if (ran_out_reading(files)) {
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    if (non_finite_number(object_tree(&files->portable)) != NULL) {
-        return refuse_non_finite(files->portable.path, refusal);
-    }
-    if (non_finite_number(object_tree(&files->application)) != NULL) {
-        return refuse_non_finite(files->application.path, refusal);
-    }
-    return SPISOR_OK;
+/** OK, or OUT_OF_MEMORY when a layer could not be read for want of it. */
+static spisor_status check_layers(const layer_files *files) {
+    return ran_out_reading(files) ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
 /** defaults, then the portable layer, then the application layer, each merged over the last (spec section 4). */
@@ -276,11 +266,10 @@ static cJSON *merged_from_disk(const cJSON *defaults, const config_targets *targ
     return merged;
 }
 
-/** The merged settings an operation answers from, refused when a layer holds what no value tree carries. */
-static spisor_status merged_checked(const cJSON *defaults, const config_targets *targets, cJSON **merged,
-                                    spisor_refusal *refusal) {
+/** The merged settings an operation answers from. */
+static spisor_status merged_checked(const cJSON *defaults, const config_targets *targets, cJSON **merged) {
     layer_files files = read_layers(targets);
-    spisor_status status = check_layers(&files, refusal);
+    spisor_status status = check_layers(&files);
     *merged = status == SPISOR_OK ? merged_layers(defaults, &files) : NULL;
     free_layers(&files);
     return status == SPISOR_OK && *merged == NULL ? SPISOR_OUT_OF_MEMORY : status;
@@ -481,7 +470,7 @@ spisor_status runtime_config_all_values(const runtime_config_request *request, c
         return status;
     }
     cJSON *merged = NULL;
-    status = merged_checked(defaults_of(request), &targets, &merged, refusal);
+    status = merged_checked(defaults_of(request), &targets, &merged);
     free_targets(&targets);
     if (status == SPISOR_OK && !remove_secrets_below(request, NULL, merged)) {
         status = SPISOR_OUT_OF_MEMORY;
@@ -510,11 +499,10 @@ static cJSON *copy_at(const runtime_config_request *request, const cJSON *merged
     return copy;
 }
 
-static spisor_status value_at(const runtime_config_request *request, const config_targets *targets, cJSON **value,
-                              spisor_refusal *refusal) {
+static spisor_status value_at(const runtime_config_request *request, const config_targets *targets, cJSON **value) {
     cJSON *merged = NULL;
     int failed = 0;
-    spisor_status status = merged_checked(defaults_of(request), targets, &merged, refusal);
+    spisor_status status = merged_checked(defaults_of(request), targets, &merged);
     if (status != SPISOR_OK || has_empty_segment(request->key)) {
         cJSON_Delete(merged);
         return status == SPISOR_OK ? SPISOR_NONE : status;
@@ -557,7 +545,7 @@ spisor_status runtime_config_get_value(const runtime_config_request *request, cJ
     if (status != SPISOR_OK) {
         return status;
     }
-    status = request->key == NULL ? refuse_key(refusal) : value_at(request, &targets, value, refusal);
+    status = request->key == NULL ? refuse_key(refusal) : value_at(request, &targets, value);
     free_targets(&targets);
     return status;
 }
@@ -763,7 +751,7 @@ static spisor_status previous_tree(const runtime_config_request *request, const 
     status = spisor_value_of_json(previous, request->previous_tree);
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings hold what no value tree can carry",
-                                 "repair the settings files so they hold only finite numbers, then try again");
+                                 "repair the settings files, then try again");
     }
     return status;
 }
@@ -772,7 +760,7 @@ static spisor_status previous_tree(const runtime_config_request *request, const 
 static spisor_status read_previous(const runtime_config_request *request, const layer_files *files, cJSON **previous,
                                    spisor_refusal *refusal) {
     int failed = 0;
-    spisor_status status = check_layers(files, refusal);
+    spisor_status status = check_layers(files);
     if (status == SPISOR_OK) {
         *previous = previous_value(request, files, request->key, &failed);
         status = failed ? SPISOR_OUT_OF_MEMORY : previous_tree(request, *previous, refusal);

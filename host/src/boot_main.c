@@ -53,7 +53,6 @@ static cJSON *resolve_call(const char *cache, const char *host_id, int count, ch
 
 /** Runs the version of host argument 0 its boot hint names, with the rest of the arguments passed through. */
 static int boot(int count, char **arguments) {
-    spisor_json_use_library_allocator();
     if (count < 1 || arguments[0][0] == 0) {
         const char *parts[1] = {"no host id was given"};
         return host_refuse(host_refusal_of(parts, 1, NO_HOST_FIX));
@@ -77,6 +76,7 @@ static int boot(int count, char **arguments) {
 #if defined(_WIN32)
 
 int wmain(int count, wchar_t **wide) {
+    spisor_json_use_library_allocator();
     char **arguments = host_utf8_arguments(count, wide);
     int code = arguments == NULL ? HOST_EXIT_MISUSED : boot(count - 1, arguments + 1);
     host_free_arguments(arguments, count);
@@ -86,6 +86,7 @@ int wmain(int count, wchar_t **wide) {
 #else
 
 int main(int count, char **arguments) {
+    spisor_json_use_library_allocator();
     return boot(count - 1, arguments + 1);
 }
 

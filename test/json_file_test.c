@@ -166,7 +166,38 @@ static void read_bom_then_comment_file(void) {
     cJSON_Delete(tree);
 }
 
+static char *nested_arrays_text(size_t depth) {
+    char *text = malloc(2 * depth + 1);
+    if (text != NULL) {
+        memset(text, '[', depth);
+        memset(text + depth, ']', depth);
+        text[2 * depth] = '\0';
+    }
+    return text;
+}
+
+static void reads_a_file_nested_as_deep_as_cjson_parses(void) {
+    spisor_json_file_state state = SPISOR_JSON_FILE_ABSENT;
+    char *text = nested_arrays_text(1000);
+    CHECK(text != NULL);
+    cJSON *tree = text == NULL ? NULL : read_content(text, 2000, &state);
+    CHECK(state == SPISOR_JSON_FILE_PARSED && tree != NULL);
+    cJSON_Delete(tree);
+    free(text);
+}
+
+static void a_file_nested_past_cjson_is_unreadable_not_out_of_memory(void) {
+    spisor_json_file_state state = SPISOR_JSON_FILE_ABSENT;
+    char *text = nested_arrays_text(1001);
+    CHECK(text != NULL);
+    cJSON *tree = text == NULL ? NULL : read_content(text, 2002, &state);
+    CHECK(state == SPISOR_JSON_FILE_UNREADABLE && tree == NULL);
+    free(text);
+}
+
 int main(void) {
+    reads_a_file_nested_as_deep_as_cjson_parses();
+    a_file_nested_past_cjson_is_unreadable_not_out_of_memory();
     strips_whole_line_comments();
     keeps_a_comment_that_follows_content();
     keeps_slashes_inside_a_string();

@@ -240,22 +240,34 @@ static void set_writes_through_a_symlinked_settings_file(void) {
     CHECK(count_temporary_entries(dotfiles) == 0);
 }
 
-static void a_file_holding_a_number_no_value_carries_is_refused_and_never_written(void) {
+static void a_file_holding_a_number_no_value_carries_reads_as_unreadable(void) {
     scratch_home home;
     fresh_home(&home, "non-finite");
     write_application_file(&home, "{\"a\":1e999,\"b\":1}");
     answer set = settings_set(&home, NULL, "a", "5");
     CHECK(set.status == SPISOR_REFUSED);
-    expect_refused_naming(&set, "not finite", "the fix names the cause");
+    CHECK(strstr(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(set.tree, "message")), "readable") != NULL);
     finish(&set);
     expect_content(home.application_file, "{\"a\":1e999,\"b\":1}", "the refused set left the file byte-identical");
-    answer all = call_with(SETTINGS_ALL, request_for(&home, 1));
-    CHECK(all.status == SPISOR_REFUSED);
-    finish(&all);
+    expect_values(&home, "{}", "the file contributes nothing");
+}
+
+static void a_file_nested_past_what_json_parses_contributes_nothing(void) {
+    scratch_home home;
+    char text[2 * 1001 + 16];
+    fresh_home(&home, "nested");
+    memcpy(text, "{\"a\":", 5);
+    memset(text + 5, '[', 1001);
+    memset(text + 5 + 1001, ']', 1001);
+    memcpy(text + 5 + 2002, "}", 2);
+    write_portable_file(&home, "{\"b\":1}");
+    write_application_file(&home, text);
+    expect_values(&home, "{\"b\":1}", "a file nested past cJSON's limit contributes nothing");
 }
 
 int main(void) {
-    a_file_holding_a_number_no_value_carries_is_refused_and_never_written();
+    a_file_nested_past_what_json_parses_contributes_nothing();
+    a_file_holding_a_number_no_value_carries_reads_as_unreadable();
     all_merges_portable_under_application();
     all_on_an_empty_home_is_empty_and_creates_nothing();
     set_without_a_layer_writes_the_application_file();

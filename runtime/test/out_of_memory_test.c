@@ -14,6 +14,7 @@
 #include "allocation.h"
 #include "check.h"
 #include "definition_fixture.h"
+#include "json_allocation.h"
 #include "runtime/config.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
@@ -169,8 +170,20 @@ static spisor_status write_log(void) {
     return status;
 }
 
-/** Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says. */
-static void every_failure_answers_out_of_memory(const char *label, operation run) {
+/** Whether log's write left no line behind: no logs folder under the home at all. */
+static int appended_nothing(void) {
+    char logs[1200];
+    snprintf(logs, sizeof logs, "%s/logs", place.home);
+    return !spisor_file_exists(logs);
+}
+
+typedef int (*untouched)(void);
+
+/**
+ * Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says and,
+ * with `left_alone` set, that the failure changed nothing it names.
+ */
+static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
     for (uint64_t attempt = 1; attempt < 100000; attempt++) {
         fresh_files();
         int64_t baseline = spisor_memory_live_blocks();
@@ -193,6 +206,12 @@ static void every_failure_answers_out_of_memory(const char *label, operation run
                    (unsigned long long)(attempt - 1));
             return;
         }
+        if (left_alone != NULL && !left_alone()) {
+            fprintf(stderr, "%s: failing allocation %llu answered out of memory after it wrote\n", label,
+                    (unsigned long long)attempt);
+            check_failures++;
+            return;
+        }
         if (status != SPISOR_OUT_OF_MEMORY) {
             fprintf(stderr, "%s: failing allocation %llu answered %d\n", label, (unsigned long long)attempt,
                     (int)status);
@@ -205,7 +224,7 @@ static void every_failure_answers_out_of_memory(const char *label, operation run
 }
 
 int main(void) {
-    runtime_paths_definition_of();
+    spisor_json_use_library_allocator();
     snprintf(place.base, sizeof place.base, RUNTIME_SCRATCH_PATH "/out-of-memory-%d", (int)CURRENT_PROCESS_ID);
     snprintf(place.home, sizeof place.home, "%s/home", place.base);
     snprintf(place.portable, sizeof place.portable, "%s/portable", place.base);
@@ -214,12 +233,12 @@ int main(void) {
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
-    every_failure_answers_out_of_memory("paths' resolve", resolve_paths);
-    every_failure_answers_out_of_memory("places' resolve", resolve_places);
-    every_failure_answers_out_of_memory("secrets' set", set_secret);
-    every_failure_answers_out_of_memory("config's set", set_config);
-    every_failure_answers_out_of_memory("settings' all", all_settings);
-    every_failure_answers_out_of_memory("log's write", write_log);
+    every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
+    every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
+    every_failure_answers_out_of_memory("secrets' set", set_secret, NULL);
+    every_failure_answers_out_of_memory("config's set", set_config, NULL);
+    every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
+    every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

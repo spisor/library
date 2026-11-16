@@ -5,7 +5,6 @@
 #include "config.h"
 #include "config_conversion.h"
 #include "definition_support.h"
-#include "json_allocation.h"
 
 #define PLUGIN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_config_plugin, places)
 #define GET_SHAPE RUNTIME_SHAPE_THROUGH(runtime_config_get_argument, key)
@@ -176,6 +175,5 @@ static const runtime_config_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_config_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }

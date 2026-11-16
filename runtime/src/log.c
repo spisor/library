@@ -220,9 +220,24 @@ static int should_print(const runtime_log_request *entry, const console_style *s
     return entry->level == RUNTIME_LOG_ERROR || style->enabled;
 }
 
-static spisor_status write_entry(const runtime_log_request *entry, const char *name, char **console,
+/** The console line due, or NULL with none due, in the block `storage` owns; 0 when memory ran out. */
+static int pack_console(const runtime_log_request *entry, const char *name, const console_style *style,
+                        runtime_log_console *console) {
+    char *line = should_print(entry, style) ? console_line(entry, name, style->colored && !entry->no_color) : NULL;
+    int packed = (line != NULL || !should_print(entry, style)) &&
+                 runtime_pack_texts((const char *const *)&line, &console->line, 1, &console->storage);
+    free(line);
+    return packed;
+}
+
+/**
+ * @implNote Everything that can run out of memory comes before the append, so a write answering OUT_OF_MEMORY never
+ * appended and a retry logs the line once.
+ */
+static spisor_status write_entry(const runtime_log_request *entry, const char *name, runtime_log_console *console,
                                  spisor_refusal *refusal) {
     int failed;
+    console_style style;
     cJSON *merged =
         runtime_read_settings(entry->home, entry->names, entry->portable, entry->plugin, entry->config, &failed);
     if (failed) {
@@ -230,16 +245,15 @@ static spisor_status write_entry(const runtime_log_request *entry, const char *n
     }
     int skip_file = is_logging_disabled(merged);
     cJSON_Delete(merged);
-    int append_failed = !skip_file && !append_line(entry, name);
-    console_style style;
-    if (!read_console_style(entry, &style)) {
+    if (!read_console_style(entry, &style) || !pack_console(entry, name, &style, console)) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    *console = should_print(entry, &style) ? console_line(entry, name, style.colored && !entry->no_color) : NULL;
-    if (append_failed && *console == NULL) {
+    if (!skip_file && !append_line(entry, name) && console->line == NULL) {
+        runtime_release_storage(console->storage);
+        console->storage = NULL;
         return refuse_append(refusal);
     }
-    return should_print(entry, &style) && *console == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    return SPISOR_OK;
 }
 
 static int is_well_formed(const runtime_log_request *entry) {
@@ -247,8 +261,10 @@ static int is_well_formed(const runtime_log_request *entry) {
            entry->level <= RUNTIME_LOG_ERROR && is_iso_time(entry->start) && is_iso_time(entry->time);
 }
 
-spisor_status runtime_write_log(const runtime_log_request *entry, char **console, spisor_refusal *refusal) {
-    *console = NULL;
+spisor_status runtime_write_log(const runtime_log_request *entry, runtime_log_console *console,
+                                spisor_refusal *refusal) {
+    console->line = NULL;
+    console->storage = NULL;
     if (!is_well_formed(entry)) {
         return refuse_entry(refusal);
     }

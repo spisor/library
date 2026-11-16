@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "definition_support.h"
-#include "json_allocation.h"
 #include "secrets.h"
 
 #define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_secrets_entry_argument, name)
@@ -124,6 +123,5 @@ static const runtime_secrets_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_secrets_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }

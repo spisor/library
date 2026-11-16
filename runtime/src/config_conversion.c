@@ -10,8 +10,8 @@
 static const char *const LAYER_NAMES[] = {NULL, "application", "portable"};
 
 int runtime_is_empty_tree(const spisor_value_tree *tree) {
-    return tree != NULL && runtime_has_shape(tree->size, RUNTIME_SHAPE_THROUGH(spisor_value_tree, storage)) && tree->storage == NULL &&
-           tree->root.kind == SPISOR_VALUE_NONE;
+    return tree != NULL && runtime_has_shape(tree->size, RUNTIME_SHAPE_THROUGH(spisor_value_tree, storage)) &&
+           tree->storage == NULL && tree->root.kind == SPISOR_VALUE_NONE;
 }
 
 static int is_known_layer(uint32_t layer) {
@@ -122,7 +122,7 @@ spisor_status runtime_tree_of_settings(const cJSON *json, spisor_value_tree *tre
     spisor_status status = json == NULL ? SPISOR_OK : spisor_value_of_json(json, tree);
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings hold what no value tree can carry",
-                                 "repair the settings files so they hold only finite numbers, then try again");
+                                 "repair the settings files, then try again");
     }
     return status;
 }

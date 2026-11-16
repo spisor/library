@@ -1,5 +1,6 @@
 #include "spisor/json_kind.h"
 
+#include "allocation.h"
 #include "json_parse.h"
 
 #include "json_grammar.h"
@@ -228,7 +229,7 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
     if (!spisor_is_valid_utf8(bytes, length)) {
         return DOCUMENT_NOT_UTF8;
     }
-    char *text = malloc(length + 1);
+    char *text = spisor_memory_allocate(length + 1);
     if (text == NULL) {
         return DOCUMENT_OUT_OF_MEMORY;
     }
@@ -244,7 +245,7 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
             refusal = nests_past_cjson(text, length) ? DOCUMENT_NOT_JSON : DOCUMENT_OUT_OF_MEMORY;
         }
     }
-    free(text);
+    spisor_memory_release(text);
     if (*root != NULL) {
         keep_last_of_each_key(*root);
     }

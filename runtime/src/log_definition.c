@@ -5,20 +5,10 @@
 
 #include "config_conversion.h"
 #include "definition_support.h"
-#include "json_allocation.h"
 #include "log.h"
 
 #define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_log_entry, no_color)
 #define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_log_answer, storage)
-
-static spisor_status fill_answer(const char *console, runtime_log_answer *answer) {
-    const char *packed;
-    if (!runtime_pack_texts(&console, &packed, 1, &answer->storage)) {
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    answer->console = packed;
-    return SPISOR_OK;
-}
 
 static void fill_request(const runtime_log_entry *entry, const cJSON *names, const cJSON *config,
                          runtime_log_request *request) {
@@ -39,7 +29,7 @@ static spisor_status write_line(void *context, const runtime_log_entry *entry, r
     runtime_log_request request;
     cJSON *names = NULL;
     cJSON *config = NULL;
-    char *console = NULL;
+    runtime_log_console console = {NULL, NULL};
     spisor_status status;
     (void)context;
     if (entry == NULL || !runtime_has_shape(entry->size, ENTRY_SHAPE) ||
@@ -55,9 +45,9 @@ static spisor_status write_line(void *context, const runtime_log_entry *entry, r
         status = runtime_write_log(&request, &console, refusal);
     }
     if (status == SPISOR_OK) {
-        status = fill_answer(console, answer);
+        answer->console = console.line;
+        answer->storage = console.storage;
     }
-    free(console);
     cJSON_Delete(config);
     cJSON_Delete(names);
     return status;
@@ -73,6 +63,5 @@ static const runtime_log_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_log_definition_of(void) {
-    spisor_json_use_library_allocator();
     return &definition;
 }

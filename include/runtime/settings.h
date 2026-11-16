@@ -60,11 +60,12 @@ typedef struct runtime_settings_definition {
     uint32_t size;
     void *context;
     /**
-     * Every setting, merged. A file that is absent, malformed or not an object contributes nothing.
+     * Every setting, merged. A file that is absent, malformed, not an object, or holding a number no value tree
+     * carries (as 1e999 parses) contributes nothing.
      *
      * @param values the consumer's empty tree, filled with a record. Required.
      * @return OK; MALFORMED for a home or portable place that is not absolute, or `names` that is not a record;
-     * REFUSED when a settings file holds a number no value tree carries, as 1e999 parses; OUT_OF_MEMORY.
+     * OUT_OF_MEMORY.
      */
     spisor_status (*all)(void *context, const runtime_settings_scope *scope, spisor_value_tree *values,
                          spisor_refusal *refusal);
@@ -75,9 +76,8 @@ typedef struct runtime_settings_definition {
      * @param previous the consumer's empty tree, filled with the merged value the key held before the write, or left
      * of kind NONE when it held none. Required.
      * @return OK; MALFORMED for an unusable scope, key, value or layer, or the portable layer on a host without one;
-     * REFUSED when the file is not a readable JSON object (it is never discarded), a settings file holds a number no
-     * value tree carries, the key crosses a value that is not an object, or the file cannot be locked or written, a
-     * refused set having written nothing; OUT_OF_MEMORY.
+     * REFUSED when the file is not a readable JSON object (it is never discarded), the key crosses a value that is
+     * not an object, or the file cannot be locked or written, a refused set having written nothing; OUT_OF_MEMORY.
      */
     spisor_status (*set)(void *context, const runtime_settings_scope *scope, const runtime_settings_change *change,
                          spisor_value_tree *previous, spisor_refusal *refusal);

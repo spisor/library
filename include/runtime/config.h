@@ -77,9 +77,8 @@ typedef struct runtime_config_set_answer {
  * The config service. Every operation answers MALFORMED for a home or portable place that is not absolute, no plugin,
  * `names` or `config` that is not a record, a declaration without a key or with a layer it does not know, a config
  * name or plugin id that is not one portable path segment, or places that are set but short of their first shape or
- * without an absolute secrets file, whether or not the key is a secret setting; REFUSED, as the settings service
- * refuses, when a settings file holds a number no value tree carries; and OUT_OF_MEMORY. First shape ends at
- * `release_refusal`.
+ * without an absolute secrets file, whether or not the key is a secret setting; and OUT_OF_MEMORY. A settings file
+ * is read as the settings service reads one. First shape ends at `release_refusal`.
  */
 typedef struct runtime_config_definition {
     uint32_t size;
