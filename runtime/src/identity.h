@@ -4,8 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
-
 /** One part of a parsed id: a view into the id's own text, empty when the id has no such part. */
 typedef struct runtime_identity_part {
     const char *start;
@@ -29,6 +27,9 @@ typedef struct runtime_identity {
  */
 int runtime_identity_parse_id(const char *id, runtime_identity *parsed);
 
+/** Whether text is a repo id: valid, not local, and with no folder below the repo. */
+int runtime_identity_is_repo_id(const char *text);
+
 typedef enum runtime_identity_folder_status {
     RUNTIME_IDENTITY_FOLDER_NAMED,
     RUNTIME_IDENTITY_FOLDER_INVALID,
@@ -48,14 +49,5 @@ char *runtime_item_folder(const char *key, int *unfit);
 
 /** The key a folder made by runtime_item_folder stands for, freed with free; NULL when memory runs out. */
 char *runtime_item_key_of_folder(const char *folder);
-
-/** identity.parse: {id} answers {valid: false} or {valid: true, resolver, host?, number?, path?}; number is a digit string. */
-RUNTIME_EXPORT int32_t runtime_identity_parse(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-
-/**
- * identity.folder: {id} answers {folder}, the id with ":" as "+" and "/" as "=", refusing an id that is invalid or
- * whose folder would not be a portable name (a local name may hold characters such as a backslash).
- */
-RUNTIME_EXPORT int32_t runtime_identity_folder(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

@@ -417,7 +417,7 @@ static cJSON *resolve_unknown(runtime_identity_part name, cJSON **refusal) {
     return refuse(refusal, fix, "no resolver is built in for %.*s", (int)name.length, name.start);
 }
 
-static cJSON *resolve(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_identity_lookup(const cJSON *argument, cJSON **refusal) {
     const cJSON *id = cJSON_GetObjectItemCaseSensitive(argument, "id");
     if (!cJSON_IsString(id)) {
         return refuse(refusal, "send {\"id\": \"<id>\"}", "the argument carries no id");
@@ -513,7 +513,7 @@ int runtime_identity_repo_url(const char *id, const char *api_base, const char *
 
 static cJSON *resolve_repository(const char *id, const char *api_base, cJSON **refusal) {
     cJSON *argument = repository_argument(id, api_base);
-    cJSON *repository = argument == NULL ? NULL : resolve(argument, refusal);
+    cJSON *repository = argument == NULL ? NULL : runtime_identity_lookup(argument, refusal);
     cJSON_Delete(argument);
     return repository;
 }
@@ -543,8 +543,4 @@ runtime_repo_file_status runtime_identity_read_file(const char *id, const char *
     }
     cJSON_Delete(repository);
     return status;
-}
-
-RUNTIME_EXPORT int32_t runtime_identity_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, resolve);
 }

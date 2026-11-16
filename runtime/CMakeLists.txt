@@ -1,8 +1,8 @@
 set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c src/user_home.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
     src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256.c src/file_stream.c src/service_call.c src/identity.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
-    src/definition_support.c src/paths_definition.c src/places_definition.c
+    src/sha256.c src/file_stream.c src/service_call.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
+    src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
     src/log_definition.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
@@ -99,8 +99,9 @@ target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
 set_target_properties(runtime_identity_resolve PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_identity_resolve)
 
-add_library(runtime_identity_also_at OBJECT src/identity_also_at.c)
+add_library(runtime_identity_also_at OBJECT src/identity_also_at.c src/identity_definition.c)
 target_link_libraries(runtime_identity_also_at PUBLIC runtime_objects)
+target_include_directories(runtime_identity_also_at PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_identity_also_at PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_identity_also_at)
 

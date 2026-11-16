@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/config.h"
+#include "runtime/identity.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
@@ -255,6 +256,78 @@ static void print_log_layouts(void) {
     SIZE(runtime_log_definition);
 }
 
+static void print_identity_layouts(void) {
+    FIELD(runtime_identity_id_argument, size);
+    FIELD(runtime_identity_id_argument, id);
+    SIZE(runtime_identity_id_argument);
+    FIELD(runtime_identity_parts, size);
+    FIELD(runtime_identity_parts, resolver);
+    FIELD(runtime_identity_parts, host);
+    FIELD(runtime_identity_parts, number);
+    FIELD(runtime_identity_parts, path);
+    FIELD(runtime_identity_parts, storage);
+    SIZE(runtime_identity_parts);
+    FIELD(runtime_identity_folder_answer, size);
+    FIELD(runtime_identity_folder_answer, folder);
+    FIELD(runtime_identity_folder_answer, storage);
+    SIZE(runtime_identity_folder_answer);
+    FIELD(runtime_identity_resolve_argument, size);
+    FIELD(runtime_identity_resolve_argument, id);
+    FIELD(runtime_identity_resolve_argument, last_known);
+    FIELD(runtime_identity_resolve_argument, token);
+    FIELD(runtime_identity_resolve_argument, api_base);
+    SIZE(runtime_identity_resolve_argument);
+    FIELD(runtime_identity_repository, size);
+    FIELD(runtime_identity_repository, name);
+    FIELD(runtime_identity_repository, full_name);
+    FIELD(runtime_identity_repository, default_branch);
+    FIELD(runtime_identity_repository, storage);
+    SIZE(runtime_identity_repository);
+    FIELD(runtime_identity_copy, id);
+    FIELD(runtime_identity_copy, read_failed);
+    FIELD(runtime_identity_copy, file);
+    SIZE(runtime_identity_copy);
+    FIELD(runtime_identity_agree_argument, size);
+    FIELD(runtime_identity_agree_argument, id);
+    FIELD(runtime_identity_agree_argument, copies);
+    FIELD(runtime_identity_agree_argument, copy_count);
+    SIZE(runtime_identity_agree_argument);
+    FIELD(runtime_identity_also_at_argument, size);
+    FIELD(runtime_identity_also_at_argument, id);
+    FIELD(runtime_identity_also_at_argument, api_base);
+    SIZE(runtime_identity_also_at_argument);
+    FIELD(runtime_identity_agreement, size);
+    FIELD(runtime_identity_agreement, ids);
+    FIELD(runtime_identity_agreement, id_count);
+    FIELD(runtime_identity_agreement, primary);
+    FIELD(runtime_identity_agreement, primary_confirmed);
+    FIELD(runtime_identity_agreement, start_file_malformed);
+    FIELD(runtime_identity_agreement, start_file_unavailable);
+    FIELD(runtime_identity_agreement, storage);
+    SIZE(runtime_identity_agreement);
+    FIELD(runtime_identity_version_argument, size);
+    FIELD(runtime_identity_version_argument, recorded);
+    FIELD(runtime_identity_version_argument, primary);
+    SIZE(runtime_identity_version_argument);
+    FIELD(runtime_identity_version_answer, size);
+    FIELD(runtime_identity_version_answer, accepted);
+    SIZE(runtime_identity_version_answer);
+    FIELD(runtime_identity_definition, size);
+    FIELD(runtime_identity_definition, context);
+    FIELD(runtime_identity_definition, parse);
+    FIELD(runtime_identity_definition, folder);
+    FIELD(runtime_identity_definition, resolve);
+    FIELD(runtime_identity_definition, agree);
+    FIELD(runtime_identity_definition, also_at);
+    FIELD(runtime_identity_definition, accepts_version);
+    FIELD(runtime_identity_definition, release_parts);
+    FIELD(runtime_identity_definition, release_folder_answer);
+    FIELD(runtime_identity_definition, release_repository);
+    FIELD(runtime_identity_definition, release_agreement);
+    FIELD(runtime_identity_definition, release_refusal);
+    SIZE(runtime_identity_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -265,5 +338,6 @@ int main(void) {
     print_settings_layouts();
     print_config_layouts();
     print_log_layouts();
+    print_identity_layouts();
     return 0;
 }
