@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <string.h>
 
 #include "allocation.h"
@@ -75,18 +74,7 @@ static void a_failed_allocation_leaves_the_refusal_empty(void) {
     CHECK(spisor_memory_live_blocks() == 0);
 }
 
-static void a_planted_heap_overflow(void) {
-    volatile size_t past = 4;
-    char *block = malloc(4);
-    CHECK(block != NULL);
-    if (block != NULL) {
-        block[past] = 'x';
-        free(block);
-    }
-}
-
 int main(void) {
-    a_planted_heap_overflow();
     numbers_are_the_standards();
     a_refusal_holds_copies_until_released();
     a_missing_fix_stays_missing();
