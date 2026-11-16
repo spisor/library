@@ -22,6 +22,7 @@ target_compile_definitions(reader_with_counting_allocator_test PRIVATE
 foreach(name paths_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
+target_link_libraries(paths_test PRIVATE spisor_vector_reader)
 
 runtime_test(secrets_test fake_secret_backend.c)
 runtime_test(config_test fake_secret_backend.c)
@@ -177,7 +178,7 @@ set(runtime_processes_test_objects $<TARGET_OBJECTS:runtime_processes> $<TARGET_
     $<TARGET_OBJECTS:runtime_secret_store>)
 add_executable(background_fixture background_fixture.c ${runtime_processes_test_objects}
     $<TARGET_OBJECTS:runtime_path_entry>)
-target_link_libraries(background_fixture PRIVATE runtime_objects ${runtime_secret_store_libraries}
+target_link_libraries(background_fixture PRIVATE runtime_objects spisor_allocator ${runtime_secret_store_libraries}
     ${runtime_path_entry_libraries} ${runtime_fetch_libraries})
 target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
 spisor_strict_warnings(background_fixture)
@@ -236,7 +237,7 @@ target_link_libraries(host_removal_test PRIVATE ${runtime_fetch_libraries})
 
 add_executable(settings_lock_test settings_lock_test.c $<TARGET_OBJECTS:runtime_secret_store>
     $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
-target_link_libraries(settings_lock_test PRIVATE runtime_objects_config_test_hooks ${runtime_secret_store_libraries}
+target_link_libraries(settings_lock_test PRIVATE runtime_objects_config_test_hooks spisor_allocator ${runtime_secret_store_libraries}
     ${runtime_path_entry_libraries})
 if(NOT WIN32)
     target_link_libraries(settings_lock_test PRIVATE Threads::Threads)

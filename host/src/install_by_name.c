@@ -8,11 +8,12 @@
 #include "host_service.h"
 #include "install_by_id.h"
 #include "install_warning_report.h"
+#include "json_service.h"
 #include "marketplace_copies.h"
 #include "marketplace_lookup.h"
 #include "marketplace_memory.h"
 #include "marketplace_name_lookup.h"
-#include "paths.h"
+#include "runtime/paths.h"
 
 #define NO_MARKETPLACE_FIX "list marketplaces in the portable settings.json as marketplaces: [{id, url}], or fix the ones refused above"
 #define RUN_AGAIN_FIX "run the command again"
@@ -114,25 +115,32 @@ static int refuse_no_marketplace(const char *name) {
     return refuse_with(parts, 3, NO_MARKETPLACE_FIX);
 }
 
+/** The plugin folder under home, resolved by the paths service. NULL with *refusal set. */
+static char *plugin_directory_under(const char *home, cJSON **refusal) {
+    const runtime_paths_definition *paths = runtime_paths_definition_of();
+    runtime_paths_resolve_argument argument = SPISOR_INIT(runtime_paths_resolve_argument);
+    runtime_paths_answer answer = SPISOR_INIT(runtime_paths_answer);
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    char *directory = NULL;
+    argument.home = home;
+    if (paths->resolve(paths->context, &argument, &answer, &refused) == SPISOR_OK) {
+        directory = malloc(strlen(answer.plugin) + 1);
+        if (directory != NULL) {
+            strcpy(directory, answer.plugin);
+        }
+    } else {
+        *refusal = runtime_refusal_of(&refused);
+    }
+    paths->release_answer(paths->context, &answer);
+    paths->release_refusal(paths->context, &refused);
+    return directory;
+}
+
 /** The plugin folder of the registered application: its home, resolved by the paths service. NULL with *refusal set. */
 static char *plugin_directory_of(const host_context *context, const char *application, cJSON **refusal) {
     cJSON *registration = host_registration(context, application, refusal);
     const char *home = host_text(registration, "home");
-    char *directory = NULL;
-    cJSON *argument = home == NULL ? NULL : cJSON_CreateObject();
-    if (argument != NULL && cJSON_AddStringToObject(argument, "home", home) != NULL) {
-        cJSON *paths = host_call(runtime_paths_resolve, argument, refusal);
-        const char *plugin = host_text(paths, "plugin");
-        if (plugin != NULL) {
-            directory = malloc(strlen(plugin) + 1);
-            if (directory != NULL) {
-                strcpy(directory, plugin);
-            }
-        }
-        cJSON_Delete(paths);
-    } else {
-        cJSON_Delete(argument);
-    }
+    char *directory = home == NULL ? NULL : plugin_directory_under(home, refusal);
     cJSON_Delete(registration);
     return directory;
 }

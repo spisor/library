@@ -14,6 +14,10 @@ cJSON *runtime_refusal(const char *message, const char *fix) {
     return refusal;
 }
 
+cJSON *runtime_refusal_of(const spisor_refusal *refusal) {
+    return refusal->detail == NULL ? NULL : runtime_refusal(refusal->detail, refusal->fix == NULL ? "" : refusal->fix);
+}
+
 int runtime_is_refusal(const cJSON *refusal) {
     return cJSON_IsString(cJSON_GetObjectItemCaseSensitive(refusal, "message")) &&
            cJSON_IsString(cJSON_GetObjectItemCaseSensitive(refusal, "fix"));
