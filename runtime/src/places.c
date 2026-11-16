@@ -133,19 +133,11 @@ static cJSON *places_to_json(const char *home, const runtime_places *places) {
     return result;
 }
 
-static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    return SPISOR_STATUS_OUT_OF_MEMORY;
-}
-
 static cJSON *places_or_refusal(const char *home, const cJSON *environment, cJSON **refusal) {
     runtime_places places;
     int status = runtime_resolve_places(RUNTIME_HOST_IS_WINDOWS, RUNTIME_HOST_IS_MACOS, home, environment, &places);
     if (status == RUNTIME_PLACES_NO_LOCAL_APP_DATA) {
-        *refusal = runtime_refusal("LOCALAPPDATA is absent, empty or not an absolute path",
-                                   "send the environment's LOCALAPPDATA as an absolute directory path; Windows has no "
-                                   "default for the machine state");
+        *refusal = runtime_refusal(RUNTIME_NO_LOCAL_APP_DATA_MESSAGE, RUNTIME_NO_LOCAL_APP_DATA_FIX);
         return NULL;
     }
     if (status != RUNTIME_PLACES_OK) {
@@ -167,47 +159,4 @@ cJSON *runtime_places_of_environment(const cJSON *environment, cJSON **refusal) 
         return NULL;
     }
     return places_or_refusal(home, environment, refusal);
-}
-
-static int32_t answer_places(const char *home, const cJSON *environment, uint8_t **out, size_t *out_len) {
-    cJSON *refusal = NULL;
-    cJSON *result = places_or_refusal(home, environment, &refusal);
-    int32_t answer;
-    if (result != NULL) {
-        answer = spisor_succeed(result, out, out_len);
-    } else if (refusal != NULL) {
-        answer = spisor_fail(cJSON_GetObjectItemCaseSensitive(refusal, "message")->valuestring,
-                             cJSON_GetObjectItemCaseSensitive(refusal, "fix")->valuestring, out, out_len);
-    } else {
-        answer = out_of_memory(out, out_len);
-    }
-    cJSON_Delete(result);
-    cJSON_Delete(refusal);
-    return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_places_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const cJSON *declared = cJSON_GetObjectItemCaseSensitive(call.argument, "home");
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call.argument, "environment");
-    const char *home = declared == NULL ? runtime_user_home_of(environment) : NULL;
-    if (environment != NULL && !cJSON_IsObject(environment)) {
-        status = spisor_fail("the argument's environment is not an object",
-                             "send {\"environment\": {\"<name>\": \"<value>\"}}, or leave it out", out, out_len);
-    } else if (declared == NULL && home == NULL) {
-        status = spisor_fail(RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX, out, out_len);
-    } else if (declared != NULL && !cJSON_IsString(declared)) {
-        status = spisor_fail("the argument's home is not a string", "send {\"home\": \"<directory>\"}, or leave it out",
-                             out, out_len);
-    } else {
-        home = declared != NULL ? declared->valuestring : home;
-        status = runtime_is_usable_home(home) ? answer_places(home, environment, out, out_len)
-                                              : runtime_refuse_home(out, out_len);
-    }
-    spisor_discard_call(&call);
-    return status;
 }

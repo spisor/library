@@ -9,12 +9,11 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "definition_support.h"
 #include "config.h"
 #include "json_service.h"
-#include "places.h"
 #include "registry.h"
 #include "spisor/path.h"
-#include "user_home.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -115,36 +114,43 @@ double host_process_id(void) {
 
 #endif
 
-static cJSON *places_call(const char *home, const cJSON *environment) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *copy = cJSON_Duplicate(environment, 1);
-    if (call == NULL || cJSON_AddStringToObject(call, "home", home) == NULL || copy == NULL ||
-        !cJSON_AddItemToObject(call, "environment", copy)) {
-        cJSON_Delete(copy);
-        cJSON_Delete(call);
-        return NULL;
+/** Resolves the places of the context's environment, the home being the one it names. 0 with *refusal set. */
+static int resolve_places(host_context *context, cJSON **refusal) {
+    const runtime_places_definition *places = runtime_places_definition_of();
+    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    runtime_variable *variables = runtime_variables_of_json(context->environment, &argument.environment_count);
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    argument.environment = variables;
+    if (variables != NULL) {
+        status = places->resolve(places->context, &argument, &context->places, &refused);
     }
-    return call;
+    if (status != SPISOR_OK) {
+        *refusal = runtime_refusal_of(&refused);
+    }
+    places->release_refusal(places->context, &refused);
+    free(variables);
+    return status == SPISOR_OK;
 }
 
 int host_open_context(host_context *context, cJSON **refusal) {
+    runtime_places_answer empty = SPISOR_INIT(runtime_places_answer);
     memset(context, 0, sizeof *context);
+    context->places = empty;
     *refusal = NULL;
     context->environment = host_process_environment();
-    const char *home = context->environment == NULL ? NULL : runtime_user_home_of(context->environment);
-    if (context->environment != NULL && home == NULL) {
-        *refusal = runtime_refusal(RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
+    if (context->environment == NULL || !resolve_places(context, refusal)) {
         return 0;
     }
-    context->places = home == NULL ? NULL : host_call(runtime_places_resolve, places_call(home, context->environment), refusal);
-    context->portable = host_text(context->places, "portable");
-    context->state = host_text(context->places, "state");
-    context->cache = host_text(context->places, "cache");
-    return context->portable != NULL && context->state != NULL && context->cache != NULL;
+    context->portable = context->places.portable;
+    context->state = context->places.state;
+    context->cache = context->places.cache;
+    return 1;
 }
 
 void host_close_context(host_context *context) {
-    cJSON_Delete(context->places);
+    const runtime_places_definition *places = runtime_places_definition_of();
+    places->release_answer(places->context, &context->places);
     cJSON_Delete(context->environment);
     memset(context, 0, sizeof *context);
 }

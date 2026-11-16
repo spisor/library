@@ -8,15 +8,15 @@
 
 #include "boot.h"
 #include "cache.h"
+#include "definition_support.h"
 #include "catalog_time.h"
 #include "file_times.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "json_service.h"
-#include "places.h"
+#include "runtime/places.h"
 #include "spisor/json_write.h"
 #include "updates.h"
-#include "user_home.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -31,7 +31,7 @@ extern char **environ;
  */
 typedef struct c_host {
     cJSON *environment;
-    cJSON *places;
+    runtime_places_answer places;
     const char *state;
     const char *cache;
 } c_host;
@@ -114,31 +114,37 @@ static int refuse(cJSON *refusal) {
 }
 
 static int open_host(c_host *host, cJSON **refusal) {
+    const runtime_places_definition *places = runtime_places_definition_of();
+    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
+    runtime_places_answer empty = SPISOR_INIT(runtime_places_answer);
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
     memset(host, 0, sizeof *host);
+    host->places = empty;
     host->environment = process_environment();
-    const char *home = runtime_user_home_of(host->environment);
-    if (home == NULL) {
-        *refusal = runtime_refusal(RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
-        return 0;
+    runtime_variable *variables = runtime_variables_of_json(host->environment, &argument.environment_count);
+    argument.environment = variables;
+    spisor_status status = variables == NULL ? SPISOR_OUT_OF_MEMORY
+                                             : places->resolve(places->context, &argument, &host->places, &refused);
+    if (status != SPISOR_OK) {
+        *refusal = runtime_refusal_of(&refused);
     }
-    cJSON *call = cJSON_CreateObject();
-    cJSON_AddStringToObject(call, "home", home);
-    cJSON_AddItemToObject(call, "environment", cJSON_Duplicate(host->environment, 1));
-    host->places = runtime_call_or_refuse(runtime_places_resolve, call, refusal);
-    host->state = text_of(host->places, "state");
-    host->cache = text_of(host->places, "cache");
-    return host->state != NULL && host->cache != NULL;
+    places->release_refusal(places->context, &refused);
+    free(variables);
+    host->state = host->places.state;
+    host->cache = host->places.cache;
+    return status == SPISOR_OK;
 }
 
 static void close_host(c_host *host) {
-    cJSON_Delete(host->places);
+    const runtime_places_definition *places = runtime_places_definition_of();
+    places->release_answer(places->context, &host->places);
     cJSON_Delete(host->environment);
 }
 
 static cJSON *places_call(const c_host *host) {
     cJSON *call = cJSON_CreateObject();
     cJSON *places = cJSON_AddObjectToObject(call, "places");
-    cJSON_AddStringToObject(places, "portable", text_of(host->places, "portable"));
+    cJSON_AddStringToObject(places, "portable", host->places.portable);
     cJSON_AddStringToObject(places, "state", host->state);
     cJSON_AddStringToObject(places, "cache", host->cache);
     return call;

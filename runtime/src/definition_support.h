@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
+#include "runtime/environment.h"
 #include "spisor/status.h"
 
 /** The bytes of a size-prefixed struct up to and including `field`, the field its first shape ends at. */
@@ -36,6 +38,24 @@ void runtime_release_refusal(void *context, spisor_refusal *refusal);
  * @return 1, or 0 with `*storage` NULL when memory runs out.
  */
 int runtime_pack_texts(const char *const *texts, const char **packed, size_t count, void **storage);
+
+/**
+ * An environment as the JSON object runtime's path rules read, each variable added in order, so the first of a name
+ * answers for it.
+ *
+ * @return OK with a new object, empty for no variables; MALFORMED for a variable without a name or a value, or a count
+ * without variables; OUT_OF_MEMORY. `*json` is NULL whenever the answer is not OK.
+ */
+spisor_status runtime_environment_json(const runtime_variable *environment, size_t count, cJSON **json);
+
+/**
+ * A JSON environment object as the variables a definition takes, borrowing its string members and skipping any other,
+ * for a caller that holds its environment as JSON. Freed with free; NULL when memory runs out.
+ */
+runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *count);
+
+/** The refusal runtime_environment_json's MALFORMED answers with. */
+spisor_status runtime_refuse_environment(spisor_refusal *refusal);
 
 /** Frees a block runtime_pack_texts or another definition helper allocated. */
 void runtime_release_storage(void *storage);

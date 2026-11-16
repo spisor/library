@@ -3,11 +3,12 @@
 
 #include "cJSON.h"
 #include "host_service.h"
+#include "runtime/places.h"
 
 /** What every command reads first: this process's environment and the places the runtime resolves from it. */
 typedef struct host_context {
     cJSON *environment;
-    cJSON *places;
+    runtime_places_answer places;
     const char *portable;
     const char *state;
     const char *cache;
