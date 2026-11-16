@@ -64,6 +64,9 @@ typedef struct runtime_config_request {
     uint32_t layer;
 } runtime_config_request;
 
+/** A request for the settings of home over portable, every other field NULL or the default layer. */
+runtime_config_request runtime_config_request_of(const char *home, const char *portable);
+
 /**
  * The config and settings operations with the rules, statuses and refusals include/runtime/config.h and settings.h
  * document, answering their JSON: `values` a new object, `value` and `previous` a new tree or NULL for none, `secret`

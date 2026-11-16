@@ -73,7 +73,7 @@ static int is_whole_plugin(const runtime_config_plugin *plugin) {
 
 static spisor_status all(void *context, const runtime_config_plugin *plugin, spisor_value_tree *values,
                          spisor_refusal *refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(NULL, NULL);
     plugin_json json;
     cJSON *merged = NULL;
     spisor_status status;
@@ -95,7 +95,7 @@ static spisor_status all(void *context, const runtime_config_plugin *plugin, spi
 
 static spisor_status get(void *context, const runtime_config_plugin *plugin, const char *key,
                          spisor_value_tree *value, spisor_refusal *refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(NULL, NULL);
     plugin_json json;
     cJSON *found = NULL;
     spisor_status status;
@@ -130,7 +130,7 @@ static spisor_status fill_set_answer(const cJSON *previous, int secret, runtime_
 
 static spisor_status set(void *context, const runtime_config_plugin *plugin, const runtime_settings_change *change,
                          runtime_config_set_answer *answer, spisor_refusal *refusal) {
-    runtime_config_request request = {NULL};
+    runtime_config_request request = runtime_config_request_of(NULL, NULL);
     plugin_json json;
     cJSON *previous = NULL;
     int secret = 0;
