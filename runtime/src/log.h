@@ -5,7 +5,8 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "export.h"
+#include "runtime/log.h"
+#include "spisor/status.h"
 
 /**
  * The ANSI colour code of a log name: the TypeScript palette indexed by its 31-multiplier hash.
@@ -15,12 +16,27 @@
  */
 uint32_t runtime_name_colour(const char *name);
 
+/** One log line as runtime's C code holds it: `names` and `config` NULL for none, `level` a runtime_log_level. */
+typedef struct runtime_log_request {
+    const char *home;
+    const char *portable;
+    const char *plugin;
+    const char *start;
+    const char *time;
+    const char *message;
+    const cJSON *names;
+    const cJSON *config;
+    uint32_t level;
+    int no_color;
+} runtime_log_request;
+
 /**
- * Appends one log line and answers the console line due, if any.
+ * Appends the line and answers the console line due, freed with free, or NULL when none is, with the rules, statuses
+ * and refusals include/runtime/log.h documents.
  *
- * @implNote A failed append answers a failure only when no console line is due, so an error is never
- * lost to its own unwritable log, as the TypeScript printed before it wrote.
+ * @implNote A failed append answers a refusal only when no console line is due, so an error is never lost to its own
+ * unwritable log, as the TypeScript printed before it wrote.
  */
-RUNTIME_EXPORT int32_t runtime_log_write(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+spisor_status runtime_write_log(const runtime_log_request *entry, char **console, spisor_refusal *refusal);
 
 #endif

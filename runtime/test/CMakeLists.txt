@@ -27,6 +27,7 @@ target_link_libraries(places_test PRIVATE spisor_vector_reader)
 
 runtime_test(secrets_test fake_secret_backend.c)
 target_link_libraries(secrets_test PRIVATE spisor_vector_reader)
+target_link_libraries(log_test PRIVATE spisor_vector_reader)
 runtime_test(config_test fake_secret_backend.c)
 foreach(name config_test settings_test)
     target_link_libraries(${name} PRIVATE spisor_vector_reader)

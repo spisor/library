@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/config.h"
+#include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/secrets.h"
@@ -224,6 +225,31 @@ static void print_config_layouts(void) {
     SIZE(runtime_config_definition);
 }
 
+static void print_log_layouts(void) {
+    FIELD(runtime_log_entry, size);
+    FIELD(runtime_log_entry, home);
+    FIELD(runtime_log_entry, names);
+    FIELD(runtime_log_entry, portable);
+    FIELD(runtime_log_entry, plugin);
+    FIELD(runtime_log_entry, config);
+    FIELD(runtime_log_entry, start);
+    FIELD(runtime_log_entry, time);
+    FIELD(runtime_log_entry, level);
+    FIELD(runtime_log_entry, message);
+    FIELD(runtime_log_entry, no_color);
+    SIZE(runtime_log_entry);
+    FIELD(runtime_log_answer, size);
+    FIELD(runtime_log_answer, console);
+    FIELD(runtime_log_answer, storage);
+    SIZE(runtime_log_answer);
+    FIELD(runtime_log_definition, size);
+    FIELD(runtime_log_definition, context);
+    FIELD(runtime_log_definition, write);
+    FIELD(runtime_log_definition, release_answer);
+    FIELD(runtime_log_definition, release_refusal);
+    SIZE(runtime_log_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -233,5 +259,6 @@ int main(void) {
     print_secrets_layouts();
     print_settings_layouts();
     print_config_layouts();
+    print_log_layouts();
     return 0;
 }

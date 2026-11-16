@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,8 +14,9 @@
 #include "check.h"
 #include "scratch_directory.h"
 #include "log.h"
+#include "runtime/log.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "vector_reader.h"
 
 #define START "2026-10-27T19:00:00.000Z"
 #define TIME "2026-10-27T19:34:53.123Z"
@@ -26,10 +28,10 @@ typedef struct scratch_home {
     char portable[1100];
 } scratch_home;
 
+/** What a write answered: its status, and its answer as JSON, {"console"?} or the refusal's {"message", "fix"}. */
 typedef struct answer {
-    int32_t status;
+    spisor_status status;
     cJSON *tree;
-    uint8_t *buffer;
 } answer;
 
 static void fresh_home(scratch_home *home, const char *label) {
@@ -87,24 +89,78 @@ static cJSON *request_for(const scratch_home *home, const char *level, const cha
     return request;
 }
 
+static const char *text_of(const cJSON *request, const char *member) {
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(request, member));
+}
+
+/** A level's runtime_log_level, or one no level has for a name the service does not know. */
+static uint32_t level_of(const char *name) {
+    const char *const names[] = {"debug", "info", "warn", "error"};
+    for (uint32_t index = 0; name != NULL && index < 4; index++) {
+        if (strcmp(name, names[index]) == 0) {
+            return index;
+        }
+    }
+    return 99;
+}
+
+static const spisor_value *value_of(const cJSON *request, const char *member, spisor_value_tree *tree) {
+    if (cJSON_GetObjectItemCaseSensitive(request, member) == NULL || !spisor_vector_value(request, member, tree)) {
+        return NULL;
+    }
+    return &tree->root;
+}
+
+static cJSON *answer_tree(spisor_status status, const runtime_log_answer *written, const spisor_refusal *refusal) {
+    cJSON *tree = cJSON_CreateObject();
+    if (status == SPISOR_OK && written->console != NULL) {
+        cJSON_AddStringToObject(tree, "console", written->console);
+    }
+    if (refusal->detail != NULL) {
+        cJSON_AddStringToObject(tree, "message", refusal->detail);
+    }
+    if (refusal->fix != NULL) {
+        cJSON_AddStringToObject(tree, "fix", refusal->fix);
+    }
+    return tree;
+}
+
+/** Writes the line a request written as JSON test data describes, deleting the request. */
 static answer write_log(cJSON *request) {
-    answer result = {0, NULL, NULL};
-    char *text = cJSON_PrintUnformatted(request);
-    size_t out_len = 0;
-    result.status = runtime_log_write((const uint8_t *)text, strlen(text), &result.buffer, &out_len);
-    result.tree = result.buffer == NULL ? NULL : spisor_parse_json(result.buffer, out_len);
-    free(text);
+    const runtime_log_definition *log = runtime_log_definition_of();
+    runtime_log_entry entry = SPISOR_INIT(runtime_log_entry);
+    runtime_log_answer written = SPISOR_INIT(runtime_log_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_value_tree names = SPISOR_INIT(spisor_value_tree);
+    spisor_value_tree config = SPISOR_INIT(spisor_value_tree);
+    answer result;
+    entry.home = text_of(request, "home");
+    entry.portable = text_of(request, "portable");
+    entry.plugin = text_of(request, "plugin");
+    entry.start = text_of(request, "start");
+    entry.time = text_of(request, "time");
+    entry.message = text_of(request, "message");
+    entry.level = level_of(text_of(request, "level"));
+    entry.no_color = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(request, "noColor"));
+    entry.names = value_of(request, "names", &names);
+    entry.config = value_of(request, "config", &config);
+    result.status = log->write(log->context, &entry, &written, &refusal);
+    result.tree = answer_tree(result.status, &written, &refusal);
+    log->release_answer(log->context, &written);
+    log->release_refusal(log->context, &refusal);
+    CHECK(written.storage == NULL && refusal.storage == NULL);
+    spisor_value_release(&names);
+    spisor_value_release(&config);
     cJSON_Delete(request);
     return result;
 }
 
 static void finish(answer *result) {
     cJSON_Delete(result->tree);
-    spisor_release(result->buffer);
 }
 
 static void expect_console(const answer *result, const char *expected, const char *label) {
-    CHECK(result->status == SPISOR_STATUS_SUCCESS);
+    CHECK(result->status == SPISOR_OK);
     const cJSON *console = cJSON_GetObjectItemCaseSensitive(result->tree, "console");
     if (expected == NULL) {
         if (console != NULL) {
@@ -117,7 +173,7 @@ static void expect_console(const answer *result, const char *expected, const cha
 }
 
 static void expect_refused(const answer *result, const char *label) {
-    if (result->status != SPISOR_STATUS_FAILURE) {
+    if (result->status != SPISOR_MALFORMED && result->status != SPISOR_REFUSED) {
         fprintf(stderr, "%s: expected a refusal, got status %d\n", label, (int)result->status);
         check_failures++;
     }
@@ -421,7 +477,50 @@ static void refuses_unusable_portable(void) {
     free(content);
 }
 
+static void the_definition_is_one_static_struct(void) {
+    const runtime_log_definition *log = runtime_log_definition_of();
+    CHECK(log != NULL && (const void *)log == runtime_log_definition_of());
+    CHECK(log != NULL && log->size == sizeof(runtime_log_definition));
+}
+
+static void refuses_an_entry_or_answer_short_of_its_shape_and_names_that_are_no_record(void) {
+    const runtime_log_definition *log = runtime_log_definition_of();
+    scratch_home home;
+    runtime_log_entry entry = SPISOR_INIT(runtime_log_entry);
+    runtime_log_answer written = SPISOR_INIT(runtime_log_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_value_tree names = SPISOR_INIT(spisor_value_tree);
+    cJSON *listed = cJSON_Parse("{\"names\": [\"logs\"]}");
+    fresh_home(&home, "typed");
+    entry.home = home.path;
+    entry.plugin = "p";
+    entry.start = START;
+    entry.time = TIME;
+    entry.message = "m";
+    entry.level = RUNTIME_LOG_ERROR;
+    entry.size = (uint32_t)offsetof(runtime_log_entry, no_color);
+    CHECK(log->write(log->context, &entry, &written, &refusal) == SPISOR_MALFORMED);
+    log->release_refusal(log->context, &refusal);
+    entry.size = sizeof entry;
+    written.size = (uint32_t)offsetof(runtime_log_answer, storage);
+    CHECK(log->write(log->context, &entry, &written, &refusal) == SPISOR_MALFORMED);
+    log->release_refusal(log->context, &refusal);
+    written.size = sizeof written;
+    CHECK(spisor_vector_value(listed, "names", &names));
+    entry.names = &names.root;
+    CHECK(log->write(log->context, &entry, &written, &refusal) == SPISOR_MALFORMED);
+    CHECK(refusal.detail != NULL && strstr(refusal.detail, "names") != NULL);
+    log->release_refusal(log->context, &refusal);
+    spisor_value_release(&names);
+    cJSON_Delete(listed);
+    char *content = read_log(&home);
+    CHECK(content == NULL);
+    free(content);
+}
+
 int main(void) {
+    the_definition_is_one_static_struct();
+    refuses_an_entry_or_answer_short_of_its_shape_and_names_that_are_no_record();
     writes_tagged_line();
     appends_each_level_tag();
     logging_false_from_manifest_default();

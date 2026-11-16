@@ -113,7 +113,7 @@ static spisor_status resolve(void *context, const runtime_paths_resolve_argument
         return runtime_refuse_shape(refusal, "paths' resolve");
     }
     if (!runtime_is_usable_home(argument->home)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
+        return runtime_refuse_home(refusal);
     }
     status = names_json(argument->names, &names, refusal);
     if (status == SPISOR_OK) {
