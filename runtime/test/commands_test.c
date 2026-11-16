@@ -223,10 +223,12 @@ static int is_malformed(answer result, const char *what) {
     return is_refused_as(result, SPISOR_MALFORMED, what);
 }
 
+#ifdef _WIN32
 static int is_refused_saying(answer result, const char *text, const char *what) {
     int said = strstr(result.detail, text) != NULL;
     return is_refused(result, what) && said;
 }
+#endif
 
 static int is_malformed_saying(answer result, const char *text, const char *what) {
     int said = strstr(result.detail, text) != NULL;
