@@ -11,12 +11,14 @@ if(MSVC)
     add_link_options(/Brepro)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sanitizers.cmake)
+
 add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
 set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
-    src/windows_file.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/allocation.c src/refusal.c src/value.c
+    src/windows_file.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/refusal.c src/value.c
     src/value_block.c src/json_value.c src/entry_order.c)
 add_library(spisor_library STATIC ${spisor_library_sources})
 target_include_directories(spisor_library PUBLIC include)
@@ -36,6 +38,18 @@ function(spisor_strict_warnings target)
 endfunction()
 
 spisor_strict_warnings(spisor_library)
+
+# spisor_library carries no allocator: every binary links exactly one of these two, so a test can count and fail
+# allocations without a second definition of the allocator beside it.
+add_library(spisor_allocator OBJECT src/allocation.c)
+set_target_properties(spisor_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON SPISOR_ALLOCATOR TRUE)
+spisor_strict_warnings(spisor_allocator)
+
+add_library(spisor_allocator_counting OBJECT EXCLUDE_FROM_ALL src/allocation.c)
+target_include_directories(spisor_allocator_counting PUBLIC src)
+target_compile_definitions(spisor_allocator_counting PUBLIC SPISOR_TESTING)
+set_target_properties(spisor_allocator_counting PROPERTIES SPISOR_TEST_ONLY TRUE SPISOR_ALLOCATOR TRUE)
+spisor_strict_warnings(spisor_allocator_counting)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/link_graph.cmake)
 add_subdirectory(testing)

@@ -15,18 +15,25 @@ add_test(NAME public_headers_are_ascii
 
 foreach(name status_test value_test json_value_test)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE spisor_library_testing spisor_vector_reader)
+    target_link_libraries(${name} PRIVATE spisor_library spisor_allocator_counting spisor_vector_reader)
     spisor_strict_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 120)
 endforeach()
 
 add_executable(vector_reader_test vector_reader_test.c)
-target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader)
+target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting)
 spisor_strict_warnings(vector_reader_test)
 target_compile_definitions(vector_reader_test PRIVATE
     SPISOR_VECTOR_READER_VECTOR_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/vector-reader.json")
 add_test(NAME vector_reader_test COMMAND vector_reader_test)
+
+add_executable(vector_reader_shipped_allocator_test vector_reader_shipped_allocator_test.c)
+target_link_libraries(vector_reader_shipped_allocator_test PRIVATE spisor_vector_reader spisor_library spisor_allocator)
+spisor_strict_warnings(vector_reader_shipped_allocator_test)
+target_compile_definitions(vector_reader_shipped_allocator_test PRIVATE
+    SPISOR_VECTOR_READER_VECTOR_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/vector-reader.json")
+add_test(NAME vector_reader_shipped_allocator_test COMMAND vector_reader_shipped_allocator_test)
 
 foreach(scenario
         link_graph_lets_a_test_link_the_reader
@@ -36,10 +43,17 @@ foreach(scenario
         link_graph_refuses_a_link_under_a_condition
         link_graph_refuses_a_link_through_an_alias
         link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test
-        link_graph_refuses_a_source_taken_from_a_test_only_directory
+        link_graph_refuses_a_source_only_a_test_only_target_lists
         link_graph_refuses_a_raw_path_to_the_readers_file
         link_graph_refuses_a_link_option_naming_the_readers_file
-        link_graph_checks_from_the_root_of_a_project_that_adds_this_one)
+        link_graph_checks_from_the_root_of_a_project_that_adds_this_one
+        link_graph_lets_a_test_hook_twin_share_its_sources
+        link_graph_refuses_a_link_flag_naming_the_readers_file
+        link_graph_prints_each_offence_once
+        link_graph_lets_a_binary_choose_one_allocator
+        link_graph_refuses_a_library_carrying_an_allocator
+        link_graph_refuses_a_binary_with_two_allocators
+        link_graph_lets_a_test_build_compile_sources_from_elsewhere)
     add_test(NAME ${scenario}
         COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
             -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"
