@@ -81,13 +81,6 @@ typedef struct runtime_changes_holders {
 runtime_changes_holders runtime_changes_find_holder(const char *state, const char *host, const cJSON *registration,
                                                     const cJSON *record);
 
-typedef int32_t (*runtime_changes_handler)(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                                           size_t *out_len);
-
-/** Parses a changes call, refuses a missing absolute places.state or host, and hands the rest to handler. */
-int32_t runtime_changes_serve(const uint8_t *in, size_t in_len, runtime_changes_handler handler, uint8_t **out,
-                              size_t *out_len);
-
 /** A JSON operation's handler for one host's request, after runtime_changes_serve_request read its place and host. */
 typedef cJSON *(*runtime_changes_request_handler)(const char *state, const char *host, const cJSON *argument,
                                                   cJSON **refusal);

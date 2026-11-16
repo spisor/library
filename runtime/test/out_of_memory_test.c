@@ -17,6 +17,7 @@
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/changes.h"
+#include "runtime/commands.h"
 #include "runtime/config.h"
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
@@ -78,7 +79,7 @@ static void fresh_files(void) {
     write_text(place.config_directory, "settings.json", "{\"logConsole\":true,\"ui\":{\"size\":2}}");
     write_text(place.portable, "settings.json", "{\"ui\":{\"theme\":\"dark\"}}");
     write_text(place.programs, "probe", "");
-    char record[2400];
+    char record[8192];
     char hosts[1300];
     snprintf(hosts, sizeof hosts, "%s/hosts", place.state);
     snprintf(record, sizeof record,
@@ -95,6 +96,13 @@ static void fresh_files(void) {
              "\"file\":\"%s/p.json\",\"key\":[\"a\",\"b\"],\"value\":1}],\"nextSequence\":2}",
              place.home, place.home, place.config_directory);
     write_text(hosts, "settler.json", record);
+    snprintf(record, sizeof record,
+             "{\"id\":\"commander\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[{\"name\":\"cc\","
+             "\"requested\":\"cc\",\"owner\":\"host\",\"state\":\"active\"}],\"changes\":[]}",
+             place.home, place.home);
+    write_text(hosts, "commander.json", record);
 #ifndef _WIN32
     char probe[1300];
     snprintf(probe, sizeof probe, "%s/probe", place.programs);
@@ -369,6 +377,30 @@ static int changed_nothing(void) {
     return file_unchanged() && holds_at_most("changer", 0);
 }
 
+static spisor_status delete_a_command(void) {
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_commands_delete_argument argument = SPISOR_INIT(runtime_commands_delete_argument);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.state = place.state;
+    argument.host = "commander";
+    argument.name = "cc";
+    status = commands->remove(commands->context, &argument, &refusal);
+    commands->release_refusal(commands->context, &refusal);
+    return status;
+}
+
+/** Whether a delete left the command active in the stored registration. */
+static int deleted_nothing(void) {
+    cJSON *registration = NULL;
+    CHECK(runtime_registry_load(place.state, "commander", &registration) == RUNTIME_REGISTRY_OK);
+    const cJSON *command = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(registration, "commands"), 0);
+    const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "state"));
+    int active = state != NULL && strcmp(state, "active") == 0;
+    cJSON_Delete(registration);
+    return active;
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -457,6 +489,7 @@ int main(void) {
     every_failure_answers_out_of_memory("changes' apply", apply_a_change, changed_nothing);
     every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
                                         settled_and_changed_nothing);
+    every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

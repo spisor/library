@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "json_allocation.h"
 #include "runtime/changes.h"
+#include "runtime/commands.h"
 #include "runtime/config.h"
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
@@ -45,6 +46,7 @@ static void take_every_definition(void) {
         runtime_detect_definition_of();
         runtime_registry_definition_of();
         runtime_changes_definition_of();
+        runtime_commands_definition_of();
     }
 }
 

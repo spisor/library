@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/changes.h"
+#include "runtime/commands.h"
 #include "runtime/config.h"
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
@@ -495,6 +496,46 @@ static void print_changes_layouts(void) {
     SIZE(runtime_changes_definition);
 }
 
+static void print_commands_layouts(void) {
+    FIELD(runtime_command_argument, size);
+    FIELD(runtime_command_argument, state);
+    FIELD(runtime_command_argument, host);
+    FIELD(runtime_command_argument, home);
+    FIELD(runtime_command_argument, name);
+    FIELD(runtime_command_argument, target);
+    FIELD(runtime_command_argument, arguments);
+    FIELD(runtime_command_argument, argument_count);
+    FIELD(runtime_command_argument, environment);
+    FIELD(runtime_command_argument, environment_count);
+    SIZE(runtime_command_argument);
+    FIELD(runtime_commands_rename_argument, size);
+    FIELD(runtime_commands_rename_argument, state);
+    FIELD(runtime_commands_rename_argument, host);
+    FIELD(runtime_commands_rename_argument, from);
+    FIELD(runtime_commands_rename_argument, to);
+    FIELD(runtime_commands_rename_argument, environment);
+    FIELD(runtime_commands_rename_argument, environment_count);
+    SIZE(runtime_commands_rename_argument);
+    FIELD(runtime_commands_delete_argument, size);
+    FIELD(runtime_commands_delete_argument, state);
+    FIELD(runtime_commands_delete_argument, host);
+    FIELD(runtime_commands_delete_argument, name);
+    SIZE(runtime_commands_delete_argument);
+    FIELD(runtime_command_answer, size);
+    FIELD(runtime_command_answer, name);
+    FIELD(runtime_command_answer, storage);
+    SIZE(runtime_command_answer);
+    FIELD(runtime_commands_definition, size);
+    FIELD(runtime_commands_definition, context);
+    FIELD(runtime_commands_definition, request);
+    FIELD(runtime_commands_definition, rename);
+    FIELD(runtime_commands_definition, remove);
+    FIELD(runtime_commands_definition, add);
+    FIELD(runtime_commands_definition, release_answer);
+    FIELD(runtime_commands_definition, release_refusal);
+    SIZE(runtime_commands_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -510,5 +551,6 @@ int main(void) {
     print_detect_layouts();
     print_registry_layouts();
     print_changes_layouts();
+    print_commands_layouts();
     return 0;
 }

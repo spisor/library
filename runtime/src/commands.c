@@ -15,17 +15,17 @@
 #endif
 
 #include "changes.h"
+#include "definition_support.h"
 #include "directory_tree.h"
 #include "hosts_lock.h"
+#include "json_service.h"
 #include "paths.h"
 #include "registry.h"
 #include "shim_format.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
 #include "spisor/path.h"
 
 #define COMMAND_NAME_LIMIT 64
-#define NAME_BUFFER_SIZE 80
 #define FALLBACK_LIMIT 999
 #define REGISTRATION_SUFFIX ".json"
 #define REGISTRATION_SUFFIX_LENGTH 5
@@ -46,11 +46,11 @@ typedef struct command_call {
     const cJSON *argument;
     char *shims;
     cJSON *registration;
-    char name[NAME_BUFFER_SIZE];
+    char name[RUNTIME_COMMAND_NAME_SIZE];
     int answers_name;
-    int answers_deleted;
     char reason[1400];
     const char *fix;
+    spisor_status failure;
 } command_call;
 
 typedef int (*command_step)(command_call *call);
@@ -62,11 +62,21 @@ static const char *text_of(const cJSON *object, const char *member) {
 static int refuse(command_call *call, const char *fix, const char *format, const char *subject) {
     snprintf(call->reason, sizeof call->reason, format, subject);
     call->fix = fix;
+    call->failure = SPISOR_REFUSED;
+    return 0;
+}
+
+/** As refuse, for a call that is the caller's mistake rather than refused for what the machine holds. */
+static int refuse_malformed(command_call *call, const char *fix, const char *format, const char *subject) {
+    refuse(call, fix, format, subject);
+    call->failure = SPISOR_MALFORMED;
     return 0;
 }
 
 static int out_of_memory(command_call *call) {
-    return refuse(call, "try again", "%s", "memory ran out");
+    refuse(call, "try again", "%s", "memory ran out");
+    call->failure = SPISOR_OUT_OF_MEMORY;
+    return 0;
 }
 
 static char folded(char character) {
@@ -155,7 +165,7 @@ static cJSON *change_of(const char *kind, const char *member, const char *value)
  * target it runs; on POSIX the one script <name>.
  */
 static char *shim_file(const char *shims, const char *name, size_t index) {
-    char file_name[NAME_BUFFER_SIZE + 8];
+    char file_name[RUNTIME_COMMAND_NAME_SIZE + 8];
     if (RUNTIME_HOST_IS_WINDOWS) {
         snprintf(file_name, sizeof file_name, index == 0 ? "%s.exe" : "%s.shim", name);
     } else {
@@ -373,7 +383,7 @@ static int ends_with_extension(const char *name, const char *extension, size_t e
 }
 
 static int has_extension_file(const char *directory, const char *name, const char *extension, size_t length) {
-    char file_name[NAME_BUFFER_SIZE + 64];
+    char file_name[RUNTIME_COMMAND_NAME_SIZE + 64];
     if (length == 0 || length > 32) {
         return 0;
     }
@@ -577,6 +587,9 @@ static int apply_change(command_call *call, cJSON *change) {
     if (outcome.answer == RUNTIME_CHANGES_RECORDED || outcome.answer == RUNTIME_CHANGES_UNNEEDED) {
         return 1;
     }
+    if (outcome.answer == RUNTIME_CHANGES_OUT_OF_MEMORY) {
+        return out_of_memory(call);
+    }
     return refuse(call, "fix the cause and ask for the command again", "%s", outcome.reason);
 }
 
@@ -607,7 +620,8 @@ static int write_shim(command_call *call, const char *name) {
 static int make_shim(command_call *call, const char *name) {
     const char *home = text_of(call->argument, "home");
     if (home == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home)) {
-        return refuse(call, "send the user's home as an absolute path", "%s", "the call carries no usable home");
+        return refuse_malformed(call, "send the user's home as an absolute path", "%s",
+                                "the call carries no usable home");
     }
     return apply_change(call, change_of("directory", "path", call->shims)) &&
            apply_change(call, path_entry_change(call, home)) && write_shim(call, name);
@@ -619,6 +633,9 @@ static int load_registration(command_call *call) {
     runtime_registry_answer loaded = runtime_registry_load(call->state, call->host, &call->registration);
     if (loaded == RUNTIME_REGISTRY_ABSENT) {
         return refuse(call, "register the host first", "the host %s is not registered", call->host);
+    }
+    if (loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        return out_of_memory(call);
     }
     if (loaded != RUNTIME_REGISTRY_OK) {
         return refuse(call, "repair or restore it", "the registration of host %s could not be read", call->host);
@@ -663,6 +680,10 @@ static int set_text(cJSON *object, const char *member, const char *text) {
         cJSON_Delete(value);
     }
     return set;
+}
+
+static int set_or_run_out(command_call *call, cJSON *object, const char *member, const char *text) {
+    return set_text(object, member, text) || out_of_memory(call);
 }
 
 static cJSON *shim_record(const command_call *call, const char *name, size_t index) {
@@ -711,8 +732,8 @@ static int remove_shim(command_call *call, const char *name) {
 static int validated_name(command_call *call, const char *member) {
     const char *name = text_of(call->argument, member);
     if (!is_command_name(name)) {
-        return refuse(call, "use letters, digits, - _ and ., starting with a letter or digit, at most 64",
-                      "the command name %s is not a portable file name", name == NULL ? "(none)" : name);
+        return refuse_malformed(call, "use letters, digits, - _ and ., starting with a letter or digit, at most 64",
+                                "the command name %s is not a portable file name", name == NULL ? "(none)" : name);
     }
     return 1;
 }
@@ -724,26 +745,27 @@ static int validated_name(command_call *call, const char *member) {
 static int validated_environment(command_call *call) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
     if (environment != NULL && !cJSON_IsObject(environment)) {
-        return refuse(call, "send the user's environment as an object of names to strings", "%s",
-                      "the call's environment is not an object");
+        return refuse_malformed(call, "send the user's environment as an object of names to strings", "%s",
+                                "the call's environment is not an object");
     }
     if (environment_value(environment, "PATH") != NULL) {
         return 1;
     }
-    return refuse(call, "send the user's environment with its PATH as a string", "%s",
-                  "the call carries no PATH, so it cannot tell which names are taken");
+    return refuse_malformed(call, "send the user's environment with its PATH as a string", "%s",
+                            "the call carries no PATH, so it cannot tell which names are taken");
 }
 
 static int validated_target(command_call *call) {
     const char *defect = target_defect(text_of(call->argument, "target"));
-    return defect == NULL || refuse(call, "send the absolute path of the program the command runs", "%s", defect);
+    return defect == NULL ||
+           refuse_malformed(call, "send the absolute path of the program the command runs", "%s", defect);
 }
 
 static int validated_arguments(command_call *call) {
     const char *defect = arguments_defect(cJSON_GetObjectItemCaseSensitive(call->argument, "arguments"));
     return defect == NULL ||
-           refuse(call, "send the arguments the command always passes as strings, each without a line break", "%s",
-                  defect);
+           refuse_malformed(call, "send the arguments the command always passes as strings, each without a line break",
+                            "%s", defect);
 }
 
 static int answer_existing(command_call *call, cJSON *entry) {
@@ -831,8 +853,8 @@ static int move_command(command_call *call, const char *from, const char *to) {
     if (moved && entry == NULL) {
         return refuse_unknown_command(call, from);
     }
-    return moved && set_text(entry, "name", to) && set_text(entry, "owner", "user") && remove_shim(call, from) &&
-           store_registration(call);
+    return moved && set_or_run_out(call, entry, "name", to) && set_or_run_out(call, entry, "owner", "user") &&
+           remove_shim(call, from) && store_registration(call);
 }
 
 static int rename_step(command_call *call) {
@@ -870,84 +892,71 @@ static int delete_step(command_call *call) {
         return refuse(call, "rename it instead, or add another command first",
                       "the host %s requires a command and this is its last one", call->host);
     }
-    call->answers_deleted = 1;
-    return set_text(entry, "state", "deleted") && set_text(entry, "owner", "user") && remove_shim(call, name) &&
-           store_registration(call);
+    return set_or_run_out(call, entry, "state", "deleted") && set_or_run_out(call, entry, "owner", "user") &&
+           remove_shim(call, name) && store_registration(call);
 }
 
-static int32_t answer(const command_call *call, uint8_t **out, size_t *out_len) {
-    cJSON *result = cJSON_CreateObject();
-    int complete = result != NULL && (!call->answers_name || cJSON_AddStringToObject(result, "name", call->name) != NULL) &&
-                   (!call->answers_deleted || cJSON_AddTrueToObject(result, "deleted") != NULL);
-    int32_t status = SPISOR_STATUS_OUT_OF_MEMORY;
-    if (complete) {
-        status = spisor_succeed(result, out, out_len);
-    } else {
-        *out = NULL;
-        *out_len = 0;
+/** The status a failed step answers, its refusal filled unless memory ran out. */
+static spisor_status refuse_failed(const command_call *call, spisor_refusal *refusal) {
+    if (call->failure == SPISOR_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
     }
-    cJSON_Delete(result);
-    return status;
+    spisor_status failure = call->failure == SPISOR_OK ? SPISOR_REFUSED : call->failure;
+    return runtime_refuse_as(refusal, failure, call->reason, call->fix == NULL ? "try again" : call->fix);
 }
 
-static int32_t run_locked(command_call *call, command_step step, uint8_t **out, size_t *out_len) {
+static spisor_status run_locked(command_call *call, command_step step, spisor_refusal *refusal) {
     spisor_lock *guard = runtime_hosts_lock(call->state);
     if (guard == NULL) {
-        return spisor_fail("the registry lock could not be taken; nothing was changed",
-                           "check that the hosts directory under the state place can be written", out, out_len);
+        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the registry lock could not be taken; nothing was changed",
+                                 "check that the hosts directory under the state place can be written");
     }
     int done = step(call);
     spisor_unlock(guard);
-    return done ? answer(call, out, out_len) : spisor_fail(call->reason, call->fix, out, out_len);
+    return done ? SPISOR_OK : refuse_failed(call, refusal);
 }
 
-static int32_t run(const char *state, const char *host, const cJSON *argument, command_step step, uint8_t **out,
-                   size_t *out_len) {
+static const command_step STEPS[] = {request_step, rename_step, delete_step, add_step};
+
+spisor_status runtime_commands_serve(runtime_command_operation operation, const cJSON *argument,
+                                     char name[RUNTIME_COMMAND_NAME_SIZE], spisor_refusal *refusal) {
     command_call call;
+    spisor_status status;
+    name[0] = '\0';
     memset(&call, 0, sizeof call);
-    call.state = state;
-    call.host = host;
+    call.state = text_of(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
+    call.host = text_of(argument, "host");
     call.argument = argument;
-    call.shims = joined(state, "bin");
-    int32_t status = call.shims == NULL ? spisor_fail("memory ran out", "try again", out, out_len)
-                                        : run_locked(&call, step, out, out_len);
+    if (call.state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, call.state)) {
+        return runtime_refuse_place(refusal, "state");
+    }
+    if (call.host == NULL) {
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no host",
+                                 "send host as the id the host registered with");
+    }
+    call.shims = joined(call.state, "bin");
+    status = call.shims == NULL ? SPISOR_OUT_OF_MEMORY : run_locked(&call, STEPS[operation], refusal);
+    if (status == SPISOR_OK && call.answers_name) {
+        snprintf(name, RUNTIME_COMMAND_NAME_SIZE, "%s", call.name);
+    }
     cJSON_Delete(call.registration);
     free(call.shims);
     return status;
 }
 
-static int32_t serve_request(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                             size_t *out_len) {
-    return run(state, host, argument, request_step, out, out_len);
-}
-
-static int32_t serve_rename(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                            size_t *out_len) {
-    return run(state, host, argument, rename_step, out, out_len);
-}
-
-static int32_t serve_delete(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                            size_t *out_len) {
-    return run(state, host, argument, delete_step, out, out_len);
-}
-
-static int32_t serve_add(const char *state, const char *host, const cJSON *argument, uint8_t **out,
-                         size_t *out_len) {
-    return run(state, host, argument, add_step, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_commands_request(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_changes_serve(in, in_len, serve_request, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_commands_rename(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_changes_serve(in, in_len, serve_rename, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_commands_delete(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_changes_serve(in, in_len, serve_delete, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_commands_add(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_changes_serve(in, in_len, serve_add, out, out_len);
+cJSON *runtime_commands_request_operation(const cJSON *argument, cJSON **refusal) {
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    char name[RUNTIME_COMMAND_NAME_SIZE];
+    cJSON *answer = NULL;
+    spisor_status status = runtime_commands_serve(RUNTIME_COMMAND_REQUEST, argument, name, &refused);
+    *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
+    spisor_refusal_release(&refused);
+    if (status == SPISOR_OK) {
+        answer = cJSON_CreateObject();
+        if (answer != NULL && name[0] != '\0' && cJSON_AddStringToObject(answer, "name", name) == NULL) {
+            cJSON_Delete(answer);
+            answer = NULL;
+        }
+    }
+    return answer;
 }

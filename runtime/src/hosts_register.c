@@ -115,7 +115,7 @@ static int add_name(cJSON *commands, const cJSON *answer) {
 static int request_command(const cJSON *argument, const cJSON *identity, const cJSON *command, const char *home,
                            cJSON *answer, cJSON **refusal) {
     cJSON *refused = NULL;
-    cJSON *requested = runtime_call_or_refuse(runtime_commands_request,
+    cJSON *requested = runtime_call_operation(runtime_commands_request_operation,
                                               command_request(argument, identity, command, home), &refused);
     int complete = requested != NULL && add_name(cJSON_GetObjectItemCaseSensitive(answer, "commands"), requested);
     cJSON_Delete(requested);
