@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,15 +18,22 @@
 #endif
 
 #include "check.h"
+#include "definition_fixture.h"
 #include "scratch_directory.h"
 #include "fake_secret_backend.h"
 #include "links.h"
-#include "secrets.h"
+#include "runtime/secrets.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
 #include "spisor/json_kind.h"
 
-typedef int32_t (*secrets_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+typedef enum secrets_operation {
+    SECRETS_GET,
+    SECRETS_SET,
+    SECRETS_REMOVE,
+    SECRETS_CLEAR,
+    SECRETS_RECONCILE
+} secrets_operation;
 
 typedef struct scratch {
     char directory[1024];
@@ -35,9 +43,23 @@ typedef struct scratch {
 
 #define VALUE_CAP_BYTES 2560000u
 
+/** One call's arguments; `place` NULL sends no places at all, `relative_file` a secrets file that is not absolute. */
+typedef struct request {
+    const scratch *place;
+    const char *relative_file;
+    const char *plugin;
+    const char *name;
+    const char *value;
+} request;
+
+/** What one call answered, copied out of the definition's answer and refusal before both were released. */
 typedef struct answer {
-    int32_t status;
-    cJSON *tree;
+    spisor_status status;
+    char *value;
+    uint32_t location;
+    uint64_t moved;
+    char *detail;
+    char *fix;
 } answer;
 
 static void fresh_scratch(scratch *place, const char *label) {
@@ -50,65 +72,121 @@ static void fresh_scratch(scratch *place, const char *label) {
     fake_store_reset();
 }
 
-static cJSON *request_for(const scratch *place, const char *plugin, const char *name, const char *value) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON *places = cJSON_AddObjectToObject(request, "places");
-    cJSON_AddStringToObject(places, "secretsFile", place->file);
-    cJSON_AddBoolToObject(places, "forceFileStore", place->force_file_store);
-    if (plugin != NULL) {
-        cJSON_AddStringToObject(request, "plugin", plugin);
-    }
-    if (name != NULL) {
-        cJSON_AddStringToObject(request, "name", name);
-    }
-    if (value != NULL) {
-        cJSON_AddStringToObject(request, "value", value);
-    }
-    return request;
+static request request_for(const scratch *place, const char *plugin, const char *name, const char *value) {
+    request built = {place, NULL, plugin, name, value};
+    return built;
 }
 
-static answer call_text(secrets_export function, const char *text) {
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
+static char *copy_of(const char *text) {
+    char *copy = text == NULL ? NULL : malloc(strlen(text) + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, strlen(text) + 1);
+    }
+    return copy;
+}
+
+static const runtime_secrets_definition *secrets_definition(void) {
+    return runtime_secrets_definition_of();
+}
+
+static spisor_status run(secrets_operation operation, const runtime_secret_places *places, const request *call,
+                         answer *result, spisor_refusal *refusal) {
+    const runtime_secrets_definition *secrets = secrets_definition();
+    runtime_secrets_entry_argument entry = SPISOR_INIT(runtime_secrets_entry_argument);
+    runtime_secrets_set_argument set = SPISOR_INIT(runtime_secrets_set_argument);
+    runtime_secrets_clear_argument clear = SPISOR_INIT(runtime_secrets_clear_argument);
+    runtime_secrets_reconcile_argument reconcile = SPISOR_INIT(runtime_secrets_reconcile_argument);
+    runtime_secrets_get_answer secret = SPISOR_INIT(runtime_secrets_get_answer);
+    runtime_secrets_set_answer stored = SPISOR_INIT(runtime_secrets_set_answer);
+    runtime_secrets_reconcile_answer reconciled = SPISOR_INIT(runtime_secrets_reconcile_answer);
+    spisor_status status;
+    entry.places = set.places = clear.places = reconcile.places = places;
+    entry.plugin = set.plugin = clear.plugin = call->plugin;
+    entry.name = set.name = call->name;
+    set.value = call->value;
+    switch (operation) {
+    case SECRETS_GET:
+        status = secrets->get(secrets->context, &entry, &secret, refusal);
+        CHECK(secret.value == NULL || secret.length == strlen(secret.value));
+        result->value = copy_of(secret.value);
+        secrets->release_get_answer(secrets->context, &secret);
+        CHECK(secret.value == NULL && secret.storage == NULL);
+        return status;
+    case SECRETS_SET:
+        status = secrets->set(secrets->context, &set, &stored, refusal);
+        result->location = stored.location;
+        return status;
+    case SECRETS_REMOVE:
+        return secrets->remove(secrets->context, &entry, refusal);
+    case SECRETS_CLEAR:
+        return secrets->clear(secrets->context, &clear, refusal);
+    default:
+        status = secrets->reconcile(secrets->context, &reconcile, &reconciled, refusal);
+        result->moved = reconciled.moved;
+        return status;
+    }
+}
+
+static answer call(secrets_operation operation, request call) {
+    runtime_secret_places places = {NULL, 0};
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    answer result = {SPISOR_OK, NULL, 0, 0, NULL, NULL};
+    if (call.place != NULL) {
+        places.secrets_file = call.relative_file != NULL ? call.relative_file : call.place->file;
+        places.force_file_store = (uint32_t)call.place->force_file_store;
+    }
+    result.status = run(operation, call.place == NULL ? NULL : &places, &call, &result, &refusal);
+    result.detail = copy_of(refusal.detail);
+    result.fix = copy_of(refusal.fix);
+    secrets_definition()->release_refusal(secrets_definition()->context, &refusal);
+    CHECK(refusal.storage == NULL);
     return result;
 }
 
-static answer call(secrets_export function, cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    answer result = call_text(function, text);
-    free(text);
-    return result;
+static void forget(answer *result) {
+    free(result->value);
+    free(result->detail);
+    free(result->fix);
 }
 
-static int succeeds(secrets_export function, cJSON *request) {
-    answer result = call(function, request);
-    int succeeded = result.status == SPISOR_STATUS_SUCCESS;
-    cJSON_Delete(result.tree);
+static int succeeds(secrets_operation operation, request request) {
+    answer result = call(operation, request);
+    int succeeded = result.status == SPISOR_OK && result.detail == NULL;
+    forget(&result);
     return succeeded;
 }
 
-static int refuses(secrets_export function, cJSON *request) {
-    answer result = call(function, request);
-    int refused = result.status == SPISOR_STATUS_FAILURE &&
-                  cJSON_IsString(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
-    cJSON_Delete(result.tree);
+/** Whether the call answered `expected` with a refusal carrying a detail and a fix. */
+static int refuses_as(secrets_operation operation, request request, spisor_status expected) {
+    answer result = call(operation, request);
+    int refused = result.status == expected && result.detail != NULL && result.fix != NULL;
+    if (!refused) {
+        fprintf(stderr, "expected status %d with a refusal, got status %d and \"%s\"\n", (int)expected,
+                (int)result.status, result.detail == NULL ? "(none)" : result.detail);
+    }
+    forget(&result);
     return refused;
 }
 
-static int refuses_naming(secrets_export function, cJSON *request, const char *member, const char *text) {
-    answer result = call(function, request);
-    const char *said = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, member));
-    int refused = result.status == SPISOR_STATUS_FAILURE && said != NULL && strstr(said, text) != NULL;
+static int refuses(secrets_operation operation, request request) {
+    return refuses_as(operation, request, SPISOR_REFUSED);
+}
+
+static int malformed(secrets_operation operation, request request) {
+    return refuses_as(operation, request, SPISOR_MALFORMED);
+}
+
+/** Whether the call was refused with `text` in its detail ("message") or its fix ("fix"). */
+static int refuses_naming(secrets_operation operation, request request, const char *member, const char *text) {
+    answer result = call(operation, request);
+    const char *said = strcmp(member, "fix") == 0 ? result.fix : result.detail;
+    int refused = (result.status == SPISOR_REFUSED || result.status == SPISOR_MALFORMED) && said != NULL &&
+                  strstr(said, text) != NULL;
     if (!refused) {
         fprintf(stderr, "expected a refusal whose %s names \"%s\", got status %d and \"%s\"\n", member, text,
                 (int)result.status, said == NULL ? "(none)" : said);
     }
-    cJSON_Delete(result.tree);
+    forget(&result);
     return refused;
 }
 
@@ -130,23 +208,32 @@ static char *repeated_value(size_t length) {
 
 static void set_secret(const scratch *place, const char *plugin, const char *name, const char *value,
                        const char *expected_place) {
-    answer result = call(runtime_secrets_set, request_for(place, plugin, name, value));
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "place")), expected_place, name);
-    cJSON_Delete(result.tree);
+    answer result = call(SECRETS_SET, request_for(place, plugin, name, value));
+    uint32_t expected = strcmp(expected_place, "store") == 0 ? RUNTIME_SECRET_LOCATION_STORE
+                                                             : RUNTIME_SECRET_LOCATION_FILE;
+    CHECK(result.status == SPISOR_OK);
+    if (result.location != expected) {
+        fprintf(stderr, "%s: expected the secret in the %s, got location %u\n", name, expected_place,
+                (unsigned)result.location);
+        check_failures++;
+    }
+    forget(&result);
 }
 
 /** The value get answers, as a copy freed with free, or NULL when it answers none. */
 static char *get_secret(const scratch *place, const char *plugin, const char *name) {
-    answer result = call(runtime_secrets_get, request_for(place, plugin, name, NULL));
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
-    const char *value = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "value"));
-    char *copy = value == NULL ? NULL : malloc(strlen(value) + 1);
-    if (copy != NULL) {
-        memcpy(copy, value, strlen(value) + 1);
-    }
-    cJSON_Delete(result.tree);
-    return copy;
+    answer result = call(SECRETS_GET, request_for(place, plugin, name, NULL));
+    char *value = result.value;
+    CHECK(result.status == (value == NULL ? SPISOR_NONE : SPISOR_OK));
+    result.value = NULL;
+    forget(&result);
+    return value;
+}
+
+static int moved_count(answer result) {
+    int count = result.status == SPISOR_OK ? (int)result.moved : -1;
+    forget(&result);
+    return count;
 }
 
 static void expect_get(const scratch *place, const char *plugin, const char *name, const char *expected) {
@@ -215,7 +302,7 @@ static void a_failing_store_fails_the_set_and_writes_nothing(void) {
     scratch place;
     fresh_scratch(&place, "failing");
     fake_store_behave(FAKE_STORE_FAILS);
-    CHECK(refuses(runtime_secrets_set, request_for(&place, "github", "token", "v1")));
+    CHECK(refuses(SECRETS_SET, request_for(&place, "github", "token", "v1")));
     CHECK(!spisor_file_exists(place.file));
 }
 
@@ -308,9 +395,9 @@ static void get_fails_when_neither_place_holds_it_and_the_store_refused(void) {
     scratch place;
     fresh_scratch(&place, "get-refused");
     fake_store_behave(FAKE_STORE_DECLINES);
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", "token", NULL)));
+    CHECK(refuses(SECRETS_GET, request_for(&place, "github", "token", NULL)));
     fake_store_behave(FAKE_STORE_FAILS);
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", "token", NULL)));
+    CHECK(refuses(SECRETS_GET, request_for(&place, "github", "token", NULL)));
     fake_store_behave(FAKE_STORE_UNAVAILABLE);
     expect_get(&place, "github", "token", NULL);
 }
@@ -322,11 +409,11 @@ static void delete_removes_from_both_places(void) {
     set_secret(&place, "github", "token", "from-file", "file");
     fake_store_behave(FAKE_STORE_ACCEPTS);
     fake_store_seed("spisor/github/token", "from-store");
-    CHECK(succeeds(runtime_secrets_delete, request_for(&place, "github", "token", NULL)));
+    CHECK(succeeds(SECRETS_REMOVE, request_for(&place, "github", "token", NULL)));
     CHECK(fake_store_value("spisor/github/token") == NULL);
     CHECK(!file_holds(&place, "spisor/github/token", NULL));
     expect_get(&place, "github", "token", NULL);
-    CHECK(succeeds(runtime_secrets_delete, request_for(&place, "github", "token", NULL)));
+    CHECK(succeeds(SECRETS_REMOVE, request_for(&place, "github", "token", NULL)));
 }
 
 static void clear_removes_one_plugin_from_both_places_and_keeps_another(void) {
@@ -338,7 +425,7 @@ static void clear_removes_one_plugin_from_both_places_and_keeps_another(void) {
     fake_store_behave(FAKE_STORE_ACCEPTS);
     fake_store_seed("spisor/github/two", "2");
     fake_store_seed("spisor/gitlab/two", "g");
-    CHECK(succeeds(runtime_secrets_clear, request_for(&place, "github", NULL, NULL)));
+    CHECK(succeeds(SECRETS_CLEAR, request_for(&place, "github", NULL, NULL)));
     CHECK(fake_store_value("spisor/github/two") == NULL);
     CHECK(!file_holds(&place, "spisor/github/one", NULL));
     CHECK(store_holds("spisor/gitlab/two", "g"));
@@ -351,19 +438,12 @@ static void a_forced_file_store_never_touches_the_store(void) {
     place.force_file_store = 1;
     set_secret(&place, "github", "token", "v1", "file");
     expect_get(&place, "github", "token", "v1");
-    CHECK(succeeds(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL)));
-    CHECK(succeeds(runtime_secrets_delete, request_for(&place, "github", "token", NULL)));
+    CHECK(succeeds(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL)));
+    CHECK(succeeds(SECRETS_REMOVE, request_for(&place, "github", "token", NULL)));
     set_secret(&place, "github", "other", "v2", "file");
-    CHECK(succeeds(runtime_secrets_clear, request_for(&place, "github", NULL, NULL)));
+    CHECK(succeeds(SECRETS_CLEAR, request_for(&place, "github", NULL, NULL)));
     CHECK(fake_store_calls() == 0);
     CHECK(file_entry_count(&place) == 0);
-}
-
-static int moved_count(answer result) {
-    const cJSON *moved = cJSON_GetObjectItemCaseSensitive(result.tree, "moved");
-    int count = result.status == SPISOR_STATUS_SUCCESS && cJSON_IsNumber(moved) ? moved->valueint : -1;
-    cJSON_Delete(result.tree);
-    return count;
 }
 
 static void reconcile_moves_file_entries_once_the_store_appears(void) {
@@ -372,20 +452,20 @@ static void reconcile_moves_file_entries_once_the_store_appears(void) {
     fake_store_behave(FAKE_STORE_UNAVAILABLE);
     set_secret(&place, "github", "one", "1", "file");
     set_secret(&place, "gitlab", "two", "2", "file");
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 0);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 0);
     CHECK(file_entry_count(&place) == 2);
     fake_store_behave(FAKE_STORE_ACCEPTS);
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 2);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 2);
     CHECK(store_holds("spisor/github/one", "1"));
     CHECK(store_holds("spisor/gitlab/two", "2"));
     CHECK(file_entry_count(&place) == 0);
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 0);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 0);
 }
 
 static void reconcile_with_no_file_moves_nothing(void) {
     scratch place;
     fresh_scratch(&place, "reconcile-empty");
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 0);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 0);
     CHECK(!spisor_file_exists(place.file));
 }
 
@@ -411,7 +491,7 @@ static void a_long_utf8_value_round_trips_through_the_file_and_the_move(void) {
     set_secret(&place, "github", "token", value, "file");
     expect_get(&place, "github", "token", value);
     fake_store_behave(FAKE_STORE_ACCEPTS);
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 1);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 1);
     CHECK(store_holds("spisor/github/token", value));
     free(value);
 }
@@ -421,8 +501,8 @@ static void a_malformed_file_is_never_overwritten(void) {
     fresh_scratch(&place, "malformed");
     write_raw_file(&place, "{ not json");
     fake_store_behave(FAKE_STORE_DECLINES);
-    CHECK(refuses(runtime_secrets_set, request_for(&place, "github", "token", "v1")));
-    CHECK(refuses(runtime_secrets_clear, request_for(&place, "github", NULL, NULL)));
+    CHECK(refuses(SECRETS_SET, request_for(&place, "github", "token", "v1")));
+    CHECK(refuses(SECRETS_CLEAR, request_for(&place, "github", NULL, NULL)));
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(place.file, &length);
     check_text((const char *)bytes, "{ not json", "malformed file");
@@ -432,21 +512,57 @@ static void a_malformed_file_is_never_overwritten(void) {
 static void unusable_arguments_are_refused(void) {
     scratch place;
     fresh_scratch(&place, "refusals");
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", NULL, NULL)));
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "github", "", NULL)));
-    CHECK(refuses(runtime_secrets_get, request_for(&place, NULL, "token", NULL)));
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "", "token", NULL)));
-    CHECK(refuses(runtime_secrets_get, request_for(&place, "git/hub", "token", NULL)));
-    CHECK(refuses(runtime_secrets_set, request_for(&place, "github", "token", NULL)));
-    CHECK(refuses(runtime_secrets_clear, request_for(&place, NULL, NULL, NULL)));
-    answer relative = call_text(runtime_secrets_get, "{\"places\":{\"secretsFile\":\"rel/secrets.json\","
-                                                     "\"forceFileStore\":false},\"plugin\":\"a\",\"name\":\"b\"}");
-    CHECK(relative.status == SPISOR_STATUS_FAILURE);
-    cJSON_Delete(relative.tree);
-    answer no_places = call_text(runtime_secrets_reconcile, "{}");
-    CHECK(no_places.status == SPISOR_STATUS_FAILURE);
-    cJSON_Delete(no_places.tree);
+    CHECK(malformed(SECRETS_GET, request_for(&place, "github", NULL, NULL)));
+    CHECK(malformed(SECRETS_GET, request_for(&place, "github", "", NULL)));
+    CHECK(malformed(SECRETS_GET, request_for(&place, NULL, "token", NULL)));
+    CHECK(malformed(SECRETS_GET, request_for(&place, "", "token", NULL)));
+    CHECK(malformed(SECRETS_GET, request_for(&place, "git/hub", "token", NULL)));
+    CHECK(malformed(SECRETS_SET, request_for(&place, "github", "token", NULL)));
+    CHECK(malformed(SECRETS_REMOVE, request_for(&place, "github", "", NULL)));
+    CHECK(malformed(SECRETS_CLEAR, request_for(&place, NULL, NULL, NULL)));
+    request relative = request_for(&place, "a", "b", NULL);
+    relative.relative_file = "rel/secrets.json";
+    CHECK(malformed(SECRETS_GET, relative));
+    CHECK(malformed(SECRETS_RECONCILE, request_for(NULL, NULL, NULL, NULL)));
     CHECK(fake_store_calls() == 0);
+}
+
+static void an_argument_or_answer_short_of_its_shape_is_malformed(void) {
+    const runtime_secrets_definition *secrets = secrets_definition();
+    scratch place;
+    runtime_secret_places places;
+    runtime_secrets_entry_argument entry = SPISOR_INIT(runtime_secrets_entry_argument);
+    runtime_secrets_get_answer secret = SPISOR_INIT(runtime_secrets_get_answer);
+    runtime_secrets_set_argument set = SPISOR_INIT(runtime_secrets_set_argument);
+    runtime_secrets_set_answer stored = SPISOR_INIT(runtime_secrets_set_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    fresh_scratch(&place, "shapes");
+    places.secrets_file = place.file;
+    places.force_file_store = 1;
+    entry.places = set.places = &places;
+    entry.plugin = set.plugin = "github";
+    entry.name = set.name = "token";
+    set.value = "v1";
+    entry.size = (uint32_t)offsetof(runtime_secrets_entry_argument, name);
+    check_refused(secrets->get(secrets->context, &entry, &secret, &refusal), SPISOR_MALFORMED, &refusal,
+                  "first shape", "a short entry");
+    secrets->release_refusal(secrets->context, &refusal);
+    entry.size = sizeof entry;
+    secret.size = (uint32_t)offsetof(runtime_secrets_get_answer, storage);
+    check_refused(secrets->get(secrets->context, &entry, &secret, &refusal), SPISOR_MALFORMED, &refusal,
+                  "first shape", "a short secret answer");
+    secrets->release_refusal(secrets->context, &refusal);
+    stored.size = (uint32_t)offsetof(runtime_secrets_set_answer, location);
+    check_refused(secrets->set(secrets->context, &set, &stored, &refusal), SPISOR_MALFORMED, &refusal, "first shape",
+                  "a short set answer");
+    secrets->release_refusal(secrets->context, &refusal);
+    CHECK(!spisor_file_exists(place.file));
+}
+
+static void the_definition_is_one_static_struct(void) {
+    const runtime_secrets_definition *secrets = secrets_definition();
+    CHECK(secrets != NULL && (const void *)secrets == runtime_secrets_definition_of());
+    CHECK(secrets != NULL && secrets->size == sizeof(runtime_secrets_definition));
 }
 
 #if !defined(_WIN32)
@@ -466,7 +582,7 @@ static void a_stored_set_beside_an_unreadable_file_is_refused_and_leaves_the_fil
     scratch place;
     fresh_scratch(&place, "stored-unreadable");
     write_raw_file(&place, "{ not json");
-    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "v1"), "message",
+    CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", "v1"), "message",
                          "not a readable JSON object"));
     expect_file_bytes(place.file, "{ not json", "the unreadable file is left byte-identical");
     CHECK(fake_store_set_calls() == 0);
@@ -511,7 +627,7 @@ static void a_stored_set_whose_older_file_copy_cannot_leave_is_refused(void) {
     if (!unwritable_or_skip(&place)) {
         return;
     }
-    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "new"), "message",
+    CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", "new"), "message",
                          "its older copy in the secrets file could not be removed"));
     CHECK(make_file_unwritable(&place, 0));
     CHECK(store_holds("spisor/github/token", "new"));
@@ -527,12 +643,12 @@ static void a_move_whose_file_rewrite_fails_leaves_the_entry_in_both_places_and_
     if (!unwritable_or_skip(&place)) {
         return;
     }
-    CHECK(refuses_naming(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL), "message",
+    CHECK(refuses_naming(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL), "message",
                          "could not be written"));
     CHECK(make_file_unwritable(&place, 0));
     CHECK(store_holds("spisor/github/token", "v1"));
     CHECK(file_holds(&place, "spisor/github/token", "v1"));
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 1);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 1);
     CHECK(file_entry_count(&place) == 0);
     expect_get(&place, "github", "token", "v1");
 }
@@ -543,7 +659,7 @@ static void a_declined_delete_keeps_the_newer_file_copy(void) {
     set_secret(&place, "github", "token", "A", "store");
     fake_store_behave(FAKE_STORE_DECLINES);
     set_secret(&place, "github", "token", "B", "file");
-    CHECK(refuses(runtime_secrets_delete, request_for(&place, "github", "token", NULL)));
+    CHECK(refuses(SECRETS_REMOVE, request_for(&place, "github", "token", NULL)));
     CHECK(file_holds(&place, "spisor/github/token", "B"));
     fake_store_behave(FAKE_STORE_ACCEPTS);
     expect_get(&place, "github", "token", "B");
@@ -554,9 +670,9 @@ static void an_over_cap_value_is_refused_before_either_place_is_touched(void) {
     fresh_scratch(&place, "over-cap");
     char *over = repeated_value(VALUE_CAP_BYTES + 1);
     CHECK(over != NULL);
-    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", over), "message", "2560000"));
+    CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", over), "message", "2560000"));
     fake_store_behave(FAKE_STORE_DECLINES);
-    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", over), "message", "2560000"));
+    CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", over), "message", "2560000"));
     CHECK(fake_store_calls() == 0);
     CHECK(fake_store_entry_count() == 0);
     CHECK(!spisor_file_exists(place.file));
@@ -581,7 +697,7 @@ static void a_hand_planted_over_cap_file_entry_never_stops_the_move(void) {
     cJSON_Delete(entries);
     write_raw_file(&place, text);
     free(text);
-    CHECK(moved_count(call(runtime_secrets_reconcile, request_for(&place, NULL, NULL, NULL))) == 1);
+    CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 1);
     CHECK(store_holds("spisor/github/small", "s"));
     CHECK(fake_store_value("spisor/github/huge") == NULL);
     CHECK(file_holds(&place, "spisor/github/huge", NULL));
@@ -607,7 +723,7 @@ static void a_linked_secrets_file_is_never_written_through(void) {
         return;
     }
     fake_store_behave(FAKE_STORE_DECLINES);
-    CHECK(refuses_naming(runtime_secrets_set, request_for(&place, "github", "token", "v1"), "fix", "SPISOR_SECRETS"));
+    CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", "v1"), "fix", "SPISOR_SECRETS"));
     CHECK(is_link(place.file));
     expect_file_bytes(target, "{}", "the link's target is left unchanged");
 }
@@ -630,6 +746,8 @@ int main(void) {
     a_long_utf8_value_round_trips_through_the_file_and_the_move();
     a_malformed_file_is_never_overwritten();
     unusable_arguments_are_refused();
+    an_argument_or_answer_short_of_its_shape_is_malformed();
+    the_definition_is_one_static_struct();
     a_stored_set_beside_an_unreadable_file_is_refused_and_leaves_the_file();
     a_stored_set_whose_older_file_copy_cannot_leave_is_refused();
     a_move_whose_file_rewrite_fails_leaves_the_entry_in_both_places_and_is_refused();

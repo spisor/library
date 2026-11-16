@@ -8,13 +8,12 @@
 #include <unistd.h>
 
 #include "check.h"
+#include "runtime/secrets.h"
 #include "scratch_directory.h"
 #include "secret_backend.h"
 #include "secret_linux_hooks.h"
-#include "secrets.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
-#include "spisor/json_kind.h"
 
 static const char *const missing_library = "libspisor-no-such-secret-service.so.0";
 static const char *const unreachable_bus = "unix:path=/nonexistent/spisor-test-bus";
@@ -33,48 +32,36 @@ static void expect_every_call_unavailable(const char *label) {
     }
 }
 
-static cJSON *secret_request(const char *secrets_file, const char *value) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON *places = cJSON_AddObjectToObject(request, "places");
-    cJSON_AddStringToObject(places, "secretsFile", secrets_file);
-    cJSON_AddBoolToObject(places, "forceFileStore", 0);
-    cJSON_AddStringToObject(request, "plugin", "github");
-    cJSON_AddStringToObject(request, "name", "token");
-    if (value != NULL) {
-        cJSON_AddStringToObject(request, "value", value);
-    }
-    return request;
-}
-
-static cJSON *call_secrets(int32_t (*function)(const uint8_t *, size_t, uint8_t **, size_t *), cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    cJSON_Delete(request);
-    CHECK(function((const uint8_t *)text, strlen(text), &out, &out_len) == SPISOR_STATUS_SUCCESS);
-    free(text);
-    cJSON *tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    return tree;
-}
-
 static void expect_set_lands_in_the_file(const char *label) {
+    const runtime_secrets_definition *secrets = runtime_secrets_definition_of();
+    runtime_secrets_set_argument set = SPISOR_INIT(runtime_secrets_set_argument);
+    runtime_secrets_set_answer stored = SPISOR_INIT(runtime_secrets_set_answer);
+    runtime_secrets_entry_argument entry = SPISOR_INIT(runtime_secrets_entry_argument);
+    runtime_secrets_get_answer got = SPISOR_INIT(runtime_secrets_get_answer);
+    runtime_secret_places places = {NULL, 0};
     char directory[1024];
     char file[1100];
     snprintf(directory, sizeof directory, RUNTIME_SCRATCH_PATH "/secret-linux-%d-%s", (int)getpid(), label);
     start_empty_directory(directory);
     snprintf(file, sizeof file, "%s/state/secrets.json", directory);
-    cJSON *set = call_secrets(runtime_secrets_set, secret_request(file, "hunter2"));
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(set, "place")), "file", label);
-    cJSON_Delete(set);
+    places.secrets_file = file;
+    set.places = entry.places = &places;
+    set.plugin = entry.plugin = "github";
+    set.name = entry.name = "token";
+    set.value = "hunter2";
+    CHECK(secrets->set(secrets->context, &set, &stored, NULL) == SPISOR_OK);
+    if (stored.location != RUNTIME_SECRET_LOCATION_FILE) {
+        fprintf(stderr, "%s: expected the secret in the file, got location %u\n", label, (unsigned)stored.location);
+        check_failures++;
+    }
     spisor_json_file_state state;
     cJSON *entries = spisor_read_json_file(file, &state);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entries, "spisor/github/token")), "hunter2",
                label);
     cJSON_Delete(entries);
-    cJSON *got = call_secrets(runtime_secrets_get, secret_request(file, NULL));
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(got, "value")), "hunter2", label);
-    cJSON_Delete(got);
+    CHECK(secrets->get(secrets->context, &entry, &got, NULL) == SPISOR_OK);
+    check_text(got.value, "hunter2", label);
+    secrets->release_get_answer(secrets->context, &got);
 }
 
 static void an_absent_library_answers_unavailable_and_the_set_lands_in_the_file(void) {
