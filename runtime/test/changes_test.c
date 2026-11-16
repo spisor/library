@@ -22,6 +22,7 @@
 #include "changes.h"
 #include "check.h"
 #include "host_provenance.h"
+#include "registry_call.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
 #include "links.h"
@@ -139,8 +140,8 @@ static void register_host_at(const scratch *place, const char *id, const char *l
     cJSON_AddStringToObject(registration, "home", location);
     add_host_provenance(registration, "npm", "1.0.0", location);
     cJSON_AddBoolToObject(registration, "requiresCommand", 0);
-    answer result = call(runtime_registry_register, request);
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    registry_result result = registry_call(REGISTRY_REGISTER, request);
+    CHECK(result.status == SPISOR_OK);
     cJSON_Delete(result.tree);
 }
 
@@ -303,8 +304,8 @@ static int forgets(const scratch *place, const char *host) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_for(place));
     cJSON_AddStringToObject(request, "id", host);
-    answer result = call(runtime_registry_forget, request);
-    int forgotten = result.status == SPISOR_STATUS_SUCCESS &&
+    registry_result result = registry_call(REGISTRY_FORGET, request);
+    int forgotten = result.status == SPISOR_OK &&
                     cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result.tree, "forgotten"));
     cJSON_Delete(result.tree);
     return forgotten;
@@ -725,7 +726,7 @@ static int race_round(const scratch *place) {
 static int listed_host_count(const scratch *place) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_for(place));
-    answer result = call(runtime_registry_list, request);
+    registry_result result = registry_call(REGISTRY_LIST, request);
     const cJSON *hosts = cJSON_GetObjectItemCaseSensitive(result.tree, "hosts");
     const cJSON *unreadable = cJSON_GetObjectItemCaseSensitive(result.tree, "unreadable");
     int count = cJSON_GetArraySize(unreadable) == 0 ? cJSON_GetArraySize(hosts) : -1;

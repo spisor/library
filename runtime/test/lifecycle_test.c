@@ -27,6 +27,7 @@
 #include "directory_tree.h"
 #include "host_provenance.h"
 #include "registry.h"
+#include "registry_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -158,7 +159,7 @@ static int registers(const scratch *place, const char *id) {
     cJSON_AddStringToObject(registration, "home", place->home);
     add_host_provenance(registration, "npm", "1.0.0", place->directory);
     cJSON_AddBoolToObject(registration, "requiresCommand", 0);
-    return succeeds(call(runtime_registry_register, request), id);
+    return registry_succeeds(registry_call(REGISTRY_REGISTER, request), id);
 }
 
 /** Whether host's request for name is answered with expected. */
@@ -208,7 +209,7 @@ static int reverses_cleanly(const scratch *place, const char *host) {
 static int forgets(const scratch *place, const char *host) {
     cJSON *request = places_request(place);
     cJSON_AddStringToObject(request, "id", host);
-    return succeeds(call(runtime_registry_forget, request), "forget");
+    return registry_succeeds(registry_call(REGISTRY_FORGET, request), "forget");
 }
 
 static int count_of_kind(const scratch *place, const char *host, const char *kind) {

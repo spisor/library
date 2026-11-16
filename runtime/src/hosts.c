@@ -18,7 +18,7 @@ cJSON *runtime_hosts_places_request(const cJSON *argument) {
 }
 
 static cJSON *list_for(const cJSON *argument, cJSON **refusal) {
-    return runtime_call_or_refuse(runtime_registry_list, runtime_hosts_places_request(argument), refusal);
+    return runtime_call_operation(runtime_registry_list_hosts, runtime_hosts_places_request(argument), refusal);
 }
 
 RUNTIME_EXPORT int32_t runtime_hosts_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {

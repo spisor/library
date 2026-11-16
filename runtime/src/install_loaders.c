@@ -107,7 +107,7 @@ static cJSON *stored_provenance(const runtime_install_run *run, const char *id) 
         call = NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_registry_get, call, &refusal);
+    cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, &refusal);
     cJSON_Delete(refusal);
     cJSON *application = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(answer, "registration"), "application");
     cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(application, "provenance");

@@ -79,7 +79,7 @@ static cJSON *refuse_leftover(const removal *request, const char *what) {
 }
 
 static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal) {
-    cJSON *forgotten = runtime_call_or_refuse(runtime_registry_forget_locked, host_request(request, "id"), refusal);
+    cJSON *forgotten = runtime_call_operation(runtime_registry_forget_locked, host_request(request, "id"), refusal);
     cJSON *flag = cJSON_DetachItemFromObjectCaseSensitive(forgotten, "forgotten");
     cJSON_Delete(forgotten);
     if (flag == NULL || !cJSON_AddItemToObject(answer, "forgotten", flag)) {

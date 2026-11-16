@@ -25,7 +25,7 @@ static cJSON *registration_of(const application_operation *request, cJSON **refu
         cJSON_Delete(call);
         call = NULL;
     }
-    cJSON *answer = runtime_call_or_refuse(runtime_registry_get, call, refusal);
+    cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, refusal);
     cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
     cJSON_Delete(answer);
     return registration;
@@ -131,7 +131,7 @@ static int record_version(const application_operation *request, const char *vers
         cJSON_Delete(call);
         return 0;
     }
-    cJSON *registered = runtime_call_or_refuse(runtime_registry_register, call, &refusal);
+    cJSON *registered = runtime_call_operation(runtime_registry_register_host, call, &refusal);
     cJSON_Delete(refusal);
     cJSON_Delete(registered);
     return registered != NULL;

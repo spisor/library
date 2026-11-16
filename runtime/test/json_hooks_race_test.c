@@ -18,6 +18,7 @@
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 
@@ -41,6 +42,7 @@ static void take_every_definition(void) {
         runtime_identity_definition_of();
         runtime_fetch_definition_of();
         runtime_detect_definition_of();
+        runtime_registry_definition_of();
     }
 }
 

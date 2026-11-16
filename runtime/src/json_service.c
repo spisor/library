@@ -48,6 +48,16 @@ int32_t runtime_serve_json(const uint8_t *in, size_t in_len, uint8_t **out, size
     return status;
 }
 
+cJSON *runtime_call_operation(runtime_json_operation operation, cJSON *argument, cJSON **refusal) {
+    cJSON *answer = NULL;
+    *refusal = NULL;
+    if (argument != NULL) {
+        answer = operation(argument, refusal);
+    }
+    cJSON_Delete(argument);
+    return answer;
+}
+
 cJSON *runtime_call_or_refuse(int32_t (*function)(const uint8_t *, size_t, uint8_t **, size_t *), cJSON *argument,
                               cJSON **refusal) {
     int32_t status = SPISOR_STATUS_OUT_OF_MEMORY;

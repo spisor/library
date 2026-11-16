@@ -23,6 +23,7 @@
 #include "directory_tree.h"
 #include "links.h"
 #include "registry.h"
+#include "registry_call.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -34,18 +35,13 @@
 #define NEWER_HOME "/home/claude-two"
 #endif
 
-typedef int32_t (*registry_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-
 typedef struct scratch {
     char directory[1024];
     char state[1100];
     char cache[1100];
 } scratch;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-} answer;
+typedef registry_result answer;
 
 static void fresh_scratch(scratch *place, const char *label) {
     static int sequence = 0;
@@ -92,56 +88,33 @@ static cJSON *register_request(const scratch *place, cJSON *registration) {
     return request;
 }
 
-static answer call(registry_export function, cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    free(text);
-    return result;
+static answer call(registry_operation operation, cJSON *request) {
+    return registry_call(operation, request);
 }
 
-static int is_refusal(const answer *result) {
-    return result->status == SPISOR_STATUS_FAILURE &&
-           cJSON_IsString(cJSON_GetObjectItemCaseSensitive(result->tree, "message"));
+/** Whether the call was refused as the caller's mistake, MALFORMED, naming `text` when it is not NULL. */
+static int malformed(registry_operation operation, cJSON *request, const char *text) {
+    return registry_refused_as(call(operation, request), SPISOR_MALFORMED, text);
 }
 
-static int refuses(registry_export function, cJSON *request) {
-    answer result = call(function, request);
-    int refused = is_refusal(&result);
-    cJSON_Delete(result.tree);
-    return refused;
-}
-
-static int refusal_names(registry_export function, cJSON *request, const char *text) {
-    answer result = call(function, request);
-    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
-    const char *fix = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "fix"));
-    int names = is_refusal(&result) && ((message != NULL && strstr(message, text) != NULL) ||
-                                        (fix != NULL && strstr(fix, text) != NULL));
-    if (!names) {
-        fprintf(stderr, "expected a refusal naming \"%s\", got status %d\n", text, (int)result.status);
-    }
-    cJSON_Delete(result.tree);
-    return names;
+/** Whether the call was REFUSED for what it found, naming `text` when it is not NULL. */
+static int refused(registry_operation operation, cJSON *request, const char *text) {
+    return registry_refused_as(call(operation, request), SPISOR_REFUSED, text);
 }
 
 static int register_host(const scratch *place, cJSON *registration) {
-    answer result = call(runtime_registry_register, register_request(place, registration));
-    int succeeded = result.status == SPISOR_STATUS_SUCCESS;
+    answer result = call(REGISTRY_REGISTER, register_request(place, registration));
+    int succeeded = result.status == SPISOR_OK;
     cJSON_Delete(result.tree);
     return succeeded;
 }
 
 /** The registration get answers, freed with cJSON_Delete, or NULL when it answers none. */
 static cJSON *get_registration(const scratch *place, const char *id) {
-    answer result = call(runtime_registry_get, id_request(place, id));
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    answer result = call(REGISTRY_GET, id_request(place, id));
+    CHECK(result.status == SPISOR_OK || result.status == SPISOR_NONE);
     cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(result.tree, "registration");
+    CHECK((result.status == SPISOR_OK) == (registration != NULL));
     cJSON_Delete(result.tree);
     return registration;
 }
@@ -191,9 +164,9 @@ static const char *provenance_text(const cJSON *registration, const char *member
 }
 
 static int list_count(const scratch *place) {
-    answer result = call(runtime_registry_list, request_for(place));
+    answer result = call(REGISTRY_LIST, request_for(place));
     const cJSON *hosts = cJSON_GetObjectItemCaseSensitive(result.tree, "hosts");
-    int count = result.status == SPISOR_STATUS_SUCCESS && cJSON_IsArray(hosts) ? cJSON_GetArraySize(hosts) : -1;
+    int count = result.status == SPISOR_OK && cJSON_IsArray(hosts) ? cJSON_GetArraySize(hosts) : -1;
     cJSON_Delete(result.tree);
     return count;
 }
@@ -201,14 +174,17 @@ static int list_count(const scratch *place) {
 static void register_then_get(void) {
     scratch place;
     fresh_scratch(&place, "get");
-    answer registered = call(runtime_registry_register,
+    answer registered = call(REGISTRY_REGISTER,
                              register_request(&place, registration_for("claude", "1.0.0", "npm", place.directory)));
-    CHECK(registered.status == SPISOR_STATUS_SUCCESS);
+    CHECK(registered.status == SPISOR_OK);
     const cJSON *answered = cJSON_GetObjectItemCaseSensitive(registered.tree, "registration");
     check_text(text_at(answered, "id"), "claude", "registered id");
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answered, "commands")) == 0);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answered, "changes")) == 0);
+    check_text(provenance_text(answered, "installedAt"), "2026-11-02T10:00:00Z", "registered installed_at");
     cJSON_Delete(registered.tree);
+    cJSON *stored = loaded_directly(&place, "claude");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(stored, "commands")) == 0);
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(stored, "changes")) == 0);
+    cJSON_Delete(stored);
 
     cJSON *fetched = get_registration(&place, "claude");
     check_text(text_at(fetched, "kind"), "host", "kind");
@@ -253,11 +229,13 @@ static void re_registration_keeps_commands_and_changes_and_replaces_the_rest(voi
     check_text(provenance_text(fetched, "method"), "winget", "provenance replaced");
     check_text(provenance_text(fetched, "location"), place.cache, "location replaced");
     check_text(text_at(fetched, "home"), NEWER_HOME, "home replaced");
-    const cJSON *commands = cJSON_GetObjectItemCaseSensitive(fetched, "commands");
+    cJSON_Delete(fetched);
+    cJSON *stored = loaded_directly(&place, "claude");
+    const cJSON *commands = cJSON_GetObjectItemCaseSensitive(stored, "commands");
     check_text(text_at(cJSON_GetArrayItem(commands, 0), "name"), "claude-weivel", "command kept");
     CHECK(cJSON_GetArraySize(commands) == 1);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(fetched, "changes")) == 1);
-    cJSON_Delete(fetched);
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(stored, "changes")) == 1);
+    cJSON_Delete(stored);
 }
 
 typedef struct registering {
@@ -324,7 +302,7 @@ static void list_sorts_hosts_and_marks_a_missing_location_as_orphan(void) {
     CHECK(register_host(&place, registration_for("zulu", "1.0.0", "npm", location)));
     CHECK(register_host(&place, registration_for("alpha", "1.0.0", "npm", location)));
 
-    answer present = call(runtime_registry_list, request_for(&place));
+    answer present = call(REGISTRY_LIST, request_for(&place));
     const cJSON *hosts = cJSON_GetObjectItemCaseSensitive(present.tree, "hosts");
     CHECK(cJSON_GetArraySize(hosts) == 2);
     check_text(text_at(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(hosts, 0), "registration"), "id"), "alpha",
@@ -334,7 +312,7 @@ static void list_sorts_hosts_and_marks_a_missing_location_as_orphan(void) {
     cJSON_Delete(present.tree);
 
     CHECK(runtime_remove_tree(location) == 1);
-    answer gone = call(runtime_registry_list, request_for(&place));
+    answer gone = call(REGISTRY_LIST, request_for(&place));
     hosts = cJSON_GetObjectItemCaseSensitive(gone.tree, "hosts");
     CHECK(cJSON_GetArraySize(hosts) == 2);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(hosts, 0), "orphan")));
@@ -352,7 +330,7 @@ static void a_host_named_like_a_registration_file_lists_once(void) {
     fresh_scratch(&place, "dotted");
     CHECK(register_host(&place, registration_for("a.json", "1.0.0", "npm", place.directory)));
     make_host_file(&place, "a.json", "own.txt", 0);
-    answer result = call(runtime_registry_list, request_for(&place));
+    answer result = call(REGISTRY_LIST, request_for(&place));
     const cJSON *hosts = cJSON_GetObjectItemCaseSensitive(result.tree, "hosts");
     CHECK(cJSON_GetArraySize(hosts) == 1);
     check_text(text_at(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(hosts, 0), "registration"), "id"), "a.json",
@@ -380,14 +358,14 @@ static void forget_is_refused_while_a_change_is_unreversed_then_removes_everythi
     make_host_file(&place, "claude", "downloads.bin", 1);
     make_host_file(&place, "other", "own.txt", 0);
 
-    CHECK(refusal_names(runtime_registry_forget, id_request(&place, "claude"), "not reversed"));
+    CHECK(refused(REGISTRY_FORGET, id_request(&place, "claude"), "not reversed"));
     CHECK(host_file_exists(&place, "claude"));
     CHECK(host_directory_exists(place.state, "claude"));
     CHECK(host_directory_exists(place.cache, "claude"));
 
     mark_every_change_reversed(&place, "claude");
-    answer forgotten = call(runtime_registry_forget, id_request(&place, "claude"));
-    CHECK(forgotten.status == SPISOR_STATUS_SUCCESS);
+    answer forgotten = call(REGISTRY_FORGET, id_request(&place, "claude"));
+    CHECK(forgotten.status == SPISOR_OK);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(forgotten.tree, "forgotten")));
     cJSON_Delete(forgotten.tree);
     CHECK(!host_file_exists(&place, "claude"));
@@ -400,8 +378,8 @@ static void forget_is_refused_while_a_change_is_unreversed_then_removes_everythi
 static void forgetting_an_unknown_host_succeeds_and_says_nothing_was_there(void) {
     scratch place;
     fresh_scratch(&place, "forget-unknown");
-    answer result = call(runtime_registry_forget, id_request(&place, "ghost"));
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    answer result = call(REGISTRY_FORGET, id_request(&place, "ghost"));
+    CHECK(result.status == SPISOR_OK);
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(result.tree, "forgotten")));
     cJSON_Delete(result.tree);
 }
@@ -416,9 +394,9 @@ static void a_bad_id_is_refused_everywhere(void) {
     write_raw_file(sentinel, "kept");
     for (size_t index = 0; index < sizeof bad_ids / sizeof bad_ids[0]; index++) {
         const char *id = bad_ids[index];
-        CHECK(refuses(runtime_registry_register, register_request(&place, registration_for(id, "1", "npm", "/x"))));
-        CHECK(refuses(runtime_registry_get, id_request(&place, id)));
-        CHECK(refuses(runtime_registry_forget, id_request(&place, id)));
+        CHECK(malformed(REGISTRY_REGISTER, register_request(&place, registration_for(id, "1", "npm", "/x")), "id"));
+        CHECK(malformed(REGISTRY_GET, id_request(&place, id), "host id"));
+        CHECK(malformed(REGISTRY_FORGET, id_request(&place, id), "host id"));
     }
     CHECK(spisor_file_exists(sentinel));
     CHECK(list_count(&place) == 0);
@@ -427,30 +405,37 @@ static void a_bad_id_is_refused_everywhere(void) {
 static void an_unusable_registration_is_refused(void) {
     scratch place;
     fresh_scratch(&place, "badshape");
-    cJSON *wrong_kind = registration_for("h", "1", "npm", "/x");
-    cJSON_ReplaceItemInObjectCaseSensitive(wrong_kind, "kind", cJSON_CreateString("plugin"));
-    CHECK(refuses(runtime_registry_register, register_request(&place, wrong_kind)));
     cJSON *no_provenance = registration_for("h", "1", "npm", "/x");
     cJSON_DeleteItemFromObjectCaseSensitive(no_provenance, "provenance");
-    CHECK(refuses(runtime_registry_register, register_request(&place, no_provenance)));
-    cJSON *no_requirement = registration_for("h", "1", "npm", "/x");
-    cJSON_DeleteItemFromObjectCaseSensitive(no_requirement, "requiresCommand");
-    CHECK(refuses(runtime_registry_register, register_request(&place, no_requirement)));
-    CHECK(refuses(runtime_registry_register, request_for(&place)));
-    CHECK(refusal_names(runtime_registry_register, register_request(&place, registration_for("h", "1", "npm", "relative/binary")), "absolute"));
+    CHECK(malformed(REGISTRY_REGISTER, register_request(&place, no_provenance), "provenance"));
+    CHECK(malformed(REGISTRY_REGISTER, request_for(&place), "registration"));
+    CHECK(malformed(REGISTRY_REGISTER,
+                    register_request(&place, registration_for("h", "1", "npm", "relative/binary")), "absolute"));
     cJSON *no_method = registration_for("h", "1", "npm", "/x");
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(no_method, "provenance"), "method");
-    CHECK(refuses(runtime_registry_register, register_request(&place, no_method)));
+    CHECK(malformed(REGISTRY_REGISTER, register_request(&place, no_method), "method"));
+    cJSON *unknown_runtime = registration_for("h", "1", "npm", "/x");
+    cJSON *start = cJSON_AddObjectToObject(unknown_runtime, "start");
+    cJSON_AddStringToObject(start, "runtime", "python");
+    cJSON_AddStringToObject(start, "entry", "main.py");
+    CHECK(malformed(REGISTRY_REGISTER, register_request(&place, unknown_runtime), "runtime"));
+    cJSON *climbing = registration_for("h", "1", "npm", "/x");
+    start = cJSON_AddObjectToObject(climbing, "start");
+    cJSON_AddStringToObject(start, "runtime", "native");
+    cJSON_AddStringToObject(start, "entry", "../outside");
+    CHECK(malformed(REGISTRY_REGISTER, register_request(&place, climbing), "entry"));
+    cJSON *listed_application = registration_for("h", "1", "npm", "/x");
+    cJSON_AddItemToObject(listed_application, "application", cJSON_CreateArray());
+    CHECK(malformed(REGISTRY_REGISTER, register_request(&place, listed_application), "application"));
     CHECK(!host_file_exists(&place, "h"));
 }
 
 static int refusal_message_names(cJSON *request, const char *text) {
-    answer result = call(runtime_registry_register, request);
-    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
-    int names = is_refusal(&result) && message != NULL && strstr(message, text) != NULL;
+    answer result = call(REGISTRY_REGISTER, request);
+    int names = result.status == SPISOR_MALFORMED && strstr(result.detail, text) != NULL;
     if (!names) {
-        fprintf(stderr, "expected a refusal message naming \"%s\", got status %d %s\n", text, (int)result.status,
-                message == NULL ? "" : message);
+        fprintf(stderr, "expected a refusal detail naming \"%s\", got status %d %s\n", text, (int)result.status,
+                result.detail);
     }
     cJSON_Delete(result.tree);
     return names;
@@ -475,10 +460,12 @@ static void a_provenance_without_its_platform_or_time_is_refused(void) {
     for (size_t index = 0; index < sizeof members / sizeof members[0]; index++) {
         CHECK(refusal_message_names(register_request(&place, with_provenance_member(members[index], NULL)),
                                     members[index]));
-        CHECK(refuses(runtime_registry_register,
-                      register_request(&place, with_provenance_member(members[index], cJSON_CreateString("")))));
-        CHECK(refuses(runtime_registry_register,
-                      register_request(&place, with_provenance_member(members[index], cJSON_CreateNumber(1)))));
+        CHECK(malformed(REGISTRY_REGISTER,
+                        register_request(&place, with_provenance_member(members[index], cJSON_CreateString(""))),
+                        NULL));
+        CHECK(malformed(REGISTRY_REGISTER,
+                        register_request(&place, with_provenance_member(members[index], cJSON_CreateNumber(1))),
+                        NULL));
     }
     for (size_t index = 0; index < sizeof bad_times / sizeof bad_times[0]; index++) {
         cJSON *time = cJSON_CreateString(bad_times[index]);
@@ -511,11 +498,12 @@ static void unusable_places_are_refused(void) {
     cJSON *relative = register_request(&place, registration_for("h", "1", "npm", "/x"));
     cJSON_ReplaceItemInObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(relative, "places"), "state",
                                            cJSON_CreateString("relative/state"));
-    CHECK(refuses(runtime_registry_register, relative));
+    CHECK(malformed(REGISTRY_REGISTER, relative, "state"));
     cJSON *no_cache = id_request(&place, "h");
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(no_cache, "places"), "cache");
-    CHECK(refuses(runtime_registry_forget, no_cache));
-    CHECK(refuses(runtime_registry_list, cJSON_CreateObject()));
+    CHECK(malformed(REGISTRY_FORGET, no_cache, "cache"));
+    CHECK(malformed(REGISTRY_LIST, cJSON_CreateObject(), "state"));
+    CHECK(malformed(REGISTRY_GET, cJSON_CreateObject(), "state"));
 }
 
 static void expect_file_bytes(const char *path, const char *expected, const char *label) {
@@ -533,15 +521,15 @@ static void an_unreadable_registration_is_reported_and_never_overwritten(void) {
     snprintf(path, sizeof path, "%s/hosts/broken.json", place.state);
     write_raw_file(path, "{ not json");
 
-    CHECK(refusal_names(runtime_registry_register,
-                        register_request(&place, registration_for("broken", "1.0.0", "npm", "/x")), "broken.json"));
+    CHECK(refused(REGISTRY_REGISTER, register_request(&place, registration_for("broken", "1.0.0", "npm", "/x")),
+                  "broken.json"));
     expect_file_bytes(path, "{ not json", "register left the file");
-    CHECK(refuses(runtime_registry_get, id_request(&place, "broken")));
-    CHECK(refuses(runtime_registry_forget, id_request(&place, "broken")));
+    CHECK(refused(REGISTRY_GET, id_request(&place, "broken"), "broken.json"));
+    CHECK(refused(REGISTRY_FORGET, id_request(&place, "broken"), "broken.json"));
     expect_file_bytes(path, "{ not json", "get and forget left the file");
 
-    answer listed = call(runtime_registry_list, request_for(&place));
-    CHECK(listed.status == SPISOR_STATUS_SUCCESS);
+    answer listed = call(REGISTRY_LIST, request_for(&place));
+    CHECK(listed.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(listed.tree, "hosts")) == 1);
     const cJSON *unreadable = cJSON_GetObjectItemCaseSensitive(listed.tree, "unreadable");
     CHECK(cJSON_GetArraySize(unreadable) == 1);
@@ -549,7 +537,7 @@ static void an_unreadable_registration_is_reported_and_never_overwritten(void) {
     cJSON_Delete(listed.tree);
 
     write_raw_file(path, "{\"id\": \"someone-else\"}");
-    CHECK(refuses(runtime_registry_get, id_request(&place, "broken")));
+    CHECK(refused(REGISTRY_GET, id_request(&place, "broken"), "broken.json"));
 }
 
 #ifdef _WIN32
@@ -641,8 +629,8 @@ static void forget_deletes_links_and_never_follows_them(void) {
     int linked = create_directory_link_or_skip(directory_link, outside_directory) &&
                  create_link_or_skip(file_link, outside_file);
     if (linked) {
-        answer forgotten = call(runtime_registry_forget, id_request(&place, "linked"));
-        CHECK(forgotten.status == SPISOR_STATUS_SUCCESS);
+        answer forgotten = call(REGISTRY_FORGET, id_request(&place, "linked"));
+        CHECK(forgotten.status == SPISOR_OK);
         cJSON_Delete(forgotten.tree);
         CHECK(!host_directory_exists(place.state, "linked"));
         CHECK(!is_link(directory_link) && !is_link(file_link));

@@ -27,6 +27,13 @@ cJSON *runtime_refusal(const char *message, const char *fix);
 cJSON *runtime_refusal_of(const spisor_refusal *refusal);
 
 /**
+ * Calls an operation of this library with argument, which it deletes: its answer, or NULL with *refusal as the
+ * operation set it, NULL when memory ran out. A NULL argument, as a builder answers when memory runs out, is answered
+ * as memory running out.
+ */
+cJSON *runtime_call_operation(runtime_json_operation operation, cJSON *argument, cJSON **refusal);
+
+/**
  * Calls another json function of this library with argument, which it frees: its answer, or NULL with
  * *refusal set to the refusal it answered (NULL when memory ran out).
  */

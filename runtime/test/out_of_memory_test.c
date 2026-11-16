@@ -23,6 +23,7 @@
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 #include "scratch_directory.h"
@@ -50,6 +51,7 @@ typedef struct scratch {
     char secrets_file[1200];
     char config_directory[1200];
     char programs[1200];
+    char state[1200];
 } scratch;
 
 static scratch place;
@@ -248,6 +250,45 @@ static spisor_status find_on_path(void) {
     return status;
 }
 
+static spisor_status register_a_host(void) {
+    const runtime_registry_definition *registry = runtime_registry_definition_of();
+    runtime_registry_provenance provenance = SPISOR_INIT(runtime_registry_provenance);
+    runtime_registry_start start = SPISOR_INIT(runtime_registry_start);
+    runtime_registration registration = SPISOR_INIT(runtime_registration);
+    runtime_registry_register_argument argument = SPISOR_INIT(runtime_registry_register_argument);
+    runtime_registry_registration_answer answer = SPISOR_INIT(runtime_registry_registration_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    provenance.method = "npm";
+    provenance.version = "1.0.0";
+    provenance.location = place.home;
+    provenance.os = "linux";
+    provenance.architecture = "x64";
+    provenance.installed_at = "2026-11-02T10:00:00Z";
+    provenance.options = &config.root;
+    start.runtime = RUNTIME_REGISTRY_START_NATIVE;
+    start.entry = "bin/host";
+    registration.id = "claude";
+    registration.version = "1.0.0";
+    registration.home = place.home;
+    registration.application = &names.root;
+    registration.provenance = &provenance;
+    registration.start = &start;
+    argument.state = place.state;
+    argument.registration = &registration;
+    status = registry->register_host(registry->context, &argument, &answer, &refusal);
+    registry->release_answer(registry->context, &answer);
+    registry->release_refusal(registry->context, &refusal);
+    return status;
+}
+
+/** Whether a register left no record behind. */
+static int registered_nothing(void) {
+    char record[1300];
+    snprintf(record, sizeof record, "%s/hosts/claude.json", place.state);
+    return !spisor_file_exists(record);
+}
+
 /** Whether log's write left no line behind: no logs folder under the home at all. */
 static int appended_nothing(void) {
     char logs[1200];
@@ -309,6 +350,7 @@ int main(void) {
     snprintf(place.secrets_file, sizeof place.secrets_file, "%s/state/secrets.json", place.base);
     snprintf(place.config_directory, sizeof place.config_directory, "%s/config", place.home);
     snprintf(place.programs, sizeof place.programs, "%s/programs", place.base);
+    snprintf(place.state, sizeof place.state, "%s/state", place.base);
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
@@ -324,6 +366,7 @@ int main(void) {
     every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
     every_failure_answers_out_of_memory("fetch's get", fetch_a_file, NULL);
     every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
+    every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

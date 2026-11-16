@@ -12,7 +12,6 @@
 #include "segment.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
-#include "spisor/json_kind.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
@@ -25,21 +24,21 @@ typedef struct registry_request {
     const char *cache;
 } registry_request;
 
-typedef int32_t (*registry_handler)(const registry_request *request, uint8_t **out, size_t *out_len);
+typedef cJSON *(*registry_handler)(const registry_request *request, cJSON **refusal);
 
-static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    return SPISOR_STATUS_OUT_OF_MEMORY;
+static cJSON *out_of_memory(cJSON **refusal) {
+    *refusal = NULL;
+    return NULL;
 }
 
-static int32_t answer_with(cJSON *result, uint8_t **out, size_t *out_len) {
-    if (result == NULL) {
-        return out_of_memory(out, out_len);
-    }
-    int32_t status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+static cJSON *answer_with(cJSON *result, cJSON **refusal) {
+    *refusal = NULL;
+    return result;
+}
+
+static cJSON *fail(const char *message, const char *fix, cJSON **refusal) {
+    *refusal = runtime_refusal(message, fix);
+    return NULL;
 }
 
 static char *join_two(const char *base, const char *name) {
@@ -174,10 +173,10 @@ static void unreadable_fix(const char *state, const char *id, char *fix, size_t 
     free(path);
 }
 
-static int32_t refuse_unreadable(const char *state, const char *id, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_unreadable(const char *state, const char *id, cJSON **refusal) {
     char fix[2048];
     unreadable_fix(state, id, fix, sizeof fix);
-    return spisor_fail(UNREADABLE_MESSAGE, fix, out, out_len);
+    return fail(UNREADABLE_MESSAGE, fix, refusal);
 }
 
 int runtime_registration_usable(const cJSON *registration, const char *id, const char *state, cJSON **refusal) {
@@ -215,29 +214,28 @@ cJSON *runtime_usable_registration(const char *state, const char *id, cJSON **re
     return registration;
 }
 
-static int32_t refuse_id(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no usable host id",
-                       "send {\"id\": \"<host id>\"}, a portable path segment with no surrounding whitespace", out,
-                       out_len);
+static cJSON *refuse_id(cJSON **refusal) {
+    return fail("the argument carries no usable host id",
+                "send {\"id\": \"<host id>\"}, a portable path segment with no surrounding whitespace", refusal);
 }
 
-static int32_t refuse_unwritable(const char *state, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_unwritable(const char *state, cJSON **refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s/hosts can be created and written", state);
-    return spisor_fail("the host's registration could not be written", fix, out, out_len);
+    return fail("the host's registration could not be written", fix, refusal);
 }
 
-static int32_t refuse_answer(runtime_registry_answer answer, const registry_request *request, const char *id,
-                             uint8_t **out, size_t *out_len) {
+static cJSON *refuse_answer(runtime_registry_answer answer, const registry_request *request, const char *id,
+                            cJSON **refusal) {
     switch (answer) {
     case RUNTIME_REGISTRY_UNREADABLE:
-        return refuse_unreadable(request->state, id, out, out_len);
+        return refuse_unreadable(request->state, id, refusal);
     case RUNTIME_REGISTRY_INVALID:
-        return refuse_id(out, out_len);
+        return refuse_id(refusal);
     case RUNTIME_REGISTRY_UNWRITABLE:
-        return refuse_unwritable(request->state, out, out_len);
+        return refuse_unwritable(request->state, refusal);
     default:
-        return out_of_memory(out, out_len);
+        return out_of_memory(refusal);
     }
 }
 
@@ -369,14 +367,14 @@ static const char *registration_defect(const cJSON *registration) {
     return start_defect_of(cJSON_GetObjectItemCaseSensitive(registration, "start"));
 }
 
-static int32_t refuse_registration(const char *defect, uint8_t **out, size_t *out_len) {
-    return spisor_fail(defect,
-                       "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\": <absolute path>, \"application\"?, "
-                       "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, \"os\", \"architecture\", "
-                       "\"installedAt\": <ISO 8601 UTC>, ...}, "
-                       "\"requiresCommand\", \"start\"?: {\"runtime\": \"javascript\" | \"jvm\" | \"native\", "
-                       "\"entry\": <relative path inside the bundle>}}}",
-                       out, out_len);
+static cJSON *refuse_registration(const char *defect, cJSON **refusal) {
+    return fail(defect,
+                "send {\"registration\": {\"id\", \"kind\": \"host\", \"version\", \"home\": <absolute path>, "
+                "\"application\"?, "
+                "\"provenance\": {\"method\", \"version\", \"location\": <absolute path>, \"os\", \"architecture\", "
+                "\"installedAt\": <ISO 8601 UTC>, ...}, "
+                "\"requiresCommand\", \"start\"?: {\"runtime\": \"javascript\" | \"jvm\" | \"native\", "
+                "\"entry\": <relative path inside the bundle>}}}", refusal);
 }
 
 static int add_copy(cJSON *target, const cJSON *source, const char *member) {
@@ -434,79 +432,80 @@ static cJSON *merged_registration(const cJSON *given, const cJSON *stored, int k
     return merged;
 }
 
-static int32_t store_and_answer(const registry_request *request, cJSON *merged, uint8_t **out, size_t *out_len) {
+/**
+ * Stores merged, which it takes, answering {registration}; the answer is built first, so memory running out writes
+ * nothing.
+ */
+static cJSON *store_and_answer(const registry_request *request, cJSON *merged, cJSON **refusal) {
+    cJSON *result = cJSON_CreateObject();
+    if (result == NULL || !cJSON_AddItemToObject(result, "registration", merged)) {
+        cJSON_Delete(result);
+        cJSON_Delete(merged);
+        return out_of_memory(refusal);
+    }
     runtime_registry_answer stored = runtime_registry_store(request->state, merged);
     if (stored != RUNTIME_REGISTRY_OK) {
-        int32_t status = refuse_answer(stored, request, string_member(merged, "id"), out, out_len);
-        cJSON_Delete(merged);
-        return status;
-    }
-    cJSON *result = cJSON_CreateObject();
-    if (result != NULL && !cJSON_AddItemToObject(result, "registration", merged)) {
+        cJSON *answer = refuse_answer(stored, request, string_member(merged, "id"), refusal);
         cJSON_Delete(result);
-        result = NULL;
+        return answer;
     }
-    if (result == NULL) {
-        cJSON_Delete(merged);
-    }
-    return answer_with(result, out, out_len);
+    return answer_with(result, refusal);
 }
 
-static int32_t refuse_unlocked(const char *state, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_unlocked(const char *state, cJSON **refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s/hosts/.lock can be created, opened and locked", state);
-    return spisor_fail("the registry lock could not be taken; nothing was changed", fix, out, out_len);
+    return fail("the registry lock could not be taken; nothing was changed", fix, refusal);
 }
 
-static int32_t register_locked(const registry_request *request, const cJSON *given, int keep_stored_provenance,
-                               uint8_t **out, size_t *out_len) {
+static cJSON *register_locked(const registry_request *request, const cJSON *given, int keep_stored_provenance,
+                              cJSON **refusal) {
     const char *id = string_member(given, "id");
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
     if (loaded != RUNTIME_REGISTRY_OK && loaded != RUNTIME_REGISTRY_ABSENT) {
-        return refuse_answer(loaded, request, id, out, out_len);
+        return refuse_answer(loaded, request, id, refusal);
     }
     cJSON *merged = merged_registration(given, stored, keep_stored_provenance);
     cJSON_Delete(stored);
     if (merged == NULL) {
-        return out_of_memory(out, out_len);
+        return out_of_memory(refusal);
     }
-    return store_and_answer(request, merged, out, out_len);
+    return store_and_answer(request, merged, refusal);
 }
 
-static int32_t register_with(const registry_request *request, int keep_stored_provenance, uint8_t **out,
-                             size_t *out_len) {
+static cJSON *register_with(const registry_request *request, int keep_stored_provenance, cJSON **refusal) {
     const cJSON *given = cJSON_GetObjectItemCaseSensitive(request->argument, "registration");
     const char *defect = registration_defect(given);
     if (defect != NULL) {
-        return refuse_registration(defect, out, out_len);
+        return refuse_registration(defect, refusal);
     }
     spisor_lock *guard = runtime_hosts_lock(request->state);
     if (guard == NULL) {
-        return refuse_unlocked(request->state, out, out_len);
+        return refuse_unlocked(request->state, refusal);
     }
-    int32_t status = register_locked(request, given, keep_stored_provenance, out, out_len);
+    cJSON *answer = register_locked(request, given, keep_stored_provenance, refusal);
     spisor_unlock(guard);
-    return status;
+    return answer;
 }
 
-static int32_t register_host(const registry_request *request, uint8_t **out, size_t *out_len) {
-    return register_with(request, 0, out, out_len);
+static cJSON *register_host(const registry_request *request, cJSON **refusal) {
+    return register_with(request, 0, refusal);
 }
 
-static int32_t register_host_keeping_provenance(const registry_request *request, uint8_t **out, size_t *out_len) {
-    return register_with(request, 1, out, out_len);
+static cJSON *register_host_keeping_provenance(const registry_request *request, cJSON **refusal) {
+    return register_with(request, 1, refusal);
 }
 
-static int32_t get_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+static cJSON *get_host(const registry_request *request, cJSON **refusal) {
     const char *id = string_member(request->argument, "id");
     if (id == NULL) {
-        return refuse_id(out, out_len);
+        return refuse_id(refusal);
     }
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
     if (loaded != RUNTIME_REGISTRY_OK && loaded != RUNTIME_REGISTRY_ABSENT) {
-        return refuse_answer(loaded, request, id, out, out_len);
+        return refuse_answer(loaded, request, id, refusal);
     }
     cJSON *result = cJSON_CreateObject();
     if (result != NULL && stored != NULL && !cJSON_AddItemToObject(result, "registration", stored)) {
@@ -516,7 +515,7 @@ static int32_t get_host(const registry_request *request, uint8_t **out, size_t *
     if (result == NULL) {
         cJSON_Delete(stored);
     }
-    return answer_with(result, out, out_len);
+    return answer_with(result, refusal);
 }
 
 static int is_orphan(const cJSON *registration) {
@@ -597,22 +596,22 @@ static int list_each(const registry_request *request, const runtime_directory_li
     return complete;
 }
 
-static int32_t refuse_unlistable(const char *state, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_unlistable(const char *state, cJSON **refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s/hosts is a readable directory", state);
-    return spisor_fail("the registry directory could not be read", fix, out, out_len);
+    return fail("the registry directory could not be read", fix, refusal);
 }
 
-static int32_t list_hosts(const registry_request *request, uint8_t **out, size_t *out_len) {
+static cJSON *list_hosts(const registry_request *request, cJSON **refusal) {
     char *directory = join_two(request->state, "hosts");
     runtime_directory_listing listing;
     if (directory == NULL) {
-        return out_of_memory(out, out_len);
+        return out_of_memory(refusal);
     }
     int listed = runtime_list_directory(directory, &listing);
     free(directory);
     if (!listed) {
-        return refuse_unlistable(request->state, out, out_len);
+        return refuse_unlistable(request->state, refusal);
     }
     cJSON *result = cJSON_CreateObject();
     cJSON *hosts = result == NULL ? NULL : cJSON_AddArrayToObject(result, "hosts");
@@ -623,7 +622,7 @@ static int32_t list_hosts(const registry_request *request, uint8_t **out, size_t
         cJSON_Delete(result);
         result = NULL;
     }
-    return answer_with(result, out, out_len);
+    return answer_with(result, refusal);
 }
 
 static int is_unreversed(const cJSON *change) {
@@ -639,11 +638,10 @@ static int count_unreversed(const cJSON *registration) {
     return count;
 }
 
-static int32_t refuse_unreversed(const char *id, int count, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_unreversed(const char *id, int count, cJSON **refusal) {
     char message[512];
     snprintf(message, sizeof message, "the host %s still holds %d change(s) that were not reversed", id, count);
-    return spisor_fail(message, "reverse the host's recorded changes first; its registration was left in place", out,
-                       out_len);
+    return fail(message, "reverse the host's recorded changes first; its registration was left in place", refusal);
 }
 
 static int remove_host_directory(const char *place, const char *id) {
@@ -660,64 +658,71 @@ static int remove_registration_file(const char *state, const char *id) {
     return removed;
 }
 
-static int32_t refuse_incomplete_removal(const char *id, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_incomplete_removal(const char *id, cJSON **refusal) {
     char message[512];
     snprintf(message, sizeof message, "the host %s could not be removed completely", id);
-    return spisor_fail(message, "close whatever holds its files open and forget it again; the registration is deleted "
-                                "last, so nothing was orphaned",
-                       out, out_len);
+    return fail(message, "close whatever holds its files open and forget it again; the registration is deleted "
+                "last, so nothing was orphaned", refusal);
 }
 
-static int32_t answer_forgotten(int forgotten, uint8_t **out, size_t *out_len) {
+/** {forgotten}, built before anything is removed, so memory running out removes nothing. */
+static cJSON *forgotten_answer(int forgotten) {
     cJSON *result = cJSON_CreateObject();
     if (result != NULL && cJSON_AddBoolToObject(result, "forgotten", forgotten) == NULL) {
         cJSON_Delete(result);
         result = NULL;
     }
-    return answer_with(result, out, out_len);
+    return result;
 }
 
-static int32_t forget_locked(const registry_request *request, const char *id, uint8_t **out, size_t *out_len) {
+static cJSON *forget_locked(const registry_request *request, const char *id, cJSON **refusal) {
     cJSON *stored = NULL;
     runtime_registry_answer loaded = runtime_registry_load(request->state, id, &stored);
     if (loaded != RUNTIME_REGISTRY_OK && loaded != RUNTIME_REGISTRY_ABSENT) {
-        return refuse_answer(loaded, request, id, out, out_len);
+        return refuse_answer(loaded, request, id, refusal);
     }
     int unreversed = count_unreversed(stored);
     cJSON_Delete(stored);
     if (unreversed > 0) {
-        return refuse_unreversed(id, unreversed, out, out_len);
+        return refuse_unreversed(id, unreversed, refusal);
+    }
+    cJSON *result = forgotten_answer(loaded == RUNTIME_REGISTRY_OK);
+    if (result == NULL) {
+        return out_of_memory(refusal);
     }
     int removed = remove_host_directory(request->state, id) && remove_host_directory(request->cache, id) &&
                   remove_registration_file(request->state, id);
-    return removed ? answer_forgotten(loaded == RUNTIME_REGISTRY_OK, out, out_len)
-                   : refuse_incomplete_removal(id, out, out_len);
+    if (!removed) {
+        cJSON_Delete(result);
+        return refuse_incomplete_removal(id, refusal);
+    }
+    return answer_with(result, refusal);
 }
 
-static int32_t forget_host(const registry_request *request, uint8_t **out, size_t *out_len) {
+static cJSON *forget_host(const registry_request *request, cJSON **refusal) {
     const char *id = string_member(request->argument, "id");
     if (id == NULL) {
-        return refuse_id(out, out_len);
+        return refuse_id(refusal);
     }
     spisor_lock *guard = runtime_hosts_lock(request->state);
     if (guard == NULL) {
-        return refuse_unlocked(request->state, out, out_len);
+        return refuse_unlocked(request->state, refusal);
     }
-    int32_t status = forget_locked(request, id, out, out_len);
+    cJSON *answer = forget_locked(request, id, refusal);
     spisor_unlock(guard);
-    return status;
+    return answer;
 }
 
-static int32_t forget_host_locked(const registry_request *request, uint8_t **out, size_t *out_len) {
+static cJSON *forget_host_locked(const registry_request *request, cJSON **refusal) {
     const char *id = string_member(request->argument, "id");
-    return id == NULL ? refuse_id(out, out_len) : forget_locked(request, id, out, out_len);
+    return id == NULL ? refuse_id(refusal) : forget_locked(request, id, refusal);
 }
 
-static int32_t refuse_places(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no usable places",
-                       "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}}; "
-                       "cache is needed only by forget",
-                       out, out_len);
+static cJSON *refuse_places(cJSON **refusal) {
+    return fail("the argument carries no usable places",
+                "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}}; "
+                "cache is needed only by forget",
+                refusal);
 }
 
 static const char *absolute_place(const cJSON *places, const char *name) {
@@ -725,45 +730,44 @@ static const char *absolute_place(const cJSON *places, const char *name) {
     return place != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place) ? place : NULL;
 }
 
-static int32_t serve(const uint8_t *in, size_t in_len, int needs_cache, registry_handler handler, uint8_t **out,
-                     size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const cJSON *places = cJSON_GetObjectItemCaseSensitive(call.argument, "places");
-    registry_request request = {call.argument, absolute_place(places, "state"), absolute_place(places, "cache")};
+static cJSON *serve(const cJSON *argument, int needs_cache, registry_handler handler, cJSON **refusal) {
+    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
+    registry_request request = {argument, absolute_place(places, "state"), absolute_place(places, "cache")};
+    *refusal = NULL;
     if (request.state == NULL || (needs_cache && request.cache == NULL)) {
-        status = refuse_places(out, out_len);
-    } else {
-        status = handler(&request, out, out_len);
+        return refuse_places(refusal);
     }
-    spisor_discard_call(&call);
-    return status;
+    return handler(&request, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_registry_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, 0, register_host, out, out_len);
+cJSON *runtime_registry_register_host(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 0, register_host, refusal);
 }
 
-int32_t runtime_registry_register_first_provenance(const uint8_t *in, size_t in_len, uint8_t **out,
-                                                   size_t *out_len) {
-    return serve(in, in_len, 0, register_host_keeping_provenance, out, out_len);
+cJSON *runtime_registry_register_first_provenance(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 0, register_host_keeping_provenance, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_registry_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, 0, get_host, out, out_len);
+cJSON *runtime_registry_get_host(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 0, get_host, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_registry_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, 0, list_hosts, out, out_len);
+cJSON *runtime_registry_list_hosts(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 0, list_hosts, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_registry_forget(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, 1, forget_host, out, out_len);
+cJSON *runtime_registry_forget_host(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 1, forget_host, refusal);
 }
 
-int32_t runtime_registry_forget_locked(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, 1, forget_host_locked, out, out_len);
+cJSON *runtime_registry_forget_locked(const cJSON *argument, cJSON **refusal) {
+    return serve(argument, 1, forget_host_locked, refusal);
+}
+
+const char *runtime_registration_defect(const cJSON *registration) {
+    return registration_defect(registration);
+}
+
+int runtime_registry_is_host_id(const char *id) {
+    return id != NULL && is_host_id(id);
 }

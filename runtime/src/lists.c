@@ -131,7 +131,7 @@ static cJSON *registered_rows(const cJSON *places, cJSON **refusal) {
         cJSON_Delete(request);
         request = NULL;
     }
-    cJSON *listed = runtime_call_or_refuse(runtime_registry_list, request, refusal);
+    cJSON *listed = runtime_call_operation(runtime_registry_list_hosts, request, refusal);
     cJSON *rows = listed == NULL ? NULL : cJSON_CreateArray();
     const cJSON *hosts = rows == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(listed, "hosts");
     const cJSON *entry;
