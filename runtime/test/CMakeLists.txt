@@ -97,7 +97,8 @@ if(WIN32)
 endif()
 
 runtime_test(marketplace_build_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_build>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+    $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks> $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(marketplace_build_test PRIVATE ${runtime_fetch_libraries})
 target_compile_definitions(marketplace_build_test PRIVATE
     RUNTIME_MARKETPLACE_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace.schema.json"
@@ -107,6 +108,7 @@ if(WIN32)
 endif()
 
 runtime_test(marketplace_sources_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(marketplace_sources_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
@@ -114,6 +116,7 @@ if(WIN32)
 endif()
 
 runtime_test(marketplace_memory_test $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(marketplace_memory_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
@@ -251,7 +254,7 @@ target_compile_definitions(settings_lock_test PRIVATE RUNTIME_SCRATCH_PATH="${CM
 add_test(NAME settings_lock_test COMMAND settings_lock_test)
 
 set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
-    ${runtime_hosts_test_objects})
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> ${runtime_hosts_test_objects})
 runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

@@ -19,6 +19,7 @@
 #include "runtime/identity.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
+#include "runtime/marketplace.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/registry.h"
@@ -49,6 +50,7 @@ static void take_every_definition(void) {
         runtime_changes_definition_of();
         runtime_commands_definition_of();
         runtime_lists_definition_of();
+        runtime_marketplace_definition_of();
     }
 }
 

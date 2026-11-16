@@ -8,6 +8,7 @@
 
 #include "catalog_call.h"
 #include "check.h"
+#include "marketplace_call.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "marketplace_name_lookup.h"
@@ -61,14 +62,14 @@ static catalog_answer sources_of(const char *marketplaces_json) {
     cJSON_AddItemToObject(settings, "marketplaces", parsed(marketplaces_json));
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "settings", settings);
-    return call_catalog(runtime_marketplace_sources, argument);
+    return marketplace_call(MARKETPLACE_SOURCES, argument);
 }
 
 static catalog_answer read_text(const char *id, const char *text) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "source", source_object(id, "https://example.com/marketplace.json"));
     cJSON_AddStringToObject(argument, "text", text);
-    return call_catalog(runtime_marketplace_read, argument);
+    return marketplace_call(MARKETPLACE_READ, argument);
 }
 
 static catalog_answer read_fetched(const char *id, const char *url) {
@@ -77,7 +78,7 @@ static catalog_answer read_fetched(const char *id, const char *url) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "source", source_object(id, url));
     cJSON_AddStringToObject(argument, "destination", destination);
-    return call_catalog(runtime_marketplace_read, argument);
+    return marketplace_call(MARKETPLACE_READ, argument);
 }
 
 static const cJSON *entry_of(const catalog_answer answer, int index) {
@@ -97,7 +98,7 @@ static catalog_answer lookup_in(const char *name) {
     cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
     cJSON_AddItemToArray(copies, copy_pair("other", COPY_TWO));
     cJSON_AddStringToObject(argument, "name", name);
-    return call_catalog(runtime_marketplace_lookup, argument);
+    return marketplace_call(MARKETPLACE_LOOKUP, argument);
 }
 
 static catalog_answer lookup_three(const char *middle_copy, const char *name) {
@@ -107,7 +108,7 @@ static catalog_answer lookup_three(const char *middle_copy, const char *name) {
     cJSON_AddItemToArray(copies, copy_pair("middle", middle_copy));
     cJSON_AddItemToArray(copies, copy_pair("other", COPY_TWO));
     cJSON_AddStringToObject(argument, "name", name);
-    return call_catalog(runtime_marketplace_lookup, argument);
+    return marketplace_call(MARKETPLACE_LOOKUP, argument);
 }
 
 static int is_not_found(const catalog_answer answer) {
@@ -136,7 +137,7 @@ static void sources_answers_each_source(void) {
 }
 
 static void sources_without_the_setting_answers_none(void) {
-    catalog_answer answer = call_catalog(runtime_marketplace_sources, parsed("{\"settings\":{}}"));
+    catalog_answer answer = marketplace_call(MARKETPLACE_SOURCES, parsed("{\"settings\":{}}"));
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     CHECK(cJSON_GetArraySize(value_at(answer.tree, "sources")) == 0);
     cJSON_Delete(answer.tree);
@@ -182,7 +183,7 @@ static void two_sources_with_one_id_are_refused_naming_both(void) {
 }
 
 static void sources_refuses_a_call_without_settings(void) {
-    catalog_answer answer = call_catalog(runtime_marketplace_sources, parsed("{}"));
+    catalog_answer answer = marketplace_call(MARKETPLACE_SOURCES, parsed("{}"));
     expect_refusal(answer, "settings", "no settings");
     cJSON_Delete(answer.tree);
 }
@@ -292,17 +293,16 @@ static void refuses_a_copy_naming_two_entries_alike(void) {
 }
 
 static void refuses_a_provider_source_and_an_unusable_call(void) {
-    catalog_answer provider = call_catalog(
-        runtime_marketplace_read, parsed("{\"source\":{\"id\":\"private\",\"provider\":\"corp\"},\"text\":\"{}\"}"));
+    catalog_answer provider = marketplace_call(
+        MARKETPLACE_READ, parsed("{\"source\":{\"id\":\"private\",\"provider\":\"corp\"},\"text\":\"{}\"}"));
     expect_refusal(provider, "private", "provider source");
     cJSON_Delete(provider.tree);
-    catalog_answer bad_id = call_catalog(
-        runtime_marketplace_read,
+    catalog_answer bad_id = marketplace_call(MARKETPLACE_READ,
         parsed("{\"source\":{\"id\":\"Bad Id\",\"url\":\"https://e.com/m.json\"},\"text\":\"{}\"}"));
     expect_refusal(bad_id, "source", "bad id");
     cJSON_Delete(bad_id.tree);
-    catalog_answer neither = call_catalog(
-        runtime_marketplace_read, parsed("{\"source\":{\"id\":\"ok\",\"url\":\"https://e.com/m.json\"}}"));
+    catalog_answer neither = marketplace_call(
+        MARKETPLACE_READ, parsed("{\"source\":{\"id\":\"ok\",\"url\":\"https://e.com/m.json\"}}"));
     expect_refusal(neither, "text", "neither text nor destination");
     cJSON_Delete(neither.tree);
 }
@@ -353,7 +353,7 @@ static void the_same_id_in_two_marketplaces_settles_on_the_first(void) {
     cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
     cJSON_AddItemToArray(copies, copy_pair("mirror", COPY_MIRROR));
     cJSON_AddStringToObject(argument, "name", "runtime");
-    catalog_answer answer = call_catalog(runtime_marketplace_lookup, argument);
+    catalog_answer answer = marketplace_call(MARKETPLACE_LOOKUP, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     check_text(text_at(answer.tree, "id"), "github:1", "id");
     check_text(text_at(answer.tree, "marketplace"), "spisor", "first marketplace in source order");
@@ -408,8 +408,7 @@ static void lookup_refuses_an_unusable_call(void) {
     catalog_answer empty_name = lookup_in("");
     expect_refusal(empty_name, "name", "empty name");
     cJSON_Delete(empty_name.tree);
-    catalog_answer list = call_catalog(
-        runtime_marketplace_lookup,
+    catalog_answer list = marketplace_call(MARKETPLACE_LOOKUP,
         parsed("{\"name\":\"x\",\"copies\":[{\"source\":{\"id\":\"spisor\"},\"copy\":" LIST_TEXT "}]}"));
     expect_refusal(list, "spisor", "a list in place of a copy");
     cJSON_Delete(list.tree);
@@ -417,7 +416,7 @@ static void lookup_refuses_an_unusable_call(void) {
     cJSON *copies = cJSON_GetObjectItemCaseSensitive(twice, "copies");
     cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_ONE));
     cJSON_AddItemToArray(copies, copy_pair("spisor", COPY_TWO));
-    catalog_answer duplicate = call_catalog(runtime_marketplace_lookup, twice);
+    catalog_answer duplicate = marketplace_call(MARKETPLACE_LOOKUP, twice);
     expect_refusal(duplicate, "spisor", "two copies of one source");
     cJSON_Delete(duplicate.tree);
 }
@@ -429,7 +428,7 @@ static void a_destination_that_exists_is_refused_and_left_alone(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "source", source_object("spisor", "https://example.com/m.json"));
     cJSON_AddStringToObject(argument, "destination", path);
-    catalog_answer answer = call_catalog(runtime_marketplace_read, argument);
+    catalog_answer answer = marketplace_call(MARKETPLACE_READ, argument);
     expect_refusal(answer, "already exists", "existing destination");
     cJSON_Delete(answer.tree);
     CHECK(spisor_file_exists(path));
@@ -441,7 +440,7 @@ static void a_url_that_is_not_file_or_https_is_refused_by_read(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "source", source_object("spisor", "ftp://example.com/m.json"));
     cJSON_AddStringToObject(argument, "destination", destination);
-    catalog_answer answer = call_catalog(runtime_marketplace_read, argument);
+    catalog_answer answer = marketplace_call(MARKETPLACE_READ, argument);
     expect_refusal(answer, "file: or https:", "scheme");
     CHECK(message_names(answer, "spisor"));
     cJSON_Delete(answer.tree);

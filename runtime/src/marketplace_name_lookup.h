@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
+#include "cJSON.h"
 
 /**
  * marketplace.lookup: {copies: [{source, copy}], name} answers {id, marketplace}, the id of the one entry the name
@@ -16,6 +16,6 @@
  * marketplace that has no copy answers notFound. Names are compared as written, since an import name is lowercase.
  * Refuses a copy that breaks marketplace-copy.schema.json and two copies from one source, naming the source.
  */
-RUNTIME_EXPORT int32_t runtime_marketplace_lookup(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_marketplace_lookup_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

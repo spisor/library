@@ -24,6 +24,7 @@
 #include "runtime/identity.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
+#include "runtime/marketplace.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/registry.h"
@@ -440,6 +441,29 @@ static spisor_status list_applications(void) {
     return status;
 }
 
+static spisor_status remember_a_name(void) {
+    const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
+    runtime_marketplace_remember_argument argument = SPISOR_INIT(runtime_marketplace_remember_argument);
+    runtime_marketplace_remember_answer answer = SPISOR_INIT(runtime_marketplace_remember_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.state = place.state;
+    argument.marketplace = "spisor";
+    argument.name = "calendar";
+    argument.id = "github:7";
+    status = marketplace->remember(marketplace->context, &argument, &answer, &refusal);
+    marketplace->release_remember_answer(marketplace->context, &answer);
+    marketplace->release_refusal(marketplace->context, &refusal);
+    return status;
+}
+
+/** Whether a remember left no record of names behind. */
+static int remembered_nothing(void) {
+    char record[1300];
+    snprintf(record, sizeof record, "%s/marketplace-names.json", place.state);
+    return !spisor_file_exists(record);
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -536,6 +560,7 @@ int main(void) {
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
     every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
     every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
+    every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);

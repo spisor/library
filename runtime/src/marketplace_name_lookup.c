@@ -183,7 +183,7 @@ static cJSON *answer_for(const match *matches, size_t count) {
     return distinct_id_count(matches, count) == 1 ? found_answer(&matches[0]) : ambiguous_answer(matches, count);
 }
 
-static cJSON *look_up(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_marketplace_lookup_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *copies = cJSON_GetObjectItemCaseSensitive(argument, "copies");
     const char *name = text_of(argument, "name");
     if (!cJSON_IsArray(copies)) {
@@ -201,8 +201,4 @@ static cJSON *look_up(const cJSON *argument, cJSON **refusal) {
     }
     free(matches);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_marketplace_lookup(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, look_up);
 }

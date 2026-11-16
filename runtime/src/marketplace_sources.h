@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
+#include "cJSON.h"
 
 /**
  * marketplace.sources: {settings} answers {sources, skipped} from the setting marketplaces, an array of {id, url} where
@@ -19,6 +19,6 @@
 /** Whether url is a file: or https: url with something after the scheme, the only kinds a source may name. */
 int runtime_marketplace_is_usable_url(const char *url);
 
-RUNTIME_EXPORT int32_t runtime_marketplace_sources(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_marketplace_sources_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

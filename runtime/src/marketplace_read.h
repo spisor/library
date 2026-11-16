@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
+#include "cJSON.h"
 
 /** The most bytes a marketplace copy may have, which the entry limit of its schema keeps well inside. */
 #define RUNTIME_MARKETPLACE_MAXIMUM_BYTES (8 * 1024 * 1024)
@@ -23,6 +23,6 @@
  * @implNote A refusal is per call, so a host reading several sources calls once for each and one bad source stops no
  * other.
  */
-RUNTIME_EXPORT int32_t runtime_marketplace_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_marketplace_read_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

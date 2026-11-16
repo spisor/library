@@ -9,6 +9,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "install_settings.h"
+#include "json_service.h"
 #include "marketplace_read.h"
 #include "marketplace_sources.h"
 #include "paths.h"
@@ -57,7 +58,7 @@ static cJSON *listed_sources(const host_context *context, cJSON **refusal) {
         cJSON_Delete(argument);
         return NULL;
     }
-    return host_call(runtime_marketplace_sources, argument, refusal);
+    return runtime_call_operation(runtime_marketplace_sources_operation, argument, refusal);
 }
 
 static char *fetch_folder(const host_context *context, int index) {
@@ -84,7 +85,8 @@ static cJSON *fetched_copy(const host_context *context, const cJSON *source, int
     char *destination = folder == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     cJSON *copy = NULL;
     if (destination != NULL && runtime_remove_tree(folder) == 1 && spisor_make_directories(folder) == 1) {
-        cJSON *answer = host_call(runtime_marketplace_read, read_call(source, destination), refusal);
+        cJSON *answer =
+            runtime_call_operation(runtime_marketplace_read_operation, read_call(source, destination), refusal);
         copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
         cJSON_Delete(answer);
         runtime_remove_tree(folder);

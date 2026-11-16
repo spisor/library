@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "export.h"
+#include "cJSON.h"
 
 /**
  * marketplace.build: {list, built, token?, tokenHost?, previous?, apiBase?} answers {copy, skipped}, the generated copy of a marketplace list that
@@ -35,6 +35,6 @@
  * @implNote Names are compared as written, since an import name is lowercase. A repo is looked up by the id up to its
  * folder, so a renamed repo never changes the list.
  */
-RUNTIME_EXPORT int32_t runtime_marketplace_build(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_marketplace_build_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

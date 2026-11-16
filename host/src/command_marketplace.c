@@ -79,7 +79,8 @@ static cJSON *built_copy(const build_inputs *inputs, cJSON **skipped, cJSON **re
         *refusal = runtime_refusal("the current time could not be read", "check the machine's clock");
         return NULL;
     }
-    cJSON *answer = host_call(runtime_marketplace_build, build_argument(inputs, built), refusal);
+    cJSON *answer =
+        runtime_call_operation(runtime_marketplace_build_operation, build_argument(inputs, built), refusal);
     cJSON *copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
     *skipped = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "skipped");
     cJSON_Delete(answer);

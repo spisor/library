@@ -189,8 +189,8 @@ static int print_installed(const host_context *context, const cJSON *installed) 
 static int settles_name(const host_context *context, const host_name_request *request, const found_name *found,
                         const char *marketplace, int is_recording, int *code) {
     cJSON *refusal = NULL;
-    cJSON *answer = host_call(runtime_marketplace_remember, remember_call(context, found, marketplace, request->accepted_name_id, is_recording),
-                              &refusal);
+    cJSON *call = remember_call(context, found, marketplace, request->accepted_name_id, is_recording);
+    cJSON *answer = runtime_call_operation(runtime_marketplace_remember_operation, call, &refusal);
     if (answer == NULL) {
         *code = refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
         return 0;
@@ -259,7 +259,8 @@ int host_install_by_name(const host_context *context, const host_name_request *r
         cJSON_Delete(copies);
         return refuse_no_marketplace(request->name);
     }
-    cJSON *answer = host_call(runtime_marketplace_lookup, lookup_call(copies, request->name), &refusal);
+    cJSON *answer =
+        runtime_call_operation(runtime_marketplace_lookup_operation, lookup_call(copies, request->name), &refusal);
     if (answer == NULL) {
         return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
     }

@@ -8,6 +8,7 @@
 
 #include "catalog_call.h"
 #include "check.h"
+#include "marketplace_call.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "marketplace_build.h"
@@ -29,7 +30,7 @@ static catalog_answer build_with(const char *list_json, const char *built) {
     cJSON_AddItemToObject(argument, "list", parsed(list_json));
     cJSON_AddStringToObject(argument, "built", built);
     cJSON_AddStringToObject(argument, "apiBase", api_base);
-    return call_catalog(runtime_marketplace_build, argument);
+    return marketplace_call(MARKETPLACE_BUILD, argument);
 }
 
 static catalog_answer build(const char *list_json) {
@@ -222,6 +223,7 @@ static void a_list_that_breaks_the_schema_is_refused(void) {
     for (size_t index = 0; index < sizeof lists / sizeof lists[0]; index++) {
         catalog_answer answer = build(lists[index]);
         CHECK(expect_refusal(answer, "list", lists[index]));
+        CHECK(marketplace_last_status == (lists[index][0] == '[' ? SPISOR_MALFORMED : SPISOR_REFUSED));
         cJSON_Delete(answer.tree);
     }
 }
@@ -261,7 +263,7 @@ static catalog_answer build_with_options(const char *list_json, const char *toke
     if (previous_json != NULL) {
         cJSON_AddItemToObject(argument, "previous", parsed(previous_json));
     }
-    return call_catalog(runtime_marketplace_build, argument);
+    return marketplace_call(MARKETPLACE_BUILD, argument);
 }
 
 static int count_of(const char *text, const char *fragment) {
@@ -470,7 +472,7 @@ static void a_list_whose_every_entry_is_lost_to_the_network_is_refused(void) {
     cJSON_AddItemToObject(argument, "list", parsed("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}"));
     cJSON_AddStringToObject(argument, "built", BUILT);
     cJSON_AddStringToObject(argument, "apiBase", "http://127.0.0.1:1");
-    catalog_answer answer = call_catalog(runtime_marketplace_build, argument);
+    catalog_answer answer = marketplace_call(MARKETPLACE_BUILD, argument);
     CHECK(expect_refusal(answer, "github:1", "an unreachable host"));
     CHECK(contains(text_at(answer.tree, "message"), "cannot be looked up"));
     cJSON_Delete(answer.tree);

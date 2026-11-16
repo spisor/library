@@ -219,7 +219,7 @@ static cJSON *interpreted(const reading *order, const char *text, size_t length,
     return copy_answer(document);
 }
 
-static cJSON *read_copy(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_marketplace_read_operation(const cJSON *argument, cJSON **refusal) {
     reading order;
     if (!is_source_usable(cJSON_GetObjectItemCaseSensitive(argument, "source"), &order, refusal) ||
         !has_way_to_read(argument, &order, refusal)) {
@@ -233,8 +233,4 @@ static cJSON *read_copy(const cJSON *argument, cJSON **refusal) {
     cJSON *answer = fetched == NULL ? NULL : interpreted(&order, fetched, length, refusal);
     free(fetched);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_marketplace_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, read_copy);
 }
