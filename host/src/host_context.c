@@ -154,7 +154,7 @@ cJSON *host_registration(const host_context *context, const char *id, cJSON **re
         cJSON_Delete(argument);
         argument = NULL;
     }
-    cJSON *answer = host_call(runtime_registry_get, argument, refusal);
+    cJSON *answer = runtime_call_operation(runtime_registry_get_host, argument, refusal);
     cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
     cJSON_Delete(answer);
     if (answer != NULL && !runtime_registration_usable(registration, id, context->state, refusal)) {

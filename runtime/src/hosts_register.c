@@ -171,7 +171,7 @@ static cJSON *register_for(const cJSON *argument, cJSON **refusal) {
         *refusal = runtime_refusal(RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
         return NULL;
     }
-    cJSON *registered = runtime_call_or_refuse(runtime_registry_register_first_provenance,
+    cJSON *registered = runtime_call_operation(runtime_registry_register_first_provenance,
                                                registration_request(argument, identity), refusal);
     cJSON *answer = registered == NULL ? NULL : registered_answer(registered);
     return answer == NULL ? NULL : request_commands(argument, identity, home, answer, refusal);

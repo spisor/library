@@ -2,7 +2,8 @@ function(runtime_test_with_allocator name allocator)
     add_executable(${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
     target_link_libraries(${name} PRIVATE runtime_objects ${allocator} ${runtime_secret_store_libraries}
         ${runtime_path_entry_libraries})
-    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test)
+    target_link_libraries(${name} PRIVATE spisor_vector_reader)
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
     add_test(NAME ${name} COMMAND ${name})
@@ -15,24 +16,15 @@ endfunction()
 
 runtime_test_with_allocator(reader_with_counting_allocator_test spisor_allocator_counting
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(reader_with_counting_allocator_test PRIVATE spisor_vector_reader)
 target_compile_definitions(reader_with_counting_allocator_test PRIVATE
     SPISOR_VECTOR_READER_VECTOR_PATH="${PROJECT_SOURCE_DIR}/test/vectors/vector-reader.json")
 
 foreach(name paths_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
-target_link_libraries(paths_test PRIVATE spisor_vector_reader)
-target_link_libraries(places_test PRIVATE spisor_vector_reader)
 
 runtime_test(secrets_test fake_secret_backend.c)
-target_link_libraries(secrets_test PRIVATE spisor_vector_reader)
-target_link_libraries(log_test PRIVATE spisor_vector_reader)
 runtime_test(config_test fake_secret_backend.c)
-foreach(name config_test settings_test)
-    target_link_libraries(${name} PRIVATE spisor_vector_reader)
-    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-endforeach()
 
 runtime_test(json_edit_test $<TARGET_OBJECTS:runtime_secret_store>)
 runtime_test(json_key_change_test $<TARGET_OBJECTS:runtime_secret_store>)
@@ -80,10 +72,10 @@ set_tests_properties(path_entry_test commands_test lifecycle_test PROPERTIES RES
 runtime_test(sha256_test $<TARGET_OBJECTS:runtime_secret_store>)
 runtime_test(identity_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(identity_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test(fetch_test http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(fetch_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(fetch_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(fetch_test PRIVATE Ws2_32)
 endif()
@@ -91,7 +83,7 @@ endif()
 runtime_test(identity_resolve_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(identity_resolve_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
 endif()
@@ -99,7 +91,7 @@ endif()
 runtime_test(identity_also_at_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_also_at_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(identity_also_at_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
 endif()
@@ -136,7 +128,7 @@ target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE
 
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_shipped_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})
@@ -197,7 +189,7 @@ set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_process
     $<TARGET_OBJECTS:runtime_change_reversal>)
 foreach(name hosts_test loader_test entry_template_test detect_test lists_test)
     runtime_test(${name} ${runtime_hosts_test_objects})
-    target_link_libraries(${name} PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
 if(WIN32)
@@ -261,7 +253,7 @@ add_test(NAME settings_lock_test COMMAND settings_lock_test)
 set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
     ${runtime_hosts_test_objects})
 runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
-target_link_libraries(out_of_memory_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
+target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 600)
 

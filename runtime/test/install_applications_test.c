@@ -11,6 +11,7 @@
 #include "install_methods.h"
 #include "install_support.h"
 #include "registry.h"
+#include "registry_call.h"
 
 #define LOADER_ID "claude-loader"
 #define BINARY "claude-binary"
@@ -66,9 +67,9 @@ static cJSON *registration_of(const install_base *base, const char *id) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "id", id);
-    catalog_answer answer = call_catalog(runtime_registry_get, argument);
-    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "registration");
-    cJSON_Delete(answer.tree);
+    registry_result result = registry_call(REGISTRY_GET, argument);
+    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(result.tree, "registration");
+    cJSON_Delete(result.tree);
     return registration;
 }
 
@@ -501,7 +502,8 @@ static void requests_each_command_running_spisor_boot_with_launch(void) {
     const cJSON *loader = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0);
     expect_json(cJSON_GetObjectItemCaseSensitive(loader, "commands"), "[\"cc\"]", "command held");
     expect_json(cJSON_GetObjectItemCaseSensitive(loader, "refusedCommands"), "[]", "none refused");
-    cJSON *registration = registration_of(&base, LOADER_ID);
+    cJSON *registration = NULL;
+    CHECK(runtime_registry_load(base.state, LOADER_ID, &registration) == RUNTIME_REGISTRY_OK);
     char *shim = NULL;
     const cJSON *changes = cJSON_GetObjectItemCaseSensitive(registration, "changes");
     for (const cJSON *recorded = changes == NULL ? NULL : changes->child; shim == NULL && recorded != NULL;

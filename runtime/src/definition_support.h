@@ -62,6 +62,9 @@ spisor_status runtime_environment_json(const runtime_variable *environment, size
  */
 runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *count);
 
+/** The MALFORMED refusal for a place, named as `place` such as "state", that is empty or not an absolute directory. */
+spisor_status runtime_refuse_place(spisor_refusal *refusal, const char *place);
+
 /** The refusal runtime_environment_json's MALFORMED answers with. */
 spisor_status runtime_refuse_environment(spisor_refusal *refusal);
 

@@ -11,6 +11,7 @@
 
 #if defined(_WIN32)
 #include "command_line_windows.h"
+#include "registry_call.h"
 #include "wide_path.h"
 #define EXECUTABLE_ENDING ".exe"
 #else
@@ -529,9 +530,9 @@ static inline cJSON *registration_in(const host_world *world, const char *id) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_of(&world->base));
     cJSON_AddStringToObject(argument, "id", id);
-    catalog_answer answer = call_catalog(runtime_registry_get, argument);
-    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "registration");
-    cJSON_Delete(answer.tree);
+    registry_result result = registry_call(REGISTRY_GET, argument);
+    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(result.tree, "registration");
+    cJSON_Delete(result.tree);
     return registration;
 }
 

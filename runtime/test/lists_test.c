@@ -11,6 +11,7 @@
 #include "host_provenance.h"
 #include "lists.h"
 #include "registry.h"
+#include "registry_call.h"
 #include "service_scratch.h"
 
 /** The rows lists.plugins answers for the three groups, given as JSON text. */
@@ -132,9 +133,9 @@ static void register_claude_host(const lists_scratch *place) {
     cJSON_AddStringToObject(registration, "home", place->base);
     add_host_provenance(registration, "test", "1.0.0", place->base);
     cJSON_AddFalseToObject(registration, "requiresCommand");
-    catalog_answer answer = call_catalog(runtime_registry_register, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON_Delete(answer.tree);
+    registry_result result = registry_call(REGISTRY_REGISTER, request);
+    CHECK(result.status == SPISOR_OK);
+    cJSON_Delete(result.tree);
 }
 
 static cJSON *application_rows(const lists_scratch *place, cJSON *environment, const char *detections) {

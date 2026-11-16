@@ -90,6 +90,14 @@ runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *co
     return variables;
 }
 
+spisor_status runtime_refuse_place(spisor_refusal *refusal, const char *place) {
+    char detail[128];
+    char fix[192];
+    snprintf(detail, sizeof detail, "the %s place is empty or not an absolute directory", place);
+    snprintf(fix, sizeof fix, "send %s as places' resolve answers it, an absolute directory", place);
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+}
+
 spisor_status runtime_refuse_environment(spisor_refusal *refusal) {
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, "an environment variable has no name or no value",
                              "send every variable with its name and its value, and environment_count no larger than "

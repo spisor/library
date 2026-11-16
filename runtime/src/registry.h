@@ -1,11 +1,7 @@
 #ifndef RUNTIME_REGISTRY_H
 #define RUNTIME_REGISTRY_H
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include "cJSON.h"
-#include "export.h"
 
 #define RUNTIME_REINSTALL_FIX "run spisor-host install --catalog <path or url> again"
 
@@ -49,19 +45,37 @@ int runtime_registration_usable(const cJSON *registration, const char *id, const
  */
 cJSON *runtime_usable_registration(const char *state, const char *id, cJSON **refusal);
 
-RUNTIME_EXPORT int32_t runtime_registry_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 /**
- * registry.register, except that a provenance the host's stored registration already carries is kept in
- * place of the given one, decided under the registry lock, so two first starts of one host cannot both
- * record theirs. hosts.register calls it in-process; it is no function of the declaration.
+ * registry's register over a JSON argument {places: {state}, registration}: {registration}, the record as stored, or
+ * NULL with *refusal set to {message, fix}, or with it NULL when memory runs out. The record keeps the given
+ * registration's own fields and carries over the commands, changes and nextSequence the stored one holds, since those
+ * belong to the services that record them.
  */
-int32_t runtime_registry_register_first_provenance(const uint8_t *in, size_t in_len, uint8_t **out,
-                                                   size_t *out_len);
+cJSON *runtime_registry_register_host(const cJSON *argument, cJSON **refusal);
 
-RUNTIME_EXPORT int32_t runtime_registry_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-RUNTIME_EXPORT int32_t runtime_registry_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-RUNTIME_EXPORT int32_t runtime_registry_forget(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-/** registry.forget for a caller that already holds runtime_hosts_lock, which is not taken again. */
-int32_t runtime_registry_forget_locked(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+/**
+ * As runtime_registry_register_host, except that a provenance the host's stored registration already carries is kept
+ * in place of the given one, decided under the registry lock, so two first starts of one host cannot both record
+ * theirs.
+ */
+cJSON *runtime_registry_register_first_provenance(const cJSON *argument, cJSON **refusal);
+
+/** registry's get over {places: {state}, id}: {registration?}, as runtime_registry_register_host answers. */
+cJSON *runtime_registry_get_host(const cJSON *argument, cJSON **refusal);
+
+/** registry's list over {places: {state}}: {hosts: [{registration, orphan}], unreadable: [id]}. */
+cJSON *runtime_registry_list_hosts(const cJSON *argument, cJSON **refusal);
+
+/** registry's forget over {places: {state, cache}, id}: {forgotten}. */
+cJSON *runtime_registry_forget_host(const cJSON *argument, cJSON **refusal);
+
+/** runtime_registry_forget_host for a caller that already holds runtime_hosts_lock, which is not taken again. */
+cJSON *runtime_registry_forget_locked(const cJSON *argument, cJSON **refusal);
+
+/** Why a registration cannot be registered, or NULL when it can. */
+const char *runtime_registration_defect(const cJSON *registration);
+
+/** Whether id can name a host: one portable path segment. */
+int runtime_registry_is_host_id(const char *id);
 
 #endif

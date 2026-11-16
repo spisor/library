@@ -30,6 +30,7 @@
 #include "directory_tree.h"
 #include "registry.h"
 #include "host_provenance.h"
+#include "registry_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 #include "tree_snapshot.h"
@@ -111,8 +112,8 @@ static void register_host(const scratch *place, const char *id, int requires_com
     cJSON_AddStringToObject(registration, "home", place->directory);
     add_host_provenance(registration, "npm", "1.0.0", place->directory);
     cJSON_AddBoolToObject(registration, "requiresCommand", requires_command);
-    answer result = call(runtime_registry_register, request);
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    registry_result result = registry_call(REGISTRY_REGISTER, request);
+    CHECK(result.status == SPISOR_OK);
     cJSON_Delete(result.tree);
 }
 

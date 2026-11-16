@@ -7,6 +7,7 @@
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 #include "spisor/json_kind.h"
@@ -375,6 +376,75 @@ static void print_detect_layouts(void) {
     SIZE(runtime_detect_definition);
 }
 
+static void print_registry_layouts(void) {
+    FIELD(runtime_registry_provenance, size);
+    FIELD(runtime_registry_provenance, method);
+    FIELD(runtime_registry_provenance, version);
+    FIELD(runtime_registry_provenance, location);
+    FIELD(runtime_registry_provenance, os);
+    FIELD(runtime_registry_provenance, architecture);
+    FIELD(runtime_registry_provenance, installed_at);
+    FIELD(runtime_registry_provenance, package);
+    FIELD(runtime_registry_provenance, options);
+    SIZE(runtime_registry_provenance);
+    FIELD(runtime_registry_start, size);
+    FIELD(runtime_registry_start, runtime);
+    FIELD(runtime_registry_start, entry);
+    SIZE(runtime_registry_start);
+    FIELD(runtime_registration, size);
+    FIELD(runtime_registration, id);
+    FIELD(runtime_registration, version);
+    FIELD(runtime_registration, home);
+    FIELD(runtime_registration, application);
+    FIELD(runtime_registration, provenance);
+    FIELD(runtime_registration, requires_command);
+    FIELD(runtime_registration, start);
+    SIZE(runtime_registration);
+    FIELD(runtime_registry_register_argument, size);
+    FIELD(runtime_registry_register_argument, state);
+    FIELD(runtime_registry_register_argument, registration);
+    SIZE(runtime_registry_register_argument);
+    FIELD(runtime_registry_host_argument, size);
+    FIELD(runtime_registry_host_argument, state);
+    FIELD(runtime_registry_host_argument, id);
+    SIZE(runtime_registry_host_argument);
+    FIELD(runtime_registry_list_argument, size);
+    FIELD(runtime_registry_list_argument, state);
+    SIZE(runtime_registry_list_argument);
+    FIELD(runtime_registry_forget_argument, size);
+    FIELD(runtime_registry_forget_argument, state);
+    FIELD(runtime_registry_forget_argument, cache);
+    FIELD(runtime_registry_forget_argument, id);
+    SIZE(runtime_registry_forget_argument);
+    FIELD(runtime_registry_registration_answer, size);
+    FIELD(runtime_registry_registration_answer, registration);
+    FIELD(runtime_registry_registration_answer, storage);
+    SIZE(runtime_registry_registration_answer);
+    FIELD(runtime_registry_host, registration);
+    FIELD(runtime_registry_host, orphan);
+    SIZE(runtime_registry_host);
+    FIELD(runtime_registry_listing, size);
+    FIELD(runtime_registry_listing, hosts);
+    FIELD(runtime_registry_listing, host_count);
+    FIELD(runtime_registry_listing, unreadable);
+    FIELD(runtime_registry_listing, unreadable_count);
+    FIELD(runtime_registry_listing, storage);
+    SIZE(runtime_registry_listing);
+    FIELD(runtime_registry_forget_answer, size);
+    FIELD(runtime_registry_forget_answer, forgotten);
+    SIZE(runtime_registry_forget_answer);
+    FIELD(runtime_registry_definition, size);
+    FIELD(runtime_registry_definition, context);
+    FIELD(runtime_registry_definition, register_host);
+    FIELD(runtime_registry_definition, get);
+    FIELD(runtime_registry_definition, list);
+    FIELD(runtime_registry_definition, forget);
+    FIELD(runtime_registry_definition, release_answer);
+    FIELD(runtime_registry_definition, release_listing);
+    FIELD(runtime_registry_definition, release_refusal);
+    SIZE(runtime_registry_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -388,5 +458,6 @@ int main(void) {
     print_identity_layouts();
     print_fetch_layouts();
     print_detect_layouts();
+    print_registry_layouts();
     return 0;
 }
