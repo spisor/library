@@ -1,8 +1,10 @@
 #include <stdio.h>
 
+#include "runtime/config.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/secrets.h"
+#include "runtime/settings.h"
 #include "spisor/json_kind.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -171,6 +173,57 @@ static void print_secrets_layouts(void) {
     SIZE(runtime_secrets_definition);
 }
 
+static void print_settings_layouts(void) {
+    FIELD(runtime_settings_scope, size);
+    FIELD(runtime_settings_scope, home);
+    FIELD(runtime_settings_scope, names);
+    FIELD(runtime_settings_scope, portable);
+    SIZE(runtime_settings_scope);
+    FIELD(runtime_settings_change, size);
+    FIELD(runtime_settings_change, key);
+    FIELD(runtime_settings_change, value);
+    FIELD(runtime_settings_change, layer);
+    SIZE(runtime_settings_change);
+    FIELD(runtime_settings_definition, size);
+    FIELD(runtime_settings_definition, context);
+    FIELD(runtime_settings_definition, all);
+    FIELD(runtime_settings_definition, set);
+    FIELD(runtime_settings_definition, release_tree);
+    FIELD(runtime_settings_definition, release_refusal);
+    SIZE(runtime_settings_definition);
+}
+
+static void print_config_layouts(void) {
+    FIELD(runtime_setting_declaration, key);
+    FIELD(runtime_setting_declaration, type);
+    FIELD(runtime_setting_declaration, layer);
+    SIZE(runtime_setting_declaration);
+    FIELD(runtime_config_plugin, size);
+    FIELD(runtime_config_plugin, home);
+    FIELD(runtime_config_plugin, names);
+    FIELD(runtime_config_plugin, portable);
+    FIELD(runtime_config_plugin, plugin);
+    FIELD(runtime_config_plugin, config);
+    FIELD(runtime_config_plugin, settings);
+    FIELD(runtime_config_plugin, setting_count);
+    FIELD(runtime_config_plugin, places);
+    SIZE(runtime_config_plugin);
+    FIELD(runtime_config_set_answer, size);
+    FIELD(runtime_config_set_answer, secret);
+    FIELD(runtime_config_set_answer, previous);
+    FIELD(runtime_config_set_answer, storage);
+    SIZE(runtime_config_set_answer);
+    FIELD(runtime_config_definition, size);
+    FIELD(runtime_config_definition, context);
+    FIELD(runtime_config_definition, all);
+    FIELD(runtime_config_definition, get);
+    FIELD(runtime_config_definition, set);
+    FIELD(runtime_config_definition, release_tree);
+    FIELD(runtime_config_definition, release_set_answer);
+    FIELD(runtime_config_definition, release_refusal);
+    SIZE(runtime_config_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -178,5 +231,7 @@ int main(void) {
     print_paths_layouts();
     print_places_layouts();
     print_secrets_layouts();
+    print_settings_layouts();
+    print_config_layouts();
     return 0;
 }

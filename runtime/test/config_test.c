@@ -3,6 +3,7 @@
 #define _XOPEN_SOURCE 700
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #endif
 
 #include "check.h"
+#include "config_fixture.h"
 #include "scratch_directory.h"
 #include "config.h"
 #include "fake_secret_backend.h"
@@ -33,11 +35,7 @@ typedef struct scratch_home {
     char portable[1100];
 } scratch_home;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-    uint8_t *buffer;
-} answer;
+typedef config_answer answer;
 
 static void fresh_home(scratch_home *home, const char *label) {
     static int sequence = 0;
@@ -79,28 +77,18 @@ static cJSON *request_for(const scratch_home *home, const char *plugin, const ch
     return request;
 }
 
-typedef int32_t (*export_function)(const uint8_t *, size_t, uint8_t **, size_t *);
-
-static answer call_with(export_function function, cJSON *request) {
-    answer result = {0, NULL, NULL};
-    char *text = cJSON_PrintUnformatted(request);
-    size_t out_len = 0;
-    result.status = function((const uint8_t *)text, strlen(text), &result.buffer, &out_len);
-    result.tree = result.buffer == NULL ? NULL : spisor_parse_json(result.buffer, out_len);
-    free(text);
-    cJSON_Delete(request);
-    return result;
+static answer call_with(config_operation operation, cJSON *request) {
+    return config_call(operation, request);
 }
 
 static void finish(answer *result) {
     cJSON_Delete(result->tree);
-    spisor_release(result->buffer);
 }
 
 static answer get_key(const scratch_home *home, const char *plugin, const char *config_json, const char *key) {
     cJSON *request = request_for(home, plugin, config_json, NULL);
     cJSON_AddStringToObject(request, "key", key);
-    return call_with(runtime_config_get, request);
+    return call_with(CONFIG_GET, request);
 }
 
 static answer set_key(const scratch_home *home, const char *plugin, const char *config_json, const char *names_json,
@@ -108,11 +96,11 @@ static answer set_key(const scratch_home *home, const char *plugin, const char *
     cJSON *request = request_for(home, plugin, config_json, names_json);
     cJSON_AddStringToObject(request, "key", key);
     cJSON_AddItemToObject(request, "value", cJSON_Parse(value_json));
-    return call_with(runtime_config_set, request);
+    return call_with(CONFIG_SET, request);
 }
 
 static void expect_member(const answer *result, const char *member, const char *expected_json, const char *label) {
-    CHECK(result->status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(*result));
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(result->tree, member);
     if (expected_json == NULL) {
         if (item != NULL) {
@@ -127,7 +115,7 @@ static void expect_member(const answer *result, const char *member, const char *
 }
 
 static void expect_refused(const answer *result, const char *label) {
-    if (result->status != SPISOR_STATUS_FAILURE) {
+    if (!REFUSED_CALL(*result)) {
         fprintf(stderr, "%s: expected a refusal, got status %d\n", label, (int)result->status);
         check_failures++;
         return;
@@ -188,7 +176,7 @@ static void deep_merge_agrees(void) {
     write_settings_file(&home, "p", "{\"a\":{\"b\":5}}");
     expect_value(&home, "p", config, "a.c", "2", "get a.c");
     expect_value(&home, "p", config, "a", "{\"b\":5,\"c\":2}", "get a");
-    answer all = call_with(runtime_config_all, request_for(&home, "p", config, NULL));
+    answer all = call_with(CONFIG_ALL, request_for(&home, "p", config, NULL));
     expect_member(&all, "values", "{\"a\":{\"b\":5,\"c\":2}}", "all");
     finish(&all);
 }
@@ -217,11 +205,11 @@ static void array_replaced_whole(void) {
 static void absent_file_reads_defaults_and_writes_nothing(void) {
     scratch_home home;
     fresh_home(&home, "absent");
-    answer all = call_with(runtime_config_all, request_for(&home, "p", "{\"defaults\":{\"x\":1}}", NULL));
+    answer all = call_with(CONFIG_ALL, request_for(&home, "p", "{\"defaults\":{\"x\":1}}", NULL));
     expect_member(&all, "values", "{\"x\":1}", "defaults");
     finish(&all);
     CHECK(spisor_file_exists(home.config_directory) == 0);
-    answer bare = call_with(runtime_config_all, request_for(&home, "p", NULL, NULL));
+    answer bare = call_with(CONFIG_ALL, request_for(&home, "p", NULL, NULL));
     expect_member(&bare, "values", "{}", "no config");
     finish(&bare);
 }
@@ -231,7 +219,7 @@ static void renamed_config_directory(void) {
     char path[1200];
     fresh_home(&home, "renamed");
     answer result = set_key(&home, "p", NULL, "{\"config\":\"settings\"}", "k", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     snprintf(path, sizeof path, "%s/settings/p.json", home.path);
     CHECK(spisor_file_exists(path) != 0);
@@ -268,7 +256,7 @@ static void set_nests_new_path(void) {
     scratch_home home;
     fresh_home(&home, "nested");
     answer result = set_key(&home, "p", "{\"defaults\":{\"a\":{\"b\":1}}}", NULL, "a.c.d", "true");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"a\": {\n    \"c\": {\n      \"d\": true\n    }\n  }\n}\n", "nested path from the file");
 }
@@ -320,7 +308,7 @@ static void set_refuses_missing_value(void) {
     fresh_home(&home, "novalue");
     cJSON *request = request_for(&home, "p", NULL, NULL);
     cJSON_AddStringToObject(request, "key", "a");
-    answer result = call_with(runtime_config_set, request);
+    answer result = call_with(CONFIG_SET, request);
     expect_refused(&result, "missing value");
     finish(&result);
     CHECK(spisor_file_exists(home.config_directory) == 0);
@@ -371,11 +359,58 @@ static void merge_and_walk_units(void) {
 }
 
 static void refuses_missing_arguments(void) {
-    const char *request = "{\"home\":\"x\"}";
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    CHECK(runtime_config_all((const uint8_t *)request, strlen(request), &out, &out_len) == SPISOR_STATUS_FAILURE);
-    spisor_release(out);
+    answer result = call_with(CONFIG_ALL, cJSON_Parse("{\"home\":\"x\"}"));
+    CHECK(result.status == SPISOR_MALFORMED);
+    expect_refused(&result, "no plugin");
+    finish(&result);
+}
+
+static void the_definitions_are_static_structs(void) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    const runtime_settings_definition *settings = runtime_settings_definition_of();
+    CHECK(config != NULL && (const void *)config == runtime_config_definition_of());
+    CHECK(config != NULL && config->size == sizeof(runtime_config_definition));
+    CHECK(settings != NULL && (const void *)settings == runtime_settings_definition_of());
+    CHECK(settings != NULL && settings->size == sizeof(runtime_settings_definition));
+}
+
+static void typed_shapes_the_json_could_not_carry_are_malformed(void) {
+    scratch_home home;
+    fresh_home(&home, "typed");
+    answer listed_names = call_with(CONFIG_ALL, request_for(&home, "p", NULL, "[\"repos\"]"));
+    CHECK(listed_names.status == SPISOR_MALFORMED);
+    finish(&listed_names);
+    answer listed_config = call_with(CONFIG_ALL, request_for(&home, "p", "[1]", NULL));
+    CHECK(listed_config.status == SPISOR_MALFORMED);
+    finish(&listed_config);
+    cJSON *relative_places = request_for(&home, "p", NULL, NULL);
+    cJSON *places = cJSON_AddObjectToObject(relative_places, "places");
+    cJSON_AddStringToObject(places, "secretsFile", "relative/secrets.json");
+    cJSON_AddFalseToObject(places, "forceFileStore");
+    answer refused_places = call_with(CONFIG_ALL, relative_places);
+    CHECK(refused_places.status == SPISOR_MALFORMED);
+    finish(&refused_places);
+    CHECK(spisor_file_exists(home.config_directory) == 0);
+}
+
+static void a_short_plugin_or_answer_is_malformed(void) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    scratch_home home;
+    runtime_config_plugin plugin = SPISOR_INIT(runtime_config_plugin);
+    spisor_value_tree values = SPISOR_INIT(spisor_value_tree);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    fresh_home(&home, "short");
+    plugin.home = home.path;
+    plugin.plugin = "p";
+    plugin.size = (uint32_t)offsetof(runtime_config_plugin, places);
+    CHECK(config->all(config->context, &plugin, &values, &refusal) == SPISOR_MALFORMED);
+    CHECK(refusal.detail != NULL && strstr(refusal.detail, "first shape") != NULL);
+    config->release_refusal(config->context, &refusal);
+    plugin.size = sizeof plugin;
+    values.size = (uint32_t)offsetof(spisor_value_tree, storage);
+    CHECK(config->all(config->context, &plugin, &values, &refusal) == SPISOR_MALFORMED);
+    config->release_refusal(config->context, &refusal);
+    CHECK(refusal.storage == NULL);
 }
 
 static void crlf_file(void) {
@@ -386,7 +421,7 @@ static void crlf_file(void) {
     write_settings_file(&home, "p", "{\r\n  // note\r\n  \"a\": 2\r\n}\r\n");
     expect_value(&home, "p", NULL, "a", "2", "crlf file with a comment line");
     answer result = set_key(&home, "p", NULL, NULL, "b", "3");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"a\": 2,\n  \"b\": 3\n}\n", "crlf file rewritten by set");
 }
@@ -397,7 +432,7 @@ static void lone_surrogate_reads_as_replacement(void) {
     write_settings_file(&home, "p", "{\"s\":\"\\ud800\"}");
     expect_value(&home, "p", NULL, "s", "\"\xEF\xBF\xBD\"", "lone surrogate");
     answer result = set_key(&home, "p", NULL, NULL, "t", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"s\": \"\xEF\xBF\xBD\",\n  \"t\": 1\n}\n", "set writes the replacement raw");
 }
@@ -407,7 +442,7 @@ static void non_object_defaults_read_as_empty(void) {
     fresh_home(&home, "defaults");
     const char *configs[] = {"{\"defaults\":\"ab\"}", "{\"defaults\":[1,2]}"};
     for (int index = 0; index < 2; index++) {
-        answer all = call_with(runtime_config_all, request_for(&home, "p", configs[index], NULL));
+        answer all = call_with(CONFIG_ALL, request_for(&home, "p", configs[index], NULL));
         expect_member(&all, "values", "{}", configs[index]);
         finish(&all);
         expect_value(&home, "p", configs[index], "0", NULL, configs[index]);
@@ -426,7 +461,7 @@ static void refuses_unusable_home(void) {
     for (int index = 0; index < 2; index++) {
         scratch_home home;
         snprintf(home.path, sizeof home.path, "%s", homes[index]);
-        answer all = call_with(runtime_config_all, request_for(&home, "p", NULL, NULL));
+        answer all = call_with(CONFIG_ALL, request_for(&home, "p", NULL, NULL));
         expect_refused(&all, "all");
         finish(&all);
         answer get = get_key(&home, "p", NULL, "a");
@@ -471,7 +506,7 @@ static cJSON *portable_request(const scratch_home *home, const char *plugin, con
 static answer portable_get(const scratch_home *home, const char *plugin, const char *config_json, const char *key) {
     cJSON *request = portable_request(home, plugin, config_json);
     cJSON_AddStringToObject(request, "key", key);
-    return call_with(runtime_config_get, request);
+    return call_with(CONFIG_GET, request);
 }
 
 static void expect_portable_value(const scratch_home *home, const char *plugin, const char *config_json,
@@ -483,7 +518,7 @@ static void expect_portable_value(const scratch_home *home, const char *plugin, 
 
 static void expect_portable_all(const scratch_home *home, const char *plugin, const char *config_json,
                                 const char *expected_json, const char *label) {
-    answer all = call_with(runtime_config_all, portable_request(home, plugin, config_json));
+    answer all = call_with(CONFIG_ALL, portable_request(home, plugin, config_json));
     expect_member(&all, "values", expected_json, label);
     finish(&all);
 }
@@ -494,7 +529,7 @@ static answer layered_set(cJSON *request, const char *layer, const char *key, co
     if (layer != NULL) {
         cJSON_AddStringToObject(request, "layer", layer);
     }
-    return call_with(runtime_config_set, request);
+    return call_with(CONFIG_SET, request);
 }
 
 static answer portable_set(const scratch_home *home, const char *plugin, const char *config_json, const char *layer,
@@ -560,15 +595,15 @@ static void set_writes_the_named_layer(void) {
     scratch_home home;
     fresh_home(&home, "set-layers");
     answer defaulted = portable_set(&home, "p", NULL, NULL, "a", "1");
-    CHECK(defaulted.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(defaulted));
     finish(&defaulted);
     CHECK(spisor_file_exists(home.portable) == 0);
     answer application = portable_set(&home, "p", NULL, "application", "b", "2");
-    CHECK(application.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(application));
     finish(&application);
     expect_file(&home, "p", "{\n  \"a\": 1,\n  \"b\": 2\n}\n", "the application layer is the default");
     answer portable = portable_set(&home, "p", NULL, "portable", "c", "3");
-    CHECK(portable.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(portable));
     finish(&portable);
     expect_portable_file(&home, "p", "{\n  \"c\": 3\n}\n", "the portable layer");
     expect_file(&home, "p", "{\n  \"a\": 1,\n  \"b\": 2\n}\n", "the application file untouched by a portable set");
@@ -606,11 +641,7 @@ static void unknown_layer_and_unusable_portable_are_refused(void) {
     answer relative = layered_set(request, "portable", "a", "1");
     expect_refused(&relative, "relative portable");
     finish(&relative);
-    cJSON *read = request_for(&home, "p", NULL, NULL);
-    cJSON_AddNumberToObject(read, "portable", 1);
-    answer numeric = call_with(runtime_config_all, read);
-    expect_refused(&numeric, "non-string portable");
-    finish(&numeric);
+    CHECK(machine.status == SPISOR_MALFORMED && relative.status == SPISOR_MALFORMED);
     CHECK(spisor_file_exists(home.config_directory) == 0);
     CHECK(spisor_file_exists("relative-portable") == 0);
 }
@@ -626,7 +657,7 @@ static void unreadable_portable_file(void) {
     expect_portable_file(&home, "p", "{\"a\":", "malformed portable file unchanged");
     expect_portable_value(&home, "p", "{\"defaults\":{\"a\":3}}", "a", "3", "a malformed portable file reads as empty");
     answer application = portable_set(&home, "p", NULL, NULL, "b", "1");
-    CHECK(application.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(application));
     finish(&application);
     expect_file(&home, "p", "{\n  \"b\": 1\n}\n", "the application layer keeps its own rules");
 }
@@ -647,7 +678,7 @@ static void portable_set_through_a_dotfiles_link(void) {
         return;
     }
     answer result = portable_set(&home, "p", NULL, "portable", "added", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     CHECK(is_link(link));
     size_t length = 0;
@@ -689,7 +720,7 @@ static void portable_folder_is_the_manifest_id(void) {
     fresh_home(&home, "portable-id");
     const char *config = "{\"name\":\"other\"}";
     answer portable = portable_set(&home, "p", config, "portable", "a", "1");
-    CHECK(portable.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(portable));
     finish(&portable);
     expect_portable_file(&home, "p", "{\n  \"a\": 1\n}\n", "the portable folder is named by the id");
     snprintf(renamed, sizeof renamed, "%s/plugins/other", home.portable);
@@ -735,7 +766,7 @@ static void fresh_declared_home(scratch_home *home, const char *label) {
 }
 
 static void expect_whole_answer(const answer *result, const char *expected_json, const char *label) {
-    CHECK(result->status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(*result));
     char *actual = result->tree == NULL ? NULL : cJSON_PrintUnformatted(result->tree);
     check_text(actual, expected_json, label);
     free(actual);
@@ -751,10 +782,10 @@ static void a_declared_key_defaults_to_its_declared_layer(void) {
     fresh_declared_home(&home, "declared-layer");
     const char *settings = "{\"shared\":{\"layer\":\"portable\"},\"local\":{\"layer\":\"application\"}}";
     answer shared = declared_set(&home, settings, 0, NULL, "shared", "1");
-    CHECK(shared.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(shared));
     finish(&shared);
     answer local = declared_set(&home, settings, 0, NULL, "local", "2");
-    CHECK(local.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(local));
     finish(&local);
     expect_portable_file(&home, "p", "{\n  \"shared\": 1\n}\n", "a key declared portable goes to the portable layer");
     expect_file(&home, "p", "{\n  \"local\": 2\n}\n", "a key declared application goes to the application layer");
@@ -764,7 +795,7 @@ static void a_declared_key_with_no_layer_defaults_to_portable(void) {
     scratch_home home;
     fresh_declared_home(&home, "declared-no-layer");
     answer result = declared_set(&home, "{\"shared\":{\"type\":\"string\"}}", 0, NULL, "shared", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_portable_file(&home, "p", "{\n  \"shared\": 1\n}\n", "a declared key with no layer is portable");
     CHECK(spisor_file_exists(home.config_directory) == 0);
@@ -787,7 +818,7 @@ static void an_undeclared_key_keeps_the_application_default(void) {
     scratch_home home;
     fresh_declared_home(&home, "undeclared");
     answer result = declared_set(&home, "{\"shared\":{}}", 0, NULL, "other", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"other\": 1\n}\n", "an undeclared key stays in the application layer");
     CHECK(spisor_file_exists(home.portable) == 0);
@@ -797,7 +828,7 @@ static void an_explicit_layer_wins_over_the_declaration(void) {
     scratch_home home;
     fresh_declared_home(&home, "explicit-layer");
     answer result = declared_set(&home, "{\"shared\":{\"layer\":\"portable\"}}", 0, "application", "shared", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"shared\": 1\n}\n", "the explicit layer wins");
     CHECK(spisor_file_exists(home.portable) == 0);
@@ -860,13 +891,13 @@ static void get_reads_a_secret_setting_from_the_store(void) {
     write_settings_file(&home, "p", "{\"token\":\"from-the-file\"}");
     cJSON *request = declared_request(&home, SECRET_SETTINGS, 1);
     cJSON_AddStringToObject(request, "key", "token");
-    answer result = call_with(runtime_config_get, request);
+    answer result = call_with(CONFIG_GET, request);
     expect_whole_answer(&result, "{\"value\":\"s3cret\"}", "get answers the stored secret");
     finish(&result);
     fake_store_reset();
     request = declared_request(&home, SECRET_SETTINGS, 1);
     cJSON_AddStringToObject(request, "key", "token");
-    answer absent = call_with(runtime_config_get, request);
+    answer absent = call_with(CONFIG_GET, request);
     expect_whole_answer(&absent, "{}", "get of an unset secret answers no value, never the file's");
     finish(&absent);
 }
@@ -876,7 +907,7 @@ static void all_leaves_out_a_secret_setting_even_when_a_file_holds_it(void) {
     fresh_declared_home(&home, "secret-all");
     write_settings_file(&home, "p", "{\"token\":\"leak\",\"x\":1,\"nested\":{\"key\":\"leak\",\"keep\":2}}");
     write_portable_file(&home, "p", "{\"token\":\"portable-leak\"}");
-    answer all = call_with(runtime_config_all, declared_request(&home, SECRET_SETTINGS, 1));
+    answer all = call_with(CONFIG_ALL, declared_request(&home, SECRET_SETTINGS, 1));
     expect_member(&all, "values", "{\"x\":1,\"nested\":{\"keep\":2}}", "all leaves every secret setting out");
     finish(&all);
 }
@@ -884,7 +915,7 @@ static void all_leaves_out_a_secret_setting_even_when_a_file_holds_it(void) {
 static answer declared_get(const scratch_home *home, const char *key) {
     cJSON *request = declared_request(home, SECRET_SETTINGS, 1);
     cJSON_AddStringToObject(request, "key", key);
-    return call_with(runtime_config_get, request);
+    return call_with(CONFIG_GET, request);
 }
 
 static void get_of_a_parent_leaves_out_a_secret_below_it(void) {
@@ -922,7 +953,7 @@ static void set_of_a_parent_refuses_a_value_reaching_a_secret(void) {
     finish(&inside);
     CHECK(spisor_file_exists(home.config_directory) == 0);
     answer clear = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested", "{\"keep\":1}");
-    CHECK(clear.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(clear));
     finish(&clear);
     expect_file(&home, "p", "{\n  \"nested\": {\n    \"keep\": 1\n  }\n}\n", "a parent value clear of secrets is set");
 }
@@ -946,8 +977,8 @@ static void settings_set_keeps_the_application_default(void) {
     cJSON_AddItemToObject(request, "settings", cJSON_Parse("{\"shared\":{\"layer\":\"portable\"}}"));
     cJSON_AddStringToObject(request, "key", "shared");
     cJSON_AddItemToObject(request, "value", cJSON_Parse("1"));
-    answer result = call_with(runtime_settings_set, request);
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    answer result = call_with(SETTINGS_SET, request);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "settings", "{\n  \"shared\": 1\n}\n", "settings.set writes the application layer");
     snprintf(path, sizeof path, "%s/settings.json", home.portable);
@@ -973,6 +1004,9 @@ int main(void) {
     hand_edit_seen();
     merge_and_walk_units();
     refuses_missing_arguments();
+    the_definitions_are_static_structs();
+    typed_shapes_the_json_could_not_carry_are_malformed();
+    a_short_plugin_or_answer_is_malformed();
     crlf_file();
     lone_surrogate_reads_as_replacement();
     non_object_defaults_read_as_empty();

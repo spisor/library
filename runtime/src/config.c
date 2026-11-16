@@ -8,14 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "definition_support.h"
 #include "hosts_lock.h"
+#include "json_service.h"
 #include "merge.h"
 #include "paths.h"
 #include "secrets.h"
 #include "segment.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
-#include "spisor/json_kind.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
@@ -41,23 +42,11 @@ typedef struct config_targets {
     config_target portable;
 } config_targets;
 
-typedef struct config_request {
-    const char *home;
-    const char *portable;
-    const char *plugin;
-    const cJSON *names;
-    const cJSON *config;
-    const cJSON *argument;
-    const cJSON *settings;
-} config_request;
-
-typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER, UNKNOWN_LAYER, UNKNOWN_DECLARED_LAYER } settings_layer;
+typedef enum settings_layer { APPLICATION_LAYER, PORTABLE_LAYER } settings_layer;
 
 typedef enum locate_status { LOCATED, UNUSABLE_NAME, UNUSABLE_ID, LOCATE_OUT_OF_MEMORY } locate_status;
 
 typedef enum place_status { PLACED, CROSSES_NON_OBJECT, PLACE_OUT_OF_MEMORY } place_status;
-
-typedef int32_t (*config_operation)(const config_request *request, uint8_t **out, size_t *out_len);
 
 static const cJSON *optional_object(const cJSON *parent, const char *member) {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(parent, member);
@@ -118,7 +107,7 @@ static locate_status join_named_target(const char *directory, const char *name, 
     return status;
 }
 
-static locate_status locate_in_config_directory(const config_request *request, const char *name,
+static locate_status locate_in_config_directory(const runtime_config_request *request, const char *name,
                                                 config_target *target) {
     runtime_paths paths;
     locate_status status = runtime_resolve_paths(request->home, request->names, &paths) == 0
@@ -128,7 +117,7 @@ static locate_status locate_in_config_directory(const config_request *request, c
     return status;
 }
 
-static locate_status locate_application(const config_request *request, config_target *target) {
+static locate_status locate_application(const runtime_config_request *request, config_target *target) {
     char *name = runtime_config_name(request->plugin, request->config);
     if (name == NULL) {
         return UNUSABLE_NAME;
@@ -139,7 +128,7 @@ static locate_status locate_application(const config_request *request, config_ta
 }
 
 /** The plugin's file in the portable place, named by the manifest id and never by config.name (spec section 3). */
-static locate_status locate_portable(const config_request *request, config_target *target) {
+static locate_status locate_portable(const runtime_config_request *request, config_target *target) {
     if (request->portable == NULL) {
         return LOCATED;
     }
@@ -154,7 +143,7 @@ static locate_status locate_portable(const config_request *request, config_targe
     return status;
 }
 
-static locate_status locate_plugin_targets(const config_request *request, config_targets *targets) {
+static locate_status locate_plugin_targets(const runtime_config_request *request, config_targets *targets) {
     locate_status status = locate_application(request, &targets->application);
     if (status == LOCATED) {
         status = locate_portable(request, &targets->portable);
@@ -162,7 +151,7 @@ static locate_status locate_plugin_targets(const config_request *request, config
     return status;
 }
 
-static locate_status locate_ecosystem_targets(const config_request *request, config_targets *targets) {
+static locate_status locate_ecosystem_targets(const runtime_config_request *request, config_targets *targets) {
     locate_status status = locate_in_config_directory(request, "settings", &targets->application);
     if (status == LOCATED && request->portable != NULL) {
         status = join_target(request->portable, ECOSYSTEM_SETTINGS_FILE, &targets->portable);
@@ -170,11 +159,11 @@ static locate_status locate_ecosystem_targets(const config_request *request, con
     return status;
 }
 
-static int is_ecosystem_request(const config_request *request) {
+static int is_ecosystem_request(const runtime_config_request *request) {
     return request->plugin == NULL;
 }
 
-static locate_status locate_targets(const config_request *request, config_targets *targets) {
+static locate_status locate_targets(const runtime_config_request *request, config_targets *targets) {
     memset(targets, 0, sizeof(*targets));
     locate_status status = is_ecosystem_request(request) ? locate_ecosystem_targets(request, targets)
                                                          : locate_plugin_targets(request, targets);
@@ -246,7 +235,7 @@ static char *detached_file(config_target *target) {
 }
 
 char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key) {
-    config_request request = {home, portable, NULL, NULL, NULL, NULL, NULL};
+    runtime_config_request request = {home, portable, NULL, NULL, NULL, NULL, NULL};
     config_targets targets;
     if (locate_targets(&request, &targets) != LOCATED) {
         return NULL;
@@ -260,13 +249,13 @@ char *runtime_ecosystem_settings_file_holding(const char *home, const char *port
     return file;
 }
 
-static const cJSON *defaults_of(const config_request *request) {
+static const cJSON *defaults_of(const runtime_config_request *request) {
     return optional_object(request->config, "defaults");
 }
 
 cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *portable, const char *plugin,
                              const cJSON *config, int *failed) {
-    config_request request = {home, portable, plugin, names, config, NULL, NULL};
+    runtime_config_request request = {home, portable, plugin, names, config, NULL, NULL};
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -278,7 +267,7 @@ cJSON *runtime_read_settings(const char *home, const cJSON *names, const char *p
 }
 
 cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, const char *portable, int *failed) {
-    config_request request = {home, portable, NULL, names, NULL, NULL, NULL};
+    runtime_config_request request = {home, portable, NULL, names, NULL, NULL, NULL};
     config_targets targets;
     cJSON *merged = NULL;
     if (locate_targets(&request, &targets) == LOCATED) {
@@ -289,61 +278,37 @@ cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, con
     return merged;
 }
 
-static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    return SPISOR_STATUS_OUT_OF_MEMORY;
+static spisor_status refuse_name(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the plugin's config name is not a usable file name",
+                             "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\"");
 }
 
-static int32_t refuse_name(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the plugin's config name is not a usable file name",
-                       "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\"", out,
-                       out_len);
+static spisor_status refuse_id(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+                             "the plugin id is not a usable folder name in the portable place",
+                             "name the plugin by a manifest id that is one portable path segment such as "
+                             "\"my-plugin\"; config.name does not name the portable folder");
 }
 
-static int32_t refuse_id(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the plugin id is not a usable folder name in the portable place",
-                       "name the plugin by a manifest id that is one portable path segment such as \"my-plugin\"; "
-                       "config.name does not name the portable folder",
-                       out, out_len);
-}
-
-static int32_t locate_or_fail(const config_request *request, config_targets *targets, uint8_t **out,
-                              size_t *out_len) {
+static spisor_status locate_or_refuse(const runtime_config_request *request, config_targets *targets,
+                                      spisor_refusal *refusal) {
     locate_status status = locate_targets(request, targets);
     if (status == UNUSABLE_NAME) {
-        return refuse_name(out, out_len);
+        return refuse_name(refusal);
     }
     if (status == UNUSABLE_ID) {
-        return refuse_id(out, out_len);
+        return refuse_id(refusal);
     }
-    return status == LOCATED ? SPISOR_STATUS_SUCCESS : out_of_memory(out, out_len);
-}
-
-static int32_t answer_member(const char *member, cJSON *value, uint8_t **out, size_t *out_len) {
-    cJSON *result = cJSON_CreateObject();
-    if (result == NULL || (value != NULL && !cJSON_AddItemToObject(result, member, value))) {
-        cJSON_Delete(value);
-        cJSON_Delete(result);
-        return out_of_memory(out, out_len);
-    }
-    int32_t status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+    return status == LOCATED ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
 }
 
 static int has_empty_segment(const char *key) {
     return key[0] == '\0' || key[0] == '.' || key[strlen(key) - 1] == '.' || strstr(key, "..") != NULL;
 }
 
-static const char *key_of(const config_request *request) {
-    const cJSON *key = cJSON_GetObjectItemCaseSensitive(request->argument, "key");
-    return cJSON_IsString(key) ? key->valuestring : NULL;
-}
-
-static int32_t refuse_key(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no usable key",
-                       "send {\"key\": \"a.b\"} with one or more dot separated, non-empty segments", out, out_len);
+static spisor_status refuse_key(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable key",
+                             "send key as a.b, one or more dot separated, non-empty segments");
 }
 
 static int is_secret_declaration(const cJSON *declaration) {
@@ -351,12 +316,8 @@ static int is_secret_declaration(const cJSON *declaration) {
     return cJSON_IsString(type) && strcmp(type->valuestring, "secret") == 0;
 }
 
-static int is_secret_setting(const config_request *request, const char *key) {
+static int is_secret_setting(const runtime_config_request *request, const char *key) {
     return key != NULL && is_secret_declaration(cJSON_GetObjectItemCaseSensitive(request->settings, key));
-}
-
-static int has_places(const config_request *request) {
-    return cJSON_GetObjectItemCaseSensitive(request->argument, "places") != NULL;
 }
 
 /** Removes the value at a dot path from tree; 0 when memory ran out. */
@@ -388,7 +349,7 @@ static const char *path_below(const char *path, const char *key) {
 }
 
 /** Removes from tree, the value at key or the whole tree when key is NULL, every declared secret below it. */
-static int remove_secrets_below(const config_request *request, const char *key, cJSON *tree) {
+static int remove_secrets_below(const runtime_config_request *request, const char *key, cJSON *tree) {
     const cJSON *declaration;
     cJSON_ArrayForEach(declaration, request->settings) {
         const char *below = key == NULL ? declaration->string : path_below(declaration->string, key);
@@ -400,7 +361,7 @@ static int remove_secrets_below(const config_request *request, const char *key, 
 }
 
 /** The declared secret key that key lies inside, NULL when none. */
-static const char *secret_above(const config_request *request, const char *key) {
+static const char *secret_above(const runtime_config_request *request, const char *key) {
     const cJSON *declaration;
     cJSON_ArrayForEach(declaration, request->settings) {
         if (is_secret_declaration(declaration) && path_below(key, declaration->string) != NULL) {
@@ -411,7 +372,7 @@ static const char *secret_above(const config_request *request, const char *key) 
 }
 
 /** The declared secret key a set of value at key would write into, NULL when none. */
-static const char *secret_reached(const config_request *request, const char *key, const cJSON *value) {
+static const char *secret_reached(const runtime_config_request *request, const char *key, const cJSON *value) {
     const char *above = secret_above(request, key);
     const cJSON *declaration;
     if (above != NULL) {
@@ -426,26 +387,46 @@ static const char *secret_reached(const config_request *request, const char *key
     return NULL;
 }
 
-static int32_t config_all(const config_request *request, uint8_t **out, size_t *out_len) {
+static spisor_status refuse_portable(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the portable folder is not an absolute path",
+                             "send portable as the portable answer of places' resolve, or leave it out when the host "
+                             "has no portable layer");
+}
+
+/** Whether the request names a home and portable place it may read and write under; the refusal otherwise. */
+static spisor_status check_places(const runtime_config_request *request, spisor_refusal *refusal) {
+    if (!runtime_is_usable_home(request->home)) {
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
+    }
+    return request->portable == NULL || runtime_is_usable_home(request->portable) ? SPISOR_OK
+                                                                                   : refuse_portable(refusal);
+}
+
+spisor_status runtime_config_all_values(const runtime_config_request *request, cJSON **values, spisor_refusal *refusal) {
     config_targets targets;
-    int32_t status = locate_or_fail(request, &targets, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
+    spisor_status status = check_places(request, refusal);
+    *values = NULL;
+    if (status == SPISOR_OK) {
+        status = locate_or_refuse(request, &targets, refusal);
+    }
+    if (status != SPISOR_OK) {
         return status;
     }
     cJSON *merged = merged_from_disk(defaults_of(request), &targets);
     free_targets(&targets);
     if (merged == NULL || !remove_secrets_below(request, NULL, merged)) {
         cJSON_Delete(merged);
-        return out_of_memory(out, out_len);
+        return SPISOR_OUT_OF_MEMORY;
     }
-    return answer_member("values", merged, out, out_len);
+    *values = merged;
+    return SPISOR_OK;
 }
 
 /**
  * A copy of the value at key in merged without the declared secrets below it, NULL when absent or
  * inside a declared secret; *failed is set when memory ran out.
  */
-static cJSON *copy_at(const config_request *request, const cJSON *merged, const char *key, int *failed) {
+static cJSON *copy_at(const runtime_config_request *request, const cJSON *merged, const char *key, int *failed) {
     const cJSON *found = secret_above(request, key) == NULL ? runtime_walk(merged, key) : NULL;
     cJSON *copy = found == NULL ? NULL : cJSON_Duplicate(found, 1);
     *failed = found != NULL && copy == NULL;
@@ -457,7 +438,7 @@ static cJSON *copy_at(const config_request *request, const cJSON *merged, const 
     return copy;
 }
 
-static cJSON *value_at(const config_request *request, const config_targets *targets, const char *key, int *failed) {
+static cJSON *value_at(const runtime_config_request *request, const config_targets *targets, const char *key, int *failed) {
     *failed = 0;
     if (has_empty_segment(key)) {
         return NULL;
@@ -472,93 +453,64 @@ static cJSON *value_at(const config_request *request, const config_targets *targ
     return copy;
 }
 
-static int secret_place_of(const cJSON *argument, runtime_secret_place *place) {
-    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    const cJSON *file = cJSON_GetObjectItemCaseSensitive(places, "secretsFile");
-    const cJSON *force = cJSON_GetObjectItemCaseSensitive(places, "forceFileStore");
-    place->secrets_file = cJSON_IsString(file) ? file->valuestring : NULL;
-    place->force_file_store = cJSON_IsTrue(force);
-    return cJSON_IsBool(force) && runtime_is_usable_secret_place(place);
-}
-
-static int32_t refuse_secret_places(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no usable places",
-                       "send {\"places\": {\"secretsFile\": \"<absolute path>\", \"forceFileStore\": <boolean>}} as "
-                       "places.resolve answers them",
-                       out, out_len);
-}
-
-/** A secrets operation's answer as this service's JSON answer: result on OK, {} on NONE, else the refusal. */
-static int32_t secret_answer(spisor_status status, spisor_refusal *refusal, cJSON *result, uint8_t **out,
-                             size_t *out_len) {
-    int32_t answered;
-    if (status == SPISOR_OK || status == SPISOR_NONE) {
-        answered = result == NULL ? out_of_memory(out, out_len) : spisor_succeed(result, out, out_len);
-    } else if (refusal->detail != NULL) {
-        answered = spisor_fail(refusal->detail, refusal->fix == NULL ? "" : refusal->fix, out, out_len);
-    } else {
-        answered = out_of_memory(out, out_len);
-    }
-    cJSON_Delete(result);
-    spisor_refusal_release(refusal);
-    return answered;
-}
-
-static int32_t get_secret_setting(const config_request *request, const char *key, uint8_t **out, size_t *out_len) {
-    runtime_secret_place place;
-    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    char *value = NULL;
+static spisor_status get_secret_setting(const runtime_config_request *request, cJSON **value, spisor_refusal *refusal) {
+    char *text = NULL;
     spisor_status status;
-    cJSON *result;
-    if (!has_places(request)) {
-        return answer_member("value", NULL, out, out_len);
+    if (request->places == NULL) {
+        return SPISOR_NONE;
     }
-    if (!secret_place_of(request->argument, &place)) {
-        return refuse_secret_places(out, out_len);
+    status = runtime_get_secret(request->places, request->plugin, request->key, &text, refusal);
+    if (status == SPISOR_OK) {
+        *value = cJSON_CreateString(text);
+        status = *value == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
     }
-    status = runtime_get_secret(&place, request->plugin, key, &value, &refusal);
-    result = cJSON_CreateObject();
-    if (result != NULL && value != NULL && cJSON_AddStringToObject(result, "value", value) == NULL) {
-        cJSON_Delete(result);
-        result = NULL;
-    }
-    free(value);
-    return secret_answer(status, &refusal, result, out, out_len);
+    free(text);
+    return status;
 }
 
-static int32_t config_get(const config_request *request, uint8_t **out, size_t *out_len) {
-    if (is_secret_setting(request, key_of(request))) {
-        return get_secret_setting(request, key_of(request), out, out_len);
+static spisor_status get_in_targets(const runtime_config_request *request, const config_targets *targets, cJSON **value) {
+    int failed;
+    *value = value_at(request, targets, request->key, &failed);
+    if (failed) {
+        return SPISOR_OUT_OF_MEMORY;
     }
+    return *value == NULL ? SPISOR_NONE : SPISOR_OK;
+}
+
+spisor_status runtime_config_get_value(const runtime_config_request *request, cJSON **value, spisor_refusal *refusal) {
     config_targets targets;
-    int32_t status = locate_or_fail(request, &targets, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
+    spisor_status status = check_places(request, refusal);
+    *value = NULL;
+    if (status != SPISOR_OK) {
         return status;
     }
-    const char *key = key_of(request);
-    if (key == NULL) {
-        free_targets(&targets);
-        return refuse_key(out, out_len);
+    if (is_secret_setting(request, request->key)) {
+        return get_secret_setting(request, value, refusal);
     }
-    int failed;
-    cJSON *found = value_at(request, &targets, key, &failed);
+    status = locate_or_refuse(request, &targets, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    status = request->key == NULL ? refuse_key(refusal) : get_in_targets(request, &targets, value);
     free_targets(&targets);
-    return failed ? out_of_memory(out, out_len) : answer_member("value", found, out, out_len);
+    return status;
 }
 
-static int32_t refuse_file(const char *file_path, uint8_t **out, size_t *out_len) {
+static spisor_status refuse_file(const char *file_path, spisor_refusal *refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "repair %s so it holds one JSON object, or remove it, then set again; it was left unchanged",
              file_path);
-    return spisor_fail("the settings file is not a readable JSON object, so setting would discard its content", fix, out,
-                       out_len);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED,
+                             "the settings file is not a readable JSON object, so setting would discard its content",
+                             fix);
 }
 
-static int32_t refuse_path(const char *file_path, const char *key, uint8_t **out, size_t *out_len) {
+static spisor_status refuse_path(const char *file_path, const char *key, spisor_refusal *refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "%s holds a value that is not an object on the way to \"%s\"; edit that file by hand",
              file_path, key);
-    return spisor_fail("the key crosses a value in the settings file that is not an object", fix, out, out_len);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the key crosses a value in the settings file that is not an object",
+                             fix);
 }
 
 static cJSON *child_object_for_write(cJSON *node, const char *segment) {
@@ -637,38 +589,39 @@ static cJSON *writable_root(settings_file *file, int *refused) {
     return NULL;
 }
 
-static int32_t refuse_write(const char *file_path, uint8_t **out, size_t *out_len) {
+static spisor_status refuse_write(const char *file_path, spisor_refusal *refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s can be written, then set again", file_path);
-    return spisor_fail("the settings file could not be written", fix, out, out_len);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings file could not be written", fix);
 }
 
-static int32_t store_value(const config_target *target, settings_file *file, const char *key, const cJSON *value,
-                           uint8_t **out, size_t *out_len) {
+static spisor_status store_value(const config_target *target, settings_file *file, const char *key,
+                                 const cJSON *value, spisor_refusal *refusal) {
     int refused;
     cJSON *root = writable_root(file, &refused);
     if (root == NULL) {
-        return refused ? refuse_file(target->file, out, out_len) : out_of_memory(out, out_len);
+        return refused ? refuse_file(target->file, refusal) : SPISOR_OUT_OF_MEMORY;
     }
     place_status placed = place_value(root, key, value);
-    int32_t status = SPISOR_STATUS_SUCCESS;
+    spisor_status status = SPISOR_OK;
     if (placed == CROSSES_NON_OBJECT) {
-        status = refuse_path(target->file, key, out, out_len);
+        status = refuse_path(target->file, key, refusal);
     } else if (placed == PLACE_OUT_OF_MEMORY) {
-        status = out_of_memory(out, out_len);
+        status = SPISOR_OUT_OF_MEMORY;
     } else if (!write_settings(target, root)) {
-        status = refuse_write(target->file, out, out_len);
+        status = refuse_write(target->file, refusal);
     }
     cJSON_Delete(root);
     return status;
 }
 
-static int32_t refuse_missing_value(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no value", "send {\"key\": \"a.b\", \"value\": <any JSON>}", out, out_len);
+static spisor_status refuse_missing_value(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
+                             "send value as the setting's value, any value but one of kind NONE");
 }
 
 /** The merged value at key before the write, from the same reads the write starts from. */
-static cJSON *previous_value(const config_request *request, const layer_files *files, const char *key, int *failed) {
+static cJSON *previous_value(const runtime_config_request *request, const layer_files *files, const char *key, int *failed) {
     cJSON *merged = merged_layers(defaults_of(request), files);
     if (merged == NULL) {
         *failed = 1;
@@ -734,20 +687,21 @@ static void pause_after_read(void) {
 }
 #endif
 
-static int32_t store_locked(const config_request *request, const config_targets *targets, settings_layer layer,
-                            const char *key, const cJSON *value, uint8_t **out, size_t *out_len) {
+static spisor_status store_locked(const runtime_config_request *request, const config_targets *targets, settings_layer layer,
+                                  cJSON **previous, spisor_refusal *refusal) {
     layer_files files = read_layers(targets);
     pause_after_read();
     int failed;
-    cJSON *previous = previous_value(request, &files, key, &failed);
+    *previous = previous_value(request, &files, request->key, &failed);
     layer_write chosen = chosen_layer(layer, targets, &files);
-    int32_t status = failed ? out_of_memory(out, out_len) : store_value(chosen.target, chosen.file, key, value, out, out_len);
+    spisor_status status =
+        failed ? SPISOR_OUT_OF_MEMORY : store_value(chosen.target, chosen.file, request->key, request->value, refusal);
     free_layers(&files);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        cJSON_Delete(previous);
-        return status;
+    if (status != SPISOR_OK) {
+        cJSON_Delete(*previous);
+        *previous = NULL;
     }
-    return answer_member("previous", previous, out, out_len);
+    return status;
 }
 
 /**
@@ -765,124 +719,75 @@ static spisor_lock *lock_layer(const config_target *target) {
     return guard;
 }
 
-static int32_t store_after_previous(const config_request *request, const config_targets *targets, settings_layer layer,
-                                    const char *key, const cJSON *value, uint8_t **out, size_t *out_len) {
+static spisor_status store_after_previous(const runtime_config_request *request, const config_targets *targets,
+                                          settings_layer layer, cJSON **previous, spisor_refusal *refusal) {
     spisor_lock *guard = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application);
     if (guard == NULL) {
-        return spisor_fail("the settings folder could not be locked for writing",
-                           "check that the settings folder is writable, then try again", out, out_len);
+        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings folder could not be locked for writing",
+                                 "check that the settings folder is writable, then try again");
     }
-    int32_t status = store_locked(request, targets, layer, key, value, out, out_len);
+    spisor_status status = store_locked(request, targets, layer, previous, refusal);
     spisor_unlock(guard);
     return status;
 }
 
-static settings_layer layer_named(const cJSON *layer) {
-    if (!cJSON_IsString(layer)) {
-        return UNKNOWN_LAYER;
-    }
-    return strcmp(layer->valuestring, "application") == 0 ? APPLICATION_LAYER
-           : strcmp(layer->valuestring, "portable") == 0  ? PORTABLE_LAYER
-                                                          : UNKNOWN_LAYER;
-}
-
 /** A declared key takes its declared layer, or portable when it declares none; an undeclared key the application. */
-static settings_layer default_layer(const config_request *request) {
-    const cJSON *declaration = cJSON_GetObjectItemCaseSensitive(request->settings, key_of(request));
+static settings_layer default_layer(const runtime_config_request *request) {
+    const cJSON *declaration = cJSON_GetObjectItemCaseSensitive(request->settings, request->key);
+    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
     if (declaration == NULL) {
         return APPLICATION_LAYER;
     }
-    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
-    if (layer == NULL) {
-        return PORTABLE_LAYER;
+    return cJSON_IsString(layer) && strcmp(layer->valuestring, "application") == 0 ? APPLICATION_LAYER
+                                                                                    : PORTABLE_LAYER;
+}
+
+static settings_layer layer_of(const runtime_config_request *request) {
+    if (request->layer == RUNTIME_SETTINGS_LAYER_APPLICATION) {
+        return APPLICATION_LAYER;
     }
-    settings_layer named = layer_named(layer);
-    return named == UNKNOWN_LAYER ? UNKNOWN_DECLARED_LAYER : named;
+    return request->layer == RUNTIME_SETTINGS_LAYER_PORTABLE ? PORTABLE_LAYER : default_layer(request);
 }
 
-static settings_layer layer_of(const config_request *request) {
-    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(request->argument, "layer");
-    return layer == NULL ? default_layer(request) : layer_named(layer);
+static spisor_status refuse_missing_portable_layer(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "this host has no portable settings layer",
+                             "send portable as the portable answer of places' resolve, or set without the portable "
+                             "layer to write the application layer");
 }
 
-static int32_t refuse_layer(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument names no known layer",
-                       "send layer as \"application\" or \"portable\", or leave it out for the declared or default "
-                       "layer",
-                       out, out_len);
+static spisor_status refuse_reaching_secret(const char *key, const char *secret, spisor_refusal *refusal) {
+    char detail[4096];
+    snprintf(detail, sizeof detail, "config.set(\"%s\"): %s is a secret setting; set it on its own", key, secret);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "set the secret setting by its own key");
 }
 
-static int32_t refuse_declared_layer(const char *key, uint8_t **out, size_t *out_len) {
-    char message[4096];
-    snprintf(message, sizeof message, "the declared layer of \"%s\" is neither application nor portable", key);
-    return spisor_fail(message, "declare the setting's layer as application or portable", out, out_len);
-}
-
-static int32_t refuse_missing_portable_layer(uint8_t **out, size_t *out_len) {
-    return spisor_fail("this host has no portable settings layer",
-                       "send portable as the portable answer of places.resolve, or set without layer \"portable\" to "
-                       "write the application layer",
-                       out, out_len);
-}
-
-static int32_t refuse_reaching_secret(const char *key, const char *secret, uint8_t **out, size_t *out_len) {
-    char message[4096];
-    snprintf(message, sizeof message, "config.set(\"%s\"): %s is a secret setting; set it on its own", key, secret);
-    return spisor_fail(message, "set the secret setting by its own key", out, out_len);
-}
-
-static int32_t set_in_targets(const config_request *request, const config_targets *targets, settings_layer layer,
-                              uint8_t **out, size_t *out_len) {
-    const char *key = key_of(request);
-    const cJSON *value = cJSON_GetObjectItemCaseSensitive(request->argument, "value");
-    if (key == NULL || has_empty_segment(key)) {
-        return refuse_key(out, out_len);
+static spisor_status set_in_targets(const runtime_config_request *request, const config_targets *targets, settings_layer layer,
+                                    cJSON **previous, spisor_refusal *refusal) {
+    const char *secret;
+    if (request->key == NULL || has_empty_segment(request->key)) {
+        return refuse_key(refusal);
     }
-    if (value == NULL) {
-        return refuse_missing_value(out, out_len);
+    if (request->value == NULL) {
+        return refuse_missing_value(refusal);
     }
-    const char *secret = secret_reached(request, key, value);
+    secret = secret_reached(request, request->key, request->value);
     if (secret != NULL) {
-        return refuse_reaching_secret(key, secret, out, out_len);
+        return refuse_reaching_secret(request->key, secret, refusal);
     }
-    return store_after_previous(request, targets, layer, key, value, out, out_len);
+    return store_after_previous(request, targets, layer, previous, refusal);
 }
 
-static int32_t refuse_secret_without_store(const char *key, uint8_t **out, size_t *out_len) {
-    char message[2048];
-    snprintf(message, sizeof message, "config.set(\"%s\"): the setting is a secret and this host has no secret store",
+static spisor_status refuse_secret_without_store(const char *key, spisor_refusal *refusal) {
+    char detail[2048];
+    snprintf(detail, sizeof detail, "config.set(\"%s\"): the setting is a secret and this host has no secret store",
              key);
-    return spisor_fail(message, "start the host with a secret store", out, out_len);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "start the host with a secret store");
 }
 
-static int32_t refuse_secret_value(const char *key, uint8_t **out, size_t *out_len) {
-    char message[2048];
-    snprintf(message, sizeof message, "config.set(\"%s\"): a secret setting takes text or null", key);
-    return spisor_fail(message, "send the value as a string, or null to remove the secret", out, out_len);
-}
-
-/** The answer a secret setting gives, which never carries a value. */
-static int32_t answer_secret(spisor_status status, spisor_refusal *refusal, uint8_t **out, size_t *out_len) {
-    cJSON *result = cJSON_CreateObject();
-    if (result != NULL && cJSON_AddTrueToObject(result, "secret") == NULL) {
-        cJSON_Delete(result);
-        result = NULL;
-    }
-    return secret_answer(status, refusal, result, out, out_len);
-}
-
-static int32_t write_secret_setting(const runtime_secret_place *place, const config_request *request, const char *key,
-                                    const cJSON *value, uint8_t **out, size_t *out_len) {
-    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    runtime_secret_location location;
-    if (cJSON_IsNull(value)) {
-        return answer_secret(runtime_delete_secret(place, request->plugin, key, &refusal), &refusal, out, out_len);
-    }
-    if (cJSON_IsString(value)) {
-        return answer_secret(runtime_set_secret(place, request->plugin, key, value->valuestring, &location, &refusal),
-                             &refusal, out, out_len);
-    }
-    return refuse_secret_value(key, out, out_len);
+static spisor_status refuse_secret_value(const char *key, spisor_refusal *refusal) {
+    char detail[2048];
+    snprintf(detail, sizeof detail, "config.set(\"%s\"): a secret setting takes text or null", key);
+    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "send the value as text, or null to remove the secret");
 }
 
 /**
@@ -890,134 +795,83 @@ static int32_t write_secret_setting(const runtime_secret_place *place, const con
  *
  * @implNote The previous value is never answered, so a secret cannot leave through the answer of a set.
  */
-static int32_t set_secret_setting(const config_request *request, const char *key, uint8_t **out, size_t *out_len) {
-    const cJSON *value = cJSON_GetObjectItemCaseSensitive(request->argument, "value");
-    runtime_secret_place place;
-    if (value == NULL) {
-        return refuse_missing_value(out, out_len);
+static spisor_status set_secret_setting(const runtime_config_request *request, int *secret, spisor_refusal *refusal) {
+    runtime_secret_location location;
+    spisor_status status;
+    if (request->value == NULL) {
+        return refuse_missing_value(refusal);
     }
-    if (!has_places(request)) {
-        return refuse_secret_without_store(key, out, out_len);
+    if (request->places == NULL) {
+        return refuse_secret_without_store(request->key, refusal);
     }
-    if (!secret_place_of(request->argument, &place)) {
-        return refuse_secret_places(out, out_len);
+    if (cJSON_IsNull(request->value)) {
+        status = runtime_delete_secret(request->places, request->plugin, request->key, refusal);
+    } else if (cJSON_IsString(request->value)) {
+        status = runtime_set_secret(request->places, request->plugin, request->key, request->value->valuestring,
+                                    &location, refusal);
+    } else {
+        return refuse_secret_value(request->key, refusal);
     }
-    return write_secret_setting(&place, request, key, value, out, out_len);
+    *secret = status == SPISOR_OK;
+    return status;
 }
 
-static int32_t config_set(const config_request *request, uint8_t **out, size_t *out_len) {
-    if (is_secret_setting(request, key_of(request))) {
-        return set_secret_setting(request, key_of(request), out, out_len);
-    }
-    settings_layer layer = layer_of(request);
-    if (layer == UNKNOWN_LAYER) {
-        return refuse_layer(out, out_len);
-    }
-    if (layer == UNKNOWN_DECLARED_LAYER) {
-        return refuse_declared_layer(key_of(request), out, out_len);
-    }
-    if (layer == PORTABLE_LAYER && request->portable == NULL) {
-        return refuse_missing_portable_layer(out, out_len);
-    }
+spisor_status runtime_config_set_value(const runtime_config_request *request, cJSON **previous, int *secret,
+                                       spisor_refusal *refusal) {
     config_targets targets;
-    int32_t status = locate_or_fail(request, &targets, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
+    settings_layer layer = layer_of(request);
+    spisor_status status = check_places(request, refusal);
+    *previous = NULL;
+    *secret = 0;
+    if (status != SPISOR_OK) {
         return status;
     }
-    status = set_in_targets(request, &targets, layer, out, out_len);
+    if (is_secret_setting(request, request->key)) {
+        return set_secret_setting(request, secret, refusal);
+    }
+    if (layer == PORTABLE_LAYER && request->portable == NULL) {
+        return refuse_missing_portable_layer(refusal);
+    }
+    status = locate_or_refuse(request, &targets, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    status = set_in_targets(request, &targets, layer, previous, refusal);
     free_targets(&targets);
     return status;
 }
 
-static int32_t refuse_home_and_plugin(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no string home and plugin",
-                       "send {\"home\": \"<directory>\", \"plugin\": \"<manifest id>\"}", out, out_len);
+/** The refusal of a status that is not OK, as runtime's JSON callers hold one; NULL when memory ran out. */
+static cJSON *refusal_json(spisor_status status, spisor_refusal *refusal) {
+    cJSON *refused = status == SPISOR_OK ? NULL : runtime_refusal_of(refusal);
+    spisor_refusal_release(refusal);
+    return refused;
 }
 
-static int32_t refuse_home(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no string home", "send {\"home\": \"<directory>\"}", out, out_len);
+cJSON *runtime_ecosystem_settings_values(const char *home, const char *portable, cJSON **refusal) {
+    runtime_config_request request = {NULL};
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    cJSON *values = NULL;
+    request.home = home;
+    request.portable = portable;
+    *refusal = refusal_json(runtime_config_all_values(&request, &values, &refused), &refused);
+    return values;
 }
 
-static int32_t run_ecosystem_operation(const spisor_call *call, config_operation operation, uint8_t **out,
-                                       size_t *out_len) {
-    const cJSON *home = cJSON_GetObjectItemCaseSensitive(call->argument, "home");
-    const char *portable;
-    if (!cJSON_IsString(home)) {
-        return refuse_home(out, out_len);
-    }
-    if (!runtime_is_usable_home(home->valuestring)) {
-        return runtime_refuse_home(out, out_len);
-    }
-    if (!runtime_portable_argument(call->argument, &portable)) {
-        return runtime_refuse_portable(out, out_len);
-    }
-    config_request request = {home->valuestring, portable, NULL, optional_object(call->argument, "names"), NULL,
-                              call->argument, NULL};
-    return operation(&request, out, out_len);
-}
-
-static int32_t run_operation(const spisor_call *call, config_operation operation, uint8_t **out, size_t *out_len) {
-    const cJSON *home = cJSON_GetObjectItemCaseSensitive(call->argument, "home");
-    const cJSON *plugin = cJSON_GetObjectItemCaseSensitive(call->argument, "plugin");
-    const char *portable;
-    if (!cJSON_IsString(home) || !cJSON_IsString(plugin)) {
-        return refuse_home_and_plugin(out, out_len);
-    }
-    if (!runtime_is_usable_home(home->valuestring)) {
-        return runtime_refuse_home(out, out_len);
-    }
-    if (!runtime_portable_argument(call->argument, &portable)) {
-        return runtime_refuse_portable(out, out_len);
-    }
-    config_request request = {home->valuestring,
-                              portable,
-                              plugin->valuestring,
-                              optional_object(call->argument, "names"),
-                              optional_object(call->argument, "config"),
-                              call->argument,
-                              optional_object(call->argument, "settings")};
-    return operation(&request, out, out_len);
-}
-
-typedef int32_t (*call_runner)(const spisor_call *call, config_operation operation, uint8_t **out, size_t *out_len);
-
-static int32_t dispatch_with(call_runner runner, const uint8_t *in, size_t in_len, config_operation operation,
-                             uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    status = runner(&call, operation, out, out_len);
-    spisor_discard_call(&call);
-    return status;
-}
-
-static int32_t dispatch(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out, size_t *out_len) {
-    return dispatch_with(run_operation, in, in_len, operation, out, out_len);
-}
-
-static int32_t dispatch_ecosystem(const uint8_t *in, size_t in_len, config_operation operation, uint8_t **out,
-                                  size_t *out_len) {
-    return dispatch_with(run_ecosystem_operation, in, in_len, operation, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_config_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return dispatch(in, in_len, config_all, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_config_get(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return dispatch(in, in_len, config_get, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_config_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return dispatch(in, in_len, config_set, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_settings_all(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return dispatch_ecosystem(in, in_len, config_all, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_settings_set(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return dispatch_ecosystem(in, in_len, config_set, out, out_len);
+int runtime_set_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
+                                  uint32_t layer, cJSON **refusal) {
+    runtime_config_request request = {NULL};
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    cJSON *previous = NULL;
+    int secret = 0;
+    spisor_status status;
+    request.home = home;
+    request.portable = portable;
+    request.key = key;
+    request.value = value;
+    request.layer = layer;
+    status = runtime_config_set_value(&request, &previous, &secret, &refused);
+    cJSON_Delete(previous);
+    *refusal = refusal_json(status, &refused);
+    return status == SPISOR_OK;
 }

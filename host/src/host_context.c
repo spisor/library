@@ -184,16 +184,7 @@ cJSON *host_registration(const host_context *context, const char *id, cJSON **re
 }
 
 cJSON *host_settings_of(const host_context *context, const char *home, cJSON **refusal) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && (cJSON_AddStringToObject(argument, "home", home) == NULL ||
-                             cJSON_AddStringToObject(argument, "portable", context->portable) == NULL)) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    cJSON *answer = host_call(runtime_settings_all, argument, refusal);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer, "values");
-    cJSON_Delete(answer);
-    return values;
+    return runtime_ecosystem_settings_values(home, context->portable, refusal);
 }
 
 #if defined(_WIN32)

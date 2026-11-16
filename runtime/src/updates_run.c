@@ -52,13 +52,7 @@ static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
 
 /** The settings values settings.all answers for a host's home; NULL with *refusal set when it refused. */
 static cJSON *settings_of(const update_run *run, const char *home, cJSON **refusal) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON_AddStringToObject(call, "home", home == NULL ? "" : home);
-    cJSON_AddStringToObject(call, "portable", text_of(run->places, "portable"));
-    cJSON *answer = runtime_call_or_refuse(runtime_settings_all, call, refusal);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer, "values");
-    cJSON_Delete(answer);
-    return values;
+    return runtime_ecosystem_settings_values(home, text_of(run->places, "portable"), refusal);
 }
 
 /**

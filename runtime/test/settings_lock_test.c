@@ -19,6 +19,7 @@
 
 #include "catalog_call.h"
 #include "check.h"
+#include "config_fixture.h"
 #include "config.h"
 #include "config_hooks.h"
 #include "directory_tree.h"
@@ -32,7 +33,7 @@ typedef struct settings_write {
     const char *home;
     const char *portable;
     const char *key;
-    int32_t status;
+    spisor_status status;
 } settings_write;
 
 static char *joined(const char *base, const char *rest) {
@@ -56,7 +57,7 @@ static void write_setting(settings_write *write) {
     cJSON_AddStringToObject(argument, "key", write->key);
     cJSON_AddTrueToObject(argument, "value");
     cJSON_AddStringToObject(argument, "layer", "portable");
-    catalog_answer answer = call_catalog(runtime_settings_set, argument);
+    config_answer answer = config_call(SETTINGS_SET, argument);
     write->status = answer.status;
     cJSON_Delete(answer.tree);
 }
@@ -122,8 +123,8 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     char *release = joined(signals, "release");
     CHECK(spisor_make_directories(home) == 1 && spisor_make_directories(signals) == 1);
     runtime_config_pause_after_read(signals);
-    settings_write first = {home, portable, "plugins.first.enabled", -1};
-    settings_write second = {home, portable, "plugins.second.enabled", -1};
+    settings_write first = {home, portable, "plugins.first.enabled", SPISOR_REFUSED};
+    settings_write second = {home, portable, "plugins.second.enabled", SPISOR_REFUSED};
     writer_thread first_thread = start_writer(&first);
     CHECK(wait_for(paused));
     writer_thread second_thread = start_writer(&second);
@@ -131,11 +132,11 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     CHECK(spisor_replace_file(release, (const uint8_t *)"", 0) == 1);
     join_writer(first_thread);
     join_writer(second_thread);
-    CHECK(first.status == SPISOR_STATUS_SUCCESS && second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK && second.status == SPISOR_OK);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "home", home);
     cJSON_AddStringToObject(argument, "portable", portable);
-    catalog_answer answer = call_catalog(runtime_settings_all, argument);
+    config_answer answer = config_call(SETTINGS_ALL, argument);
     const cJSON *plugins = value_at(answer.tree, "values/plugins");
     CHECK(cJSON_IsTrue(value_at(plugins, "first/enabled")));
     CHECK(cJSON_IsTrue(value_at(plugins, "second/enabled")));

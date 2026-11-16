@@ -16,6 +16,7 @@
 #endif
 
 #include "check.h"
+#include "config_fixture.h"
 #include "scratch_directory.h"
 #include "config.h"
 #include "spisor/file.h"
@@ -30,13 +31,7 @@ typedef struct scratch_home {
     char portable_file[1200];
 } scratch_home;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-    uint8_t *buffer;
-} answer;
-
-typedef int32_t (*export_function)(const uint8_t *, size_t, uint8_t **, size_t *);
+typedef config_answer answer;
 
 static void fresh_home(scratch_home *home, const char *label) {
     static int sequence = 0;
@@ -80,20 +75,12 @@ static cJSON *request_for(const scratch_home *home, int with_portable) {
     return request;
 }
 
-static answer call_with(export_function function, cJSON *request) {
-    answer result = {0, NULL, NULL};
-    char *text = cJSON_PrintUnformatted(request);
-    size_t out_len = 0;
-    result.status = function((const uint8_t *)text, strlen(text), &result.buffer, &out_len);
-    result.tree = result.buffer == NULL ? NULL : spisor_parse_json(result.buffer, out_len);
-    free(text);
-    cJSON_Delete(request);
-    return result;
+static answer call_with(config_operation operation, cJSON *request) {
+    return config_call(operation, request);
 }
 
 static void finish(answer *result) {
     cJSON_Delete(result->tree);
-    spisor_release(result->buffer);
 }
 
 static answer settings_set(const scratch_home *home, const char *layer, const char *key, const char *value_json) {
@@ -103,12 +90,12 @@ static answer settings_set(const scratch_home *home, const char *layer, const ch
     if (layer != NULL) {
         cJSON_AddStringToObject(request, "layer", layer);
     }
-    return call_with(runtime_settings_set, request);
+    return call_with(SETTINGS_SET, request);
 }
 
 static void expect_values(const scratch_home *home, const char *expected_json, const char *label) {
-    answer result = call_with(runtime_settings_all, request_for(home, 1));
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    answer result = call_with(SETTINGS_ALL, request_for(home, 1));
+    CHECK(ANSWERED(result));
     const cJSON *values = cJSON_GetObjectItemCaseSensitive(result.tree, "values");
     char *actual = values == NULL ? NULL : cJSON_PrintUnformatted(values);
     check_text(actual, expected_json, label);
@@ -118,7 +105,7 @@ static void expect_values(const scratch_home *home, const char *expected_json, c
 
 static void expect_refused_naming(const answer *result, const char *path, const char *label) {
     const cJSON *fix = cJSON_GetObjectItemCaseSensitive(result->tree, "fix");
-    if (result->status != SPISOR_STATUS_FAILURE || !cJSON_IsString(fix) || strstr(fix->valuestring, path) == NULL) {
+    if (!REFUSED_CALL(*result) || !cJSON_IsString(fix) || strstr(fix->valuestring, path) == NULL) {
         fprintf(stderr, "%s: expected a refusal whose fix names %s\n", label, path);
         check_failures++;
     }
@@ -130,8 +117,8 @@ static void all_merges_portable_under_application(void) {
     write_portable_file(&home, "{\"ui\":{\"theme\":\"dark\",\"size\":1},\"only\":true}");
     write_application_file(&home, "{\"ui\":{\"size\":2}}");
     expect_values(&home, "{\"ui\":{\"theme\":\"dark\",\"size\":2},\"only\":true}", "application over portable");
-    answer without_portable = call_with(runtime_settings_all, request_for(&home, 0));
-    CHECK(without_portable.status == SPISOR_STATUS_SUCCESS);
+    answer without_portable = call_with(SETTINGS_ALL, request_for(&home, 0));
+    CHECK(ANSWERED(without_portable));
     finish(&without_portable);
 }
 
@@ -146,7 +133,7 @@ static void set_without_a_layer_writes_the_application_file(void) {
     scratch_home home;
     fresh_home(&home, "application");
     answer result = settings_set(&home, NULL, "a", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     CHECK(cJSON_GetObjectItemCaseSensitive(result.tree, "previous") == NULL);
     finish(&result);
     expect_content(home.application_file, "{\n  \"a\": 1\n}\n", "the application file");
@@ -158,7 +145,7 @@ static void set_in_the_portable_layer_writes_only_that_file(void) {
     fresh_home(&home, "portable");
     write_application_file(&home, "{\"kept\":1}");
     answer result = settings_set(&home, "portable", "b", "2");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     expect_content(home.portable_file, "{\n  \"b\": 2\n}\n", "the portable file");
     expect_content(home.application_file, "{\"kept\":1}", "the application file untouched");
@@ -170,7 +157,7 @@ static void set_reports_the_merged_previous(void) {
     write_portable_file(&home, "{\"x\":7}");
     answer result = settings_set(&home, NULL, "x", "8");
     const cJSON *previous = cJSON_GetObjectItemCaseSensitive(result.tree, "previous");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS && cJSON_IsNumber(previous) && previous->valuedouble == 7);
+    CHECK(ANSWERED(result) && cJSON_IsNumber(previous) && previous->valuedouble == 7);
     finish(&result);
 }
 
@@ -178,10 +165,10 @@ static void set_nests_a_dotted_key(void) {
     scratch_home home;
     fresh_home(&home, "dotted");
     answer first = settings_set(&home, NULL, "plugins.demo.enabled", "true");
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(first));
     finish(&first);
     answer second = settings_set(&home, NULL, "plugins.demo.size", "3");
-    CHECK(second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(second));
     finish(&second);
     expect_values(&home, "{\"plugins\":{\"demo\":{\"enabled\":true,\"size\":3}}}", "nested object");
 }
@@ -190,18 +177,18 @@ static void set_refuses_a_bad_key_a_missing_value_and_a_bad_layer(void) {
     scratch_home home;
     fresh_home(&home, "refusals");
     answer empty_segment = settings_set(&home, NULL, "a..b", "1");
-    CHECK(empty_segment.status == SPISOR_STATUS_FAILURE);
+    CHECK(REFUSED_CALL(empty_segment));
     finish(&empty_segment);
     answer unknown_layer = settings_set(&home, "machine", "a", "1");
-    CHECK(unknown_layer.status == SPISOR_STATUS_FAILURE);
+    CHECK(REFUSED_CALL(unknown_layer));
     finish(&unknown_layer);
     cJSON *no_value = request_for(&home, 1);
     cJSON_AddStringToObject(no_value, "key", "a");
-    answer missing = call_with(runtime_settings_set, no_value);
-    CHECK(missing.status == SPISOR_STATUS_FAILURE);
+    answer missing = call_with(SETTINGS_SET, no_value);
+    CHECK(REFUSED_CALL(missing));
     finish(&missing);
-    answer no_home = call_with(runtime_settings_all, cJSON_CreateObject());
-    CHECK(no_home.status == SPISOR_STATUS_FAILURE);
+    answer no_home = call_with(SETTINGS_ALL, cJSON_CreateObject());
+    CHECK(REFUSED_CALL(no_home));
     finish(&no_home);
     CHECK(spisor_file_exists(home.application_file) == 0);
 }
@@ -213,8 +200,8 @@ static void set_in_portable_without_portable_is_refused(void) {
     cJSON_AddStringToObject(request, "key", "a");
     cJSON_AddNumberToObject(request, "value", 1);
     cJSON_AddStringToObject(request, "layer", "portable");
-    answer result = call_with(runtime_settings_set, request);
-    CHECK(result.status == SPISOR_STATUS_FAILURE);
+    answer result = call_with(SETTINGS_SET, request);
+    CHECK(REFUSED_CALL(result));
     finish(&result);
     CHECK(spisor_file_exists(home.application_file) == 0);
 }
@@ -228,7 +215,7 @@ static void an_unreadable_portable_file_is_refused_and_kept(void) {
     finish(&refused);
     expect_content(home.portable_file, "{\"a\":", "the portable file unchanged");
     answer application = settings_set(&home, NULL, "b", "1");
-    CHECK(application.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(application));
     finish(&application);
 }
 
@@ -246,7 +233,7 @@ static void set_writes_through_a_symlinked_settings_file(void) {
         return;
     }
     answer result = settings_set(&home, "portable", "added", "1");
-    CHECK(result.status == SPISOR_STATUS_SUCCESS);
+    CHECK(ANSWERED(result));
     finish(&result);
     CHECK(is_link(home.portable_file));
     expect_content(target, "{\n  \"kept\": true,\n  \"added\": 1\n}\n", "the link's target changed");

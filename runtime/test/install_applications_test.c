@@ -238,14 +238,11 @@ static void records_the_registered_version_of_each_loader_keeping_what_it_schedu
 /** The settings the loader's own home and the portable place merge to, as a launch of the loader reads them. */
 static cJSON *loader_settings(const install_base *base) {
     char *home = joined(base->user, "homes/claude");
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "home", home);
-    cJSON_AddStringToObject(argument, "portable", base->portable);
+    cJSON *refusal = NULL;
+    cJSON *values = runtime_ecosystem_settings_values(home, base->portable, &refusal);
+    CHECK(values != NULL && refusal == NULL);
+    cJSON_Delete(refusal);
     free(home);
-    catalog_answer answer = call_catalog(runtime_settings_all, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON *values = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "values");
-    cJSON_Delete(answer.tree);
     return values;
 }
 
