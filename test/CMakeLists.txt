@@ -12,3 +12,31 @@ endforeach()
 
 add_test(NAME public_headers_are_ascii
     COMMAND ${CMAKE_COMMAND} -DDIRECTORY=${PROJECT_SOURCE_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/ascii_check.cmake)
+
+foreach(name status_test value_test json_value_test)
+    add_executable(${name} ${name}.c)
+    target_link_libraries(${name} PRIVATE spisor_library_testing)
+    spisor_strict_warnings(${name})
+    add_test(NAME ${name} COMMAND ${name})
+endforeach()
+
+add_executable(vector_reader_test vector_reader_test.c)
+target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader)
+spisor_strict_warnings(vector_reader_test)
+target_compile_definitions(vector_reader_test PRIVATE
+    SPISOR_VECTOR_READER_VECTOR_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/vector-reader.json")
+add_test(NAME vector_reader_test COMMAND vector_reader_test)
+
+foreach(scenario
+        link_graph_lets_a_test_link_the_reader
+        link_graph_refuses_a_direct_link
+        link_graph_refuses_a_link_through_another_library
+        link_graph_refuses_objects_taken_from_the_reader
+        link_graph_refuses_a_link_under_a_condition
+        link_graph_refuses_a_link_through_an_alias
+        link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test)
+    add_test(NAME ${scenario}
+        COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
+            -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/link_graph/link_graph_test.cmake)
+endforeach()

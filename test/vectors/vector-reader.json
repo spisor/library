@@ -1,0 +1,10 @@
+{
+  "name": "zweit\u00e9",
+  "number": 3,
+  "statuses": {"0": "OK", "1": "NONE", "2": "MALFORMED", "3": "REFUSED", "4": "OUT_OF_MEMORY"},
+  "unknown status": "FAILED",
+  "refusal": {"detail": "the settings file cannot be read", "fix": "check its permissions"},
+  "refusal without fix": {"detail": "no such key"},
+  "refusal with a number": {"detail": 1},
+  "value": {"enabled": true, "count": 2.5, "tags": ["a", null], "nested": {"empty": {}}}
+}

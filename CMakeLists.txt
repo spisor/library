@@ -15,7 +15,10 @@ add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
 set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(spisor_library STATIC src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c src/windows_file.c src/lock.c src/json_write.c src/json_file.c)
+set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
+    src/windows_file.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/allocation.c src/refusal.c src/value.c
+    src/value_block.c src/json_value.c)
+add_library(spisor_library STATIC ${spisor_library_sources})
 target_include_directories(spisor_library PUBLIC include)
 target_link_libraries(spisor_library PUBLIC spisor_cjson)
 set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -34,9 +37,14 @@ endfunction()
 
 spisor_strict_warnings(spisor_library)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/link_graph.cmake)
+add_subdirectory(testing)
+
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     enable_testing()
     add_subdirectory(test)
     add_subdirectory(runtime)
     add_subdirectory(host)
 endif()
+
+spisor_refuse_test_only_links("${CMAKE_CURRENT_SOURCE_DIR}")
