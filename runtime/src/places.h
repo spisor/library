@@ -5,7 +5,11 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "export.h"
+
+#define RUNTIME_NO_LOCAL_APP_DATA_MESSAGE "LOCALAPPDATA is absent, empty or not an absolute path"
+#define RUNTIME_NO_LOCAL_APP_DATA_FIX                                                                   \
+    "send the environment's LOCALAPPDATA as an absolute directory path; Windows has no default for the " \
+    "machine state"
 
 #define RUNTIME_PLACES_OK 0
 #define RUNTIME_PLACES_OUT_OF_MEMORY 1
@@ -40,7 +44,5 @@ void runtime_free_places(runtime_places *places);
  * to the {message, fix} places.resolve refuses with, or with *refusal NULL when memory runs out.
  */
 cJSON *runtime_places_of_environment(const cJSON *environment, cJSON **refusal);
-
-RUNTIME_EXPORT int32_t runtime_places_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

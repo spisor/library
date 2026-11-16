@@ -23,6 +23,7 @@ foreach(name paths_test settings_test log_test places_test install_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
 target_link_libraries(paths_test PRIVATE spisor_vector_reader)
+target_link_libraries(places_test PRIVATE spisor_vector_reader)
 
 runtime_test(secrets_test fake_secret_backend.c)
 runtime_test(config_test fake_secret_backend.c)

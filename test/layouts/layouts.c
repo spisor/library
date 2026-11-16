@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/paths.h"
+#include "runtime/places.h"
 #include "spisor/json_kind.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -98,10 +99,37 @@ static void print_paths_layouts(void) {
     SIZE(runtime_paths_definition);
 }
 
+static void print_places_layouts(void) {
+    FIELD(runtime_variable, name);
+    FIELD(runtime_variable, value);
+    SIZE(runtime_variable);
+    FIELD(runtime_places_resolve_argument, size);
+    FIELD(runtime_places_resolve_argument, home);
+    FIELD(runtime_places_resolve_argument, environment);
+    FIELD(runtime_places_resolve_argument, environment_count);
+    SIZE(runtime_places_resolve_argument);
+    FIELD(runtime_places_answer, size);
+    FIELD(runtime_places_answer, home);
+    FIELD(runtime_places_answer, portable);
+    FIELD(runtime_places_answer, state);
+    FIELD(runtime_places_answer, cache);
+    FIELD(runtime_places_answer, secrets_file);
+    FIELD(runtime_places_answer, force_file_store);
+    FIELD(runtime_places_answer, storage);
+    SIZE(runtime_places_answer);
+    FIELD(runtime_places_definition, size);
+    FIELD(runtime_places_definition, context);
+    FIELD(runtime_places_definition, resolve);
+    FIELD(runtime_places_definition, release_answer);
+    FIELD(runtime_places_definition, release_refusal);
+    SIZE(runtime_places_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
     print_json_kind_layouts();
     print_paths_layouts();
+    print_places_layouts();
     return 0;
 }
