@@ -122,3 +122,65 @@ spisor_status spisor_value_of_json(const cJSON *json, spisor_value_tree *tree) {
     value_tree_adopt(tree, &root, storage);
     return SPISOR_OK;
 }
+
+static cJSON *json_of(const spisor_value *value);
+
+static cJSON *list_of(const spisor_value *value) {
+    cJSON *list = cJSON_CreateArray();
+    size_t index;
+    for (index = 0; list != NULL && index < value->count; index++) {
+        cJSON *item = json_of(&value->items[index]);
+        if (item == NULL || !cJSON_AddItemToArray(list, item)) {
+            cJSON_Delete(item);
+            cJSON_Delete(list);
+            list = NULL;
+        }
+    }
+    return list;
+}
+
+static cJSON *record_of(const spisor_value *value) {
+    cJSON *record = cJSON_CreateObject();
+    size_t index;
+    for (index = 0; record != NULL && index < value->count; index++) {
+        cJSON *member = json_of(&value->entries[index].value);
+        if (member == NULL || !cJSON_AddItemToObject(record, value->entries[index].key, member)) {
+            cJSON_Delete(member);
+            cJSON_Delete(record);
+            record = NULL;
+        }
+    }
+    return record;
+}
+
+/** A checked value as cJSON; NULL only when cJSON runs out of memory. */
+static cJSON *json_of(const spisor_value *value) {
+    switch (value->kind) {
+    case SPISOR_VALUE_NULL:
+        return cJSON_CreateNull();
+    case SPISOR_VALUE_BOOLEAN:
+        return cJSON_CreateBool(value->boolean != 0);
+    case SPISOR_VALUE_NUMBER:
+        return cJSON_CreateNumber(value->number);
+    case SPISOR_VALUE_TEXT:
+        return cJSON_CreateString(value->text);
+    case SPISOR_VALUE_LIST:
+        return list_of(value);
+    default:
+        return record_of(value);
+    }
+}
+
+spisor_status spisor_json_of_value(const spisor_value *value, cJSON **json) {
+    spisor_status status;
+    *json = NULL;
+    if (value == NULL || value->kind == SPISOR_VALUE_NONE) {
+        return SPISOR_MALFORMED;
+    }
+    status = spisor_value_check(value);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    *json = json_of(value);
+    return *json == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+}

@@ -1,3 +1,4 @@
+#include <math.h>
 #include <string.h>
 
 #include "allocation.h"
@@ -131,10 +132,64 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
     CHECK(0);
 }
 
+static void every_node_becomes_its_json(void) {
+    cJSON *json = parsed("{\"name\":\"zweit\\u00e9\",\"count\":42.5,\"on\":true,\"off\":false,\"none\":null,"
+                         "\"list\":[1,\"two\",[],{}],\"record\":{\"inner\":{\"deep\":[null]}}}");
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    cJSON *written = NULL;
+    CHECK(spisor_value_of_json(json, &tree) == SPISOR_OK);
+    CHECK(spisor_json_of_value(&tree.root, &written) == SPISOR_OK);
+    CHECK(written != NULL && cJSON_Compare(json, written, 1));
+    cJSON_Delete(written);
+    cJSON_Delete(json);
+    spisor_value_release(&tree);
+    CHECK(spisor_memory_live_blocks() == 0);
+}
+
+static void expect_unwritable(const spisor_value *value, const char *label) {
+    cJSON *written = NULL;
+    if (spisor_json_of_value(value, &written) != SPISOR_MALFORMED) {
+        fprintf(stderr, "json_of_value accepted %s\n", label);
+        check_failures++;
+    }
+    CHECK(written == NULL);
+    CHECK(spisor_memory_live_blocks() == 0);
+}
+
+static void what_json_cannot_hold_is_malformed(void) {
+    spisor_value none = {SPISOR_VALUE_NONE, 0, 0, NULL, 0, NULL, NULL, 0};
+    spisor_value not_a_number = {SPISOR_VALUE_NUMBER, 0, 0, NULL, 0, NULL, NULL, 0};
+    spisor_value broken_text = {SPISOR_VALUE_TEXT, 0, 0, "\xff", 1, NULL, NULL, 0};
+    spisor_value none_in_a_list = {SPISOR_VALUE_LIST, 0, 0, NULL, 0, &none, NULL, 1};
+    not_a_number.number = HUGE_VAL;
+    expect_unwritable(NULL, "NULL");
+    expect_unwritable(&none, "a root of kind NONE");
+    expect_unwritable(&not_a_number, "a number that is not finite");
+    expect_unwritable(&broken_text, "text that is not UTF-8");
+    expect_unwritable(&none_in_a_list, "an item of kind NONE");
+}
+
+static void a_failed_check_writes_nothing(void) {
+    cJSON *json = parsed("[[1],[2],[3]]");
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    cJSON *written = NULL;
+    CHECK(spisor_value_of_json(json, &tree) == SPISOR_OK);
+    spisor_memory_fail_at(1);
+    CHECK(spisor_json_of_value(&tree.root, &written) == SPISOR_OUT_OF_MEMORY);
+    spisor_memory_fail_at(0);
+    CHECK(written == NULL);
+    spisor_value_release(&tree);
+    cJSON_Delete(json);
+    CHECK(spisor_memory_live_blocks() == 0);
+}
+
 int main(void) {
     every_json_kind_becomes_its_node();
     what_a_tree_cannot_hold_is_malformed();
     a_tree_that_is_not_empty_is_refused();
     every_failed_allocation_leaves_the_tree_empty();
+    every_node_becomes_its_json();
+    what_json_cannot_hold_is_malformed();
+    a_failed_check_writes_nothing();
     return check_summary("json_value_test");
 }

@@ -21,6 +21,16 @@ extern "C" {
  */
 spisor_status spisor_value_of_json(const cJSON *json, spisor_value_tree *tree);
 
+/**
+ * Builds a new cJSON tree from a value tree, for a value crossing a definition that the library keeps as JSON in its
+ * own files. The cJSON tree is the caller's, freed with cJSON_Delete.
+ *
+ * @param json where the new tree goes, NULL whenever the answer is not OK. Required.
+ * @return OK; MALFORMED for a value spisor_value_check refuses or a root of kind NONE, which JSON cannot hold;
+ * OUT_OF_MEMORY.
+ */
+spisor_status spisor_json_of_value(const spisor_value *value, cJSON **json);
+
 #ifdef __cplusplus
 }
 #endif
