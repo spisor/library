@@ -8,7 +8,6 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
-target_compile_definitions(runtime_objects PRIVATE RUNTIME_BUILDING)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
@@ -218,11 +217,18 @@ set_target_properties(runtime_install_test_hooks PROPERTIES SPISOR_TEST_ONLY TRU
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_library(runtime SHARED src/release.c src/library_load.c $<TARGET_OBJECTS:runtime_objects> $<TARGET_OBJECTS:runtime_change_reversal>
-    $<TARGET_OBJECTS:runtime_path_entry> $<TARGET_OBJECTS:runtime_secret_store> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
-    $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
-    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_ui> $<TARGET_OBJECTS:runtime_install>)
+# Whether a definition is exported follows membership here, never which object library holds its source.
+set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_path_entry runtime_secret_store
+    runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
+    runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
+    runtime_hosts runtime_ui runtime_install)
+set(runtime_shipped_objects "")
+foreach(library IN LISTS runtime_shipped_object_libraries)
+    target_compile_definitions(${library} PRIVATE RUNTIME_BUILDING)
+    list(APPEND runtime_shipped_objects $<TARGET_OBJECTS:${library}>)
+endforeach()
+add_library(runtime SHARED src/release.c src/library_load.c ${runtime_shipped_objects})
+target_compile_definitions(runtime PRIVATE RUNTIME_BUILDING)
 target_include_directories(runtime PRIVATE src ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
     ${runtime_fetch_libraries})
