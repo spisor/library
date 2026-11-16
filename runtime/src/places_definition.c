@@ -49,7 +49,7 @@ static spisor_status resolve_in(const runtime_places_resolve_argument *argument,
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
     }
     if (!runtime_is_usable_home(home)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
+        return runtime_refuse_home(refusal);
     }
     return resolve_under(home, environment, answer, refusal);
 }

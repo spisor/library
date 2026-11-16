@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "definition_support.h"
 #include "segment.h"
-#include "spisor/json_kind.h"
 #include "spisor/path.h"
 
 static char *declared_segment(const cJSON *names, const char *kind) {
@@ -55,28 +55,14 @@ int runtime_is_usable_home(const char *home) {
     return home != NULL && home[0] != '\0' && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home);
 }
 
-int32_t runtime_refuse_home(uint8_t **out, size_t *out_len) {
-    return spisor_fail(RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX, out, out_len);
+spisor_status runtime_refuse_home(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
 }
 
-int runtime_portable_argument(const cJSON *argument, const char **portable) {
-    const cJSON *declared = cJSON_GetObjectItemCaseSensitive(argument, "portable");
-    *portable = NULL;
-    if (declared == NULL) {
-        return 1;
-    }
-    if (!cJSON_IsString(declared) || !runtime_is_usable_home(declared->valuestring)) {
-        return 0;
-    }
-    *portable = declared->valuestring;
-    return 1;
-}
-
-int32_t runtime_refuse_portable(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the portable folder is not an absolute path",
-                       "send portable as the portable answer of places.resolve, or leave it out when the host has no "
-                       "portable layer",
-                       out, out_len);
+spisor_status runtime_refuse_portable(spisor_refusal *refusal) {
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the portable folder is not an absolute path",
+                             "send portable as the portable answer of places' resolve, or leave it out when the host "
+                             "has no portable layer");
 }
 
 char *runtime_plugin_folder(const char *place, const char *folder_name) {

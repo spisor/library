@@ -387,19 +387,15 @@ static const char *secret_reached(const runtime_config_request *request, const c
     return NULL;
 }
 
-static spisor_status refuse_portable(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the portable folder is not an absolute path",
-                             "send portable as the portable answer of places' resolve, or leave it out when the host "
-                             "has no portable layer");
-}
-
 /** Whether the request names a home and portable place it may read and write under; the refusal otherwise. */
 static spisor_status check_places(const runtime_config_request *request, spisor_refusal *refusal) {
     if (!runtime_is_usable_home(request->home)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
+        return runtime_refuse_home(refusal);
     }
-    return request->portable == NULL || runtime_is_usable_home(request->portable) ? SPISOR_OK
-                                                                                   : refuse_portable(refusal);
+    if (request->portable != NULL && !runtime_is_usable_home(request->portable)) {
+        return runtime_refuse_portable(refusal);
+    }
+    return SPISOR_OK;
 }
 
 spisor_status runtime_config_all_values(const runtime_config_request *request, cJSON **values, spisor_refusal *refusal) {
