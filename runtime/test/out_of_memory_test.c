@@ -22,6 +22,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
@@ -64,6 +65,8 @@ static spisor_value_tree config = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree value = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree first_file = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree second_file = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree plugin_rows = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree catalog_items = SPISOR_INIT(spisor_value_tree);
 
 static void write_text(const char *directory, const char *name, const char *text) {
     char path[1400];
@@ -97,7 +100,8 @@ static void fresh_files(void) {
              place.home, place.home, place.config_directory);
     write_text(hosts, "settler.json", record);
     snprintf(record, sizeof record,
-             "{\"id\":\"commander\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"id\":\"commander\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\","
+             "\"application\":{\"id\":\"claude\"},\"provenance\":"
              "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
              "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[{\"name\":\"cc\","
              "\"requested\":\"cc\",\"owner\":\"host\",\"state\":\"active\"}],\"changes\":[]}",
@@ -401,6 +405,41 @@ static int deleted_nothing(void) {
     return active;
 }
 
+static spisor_status list_plugins(void) {
+    const runtime_lists_definition *lists = runtime_lists_definition_of();
+    runtime_lists_plugins_argument argument = SPISOR_INIT(runtime_lists_plugins_argument);
+    runtime_list answer = SPISOR_INIT(runtime_list);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.installed = &plugin_rows.root;
+    argument.detected = &plugin_rows.root;
+    argument.available = &plugin_rows.root;
+    status = lists->plugins(lists->context, &argument, &answer, &refusal);
+    lists->release_list(lists->context, &answer);
+    lists->release_refusal(lists->context, &refusal);
+    return status;
+}
+
+static spisor_status list_applications(void) {
+    const runtime_lists_definition *lists = runtime_lists_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_list_detection detections[] = {{"opencode-host", 1, NULL}};
+    runtime_lists_applications_argument argument = SPISOR_INIT(runtime_lists_applications_argument);
+    runtime_list answer = SPISOR_INIT(runtime_list);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.items = &catalog_items.root;
+    argument.state = place.state;
+    argument.environment = environment;
+    argument.environment_count = 2;
+    argument.detections = detections;
+    argument.detection_count = 1;
+    status = lists->applications(lists->context, &argument, &answer, &refusal);
+    lists->release_list(lists->context, &answer);
+    lists->release_refusal(lists->context, &refusal);
+    return status;
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -476,6 +515,11 @@ int main(void) {
     CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\",\"github:3\"]}",
                         &first_file));
     CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}", &second_file));
+    CHECK(value_of_text("[{\"id\":\"b\",\"label\":\"x\"},{\"id\":\"a\",\"n\":[1,2]}]", &plugin_rows));
+    CHECK(value_of_text("{\"claude-host\":{\"kind\":\"host\",\"application\":{\"id\":\"claude\",\"label\":\"C\","
+                        "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
+                        "\"opencode\",\"binary\":\"absent\"}}}",
+                        &catalog_items));
     every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
     every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
     every_failure_answers_out_of_memory("secrets' set", set_secret, NULL);
@@ -490,11 +534,15 @@ int main(void) {
     every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
                                         settled_and_changed_nothing);
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
+    every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
+    every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
     spisor_value_release(&first_file);
     spisor_value_release(&second_file);
+    spisor_value_release(&plugin_rows);
+    spisor_value_release(&catalog_items);
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");
 }
