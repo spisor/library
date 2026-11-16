@@ -45,10 +45,12 @@ static int add_platform(cJSON *provenance) {
 static int add_location(cJSON *provenance, const cJSON *argument) {
     const char *binary = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "application"), "binary"));
-    char *found = runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary,
-                                       cJSON_GetObjectItemCaseSensitive(argument, "environment"));
+    char *found = NULL;
+    runtime_on_path_status searched = runtime_find_on_path(
+        RUNTIME_HOST_IS_WINDOWS, binary, cJSON_GetObjectItemCaseSensitive(argument, "environment"), &found);
     const char *home = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "home"));
-    int added = cJSON_AddStringToObject(provenance, "location", found == NULL ? home : found) != NULL;
+    int added = searched != RUNTIME_ON_PATH_OUT_OF_MEMORY &&
+                cJSON_AddStringToObject(provenance, "location", found == NULL ? home : found) != NULL;
     free(found);
     return added;
 }

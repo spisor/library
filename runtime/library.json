@@ -2635,29 +2635,6 @@
       ]
     },
     {
-      "id": "detect",
-      "functions": [
-        {
-          "name": "onPath",
-          "symbol": "runtime_detect_on_path",
-          "kind": "json",
-          "argument": {
-            "type": "object",
-            "properties": {
-              "binary": { "type": "string", "minLength": 1 },
-              "environment": { "type": "object", "additionalProperties": { "type": "string" } }
-            },
-            "required": ["binary", "environment"]
-          },
-          "result": {
-            "type": "object",
-            "properties": { "path": { "type": "string" } },
-            "additionalProperties": false
-          }
-        }
-      ]
-    },
-    {
       "id": "lists",
       "functions": [
         {
