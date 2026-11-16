@@ -8,10 +8,10 @@
 #include "file_times.h"
 #include "process_alive.h"
 #include "registry.h"
+#include "registry_call.h"
 
 #if defined(_WIN32)
 #include "command_line_windows.h"
-#include "registry_call.h"
 #include "wide_path.h"
 #define EXECUTABLE_ENDING ".exe"
 #else
