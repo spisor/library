@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "export.h"
 
 #if defined(_WIN32)
 #define RUNTIME_HOST_IS_WINDOWS 1
@@ -64,7 +63,5 @@ int32_t runtime_refuse_portable(uint8_t **out, size_t *out_len);
 
 /** A plugin's own folder in a place, place/plugins/folder_name, freed with free; NULL when memory runs out. */
 char *runtime_plugin_folder(const char *place, const char *folder_name);
-
-RUNTIME_EXPORT int32_t runtime_paths_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 #endif

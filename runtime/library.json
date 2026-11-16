@@ -6,47 +6,6 @@
   "release": "runtime_release",
   "services": [
     {
-      "id": "paths",
-      "functions": [
-        {
-          "name": "resolve",
-          "symbol": "runtime_paths_resolve",
-          "kind": "json",
-          "argument": {
-            "type": "object",
-            "properties": {
-              "home": { "type": "string", "minLength": 1 },
-              "names": { "type": "object" },
-              "plugin": { "type": "string" },
-              "places": {
-                "type": "object",
-                "properties": {
-                  "portable": { "type": "string", "minLength": 1 },
-                  "cache": { "type": "string", "minLength": 1 }
-                },
-                "required": ["portable", "cache"]
-              }
-            },
-            "required": ["home"]
-          },
-          "result": {
-            "type": "object",
-            "properties": {
-              "home": { "type": "string" },
-              "repos": { "type": "string" },
-              "plugin": { "type": "string" },
-              "cache": { "type": "string" },
-              "config": { "type": "string" },
-              "portable": { "type": "string" },
-              "pluginCache": { "type": "string" }
-            },
-            "required": ["home", "repos", "plugin", "cache", "config"],
-            "additionalProperties": false
-          }
-        }
-      ]
-    },
-    {
       "id": "identity",
       "functions": [
         {

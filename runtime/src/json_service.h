@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "spisor/status.h"
 
 /** Answers the result, or NULL with *refusal set to {message, fix}; NULL with no refusal is out of memory. */
 typedef cJSON *(*runtime_json_operation)(const cJSON *argument, cJSON **refusal);
@@ -18,6 +19,12 @@ int runtime_is_refusal(const cJSON *refusal);
 
 /** The {message, fix} refusal of one message and its fix; NULL when memory runs out. */
 cJSON *runtime_refusal(const char *message, const char *fix);
+
+/**
+ * The {message, fix} refusal a definition's refusal carries, for a caller that still answers JSON refusals; NULL when
+ * the refusal is empty, as an answer of OUT_OF_MEMORY leaves it, or memory runs out.
+ */
+cJSON *runtime_refusal_of(const spisor_refusal *refusal);
 
 /**
  * Calls another json function of this library with argument, which it frees: its answer, or NULL with
