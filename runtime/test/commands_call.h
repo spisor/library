@@ -47,11 +47,12 @@ static inline const char *commands_member_text(const cJSON *object, const char *
 static inline void commands_parts_of(const cJSON *request, commands_parts *parts) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(request, "environment");
     const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(request, "arguments");
+    const cJSON *variables = cJSON_IsObject(environment) ? environment : NULL;
     const cJSON *item;
     memset(parts, 0, sizeof *parts);
     parts->environment = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *parts->environment);
     parts->arguments = calloc((size_t)cJSON_GetArraySize(arguments) + 1, sizeof *parts->arguments);
-    cJSON_ArrayForEach(item, cJSON_IsObject(environment) ? environment : NULL) {
+    cJSON_ArrayForEach(item, variables) {
         if (cJSON_IsString(item)) {
             parts->environment[parts->environment_count].name = item->string;
             parts->environment[parts->environment_count++].value = item->valuestring;
