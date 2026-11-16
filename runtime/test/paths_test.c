@@ -229,13 +229,15 @@ static void refuses_an_argument_or_answer_short_of_its_shape(void) {
 }
 
 static void places_add_the_plugin_folders(void) {
-    runtime_plugin_places places = {TEST_PORTABLE, TEST_CACHE};
+    runtime_plugin_places places = SPISOR_INIT(runtime_plugin_places);
     runtime_paths_resolve_argument argument = SPISOR_INIT(runtime_paths_resolve_argument);
     runtime_paths_answer answer = SPISOR_INIT(runtime_paths_answer);
     const char *portable_segments[3] = {TEST_PORTABLE, "plugins", "p"};
     const char *cache_segments[3] = {TEST_CACHE, "plugins", "p"};
     char *portable = spisor_path_join(TEST_WINDOWS, portable_segments, 3);
     char *cache = spisor_path_join(TEST_WINDOWS, cache_segments, 3);
+    places.portable = TEST_PORTABLE;
+    places.cache = TEST_CACHE;
     argument.home = TEST_HOME;
     argument.plugin = "p";
     argument.places = &places;
@@ -259,11 +261,12 @@ static void no_places_adds_nothing(void) {
 }
 
 static void places_need_a_usable_plugin_and_places(void) {
-    runtime_plugin_places usable = {TEST_PORTABLE, TEST_CACHE};
-    runtime_plugin_places relative = {"relative", TEST_CACHE};
-    runtime_plugin_places no_cache = {TEST_PORTABLE, NULL};
-    const runtime_plugin_places *places[] = {&usable, &usable, &relative, &no_cache};
-    const char *plugins[] = {NULL, "../p", "p", "p"};
+    runtime_plugin_places usable = {sizeof(runtime_plugin_places), TEST_PORTABLE, TEST_CACHE};
+    runtime_plugin_places relative = {sizeof(runtime_plugin_places), "relative", TEST_CACHE};
+    runtime_plugin_places no_cache = {sizeof(runtime_plugin_places), TEST_PORTABLE, NULL};
+    runtime_plugin_places short_of_shape = {(uint32_t)offsetof(runtime_plugin_places, cache), TEST_PORTABLE, TEST_CACHE};
+    const runtime_plugin_places *places[] = {&usable, &usable, &relative, &no_cache, &short_of_shape};
+    const char *plugins[] = {NULL, "../p", "p", "p", "p"};
     for (size_t index = 0; index < sizeof plugins / sizeof plugins[0]; index++) {
         runtime_paths_resolve_argument argument = SPISOR_INIT(runtime_paths_resolve_argument);
         argument.home = TEST_HOME;

@@ -19,7 +19,7 @@ set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
     src/windows_file.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/refusal.c src/value.c
-    src/value_block.c src/json_value.c src/entry_order.c)
+    src/value_block.c src/json_value.c src/entry_order.c src/json_allocation.c)
 add_library(spisor_library STATIC ${spisor_library_sources})
 target_include_directories(spisor_library PUBLIC include)
 target_link_libraries(spisor_library PUBLIC spisor_cjson)

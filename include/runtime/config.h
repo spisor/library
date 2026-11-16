@@ -55,6 +55,12 @@ typedef struct runtime_config_plugin {
     const runtime_secret_places *places;
 } runtime_config_plugin;
 
+/** The key a get reads. First shape ends at `key`. */
+typedef struct runtime_config_get_argument {
+    uint32_t size;
+    const char *key;
+} runtime_config_get_argument;
+
 /**
  * What a set answers: for a secret setting `secret` 1 and no previous value, so a secret never leaves through it;
  * otherwise the merged value the key held before the write, of kind NONE when it held none. First shape ends at
@@ -70,8 +76,10 @@ typedef struct runtime_config_set_answer {
 /**
  * The config service. Every operation answers MALFORMED for a home or portable place that is not absolute, no plugin,
  * `names` or `config` that is not a record, a declaration without a key or with a layer it does not know, a config
- * name or plugin id that is not one portable path segment, or a secret setting's unusable places; and OUT_OF_MEMORY.
- * First shape ends at `release_refusal`.
+ * name or plugin id that is not one portable path segment, or places that are set but short of their first shape or
+ * without an absolute secrets file, whether or not the key is a secret setting; REFUSED, as the settings service
+ * refuses, when a settings file holds a number no value tree carries; and OUT_OF_MEMORY. First shape ends at
+ * `release_refusal`.
  */
 typedef struct runtime_config_definition {
     uint32_t size;
@@ -89,10 +97,11 @@ typedef struct runtime_config_definition {
      *
      * @param value the consumer's empty tree. Required.
      * @return OK; NONE when nothing holds the key, the key has an empty segment, or it lies inside a declared secret;
-     * MALFORMED for no key; REFUSED as the secrets service refuses.
+     * MALFORMED for no key; REFUSED as the secrets service refuses. A secret's text is overwritten when its tree is
+     * released.
      */
-    spisor_status (*get)(void *context, const runtime_config_plugin *plugin, const char *key, spisor_value_tree *value,
-                         spisor_refusal *refusal);
+    spisor_status (*get)(void *context, const runtime_config_plugin *plugin, const runtime_config_get_argument *argument,
+                         spisor_value_tree *value, spisor_refusal *refusal);
     /**
      * Writes one setting, as the settings service's set writes one, or a declared secret through the secrets service:
      * text stores it and null removes it.

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "definition_support.h"
+#include "json_allocation.h"
 #include "secrets.h"
 
 #define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_secrets_entry_argument, name)
@@ -14,29 +15,11 @@
 #define SET_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_secrets_set_answer, location)
 #define RECONCILE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_secrets_reconcile_answer, moved)
 
-/** The place `places` names; 0 when it names no absolute secrets file. */
-static int place_of(const runtime_secret_places *places, runtime_secret_place *place) {
-    if (places == NULL) {
-        return 0;
-    }
-    place->secrets_file = places->secrets_file;
-    place->force_file_store = places->force_file_store != 0;
-    return runtime_is_usable_secret_place(place);
-}
-
-/** Overwrites a secret's bytes, through a volatile pointer so the compiler cannot drop a write to memory it frees. */
-static void overwrite(char *bytes, size_t length) {
-    volatile char *cursor = bytes;
-    while (length-- > 0) {
-        *cursor++ = 0;
-    }
-}
-
 static spisor_status fill_secret(char *value, runtime_secrets_get_answer *answer) {
     const char *packed;
     size_t length = strlen(value);
     int filled = runtime_pack_texts((const char *const *)&value, &packed, 1, &answer->storage);
-    overwrite(value, length);
+    runtime_overwrite(value, length);
     free(value);
     if (!filled) {
         return SPISOR_OUT_OF_MEMORY;
@@ -48,7 +31,6 @@ static spisor_status fill_secret(char *value, runtime_secrets_get_answer *answer
 
 static spisor_status get(void *context, const runtime_secrets_entry_argument *argument,
                          runtime_secrets_get_answer *answer, spisor_refusal *refusal) {
-    runtime_secret_place place;
     char *value = NULL;
     spisor_status status;
     (void)context;
@@ -56,16 +38,15 @@ static spisor_status get(void *context, const runtime_secrets_entry_argument *ar
         !RUNTIME_IS_EMPTY_ANSWER(answer, GET_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "secrets' get");
     }
-    if (!place_of(argument->places, &place)) {
+    if (!runtime_is_usable_secret_place(argument->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    status = runtime_get_secret(&place, argument->plugin, argument->name, &value, refusal);
+    status = runtime_get_secret(argument->places, argument->plugin, argument->name, &value, refusal);
     return status == SPISOR_OK ? fill_secret(value, answer) : status;
 }
 
 static spisor_status set(void *context, const runtime_secrets_set_argument *argument,
                          runtime_secrets_set_answer *answer, spisor_refusal *refusal) {
-    runtime_secret_place place;
     runtime_secret_location location = RUNTIME_SECRET_LOCATION_FILE;
     spisor_status status;
     (void)context;
@@ -73,10 +54,10 @@ static spisor_status set(void *context, const runtime_secrets_set_argument *argu
         !runtime_has_shape(answer->size, SET_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "secrets' set");
     }
-    if (!place_of(argument->places, &place)) {
+    if (!runtime_is_usable_secret_place(argument->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    status = runtime_set_secret(&place, argument->plugin, argument->name, argument->value, &location, refusal);
+    status = runtime_set_secret(argument->places, argument->plugin, argument->name, argument->value, &location, refusal);
     if (status == SPISOR_OK) {
         answer->location = (uint32_t)location;
     }
@@ -85,32 +66,29 @@ static spisor_status set(void *context, const runtime_secrets_set_argument *argu
 
 static spisor_status remove_entry(void *context, const runtime_secrets_entry_argument *argument,
                                   spisor_refusal *refusal) {
-    runtime_secret_place place;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ENTRY_SHAPE)) {
         return runtime_refuse_shape(refusal, "secrets' remove");
     }
-    if (!place_of(argument->places, &place)) {
+    if (!runtime_is_usable_secret_place(argument->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    return runtime_delete_secret(&place, argument->plugin, argument->name, refusal);
+    return runtime_delete_secret(argument->places, argument->plugin, argument->name, refusal);
 }
 
 static spisor_status clear(void *context, const runtime_secrets_clear_argument *argument, spisor_refusal *refusal) {
-    runtime_secret_place place;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CLEAR_SHAPE)) {
         return runtime_refuse_shape(refusal, "secrets' clear");
     }
-    if (!place_of(argument->places, &place)) {
+    if (!runtime_is_usable_secret_place(argument->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    return runtime_clear_secrets(&place, argument->plugin, refusal);
+    return runtime_clear_secrets(argument->places, argument->plugin, refusal);
 }
 
 static spisor_status reconcile(void *context, const runtime_secrets_reconcile_argument *argument,
                                runtime_secrets_reconcile_answer *answer, spisor_refusal *refusal) {
-    runtime_secret_place place;
     uint64_t moved = 0;
     spisor_status status;
     (void)context;
@@ -118,10 +96,10 @@ static spisor_status reconcile(void *context, const runtime_secrets_reconcile_ar
         !runtime_has_shape(answer->size, RECONCILE_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "secrets' reconcile");
     }
-    if (!place_of(argument->places, &place)) {
+    if (!runtime_is_usable_secret_place(argument->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    status = runtime_reconcile_secrets(&place, &moved, refusal);
+    status = runtime_reconcile_secrets(argument->places, &moved, refusal);
     if (status == SPISOR_OK) {
         answer->moved = moved;
     }
@@ -134,7 +112,7 @@ static void release_get_answer(void *context, runtime_secrets_get_answer *answer
         return;
     }
     if (answer->storage != NULL) {
-        overwrite(answer->storage, answer->length);
+        runtime_overwrite(answer->storage, answer->length);
     }
     runtime_release_storage(answer->storage);
     RUNTIME_CLEAR_ANSWER(answer, GET_ANSWER_SHAPE);
@@ -146,5 +124,6 @@ static const runtime_secrets_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_secrets_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
 }

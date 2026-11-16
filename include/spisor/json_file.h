@@ -13,7 +13,8 @@ extern "C" {
 typedef enum spisor_json_file_state {
     SPISOR_JSON_FILE_ABSENT,
     SPISOR_JSON_FILE_UNREADABLE,
-    SPISOR_JSON_FILE_PARSED
+    SPISOR_JSON_FILE_PARSED,
+    SPISOR_JSON_FILE_OUT_OF_MEMORY
 } spisor_json_file_state;
 
 /**
@@ -29,15 +30,12 @@ char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripp
 /**
  * the TypeScript read-json without the fallback: the file read as Node reads UTF-8, whole-line comments
  * stripped, then JSON.parse. The tree comes back with PARSED. NULL comes back with ABSENT only when
- * the path genuinely does not exist, or UNREADABLE when something exists but cannot be read (a
+ * the path genuinely does not exist, UNREADABLE when something exists but cannot be read (a
  * directory, say) or is not JSON, or when the OS would not say whether anything exists (a parent
- * without search permission, say).
+ * without search permission, say), and OUT_OF_MEMORY when memory ran out reading, decoding,
+ * stripping or parsing it.
  *
- * @implNote A BOM not followed by a comment is refused, as JSON.parse refuses it. UNREADABLE also
- * covers running out of memory while reading or parsing, since spisor_read_file and
- * spisor_parse_json answer NULL for every failure; that fails safe, as a caller that refuses to
- * write over an UNREADABLE file never overwrites one. The state is left untouched only when
- * memory runs out in the decode or strip step.
+ * @implNote A BOM not followed by a comment is refused, as JSON.parse refuses it.
  */
 cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state);
 

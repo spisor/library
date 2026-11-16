@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
-#include "definition_support.h"
+#include "places.h"
 #include "config.h"
 #include "json_service.h"
 #include "registry.h"
@@ -114,32 +114,13 @@ double host_process_id(void) {
 
 #endif
 
-/** Resolves the places of the context's environment, the home being the one it names. 0 with *refusal set. */
-static int resolve_places(host_context *context, cJSON **refusal) {
-    const runtime_places_definition *places = runtime_places_definition_of();
-    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
-    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
-    runtime_variable *variables = runtime_variables_of_json(context->environment, &argument.environment_count);
-    spisor_status status = SPISOR_OUT_OF_MEMORY;
-    argument.environment = variables;
-    if (variables != NULL) {
-        status = places->resolve(places->context, &argument, &context->places, &refused);
-    }
-    if (status != SPISOR_OK) {
-        *refusal = runtime_refusal_of(&refused);
-    }
-    places->release_refusal(places->context, &refused);
-    free(variables);
-    return status == SPISOR_OK;
-}
-
 int host_open_context(host_context *context, cJSON **refusal) {
     runtime_places_answer empty = SPISOR_INIT(runtime_places_answer);
     memset(context, 0, sizeof *context);
     context->places = empty;
     *refusal = NULL;
     context->environment = host_process_environment();
-    if (context->environment == NULL || !resolve_places(context, refusal)) {
+    if (context->environment == NULL || !runtime_resolve_places_answer(context->environment, &context->places, refusal)) {
         return 0;
     }
     context->portable = context->places.portable;

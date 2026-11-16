@@ -22,7 +22,7 @@ cJSON *runtime_read_secret_file(const char *path, runtime_secret_file_answer *an
         return entries;
     }
     cJSON_Delete(entries);
-    *answer = RUNTIME_SECRET_FILE_UNREADABLE;
+    *answer = state == SPISOR_JSON_FILE_OUT_OF_MEMORY ? RUNTIME_SECRET_FILE_OUT_OF_MEMORY : RUNTIME_SECRET_FILE_UNREADABLE;
     return NULL;
 }
 

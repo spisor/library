@@ -11,10 +11,12 @@ static int merge_item(cJSON *result, const cJSON *file_item) {
     if (merged == NULL) {
         return 0;
     }
-    if (existing == NULL) {
-        return cJSON_AddItemToObject(result, file_item->string, merged);
+    int attached = existing == NULL ? cJSON_AddItemToObject(result, file_item->string, merged)
+                                    : cJSON_ReplaceItemInObjectCaseSensitive(result, file_item->string, merged);
+    if (!attached) {
+        cJSON_Delete(merged);
     }
-    return cJSON_ReplaceItemInObjectCaseSensitive(result, file_item->string, merged);
+    return attached;
 }
 
 static cJSON *merge_objects(const cJSON *defaults, const cJSON *file) {

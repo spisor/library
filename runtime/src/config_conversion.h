@@ -5,11 +5,10 @@
 
 #include "cJSON.h"
 #include "config.h"
+#include "definition_support.h"
 #include "runtime/config.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
-
-#define RUNTIME_TREE_SHAPE (offsetof(spisor_value_tree, storage) + sizeof(void *))
 
 /** Whether a consumer's tree can be filled: present, reaching through its first shape, and empty. */
 int runtime_is_empty_tree(const spisor_value_tree *tree);

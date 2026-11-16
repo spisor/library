@@ -5,8 +5,10 @@
 #include "config.h"
 #include "config_conversion.h"
 #include "definition_support.h"
+#include "json_allocation.h"
 
 #define PLUGIN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_config_plugin, places)
+#define GET_SHAPE RUNTIME_SHAPE_THROUGH(runtime_config_get_argument, key)
 #define SET_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_config_set_answer, storage)
 
 /** The JSON a request points at while it is served, deleted by free_plugin_json. */
@@ -15,7 +17,6 @@ typedef struct plugin_json {
     cJSON *config;
     cJSON *settings;
     cJSON *value;
-    runtime_secret_place place;
 } plugin_json;
 
 static void free_plugin_json(plugin_json *json) {
@@ -25,17 +26,15 @@ static void free_plugin_json(plugin_json *json) {
     cJSON_Delete(json->value);
 }
 
-static spisor_status read_places(const runtime_config_plugin *plugin, plugin_json *json,
-                                 runtime_config_request *request, spisor_refusal *refusal) {
+static spisor_status read_places(const runtime_config_plugin *plugin, runtime_config_request *request,
+                                 spisor_refusal *refusal) {
     if (plugin->places == NULL) {
         return SPISOR_OK;
     }
-    json->place.secrets_file = plugin->places->secrets_file;
-    json->place.force_file_store = plugin->places->force_file_store != 0;
-    if (!runtime_is_usable_secret_place(&json->place)) {
+    if (!runtime_is_usable_secret_place(plugin->places)) {
         return runtime_refuse_secret_place(refusal);
     }
-    request->places = &json->place;
+    request->places = plugin->places;
     return SPISOR_OK;
 }
 
@@ -56,7 +55,7 @@ static spisor_status plugin_request(const runtime_config_plugin *plugin, runtime
         status = runtime_declarations_json(plugin->settings, plugin->setting_count, &json->settings, refusal);
     }
     if (status == SPISOR_OK) {
-        status = read_places(plugin, json, request, refusal);
+        status = read_places(plugin, request, refusal);
     }
     request->home = plugin->home;
     request->portable = plugin->portable;
@@ -93,38 +92,31 @@ static spisor_status all(void *context, const runtime_config_plugin *plugin, spi
     return status;
 }
 
-static spisor_status get(void *context, const runtime_config_plugin *plugin, const char *key,
-                         spisor_value_tree *value, spisor_refusal *refusal) {
+static spisor_status get(void *context, const runtime_config_plugin *plugin,
+                         const runtime_config_get_argument *argument, spisor_value_tree *value,
+                         spisor_refusal *refusal) {
     runtime_config_request request = runtime_config_request_of(NULL, NULL);
     plugin_json json;
     cJSON *found = NULL;
     spisor_status status;
     (void)context;
-    if (!is_whole_plugin(plugin) || !runtime_is_empty_tree(value)) {
+    if (!is_whole_plugin(plugin) || argument == NULL || !runtime_has_shape(argument->size, GET_SHAPE) ||
+        !runtime_is_empty_tree(value)) {
         return runtime_refuse_shape(refusal, "config's get");
     }
     status = plugin_request(plugin, &request, &json, refusal);
-    request.key = key;
+    request.key = argument->key;
     if (status == SPISOR_OK) {
         status = runtime_config_get_value(&request, &found, refusal);
     }
     if (status == SPISOR_OK) {
         status = runtime_tree_of_settings(found, value, refusal);
     }
+    if (found != NULL) {
+        runtime_overwrite_json_texts(found);
+    }
     cJSON_Delete(found);
     free_plugin_json(&json);
-    return status;
-}
-
-static spisor_status fill_set_answer(const cJSON *previous, int secret, runtime_config_set_answer *answer,
-                                     spisor_refusal *refusal) {
-    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
-    spisor_status status = runtime_tree_of_settings(previous, &tree, refusal);
-    if (status == SPISOR_OK) {
-        answer->secret = secret ? 1 : 0;
-        answer->previous = tree.root;
-        answer->storage = tree.storage;
-    }
     return status;
 }
 
@@ -133,6 +125,7 @@ static spisor_status set(void *context, const runtime_config_plugin *plugin, con
     runtime_config_request request = runtime_config_request_of(NULL, NULL);
     plugin_json json;
     cJSON *previous = NULL;
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
     int secret = 0;
     spisor_status status;
     (void)context;
@@ -144,10 +137,13 @@ static spisor_status set(void *context, const runtime_config_plugin *plugin, con
         status = runtime_change_request(change, &request, &json.value, refusal);
     }
     if (status == SPISOR_OK) {
+        request.previous_tree = &tree;
         status = runtime_config_set_value(&request, &previous, &secret, refusal);
     }
     if (status == SPISOR_OK) {
-        status = fill_set_answer(previous, secret, answer, refusal);
+        answer->secret = secret ? 1 : 0;
+        answer->previous = tree.root;
+        answer->storage = tree.storage;
     }
     cJSON_Delete(previous);
     free_plugin_json(&json);
@@ -166,11 +162,20 @@ static void release_set_answer(void *context, runtime_config_set_answer *answer)
     RUNTIME_CLEAR_ANSWER(answer, SET_ANSWER_SHAPE);
 }
 
+/** Releases a tree after overwriting its texts, since a get of a secret setting answers the secret in one. */
+static void release_tree(void *context, spisor_value_tree *tree) {
+    if (tree != NULL && runtime_has_shape(tree->size, RUNTIME_SHAPE_THROUGH(spisor_value_tree, storage))) {
+        runtime_overwrite_texts(&tree->root);
+    }
+    runtime_release_tree(context, tree);
+}
+
 static const runtime_config_definition definition = {
-    sizeof(runtime_config_definition), NULL, all, get, set, runtime_release_tree, release_set_answer,
+    sizeof(runtime_config_definition), NULL, all, get, set, release_tree, release_set_answer,
     runtime_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_config_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
 }

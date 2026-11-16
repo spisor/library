@@ -1,5 +1,7 @@
 #include "spisor/json_kind.h"
 
+#include "json_parse.h"
+
 #include "json_grammar.h"
 #include "utf8.h"
 
@@ -199,6 +201,28 @@ static void keep_last_of_each_key(cJSON *item) {
     }
 }
 
+/** Whether a text of the JSON grammar nests deeper than cJSON parses, which it then refuses as no JSON. */
+static int nests_past_cjson(const char *text, size_t length) {
+    size_t depth = 0;
+    int in_string = 0;
+    for (size_t index = 0; index < length; index++) {
+        char character = text[index];
+        if (in_string) {
+            index += character == '\\';
+            in_string = character != '"';
+        } else if (character == '"') {
+            in_string = 1;
+        } else if (character == '[' || character == '{') {
+            if (++depth > CJSON_NESTING_LIMIT) {
+                return 1;
+            }
+        } else if (character == ']' || character == '}') {
+            depth--;
+        }
+    }
+    return 0;
+}
+
 static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSON **root) {
     *root = NULL;
     if (!spisor_is_valid_utf8(bytes, length)) {
@@ -216,7 +240,9 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
                                                                           : DOCUMENT_NOT_JSON;
     if (refusal == DOCUMENT_ACCEPTED) {
         *root = cJSON_ParseWithLength(text, length);
-        refusal = *root == NULL ? DOCUMENT_NOT_JSON : DOCUMENT_ACCEPTED;
+        if (*root == NULL) {
+            refusal = nests_past_cjson(text, length) ? DOCUMENT_NOT_JSON : DOCUMENT_OUT_OF_MEMORY;
+        }
     }
     free(text);
     if (*root != NULL) {
@@ -228,6 +254,12 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
 cJSON *spisor_parse_json(const uint8_t *bytes, size_t length) {
     cJSON *root = NULL;
     parse_document(bytes, length, &root);
+    return root;
+}
+
+cJSON *spisor_parse_json_reporting(const uint8_t *bytes, size_t length, int *out_of_memory) {
+    cJSON *root = NULL;
+    *out_of_memory = parse_document(bytes, length, &root) == DOCUMENT_OUT_OF_MEMORY;
     return root;
 }
 

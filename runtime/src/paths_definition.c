@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "definition_support.h"
+#include "json_allocation.h"
 #include "json_value.h"
 #include "paths.h"
 #include "segment.h"
@@ -53,6 +54,9 @@ static int read_plugin_folders(const runtime_paths_resolve_argument *argument, p
     *out_of_memory = 0;
     if (places == NULL) {
         return 1;
+    }
+    if (!runtime_has_shape(places->size, RUNTIME_SHAPE_THROUGH(runtime_plugin_places, cache))) {
+        return 0;
     }
     folder_name = argument->plugin == NULL ? NULL : runtime_portable_segment(argument->plugin);
     if (folder_name == NULL || !runtime_is_usable_home(places->portable) || !runtime_is_usable_home(places->cache)) {
@@ -125,11 +129,7 @@ static spisor_status resolve(void *context, const runtime_paths_resolve_argument
 
 static void release_answer(void *context, runtime_paths_answer *answer) {
     (void)context;
-    if (answer == NULL || !runtime_has_shape(answer->size, ANSWER_SHAPE)) {
-        return;
-    }
-    runtime_release_storage(answer->storage);
-    RUNTIME_CLEAR_ANSWER(answer, ANSWER_SHAPE);
+    runtime_release_packed_answer(answer, ANSWER_SHAPE);
 }
 
 static const runtime_paths_definition definition = {
@@ -137,5 +137,6 @@ static const runtime_paths_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_paths_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
 }

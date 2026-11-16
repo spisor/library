@@ -128,7 +128,7 @@ static spisor_status run(secrets_operation operation, const runtime_secret_place
 }
 
 static answer call(secrets_operation operation, request call) {
-    runtime_secret_places places = {NULL, 0};
+    runtime_secret_places places = SPISOR_INIT(runtime_secret_places);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     answer result = {SPISOR_OK, NULL, 0, 0, NULL, NULL};
     if (call.place != NULL) {
@@ -530,7 +530,7 @@ static void unusable_arguments_are_refused(void) {
 static void an_argument_or_answer_short_of_its_shape_is_malformed(void) {
     const runtime_secrets_definition *secrets = secrets_definition();
     scratch place;
-    runtime_secret_places places;
+    runtime_secret_places places = SPISOR_INIT(runtime_secret_places);
     runtime_secrets_entry_argument entry = SPISOR_INIT(runtime_secrets_entry_argument);
     runtime_secrets_get_answer secret = SPISOR_INIT(runtime_secrets_get_answer);
     runtime_secrets_set_argument set = SPISOR_INIT(runtime_secrets_set_argument);
@@ -555,6 +555,12 @@ static void an_argument_or_answer_short_of_its_shape_is_malformed(void) {
     stored.size = (uint32_t)offsetof(runtime_secrets_set_answer, location);
     check_refused(secrets->set(secrets->context, &set, &stored, &refusal), SPISOR_MALFORMED, &refusal, "first shape",
                   "a short set answer");
+    secrets->release_refusal(secrets->context, &refusal);
+    places.size = (uint32_t)offsetof(runtime_secret_places, force_file_store);
+    entry.size = sizeof entry;
+    secret.size = sizeof secret;
+    check_refused(secrets->get(secrets->context, &entry, &secret, &refusal), SPISOR_MALFORMED, &refusal, "places",
+                  "places short of their first shape");
     secrets->release_refusal(secrets->context, &refusal);
     CHECK(!spisor_file_exists(place.file));
 }

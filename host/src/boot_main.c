@@ -11,6 +11,7 @@
 #include "host_child.h"
 #include "host_service.h"
 #include "host_output.h"
+#include "json_allocation.h"
 #include "own_executable.h"
 #include "paths.h"
 #include "spisor/path.h"
@@ -52,6 +53,7 @@ static cJSON *resolve_call(const char *cache, const char *host_id, int count, ch
 
 /** Runs the version of host argument 0 its boot hint names, with the rest of the arguments passed through. */
 static int boot(int count, char **arguments) {
+    spisor_json_use_library_allocator();
     if (count < 1 || arguments[0][0] == 0) {
         const char *parts[1] = {"no host id was given"};
         return host_refuse(host_refusal_of(parts, 1, NO_HOST_FIX));

@@ -112,6 +112,9 @@ runtime_registry_answer runtime_registry_load(const char *state, const char *id,
     if (file_state == SPISOR_JSON_FILE_ABSENT) {
         return RUNTIME_REGISTRY_ABSENT;
     }
+    if (file_state == SPISOR_JSON_FILE_OUT_OF_MEMORY) {
+        return RUNTIME_REGISTRY_OUT_OF_MEMORY;
+    }
     if (file_state != SPISOR_JSON_FILE_PARSED || !is_usable_stored_record(record, id)) {
         cJSON_Delete(record);
         return RUNTIME_REGISTRY_UNREADABLE;

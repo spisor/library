@@ -152,17 +152,17 @@ static int is_logging_disabled(const cJSON *merged) {
     return cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(merged, "logging"));
 }
 
-/** Unreadable settings leave console logging off and colour on, as the TypeScript read-json fallback did. */
-static console_style read_console_style(const runtime_log_request *entry) {
-    console_style style = {0, 1};
+/**
+ * The console style the ecosystem settings choose; 0 when memory ran out. An unreadable settings file contributes
+ * nothing, so it leaves console logging off and colour on, as the TypeScript read-json fallback did.
+ */
+static int read_console_style(const runtime_log_request *entry, console_style *style) {
     int failed;
     cJSON *settings = runtime_read_ecosystem_settings(entry->home, entry->names, entry->portable, &failed);
-    if (settings != NULL) {
-        style.enabled = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings, "logConsole"));
-        style.colored = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(settings, "logColor"));
-        cJSON_Delete(settings);
-    }
-    return style;
+    style->enabled = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(settings, "logConsole"));
+    style->colored = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(settings, "logColor"));
+    cJSON_Delete(settings);
+    return !failed;
 }
 
 static const char *level_prefix(uint32_t level) {
@@ -231,7 +231,10 @@ static spisor_status write_entry(const runtime_log_request *entry, const char *n
     int skip_file = is_logging_disabled(merged);
     cJSON_Delete(merged);
     int append_failed = !skip_file && !append_line(entry, name);
-    console_style style = read_console_style(entry);
+    console_style style;
+    if (!read_console_style(entry, &style)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     *console = should_print(entry, &style) ? console_line(entry, name, style.colored && !entry->no_color) : NULL;
     if (append_failed && *console == NULL) {
         return refuse_append(refusal);

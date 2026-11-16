@@ -985,6 +985,54 @@ static void settings_set_keeps_the_application_default(void) {
     CHECK(spisor_file_exists(path) == 0);
 }
 
+static void releasing_a_tree_overwrites_its_texts_as_a_secret_needs(void) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    char secret[] = "hunter2";
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    tree.root.kind = SPISOR_VALUE_TEXT;
+    tree.root.text = secret;
+    tree.root.length = strlen(secret);
+    config->release_tree(config->context, &tree);
+    for (size_t index = 0; index < sizeof secret - 1; index++) {
+        CHECK(secret[index] == 0);
+    }
+    CHECK(tree.root.kind == SPISOR_VALUE_NONE);
+}
+
+static void a_get_without_its_argument_shape_is_malformed(void) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    scratch_home home;
+    runtime_config_plugin plugin = SPISOR_INIT(runtime_config_plugin);
+    runtime_config_get_argument argument = SPISOR_INIT(runtime_config_get_argument);
+    spisor_value_tree value = SPISOR_INIT(spisor_value_tree);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    fresh_home(&home, "short-get");
+    plugin.home = home.path;
+    plugin.plugin = "p";
+    argument.key = "a";
+    argument.size = (uint32_t)offsetof(runtime_config_get_argument, key);
+    CHECK(config->get(config->context, &plugin, &argument, &value, &refusal) == SPISOR_MALFORMED);
+    config->release_refusal(config->context, &refusal);
+    CHECK(config->get(config->context, &plugin, NULL, &value, &refusal) == SPISOR_MALFORMED);
+    config->release_refusal(config->context, &refusal);
+}
+
+static void get_and_all_refuse_a_file_holding_a_number_no_value_carries(void) {
+    scratch_home home;
+    fresh_home(&home, "non-finite");
+    write_settings_file(&home, "p", "{\"a\":1e999,\"b\":1}");
+    answer got = get_key(&home, "p", NULL, "b");
+    CHECK(got.status == SPISOR_REFUSED);
+    finish(&got);
+    answer all = call_with(CONFIG_ALL, request_for(&home, "p", NULL, NULL));
+    CHECK(all.status == SPISOR_REFUSED);
+    finish(&all);
+    answer set = set_key(&home, "p", NULL, NULL, "a", "5");
+    CHECK(set.status == SPISOR_REFUSED);
+    finish(&set);
+    expect_file(&home, "p", "{\"a\":1e999,\"b\":1}", "the refused set left the file byte-identical");
+}
+
 int main(void) {
     name_rules();
     deep_merge_agrees();
@@ -1004,6 +1052,9 @@ int main(void) {
     hand_edit_seen();
     merge_and_walk_units();
     refuses_missing_arguments();
+    get_and_all_refuse_a_file_holding_a_number_no_value_carries();
+    releasing_a_tree_overwrites_its_texts_as_a_secret_needs();
+    a_get_without_its_argument_shape_is_malformed();
     the_definitions_are_static_structs();
     typed_shapes_the_json_could_not_carry_are_malformed();
     a_short_plugin_or_answer_is_malformed();

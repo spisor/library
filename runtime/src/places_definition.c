@@ -1,8 +1,11 @@
 #include "runtime/places.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "definition_support.h"
+#include "json_service.h"
+#include "json_allocation.h"
 #include "paths.h"
 #include "places.h"
 #include "user_home.h"
@@ -76,11 +79,7 @@ static spisor_status resolve(void *context, const runtime_places_resolve_argumen
 
 static void release_answer(void *context, runtime_places_answer *answer) {
     (void)context;
-    if (answer == NULL || !runtime_has_shape(answer->size, ANSWER_SHAPE)) {
-        return;
-    }
-    runtime_release_storage(answer->storage);
-    RUNTIME_CLEAR_ANSWER(answer, ANSWER_SHAPE);
+    runtime_release_packed_answer(answer, ANSWER_SHAPE);
 }
 
 static const runtime_places_definition definition = {
@@ -88,5 +87,21 @@ static const runtime_places_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_places_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
+}
+
+int runtime_resolve_places_answer(const cJSON *environment, runtime_places_answer *answer, cJSON **refusal) {
+    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    runtime_variable *variables = runtime_variables_of_json(environment, &argument.environment_count);
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    argument.environment = variables;
+    if (variables != NULL) {
+        status = definition.resolve(definition.context, &argument, answer, &refused);
+    }
+    *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
+    runtime_release_refusal(NULL, &refused);
+    free(variables);
+    return status == SPISOR_OK;
 }
