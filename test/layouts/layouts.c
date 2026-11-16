@@ -2,6 +2,7 @@
 
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/secrets.h"
 #include "spisor/json_kind.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -125,11 +126,57 @@ static void print_places_layouts(void) {
     SIZE(runtime_places_definition);
 }
 
+static void print_secrets_layouts(void) {
+    FIELD(runtime_secret_places, secrets_file);
+    FIELD(runtime_secret_places, force_file_store);
+    SIZE(runtime_secret_places);
+    FIELD(runtime_secrets_entry_argument, size);
+    FIELD(runtime_secrets_entry_argument, places);
+    FIELD(runtime_secrets_entry_argument, plugin);
+    FIELD(runtime_secrets_entry_argument, name);
+    SIZE(runtime_secrets_entry_argument);
+    FIELD(runtime_secrets_set_argument, size);
+    FIELD(runtime_secrets_set_argument, places);
+    FIELD(runtime_secrets_set_argument, plugin);
+    FIELD(runtime_secrets_set_argument, name);
+    FIELD(runtime_secrets_set_argument, value);
+    SIZE(runtime_secrets_set_argument);
+    FIELD(runtime_secrets_clear_argument, size);
+    FIELD(runtime_secrets_clear_argument, places);
+    FIELD(runtime_secrets_clear_argument, plugin);
+    SIZE(runtime_secrets_clear_argument);
+    FIELD(runtime_secrets_reconcile_argument, size);
+    FIELD(runtime_secrets_reconcile_argument, places);
+    SIZE(runtime_secrets_reconcile_argument);
+    FIELD(runtime_secrets_get_answer, size);
+    FIELD(runtime_secrets_get_answer, value);
+    FIELD(runtime_secrets_get_answer, length);
+    FIELD(runtime_secrets_get_answer, storage);
+    SIZE(runtime_secrets_get_answer);
+    FIELD(runtime_secrets_set_answer, size);
+    FIELD(runtime_secrets_set_answer, location);
+    SIZE(runtime_secrets_set_answer);
+    FIELD(runtime_secrets_reconcile_answer, size);
+    FIELD(runtime_secrets_reconcile_answer, moved);
+    SIZE(runtime_secrets_reconcile_answer);
+    FIELD(runtime_secrets_definition, size);
+    FIELD(runtime_secrets_definition, context);
+    FIELD(runtime_secrets_definition, get);
+    FIELD(runtime_secrets_definition, set);
+    FIELD(runtime_secrets_definition, remove);
+    FIELD(runtime_secrets_definition, clear);
+    FIELD(runtime_secrets_definition, reconcile);
+    FIELD(runtime_secrets_definition, release_get_answer);
+    FIELD(runtime_secrets_definition, release_refusal);
+    SIZE(runtime_secrets_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
     print_json_kind_layouts();
     print_paths_layouts();
     print_places_layouts();
+    print_secrets_layouts();
     return 0;
 }

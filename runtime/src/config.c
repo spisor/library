@@ -472,15 +472,58 @@ static cJSON *value_at(const config_request *request, const config_targets *targ
     return copy;
 }
 
+static int secret_place_of(const cJSON *argument, runtime_secret_place *place) {
+    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
+    const cJSON *file = cJSON_GetObjectItemCaseSensitive(places, "secretsFile");
+    const cJSON *force = cJSON_GetObjectItemCaseSensitive(places, "forceFileStore");
+    place->secrets_file = cJSON_IsString(file) ? file->valuestring : NULL;
+    place->force_file_store = cJSON_IsTrue(force);
+    return cJSON_IsBool(force) && runtime_is_usable_secret_place(place);
+}
+
+static int32_t refuse_secret_places(uint8_t **out, size_t *out_len) {
+    return spisor_fail("the argument carries no usable places",
+                       "send {\"places\": {\"secretsFile\": \"<absolute path>\", \"forceFileStore\": <boolean>}} as "
+                       "places.resolve answers them",
+                       out, out_len);
+}
+
+/** A secrets operation's answer as this service's JSON answer: result on OK, {} on NONE, else the refusal. */
+static int32_t secret_answer(spisor_status status, spisor_refusal *refusal, cJSON *result, uint8_t **out,
+                             size_t *out_len) {
+    int32_t answered;
+    if (status == SPISOR_OK || status == SPISOR_NONE) {
+        answered = result == NULL ? out_of_memory(out, out_len) : spisor_succeed(result, out, out_len);
+    } else if (refusal->detail != NULL) {
+        answered = spisor_fail(refusal->detail, refusal->fix == NULL ? "" : refusal->fix, out, out_len);
+    } else {
+        answered = out_of_memory(out, out_len);
+    }
+    cJSON_Delete(result);
+    spisor_refusal_release(refusal);
+    return answered;
+}
+
 static int32_t get_secret_setting(const config_request *request, const char *key, uint8_t **out, size_t *out_len) {
     runtime_secret_place place;
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char *value = NULL;
+    spisor_status status;
+    cJSON *result;
     if (!has_places(request)) {
         return answer_member("value", NULL, out, out_len);
     }
-    if (!runtime_secret_place_of(request->argument, &place)) {
-        return runtime_refuse_secret_places(out, out_len);
+    if (!secret_place_of(request->argument, &place)) {
+        return refuse_secret_places(out, out_len);
     }
-    return runtime_get_secret(&place, request->plugin, key, out, out_len);
+    status = runtime_get_secret(&place, request->plugin, key, &value, &refusal);
+    result = cJSON_CreateObject();
+    if (result != NULL && value != NULL && cJSON_AddStringToObject(result, "value", value) == NULL) {
+        cJSON_Delete(result);
+        result = NULL;
+    }
+    free(value);
+    return secret_answer(status, &refusal, result, out, out_len);
 }
 
 static int32_t config_get(const config_request *request, uint8_t **out, size_t *out_len) {
@@ -818,30 +861,26 @@ static int32_t refuse_secret_value(const char *key, uint8_t **out, size_t *out_l
     return spisor_fail(message, "send the value as a string, or null to remove the secret", out, out_len);
 }
 
-/** Replaces the secrets service's answer with the one a secret setting gives, which never carries a value. */
-static int32_t answer_secret(int32_t status, uint8_t **out, size_t *out_len) {
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    spisor_release(*out);
+/** The answer a secret setting gives, which never carries a value. */
+static int32_t answer_secret(spisor_status status, spisor_refusal *refusal, uint8_t **out, size_t *out_len) {
     cJSON *result = cJSON_CreateObject();
-    if (result == NULL || cJSON_AddTrueToObject(result, "secret") == NULL) {
+    if (result != NULL && cJSON_AddTrueToObject(result, "secret") == NULL) {
         cJSON_Delete(result);
-        return out_of_memory(out, out_len);
+        result = NULL;
     }
-    status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
+    return secret_answer(status, refusal, result, out, out_len);
 }
 
 static int32_t write_secret_setting(const runtime_secret_place *place, const config_request *request, const char *key,
                                     const cJSON *value, uint8_t **out, size_t *out_len) {
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_secret_location location;
     if (cJSON_IsNull(value)) {
-        return answer_secret(runtime_delete_secret(place, request->plugin, key, out, out_len), out, out_len);
+        return answer_secret(runtime_delete_secret(place, request->plugin, key, &refusal), &refusal, out, out_len);
     }
     if (cJSON_IsString(value)) {
-        return answer_secret(runtime_set_secret(place, request->plugin, key, value->valuestring, out, out_len), out,
-                             out_len);
+        return answer_secret(runtime_set_secret(place, request->plugin, key, value->valuestring, &location, &refusal),
+                             &refusal, out, out_len);
     }
     return refuse_secret_value(key, out, out_len);
 }
@@ -860,8 +899,8 @@ static int32_t set_secret_setting(const config_request *request, const char *key
     if (!has_places(request)) {
         return refuse_secret_without_store(key, out, out_len);
     }
-    if (!runtime_secret_place_of(request->argument, &place)) {
-        return runtime_refuse_secret_places(out, out_len);
+    if (!secret_place_of(request->argument, &place)) {
+        return refuse_secret_places(out, out_len);
     }
     return write_secret_setting(&place, request, key, value, out, out_len);
 }
