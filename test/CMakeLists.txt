@@ -15,9 +15,10 @@ add_test(NAME public_headers_are_ascii
 
 foreach(name status_test value_test json_value_test)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE spisor_library_testing)
+    target_link_libraries(${name} PRIVATE spisor_library_testing spisor_vector_reader)
     spisor_strict_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES TIMEOUT 120)
 endforeach()
 
 add_executable(vector_reader_test vector_reader_test.c)
@@ -34,7 +35,11 @@ foreach(scenario
         link_graph_refuses_objects_taken_from_the_reader
         link_graph_refuses_a_link_under_a_condition
         link_graph_refuses_a_link_through_an_alias
-        link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test)
+        link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test
+        link_graph_refuses_a_source_taken_from_a_test_only_directory
+        link_graph_refuses_a_raw_path_to_the_readers_file
+        link_graph_refuses_a_link_option_naming_the_readers_file
+        link_graph_checks_from_the_root_of_a_project_that_adds_this_one)
     add_test(NAME ${scenario}
         COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
             -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"

@@ -1,9 +1,12 @@
 #include "spisor/value.h"
 
 #include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "allocation.h"
+#include "entry_order.h"
 #include "utf8.h"
 #include "value_block.h"
 
@@ -44,53 +47,129 @@ static int holds_only_its_kind(const spisor_value *value) {
     }
 }
 
-static int is_same_key(const spisor_entry *left, const spisor_entry *right) {
-    return left->key_length == right->key_length && memcmp(left->key, right->key, left->key_length) == 0;
+typedef struct reached_nodes {
+    const spisor_value **nodes;
+    size_t count;
+    size_t capacity;
+} reached_nodes;
+
+#define FIRST_REACHED_CAPACITY 64
+
+static int compare_addresses(const void *left, const void *right) {
+    uintptr_t first = (uintptr_t)*(const spisor_value *const *)left;
+    uintptr_t second = (uintptr_t)*(const spisor_value *const *)right;
+    return (first > second) - (first < second);
 }
 
-static int has_key_twice(const spisor_value *record) {
-    for (size_t index = 1; index < record->count; index++) {
-        for (size_t earlier = 0; earlier < index; earlier++) {
-            if (is_same_key(&record->entries[earlier], &record->entries[index])) {
-                return 1;
-            }
+static int holds_a_node_twice(reached_nodes *reached) {
+    qsort((void *)reached->nodes, reached->count, sizeof *reached->nodes, compare_addresses);
+    for (size_t index = 1; index < reached->count; index++) {
+        if (reached->nodes[index] == reached->nodes[index - 1]) {
+            return 1;
         }
     }
     return 0;
 }
 
-static int is_well_formed(const spisor_value *value, size_t depth);
-
-static int is_well_formed_member(const spisor_value *value, size_t depth) {
-    return value->kind != SPISOR_VALUE_NONE && is_well_formed(value, depth);
+static spisor_status grow(reached_nodes *reached) {
+    size_t capacity = reached->capacity == 0 ? FIRST_REACHED_CAPACITY : reached->capacity * 2;
+    const spisor_value **nodes;
+    if (capacity > SIZE_MAX / sizeof *nodes) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    nodes = spisor_memory_allocate(capacity * sizeof *nodes);
+    if (nodes == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (reached->count > 0) {
+        memcpy((void *)nodes, (const void *)reached->nodes, reached->count * sizeof *nodes);
+    }
+    spisor_memory_release((void *)reached->nodes);
+    reached->nodes = nodes;
+    reached->capacity = capacity;
+    return SPISOR_OK;
 }
 
-static int is_well_formed(const spisor_value *value, size_t depth) {
+/**
+ * @implNote The reached nodes are searched for a repeat each time their array fills, before it doubles, so a shared
+ * subtree is refused once at most twice as many nodes as the tree holds have been walked, never after every path.
+ */
+static spisor_status reach(reached_nodes *reached, const spisor_value *node) {
+    if (reached->count == reached->capacity) {
+        spisor_status status;
+        if (holds_a_node_twice(reached)) {
+            return SPISOR_MALFORMED;
+        }
+        status = grow(reached);
+        if (status != SPISOR_OK) {
+            return status;
+        }
+    }
+    reached->nodes[reached->count++] = node;
+    return SPISOR_OK;
+}
+
+static spisor_status refuse_a_key_held_twice(const spisor_value *record) {
+    const spisor_entry **sorted = NULL;
+    spisor_status status = spisor_entries_by_key(record, &sorted);
+    if (status != SPISOR_OK || sorted == NULL) {
+        return status;
+    }
+    for (size_t index = 1; index < record->count; index++) {
+        if (spisor_entries_share_a_key(sorted[index - 1], sorted[index])) {
+            status = SPISOR_MALFORMED;
+            break;
+        }
+    }
+    spisor_memory_release((void *)sorted);
+    return status;
+}
+
+static spisor_status walk(const spisor_value *value, size_t depth, reached_nodes *reached);
+
+static spisor_status walk_member(const spisor_value *value, size_t depth, reached_nodes *reached) {
+    spisor_status status;
+    if (value->kind == SPISOR_VALUE_NONE) {
+        return SPISOR_MALFORMED;
+    }
+    status = reach(reached, value);
+    return status == SPISOR_OK ? walk(value, depth, reached) : status;
+}
+
+static spisor_status walk(const spisor_value *value, size_t depth, reached_nodes *reached) {
+    spisor_status status = SPISOR_OK;
     if (depth > SPISOR_VALUE_DEPTH_LIMIT || !holds_only_its_kind(value)) {
-        return 0;
+        return SPISOR_MALFORMED;
     }
     if (value->kind == SPISOR_VALUE_LIST) {
-        for (size_t index = 0; index < value->count; index++) {
-            if (!is_well_formed_member(&value->items[index], depth + 1)) {
-                return 0;
-            }
+        for (size_t index = 0; status == SPISOR_OK && index < value->count; index++) {
+            status = walk_member(&value->items[index], depth + 1, reached);
         }
     } else if (value->kind == SPISOR_VALUE_RECORD) {
-        for (size_t index = 0; index < value->count; index++) {
+        for (size_t index = 0; status == SPISOR_OK && index < value->count; index++) {
             const spisor_entry *entry = &value->entries[index];
-            if (!is_text(entry->key, entry->key_length) || !is_well_formed_member(&entry->value, depth + 1)) {
-                return 0;
-            }
+            status = is_text(entry->key, entry->key_length) ? walk_member(&entry->value, depth + 1, reached)
+                                                              : SPISOR_MALFORMED;
         }
-        if (has_key_twice(value)) {
-            return 0;
+        if (status == SPISOR_OK) {
+            status = refuse_a_key_held_twice(value);
         }
     }
-    return 1;
+    return status;
 }
 
 spisor_status spisor_value_check(const spisor_value *value) {
-    return value != NULL && is_well_formed(value, 0) ? SPISOR_OK : SPISOR_MALFORMED;
+    reached_nodes reached = {NULL, 0, 0};
+    spisor_status status;
+    if (value == NULL) {
+        return SPISOR_MALFORMED;
+    }
+    status = walk(value, 0, &reached);
+    if (status == SPISOR_OK && holds_a_node_twice(&reached)) {
+        status = SPISOR_MALFORMED;
+    }
+    spisor_memory_release((void *)reached.nodes);
+    return status;
 }
 
 const spisor_value *spisor_value_member(const spisor_value *record, const char *key, size_t key_length) {
@@ -104,52 +183,6 @@ const spisor_value *spisor_value_member(const spisor_value *record, const char *
         }
     }
     return NULL;
-}
-
-static int is_equal(const spisor_value *left, const spisor_value *right, size_t depth);
-
-static int are_equal_lists(const spisor_value *left, const spisor_value *right, size_t depth) {
-    for (size_t index = 0; index < left->count; index++) {
-        if (!is_equal(&left->items[index], &right->items[index], depth + 1)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static int are_equal_records(const spisor_value *left, const spisor_value *right, size_t depth) {
-    for (size_t index = 0; index < left->count; index++) {
-        const spisor_entry *entry = &left->entries[index];
-        const spisor_value *other = spisor_value_member(right, entry->key, entry->key_length);
-        if (other == NULL || !is_equal(&entry->value, other, depth + 1)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static int is_equal(const spisor_value *left, const spisor_value *right, size_t depth) {
-    if (depth > SPISOR_VALUE_DEPTH_LIMIT || left->kind != right->kind) {
-        return 0;
-    }
-    switch (left->kind) {
-    case SPISOR_VALUE_BOOLEAN:
-        return left->boolean == right->boolean;
-    case SPISOR_VALUE_NUMBER:
-        return left->number == right->number;
-    case SPISOR_VALUE_TEXT:
-        return left->length == right->length && memcmp(left->text, right->text, left->length) == 0;
-    case SPISOR_VALUE_LIST:
-        return left->count == right->count && are_equal_lists(left, right, depth);
-    case SPISOR_VALUE_RECORD:
-        return left->count == right->count && are_equal_records(left, right, depth);
-    default:
-        return 1;
-    }
-}
-
-int spisor_value_equal(const spisor_value *left, const spisor_value *right) {
-    return left != NULL && right != NULL && is_equal(left, right, 0);
 }
 
 static int add_text(value_block_size *size, size_t length) {
@@ -215,8 +248,12 @@ spisor_status spisor_value_build(const spisor_value *source, spisor_value_tree *
     void *storage = NULL;
     spisor_value root;
     spisor_status status;
-    if (!value_tree_is_empty(tree) || spisor_value_check(source) != SPISOR_OK) {
+    if (!value_tree_is_empty(tree) || source == NULL) {
         return SPISOR_MALFORMED;
+    }
+    status = spisor_value_check(source);
+    if (status != SPISOR_OK) {
+        return status;
     }
     if (!measure(source, &size)) {
         return SPISOR_OUT_OF_MEMORY;

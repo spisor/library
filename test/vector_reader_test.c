@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "allocation.h"
 #include "check.h"
 #include "spisor/value.h"
+#include "value_equal.h"
 #include "vector_reader.h"
 
 static void a_text_is_borrowed_with_its_length(const cJSON *vector) {
@@ -86,6 +88,17 @@ static void a_value_becomes_a_tree(const cJSON *vector) {
     CHECK(tree.root.kind == SPISOR_VALUE_NONE && tree.storage == NULL);
 }
 
+static void a_value_read_under_a_failing_allocator_leaves_nothing(const cJSON *vector) {
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    spisor_memory_fail_at(1);
+    CHECK(!spisor_vector_value(vector, "value", &tree));
+    CHECK(spisor_memory_failed());
+    CHECK(spisor_memory_attempts() == 1);
+    spisor_memory_fail_at(0);
+    CHECK(tree.root.kind == SPISOR_VALUE_NONE && tree.storage == NULL);
+    CHECK(spisor_memory_live_blocks() == 0);
+}
+
 int main(void) {
     cJSON *vector = spisor_vector_read(SPISOR_VECTOR_READER_VECTOR_PATH);
     CHECK(vector != NULL);
@@ -95,6 +108,7 @@ int main(void) {
         every_status_is_read_by_its_name(vector);
         a_refusal_is_borrowed_and_owns_nothing(vector);
         a_value_becomes_a_tree(vector);
+        a_value_read_under_a_failing_allocator_leaves_nothing(vector);
         cJSON_Delete(vector);
     }
     return check_summary("vector_reader_test");
