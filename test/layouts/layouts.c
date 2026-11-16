@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/config.h"
+#include "runtime/fetch.h"
 #include "runtime/identity.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
@@ -328,6 +329,33 @@ static void print_identity_layouts(void) {
     SIZE(runtime_identity_definition);
 }
 
+static void print_fetch_layouts(void) {
+    FIELD(runtime_fetch_get_argument, size);
+    FIELD(runtime_fetch_get_argument, url);
+    FIELD(runtime_fetch_get_argument, destination);
+    FIELD(runtime_fetch_get_argument, sha256);
+    FIELD(runtime_fetch_get_argument, etag);
+    FIELD(runtime_fetch_get_argument, last_modified);
+    FIELD(runtime_fetch_get_argument, limited);
+    FIELD(runtime_fetch_get_argument, max_bytes);
+    FIELD(runtime_fetch_get_argument, timeout_seconds);
+    SIZE(runtime_fetch_get_argument);
+    FIELD(runtime_fetch_get_answer, size);
+    FIELD(runtime_fetch_get_answer, outcome);
+    FIELD(runtime_fetch_get_answer, sha256);
+    FIELD(runtime_fetch_get_answer, bytes);
+    FIELD(runtime_fetch_get_answer, etag);
+    FIELD(runtime_fetch_get_answer, last_modified);
+    FIELD(runtime_fetch_get_answer, storage);
+    SIZE(runtime_fetch_get_answer);
+    FIELD(runtime_fetch_definition, size);
+    FIELD(runtime_fetch_definition, context);
+    FIELD(runtime_fetch_definition, get);
+    FIELD(runtime_fetch_definition, release_answer);
+    FIELD(runtime_fetch_definition, release_refusal);
+    SIZE(runtime_fetch_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -339,5 +367,6 @@ int main(void) {
     print_config_layouts();
     print_log_layouts();
     print_identity_layouts();
+    print_fetch_layouts();
     return 0;
 }

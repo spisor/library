@@ -98,7 +98,7 @@ runtime_test(identity_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_O
 target_link_libraries(identity_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 
 runtime_test(fetch_test http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(fetch_test PRIVATE ${runtime_fetch_libraries})
+target_link_libraries(fetch_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(fetch_test PRIVATE Ws2_32)
 endif()
