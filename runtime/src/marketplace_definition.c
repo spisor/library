@@ -57,11 +57,16 @@ static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
 }
 
-/** Serves `call`, which it deletes, filling the answer of `shape` bytes through `fill`. */
+/**
+ * Serves `call`, which it deletes, filling the answer of `shape` bytes through `fill`. The call's texts are overwritten
+ * before it is freed, since a build's carries an access token.
+ */
 static spisor_status serve(runtime_json_operation operation, cJSON *call, answer_filler fill, void *answer,
                            size_t shape, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
+    cJSON *answered = operation(call, &operation_refusal);
+    runtime_overwrite_json_texts(call);
+    cJSON_Delete(call);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, shape);
