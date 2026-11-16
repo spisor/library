@@ -286,9 +286,9 @@ static void it_reads_a_host_that_is_no_text_as_none(void) {
 
 static void it_refuses_a_host_id_that_would_record_its_libraries_outside_the_hosts_folder(void) {
     start_base("hint-escape");
-    expect_refusal(write_hint_through_boot("../escape", LIBRARIES, "1.0.0"), "outside", "escape write");
-    expect_refusal(read_hint("../escape"), "outside", "escape read");
-    expect_refusal(read_hint(""), NULL, "empty id");
+    expect_refusal_released(write_hint_through_boot("../escape", LIBRARIES, "1.0.0"), "outside", "escape write");
+    expect_refusal_released(read_hint("../escape"), "outside", "escape read");
+    expect_refusal_released(read_hint(""), NULL, "empty id");
     CHECK(!exists_in(scratch, "escape.json"));
     finish_base();
 }

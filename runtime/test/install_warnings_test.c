@@ -70,7 +70,7 @@ static void says_nothing_for_a_manifest_with_neither(void) {
 
 static void refuses_a_call_without_a_manifest_object(void) {
     cJSON *argument = cJSON_CreateObject();
-    expect_refusal(call_catalog(runtime_install_warnings, argument), "manifest", "no manifest");
+    expect_refusal_released(call_catalog(runtime_install_warnings, argument), "manifest", "no manifest");
 }
 
 int main(void) {

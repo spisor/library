@@ -196,8 +196,8 @@ static void it_answers_each_item_s_runtime(void) {
 }
 
 static void it_refuses_an_unusable_argument(void) {
-    expect_refusal(call_catalog(runtime_catalog_read, parsed("{\"origin\":\"" ORIGIN "\"}")), "text", "no text");
-    expect_refusal(call_catalog(runtime_catalog_read, parsed("{\"text\":\"{}\"}")), "origin", "no origin");
+    expect_refusal_released(call_catalog(runtime_catalog_read, parsed("{\"origin\":\"" ORIGIN "\"}")), "text", "no text");
+    expect_refusal_released(call_catalog(runtime_catalog_read, parsed("{\"text\":\"{}\"}")), "origin", "no origin");
 }
 
 static void every_url_resolves_as_node_does(void) {
