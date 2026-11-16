@@ -24,6 +24,7 @@
 #include "changes.h"
 #include "changes_call.h"
 #include "check.h"
+#include "commands_call.h"
 #include "commands.h"
 #include "directory_tree.h"
 #include "host_provenance.h"
@@ -38,7 +39,6 @@
 #include "path_entry_windows_hooks.h"
 #endif
 
-typedef int32_t (*runtime_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 typedef struct scratch {
     char directory[1024];
@@ -54,10 +54,7 @@ typedef struct scratch {
     char search[2500];
 } scratch;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-} answer;
+typedef commands_result answer;
 
 static const char *const application_config = "{\n  \"theme\": \"dark\"\n}\n";
 static const char *const portable_bytes = "{\"portable\":true}\n";
@@ -102,25 +99,10 @@ static void seed_scratch(const scratch *place) {
     CHECK(runtime_create_new_file(path, (const uint8_t *)"program\n", 8, 1) == RUNTIME_ENTRY_DONE);
 }
 
-static answer call(runtime_export function, cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    free(text);
-    return result;
-}
-
 static int succeeds(answer result, const char *what) {
-    int succeeded = result.status == SPISOR_STATUS_SUCCESS;
+    int succeeded = result.status == SPISOR_OK;
     if (!succeeded) {
-        char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
-        fprintf(stderr, "%s: status %d %s\n", what, (int)result.status, text == NULL ? "" : text);
-        free(text);
+        fprintf(stderr, "%s: status %d %s\n", what, (int)result.status, result.detail);
     }
     cJSON_Delete(result.tree);
     return succeeded;
@@ -169,9 +151,9 @@ static int requests(const scratch *place, const char *host, const char *name, co
     cJSON_AddStringToObject(request, "home", place->home);
     cJSON_AddStringToObject(request, "name", name);
     cJSON_AddStringToObject(request, "target", place->target);
-    answer result = call(runtime_commands_request, request);
+    answer result = commands_call(COMMANDS_REQUEST, request);
     const char *given = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "name"));
-    int matches = result.status == SPISOR_STATUS_SUCCESS && check_text(given, expected, name);
+    int matches = result.status == SPISOR_OK && check_text(given, expected, name);
     cJSON_Delete(result.tree);
     return matches;
 }
@@ -180,13 +162,13 @@ static int renames(const scratch *place, const char *host, const char *from, con
     cJSON *request = environment_request(place, host);
     cJSON_AddStringToObject(request, "from", from);
     cJSON_AddStringToObject(request, "to", to);
-    return succeeds(call(runtime_commands_rename, request), "rename");
+    return succeeds(commands_call(COMMANDS_RENAME, request), "rename");
 }
 
 static int deletes(const scratch *place, const char *host, const char *name) {
     cJSON *request = host_request(place, host);
     cJSON_AddStringToObject(request, "name", name);
-    return succeeds(call(runtime_commands_delete, request), "delete");
+    return succeeds(commands_call(COMMANDS_DELETE, request), "delete");
 }
 
 static int sets_application_key(const scratch *place, const char *host) {

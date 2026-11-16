@@ -11,7 +11,6 @@
 #include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
 #include "spisor/path.h"
 
 #define REGISTRATION_SUFFIX ".json"
@@ -695,30 +694,6 @@ runtime_change_reversal runtime_changes_reverse_entry(const char *state, const c
         return RUNTIME_CHANGE_NOT_REVERSED;
     }
     return reversal;
-}
-
-static int32_t refuse_places(uint8_t **out, size_t *out_len) {
-    return spisor_fail("the argument carries no usable places or host",
-                       "send {\"places\": {\"state\": \"<absolute directory>\"}, \"host\": \"<host id>\"}", out,
-                       out_len);
-}
-
-int32_t runtime_changes_serve(const uint8_t *in, size_t in_len, runtime_changes_handler handler, uint8_t **out,
-                              size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const char *state = text_of(cJSON_GetObjectItemCaseSensitive(call.argument, "places"), "state");
-    const char *host = text_of(call.argument, "host");
-    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
-        status = refuse_places(out, out_len);
-    } else {
-        status = handler(state, host, call.argument, out, out_len);
-    }
-    spisor_discard_call(&call);
-    return status;
 }
 
 cJSON *runtime_changes_serve_request(const cJSON *argument, runtime_changes_request_handler handler, cJSON **refusal) {

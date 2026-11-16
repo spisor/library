@@ -27,6 +27,8 @@
 #include "changes.h"
 #include "changes_call.h"
 #include "check.h"
+#include "commands_call.h"
+#include "definition_fixture.h"
 #include "commands.h"
 #include "directory_tree.h"
 #include "registry.h"
@@ -41,8 +43,6 @@
 #include "path_entry_windows_hooks.h"
 #endif
 
-typedef int32_t (*runtime_export)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-
 typedef struct scratch {
     char directory[1024];
     char home[1100];
@@ -52,10 +52,7 @@ typedef struct scratch {
     char targets[1100];
 } scratch;
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-} answer;
+typedef commands_result answer;
 
 static void fresh_scratch(scratch *place, const char *label) {
     static int sequence = 0;
@@ -76,23 +73,12 @@ static void fresh_scratch(scratch *place, const char *label) {
     CHECK(spisor_replace_file(profile, (const uint8_t *)"# profile\n", 10) == 1);
 }
 
-static answer call(runtime_export function, cJSON *request) {
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    free(text);
-    return result;
+static answer call(commands_operation operation, cJSON *request) {
+    return commands_call(operation, request);
 }
 
 static void report(const char *what, const answer *result) {
-    char *text = result->tree == NULL ? NULL : cJSON_PrintUnformatted(result->tree);
-    fprintf(stderr, "%s: status %d %s\n", what, (int)result->status, text == NULL ? "" : text);
-    free(text);
+    fprintf(stderr, "%s: status %d %s\n", what, (int)result->status, result->detail);
 }
 
 static cJSON *host_request(const scratch *place, const char *host) {
@@ -154,7 +140,7 @@ static cJSON *naming_request(const scratch *place, const char *host, const char 
 /** The name answered, "" when none, or NULL when the call fails; freed with free. */
 static char *answered_name(answer result, const char *what) {
     char *assigned = NULL;
-    if (result.status == SPISOR_STATUS_SUCCESS) {
+    if (result.status == SPISOR_OK) {
         const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "name"));
         assigned = text == NULL ? calloc(1, 1) : malloc(strlen(text) + 1);
         if (assigned != NULL && text != NULL) {
@@ -169,7 +155,7 @@ static char *answered_name(answer result, const char *what) {
 
 static char *requested_on(const scratch *place, const char *host, const char *search, const char *name,
                           const char *program) {
-    return answered_name(call(runtime_commands_request, naming_request(place, host, search, name, program)),
+    return answered_name(call(COMMANDS_REQUEST, naming_request(place, host, search, name, program)),
                          "request");
 }
 
@@ -189,19 +175,19 @@ static answer rename_command(const scratch *place, const char *host, const char 
     add_environment(request, search);
     cJSON_AddStringToObject(request, "from", from);
     cJSON_AddStringToObject(request, "to", to);
-    return call(runtime_commands_rename, request);
+    return call(COMMANDS_RENAME, request);
 }
 
 static answer delete_command(const scratch *place, const char *host, const char *name) {
     cJSON *request = host_request(place, host);
     cJSON_AddStringToObject(request, "name", name);
-    return call(runtime_commands_delete, request);
+    return call(COMMANDS_DELETE, request);
 }
 
 static answer add_program(const scratch *place, const char *host, const char *name, const char *program) {
     char search[2500];
     default_search(place, search, sizeof search);
-    return call(runtime_commands_add, naming_request(place, host, search, name, program));
+    return call(COMMANDS_ADD, naming_request(place, host, search, name, program));
 }
 
 static answer add_command(const scratch *place, const char *host, const char *name) {
@@ -209,7 +195,7 @@ static answer add_command(const scratch *place, const char *host, const char *na
 }
 
 static int succeeds(answer result, const char *what) {
-    int succeeded = result.status == SPISOR_STATUS_SUCCESS;
+    int succeeded = result.status == SPISOR_OK;
     if (!succeeded) {
         report(what, &result);
     }
@@ -217,8 +203,9 @@ static int succeeds(answer result, const char *what) {
     return succeeded;
 }
 
-static int is_refused(answer result, const char *what) {
-    int refused = result.status == SPISOR_STATUS_FAILURE;
+/** Whether a call answered `expected` with a refusal, released either way. */
+static int is_refused_as(answer result, spisor_status expected, const char *what) {
+    int refused = result.status == expected && result.detail[0] != '\0' && result.fix[0] != '\0';
     if (!refused) {
         report(what, &result);
     }
@@ -226,10 +213,24 @@ static int is_refused(answer result, const char *what) {
     return refused;
 }
 
+/** Whether the call was REFUSED for what the machine holds. */
+static int is_refused(answer result, const char *what) {
+    return is_refused_as(result, SPISOR_REFUSED, what);
+}
+
+/** Whether the call was refused as the caller's mistake. */
+static int is_malformed(answer result, const char *what) {
+    return is_refused_as(result, SPISOR_MALFORMED, what);
+}
+
 static int is_refused_saying(answer result, const char *text, const char *what) {
-    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "message"));
-    int said = message != NULL && strstr(message, text) != NULL;
+    int said = strstr(result.detail, text) != NULL;
     return is_refused(result, what) && said;
+}
+
+static int is_malformed_saying(answer result, const char *text, const char *what) {
+    int said = strstr(result.detail, text) != NULL;
+    return is_malformed(result, what) && said;
 }
 
 /** The file a shim is run by: <name>.exe on Windows, beside its <name>.shim, and <name> on POSIX. */
@@ -491,23 +492,16 @@ static void rename_and_add_refuse_a_held_name(void) {
     CHECK(is_refused(add_command(&place, "alpha", "bc"), "add another host's command"));
     CHECK(is_refused(add_command(&place, "alpha", "cc"), "add a program on PATH"));
     CHECK(is_refused(rename_command(&place, "alpha", "nothing", "free"), "rename a command the host lacks"));
-    CHECK(is_refused(add_command(&place, "alpha", "../escape"), "add a name that is not a file name"));
+    CHECK(is_malformed(add_command(&place, "alpha", "../escape"), "add a name that is not a file name"));
     CHECK(entry_is(&place, "alpha", "oc", "oc", "host", "active"));
     CHECK(has_shim(&place, "oc") && has_shim(&place, "bc") && lacks_shim(&place, "cc"));
     CHECK(reverse_host(&place, "alpha"));
     CHECK(reverse_host(&place, "beta"));
 }
 
-#define NOT_AN_OBJECT "an environment that is an array"
-
 static cJSON *without_path(cJSON *request, const char *shape) {
     cJSON_DeleteItemFromObjectCaseSensitive(request, "environment");
     if (strcmp(shape, "no environment") == 0) {
-        return request;
-    }
-    if (strcmp(shape, NOT_AN_OBJECT) == 0) {
-        cJSON *entries = cJSON_AddArrayToObject(request, "environment");
-        cJSON_AddItemToArray(entries, cJSON_CreateString("PATH=/usr/bin"));
         return request;
     }
     cJSON *environment = cJSON_AddObjectToObject(request, "environment");
@@ -527,16 +521,17 @@ static void a_call_without_a_path_is_refused_and_changes_nothing(void) {
     for (size_t index = 0; index < sizeof shapes / sizeof shapes[0]; index++) {
         char search[2500];
         default_search(&place, search, sizeof search);
-        CHECK(is_refused(call(runtime_commands_request,
-                              without_path(naming_request(&place, "alpha", search, "cc", "tool"), shapes[index])),
-                         shapes[index]));
-        CHECK(is_refused(call(runtime_commands_add,
-                              without_path(naming_request(&place, "alpha", search, "ad", "tool"), shapes[index])),
-                         shapes[index]));
+        CHECK(is_malformed_saying(
+            call(COMMANDS_REQUEST, without_path(naming_request(&place, "alpha", search, "cc", "tool"), shapes[index])),
+            "no PATH", shapes[index]));
+        CHECK(is_malformed_saying(
+            call(COMMANDS_ADD, without_path(naming_request(&place, "alpha", search, "ad", "tool"), shapes[index])),
+            "no PATH", shapes[index]));
         cJSON *rename = host_request(&place, "alpha");
         cJSON_AddStringToObject(rename, "from", "oc");
         cJSON_AddStringToObject(rename, "to", "rn");
-        CHECK(is_refused(call(runtime_commands_rename, without_path(rename, shapes[index])), shapes[index]));
+        CHECK(is_malformed_saying(call(COMMANDS_RENAME, without_path(rename, shapes[index])), "no PATH",
+                                  shapes[index]));
     }
     CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "ad") && lacks_shim(&place, "rn"));
     CHECK(has_shim(&place, "oc"));
@@ -544,25 +539,42 @@ static void a_call_without_a_path_is_refused_and_changes_nothing(void) {
     CHECK(reverse_host(&place, "alpha"));
 }
 
-static void an_environment_that_is_not_an_object_is_refused_by_every_export(void) {
+static void a_variable_without_a_value_is_refused_by_every_operation(void) {
+    runtime_variable unnamed[] = {{"PATH", NULL}};
     scratch place;
-    fresh_scratch(&place, "environment-array");
+    fresh_scratch(&place, "environment-variable");
     register_host(&place, "alpha", 0);
-    CHECK(requests(&place, "alpha", "oc", "oc"));
-    char search[2500];
-    default_search(&place, search, sizeof search);
-    CHECK(is_refused_saying(call(runtime_commands_request,
-                                 without_path(naming_request(&place, "alpha", search, "cc", "tool"), NOT_AN_OBJECT)),
-                            "not an object", "request"));
-    CHECK(is_refused_saying(call(runtime_commands_add,
-                                 without_path(naming_request(&place, "alpha", search, "ad", "tool"), NOT_AN_OBJECT)),
-                            "not an object", "add"));
-    cJSON *rename = host_request(&place, "alpha");
-    cJSON_AddStringToObject(rename, "from", "oc");
-    cJSON_AddStringToObject(rename, "to", "rn");
-    CHECK(is_refused_saying(call(runtime_commands_rename, without_path(rename, NOT_AN_OBJECT)), "not an object",
-                            "rename"));
-    CHECK(reverse_host(&place, "alpha"));
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
+    runtime_commands_rename_argument rename = SPISOR_INIT(runtime_commands_rename_argument);
+    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char target[1300];
+    target_path(&place, "tool", target, sizeof target);
+    argument.state = place.state;
+    argument.host = "alpha";
+    argument.home = place.home;
+    argument.name = "cc";
+    argument.target = target;
+    argument.environment = unnamed;
+    argument.environment_count = 1;
+    check_refused(commands->request(commands->context, &argument, &answer, &refusal), SPISOR_MALFORMED, &refusal,
+                  "environment variable", "request");
+    commands->release_refusal(commands->context, &refusal);
+    check_refused(commands->add(commands->context, &argument, &answer, &refusal), SPISOR_MALFORMED, &refusal,
+                  "environment variable", "add");
+    commands->release_refusal(commands->context, &refusal);
+    rename.state = place.state;
+    rename.host = "alpha";
+    rename.from = "oc";
+    rename.to = "rn";
+    rename.environment = unnamed;
+    rename.environment_count = 1;
+    check_refused(commands->rename(commands->context, &rename, &answer, &refusal), SPISOR_MALFORMED, &refusal,
+                  "environment variable", "rename");
+    commands->release_refusal(commands->context, &refusal);
+    CHECK(answer.storage == NULL);
+    CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
 }
 
 #ifdef _WIN32
@@ -662,7 +674,7 @@ static void place_probe(const scratch *place, const char *directory, char *targe
 static char *request_target(const scratch *place, const char *host, const char *name, const char *target) {
     char search[2500];
     default_search(place, search, sizeof search);
-    return answered_name(call(runtime_commands_request, targeted_request(place, host, search, name, target)),
+    return answered_name(call(COMMANDS_REQUEST, targeted_request(place, host, search, name, target)),
                          "request");
 }
 
@@ -724,7 +736,7 @@ static cJSON *argued_request(const scratch *place, const char *host, const char 
 
 static char *request_argued(const scratch *place, const char *host, const char *name, const char *target,
                             const char *const *arguments, size_t count) {
-    return answered_name(call(runtime_commands_request, argued_request(place, host, name, target, arguments, count)),
+    return answered_name(call(COMMANDS_REQUEST, argued_request(place, host, name, target, arguments, count)),
                          "request with arguments");
 }
 
@@ -770,7 +782,7 @@ static void fixed_arguments_reach_the_target_exactly_through_the_shim(void) {
     CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
     CHECK(succeeds(rename_command(&place, "alpha", "cc", "renamed"), "rename"));
     CHECK(shim_delivers(&place, "renamed", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
-    CHECK(succeeds(call(runtime_commands_add, argued_request(&place, "alpha", "mine", target, fixed, 10)), "add"));
+    CHECK(succeeds(call(COMMANDS_ADD, argued_request(&place, "alpha", "mine", target, fixed, 10)), "add"));
     CHECK(shim_delivers(&place, "mine", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
     CHECK(reverse_host(&place, "alpha"));
 }
@@ -801,52 +813,21 @@ static void a_shim_file_without_the_format_line_is_refused_by_the_launcher(void)
 }
 #endif
 
-static answer raw_call(runtime_export function, const char *text) {
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    answer result;
-    result.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    result.tree = out == NULL ? NULL : spisor_parse_json(out, out_len);
-    free(out);
-    return result;
-}
-
-/** request with its arguments replaced by the JSON text arguments, sent as written so it can carry \u0000. */
-static answer call_with_raw_arguments(runtime_export function, cJSON *request, const char *arguments) {
-    cJSON_DeleteItemFromObjectCaseSensitive(request, "arguments");
-    char *text = cJSON_PrintUnformatted(request);
-    cJSON_Delete(request);
-    size_t size = strlen(text) + strlen(arguments) + 32;
-    char *sent = malloc(size);
-    snprintf(sent, size, "%.*s,\"arguments\":%s}", (int)(strlen(text) - 1), text, arguments);
-    answer result = raw_call(function, sent);
-    free(sent);
-    free(text);
-    return result;
-}
-
 static void a_defective_argument_is_refused_and_changes_nothing(void) {
-    static const char *const defective[] = {"[\"one\\ntwo\"]", "[\"one\\rtwo\"]", "\"one\"", "[\"one\", 2]"};
-    static const char *const said[] = {"line break", "line break", "array of strings", "array of strings"};
+    static const char *const defective[] = {"one\ntwo", "one\rtwo"};
     scratch place;
     fresh_scratch(&place, "defective-arguments");
     register_host(&place, "alpha", 0);
     char target[1400];
     target_path(&place, "tool", target, sizeof target);
     for (size_t index = 0; index < sizeof defective / sizeof defective[0]; index++) {
-        CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_request,
-                                                        argued_request(&place, "alpha", "cc", target, NULL, 0),
-                                                        defective[index]),
-                                said[index], defective[index]));
-        CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_add,
-                                                        argued_request(&place, "alpha", "ad", target, NULL, 0),
-                                                        defective[index]),
-                                said[index], defective[index]));
+        CHECK(is_malformed_saying(call(COMMANDS_REQUEST, argued_request(&place, "alpha", "cc", target,
+                                                                         &defective[index], 1)),
+                                  "line break", defective[index]));
+        CHECK(is_malformed_saying(call(COMMANDS_ADD, argued_request(&place, "alpha", "ad", target,
+                                                                     &defective[index], 1)),
+                                  "line break", defective[index]));
     }
-    CHECK(is_refused_saying(call_with_raw_arguments(runtime_commands_request,
-                                                    argued_request(&place, "alpha", "cc", target, NULL, 0),
-                                                    "[\"one\\u0000two\"]"),
-                            "NUL", "an argument holding a NUL"));
     CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "ad"));
     CHECK(runtime_probe_entry(place.shims) == RUNTIME_ENTRY_MISSING);
     CHECK(reverse_host(&place, "alpha"));
@@ -1086,7 +1067,7 @@ static void a_rerequest_reports_a_shim_source_that_is_gone(void) {
     CHECK(MoveFileExW(launcher, away, 0) != 0);
     char search[2500];
     default_search(&place, search, sizeof search);
-    answer result = call(runtime_commands_request, naming_request(&place, "alpha", search, "oc", "tool"));
+    answer result = call(COMMANDS_REQUEST, naming_request(&place, "alpha", search, "oc", "tool"));
     MoveFileExW(away, launcher, 0);
     CHECK(is_refused_saying(result, "cannot be read", "a gone source"));
     CHECK(reverse_host(&place, "alpha"));
@@ -1123,7 +1104,7 @@ int main(void) {
     a_required_host_keeps_its_last_command();
     rename_and_add_refuse_a_held_name();
     a_call_without_a_path_is_refused_and_changes_nothing();
-    an_environment_that_is_not_an_object_is_refused_by_every_export();
+    a_variable_without_a_value_is_refused_by_every_operation();
     the_shim_runs_its_target_with_the_arguments_and_exit_code();
     fixed_arguments_reach_the_target_exactly_through_the_shim();
 #ifdef _WIN32

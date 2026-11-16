@@ -19,6 +19,7 @@
 #include "changes.h"
 #include "changes_call.h"
 #include "check.h"
+#include "commands_call.h"
 #include "commands.h"
 #include "file_times.h"
 #include "holders.h"
@@ -466,11 +467,6 @@ static cJSON *command_request(const hosts_scratch *place) {
     return request;
 }
 
-static const char *answered_name(catalog_answer *answer) {
-    CHECK(answer->status == SPISOR_STATUS_SUCCESS);
-    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer->tree, "name"));
-}
-
 static void adds_renames_and_deletes_a_command(void) {
     hosts_scratch place;
     fresh(&place, "commands");
@@ -481,21 +477,22 @@ static void adds_renames_and_deletes_a_command(void) {
     cJSON_AddStringToObject(request, "home", place.user);
     cJSON_AddStringToObject(request, "name", "tool");
     cJSON_AddStringToObject(request, "target", target);
-    catalog_answer answer = call_catalog(runtime_commands_add, request);
-    check_text(answered_name(&answer), "tool", "the added command");
-    cJSON_Delete(answer.tree);
+    commands_result named = commands_call(COMMANDS_ADD, request);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(named.tree, "name")), "tool", "the added command");
+    cJSON_Delete(named.tree);
     request = command_request(&place);
     cJSON_AddItemToObject(request, "environment", environment_of(&place));
     cJSON_AddStringToObject(request, "from", "tool");
     cJSON_AddStringToObject(request, "to", "tool-renamed");
-    answer = call_catalog(runtime_commands_rename, request);
-    check_text(answered_name(&answer), "tool-renamed", "the renamed command");
-    cJSON_Delete(answer.tree);
+    named = commands_call(COMMANDS_RENAME, request);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(named.tree, "name")), "tool-renamed",
+               "the renamed command");
+    cJSON_Delete(named.tree);
     request = command_request(&place);
     cJSON_AddStringToObject(request, "name", "tool-renamed");
-    answer = call_catalog(runtime_commands_delete, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    cJSON_Delete(answer.tree);
+    named = commands_call(COMMANDS_DELETE, request);
+    CHECK(named.status == SPISOR_OK);
+    cJSON_Delete(named.tree);
     cJSON *registration = stored_registration(&place, HOST_ID);
     const char *state = NULL;
     const cJSON *command;
