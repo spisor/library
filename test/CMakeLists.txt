@@ -34,7 +34,11 @@ foreach(scenario
         link_graph_refuses_objects_taken_from_the_reader
         link_graph_refuses_a_link_under_a_condition
         link_graph_refuses_a_link_through_an_alias
-        link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test)
+        link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test
+        link_graph_refuses_a_source_taken_from_a_test_only_directory
+        link_graph_refuses_a_raw_path_to_the_readers_file
+        link_graph_refuses_a_link_option_naming_the_readers_file
+        link_graph_checks_from_the_root_of_a_project_that_adds_this_one)
     add_test(NAME ${scenario}
         COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
             -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"
