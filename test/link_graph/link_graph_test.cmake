@@ -1,0 +1,58 @@
+# -DSCENARIO=<name> -DWORK=<dir> -DLINK_GRAPH=<link_graph.cmake> -DGENERATOR=<cmake generator>
+#
+# Each scenario writes a probe project with no language into WORK, links a test-only target into it one way, and
+# configures it. The probe ends in a deliberate error once the check has passed, so it never needs a compiler.
+
+cmake_minimum_required(VERSION 3.15)
+
+set(root "${WORK}/${SCENARIO}")
+file(REMOVE_RECURSE "${root}")
+file(MAKE_DIRECTORY "${root}/source/test")
+
+set(preamble "cmake_minimum_required(VERSION 3.15)\nproject(probe NONE)\ninclude(\"${LINK_GRAPH}\")\n")
+set(preamble "${preamble}add_library(reader STATIC reader.c)\nset_target_properties(reader PROPERTIES SPISOR_TEST_ONLY TRUE)\n")
+set(closing "add_subdirectory(test)\nspisor_refuse_test_only_links(\"\${CMAKE_CURRENT_SOURCE_DIR}\")\nmessage(FATAL_ERROR \"the link graph passed\")\n")
+
+function(probe body test_body)
+    file(WRITE "${root}/source/CMakeLists.txt" "${preamble}${body}\n${closing}")
+    file(WRITE "${root}/source/test/CMakeLists.txt" "${test_body}\n")
+endfunction()
+
+function(expect must_match)
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${GENERATOR}" -S "${root}/source" -B "${root}/build"
+                    RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    string(REGEX REPLACE "[ \t\r\n]+" " " output "${out}${err}")
+    if(NOT output MATCHES "${must_match}")
+        message(FATAL_ERROR "${SCENARIO}: output does not match '${must_match}'\n${output}")
+    endif()
+endfunction()
+
+set(test_links_reader "add_executable(reader_test reader_test.c)\ntarget_link_libraries(reader_test PRIVATE reader)")
+set(refused "is shipped and reaches the test-only reader")
+
+if(SCENARIO STREQUAL "link_graph_lets_a_test_link_the_reader")
+    probe("add_library(shipped SHARED shipped.c)" "${test_links_reader}")
+    expect("the link graph passed")
+elseif(SCENARIO STREQUAL "link_graph_refuses_a_direct_link")
+    probe("add_library(shipped SHARED shipped.c)\ntarget_link_libraries(shipped PRIVATE reader)" "")
+    expect("shipped ${refused} \\(through shipped\\)")
+elseif(SCENARIO STREQUAL "link_graph_refuses_a_link_through_another_library")
+    probe("add_library(middle STATIC middle.c)\ntarget_link_libraries(middle PRIVATE reader)\nadd_executable(shipped shipped.c)\ntarget_link_libraries(shipped PRIVATE middle)" "")
+    expect("shipped ${refused} \\(through middle\\)")
+elseif(SCENARIO STREQUAL "link_graph_refuses_objects_taken_from_the_reader")
+    probe("add_library(reader_objects OBJECT reader.c)\nset_target_properties(reader_objects PROPERTIES SPISOR_TEST_ONLY TRUE)\nadd_library(shipped SHARED shipped.c $<TARGET_OBJECTS:reader_objects>)" "")
+    expect("shipped is shipped and reaches the test-only reader_objects")
+elseif(SCENARIO STREQUAL "link_graph_refuses_a_link_under_a_condition")
+    probe("add_library(bundle INTERFACE)\ntarget_link_libraries(bundle INTERFACE $<$<CONFIG:Debug>:reader>)\nadd_library(shipped SHARED shipped.c)\ntarget_link_libraries(shipped PRIVATE bundle)" "")
+    expect("shipped ${refused} \\(through bundle\\)")
+elseif(SCENARIO STREQUAL "link_graph_refuses_a_link_through_an_alias")
+    probe("add_library(probe::reader ALIAS reader)\nadd_library(shipped SHARED shipped.c)\ntarget_link_libraries(shipped PRIVATE probe::reader)" "")
+    expect("shipped ${refused} \\(through shipped\\)")
+elseif(SCENARIO STREQUAL "link_graph_refuses_a_shipped_target_in_a_directory_only_named_like_a_test")
+    file(MAKE_DIRECTORY "${root}/source/tests")
+    file(WRITE "${root}/source/tests/CMakeLists.txt" "add_library(shipped SHARED shipped.c)\ntarget_link_libraries(shipped PRIVATE reader)\n")
+    probe("add_subdirectory(tests)" "")
+    expect("shipped ${refused}")
+else()
+    message(FATAL_ERROR "unknown SCENARIO '${SCENARIO}'")
+endif()
