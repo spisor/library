@@ -1,8 +1,8 @@
 #include "host_fixture.h"
 
 #include "holders.h"
-#include "holders_lock.h"
 #include "processes.h"
+#include "processes_request.h"
 
 static char *stub_of(const host_world *world) {
     return joined(world->base.cache, "boot/spisor-boot" EXECUTABLE_ENDING);
@@ -196,41 +196,42 @@ static int records_no_spisor_host(const void *context) {
     return !records_spisor_host(context);
 }
 
-/**
- * Holds the background host for this test's own pid, with no host process recorded yet, as a launcher would.
- *
- * @implNote Written under the holders lock the background host takes for its own read and write of the record, so
- * a release cannot be lost to the host rewriting the holders it read just before.
- */
-static void hold_for_this_test(const host_world *world, int held) {
+/** Holds the background host for this test's own pid, with no host process recorded yet, as a launcher would. */
+static void hold_for_this_test(const host_world *world) {
     char text[256];
-    char *problem = NULL;
-    char *folder = runtime_processes_folder(world->base.state);
-    CHECK(folder != NULL && spisor_make_directories(folder) == 1);
-    free(folder);
-    char *lock = runtime_holders_path(world->base.state, BACKGROUND_ID, ".lock", &problem);
-    runtime_holders_guard *guard = lock == NULL ? NULL : runtime_lock_holders(lock);
-    CHECK(guard != NULL);
-    snprintf(text, sizeof text, "{\"pid\":null,\"aliveAt\":null,\"checkMilliseconds\":%d,\"holders\":[%.0d]}",
-             INTERVAL_MILLISECONDS, held ? (int)fixture_process_id() : 0);
+    snprintf(text, sizeof text, "{\"pid\":null,\"aliveAt\":null,\"checkMilliseconds\":%d,\"holders\":[%d]}",
+             INTERVAL_MILLISECONDS, (int)fixture_process_id());
     write_in(world->base.state, "processes/" BACKGROUND_ID ".json", text);
-    if (guard != NULL) {
-        runtime_unlock_holders(guard);
-    }
-    free(lock);
-    free(problem);
+}
+
+static cJSON *drop_this_test(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
+                             cJSON **refusal) {
+    (void)request;
+    (void)refusal;
+    runtime_keep_live_holders(record, (double)fixture_process_id());
+    return runtime_write_holders(path, record) ? cJSON_CreateObject() : NULL;
+}
+
+/** Releases this test's hold as a launcher does: under the holders lock, keeping what the host recorded. */
+static void release_this_test(const host_world *world) {
+    runtime_processes_request request = {NULL, world->base.state, BACKGROUND_ID};
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_processes_with_holders(&request, drop_this_test, &refusal);
+    CHECK(answer != NULL && refusal == NULL);
+    cJSON_Delete(answer);
+    cJSON_Delete(refusal);
 }
 
 static void records_the_spisor_host_version_a_background_command_runs_while_its_layer_runs(void) {
     host_world world;
     install_boot_world(&world, "background-run");
-    hold_for_this_test(&world, 1);
+    hold_for_this_test(&world);
     program background;
     const char *arguments[] = {"spisor-host", "background", BACKGROUND_ID, NULL};
     char *stub = stub_of(&world);
     world_start(&world, &background, stub, arguments, NULL, 0);
     CHECK(wait_until(records_spisor_host, &world, START_TIMEOUT));
-    hold_for_this_test(&world, 0);
+    release_this_test(&world);
     CHECK(program_finish(&background, 30000) == 0);
     CHECK(wait_until(records_no_spisor_host, &world, 5000));
     free(stub);

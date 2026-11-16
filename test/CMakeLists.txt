@@ -53,7 +53,11 @@ foreach(scenario
         link_graph_lets_a_binary_choose_one_allocator
         link_graph_refuses_a_library_carrying_an_allocator
         link_graph_refuses_a_binary_with_two_allocators
-        link_graph_lets_a_test_build_compile_sources_from_elsewhere)
+        link_graph_lets_a_test_build_compile_sources_from_elsewhere
+        link_graph_refuses_a_test_source_behind_a_condition
+        link_graph_refuses_a_source_from_a_test_directory
+        link_graph_refuses_a_test_hook_definition_on_a_shipped_target
+        link_graph_refuses_a_test_definition_on_a_shipped_allocator)
     add_test(NAME ${scenario}
         COMMAND ${CMAKE_COMMAND} -DSCENARIO=${scenario} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/link-graph-work
             -DLINK_GRAPH=${PROJECT_SOURCE_DIR}/cmake/link_graph.cmake "-DGENERATOR=${CMAKE_GENERATOR}"

@@ -30,8 +30,8 @@ endif()
 
 function(spisor_strict_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /WX /utf-8)
-        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+        # An option, not a definition: the link graph reads every definition a test-only target carries as test-only.
+        target_compile_options(${target} PRIVATE /W4 /WX /utf-8 /D_CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
