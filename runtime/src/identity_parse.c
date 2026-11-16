@@ -149,6 +149,12 @@ static int is_ambiguous_local_name(const runtime_identity *parsed) {
     return 0;
 }
 
+int runtime_identity_is_repo_id(const char *text) {
+    runtime_identity parsed;
+    return text != NULL && runtime_identity_parse_id(text, &parsed) &&
+           !(parsed.resolver.length == 5 && strncmp(parsed.resolver.start, "local", 5) == 0) && parsed.path.length == 0;
+}
+
 runtime_identity_folder_status runtime_identity_folder_name(const char *id, char **folder) {
     runtime_identity parsed;
     *folder = NULL;

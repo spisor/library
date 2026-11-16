@@ -1,19 +1,16 @@
 #ifndef RUNTIME_IDENTITY_ALSO_AT_H
 #define RUNTIME_IDENTITY_ALSO_AT_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "cJSON.h"
 
-#include "export.h"
-
-/** The start of the refusal identity.alsoAt and identity.agree answer when the copies name different primaries. */
+/** The start of the refusal identity's also_at and agree answer when the copies name different primaries. */
 #define RUNTIME_PRIMARIES_DISAGREE "the copies name different primaries"
 
 /**
- * identity.agree: {id, files} answers {ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable?} for
- * the repo id names. files maps a repo id to its also-at file, to null when that copy has none, or to false when
- * reading it failed. Pure: it reads
- * nothing, so a caller holding the files can ask it directly.
+ * identity's agree over a JSON argument {id, files}: {ids, primary, primaryConfirmed, startFileMalformed?,
+ * startFileUnavailable?} for the repo id names, or NULL with *refusal set, or with it NULL when memory runs out. files
+ * maps a repo id to its also-at file, to null when that copy has none, or to false when reading it failed. Pure: it
+ * reads nothing, so a caller holding the files can ask it directly.
  *
  * @implNote This is the only place the two-sided rule lives: an id is counted only when the file of the id we
  * started from lists it and its own file lists the id we started from. Only the ids the starting file lists are
@@ -26,19 +23,14 @@
  * starting file's are refused, since the set then has no one primary; a named primary no counted copy confirms is
  * answered with primaryConfirmed false.
  */
-RUNTIME_EXPORT int32_t runtime_identity_agree(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_identity_agree_on_files(const cJSON *argument, cJSON **refusal);
 
 /**
- * identity.alsoAt: {id, apiBase?} reads `.weivel/also-at.json` at the default branch of the id's repo and of each copy
- * it lists, then answers what identity.agree does. A copy that cannot be reached is left out, no refusal; the
- * id itself being unresolvable is refused. apiBase is honoured only as identity.resolve honours it.
+ * identity's also_at over a JSON argument {id, apiBase?}: reads `.weivel/also-at.json` at the default branch of the
+ * id's repo and of each copy it lists, then answers what runtime_identity_agree_on_files does. A copy that cannot be
+ * reached is left out, no refusal; the id itself being unresolvable is refused. apiBase is honoured only as
+ * runtime_identity_lookup honours it.
  */
-RUNTIME_EXPORT int32_t runtime_identity_also_at(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-
-/**
- * identity.acceptsVersion: {recorded, primary} answers {accepted, needsUserAcceptance}. recorded is the primary
- * kept at install and primary the one a new version comes from; a different one is accepted only by the user.
- */
-RUNTIME_EXPORT int32_t runtime_identity_accepts_version(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_identity_read_also_at(const cJSON *argument, cJSON **refusal);
 
 #endif

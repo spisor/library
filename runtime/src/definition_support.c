@@ -14,6 +14,17 @@ spisor_status runtime_refuse_as(spisor_refusal *refusal, spisor_status status, c
     return spisor_refuse(refusal, detail, fix) == SPISOR_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : status;
 }
 
+spisor_status runtime_refuse_json(spisor_refusal *refusal, cJSON *json_refusal) {
+    const cJSON *message = cJSON_GetObjectItemCaseSensitive(json_refusal, "message");
+    const cJSON *fix = cJSON_GetObjectItemCaseSensitive(json_refusal, "fix");
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    if (cJSON_IsString(message) && cJSON_IsString(fix)) {
+        status = runtime_refuse_as(refusal, SPISOR_REFUSED, message->valuestring, fix->valuestring);
+    }
+    cJSON_Delete(json_refusal);
+    return status;
+}
+
 spisor_status runtime_refuse_shape(spisor_refusal *refusal, const char *operation) {
     char detail[160];
     snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape", operation);

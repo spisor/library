@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "catalog_call.h"
 #include "check.h"
-#include "identity.h"
+#include "definition_fixture.h"
+#include "runtime/identity.h"
 
 typedef struct identity_vector {
     const char *name;
@@ -41,24 +41,28 @@ static const char *const further_valid[] = {
     "github:0", "github:1/a/b/c", "github:1/a_b-c.d", "gitea@a.b-c:7", "a1-b:9/x", "local:x/..a", "local:x/a..",
 };
 
-static cJSON *call_with_id(catalog_function function, const char *id) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", id);
-    catalog_answer answer = call_catalog(function, argument);
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
-        cJSON_Delete(answer.tree);
-        return NULL;
-    }
-    return answer.tree;
+static const runtime_identity_definition *identity(void) {
+    return runtime_identity_definition_of();
+}
+
+/** Parses `id` into `parts`, which the caller releases. */
+static spisor_status parse_into(const char *id, runtime_identity_parts *parts) {
+    runtime_identity_id_argument argument = SPISOR_INIT(runtime_identity_id_argument);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.id = id;
+    status = identity()->parse(identity()->context, &argument, parts, &refusal);
+    identity()->release_refusal(identity()->context, &refusal);
+    return status;
 }
 
 static int is_valid(const char *id) {
-    cJSON *answer = call_with_id(runtime_identity_parse, id);
-    const cJSON *valid = cJSON_GetObjectItemCaseSensitive(answer, "valid");
-    int result = cJSON_IsTrue(valid);
-    CHECK(cJSON_IsBool(valid));
-    cJSON_Delete(answer);
-    return result;
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    spisor_status status = parse_into(id, &parts);
+    CHECK(status == SPISOR_OK || status == SPISOR_NONE);
+    CHECK((status == SPISOR_OK) == (parts.resolver != NULL));
+    identity()->release_parts(identity()->context, &parts);
+    return status == SPISOR_OK;
 }
 
 static void every_kit_vector_gives_the_same_verdict(void) {
@@ -86,57 +90,100 @@ static void further_shapes_the_grammar_decides(void) {
     }
 }
 
-static void an_invalid_id_answers_only_valid_false(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "github:1/..");
-    char *text = cJSON_PrintUnformatted(answer);
-    check_text(text, "{\"valid\":false}", "invalid answer");
-    cJSON_free(text);
-    cJSON_Delete(answer);
+static void an_invalid_id_answers_none_and_no_parts(void) {
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("github:1/..", &parts) == SPISOR_NONE);
+    CHECK(parts.resolver == NULL && parts.host == NULL && parts.number == NULL && parts.path == NULL);
+    CHECK(parts.storage == NULL);
 }
 
 static void a_github_id_parses_to_its_parts(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "github:12/kernel");
-    check_text(text_at(answer, "resolver"), "github", "resolver");
-    check_text(text_at(answer, "number"), "12", "number");
-    check_text(text_at(answer, "path"), "kernel", "path");
-    CHECK(cJSON_GetObjectItemCaseSensitive(answer, "host") == NULL);
-    cJSON_Delete(answer);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("github:12/kernel", &parts) == SPISOR_OK);
+    check_text(parts.resolver, "github", "resolver");
+    check_text(parts.number, "12", "number");
+    check_text(parts.path, "kernel", "path");
+    CHECK(parts.host == NULL);
+    identity()->release_parts(identity()->context, &parts);
+    CHECK(parts.storage == NULL && parts.resolver == NULL);
 }
 
 static void a_deep_path_is_kept_whole(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "github:12/a/b.c");
-    check_text(text_at(answer, "path"), "a/b.c", "deep path");
-    cJSON_Delete(answer);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("github:12/a/b.c", &parts) == SPISOR_OK);
+    check_text(parts.path, "a/b.c", "deep path");
+    identity()->release_parts(identity()->context, &parts);
 }
 
 static void an_id_without_a_path_has_no_path(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "github:12");
-    CHECK(cJSON_GetObjectItemCaseSensitive(answer, "path") == NULL);
-    check_text(text_at(answer, "number"), "12", "number");
-    cJSON_Delete(answer);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("github:12", &parts) == SPISOR_OK);
+    CHECK(parts.path == NULL);
+    check_text(parts.number, "12", "number");
+    identity()->release_parts(identity()->context, &parts);
 }
 
 static void a_host_qualified_id_carries_its_host(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "gitea@git.example.com:5");
-    check_text(text_at(answer, "resolver"), "gitea", "resolver");
-    check_text(text_at(answer, "host"), "git.example.com", "host");
-    check_text(text_at(answer, "number"), "5", "number");
-    cJSON_Delete(answer);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("gitea@git.example.com:5", &parts) == SPISOR_OK);
+    check_text(parts.resolver, "gitea", "resolver");
+    check_text(parts.host, "git.example.com", "host");
+    check_text(parts.number, "5", "number");
+    identity()->release_parts(identity()->context, &parts);
 }
 
 static void a_local_id_resolves_locally_with_no_number(void) {
-    cJSON *answer = call_with_id(runtime_identity_parse, "local:x");
-    check_text(text_at(answer, "resolver"), "local", "resolver");
-    check_text(text_at(answer, "path"), "x", "local name");
-    CHECK(cJSON_GetObjectItemCaseSensitive(answer, "number") == NULL);
-    CHECK(cJSON_GetObjectItemCaseSensitive(answer, "host") == NULL);
-    cJSON_Delete(answer);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    CHECK(parse_into("local:x", &parts) == SPISOR_OK);
+    check_text(parts.resolver, "local", "resolver");
+    check_text(parts.path, "x", "local name");
+    CHECK(parts.number == NULL);
+    CHECK(parts.host == NULL);
+    identity()->release_parts(identity()->context, &parts);
+}
+
+static void a_parse_without_an_id_is_malformed(void) {
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    runtime_identity_id_argument argument = SPISOR_INIT(runtime_identity_id_argument);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    check_refused(identity()->parse(identity()->context, &argument, &parts, &refusal), SPISOR_MALFORMED, &refusal,
+                  "no id", "parse without an id");
+    identity()->release_refusal(identity()->context, &refusal);
+}
+
+typedef struct folder_call {
+    spisor_status status;
+    runtime_identity_folder_answer answer;
+    spisor_refusal refusal;
+} folder_call;
+
+static folder_call folder_of(const char *id) {
+    runtime_identity_id_argument argument = SPISOR_INIT(runtime_identity_id_argument);
+    folder_call call = {SPISOR_OK, SPISOR_INIT(runtime_identity_folder_answer), SPISOR_INIT(spisor_refusal)};
+    argument.id = id;
+    call.status = identity()->folder(identity()->context, &argument, &call.answer, &call.refusal);
+    return call;
+}
+
+static void release_folder_call(folder_call *call) {
+    identity()->release_folder_answer(identity()->context, &call->answer);
+    identity()->release_refusal(identity()->context, &call->refusal);
 }
 
 static void expect_folder(const char *id, const char *expected) {
-    cJSON *answer = call_with_id(runtime_identity_folder, id);
-    check_text(text_at(answer, "folder"), expected, id);
-    cJSON_Delete(answer);
+    folder_call call = folder_of(id);
+    CHECK(call.status == SPISOR_OK);
+    check_text(call.answer.folder, expected, id);
+    release_folder_call(&call);
+}
+
+static void expect_no_folder(const char *id, spisor_status expected) {
+    folder_call call = folder_of(id);
+    if (!check_refused(call.status, expected, &call.refusal, NULL, id) || call.answer.folder != NULL) {
+        fprintf(stderr, "%s should have no folder\n", id);
+        check_failures++;
+    }
+    release_folder_call(&call);
 }
 
 static void a_folder_swaps_the_colon_for_a_plus_and_the_slash_for_an_equals_sign(void) {
@@ -147,59 +194,96 @@ static void a_folder_swaps_the_colon_for_a_plus_and_the_slash_for_an_equals_sign
 
 static void no_folder_holds_a_path_separator_or_colon(void) {
     for (size_t index = 0; index < sizeof kit_vectors / sizeof kit_vectors[0]; index++) {
-        cJSON *answer = call_with_id(runtime_identity_folder, kit_vectors[index].value);
-        const char *folder = text_at(answer, "folder");
+        folder_call call = folder_of(kit_vectors[index].value);
+        const char *folder = call.answer.folder;
         CHECK((folder != NULL) == kit_vectors[index].valid);
         CHECK(folder == NULL || strpbrk(folder, ":/\\") == NULL);
-        cJSON_Delete(answer);
+        release_folder_call(&call);
     }
     for (size_t index = 0; index < sizeof further_valid / sizeof further_valid[0]; index++) {
-        cJSON *answer = call_with_id(runtime_identity_folder, further_valid[index]);
-        const char *folder = text_at(answer, "folder");
-        CHECK(folder == NULL || strpbrk(folder, ":/\\") == NULL);
-        cJSON_Delete(answer);
+        folder_call call = folder_of(further_valid[index]);
+        CHECK(call.answer.folder == NULL || strpbrk(call.answer.folder, ":/\\") == NULL);
+        release_folder_call(&call);
     }
 }
 
 static void a_name_a_folder_cannot_carry_is_refused_not_rewritten(void) {
-    CHECK(call_with_id(runtime_identity_folder, "local:a\\b") == NULL);
-    CHECK(call_with_id(runtime_identity_folder, "local:a?") == NULL);
-    CHECK(call_with_id(runtime_identity_folder, "github:1/a.") == NULL);
+    expect_no_folder("local:a\\b", SPISOR_REFUSED);
+    expect_no_folder("local:a?", SPISOR_REFUSED);
+    expect_no_folder("github:1/a.", SPISOR_REFUSED);
 }
 
 static void a_local_id_whose_folder_would_be_shared_is_refused(void) {
-    const char *const colliding[] = {"local:a=b", "local:a+b", "local:a:b", "local:Foo", "local:fOo", "local:x/a+b"};
+    const char *const colliding[] = {"local:a=b", "local:a+b", "local:a:b", "local:Foo", "local:fOo"};
     for (size_t index = 0; index < sizeof colliding / sizeof colliding[0]; index++) {
-        cJSON *answer = call_with_id(runtime_identity_folder, colliding[index]);
-        if (answer != NULL) {
-            fprintf(stderr, "%s should have no folder\n", colliding[index]);
-            check_failures++;
-        }
-        cJSON_Delete(answer);
+        expect_no_folder(colliding[index], SPISOR_REFUSED);
     }
+    expect_no_folder("local:x/a+b", SPISOR_MALFORMED);
     expect_folder("local:a/b", "local+a=b");
     expect_folder("local:foo", "local+foo");
     CHECK(is_valid("local:a=b") && is_valid("local:Foo"));
 }
 
-static void a_folder_for_an_invalid_id_is_refused(void) {
-    CHECK(call_with_id(runtime_identity_folder, "calendar") == NULL);
-    CHECK(call_with_id(runtime_identity_folder, "github:1/..") == NULL);
+static void a_folder_for_an_invalid_id_is_malformed(void) {
+    expect_no_folder("calendar", SPISOR_MALFORMED);
+    expect_no_folder("github:1/..", SPISOR_MALFORMED);
+    expect_no_folder(NULL, SPISOR_MALFORMED);
+}
+
+static spisor_status accepts(const char *recorded, const char *primary, runtime_identity_version_answer *answer,
+                             spisor_refusal *refusal) {
+    runtime_identity_version_argument argument = SPISOR_INIT(runtime_identity_version_argument);
+    argument.recorded = recorded;
+    argument.primary = primary;
+    return identity()->accepts_version(identity()->context, &argument, answer, refusal);
+}
+
+static void only_the_recorded_primary_is_accepted_without_the_user(void) {
+    runtime_identity_version_answer answer = SPISOR_INIT(runtime_identity_version_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    CHECK(accepts("github:1", "github:1", &answer, &refusal) == SPISOR_OK && answer.accepted == 1);
+    CHECK(accepts("github:1", "github:2", &answer, &refusal) == SPISOR_OK && answer.accepted == 0);
+    check_refused(accepts("github:1/x", "github:1", &answer, &refusal), SPISOR_MALFORMED, &refusal, "recorded",
+                  "a recorded id with a folder");
+    identity()->release_refusal(identity()->context, &refusal);
+    check_refused(accepts("github:1", "local:x", &answer, &refusal), SPISOR_MALFORMED, &refusal, "primary",
+                  "a local primary");
+    identity()->release_refusal(identity()->context, &refusal);
+}
+
+static void a_short_argument_or_a_filled_answer_is_malformed(void) {
+    runtime_identity_id_argument argument = SPISOR_INIT(runtime_identity_id_argument);
+    runtime_identity_parts parts = SPISOR_INIT(runtime_identity_parts);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.id = "github:1";
+    argument.size = sizeof argument.size;
+    check_refused(identity()->parse(identity()->context, &argument, &parts, &refusal), SPISOR_MALFORMED, &refusal,
+                  "short of its first shape", "a short argument");
+    identity()->release_refusal(identity()->context, &refusal);
+    argument.size = sizeof argument;
+    parts.storage = &parts;
+    check_refused(identity()->parse(identity()->context, &argument, &parts, &refusal), SPISOR_MALFORMED, &refusal,
+                  "short of its first shape", "an answer already holding storage");
+    identity()->release_refusal(identity()->context, &refusal);
 }
 
 int main(void) {
+    CHECK(identity()->size == sizeof(runtime_identity_definition));
     every_kit_vector_gives_the_same_verdict();
     further_shapes_the_grammar_decides();
-    an_invalid_id_answers_only_valid_false();
+    an_invalid_id_answers_none_and_no_parts();
     a_github_id_parses_to_its_parts();
     a_deep_path_is_kept_whole();
     an_id_without_a_path_has_no_path();
     a_host_qualified_id_carries_its_host();
     a_local_id_resolves_locally_with_no_number();
+    a_parse_without_an_id_is_malformed();
     a_folder_swaps_the_colon_for_a_plus_and_the_slash_for_an_equals_sign();
     no_folder_holds_a_path_separator_or_colon();
     a_name_a_folder_cannot_carry_is_refused_not_rewritten();
     a_local_id_whose_folder_would_be_shared_is_refused();
-    a_folder_for_an_invalid_id_is_refused();
+    a_folder_for_an_invalid_id_is_malformed();
+    only_the_recorded_primary_is_accepted_without_the_user();
+    a_short_argument_or_a_filled_answer_is_malformed();
     return check_summary("identity_test");
 }

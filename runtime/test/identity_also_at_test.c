@@ -6,11 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "catalog_call.h"
 #include "check.h"
+#include "definition_fixture.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
-#include "identity_also_at.h"
+#include "runtime/identity.h"
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
@@ -20,44 +20,102 @@
 
 static unsigned short server_port;
 
-static catalog_answer agree(const char *id, const char *files_json) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", id);
-    cJSON_AddItemToObject(argument, "files", parsed(files_json));
-    return call_catalog(runtime_identity_agree, argument);
+/** One agree or also_at call's status, answer and refusal, released by release_call. */
+typedef struct agreement_call {
+    spisor_status status;
+    runtime_identity_agreement answer;
+    spisor_refusal refusal;
+} agreement_call;
+
+static const runtime_identity_definition *identity(void) {
+    return runtime_identity_definition_of();
 }
 
-static catalog_answer also_at(const char *id) {
+static void release_call(agreement_call *call) {
+    identity()->release_agreement(identity()->context, &call->answer);
+    identity()->release_refusal(identity()->context, &call->refusal);
+}
+
+/** The copies a test's files object describes, as a reader would hand them: false a failed read, null no file. */
+static runtime_identity_copy *copies_of(const cJSON *files, spisor_value_tree *trees, size_t *count) {
+    runtime_identity_copy *copies = calloc((size_t)cJSON_GetArraySize(files) + 1, sizeof *copies);
+    const cJSON *file;
+    *count = 0;
+    cJSON_ArrayForEach(file, files) {
+        runtime_identity_copy *copy = &copies[(*count)++];
+        copy->id = file->string;
+        copy->read_failed = cJSON_IsFalse(file) ? 1 : 0;
+        if (!cJSON_IsFalse(file) && !cJSON_IsNull(file)) {
+            cJSON *wrapper = cJSON_CreateObject();
+            cJSON_AddItemReferenceToObject(wrapper, "value", (cJSON *)file);
+            CHECK(spisor_vector_value(wrapper, "value", &trees[*count - 1]));
+            cJSON_Delete(wrapper);
+            copy->file = &trees[*count - 1].root;
+        }
+    }
+    return copies;
+}
+
+static agreement_call agree(const char *id, const char *files_json) {
+    cJSON *files = spisor_parse_json((const uint8_t *)files_json, strlen(files_json));
+    size_t file_count = (size_t)cJSON_GetArraySize(files);
+    spisor_value_tree *trees = calloc(file_count + 1, sizeof *trees);
+    runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
+    agreement_call call = {SPISOR_OK, SPISOR_INIT(runtime_identity_agreement), SPISOR_INIT(spisor_refusal)};
+    for (size_t index = 0; index < file_count; index++) {
+        trees[index].size = (uint32_t)sizeof trees[index];
+    }
+    runtime_identity_copy *copies = copies_of(files, trees, &argument.copy_count);
+    argument.id = id;
+    argument.copies = copies;
+    call.status = identity()->agree(identity()->context, &argument, &call.answer, &call.refusal);
+    for (size_t index = 0; index < file_count; index++) {
+        spisor_value_release(&trees[index]);
+    }
+    free(trees);
+    free(copies);
+    cJSON_Delete(files);
+    return call;
+}
+
+static agreement_call also_at_root(const char *api_base, const char *id) {
+    runtime_identity_also_at_argument argument = SPISOR_INIT(runtime_identity_also_at_argument);
+    agreement_call call = {SPISOR_OK, SPISOR_INIT(runtime_identity_agreement), SPISOR_INIT(spisor_refusal)};
+    argument.id = id;
+    argument.api_base = api_base;
+    call.status = identity()->also_at(identity()->context, &argument, &call.answer, &call.refusal);
+    return call;
+}
+
+static agreement_call also_at(const char *id) {
     char api_base[128];
     snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", id);
-    cJSON_AddStringToObject(argument, "apiBase", api_base);
-    return call_catalog(runtime_identity_also_at, argument);
+    return also_at_root(api_base, id);
 }
 
-static catalog_answer accepts_version(const char *recorded, const char *primary) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "recorded", recorded);
-    cJSON_AddStringToObject(argument, "primary", primary);
-    return call_catalog(runtime_identity_accepts_version, argument);
-}
-
-static int ids_are(const catalog_answer answer, const char *expected) {
-    const cJSON *ids = cJSON_GetObjectItemCaseSensitive(answer.tree, "ids");
-    char *printed = cJSON_IsArray(ids) ? cJSON_PrintUnformatted(ids) : NULL;
-    int matched = printed != NULL && strcmp(printed, expected) == 0;
+/** The ids as the JSON array text a test expects, so each expectation reads as the set it names. */
+static int ids_are(const agreement_call answer, const char *expected) {
+    char printed[1024] = "[";
+    for (size_t index = 0; index < answer.answer.id_count; index++) {
+        strcat(printed, index == 0 ? "\"" : ",\"");
+        strcat(printed, answer.answer.ids[index]);
+        strcat(printed, "\"");
+    }
+    strcat(printed, "]");
+    int matched = answer.status == SPISOR_OK && strcmp(printed, expected) == 0;
     if (!matched) {
-        fprintf(stderr, "expected ids %s, got %s\n", expected, printed == NULL ? "(none)" : printed);
+        fprintf(stderr, "expected ids %s, got status %d and %s\n", expected, (int)answer.status, printed);
         check_failures++;
     }
-    cJSON_free(printed);
     return matched;
 }
 
-static int flag_is(const catalog_answer answer, const char *member, int expected) {
-    const cJSON *flag = cJSON_GetObjectItemCaseSensitive(answer.tree, member);
-    int matched = expected < 0 ? flag == NULL : cJSON_IsBool(flag) && cJSON_IsTrue(flag) == expected;
+static int flag_is(const agreement_call answer, const char *member, int expected) {
+    uint32_t flag = strcmp(member, "primaryConfirmed") == 0       ? answer.answer.primary_confirmed
+                    : strcmp(member, "startFileMalformed") == 0   ? answer.answer.start_file_malformed
+                    : strcmp(member, "startFileUnavailable") == 0 ? answer.answer.start_file_unavailable
+                                                                  : 2;
+    int matched = answer.status == SPISOR_OK && flag == (uint32_t)expected;
     if (!matched) {
         fprintf(stderr, "expected %s to be %d\n", member, expected);
         check_failures++;
@@ -65,8 +123,12 @@ static int flag_is(const catalog_answer answer, const char *member, int expected
     return matched;
 }
 
-static int primary_is(const catalog_answer answer, const char *expected) {
-    const char *primary = text_at(answer.tree, "primary");
+static int expect_refusal(const agreement_call answer, const char *fragment, const char *label) {
+    return check_refused(answer.status, SPISOR_REFUSED, &answer.refusal, fragment, label);
+}
+
+static int primary_is(const agreement_call answer, const char *expected) {
+    const char *primary = answer.answer.primary;
     int matched = primary != NULL && strcmp(primary, expected) == 0;
     if (!matched) {
         fprintf(stderr, "expected primary %s, got %s\n", expected, primary == NULL ? "(none)" : primary);
@@ -80,120 +142,120 @@ static int primary_is(const catalog_answer answer, const char *expected) {
     "\"github:2\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}}"
 
 static void two_copies_listing_each_other_agree(void) {
-    catalog_answer answer = agree("github:1", BOTH_LIST_EACH_OTHER);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = agree("github:1", BOTH_LIST_EACH_OTHER);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\",\"github:2\"]"));
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
 static void agreement_does_not_depend_on_which_copy_it_starts_from(void) {
-    catalog_answer answer = agree("github:2", BOTH_LIST_EACH_OTHER);
+    agreement_call answer = agree("github:2", BOTH_LIST_EACH_OTHER);
     CHECK(ids_are(answer, "[\"github:2\",\"github:1\"]"));
     CHECK(primary_is(answer, "github:1"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void a_one_sided_claim_is_not_counted(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]},"
                                   "\"github:2\":{\"primary\":\"github:2\",\"ids\":[\"github:2\"]}}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void a_copy_that_lists_us_but_is_not_listed_by_us_is_not_counted(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\"]},"
                                   "\"github:2\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}}");
     CHECK(ids_are(answer, "[\"github:1\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void an_unreachable_copy_is_left_out_and_is_no_refusal(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\",\"github:3\"]},"
                                   "\"github:2\":null,"
                                   "\"github:3\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:3\"]}}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\",\"github:3\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void a_copy_with_no_entry_at_all_is_left_out_too(void) {
-    catalog_answer answer =
+    agreement_call answer =
         agree("github:1", "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}}");
     CHECK(ids_are(answer, "[\"github:1\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void no_also_at_file_means_only_the_id_itself(void) {
-    catalog_answer answer = agree("github:1", "{\"github:1\":null}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = agree("github:1", "{\"github:1\":null}");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\"]"));
     CHECK(primary_is(answer, "github:1"));
     CHECK(flag_is(answer, "primaryConfirmed", 1));
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
 static void the_primary_is_the_one_both_name(void) {
-    catalog_answer answer = agree("github:2",
+    agreement_call answer = agree("github:2",
                                   "{\"github:2\":{\"primary\":\"github:1\",\"ids\":[\"github:2\",\"github:1\"]},"
                                   "\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}}");
     CHECK(primary_is(answer, "github:1"));
     CHECK(flag_is(answer, "primaryConfirmed", 1));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void a_primary_that_could_not_be_confirmed_says_so(void) {
-    catalog_answer answer = agree("github:2",
+    agreement_call answer = agree("github:2",
                                   "{\"github:2\":{\"primary\":\"github:1\",\"ids\":[\"github:2\",\"github:1\"]},"
                                   "\"github:1\":null}");
     CHECK(primary_is(answer, "github:1"));
     CHECK(flag_is(answer, "primaryConfirmed", 0));
     CHECK(ids_are(answer, "[\"github:2\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void disagreeing_primaries_are_refused_with_a_fix(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]},"
                                   "\"github:2\":{\"primary\":\"github:2\",\"ids\":[\"github:1\",\"github:2\"]}}");
     CHECK(expect_refusal(answer, "primaries", "disagreeing primaries"));
-    CHECK(strstr(text_at(answer.tree, "fix"), "same primary") != NULL);
-    cJSON_Delete(answer.tree);
+    CHECK(answer.refusal.fix != NULL && strstr(answer.refusal.fix, "same primary") != NULL);
+    release_call(&answer);
 }
 
 static void an_id_outside_the_grammar_is_left_out(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:../x\",\"github:2\"]},"
                                   "\"github:2\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void a_start_file_that_could_not_be_read_is_not_a_confirmed_primary(void) {
-    catalog_answer answer = agree("github:1", "{\"github:1\":false}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = agree("github:1", "{\"github:1\":false}");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\"]"));
     CHECK(primary_is(answer, "github:1"));
     CHECK(flag_is(answer, "primaryConfirmed", 0));
     CHECK(flag_is(answer, "startFileUnavailable", 1));
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
 static void a_listed_copy_that_could_not_be_read_is_left_out(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]},"
                                   "\"github:2\":false}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\"]"));
-    CHECK(flag_is(answer, "startFileUnavailable", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileUnavailable", 0));
+    release_call(&answer);
 }
 
 static void a_malformed_start_file_is_reported_in_the_answer(void) {
@@ -203,23 +265,23 @@ static void a_malformed_start_file_is_reported_in_the_answer(void) {
                                "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"local:folder\"]}}",
                                "{\"github:1\":\"not an also-at file\"}"};
     for (size_t index = 0; index < sizeof malformed / sizeof malformed[0]; index++) {
-        catalog_answer answer = agree("github:1", malformed[index]);
-        CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+        agreement_call answer = agree("github:1", malformed[index]);
+        CHECK(answer.status == SPISOR_OK);
         CHECK(ids_are(answer, "[\"github:1\"]"));
         CHECK(flag_is(answer, "startFileMalformed", 1));
-        cJSON_Delete(answer.tree);
+        release_call(&answer);
     }
 }
 
 static void a_malformed_file_on_another_copy_leaves_only_that_copy_out(void) {
-    catalog_answer answer = agree("github:1",
+    agreement_call answer = agree("github:1",
                                   "{\"github:1\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\",\"github:3\"]},"
                                   "\"github:2\":{\"primary\":7,\"ids\":[\"github:1\",\"github:2\"]},"
                                   "\"github:3\":{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:3\"]}}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\",\"github:3\"]"));
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
 static void a_file_listing_more_than_sixteen_ids_is_malformed(void) {
@@ -230,10 +292,10 @@ static void a_file_listing_more_than_sixteen_ids_is_malformed(void) {
         strcat(text, more);
     }
     strcat(text, "]}}");
-    catalog_answer answer = agree("github:1", text);
+    agreement_call answer = agree("github:1", text);
     CHECK(ids_are(answer, "[\"github:1\"]"));
     CHECK(flag_is(answer, "startFileMalformed", 1));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void sixteen_ids_are_allowed(void) {
@@ -244,142 +306,128 @@ static void sixteen_ids_are_allowed(void) {
         strcat(text, more);
     }
     strcat(text, "]}}");
-    catalog_answer answer = agree("github:1", text);
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    agreement_call answer = agree("github:1", text);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
-static void refuses_a_start_id_that_is_not_a_repo(void) {
+static void a_start_id_that_is_not_a_repo_is_malformed(void) {
     const char *refused[] = {"calendar", "local:folder", "github:1/kernel"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
-        catalog_answer answer = agree(refused[index], "{}");
-        CHECK(expect_refusal(answer, "id", refused[index]));
-        cJSON_Delete(answer.tree);
+        agreement_call answer = agree(refused[index], "{}");
+        CHECK(check_refused(answer.status, SPISOR_MALFORMED, &answer.refusal, "id", refused[index]));
+        release_call(&answer);
+        answer = also_at_root("http://127.0.0.1:1", refused[index]);
+        CHECK(check_refused(answer.status, SPISOR_MALFORMED, &answer.refusal, "id", refused[index]));
+        release_call(&answer);
     }
 }
 
-static void a_version_from_the_recorded_primary_is_accepted(void) {
-    catalog_answer answer = accepts_version("github:1", "github:1");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(flag_is(answer, "accepted", 1));
-    CHECK(flag_is(answer, "needsUserAcceptance", 0));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_new_primary_needs_the_user_to_accept_it(void) {
-    catalog_answer answer = accepts_version("github:1", "gitea@git.example.com:5");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(flag_is(answer, "accepted", 0));
-    CHECK(flag_is(answer, "needsUserAcceptance", 1));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_version_check_refuses_an_id_outside_the_grammar(void) {
-    catalog_answer answer = accepts_version("github:1", "github:1/../x");
-    CHECK(expect_refusal(answer, "primary", "bad primary"));
-    cJSON_Delete(answer.tree);
-    answer = accepts_version("", "github:1");
-    CHECK(expect_refusal(answer, "recorded", "bad recorded"));
-    cJSON_Delete(answer.tree);
+static void a_copy_listed_twice_or_without_an_id_is_malformed(void) {
+    runtime_identity_copy copies[2] = {{"github:2", 0, NULL}, {"github:2", 1, NULL}};
+    runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
+    agreement_call call = {SPISOR_OK, SPISOR_INIT(runtime_identity_agreement), SPISOR_INIT(spisor_refusal)};
+    argument.id = "github:1";
+    argument.copies = copies;
+    argument.copy_count = 2;
+    call.status = identity()->agree(identity()->context, &argument, &call.answer, &call.refusal);
+    CHECK(check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "listed twice", "a copy listed twice"));
+    release_call(&call);
+    copies[1].id = NULL;
+    call.status = identity()->agree(identity()->context, &argument, &call.answer, &call.refusal);
+    CHECK(check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "no id", "a copy without an id"));
+    release_call(&call);
+    argument.copies = NULL;
+    call.status = identity()->agree(identity()->context, &argument, &call.answer, &call.refusal);
+    CHECK(check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "copy", "a count without copies"));
+    release_call(&call);
 }
 
 static void reads_the_files_of_the_copies_its_own_file_lists(void) {
-    catalog_answer answer = also_at("github:1");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:1");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:1\",\"github:2\"]"));
     CHECK(primary_is(answer, "github:1"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void leaves_out_a_copy_the_host_cannot_find(void) {
-    catalog_answer answer = also_at("github:10");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:10");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:10\",\"github:11\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void leaves_out_a_copy_that_is_a_one_sided_claim(void) {
-    catalog_answer answer = also_at("github:20");
+    agreement_call answer = also_at("github:20");
     CHECK(ids_are(answer, "[\"github:20\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void does_not_follow_ids_beyond_the_set_its_own_file_lists(void) {
-    catalog_answer answer = also_at("github:30");
+    agreement_call answer = also_at("github:30");
     CHECK(ids_are(answer, "[\"github:30\",\"github:31\"]"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void answers_only_the_id_when_it_has_no_file(void) {
-    catalog_answer answer = also_at("github:40");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:40");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:40\"]"));
-    CHECK(flag_is(answer, "startFileMalformed", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileMalformed", 0));
+    release_call(&answer);
 }
 
 static void reports_a_malformed_file_of_the_id_itself(void) {
     const char *ids[] = {"github:50", "github:51"};
     for (size_t index = 0; index < 2; index++) {
-        catalog_answer answer = also_at(ids[index]);
-        CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+        agreement_call answer = also_at(ids[index]);
+        CHECK(answer.status == SPISOR_OK);
         CHECK(ids_are(answer, index == 0 ? "[\"github:50\"]" : "[\"github:51\"]"));
         CHECK(flag_is(answer, "startFileMalformed", 1));
-        cJSON_Delete(answer.tree);
+        release_call(&answer);
     }
 }
 
 static void says_so_when_the_start_copy_answers_a_server_error(void) {
-    catalog_answer answer = also_at("github:80");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:80");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:80\"]"));
     CHECK(flag_is(answer, "primaryConfirmed", 0));
     CHECK(flag_is(answer, "startFileUnavailable", 1));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void leaves_out_a_listed_copy_that_answers_a_server_error(void) {
-    catalog_answer answer = also_at("github:81");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:81");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:81\"]"));
     CHECK(flag_is(answer, "primaryConfirmed", 1));
-    CHECK(flag_is(answer, "startFileUnavailable", -1));
-    cJSON_Delete(answer.tree);
+    CHECK(flag_is(answer, "startFileUnavailable", 0));
+    release_call(&answer);
 }
 
 static void does_not_keep_a_file_when_the_name_changed_hands_during_the_read(void) {
-    catalog_answer answer = also_at("github:90");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    agreement_call answer = also_at("github:90");
+    CHECK(answer.status == SPISOR_OK);
     CHECK(ids_are(answer, "[\"github:90\"]"));
     CHECK(flag_is(answer, "startFileUnavailable", 1));
     CHECK(flag_is(answer, "primaryConfirmed", 0));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void refuses_when_the_id_itself_cannot_be_resolved(void) {
-    catalog_answer answer = also_at("github:60");
+    agreement_call answer = also_at("github:60");
     CHECK(expect_refusal(answer, "not found", "unresolvable start"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void reads_a_gitea_copy_from_its_raw_file_route(void) {
     char api_root[128];
     snprintf(api_root, sizeof api_root, "http://127.0.0.1:%u/api/v1", (unsigned)server_port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", "gitea@git.example.com:70");
-    cJSON_AddStringToObject(argument, "apiBase", api_root);
-    catalog_answer answer = call_catalog(runtime_identity_also_at, argument);
+    agreement_call answer = also_at_root(api_root, "gitea@git.example.com:70");
     CHECK(ids_are(answer, "[\"gitea@git.example.com:70\",\"gitea@git.example.com:71\"]"));
-    cJSON_Delete(answer.tree);
-}
-
-static void refuses_an_apibase_that_is_not_a_string(void) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", "github:1");
-    cJSON_AddNumberToObject(argument, "apiBase", 5);
-    catalog_answer answer = call_catalog(runtime_identity_also_at, argument);
-    CHECK(expect_refusal(answer, "apiBase", "numeric apiBase"));
-    cJSON_Delete(answer.tree);
+    release_call(&answer);
 }
 
 static void run_against_the_server(void) {
@@ -510,11 +558,8 @@ int main(void) {
     a_malformed_file_on_another_copy_leaves_only_that_copy_out();
     a_file_listing_more_than_sixteen_ids_is_malformed();
     sixteen_ids_are_allowed();
-    refuses_a_start_id_that_is_not_a_repo();
-    a_version_from_the_recorded_primary_is_accepted();
-    a_new_primary_needs_the_user_to_accept_it();
-    a_version_check_refuses_an_id_outside_the_grammar();
-    refuses_an_apibase_that_is_not_a_string();
+    a_start_id_that_is_not_a_repo_is_malformed();
+    a_copy_listed_twice_or_without_an_id_is_malformed();
     run_against_the_server();
     return check_summary("identity_also_at_test");
 }

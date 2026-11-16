@@ -213,7 +213,9 @@ typedef struct lookup_result {
 static lookup_result resolved(const char *repository_id, const build_request *request) {
     lookup_result result = {NULL, "", 0};
     cJSON *lookup_refusal = NULL;
-    result.answer = runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(repository_id, request), &lookup_refusal);
+    cJSON *argument = resolve_argument(repository_id, request);
+    result.answer = argument == NULL ? NULL : runtime_identity_lookup(argument, &lookup_refusal);
+    cJSON_Delete(argument);
     if (result.answer == NULL && runtime_is_refusal(lookup_refusal)) {
         snprintf(result.reason, sizeof result.reason, "it cannot be looked up: %s", text_of(lookup_refusal, "message"));
         result.status = runtime_identity_refusal_status(lookup_refusal);

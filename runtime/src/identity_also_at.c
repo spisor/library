@@ -17,18 +17,8 @@ static cJSON *unparseable_file(void) {
     return cJSON_CreateString("");
 }
 
-static int is_text(const char *text, runtime_identity_part part) {
-    return strlen(text) == part.length && strncmp(text, part.start, part.length) == 0;
-}
-
-/** A repo id: valid, not local, and with no folder below the repo. */
-static int is_repo_id(const char *text) {
-    runtime_identity parsed;
-    return runtime_identity_parse_id(text, &parsed) && !is_text("local", parsed.resolver) && parsed.path.length == 0;
-}
-
 static int is_repo_id_item(const cJSON *item) {
-    return cJSON_IsString(item) && is_repo_id(item->valuestring);
+    return cJSON_IsString(item) && runtime_identity_is_repo_id(item->valuestring);
 }
 
 static int has_only_repo_ids(const cJSON *ids) {
@@ -79,9 +69,18 @@ static int is_counted_copy(const cJSON *file, const char *id) {
 
 typedef enum start_file_state { START_FILE_USABLE, START_FILE_MALFORMED, START_FILE_UNAVAILABLE } start_file_state;
 
+static int adds_copy_of(cJSON *object, const char *name, const cJSON *item) {
+    cJSON *copy = cJSON_Duplicate(item, 1);
+    if (copy != NULL && !cJSON_AddItemToObject(object, name, copy)) {
+        cJSON_Delete(copy);
+        copy = NULL;
+    }
+    return copy != NULL;
+}
+
 static cJSON *answer_of(const cJSON *ids, const char *primary, int primary_confirmed, start_file_state state) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddItemToObject(answer, "ids", cJSON_Duplicate(ids, 1)) == 0 ||
+    if (answer == NULL || !adds_copy_of(answer, "ids", ids) ||
         cJSON_AddStringToObject(answer, "primary", primary) == NULL ||
         cJSON_AddBoolToObject(answer, "primaryConfirmed", primary_confirmed) == NULL ||
         (state == START_FILE_MALFORMED && cJSON_AddTrueToObject(answer, "startFileMalformed") == NULL) ||
@@ -172,7 +171,7 @@ static const cJSON *repo_id_argument(const cJSON *argument, const char *member, 
     return id;
 }
 
-static cJSON *agree(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_identity_agree_on_files(const cJSON *argument, cJSON **refusal) {
     const cJSON *id = repo_id_argument(argument, "id", refusal);
     const cJSON *files = cJSON_GetObjectItemCaseSensitive(argument, "files");
     if (id == NULL) {
@@ -270,39 +269,11 @@ static int read_api_base(const cJSON *argument, const char **api_base, cJSON **r
     return 1;
 }
 
-static cJSON *also_at(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_identity_read_also_at(const cJSON *argument, cJSON **refusal) {
     const cJSON *id = repo_id_argument(argument, "id", refusal);
     const char *api_base = NULL;
     if (id == NULL || !read_api_base(argument, &api_base, refusal)) {
         return NULL;
     }
     return agree_from_hosts(id->valuestring, api_base, refusal);
-}
-
-static cJSON *accepts_version(const cJSON *argument, cJSON **refusal) {
-    const cJSON *recorded = repo_id_argument(argument, "recorded", refusal);
-    const cJSON *primary = recorded == NULL ? NULL : repo_id_argument(argument, "primary", refusal);
-    if (primary == NULL) {
-        return NULL;
-    }
-    int accepted = strcmp(recorded->valuestring, primary->valuestring) == 0;
-    cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddBoolToObject(answer, "accepted", accepted) == NULL ||
-        cJSON_AddBoolToObject(answer, "needsUserAcceptance", !accepted) == NULL) {
-        cJSON_Delete(answer);
-        return NULL;
-    }
-    return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_identity_agree(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, agree);
-}
-
-RUNTIME_EXPORT int32_t runtime_identity_also_at(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, also_at);
-}
-
-RUNTIME_EXPORT int32_t runtime_identity_accepts_version(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, accepts_version);
 }

@@ -16,6 +16,7 @@
 #include "identity_resolve.h"
 #include "json_service.h"
 #include "platform_key.h"
+#include "runtime/identity.h"
 #include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -180,7 +181,10 @@ static cJSON *resolve_argument(const install_request *request) {
 }
 
 static cJSON *resolve_repository(const install_request *request, cJSON **refusal) {
-    return runtime_call_or_refuse(runtime_identity_resolve, resolve_argument(request), refusal);
+    cJSON *argument = resolve_argument(request);
+    cJSON *repository = argument == NULL ? NULL : runtime_identity_lookup(argument, refusal);
+    cJSON_Delete(argument);
+    return repository;
 }
 
 static cJSON *unconfirmed_set(const char *id) {
@@ -219,7 +223,9 @@ static cJSON *also_at_argument(const install_request *request) {
  */
 static cJSON *verified_set(const install_request *request, cJSON **refusal) {
     cJSON *found_refusal = NULL;
-    cJSON *found = runtime_call_or_refuse(runtime_identity_also_at, also_at_argument(request), &found_refusal);
+    cJSON *argument = also_at_argument(request);
+    cJSON *found = argument == NULL ? NULL : runtime_identity_read_also_at(argument, &found_refusal);
+    cJSON_Delete(argument);
     if (found_refusal != NULL) {
         *refusal = found_refusal;
         return NULL;
@@ -286,18 +292,18 @@ static int needs_user_acceptance(const install_request *request, const cJSON *se
     if (request->recorded_primary == NULL) {
         return 1;
     }
-    cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "recorded", request->recorded_primary) != NULL &&
-                cJSON_AddStringToObject(argument, "primary", text_of(set, "primary")) != NULL;
-    cJSON *decision = built ? runtime_call_or_refuse(runtime_identity_accepts_version, argument, refusal) : NULL;
-    if (!built) {
-        cJSON_Delete(argument);
-    }
+    const runtime_identity_definition *identity = runtime_identity_definition_of();
+    runtime_identity_version_argument argument = SPISOR_INIT(runtime_identity_version_argument);
+    runtime_identity_version_answer decision = SPISOR_INIT(runtime_identity_version_answer);
+    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
+    argument.recorded = request->recorded_primary;
+    argument.primary = text_of(set, "primary");
+    spisor_status status = identity->accepts_version(identity->context, &argument, &decision, &refused);
     int accepted = request->accept_primary != NULL && strcmp(request->accept_primary, text_of(set, "primary")) == 0;
-    *needed = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(decision, "needsUserAcceptance")) && !accepted;
-    int decided = decision != NULL;
-    cJSON_Delete(decision);
-    return decided;
+    *needed = status == SPISOR_OK && !decision.accepted && !accepted;
+    *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
+    identity->release_refusal(identity->context, &refused);
+    return status == SPISOR_OK;
 }
 
 static const char *index_asset_url(const cJSON *release) {

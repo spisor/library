@@ -25,12 +25,15 @@ endforeach()
 target_link_libraries(paths_test PRIVATE spisor_vector_reader)
 target_link_libraries(places_test PRIVATE spisor_vector_reader)
 
-runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(out_of_memory_test PRIVATE spisor_vector_reader)
+set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
+target_link_libraries(out_of_memory_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 600)
 
-runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting ${runtime_definition_test_objects})
+target_link_libraries(json_hooks_race_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(json_hooks_race_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 if(NOT WIN32)
     find_package(Threads REQUIRED)
@@ -90,7 +93,9 @@ endif()
 set_tests_properties(path_entry_test commands_test lifecycle_test PROPERTIES RESOURCE_LOCK user_path_value)
 
 runtime_test(sha256_test $<TARGET_OBJECTS:runtime_secret_store>)
-runtime_test(identity_test $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(identity_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(identity_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 
 runtime_test(fetch_test http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(fetch_test PRIVATE ${runtime_fetch_libraries})
@@ -99,8 +104,9 @@ if(WIN32)
 endif()
 
 runtime_test(identity_resolve_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
-    $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_test PRIVATE ${runtime_fetch_libraries})
+    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(identity_resolve_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
 endif()
@@ -108,7 +114,7 @@ endif()
 runtime_test(identity_also_at_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_also_at_test PRIVATE ${runtime_fetch_libraries})
+target_link_libraries(identity_also_at_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
 endif()
@@ -143,9 +149,9 @@ set(SPISOR_MARKETPLACE_TEMPLATES_PATH "" CACHE PATH "Folder holding the six mark
 runtime_test(marketplace_templates_test $<TARGET_OBJECTS:runtime_secret_store>)
 target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE_TEMPLATES_PATH="${SPISOR_MARKETPLACE_TEMPLATES_PATH}")
 
-runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_fetch>
-    $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})
+runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(identity_resolve_shipped_test PRIVATE spisor_vector_reader ${runtime_fetch_libraries})
 
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})

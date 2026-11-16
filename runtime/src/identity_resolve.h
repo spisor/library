@@ -5,21 +5,20 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "export.h"
 
 /**
- * identity.resolve: {id, lastKnown?, token?, apiBase?} answers {name, fullName, defaultBranch?} for the repo the id names,
- * or refuses with a fix. lastKnown is an "owner/name" a previous lookup saw. apiBase replaces the host's API root,
- * is not in library.json, and is refused unless the fetch test hook allows plain http, so only a test can aim a lookup.
- * token is an access token for the host the id names, sent as "Authorization: token <token>" to that host and to no
- * other, a redirect to another host included. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without one.
+ * identity's resolve over a JSON argument {id, lastKnown?, token?, apiBase?}: {name, fullName, defaultBranch?} for the
+ * repo the id names, or NULL with *refusal set to {message, fix}, or with it NULL when memory runs out. apiBase replaces
+ * the host's API root and is refused unless the fetch test hook allows plain http, so only a test can aim a lookup.
+ * token is sent as "Authorization: token <token>" to the host the id names and to no other, a redirect to another
+ * host included. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without one.
  *
  * @implNote A repo is looked up by its number, which survives a rename; a number the host answers with is
  * always compared, as text, with the one asked for. Only when the host cannot answer by number (404, or 401 where
  * it wants a token for that route) is lastKnown asked, and its answer is accepted only when it carries the same
  * number, so a name someone else has since taken is refused. A local id has no host and answers from its own text.
  */
-RUNTIME_EXPORT int32_t runtime_identity_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_identity_lookup(const cJSON *argument, cJSON **refusal);
 
 typedef enum runtime_repo_file_status {
     RUNTIME_REPO_FILE_READ,

@@ -16,6 +16,7 @@
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/config.h"
+#include "runtime/identity.h"
 #include "runtime/log.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
@@ -51,6 +52,8 @@ static scratch place;
 static spisor_value_tree names = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree config = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree value = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree first_file = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree second_file = SPISOR_INIT(spisor_value_tree);
 
 static void write_text(const char *directory, const char *name, const char *text) {
     char path[1400];
@@ -170,6 +173,23 @@ static spisor_status write_log(void) {
     return status;
 }
 
+static spisor_status agree_on_copies(void) {
+    const runtime_identity_definition *identity = runtime_identity_definition_of();
+    runtime_identity_copy copies[3] = {{"github:1", 0, &first_file.root}, {"github:2", 0, &second_file.root},
+                                       {"github:3", 1, NULL}};
+    runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
+    runtime_identity_agreement answer = SPISOR_INIT(runtime_identity_agreement);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.id = "github:1";
+    argument.copies = copies;
+    argument.copy_count = 3;
+    status = identity->agree(identity->context, &argument, &answer, &refusal);
+    identity->release_agreement(identity->context, &answer);
+    identity->release_refusal(identity->context, &refusal);
+    return status;
+}
+
 /** Whether log's write left no line behind: no logs folder under the home at all. */
 static int appended_nothing(void) {
     char logs[1200];
@@ -233,15 +253,21 @@ int main(void) {
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
+    CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\",\"github:3\"]}",
+                        &first_file));
+    CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}", &second_file));
     every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
     every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
     every_failure_answers_out_of_memory("secrets' set", set_secret, NULL);
     every_failure_answers_out_of_memory("config's set", set_config, NULL);
     every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
     every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
+    every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
+    spisor_value_release(&first_file);
+    spisor_value_release(&second_file);
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");
 }

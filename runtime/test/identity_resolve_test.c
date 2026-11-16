@@ -6,11 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "catalog_call.h"
 #include "check.h"
+#include "definition_fixture.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
-#include "identity_resolve.h"
+#include "runtime/identity.h"
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
@@ -32,52 +32,81 @@ static char oversized_body[300 * 1024];
 
 static unsigned short server_port;
 
-static cJSON *resolve_argument(const char *id, const char *last_known) {
+/** One resolve's status, answer and refusal, released by release_resolved. */
+typedef struct resolved {
+    spisor_status status;
+    runtime_identity_repository answer;
+    spisor_refusal refusal;
+} resolved;
+
+static resolved resolve_through(const char *api_base, const char *id, const char *last_known, const char *token) {
+    const runtime_identity_definition *identity = runtime_identity_definition_of();
+    runtime_identity_resolve_argument argument = SPISOR_INIT(runtime_identity_resolve_argument);
+    resolved call = {SPISOR_OK, SPISOR_INIT(runtime_identity_repository), SPISOR_INIT(spisor_refusal)};
+    argument.id = id;
+    argument.last_known = last_known;
+    argument.token = token;
+    argument.api_base = api_base;
+    call.status = identity->resolve(identity->context, &argument, &call.answer, &call.refusal);
+    return call;
+}
+
+static void release_resolved(resolved *call) {
+    const runtime_identity_definition *identity = runtime_identity_definition_of();
+    identity->release_repository(identity->context, &call->answer);
+    identity->release_refusal(identity->context, &call->refusal);
+}
+
+static resolved resolve_at(unsigned short port, const char *id, const char *last_known, const char *token) {
     char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", id);
-    if (last_known != NULL) {
-        cJSON_AddStringToObject(argument, "lastKnown", last_known);
-    }
-    cJSON_AddStringToObject(argument, "apiBase", api_base);
-    return argument;
+    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)port);
+    return resolve_through(api_base, id, last_known, token);
 }
 
-static catalog_answer resolve(const char *id, const char *last_known) {
-    return call_catalog(runtime_identity_resolve, resolve_argument(id, last_known));
+static resolved resolve(const char *id, const char *last_known) {
+    return resolve_at(server_port, id, last_known, NULL);
 }
 
-static void expect_resolved(catalog_answer answer, const char *full_name, const char *label) {
-    const char *found = text_at(answer.tree, "fullName");
-    if (answer.status != SPISOR_STATUS_SUCCESS || found == NULL || strcmp(found, full_name) != 0) {
-        fprintf(stderr, "%s: expected %s, got status %d and \"%s\"\n", label, full_name, (int)answer.status,
+static void expect_resolved(resolved call, const char *full_name, const char *label) {
+    const char *found = call.answer.full_name;
+    if (call.status != SPISOR_OK || found == NULL || strcmp(found, full_name) != 0) {
+        fprintf(stderr, "%s: expected %s, got status %d and \"%s\"\n", label, full_name, (int)call.status,
                 found == NULL ? "(none)" : found);
         check_failures++;
     }
-    cJSON_Delete(answer.tree);
+    release_resolved(&call);
 }
 
-static void expect_fix_naming(catalog_answer answer, const char *fragment, const char *label) {
-    const char *fix = text_at(answer.tree, "fix");
+static int expect_refusal(const resolved *call, const char *fragment, const char *label) {
+    return check_refused(call->status, SPISOR_REFUSED, &call->refusal, fragment, label);
+}
+
+static void expect_fix_naming(const resolved *call, const char *fragment, const char *label) {
+    const char *fix = call->refusal.fix;
     if (fix == NULL || strstr(fix, fragment) == NULL) {
         fprintf(stderr, "%s: the fix should name \"%s\", got \"%s\"\n", label, fragment, fix == NULL ? "(none)" : fix);
         check_failures++;
     }
 }
 
-static void expect_refused_then_free(catalog_answer answer, const char *fragment, const char *label) {
-    CHECK(expect_refusal(answer, fragment, label));
-    cJSON_Delete(answer.tree);
+static void expect_refused_then_free(resolved call, const char *fragment, const char *label) {
+    CHECK(expect_refusal(&call, fragment, label));
+    release_resolved(&call);
+}
+
+/** Whether a refusal repeats `secret` anywhere in its detail or fix. */
+static int refusal_repeats(const spisor_refusal *refusal, const char *secret) {
+    return (refusal->detail != NULL && strstr(refusal->detail, secret) != NULL) ||
+           (refusal->fix != NULL && strstr(refusal->fix, secret) != NULL);
 }
 
 static void resolves_by_number(void) {
-    catalog_answer answer = resolve("github:7", NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(strcmp(text_at(answer.tree, "name"), "n") == 0);
-    CHECK(strcmp(text_at(answer.tree, "fullName"), "o/n") == 0);
-    CHECK(strcmp(text_at(answer.tree, "defaultBranch"), "main") == 0);
-    cJSON_Delete(answer.tree);
+    resolved call = resolve("github:7", NULL);
+    CHECK(call.status == SPISOR_OK);
+    check_text(call.answer.name, "n", "name");
+    check_text(call.answer.full_name, "o/n", "full name");
+    check_text(call.answer.default_branch, "main", "default branch");
+    release_resolved(&call);
 }
 
 static void follows_a_rename(void) {
@@ -93,21 +122,21 @@ static void confirms_by_name_when_the_host_wants_a_token_for_numbers(void) {
 }
 
 static void refuses_a_taken_name(void) {
-    catalog_answer answer = resolve("github:10", "o/taken");
-    CHECK(expect_refusal(answer, "o/taken", "taken name"));
-    expect_fix_naming(answer, "10", "taken name asked");
-    expect_fix_naming(answer, "11", "taken name found");
-    cJSON_Delete(answer.tree);
+    resolved call = resolve("github:10", "o/taken");
+    CHECK(expect_refusal(&call, "o/taken", "taken name"));
+    expect_fix_naming(&call, "10", "taken name asked");
+    expect_fix_naming(&call, "11", "taken name found");
+    release_resolved(&call);
 }
 
 static void says_rate_limited_on_403_and_429(void) {
     const char *ids[] = {"github:20", "github:21"};
     for (size_t index = 0; index < 2; index++) {
-        catalog_answer answer = resolve(ids[index], NULL);
-        CHECK(expect_refusal(answer, "rate limit", ids[index]));
-        CHECK(strstr(text_at(answer.tree, "message"), "not found") == NULL);
-        expect_fix_naming(answer, "wait", ids[index]);
-        cJSON_Delete(answer.tree);
+        resolved call = resolve(ids[index], NULL);
+        CHECK(expect_refusal(&call, "rate limit", ids[index]));
+        CHECK(!refusal_repeats(&call.refusal, "not found"));
+        expect_fix_naming(&call, "wait", ids[index]);
+        release_resolved(&call);
     }
 }
 
@@ -146,40 +175,36 @@ static void refuses_a_last_known_name_that_is_not_owner_and_name(void) {
 static void reads_a_gitea_host_through_its_api_root(void) {
     char api_root[128];
     snprintf(api_root, sizeof api_root, "http://127.0.0.1:%u/api/v1", (unsigned)server_port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", "gitea@git.example.com:60");
-    cJSON_AddStringToObject(argument, "apiBase", api_root);
-    expect_resolved(call_catalog(runtime_identity_resolve, argument), "o/tea", "gitea");
+    expect_resolved(resolve_through(api_root, "gitea@git.example.com:60", NULL, NULL), "o/tea", "gitea");
 }
 
 static void refuses_a_gitea_id_with_no_host(void) {
-    catalog_answer answer = resolve("gitea:60", NULL);
-    CHECK(expect_refusal(answer, "host", "gitea without host"));
-    expect_fix_naming(answer, "gitea@", "gitea without host");
-    cJSON_Delete(answer.tree);
+    resolved call = resolve("gitea:60", NULL);
+    CHECK(expect_refusal(&call, "host", "gitea without host"));
+    expect_fix_naming(&call, "gitea@", "gitea without host");
+    release_resolved(&call);
 }
 
 static void names_the_missing_resolver_for_an_unknown_scheme(void) {
-    catalog_answer answer = resolve("mercurial:5", NULL);
-    CHECK(expect_refusal(answer, "mercurial", "unknown scheme"));
-    expect_fix_naming(answer, "plugin", "unknown scheme");
-    cJSON_Delete(answer.tree);
+    resolved call = resolve("mercurial:5", NULL);
+    CHECK(expect_refusal(&call, "mercurial", "unknown scheme"));
+    expect_fix_naming(&call, "plugin", "unknown scheme");
+    release_resolved(&call);
 }
 
-static void refuses_an_invalid_id(void) {
-    expect_refused_then_free(resolve("calendar", NULL), "not valid", "invalid id");
+static void an_invalid_id_is_malformed(void) {
+    resolved call = resolve("calendar", NULL);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "not valid", "invalid id");
+    release_resolved(&call);
 }
 
 static void resolves_local_without_the_network(void) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", "local:plugin-stub");
-    cJSON_AddStringToObject(argument, "apiBase", "http://127.0.0.1:1");
-    catalog_answer answer = call_catalog(runtime_identity_resolve, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(strcmp(text_at(answer.tree, "name"), "plugin-stub") == 0);
-    CHECK(strcmp(text_at(answer.tree, "fullName"), "plugin-stub") == 0);
-    CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "defaultBranch") == NULL);
-    cJSON_Delete(answer.tree);
+    resolved call = resolve_through("http://127.0.0.1:1", "local:plugin-stub", NULL, NULL);
+    CHECK(call.status == SPISOR_OK);
+    check_text(call.answer.name, "plugin-stub", "local name");
+    check_text(call.answer.full_name, "plugin-stub", "local full name");
+    CHECK(call.answer.default_branch == NULL);
+    release_resolved(&call);
 }
 
 static void refuses_a_body_above_the_cap(void) {
@@ -237,25 +262,13 @@ static void run_against_the_server(void) {
     reads_a_gitea_host_through_its_api_root();
     refuses_a_gitea_id_with_no_host();
     names_the_missing_resolver_for_an_unknown_scheme();
-    refuses_an_invalid_id();
+    an_invalid_id_is_malformed();
     resolves_local_without_the_network();
     free(http_fixture_stop(server));
 }
 
 #define TOKEN "tok-1234567890abcdef"
 #define AUTHORIZATION_LINE "Authorization: token " TOKEN
-
-static cJSON *resolve_argument_at(unsigned short port, const char *id, const char *token) {
-    char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "id", id);
-    cJSON_AddStringToObject(argument, "apiBase", api_base);
-    if (token != NULL) {
-        cJSON_AddStringToObject(argument, "token", token);
-    }
-    return argument;
-}
 
 static int count_of(const char *text, const char *fragment) {
     int count = 0;
@@ -289,15 +302,13 @@ static void sends_the_token_only_when_given_and_never_to_another_host(void) {
         return;
     }
     unsigned short port = http_fixture_port(named);
-    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:100", TOKEN)), "o/mine", "with a token");
-    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:100", NULL)), "o/mine", "without a token");
-    expect_resolved(call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:101", TOKEN)), "o/far", "a redirect");
-    catalog_answer refused = call_catalog(runtime_identity_resolve, resolve_argument_at(port, "github:102", TOKEN));
-    CHECK(expect_refusal(refused, "not found", "a refusal with a token"));
-    char *printed = cJSON_PrintUnformatted(refused.tree);
-    CHECK(strstr(printed, TOKEN) == NULL);
-    cJSON_free(printed);
-    cJSON_Delete(refused.tree);
+    expect_resolved(resolve_at(port, "github:100", NULL, TOKEN), "o/mine", "with a token");
+    expect_resolved(resolve_at(port, "github:100", NULL, NULL), "o/mine", "without a token");
+    expect_resolved(resolve_at(port, "github:101", NULL, TOKEN), "o/far", "a redirect");
+    resolved refused = resolve_at(port, "github:102", NULL, TOKEN);
+    CHECK(expect_refusal(&refused, "not found", "a refusal with a token"));
+    CHECK(!refusal_repeats(&refused.refusal, TOKEN));
+    release_resolved(&refused);
     char *named_requests = http_fixture_stop(named);
     char *other_requests = http_fixture_stop(other);
     CHECK(count_of(named_requests, AUTHORIZATION_LINE) == 3);
@@ -309,12 +320,10 @@ static void sends_the_token_only_when_given_and_never_to_another_host(void) {
 }
 
 static void refuses_a_token_that_is_not_one_line_without_repeating_it(void) {
-    catalog_answer answer = call_catalog(runtime_identity_resolve, resolve_argument_at(1, "github:100", "bad\r\nX: " TOKEN));
-    CHECK(expect_refusal(answer, "token", "a token with a line break"));
-    char *printed = cJSON_PrintUnformatted(answer.tree);
-    CHECK(strstr(printed, TOKEN) == NULL);
-    cJSON_free(printed);
-    cJSON_Delete(answer.tree);
+    resolved call = resolve_at(1, "github:100", NULL, "bad\r\nX: " TOKEN);
+    check_refused(call.status, SPISOR_MALFORMED, &call.refusal, "token", "a token with a line break");
+    CHECK(!refusal_repeats(&call.refusal, TOKEN));
+    release_resolved(&call);
 }
 
 #if !defined(_WIN32)

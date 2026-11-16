@@ -26,6 +26,13 @@ int runtime_has_shape(uint32_t size, size_t shape);
 /** Fills the refusal and answers `status`, or OUT_OF_MEMORY when the refusal could not be filled. */
 spisor_status runtime_refuse_as(spisor_refusal *refusal, spisor_status status, const char *detail, const char *fix);
 
+/**
+ * What an operation that answers JSON refused with, as a definition answers it: REFUSED with the refusal filled from
+ * the JSON's message and fix, or OUT_OF_MEMORY when there is no such refusal, as such an operation answers memory
+ * running out, or the refusal could not be filled. Deletes `json_refusal`.
+ */
+spisor_status runtime_refuse_json(spisor_refusal *refusal, cJSON *json_refusal);
+
 /** The refusal every definition answers for an argument or answer that is absent or short of its first shape. */
 spisor_status runtime_refuse_shape(spisor_refusal *refusal, const char *operation);
 
