@@ -140,6 +140,9 @@ static install_status merge_user_file(cJSON *merged, const char *path, const cha
     if (state == SPISOR_JSON_FILE_ABSENT) {
         return INSTALL_OK;
     }
+    if (state == SPISOR_JSON_FILE_OUT_OF_MEMORY) {
+        return INSTALL_OUT_OF_MEMORY;
+    }
     install_status status = state == SPISOR_JSON_FILE_PARSED && cJSON_IsObject(root)
                                 ? merge_item_entry(merged, root, path, item, reason)
                                 : refuse_file(reason, path);

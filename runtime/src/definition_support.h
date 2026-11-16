@@ -7,6 +7,7 @@
 #include "cJSON.h"
 #include "runtime/environment.h"
 #include "spisor/status.h"
+#include "spisor/value.h"
 
 /** The bytes of a size-prefixed struct up to and including `field`, the field its first shape ends at. */
 #define RUNTIME_SHAPE_THROUGH(type, field) (offsetof(type, field) + sizeof(((type *)0)->field))
@@ -56,6 +57,21 @@ runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *co
 
 /** The refusal runtime_environment_json's MALFORMED answers with. */
 spisor_status runtime_refuse_environment(spisor_refusal *refusal);
+
+/**
+ * Frees what runtime_pack_texts filled an answer with and empties it: an answer whose first shape of `shape` bytes
+ * begins with its `size` and ends at its `storage`. NULL, or an answer short of that shape, is left as it is.
+ */
+void runtime_release_packed_answer(void *answer, size_t shape);
+
+/** Overwrites a secret's bytes before they are freed, through a volatile pointer so no write is optimised away. */
+void runtime_overwrite(void *bytes, size_t length);
+
+/** Overwrites every text and key of a tree, as its release does before freeing a tree that may hold a secret. */
+void runtime_overwrite_texts(const spisor_value *value);
+
+/** Overwrites every string and key of a JSON tree, as its owner does before deleting a tree that may hold a secret. */
+void runtime_overwrite_json_texts(const cJSON *json);
 
 /** Frees a block runtime_pack_texts or another definition helper allocated. */
 void runtime_release_storage(void *storage);

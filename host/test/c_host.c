@@ -8,13 +8,12 @@
 
 #include "boot.h"
 #include "cache.h"
-#include "definition_support.h"
+#include "places.h"
 #include "catalog_time.h"
 #include "file_times.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "json_service.h"
-#include "runtime/places.h"
 #include "spisor/json_write.h"
 #include "updates.h"
 
@@ -114,25 +113,14 @@ static int refuse(cJSON *refusal) {
 }
 
 static int open_host(c_host *host, cJSON **refusal) {
-    const runtime_places_definition *places = runtime_places_definition_of();
-    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
     runtime_places_answer empty = SPISOR_INIT(runtime_places_answer);
-    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
     memset(host, 0, sizeof *host);
     host->places = empty;
     host->environment = process_environment();
-    runtime_variable *variables = runtime_variables_of_json(host->environment, &argument.environment_count);
-    argument.environment = variables;
-    spisor_status status = variables == NULL ? SPISOR_OUT_OF_MEMORY
-                                             : places->resolve(places->context, &argument, &host->places, &refused);
-    if (status != SPISOR_OK) {
-        *refusal = runtime_refusal_of(&refused);
-    }
-    places->release_refusal(places->context, &refused);
-    free(variables);
+    int resolved = host->environment != NULL && runtime_resolve_places_answer(host->environment, &host->places, refusal);
     host->state = host->places.state;
     host->cache = host->places.cache;
-    return status == SPISOR_OK;
+    return resolved;
 }
 
 static void close_host(c_host *host) {

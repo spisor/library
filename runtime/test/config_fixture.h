@@ -45,6 +45,7 @@ typedef struct typed_request {
     runtime_setting_declaration *declarations;
     size_t declaration_count;
     runtime_secret_places places;
+    runtime_config_get_argument get;
     runtime_config_plugin plugin;
     runtime_settings_scope scope;
     runtime_settings_change change;
@@ -95,6 +96,10 @@ static inline void config_fixture_read(const cJSON *request, typed_request *type
     runtime_settings_scope scope = SPISOR_INIT(runtime_settings_scope);
     runtime_settings_change change = SPISOR_INIT(runtime_settings_change);
     spisor_value_tree empty = SPISOR_INIT(spisor_value_tree);
+    runtime_secret_places no_places = SPISOR_INIT(runtime_secret_places);
+    runtime_config_get_argument get = SPISOR_INIT(runtime_config_get_argument);
+    typed->places = no_places;
+    typed->get = get;
     typed->names = typed->config = typed->value = empty;
     config_fixture_declarations(request, typed);
     plugin.home = scope.home = config_fixture_text(request, "home");
@@ -110,6 +115,7 @@ static inline void config_fixture_read(const cJSON *request, typed_request *type
         plugin.places = &typed->places;
     }
     change.key = config_fixture_text(request, "key");
+    typed->get.key = change.key;
     change.value = config_fixture_value(request, "value", &typed->value);
     change.layer = config_fixture_layer(cJSON_GetObjectItemCaseSensitive(request, "layer"));
     typed->plugin = plugin;
@@ -152,7 +158,7 @@ static inline spisor_status config_fixture_tree_call(config_operation operation,
     if (operation == CONFIG_ALL) {
         status = config->all(config->context, &typed->plugin, &answer, refusal);
     } else if (operation == CONFIG_GET) {
-        status = config->get(config->context, &typed->plugin, typed->change.key, &answer, refusal);
+        status = config->get(config->context, &typed->plugin, &typed->get, &answer, refusal);
     } else if (operation == SETTINGS_ALL) {
         status = settings->all(settings->context, &typed->scope, &answer, refusal);
     } else {
@@ -161,7 +167,11 @@ static inline spisor_status config_fixture_tree_call(config_operation operation,
     if (status == SPISOR_OK) {
         config_fixture_add_value(tree, member, &answer.root);
     }
-    settings->release_tree(settings->context, &answer);
+    if (operation == CONFIG_ALL || operation == CONFIG_GET) {
+        config->release_tree(config->context, &answer);
+    } else {
+        settings->release_tree(settings->context, &answer);
+    }
     return status;
 }
 

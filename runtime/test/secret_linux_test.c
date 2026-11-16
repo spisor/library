@@ -38,7 +38,7 @@ static void expect_set_lands_in_the_file(const char *label) {
     runtime_secrets_set_answer stored = SPISOR_INIT(runtime_secrets_set_answer);
     runtime_secrets_entry_argument entry = SPISOR_INIT(runtime_secrets_entry_argument);
     runtime_secrets_get_answer got = SPISOR_INIT(runtime_secrets_get_answer);
-    runtime_secret_places places = {NULL, 0};
+    runtime_secret_places places = SPISOR_INIT(runtime_secret_places);
     char directory[1024];
     char file[1100];
     snprintf(directory, sizeof directory, RUNTIME_SCRATCH_PATH "/secret-linux-%d-%s", (int)getpid(), label);

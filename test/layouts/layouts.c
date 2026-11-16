@@ -76,6 +76,7 @@ static void print_json_kind_layouts(void) {
 }
 
 static void print_paths_layouts(void) {
+    FIELD(runtime_plugin_places, size);
     FIELD(runtime_plugin_places, portable);
     FIELD(runtime_plugin_places, cache);
     SIZE(runtime_plugin_places);
@@ -130,6 +131,7 @@ static void print_places_layouts(void) {
 }
 
 static void print_secrets_layouts(void) {
+    FIELD(runtime_secret_places, size);
     FIELD(runtime_secret_places, secrets_file);
     FIELD(runtime_secret_places, force_file_store);
     SIZE(runtime_secret_places);
@@ -209,6 +211,9 @@ static void print_config_layouts(void) {
     FIELD(runtime_config_plugin, setting_count);
     FIELD(runtime_config_plugin, places);
     SIZE(runtime_config_plugin);
+    FIELD(runtime_config_get_argument, size);
+    FIELD(runtime_config_get_argument, key);
+    SIZE(runtime_config_get_argument);
     FIELD(runtime_config_set_answer, size);
     FIELD(runtime_config_set_answer, secret);
     FIELD(runtime_config_set_answer, previous);

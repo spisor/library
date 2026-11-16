@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "runtime/places.h"
 
 #define RUNTIME_NO_LOCAL_APP_DATA_MESSAGE "LOCALAPPDATA is absent, empty or not an absolute path"
 #define RUNTIME_NO_LOCAL_APP_DATA_FIX                                                                   \
@@ -37,6 +38,14 @@ int runtime_resolve_places(int windows, int macos, const char *user_home, const 
                            runtime_places *places);
 
 void runtime_free_places(runtime_places *places);
+
+/**
+ * Resolves the places of a JSON environment through the places definition, the home being the one it names, for a
+ * caller that holds its environment as JSON. The answer is the consumer's empty answer, released with the
+ * definition's release_answer. 1, or 0 with *refusal set to the {message, fix} refusal, or left NULL when memory ran
+ * out.
+ */
+int runtime_resolve_places_answer(const cJSON *environment, runtime_places_answer *answer, cJSON **refusal);
 
 /**
  * The places places.resolve answers for environment with no home given, {home, portable, state, cache,

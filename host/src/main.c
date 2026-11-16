@@ -4,6 +4,7 @@
 
 #include "host_commands.h"
 #include "host_output.h"
+#include "json_allocation.h"
 
 #if defined(_WIN32)
 #include "host_arguments.h"
@@ -45,6 +46,7 @@ static int unknown_command(int count, char **arguments) {
 }
 
 int host_run_command_line(int count, char **arguments) {
+    spisor_json_use_library_allocator();
     if (count >= 2 && strcmp(arguments[0], "catalog") == 0 && strcmp(arguments[1], "build") == 0) {
         return host_command_catalog_build(count - 2, arguments + 2);
     }

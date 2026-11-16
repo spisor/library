@@ -3,6 +3,7 @@
 #include "config.h"
 #include "config_conversion.h"
 #include "definition_support.h"
+#include "json_allocation.h"
 
 #define SCOPE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_settings_scope, portable)
 
@@ -49,10 +50,8 @@ static spisor_status set(void *context, const runtime_settings_scope *scope, con
         status = runtime_change_request(change, &request, &value, refusal);
     }
     if (status == SPISOR_OK) {
+        request.previous_tree = previous;
         status = runtime_config_set_value(&request, &held, &secret, refusal);
-    }
-    if (status == SPISOR_OK) {
-        status = runtime_tree_of_settings(held, previous, refusal);
     }
     cJSON_Delete(held);
     cJSON_Delete(value);
@@ -65,5 +64,6 @@ static const runtime_settings_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_settings_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
 }

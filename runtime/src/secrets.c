@@ -132,7 +132,7 @@ static move_result move_file_secrets(const char *file_path) {
     return result;
 }
 
-static spisor_status get_from_store(const runtime_secret_place *place, const char *entry,
+static spisor_status get_from_store(const runtime_secret_places *place, const char *entry,
                                     runtime_secret_file_answer file, char **value, spisor_refusal *refusal) {
     char *stored = NULL;
     runtime_secret_answer store =
@@ -151,7 +151,7 @@ static spisor_status get_from_store(const runtime_secret_place *place, const cha
     return SPISOR_NONE;
 }
 
-static spisor_status get_entry(const runtime_secret_place *place, const char *entry, char **value,
+static spisor_status get_entry(const runtime_secret_places *place, const char *entry, char **value,
                                spisor_refusal *refusal) {
     runtime_secret_file_answer file;
     char *held = runtime_get_file_secret(place->secrets_file, entry, &file);
@@ -162,7 +162,7 @@ static spisor_status get_entry(const runtime_secret_place *place, const char *en
     return get_from_store(place, entry, file, value, refusal);
 }
 
-static spisor_status put_in_file(const runtime_secret_place *place, const char *entry, const char *value,
+static spisor_status put_in_file(const runtime_secret_places *place, const char *entry, const char *value,
                                  runtime_secret_location *location, spisor_refusal *refusal) {
     runtime_secret_file_answer file = runtime_put_file_secret(place->secrets_file, entry, value);
     if (file != RUNTIME_SECRET_FILE_DONE) {
@@ -180,7 +180,7 @@ static spisor_status refuse_stale_copy(const char *file_path, spisor_refusal *re
                              "the secret was stored, but its older copy in the secrets file could not be removed", fix);
 }
 
-static spisor_status settle_after_store(const runtime_secret_place *place, const char *entry,
+static spisor_status settle_after_store(const runtime_secret_places *place, const char *entry,
                                         runtime_secret_location *location, spisor_refusal *refusal) {
     runtime_secret_file_answer file = runtime_remove_file_secret(place->secrets_file, entry);
     if (file == RUNTIME_SECRET_FILE_UNWRITABLE || file == RUNTIME_SECRET_FILE_OUT_OF_MEMORY) {
@@ -205,7 +205,7 @@ static runtime_secret_file_answer read_file_answer(const char *file_path) {
  * set before either place holds the new value; refusing after the store write would leave a value
  * the answer calls unchanged, and the file's older copy would later overwrite it.
  */
-static spisor_status store_or_file(const runtime_secret_place *place, const char *entry, const char *value,
+static spisor_status store_or_file(const runtime_secret_places *place, const char *entry, const char *value,
                                    runtime_secret_location *location, spisor_refusal *refusal) {
     runtime_secret_file_answer file = read_file_answer(place->secrets_file);
     runtime_secret_answer store;
@@ -237,12 +237,12 @@ static int store_kept_it(runtime_secret_answer answer) {
     return answer == RUNTIME_SECRET_DECLINED || answer == RUNTIME_SECRET_FAILED;
 }
 
-static spisor_status remove_from_file(const runtime_secret_place *place, const char *entry, spisor_refusal *refusal) {
+static spisor_status remove_from_file(const runtime_secret_places *place, const char *entry, spisor_refusal *refusal) {
     runtime_secret_file_answer file = runtime_remove_file_secret(place->secrets_file, entry);
     return file == RUNTIME_SECRET_FILE_DONE ? SPISOR_OK : refuse_file(place->secrets_file, file, refusal);
 }
 
-static spisor_status delete_entry(const runtime_secret_place *place, const char *entry, spisor_refusal *refusal) {
+static spisor_status delete_entry(const runtime_secret_places *place, const char *entry, spisor_refusal *refusal) {
     runtime_secret_answer store =
         place->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_delete(entry);
     return store_kept_it(store) ? refuse_store("remove", store, refusal) : remove_from_file(place, entry, refusal);
@@ -263,7 +263,7 @@ static runtime_secret_answer delete_store_entries_under(const char *prefix) {
     return answer;
 }
 
-static spisor_status clear_under(const runtime_secret_place *place, const char *prefix, spisor_refusal *refusal) {
+static spisor_status clear_under(const runtime_secret_places *place, const char *prefix, spisor_refusal *refusal) {
     runtime_secret_answer store = place->force_file_store ? RUNTIME_SECRET_DONE : delete_store_entries_under(prefix);
     runtime_secret_file_answer file = runtime_remove_file_secrets_under(place->secrets_file, prefix);
     if (store != RUNTIME_SECRET_DONE) {
@@ -272,8 +272,9 @@ static spisor_status clear_under(const runtime_secret_place *place, const char *
     return file == RUNTIME_SECRET_FILE_DONE ? SPISOR_OK : refuse_file(place->secrets_file, file, refusal);
 }
 
-int runtime_is_usable_secret_place(const runtime_secret_place *place) {
-    return place->secrets_file != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place->secrets_file);
+int runtime_is_usable_secret_place(const runtime_secret_places *place) {
+    return place != NULL && runtime_has_shape(place->size, RUNTIME_SHAPE_THROUGH(runtime_secret_places, force_file_store)) &&
+           place->secrets_file != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place->secrets_file);
 }
 
 spisor_status runtime_refuse_secret_place(spisor_refusal *refusal) {
@@ -282,7 +283,7 @@ spisor_status runtime_refuse_secret_place(spisor_refusal *refusal) {
                              "secrets file an absolute path");
 }
 
-spisor_status runtime_get_secret(const runtime_secret_place *place, const char *plugin, const char *name, char **value,
+spisor_status runtime_get_secret(const runtime_secret_places *place, const char *plugin, const char *name, char **value,
                                  spisor_refusal *refusal) {
     spisor_status status;
     char *entry = checked_entry(plugin, name, &status, refusal);
@@ -295,7 +296,7 @@ spisor_status runtime_get_secret(const runtime_secret_place *place, const char *
     return status;
 }
 
-spisor_status runtime_set_secret(const runtime_secret_place *place, const char *plugin, const char *name,
+spisor_status runtime_set_secret(const runtime_secret_places *place, const char *plugin, const char *name,
                                  const char *value, runtime_secret_location *location, spisor_refusal *refusal) {
     spisor_status status;
     char *entry = checked_entry(plugin, name, &status, refusal);
@@ -312,7 +313,7 @@ spisor_status runtime_set_secret(const runtime_secret_place *place, const char *
     return status;
 }
 
-spisor_status runtime_delete_secret(const runtime_secret_place *place, const char *plugin, const char *name,
+spisor_status runtime_delete_secret(const runtime_secret_places *place, const char *plugin, const char *name,
                                     spisor_refusal *refusal) {
     spisor_status status;
     char *entry = checked_entry(plugin, name, &status, refusal);
@@ -324,7 +325,7 @@ spisor_status runtime_delete_secret(const runtime_secret_place *place, const cha
     return status;
 }
 
-spisor_status runtime_clear_secrets(const runtime_secret_place *place, const char *plugin, spisor_refusal *refusal) {
+spisor_status runtime_clear_secrets(const runtime_secret_places *place, const char *plugin, spisor_refusal *refusal) {
     spisor_status status;
     char *prefix;
     if (!is_usable_plugin(plugin)) {
@@ -339,7 +340,7 @@ spisor_status runtime_clear_secrets(const runtime_secret_place *place, const cha
     return status;
 }
 
-spisor_status runtime_reconcile_secrets(const runtime_secret_place *place, uint64_t *moved, spisor_refusal *refusal) {
+spisor_status runtime_reconcile_secrets(const runtime_secret_places *place, uint64_t *moved, spisor_refusal *refusal) {
     move_result result;
     *moved = 0;
     if (place->force_file_store || !runtime_secret_store_available()) {

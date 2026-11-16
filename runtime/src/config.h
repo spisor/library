@@ -49,7 +49,8 @@ char *runtime_ecosystem_settings_file_holding(const char *home, const char *port
  * ecosystem's own settings. `names`, `config` and `settings` are NULL for none; `settings` is an object holding each
  * declaration under its key as {type?, layer?}, a layer being "application" or "portable". `places` NULL is a host
  * with no secret store. `key` is what get and set read, `value` and `layer` (a runtime_settings_layer) what set
- * writes.
+ * writes. `previous_tree`, an empty tree or NULL, is where set also answers the previous value as a tree, built
+ * before it writes.
  */
 typedef struct runtime_config_request {
     const char *home;
@@ -58,10 +59,11 @@ typedef struct runtime_config_request {
     const cJSON *names;
     const cJSON *config;
     const cJSON *settings;
-    const runtime_secret_place *places;
+    const runtime_secret_places *places;
     const char *key;
     const cJSON *value;
     uint32_t layer;
+    spisor_value_tree *previous_tree;
 } runtime_config_request;
 
 /** A request for the settings of home over portable, every other field NULL or the default layer. */

@@ -8,6 +8,8 @@
 #include "spisor/json_kind.h"
 
 #include "file_presence.h"
+#include "file_reading.h"
+#include "json_parse.h"
 
 /** True when the code point ending just before index is a JavaScript LineTerminator, which is where a multiline ^ holds. */
 static int follows_line_terminator(const unsigned char *text, size_t index) {
@@ -68,6 +70,8 @@ char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripp
 static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_file_state *state) {
     size_t decoded_length = 0;
     uint8_t *decoded = spisor_decode_utf8_lossy(bytes, length, &decoded_length);
+    int out_of_memory = 0;
+    *state = SPISOR_JSON_FILE_OUT_OF_MEMORY;
     if (decoded == NULL) {
         return NULL;
     }
@@ -77,9 +81,13 @@ static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_fi
     if (text == NULL) {
         return NULL;
     }
-    cJSON *parsed = spisor_parse_json((const uint8_t *)text, text_length);
+    cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)text, text_length, &out_of_memory);
     free(text);
-    *state = parsed == NULL ? SPISOR_JSON_FILE_UNREADABLE : SPISOR_JSON_FILE_PARSED;
+    if (parsed != NULL) {
+        *state = SPISOR_JSON_FILE_PARSED;
+    } else if (!out_of_memory) {
+        *state = SPISOR_JSON_FILE_UNREADABLE;
+    }
     return parsed;
 }
 
@@ -90,9 +98,10 @@ cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state) {
         return NULL;
     }
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     if (bytes == NULL) {
-        *state = SPISOR_JSON_FILE_UNREADABLE;
+        *state = outcome == SPISOR_READ_OUT_OF_MEMORY ? SPISOR_JSON_FILE_OUT_OF_MEMORY : SPISOR_JSON_FILE_UNREADABLE;
         return NULL;
     }
     cJSON *parsed = parse_stripped(bytes, length, state);

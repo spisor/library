@@ -18,8 +18,12 @@
 extern "C" {
 #endif
 
-/** The two places a plugin's own folders lie under, as places' `resolve` answers them: both absolute. */
+/**
+ * The two places a plugin's own folders lie under, as places' `resolve` answers them: both absolute. First shape ends
+ * at `cache`.
+ */
 typedef struct runtime_plugin_places {
+    uint32_t size;
     const char *portable;
     const char *cache;
 } runtime_plugin_places;

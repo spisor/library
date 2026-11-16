@@ -6,6 +6,7 @@
 #include "spisor/file.h"
 
 #include "file_presence.h"
+#include "file_reading.h"
 #include "file_replacement.h"
 
 #include <stdio.h>
@@ -244,14 +245,16 @@ static char *write_target_of(const char *path) {
 }
 #endif
 
-static uint8_t *read_stream(FILE *file, size_t *length) {
+static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *outcome) {
     size_t capacity = 4096;
     size_t used = 0;
     uint8_t *bytes = malloc(capacity);
+    *outcome = bytes == NULL ? SPISOR_READ_OUT_OF_MEMORY : SPISOR_READ_FAILED;
     while (bytes != NULL) {
         if (used + 1 >= capacity) {
             uint8_t *grown = realloc(bytes, capacity * 2);
             if (grown == NULL) {
+                *outcome = SPISOR_READ_OUT_OF_MEMORY;
                 break;
             }
             bytes = grown;
@@ -265,6 +268,7 @@ static uint8_t *read_stream(FILE *file, size_t *length) {
             }
             bytes[used] = '\0';
             *length = used;
+            *outcome = SPISOR_READ_DONE;
             return bytes;
         }
     }
@@ -272,7 +276,8 @@ static uint8_t *read_stream(FILE *file, size_t *length) {
     return NULL;
 }
 
-uint8_t *spisor_read_file(const char *path, size_t *length) {
+uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
+    *outcome = SPISOR_READ_FAILED;
     if (path[0] == '\0' || is_directory(path)) {
         return NULL;
     }
@@ -280,9 +285,14 @@ uint8_t *spisor_read_file(const char *path, size_t *length) {
     if (file == NULL) {
         return NULL;
     }
-    uint8_t *bytes = read_stream(file, length);
+    uint8_t *bytes = read_stream(file, length, outcome);
     fclose(file);
     return bytes;
+}
+
+uint8_t *spisor_read_file(const char *path, size_t *length) {
+    spisor_read_outcome outcome;
+    return spisor_read_file_reporting(path, length, &outcome);
 }
 
 static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {

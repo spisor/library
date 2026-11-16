@@ -240,7 +240,22 @@ static void set_writes_through_a_symlinked_settings_file(void) {
     CHECK(count_temporary_entries(dotfiles) == 0);
 }
 
+static void a_file_holding_a_number_no_value_carries_is_refused_and_never_written(void) {
+    scratch_home home;
+    fresh_home(&home, "non-finite");
+    write_application_file(&home, "{\"a\":1e999,\"b\":1}");
+    answer set = settings_set(&home, NULL, "a", "5");
+    CHECK(set.status == SPISOR_REFUSED);
+    expect_refused_naming(&set, "not finite", "the fix names the cause");
+    finish(&set);
+    expect_content(home.application_file, "{\"a\":1e999,\"b\":1}", "the refused set left the file byte-identical");
+    answer all = call_with(SETTINGS_ALL, request_for(&home, 1));
+    CHECK(all.status == SPISOR_REFUSED);
+    finish(&all);
+}
+
 int main(void) {
+    a_file_holding_a_number_no_value_carries_is_refused_and_never_written();
     all_merges_portable_under_application();
     all_on_an_empty_home_is_empty_and_creates_nothing();
     set_without_a_layer_writes_the_application_file();

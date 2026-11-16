@@ -85,6 +85,55 @@ spisor_status runtime_refuse_environment(spisor_refusal *refusal) {
                              "the variables sent");
 }
 
+void runtime_release_packed_answer(void *answer, size_t shape) {
+    uint32_t size;
+    void *storage;
+    if (answer == NULL) {
+        return;
+    }
+    memcpy(&size, answer, sizeof size);
+    if (!runtime_has_shape(size, shape)) {
+        return;
+    }
+    memcpy(&storage, (char *)answer + shape - sizeof storage, sizeof storage);
+    runtime_release_storage(storage);
+    memset((char *)answer + sizeof size, 0, shape - sizeof size);
+}
+
+void runtime_overwrite(void *bytes, size_t length) {
+    volatile unsigned char *cursor = bytes;
+    while (length-- > 0) {
+        *cursor++ = 0;
+    }
+}
+
+void runtime_overwrite_texts(const spisor_value *value) {
+    size_t index;
+    if (value->kind == SPISOR_VALUE_TEXT) {
+        runtime_overwrite((char *)value->text, value->length);
+    }
+    for (index = 0; value->kind == SPISOR_VALUE_LIST && index < value->count; index++) {
+        runtime_overwrite_texts(&value->items[index]);
+    }
+    for (index = 0; value->kind == SPISOR_VALUE_RECORD && index < value->count; index++) {
+        runtime_overwrite((char *)value->entries[index].key, value->entries[index].key_length);
+        runtime_overwrite_texts(&value->entries[index].value);
+    }
+}
+
+void runtime_overwrite_json_texts(const cJSON *json) {
+    const cJSON *child;
+    if (cJSON_IsString(json)) {
+        runtime_overwrite(json->valuestring, strlen(json->valuestring));
+    }
+    cJSON_ArrayForEach(child, json) {
+        if (child->string != NULL) {
+            runtime_overwrite(child->string, strlen(child->string));
+        }
+        runtime_overwrite_json_texts(child);
+    }
+}
+
 void runtime_release_storage(void *storage) {
     spisor_memory_release(storage);
 }

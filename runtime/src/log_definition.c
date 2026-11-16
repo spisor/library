@@ -5,6 +5,7 @@
 
 #include "config_conversion.h"
 #include "definition_support.h"
+#include "json_allocation.h"
 #include "log.h"
 
 #define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_log_entry, no_color)
@@ -64,11 +65,7 @@ static spisor_status write_line(void *context, const runtime_log_entry *entry, r
 
 static void release_answer(void *context, runtime_log_answer *answer) {
     (void)context;
-    if (answer == NULL || !runtime_has_shape(answer->size, ANSWER_SHAPE)) {
-        return;
-    }
-    runtime_release_storage(answer->storage);
-    RUNTIME_CLEAR_ANSWER(answer, ANSWER_SHAPE);
+    runtime_release_packed_answer(answer, ANSWER_SHAPE);
 }
 
 static const runtime_log_definition definition = {
@@ -76,5 +73,6 @@ static const runtime_log_definition definition = {
 };
 
 RUNTIME_DEFINITION_API const void *runtime_log_definition_of(void) {
+    spisor_json_use_library_allocator();
     return &definition;
 }

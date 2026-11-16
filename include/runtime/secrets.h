@@ -25,9 +25,10 @@ extern "C" {
 
 /**
  * Where secrets live, as places' `resolve` answers them: `secrets_file` an absolute path, and `force_file_store` 1 to
- * skip the credential store so not one store call is made.
+ * skip the credential store so not one store call is made. First shape ends at `force_file_store`.
  */
 typedef struct runtime_secret_places {
+    uint32_t size;
     const char *secrets_file;
     uint32_t force_file_store;
 } runtime_secret_places;
@@ -89,7 +90,8 @@ typedef struct runtime_secrets_reconcile_answer {
 } runtime_secrets_reconcile_answer;
 
 /**
- * The secrets service. Every operation answers MALFORMED for places without an absolute secrets file, a plugin id that
+ * The secrets service. Every operation answers MALFORMED for places short of their first shape or without an absolute
+ * secrets file, a plugin id that
  * is empty or holds a slash, or an empty name; REFUSED, with the refusal saying what to repair, when the secrets file
  * is not a readable JSON object, is a symbolic link (a secret is never written through one) or cannot be written, or
  * when the credential store declines or fails; and OUT_OF_MEMORY. First shape ends at `release_refusal`.
