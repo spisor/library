@@ -88,14 +88,36 @@ static int record_started(const char *path, runtime_holders_draft *draft, cJSON 
 }
 
 /**
+ * Rewrites the record without this call's holder, appended last, once the host it recorded never ran its program,
+ * so the record names no holder of a host that does not run.
+ */
+static void unrecord(const char *path, runtime_holders_record *record) {
+    record->count--;
+    (void)runtime_write_holders(path, record);
+}
+
+/** Runs the recorded host: the answer, or NULL with *refusal set when its program could not run. */
+static cJSON *run_recorded(runtime_detached_host *host, const char *path, runtime_holders_record *record,
+                           cJSON *answer, cJSON **refusal) {
+    char *problem = NULL;
+    if (runtime_release_detached(host, &problem)) {
+        return answer;
+    }
+    unrecord(path, record);
+    *refusal = start_refusal(problem);
+    cJSON_Delete(answer);
+    return NULL;
+}
+
+/**
  * Starts the host and records it as the holders' host.
  *
- * @implNote The answer and the record's text are built before the start, so once the host runs nothing is left to
- * allocate but the file replacement; a host whose record still cannot be written is stopped, since a host nobody
- * recorded would be started a second time by the next holder.
+ * @implNote The answer and the record's text are built before the start, and the host is held before its program
+ * runs until it is recorded, so a record that cannot be written ends a host that never ran, through the handle or
+ * pipe the start holds rather than by a pid another process may have taken since.
  */
-static cJSON *start_host(const runtime_processes_request *request, const char *path,
-                         const runtime_holders_record *record, cJSON **refusal) {
+static cJSON *start_host(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
+                         cJSON **refusal) {
     runtime_holders_draft draft;
     cJSON *answer = held_answer(0, 1, 1);
     if (answer == NULL || !runtime_draft_started_host(record, &draft)) {
@@ -104,18 +126,19 @@ static cJSON *start_host(const runtime_processes_request *request, const char *p
     }
     runtime_detached_start start;
     read_start(request, &start);
-    double pid = NAN;
-    int outside_job = 1;
+    runtime_detached_host host;
     char *problem = NULL;
-    if (!runtime_start_detached(&start, &pid, &outside_job, &problem)) {
+    if (!runtime_start_detached(&start, &host, &problem)) {
         *refusal = start_refusal(problem);
         cJSON_Delete(answer);
         answer = NULL;
-    } else if (!record_started(path, &draft, answer, pid, outside_job)) {
-        runtime_stop_detached(pid);
+    } else if (!record_started(path, &draft, answer, host.pid, host.outside_job)) {
+        runtime_cancel_detached(&host);
         *refusal = runtime_processes_state_refusal("the holders file", path);
         cJSON_Delete(answer);
         answer = NULL;
+    } else {
+        answer = run_recorded(&host, path, record, answer, refusal);
     }
     runtime_free_holders_draft(&draft);
     return answer;

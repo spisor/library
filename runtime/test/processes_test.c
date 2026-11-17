@@ -775,6 +775,27 @@ static void it_starts_the_host_in_an_empty_environment_when_given_no_variables(v
     finish_case();
 }
 
+/** How long a host refused its record is given to write its marker, which it may never write. */
+#define UNRECORDED_WAIT_MILLISECONDS 2000
+
+static void it_never_runs_a_host_whose_record_cannot_be_written(void) {
+    fresh_state("unrecorded");
+    char *ran = joined(state, "ran.json");
+    char *holders = joined(state, "processes/" HOST ".json");
+    CHECK(spisor_make_directories(holders) == 1);
+    const char *arguments[3] = {"environment", ran, "SPISOR_FIXTURE_VALUE"};
+    catalog_answer answer = hold(self_pid(), start_of(arguments, 3));
+    CHECK(answer.status == SPISOR_REFUSED);
+    const char *message = text_at(answer.tree, "message");
+    CHECK(message != NULL && strstr(message, "holders file") != NULL);
+    pause_milliseconds(UNRECORDED_WAIT_MILLISECONDS);
+    CHECK(!spisor_file_exists(ran));
+    cJSON_Delete(answer.tree);
+    free(holders);
+    free(ran);
+    finish_case();
+}
+
 static int prune_exits(double self, double now) {
     catalog_answer answer = prune(self, now);
     CHECK(answer.status == 0);
@@ -1239,6 +1260,7 @@ int main(void) {
     it_starts_the_host_in_the_environment_and_directory_given();
     it_starts_the_host_in_the_callers_environment_when_given_none();
     it_starts_the_host_in_an_empty_environment_when_given_no_variables();
+    it_never_runs_a_host_whose_record_cannot_be_written();
     it_keeps_running_while_a_holder_lives_and_exits_once_the_last_dies();
     it_prunes_a_dead_holder_and_keeps_the_live_ones();
     it_exits_without_touching_the_record_when_another_process_is_the_host();
