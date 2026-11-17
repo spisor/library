@@ -5,6 +5,7 @@
 #include "cache_installed.h"
 #include "cache_refusal.h"
 #include "host_references.h"
+#include "json_service.h"
 #include "plugin_choices.h"
 #include "run_records.h"
 #include "updates_catalog.h"
@@ -240,11 +241,11 @@ static int record_start(const runtime_updates_request *request, const start_plan
 
 static cJSON *started(start_record *record, const char *run_record) {
     cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && cJSON_AddItemReferenceToObject(answer, "plugins", record->plugins) &&
-                cJSON_AddItemReferenceToObject(answer, "run", record->references.run) &&
-                cJSON_AddItemReferenceToObject(answer, "next", record->references.next) &&
-                cJSON_AddItemReferenceToObject(answer, "rollback", record->references.rollback) &&
-                cJSON_AddItemReferenceToObject(answer, "unrecorded", record->unrecorded) &&
+    int built = answer != NULL && runtime_add_reference(answer, "plugins", record->plugins) &&
+                runtime_add_reference(answer, "run", record->references.run) &&
+                runtime_add_reference(answer, "next", record->references.next) &&
+                runtime_add_reference(answer, "rollback", record->references.rollback) &&
+                runtime_add_reference(answer, "unrecorded", record->unrecorded) &&
                 cJSON_AddStringToObject(answer, "runRecord", run_record) != NULL;
     cJSON *copy = built ? cJSON_Duplicate(answer, 1) : NULL;
     cJSON_Delete(answer);

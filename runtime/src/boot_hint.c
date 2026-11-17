@@ -7,6 +7,7 @@
 #include "cache_place.h"
 #include "cache_refusal.h"
 #include "directory_tree.h"
+#include "json_service.h"
 #include "host_references.h"
 #include "identity.h"
 #include "node_json_file.h"
@@ -270,7 +271,7 @@ static char *recorded_host(const char *cache, const char *host_id, const char *h
 
 static char *hint_text(const cJSON *libraries, const char *host) {
     cJSON *hint = cJSON_CreateObject();
-    int built = hint != NULL && cJSON_AddItemReferenceToObject(hint, "libraries", (cJSON *)libraries) &&
+    int built = hint != NULL && runtime_add_reference(hint, "libraries", libraries) &&
                 (host == NULL || cJSON_AddStringToObject(hint, "host", host) != NULL);
     char *pretty = built ? spisor_json_stringify_pretty(hint) : NULL;
     cJSON_Delete(hint);

@@ -26,6 +26,14 @@ int runtime_install_copy_into(cJSON *object, const char *name, const cJSON *valu
     return 1;
 }
 
+int runtime_install_move_into(cJSON *object, const char *name, cJSON *value) {
+    if (value == NULL || !cJSON_AddItemToObject(object, name, value)) {
+        cJSON_Delete(value);
+        return 0;
+    }
+    return 1;
+}
+
 cJSON *runtime_install_places_call(const cJSON *places) {
     cJSON *call = cJSON_CreateObject();
     if (call == NULL || !runtime_install_copy_into(call, "places", places)) {

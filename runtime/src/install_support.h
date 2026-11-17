@@ -12,6 +12,9 @@ const char *runtime_install_text(const cJSON *object, const char *name);
 /** Adds a copy of value to object under name; 1 when value is NULL or the copy was added. */
 int runtime_install_copy_into(cJSON *object, const char *name, const cJSON *value);
 
+/** Adds value to object under name, taking it; 0 with value deleted when value is NULL or memory runs out. */
+int runtime_install_move_into(cJSON *object, const char *name, cJSON *value);
+
 /** A new argument {places} carrying a copy of places; NULL when memory runs out. */
 cJSON *runtime_install_places_call(const cJSON *places);
 

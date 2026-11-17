@@ -40,4 +40,12 @@ cJSON *runtime_call_operation(runtime_json_operation operation, cJSON *argument,
 cJSON *runtime_call_or_refuse(int32_t (*function)(const uint8_t *, size_t, uint8_t **, size_t *), cJSON *argument,
                               cJSON **refusal);
 
+/**
+ * Adds to object under name a reference to item, an object or an array, which object never frees; 0 when item is
+ * NULL or memory runs out.
+ *
+ * @implNote cJSON_AddItemReferenceToObject leaks the reference it made when the key cannot be copied.
+ */
+int runtime_add_reference(cJSON *object, const char *name, const cJSON *item);
+
 #endif

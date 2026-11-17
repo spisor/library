@@ -264,7 +264,7 @@ static cJSON *loader_row(const runtime_install_run *run, const catalog_loader *l
                 cJSON_AddStringToObject(row, "home", loader->home) != NULL &&
                 runtime_install_copy_into(row, "commands", cJSON_GetObjectItemCaseSensitive(registered, "commands")) &&
                 runtime_install_copy_into(row, "refusedCommands", cJSON_GetObjectItemCaseSensitive(registered, "refusedCommands")) &&
-                cJSON_AddItemToObject(row, "entry", entry_of(run, loader));
+                runtime_install_move_into(row, "entry", entry_of(run, loader));
     cJSON_Delete(registered);
     if (!built) {
         cJSON_Delete(row);

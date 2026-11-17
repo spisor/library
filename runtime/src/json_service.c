@@ -72,3 +72,14 @@ cJSON *runtime_call_or_refuse(int32_t (*function)(const uint8_t *, size_t, uint8
     }
     return NULL;
 }
+
+int runtime_add_reference(cJSON *object, const char *name, const cJSON *item) {
+    cJSON *reference = item == NULL            ? NULL
+                       : cJSON_IsArray(item) ? cJSON_CreateArrayReference(item->child)
+                                             : cJSON_CreateObjectReference(item->child);
+    if (reference == NULL || !cJSON_AddItemToObject(object, name, reference)) {
+        cJSON_Delete(reference);
+        return 0;
+    }
+    return 1;
+}

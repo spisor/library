@@ -145,8 +145,8 @@ static cJSON *apply_argument(const start_context *context) {
     int built = places != NULL && cJSON_AddStringToObject(places, "state", context->state) != NULL &&
                 cJSON_AddStringToObject(places, "cache", context->cache) != NULL &&
                 cJSON_AddStringToObject(argument, "hostId", context->argument.host_id) != NULL &&
-                cJSON_AddItemReferenceToObject(argument, "settings", context->settings) &&
-                cJSON_AddItemReferenceToObject(argument, "running", context->running);
+                runtime_add_reference(argument, "settings", context->settings) &&
+                runtime_add_reference(argument, "running", context->running);
     if (!built) {
         cJSON_Delete(argument);
         return NULL;

@@ -69,11 +69,10 @@ static int32_t read_hint(const cJSON *argument, const char *cache, const char *h
     int out_of_memory;
     cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
     cJSON *answer = out_of_memory ? NULL : cJSON_CreateObject();
-    if (answer != NULL && hint != NULL && !cJSON_AddItemToObject(answer, "hint", hint)) {
+    if (answer == NULL || (hint != NULL && !cJSON_AddItemToObject(answer, "hint", hint))) {
         cJSON_Delete(answer);
-        answer = NULL;
-    } else if (answer == NULL) {
         cJSON_Delete(hint);
+        answer = NULL;
     }
     return runtime_catalog_answer(answer, out, out_len);
 }
