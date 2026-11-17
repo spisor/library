@@ -46,7 +46,8 @@ static cJSON *read_start(const runtime_processes_request *request, runtime_detac
     }
     if (start->environment != NULL && !runtime_processes_is_environment(start->environment)) {
         return runtime_processes_argument_refusal("start.environment",
-                                                  "an object of strings whose names hold no =, or leave it out");
+                                                  "an object of strings whose names hold no = and appear once, "
+                                                  "or leave it out");
     }
     if (start->directory == NULL) {
         return runtime_processes_argument_refusal("start.directory", "an absolute folder, or leave it out");
@@ -77,6 +78,49 @@ static cJSON *start_refusal(char *problem) {
     return refusal;
 }
 
+/** Fills the started host into the answer and the draft, and records it; 0 when the record could not be written. */
+static int record_started(const char *path, runtime_holders_draft *draft, cJSON *answer, double pid,
+                          int outside_job) {
+    (void)cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(answer, "pid"), pid);
+    (void)cJSON_SetBoolValue(cJSON_GetObjectItemCaseSensitive(answer, "outsideJob"), outside_job);
+    return runtime_print_started_host(draft, pid, floor(runtime_now_milliseconds())) &&
+           runtime_write_holders_draft(path, draft) == SPISOR_OK;
+}
+
+/**
+ * Starts the host and records it as the holders' host.
+ *
+ * @implNote The answer and the record's text are built before the start, so once the host runs nothing is left to
+ * allocate but the file replacement; a host whose record still cannot be written is stopped, since a host nobody
+ * recorded would be started a second time by the next holder.
+ */
+static cJSON *start_host(const runtime_processes_request *request, const char *path,
+                         const runtime_holders_record *record, cJSON **refusal) {
+    runtime_holders_draft draft;
+    cJSON *answer = held_answer(0, 1, 1);
+    if (answer == NULL || !runtime_draft_started_host(record, &draft)) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    runtime_detached_start start;
+    read_start(request, &start);
+    double pid = NAN;
+    int outside_job = 1;
+    char *problem = NULL;
+    if (!runtime_start_detached(&start, &pid, &outside_job, &problem)) {
+        *refusal = start_refusal(problem);
+        cJSON_Delete(answer);
+        answer = NULL;
+    } else if (!record_started(path, &draft, answer, pid, outside_job)) {
+        runtime_stop_detached(pid);
+        *refusal = runtime_processes_state_refusal("the holders file", path);
+        cJSON_Delete(answer);
+        answer = NULL;
+    }
+    runtime_free_holders_draft(&draft);
+    return answer;
+}
+
 static cJSON *hold_step(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
                         cJSON **refusal) {
     double holder = runtime_processes_pid_member(request->argument, "holder");
@@ -84,20 +128,10 @@ static cJSON *hold_step(const runtime_processes_request *request, const char *pa
     if (!runtime_add_holder(record, holder)) {
         return NULL;
     }
-    int running = is_host_running(record);
-    int outside_job = 1;
-    if (!running) {
-        runtime_detached_start start;
-        read_start(request, &start);
-        char *problem = NULL;
-        if (!runtime_start_detached(&start, &record->pid, &outside_job, &problem)) {
-            *refusal = start_refusal(problem);
-            return NULL;
-        }
-        record->alive_at = floor(runtime_now_milliseconds());
-        record->check_milliseconds = NAN;
+    if (!is_host_running(record)) {
+        return start_host(request, path, record, refusal);
     }
-    return runtime_processes_write_answered(path, record, held_answer(record->pid, !running, outside_job), refusal);
+    return runtime_processes_write_answered(path, record, held_answer(record->pid, 0, 1), refusal);
 }
 
 cJSON *runtime_processes_hold_for(const runtime_processes_request *request, cJSON **refusal) {

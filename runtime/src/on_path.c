@@ -165,6 +165,9 @@ static spisor_status on_path(void *context, const runtime_detect_on_path_argumen
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "detect's on_path");
     }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
+    }
     if (argument->binary == NULL || argument->binary[0] == '\0') {
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no binary",
                                  "send binary as a command name, such as \"claude\"");

@@ -56,23 +56,29 @@ static int is_refusal_published(const cJSON *argument) {
     return cJSON_HasObjectItem(argument, "refused") && is_text_member(argument, "refused") && is_text_member(argument, "fix");
 }
 
-/** The refusal of a publication that is neither an environment nor a refusal with its fix, or NULL. */
-static cJSON *publication_refusal(const cJSON *argument) {
+/** A member of a publication that is unusable and the shape it takes; a NULL member for a usable publication. */
+typedef struct publication_problem {
+    const char *member;
+    const char *shape;
+} publication_problem;
+
+/** What makes a publication neither an environment nor a refusal with its fix, the member NULL when nothing does. */
+static publication_problem publication_problem_of(const cJSON *argument) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
     int refuses = cJSON_HasObjectItem(argument, "refused");
+    publication_problem problem = {NULL, NULL};
     if (isnan(runtime_processes_pid_member(argument, "pid"))) {
-        return runtime_processes_argument_refusal("pid", "the pid of the session host, a whole number above zero");
+        problem = (publication_problem){"pid", "the pid of the session host, a whole number above zero"};
+    } else if (environment != NULL && !runtime_processes_is_environment(environment)) {
+        problem = (publication_problem){"environment",
+                                        "an object of strings whose names hold no = and appear once, or leave it out"};
+    } else if (refuses && environment != NULL) {
+        problem = (publication_problem){"environment",
+                                        "nothing beside refused, which publishes that the host cannot serve"};
+    } else if (refuses != cJSON_HasObjectItem(argument, "fix") || (refuses && !is_refusal_published(argument))) {
+        problem = (publication_problem){"refused and fix", "both as text, or neither"};
     }
-    if (environment != NULL && !runtime_processes_is_environment(environment)) {
-        return runtime_processes_argument_refusal("environment", "an object of strings whose names hold no =, or leave it out");
-    }
-    if (refuses && environment != NULL) {
-        return runtime_processes_argument_refusal("environment", "nothing beside refused, which publishes that the host cannot serve");
-    }
-    if (refuses != cJSON_HasObjectItem(argument, "fix") || (refuses && !is_refusal_published(argument))) {
-        return runtime_processes_argument_refusal("refused and fix", "both as text, or neither");
-    }
-    return NULL;
+    return problem;
 }
 
 static int copy_member(cJSON *record, const cJSON *argument, const char *name) {
@@ -110,8 +116,12 @@ static spisor_status write_record(const runtime_processes_request *request, cons
 }
 
 static cJSON *ready_for(const runtime_processes_request *request, cJSON **refusal) {
-    *refusal = publication_refusal(request->argument);
-    cJSON *record = *refusal == NULL ? record_of(request->argument) : NULL;
+    publication_problem problem = publication_problem_of(request->argument);
+    if (problem.member != NULL) {
+        *refusal = runtime_processes_argument_refusal(problem.member, problem.shape);
+        return NULL;
+    }
+    cJSON *record = record_of(request->argument);
     char *path = record == NULL ? NULL : ready_path(request);
     cJSON *answer = path == NULL ? NULL : cJSON_CreateObject();
     spisor_status written = answer == NULL ? SPISOR_OUT_OF_MEMORY : write_record(request, path, record);

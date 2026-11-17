@@ -27,10 +27,6 @@
 #define DEPLOY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_deploy_argument, replaces)
 #define DEPLOY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_deploy_answer, storage)
 
-static int is_text(const char *text) {
-    return text != NULL && text[0] != '\0';
-}
-
 static spisor_status refuse_missing(spisor_refusal *refusal, const char *member) {
     char detail[160];
     char fix[160];
@@ -132,12 +128,12 @@ static spisor_status install(void *context, const runtime_cache_install_argument
         !RUNTIME_IS_EMPTY_ANSWER(answer, INSTALL_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's install");
     }
-    if (!is_text(argument->cache) || !is_text(argument->id) || !is_text(argument->version) ||
-        (argument->platform != NULL && !is_text(argument->platform))) {
-        return refuse_missing(refusal, !is_text(argument->cache)     ? "cache"
-                                       : !is_text(argument->id)      ? "id"
-                                       : !is_text(argument->version) ? "version"
-                                                                     : "platform");
+    if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->id) || !runtime_is_text(argument->version) ||
+        (argument->platform != NULL && !runtime_is_text(argument->platform))) {
+        return refuse_missing(refusal, !runtime_is_text(argument->cache)     ? "cache"
+                                       : !runtime_is_text(argument->id)      ? "id"
+                                       : !runtime_is_text(argument->version) ? "version"
+                                                                             : "platform");
     }
     status = item_json(argument->item, &item);
     if (status == SPISOR_MALFORMED) {
@@ -199,7 +195,7 @@ static spisor_status fill_installed(const cJSON *answered, void *filled) {
 static spisor_status place_call(const runtime_cache_place_argument *argument, cJSON **call, spisor_refusal *refusal) {
     const char *names[2] = {"cache", "platform"};
     const char *texts[2];
-    if (!is_text(argument->cache)) {
+    if (!runtime_is_text(argument->cache)) {
         return refuse_missing(refusal, "cache");
     }
     texts[0] = argument->cache;
@@ -255,7 +251,7 @@ static spisor_status check(void *context, const runtime_cache_check_argument *ar
         !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's check");
     }
-    if (!is_text(argument->directory)) {
+    if (!runtime_is_text(argument->directory)) {
         return refuse_missing(refusal, "directory");
     }
     call = call_of(&name, &argument->directory, 1);
@@ -361,8 +357,8 @@ static int are_plugins(const runtime_cache_locate_argument *argument) {
         return 0;
     }
     for (size_t index = 0; index < argument->plugin_count; index++) {
-        const runtime_cache_plugin *plugin = &argument->plugins[index];
-        if (!is_text(plugin->id) || !is_text(plugin->version)) {
+        const runtime_item_version *plugin = &argument->plugins[index];
+        if (!runtime_is_text(plugin->id) || !runtime_is_text(plugin->version)) {
             return 0;
         }
         for (size_t earlier = 0; earlier < index; earlier++) {
@@ -378,7 +374,7 @@ static int are_plugins(const runtime_cache_locate_argument *argument) {
 static spisor_status plugins_json(const runtime_cache_locate_argument *argument, cJSON *call) {
     cJSON *plugins = cJSON_AddObjectToObject(call, "plugins");
     for (size_t index = 0; plugins != NULL && index < argument->plugin_count; index++) {
-        const runtime_cache_plugin *plugin = &argument->plugins[index];
+        const runtime_item_version *plugin = &argument->plugins[index];
         if (cJSON_AddStringToObject(plugins, plugin->id, plugin->version) == NULL) {
             return SPISOR_OUT_OF_MEMORY;
         }
@@ -396,7 +392,7 @@ static spisor_status locate(void *context, const runtime_cache_locate_argument *
         !RUNTIME_IS_EMPTY_ANSWER(answer, LOCATE_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's locate");
     }
-    if (!is_text(argument->cache)) {
+    if (!runtime_is_text(argument->cache)) {
         return refuse_missing(refusal, "cache");
     }
     if (!are_plugins(argument)) {
@@ -440,8 +436,8 @@ static spisor_status sweep(void *context, const runtime_cache_sweep_argument *ar
         !RUNTIME_IS_EMPTY_ANSWER(answer, SWEEP_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's sweep");
     }
-    if (!is_text(argument->cache) || !is_text(argument->state)) {
-        return refuse_missing(refusal, !is_text(argument->cache) ? "cache" : "state");
+    if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->state)) {
+        return refuse_missing(refusal, !runtime_is_text(argument->cache) ? "cache" : "state");
     }
     texts[0] = argument->cache;
     texts[1] = argument->state;
@@ -497,10 +493,11 @@ static spisor_status deploy(void *context, const runtime_cache_deploy_argument *
         !RUNTIME_IS_EMPTY_ANSWER(answer, DEPLOY_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's deploy");
     }
-    if (!is_text(argument->directory) || !is_text(argument->plugin_directory) || !is_text(argument->name)) {
-        return refuse_missing(refusal, !is_text(argument->directory)          ? "directory"
-                                       : !is_text(argument->plugin_directory) ? "plugin_directory"
-                                                                              : "name");
+    if (!runtime_is_text(argument->directory) || !runtime_is_text(argument->plugin_directory) ||
+        !runtime_is_text(argument->name)) {
+        return refuse_missing(refusal, !runtime_is_text(argument->directory)          ? "directory"
+                                       : !runtime_is_text(argument->plugin_directory) ? "plugin_directory"
+                                                                                      : "name");
     }
     if (argument->id == NULL || !runtime_identity_parse_id(argument->id, &parsed)) {
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the identity id is not a valid id",

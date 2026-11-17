@@ -7,6 +7,8 @@
 #include "allocation.h"
 #include "answer_storage.h"
 #include "json_value.h"
+#include "paths.h"
+#include "spisor/path.h"
 
 spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *call, runtime_answer_filler fill,
                                       void *answer, size_t answer_shape, spisor_refusal *refusal) {
@@ -86,15 +88,97 @@ int runtime_pack_texts(const char *const *texts, const char **packed, size_t cou
     return 1;
 }
 
-spisor_status runtime_environment_json(const runtime_variable *environment, size_t count, cJSON **json) {
-    *json = NULL;
-    if (count > 0 && environment == NULL) {
-        return SPISOR_MALFORMED;
+int runtime_is_text(const char *text) {
+    return text != NULL && text[0] != '\0';
+}
+
+int runtime_is_place(const char *place) {
+    return runtime_is_text(place) && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place);
+}
+
+int runtime_are_arguments(const char *const *texts, size_t count) {
+    if (count > 0 && texts == NULL) {
+        return 0;
     }
     for (size_t index = 0; index < count; index++) {
-        if (environment[index].name == NULL || environment[index].value == NULL) {
-            return SPISOR_MALFORMED;
+        if (texts[index] == NULL) {
+            return 0;
         }
+    }
+    return 1;
+}
+
+int runtime_are_texts(const char *const *texts, size_t count, int unique) {
+    if (!runtime_are_arguments(texts, count)) {
+        return 0;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!runtime_is_text(texts[index])) {
+            return 0;
+        }
+        for (size_t earlier = 0; unique && earlier < index; earlier++) {
+            if (strcmp(texts[earlier], texts[index]) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+int runtime_are_item_versions(const runtime_item_version *versions, size_t count) {
+    if (count > 0 && versions == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!runtime_is_text(versions[index].id) || !runtime_is_text(versions[index].version)) {
+            return 0;
+        }
+        for (size_t earlier = 0; earlier < index; earlier++) {
+            if (strcmp(versions[earlier].id, versions[index].id) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int is_variable_name(const char *name) {
+    return runtime_is_text(name) && strchr(name, '=') == NULL;
+}
+
+int runtime_is_environment(const runtime_variable *environment, size_t count) {
+    if (count > 0 && environment == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!is_variable_name(environment[index].name) || environment[index].value == NULL) {
+            return 0;
+        }
+        for (size_t earlier = 0; earlier < index; earlier++) {
+            if (strcmp(environment[earlier].name, environment[index].name) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+spisor_status runtime_start_storage(void **storage) {
+    return runtime_storage_take(storage, 1) == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+}
+
+spisor_status runtime_refuse_member(spisor_refusal *refusal, const char *member, const char *header) {
+    char detail[160];
+    char fix[200];
+    snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
+    snprintf(fix, sizeof fix, "send %s as %s describes it", member, header);
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+}
+
+spisor_status runtime_environment_json(const runtime_variable *environment, size_t count, cJSON **json) {
+    *json = NULL;
+    if (!runtime_is_environment(environment, count)) {
+        return SPISOR_MALFORMED;
     }
     *json = cJSON_CreateObject();
     for (size_t index = 0; *json != NULL && index < count; index++) {
@@ -129,9 +213,10 @@ spisor_status runtime_refuse_place(spisor_refusal *refusal, const char *place) {
 }
 
 spisor_status runtime_refuse_environment(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "an environment variable has no name or no value",
-                             "send every variable with its name and its value, and environment_count no larger than "
-                             "the variables sent");
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+                             "an environment variable has no name or no value, a name holding =, or a name given twice",
+                             "send every variable once with its name and its value, and environment_count no larger "
+                             "than the variables sent");
 }
 
 void runtime_release_packed_answer(void *answer, size_t shape) {

@@ -65,6 +65,9 @@ static spisor_status resolve(void *context, const runtime_places_resolve_argumen
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "places' resolve");
     }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
+    }
     status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_environment(refusal);

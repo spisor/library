@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -175,18 +176,12 @@ typedef struct runtime_catalog_resolve_argument {
     uint32_t kind;
 } runtime_catalog_resolve_argument;
 
-/** An id and a version of it. An element of an array, so it has no size. */
-typedef struct runtime_catalog_version {
-    const char *id;
-    const char *version;
-} runtime_catalog_version;
-
 /** The installed version each enabled item runs this start, and the versions to fetch for the next. First shape ends at `storage`. */
 typedef struct runtime_catalog_resolve_answer {
     uint32_t size;
-    const runtime_catalog_version *run;
+    const runtime_item_version *run;
     size_t run_count;
-    const runtime_catalog_version *fetch;
+    const runtime_item_version *fetch;
     size_t fetch_count;
     void *storage;
 } runtime_catalog_resolve_answer;

@@ -174,7 +174,7 @@ static inline spisor_status cache_locate_call(const runtime_cache_definition *ca
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(request, "plugins");
     runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
     runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
-    runtime_cache_plugin *listed = calloc((size_t)cJSON_GetArraySize(plugins) + 1, sizeof *listed);
+    runtime_item_version *listed = calloc((size_t)cJSON_GetArraySize(plugins) + 1, sizeof *listed);
     const cJSON *plugin;
     spisor_status status;
     CHECK(listed != NULL);

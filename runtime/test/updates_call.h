@@ -37,9 +37,9 @@ typedef struct updates_request {
     int has_settings;
     runtime_updates_default *defaults;
     size_t default_count;
-    runtime_updates_version *running;
+    runtime_item_version *running;
     size_t running_count;
-    runtime_updates_version *damaged;
+    runtime_item_version *damaged;
     size_t damaged_count;
     const char **libraries;
     size_t library_count;
@@ -50,8 +50,8 @@ static inline const char *updates_text(const cJSON *object, const char *name) {
 }
 
 /** The members of a JSON object of texts as id and version pairs, which the caller frees. */
-static inline runtime_updates_version *updates_versions_of(const cJSON *object, size_t *count) {
-    runtime_updates_version *versions = calloc((size_t)cJSON_GetArraySize(object) + 1, sizeof *versions);
+static inline runtime_item_version *updates_versions_of(const cJSON *object, size_t *count) {
+    runtime_item_version *versions = calloc((size_t)cJSON_GetArraySize(object) + 1, sizeof *versions);
     const cJSON *member;
     *count = 0;
     CHECK(versions != NULL);
@@ -120,7 +120,7 @@ static inline void updates_add_text(cJSON *object, const char *name, const char 
     }
 }
 
-static inline cJSON *updates_versions_json(const runtime_updates_version *versions, size_t count) {
+static inline cJSON *updates_versions_json(const runtime_item_version *versions, size_t count) {
     cJSON *object = cJSON_CreateObject();
     for (size_t index = 0; index < count; index++) {
         updates_add_text(object, versions[index].id, versions[index].version);
@@ -167,9 +167,9 @@ static inline cJSON *updates_check_json(const runtime_updates_source_check *sour
     return tree;
 }
 
-static inline void updates_add_references(cJSON *tree, const runtime_updates_version *run, size_t run_count,
-                                          const runtime_updates_version *next, size_t next_count,
-                                          const runtime_updates_version *rollback, size_t rollback_count) {
+static inline void updates_add_references(cJSON *tree, const runtime_item_version *run, size_t run_count,
+                                          const runtime_item_version *next, size_t next_count,
+                                          const runtime_item_version *rollback, size_t rollback_count) {
     cJSON_AddItemToObject(tree, "run", updates_versions_json(run, run_count));
     cJSON_AddItemToObject(tree, "next", updates_versions_json(next, next_count));
     cJSON_AddItemToObject(tree, "rollback", updates_versions_json(rollback, rollback_count));

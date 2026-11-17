@@ -31,7 +31,7 @@ cJSON *runtime_processes_serve(const cJSON *argument, runtime_processes_host hos
 /** The refusal of an argument that carries no usable member, saying what shape it takes. */
 cJSON *runtime_processes_argument_refusal(const char *member, const char *shape);
 
-/** Whether environment is an object of strings whose names are not empty and hold no =. */
+/** Whether environment is an object of strings whose names are not empty, hold no = and appear once. */
 int runtime_processes_is_environment(const cJSON *environment);
 
 /** The pid member, a whole number above zero, or NaN. */

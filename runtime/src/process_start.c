@@ -123,6 +123,14 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
     return 1;
 }
 
+void runtime_stop_detached(double pid) {
+    HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid);
+    if (process != NULL) {
+        TerminateProcess(process, 1);
+        CloseHandle(process);
+    }
+}
+
 #else
 
 #define LAST_SIGNAL 64
@@ -342,6 +350,10 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
     free_list(arguments, text_count(start->arguments) + 1);
     free_list(environment, text_count(start->environment));
     return started;
+}
+
+void runtime_stop_detached(double pid) {
+    kill((pid_t)pid, SIGKILL);
 }
 
 #endif

@@ -26,4 +26,7 @@ typedef struct runtime_detached_start {
  */
 int runtime_start_detached(const runtime_detached_start *start, double *pid, int *outside_job, char **problem);
 
+/** Stops the process runtime_start_detached just started as pid, for a start that could not be recorded. */
+void runtime_stop_detached(double pid);
+
 #endif

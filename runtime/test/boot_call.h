@@ -71,7 +71,7 @@ static inline spisor_status boot_write_call(const runtime_boot_definition *boot,
     const cJSON *versions = cJSON_GetObjectItemCaseSensitive(request, "libraries");
     runtime_boot_write_argument argument = SPISOR_INIT(runtime_boot_write_argument);
     runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
-    runtime_boot_version *libraries = calloc((size_t)cJSON_GetArraySize(versions) + 1, sizeof *libraries);
+    runtime_item_version *libraries = calloc((size_t)cJSON_GetArraySize(versions) + 1, sizeof *libraries);
     const cJSON *member;
     spisor_status status;
     CHECK(libraries != NULL);

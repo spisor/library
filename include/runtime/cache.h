@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -121,17 +122,11 @@ typedef struct runtime_cache_damaged_answer {
     void *storage;
 } runtime_cache_damaged_answer;
 
-/** A plugin id and the version it runs. An element of an array, so it has no size. */
-typedef struct runtime_cache_plugin {
-    const char *id;
-    const char *version;
-} runtime_cache_plugin;
-
 /** The plugins to find in the `cache` place, each id once. First shape ends at `plugin_count`. */
 typedef struct runtime_cache_locate_argument {
     uint32_t size;
     const char *cache;
-    const runtime_cache_plugin *plugins;
+    const runtime_item_version *plugins;
     size_t plugin_count;
 } runtime_cache_locate_argument;
 

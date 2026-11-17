@@ -14,6 +14,7 @@
 #include "run_records.h"
 #include "spisor/path.h"
 
+#define HEADER "the processes header"
 #define HOLD_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_hold_argument, directory)
 #define HOLD_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_hold_answer, storage)
 #define HOLDER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_holder_argument, holder)
@@ -35,10 +36,6 @@ typedef struct process_target {
     const char *host_id;
 } process_target;
 
-static int is_text(const char *text) {
-    return text != NULL && text[0] != '\0';
-}
-
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
 }
@@ -47,55 +44,11 @@ static int is_time(double value) {
     return isfinite(value) && value >= 0;
 }
 
-static spisor_status refuse_malformed(spisor_refusal *refusal, const char *member) {
-    char detail[160];
-    char fix[200];
-    snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
-    snprintf(fix, sizeof fix, "send %s as the processes header describes it", member);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
-}
-
 static spisor_status check_target(const process_target *target, int takes_host, spisor_refusal *refusal) {
-    if (!is_text(target->state) || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, target->state)) {
+    if (!runtime_is_place(target->state)) {
         return runtime_refuse_place(refusal, "state");
     }
-    if (takes_host && !is_text(target->host_id)) {
-        return refuse_malformed(refusal, "host_id");
-    }
-    if (takes_host && !runtime_is_plain_host_id(target->host_id)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the host id is not a plain file name",
-                                 RUNTIME_PLAIN_HOST_ID_FIX);
-    }
-    return SPISOR_OK;
-}
-
-static int are_versions(const runtime_processes_version *versions, size_t count) {
-    if (count > 0 && versions == NULL) {
-        return 0;
-    }
-    for (size_t index = 0; index < count; index++) {
-        if (!is_text(versions[index].id) || !is_text(versions[index].version)) {
-            return 0;
-        }
-        for (size_t earlier = 0; earlier < index; earlier++) {
-            if (strcmp(versions[earlier].id, versions[index].id) == 0) {
-                return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-static int are_texts(const char *const *texts, size_t count) {
-    if (count > 0 && texts == NULL) {
-        return 0;
-    }
-    for (size_t index = 0; index < count; index++) {
-        if (texts[index] == NULL) {
-            return 0;
-        }
-    }
-    return 1;
+    return takes_host ? runtime_check_host_id(refusal, target->host_id, HEADER) : SPISOR_OK;
 }
 
 static int add_text(cJSON *object, const char *name, const char *text) {
@@ -135,10 +88,6 @@ static int add_environment(cJSON *object, const char *name, const runtime_variab
     return 1;
 }
 
-static spisor_status start_storage(void **storage) {
-    return runtime_storage_take(storage, 1) == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-}
-
 static int64_t number_of(const cJSON *answered, const char *name) {
     return (int64_t)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(answered, name));
 }
@@ -155,7 +104,7 @@ static spisor_status serve_fixed(runtime_json_operation operation, cJSON *call, 
                                  void *answer, void **storage, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered = NULL;
-    if (start_storage(storage) != SPISOR_OK) {
+    if (runtime_start_storage(storage) != SPISOR_OK) {
         cJSON_Delete(call);
         return SPISOR_OUT_OF_MEMORY;
     }
@@ -181,27 +130,32 @@ static spisor_status check_hold(const runtime_processes_hold_argument *argument,
     process_target target = {argument->state, argument->host_id};
     spisor_status status = check_target(&target, 1, refusal);
     if (status == SPISOR_OK && argument->holder <= 0) {
-        status = refuse_malformed(refusal, "holder");
+        status = runtime_refuse_member(refusal, "holder", HEADER);
     }
-    if (status == SPISOR_OK && (!is_text(argument->executable) ||
+    if (status == SPISOR_OK && (!runtime_is_text(argument->executable) ||
                                 !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, argument->executable))) {
-        status = refuse_malformed(refusal, "executable");
+        status = runtime_refuse_member(refusal, "executable", HEADER);
     }
-    if (status == SPISOR_OK && !are_texts(argument->arguments, argument->argument_count)) {
-        status = refuse_malformed(refusal, "arguments");
+    if (status == SPISOR_OK && !runtime_are_arguments(argument->arguments, argument->argument_count)) {
+        status = runtime_refuse_member(refusal, "arguments", HEADER);
     }
-    if (status == SPISOR_OK && argument->directory != NULL && !is_text(argument->directory)) {
-        status = refuse_malformed(refusal, "directory");
+    if (status == SPISOR_OK && argument->directory != NULL && !runtime_is_text(argument->directory)) {
+        status = runtime_refuse_member(refusal, "directory", HEADER);
+    }
+    if (status == SPISOR_OK && !runtime_is_environment(argument->environment, argument->environment_count)) {
+        status = runtime_refuse_environment(refusal);
     }
     return status;
 }
 
+/** The start member, with an environment only for a caller that gave one, so NULL leaves the caller's to inherit. */
 static cJSON *hold_start(const runtime_processes_hold_argument *argument) {
     cJSON *start = cJSON_CreateObject();
     cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
     int built = arguments != NULL && add_text(start, "executable", argument->executable) &&
                 add_text(start, "directory", argument->directory) &&
-                add_environment(start, "environment", argument->environment, argument->environment_count);
+                (argument->environment == NULL ||
+                 add_environment(start, "environment", argument->environment, argument->environment_count));
     for (size_t index = 0; built && index < argument->argument_count; index++) {
         cJSON *text = cJSON_CreateString(argument->arguments[index]);
         built = text != NULL && cJSON_AddItemToArray(arguments, text);
@@ -232,14 +186,6 @@ static spisor_status hold(void *context, const runtime_processes_hold_argument *
         return runtime_refuse_shape(refusal, "processes' hold");
     }
     status = check_hold(argument, refusal);
-    if (status == SPISOR_OK) {
-        cJSON *environment = NULL;
-        status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
-        cJSON_Delete(environment);
-        if (status == SPISOR_MALFORMED) {
-            return runtime_refuse_environment(refusal);
-        }
-    }
     return status != SPISOR_OK ? status
                                : serve_fixed(runtime_processes_hold_operation, hold_call(argument), fill_hold,
                                              answer, &answer->storage, refusal);
@@ -250,7 +196,7 @@ static spisor_status fill_release(const cJSON *answered, void *filled) {
     const cJSON *holders = cJSON_GetObjectItemCaseSensitive(answered, "holders");
     const cJSON *holder;
     int64_t *copies;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status != SPISOR_OK || !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(holders),
                                                            sizeof *copies, (void **)&copies)) {
         return SPISOR_OUT_OF_MEMORY;
@@ -275,7 +221,7 @@ static spisor_status release(void *context, const runtime_processes_holder_argum
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
     if (status == SPISOR_OK && argument->holder <= 0) {
-        status = refuse_malformed(refusal, "holder");
+        status = runtime_refuse_member(refusal, "holder", HEADER);
     }
     if (status != SPISOR_OK) {
         return status;
@@ -313,10 +259,10 @@ static spisor_status prune(void *context, const runtime_processes_prune_argument
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
     if (status == SPISOR_OK && argument->self <= 0) {
-        status = refuse_malformed(refusal, "self");
+        status = runtime_refuse_member(refusal, "self", HEADER);
     }
     if (status == SPISOR_OK && (!is_time(argument->now) || !is_time(argument->check_milliseconds))) {
-        status = refuse_malformed(refusal, !is_time(argument->now) ? "now" : "check_milliseconds");
+        status = runtime_refuse_member(refusal, !is_time(argument->now) ? "now" : "check_milliseconds", HEADER);
     }
     return status != SPISOR_OK ? status
                                : serve_fixed(runtime_processes_prune_operation, prune_call(argument), fill_prune,
@@ -336,18 +282,15 @@ static spisor_status check_ready(const runtime_processes_ready_argument *argumen
     process_target target = {argument->state, argument->host_id};
     spisor_status status = check_target(&target, 1, refusal);
     if (status == SPISOR_OK && argument->pid <= 0) {
-        status = refuse_malformed(refusal, "pid");
+        status = runtime_refuse_member(refusal, "pid", HEADER);
     }
     if (status == SPISOR_OK && (argument->refused != NULL || argument->fix != NULL) &&
-        (!is_text(argument->refused) || !is_text(argument->fix) || argument->environment != NULL)) {
-        status = refuse_malformed(refusal, argument->environment != NULL ? "environment beside refused"
-                                                                           : "refused and fix");
+        (!runtime_is_text(argument->refused) || !runtime_is_text(argument->fix) || argument->environment != NULL)) {
+        status = runtime_refuse_member(
+            refusal, argument->environment != NULL ? "environment beside refused" : "refused and fix", HEADER);
     }
-    if (status == SPISOR_OK) {
-        cJSON *environment = NULL;
-        status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
-        cJSON_Delete(environment);
-        status = status == SPISOR_MALFORMED ? runtime_refuse_environment(refusal) : status;
+    if (status == SPISOR_OK && !runtime_is_environment(argument->environment, argument->environment_count)) {
+        status = runtime_refuse_environment(refusal);
     }
     return status;
 }
@@ -379,7 +322,7 @@ static spisor_status fill_await(const cJSON *answered, void *filled) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(answered, "environment");
     const cJSON *member;
     runtime_variable *variables;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status != SPISOR_OK || !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(environment),
                                                            sizeof *variables, (void **)&variables)) {
         return SPISOR_OUT_OF_MEMORY;
@@ -408,7 +351,7 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
     if (status == SPISOR_OK && (argument->pid <= 0 || argument->timeout_milliseconds <= 0)) {
-        status = refuse_malformed(refusal, argument->pid <= 0 ? "pid" : "timeout_milliseconds");
+        status = runtime_refuse_member(refusal, argument->pid <= 0 ? "pid" : "timeout_milliseconds", HEADER);
     }
     if (status != SPISOR_OK) {
         return status;
@@ -422,7 +365,7 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
 
 static spisor_status fill_record(const cJSON *answered, void *filled) {
     runtime_processes_record_answer *answer = filled;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status == SPISOR_OK && !runtime_storage_copy(&answer->storage, text_of(answered, "record"), &answer->record)) {
         status = SPISOR_OUT_OF_MEMORY;
     }
@@ -470,20 +413,20 @@ static spisor_status record_run(void *context, const runtime_processes_record_ar
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
-    if (status == SPISOR_OK && !are_versions(argument->run, argument->run_count)) {
-        status = refuse_malformed(refusal, "run");
+    if (status == SPISOR_OK && !runtime_are_item_versions(argument->run, argument->run_count)) {
+        status = runtime_refuse_member(refusal, "run", HEADER);
     }
     if (status == SPISOR_OK && !is_time(argument->check_milliseconds)) {
-        status = refuse_malformed(refusal, "check_milliseconds");
+        status = runtime_refuse_member(refusal, "check_milliseconds", HEADER);
     }
-    if (status == SPISOR_OK && argument->record != NULL && !is_text(argument->record)) {
-        status = refuse_malformed(refusal, "record");
+    if (status == SPISOR_OK && argument->record != NULL && !runtime_is_text(argument->record)) {
+        status = runtime_refuse_member(refusal, "record", HEADER);
     }
     return status != SPISOR_OK ? status : serve_record(argument, record_call(argument), answer, refusal);
 }
 
 static spisor_status fill_run(void **storage, const cJSON *object, runtime_processes_run *run) {
-    runtime_processes_version *versions;
+    runtime_item_version *versions;
     const cJSON *member;
     if (!runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(object), sizeof *versions,
                                     (void **)&versions)) {
@@ -491,7 +434,7 @@ static spisor_status fill_run(void **storage, const cJSON *object, runtime_proce
     }
     run->versions = versions;
     cJSON_ArrayForEach(member, object) {
-        runtime_processes_version *each = &versions[run->version_count++];
+        runtime_item_version *each = &versions[run->version_count++];
         if (!runtime_storage_copy(storage, member->string, &each->id) ||
             !runtime_storage_copy(storage, cJSON_GetStringValue(member), &each->version)) {
             return SPISOR_OUT_OF_MEMORY;
@@ -505,7 +448,7 @@ static spisor_status fill_live(const cJSON *answered, void *filled) {
     const cJSON *runs = cJSON_GetObjectItemCaseSensitive(answered, "runs");
     const cJSON *entry;
     runtime_processes_run *copies;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status != SPISOR_OK || !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(runs),
                                                            sizeof *copies, (void **)&copies)) {
         return SPISOR_OUT_OF_MEMORY;
@@ -532,7 +475,7 @@ static spisor_status live_runs(void *context, const runtime_processes_live_argum
     target = (process_target){argument->state, NULL};
     status = check_target(&target, 0, refusal);
     if (status == SPISOR_OK && !is_time(argument->now)) {
-        status = refuse_malformed(refusal, "now");
+        status = runtime_refuse_member(refusal, "now", HEADER);
     }
     if (status != SPISOR_OK) {
         return status;
@@ -554,8 +497,8 @@ static spisor_status remove_runs(void *context, const runtime_processes_remove_a
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
-    if (status == SPISOR_OK && argument->record != NULL && !is_text(argument->record)) {
-        status = refuse_malformed(refusal, "record");
+    if (status == SPISOR_OK && argument->record != NULL && !runtime_is_text(argument->record)) {
+        status = runtime_refuse_member(refusal, "record", HEADER);
     }
     if (status != SPISOR_OK) {
         return status;

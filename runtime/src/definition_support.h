@@ -7,6 +7,7 @@
 #include "cJSON.h"
 #include "json_service.h"
 #include "runtime/environment.h"
+#include "runtime/item_version.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -38,6 +39,44 @@ spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *c
 /** Adds `value`, a well-formed tree of `kind`, to `call` as JSON under `name`; MALFORMED for NULL or any other value. */
 spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor_value *value, spisor_value_kind kind);
 
+/** Whether a text is present and not empty. */
+int runtime_is_text(const char *text);
+
+/** Whether a place is present and an absolute path. */
+int runtime_is_place(const char *place);
+
+/** Whether `count` texts are each present, an empty one allowed, as an argument list holds them. */
+int runtime_are_arguments(const char *const *texts, size_t count);
+
+/** Whether `count` texts are each present and not empty, and, when `unique`, each given once. */
+int runtime_are_texts(const char *const *texts, size_t count, int unique);
+
+/** Whether `count` item versions each carry an id and a version that are not empty, and no id twice. */
+int runtime_are_item_versions(const runtime_item_version *versions, size_t count);
+
+/**
+ * Whether `count` variables are an environment a definition takes: each with a name and a value, the name not empty,
+ * holding no = and given once. It allocates nothing, so a definition checks it before anything else.
+ */
+int runtime_is_environment(const runtime_variable *environment, size_t count);
+
+/** Takes an answer's first block of storage, before anything fills it; OUT_OF_MEMORY when memory runs out. */
+spisor_status runtime_start_storage(void **storage);
+
+/** The MALFORMED refusal for an argument carrying no usable `member`, whose shape `header` describes. */
+spisor_status runtime_refuse_member(spisor_refusal *refusal, const char *member, const char *header);
+
+/**
+ * OK for a host id that is a plain file name; otherwise MALFORMED, refused through runtime_refuse_member with
+ * `header` for one that is NULL or empty.
+ *
+ * @implNote Defined in definition_host_target.c, linked beside the host id and platform rules it reads.
+ */
+spisor_status runtime_check_host_id(spisor_refusal *refusal, const char *host_id, const char *header);
+
+/** OK for a NULL platform or a platform key; otherwise MALFORMED, refused through runtime_refuse_member. */
+spisor_status runtime_check_platform(spisor_refusal *refusal, const char *platform, const char *header);
+
 /** Fills the refusal and answers `status`, or OUT_OF_MEMORY when the refusal could not be filled. */
 spisor_status runtime_refuse_as(spisor_refusal *refusal, spisor_status status, const char *detail, const char *fix);
 
@@ -63,11 +102,10 @@ void runtime_release_refusal(void *context, spisor_refusal *refusal);
 int runtime_pack_texts(const char *const *texts, const char **packed, size_t count, void **storage);
 
 /**
- * An environment as the JSON object runtime's path rules read, each variable added in order, so the first of a name
- * answers for it.
+ * An environment as the JSON object runtime's path rules read.
  *
- * @return OK with a new object, empty for no variables; MALFORMED for a variable without a name or a value, or a count
- * without variables; OUT_OF_MEMORY. `*json` is NULL whenever the answer is not OK.
+ * @return OK with a new object, empty for no variables; MALFORMED for variables runtime_is_environment refuses;
+ * OUT_OF_MEMORY. `*json` is NULL whenever the answer is not OK.
  */
 spisor_status runtime_environment_json(const runtime_variable *environment, size_t count, cJSON **json);
 

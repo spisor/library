@@ -293,8 +293,9 @@ runtime_test_with_allocator(out_of_memory_install_operations_test spisor_allocat
 target_link_libraries(out_of_memory_install_operations_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_install_operations_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(out_of_memory_install_operations_test PRIVATE
-    RUNTIME_NODE_PROBE_PATH="$<TARGET_FILE:node_probe>")
-add_dependencies(out_of_memory_install_operations_test node_probe)
+    RUNTIME_NODE_PROBE_PATH="$<TARGET_FILE:node_probe>"
+    RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
+add_dependencies(out_of_memory_install_operations_test node_probe background_fixture)
 set_tests_properties(out_of_memory_install_operations_test PROPERTIES TIMEOUT 1800 RESOURCE_LOCK user_path_value)
 if(WIN32)
     add_dependencies(out_of_memory_install_operations_test runtime_launcher)
@@ -336,3 +337,7 @@ target_link_libraries(definition_exports_test PRIVATE ${CMAKE_DL_LIBS})
 add_dependencies(definition_exports_test runtime)
 spisor_strict_warnings(definition_exports_test)
 add_test(NAME definition_exports_test COMMAND definition_exports_test)
+
+runtime_test_with_allocator(environment_check_test spisor_allocator_counting ${runtime_install_test_objects})
+target_link_libraries(environment_check_test PRIVATE ${runtime_fetch_libraries})
+target_include_directories(environment_check_test PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/runtime/src)

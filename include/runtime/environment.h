@@ -3,8 +3,9 @@
 
 /**
  * @file
- * An environment as runtime's services take one: an array of variables, read in order, the first of a name answering
- * for it, as a process environment holds each name once.
+ * An environment as runtime's services take one: an array of variables, each name given once, as a process environment
+ * holds it. Every service refuses as MALFORMED a variable without a name or a value, a name that is empty or holds =,
+ * and a name given twice, before it allocates anything.
  */
 
 #ifdef __cplusplus

@@ -217,6 +217,9 @@ static spisor_status applications(void *context, const runtime_lists_application
         !RUNTIME_IS_EMPTY_ANSWER(answer, LIST_SHAPE)) {
         return runtime_refuse_shape(refusal, "lists' applications");
     }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
+    }
     if (argument->items == NULL || argument->items->kind != SPISOR_VALUE_RECORD) {
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the catalog's items are not a record",
                                  "send items as the catalog's items record, as catalog's read answers it");
