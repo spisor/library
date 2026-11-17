@@ -19,6 +19,7 @@
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/cache.h"
+#include "runtime/catalog.h"
 #include "runtime/changes.h"
 #include "runtime/commands.h"
 #include "runtime/config.h"
@@ -77,6 +78,7 @@ static spisor_value_tree first_file = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree second_file = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree plugin_rows = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree catalog_items = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree whole_catalog = SPISOR_INIT(spisor_value_tree);
 
 static void write_text(const char *directory, const char *name, const char *text) {
     char path[1400];
@@ -580,6 +582,23 @@ static spisor_status list_installed_versions(void) {
     return status;
 }
 
+static spisor_status merge_catalogs(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    runtime_catalog_reading readings[2] = {{{RUNTIME_CATALOG_LOCAL, "/first.json"}, &whole_catalog.root},
+                                           {{RUNTIME_CATALOG_HTTPS, "https://example.com/c.json"}, &whole_catalog.root}};
+    runtime_catalog_merge_argument argument = SPISOR_INIT(runtime_catalog_merge_argument);
+    runtime_catalog_merge_answer answer = SPISOR_INIT(runtime_catalog_merge_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.catalogs = readings;
+    argument.catalog_count = 2;
+    status = catalog->merge(catalog->context, &argument, &answer, &refusal);
+    CHECK(status != SPISOR_OK || answer.shadowed_count == 2);
+    catalog->release_merge_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -881,6 +900,7 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
     every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
     every_failure_answers_out_of_memory("cache's installed", list_installed_versions, NULL);
+    every_failure_answers_out_of_memory("catalog's merge", merge_catalogs, NULL);
 }
 
 /** The check must see a profile line nothing records, or it passes whatever a command leaves in a profile. */
@@ -924,6 +944,8 @@ int main(int argc, char **argv) {
                         "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
                         "\"opencode\",\"binary\":\"absent\"}}}",
                         &catalog_items));
+    CHECK(value_of_text("{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\"},\"b\":{\"kind\":\"host\"}}}",
+                        &whole_catalog));
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
         every_command();
     } else {
@@ -936,6 +958,7 @@ int main(int argc, char **argv) {
     spisor_value_release(&second_file);
     spisor_value_release(&plugin_rows);
     spisor_value_release(&catalog_items);
+    spisor_value_release(&whole_catalog);
     forget_test_path_value();
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");

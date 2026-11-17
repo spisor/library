@@ -9,6 +9,7 @@
 
 #include "catalog.h"
 #include "catalog_call.h"
+#include "catalog_service_call.h"
 #include "check.h"
 #include "config.h"
 #include "scratch_directory.h"
@@ -32,7 +33,7 @@
 static catalog_answer sources_of(const char *settings_json) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "settings", parsed(settings_json));
-    return call_catalog(runtime_catalog_sources, argument);
+    return catalog_service_call(CATALOG_SOURCES, argument);
 }
 
 static void expect_json(const cJSON *actual, const char *expected_json, const char *label) {
@@ -75,7 +76,7 @@ static void it_reads_the_sources_a_real_settings_round_trip_stores(void) {
     CHECK(all != NULL && refusal == NULL);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "settings", all);
-    catalog_answer answer = call_catalog(runtime_catalog_sources, argument);
+    catalog_answer answer = catalog_service_call(CATALOG_SOURCES, argument);
     expect_json(value_at(answer.tree, "sources"), sources, "round trip");
     cJSON_Delete(answer.tree);
     CHECK(runtime_remove_tree(base) == 1);
@@ -109,14 +110,14 @@ static void it_skips_an_unknown_kind_and_reports_it(void) {
 }
 
 static void it_refuses_settings_that_are_not_an_object(void) {
-    expect_refusal_released(call_catalog(runtime_catalog_sources, parsed("{\"settings\":[]}")), "settings",
+    expect_malformed_released(catalog_service_call(CATALOG_SOURCES, parsed("{\"settings\":[]}")), "settings",
                             "settings array");
 }
 
 static catalog_answer merged(const char *catalogs_json) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "catalogs", parsed(catalogs_json));
-    return call_catalog(runtime_catalog_merge, argument);
+    return catalog_service_call(CATALOG_MERGE, argument);
 }
 
 static void it_keeps_the_earlier_source_s_item_and_reports_the_later_one_shadowed(void) {
@@ -154,8 +155,8 @@ static void it_merges_ids_in_the_order_javascript_enumerates_them(void) {
 }
 
 static void it_refuses_catalogs_it_cannot_merge(void) {
-    expect_refusal_released(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1}}]"), "catalogs", "no items");
-    expect_refusal_released(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":1,\"items\":{}}}]"), "catalogs",
+    expect_malformed_released(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1}}]"), "catalogs", "no items");
+    expect_malformed_released(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":1,\"items\":{}}}]"), "catalogs",
                    "bad source");
 }
 

@@ -6,7 +6,6 @@
 #include "catalog_merge.h"
 #include "spisor/json_write.h"
 #include "catalog_source.h"
-#include "spisor/json_kind.h"
 
 static int add_skipped(cJSON *skipped, int index, char *problem) {
     cJSON *entry = cJSON_CreateObject();
@@ -19,7 +18,7 @@ static int add_skipped(cJSON *skipped, int index, char *problem) {
     return added;
 }
 
-static int add_source(cJSON *sources, const runtime_catalog_source *source) {
+static int add_source(cJSON *sources, const runtime_catalog_location *source) {
     cJSON *written = runtime_catalog_source_json(source);
     if (written == NULL || !cJSON_AddItemToArray(sources, written)) {
         cJSON_Delete(written);
@@ -45,7 +44,7 @@ static cJSON *read_sources(const cJSON *settings) {
     const cJSON *configured = configured_sources(settings);
     int index = 0;
     for (const cJSON *entry = configured == NULL ? NULL : configured->child; entry != NULL; entry = entry->next) {
-        runtime_catalog_source source;
+        runtime_catalog_location source;
         char *problem;
         int kept = runtime_catalog_source_of(entry, &source, &problem) ? add_source(sources, &source)
                                                                        : add_skipped(skipped, index, problem);
@@ -58,20 +57,13 @@ static cJSON *read_sources(const cJSON *settings) {
     return result;
 }
 
-RUNTIME_EXPORT int32_t runtime_catalog_sources(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const cJSON *settings = cJSON_GetObjectItemCaseSensitive(call.argument, "settings");
-    status = cJSON_IsObject(settings) ? runtime_catalog_answer(read_sources(settings), out, out_len)
-                                      : runtime_catalog_refuse_argument("settings", "the merged settings object", out, out_len);
-    spisor_discard_call(&call);
-    return status;
+cJSON *runtime_catalog_sources_operation(const cJSON *argument, cJSON **refusal) {
+    const cJSON *settings = cJSON_GetObjectItemCaseSensitive(argument, "settings");
+    return cJSON_IsObject(settings) ? read_sources(settings)
+                                    : runtime_catalog_refuse_member("settings", "the merged settings object", refusal);
 }
 
-static int add_shadowed(cJSON *shadowed, const char *id, const runtime_catalog_source *source) {
+static int add_shadowed(cJSON *shadowed, const char *id, const runtime_catalog_location *source) {
     cJSON *entry = cJSON_CreateObject();
     int added = entry != NULL && cJSON_AddStringToObject(entry, "id", id) != NULL &&
                 runtime_catalog_attach(entry, "source", runtime_catalog_source_json(source));
@@ -125,37 +117,37 @@ cJSON *runtime_catalog_merge_readings(const runtime_catalog_reading *readings, s
     return catalog;
 }
 
-static int32_t refuse_catalogs(uint8_t **out, size_t *out_len) {
-    return runtime_catalog_refuse_argument("catalogs", "an array of {source, catalog}, each catalog with items", out,
-                                           out_len);
-}
-
+/** Reads every {source, catalog} of catalogs: 1, 0 for one that is not usable, -1 when memory runs out. */
 static int read_readings(const cJSON *catalogs, runtime_catalog_reading *readings, size_t *count) {
     *count = 0;
     for (const cJSON *entry = catalogs->child; entry != NULL; entry = entry->next) {
         const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(entry, "catalog");
         char *problem = NULL;
-        int usable = cJSON_IsObject(catalog) && cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(catalog, "items")) &&
-                     runtime_catalog_source_of(cJSON_GetObjectItemCaseSensitive(entry, "source"),
-                                               &readings[*count].source, &problem);
-        free(problem);
-        if (!usable) {
+        if (!cJSON_IsObject(catalog) || !cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(catalog, "items"))) {
             return 0;
+        }
+        if (!runtime_catalog_source_of(cJSON_GetObjectItemCaseSensitive(entry, "source"), &readings[*count].source,
+                                       &problem)) {
+            int out_of_memory = problem == NULL;
+            free(problem);
+            return out_of_memory ? -1 : 0;
         }
         readings[(*count)++].catalog = catalog;
     }
     return 1;
 }
 
-static int32_t merge(const cJSON *catalogs, uint8_t **out, size_t *out_len) {
+static cJSON *merge(const cJSON *catalogs, cJSON **refusal) {
     runtime_catalog_reading *readings = malloc(((size_t)cJSON_GetArraySize(catalogs) + 1) * sizeof *readings);
     if (readings == NULL) {
-        return runtime_catalog_answer(NULL, out, out_len);
+        return NULL;
     }
     size_t count;
-    if (!read_readings(catalogs, readings, &count)) {
+    int usable = read_readings(catalogs, readings, &count);
+    if (usable != 1) {
         free(readings);
-        return refuse_catalogs(out, out_len);
+        return usable < 0 ? NULL : runtime_catalog_refuse_member("catalogs", "an array of {source, catalog}, each catalog with items",
+                                             refusal);
     }
     cJSON *result = cJSON_CreateObject();
     cJSON *shadowed = cJSON_CreateArray();
@@ -167,19 +159,15 @@ static int32_t merge(const cJSON *catalogs, uint8_t **out, size_t *out_len) {
             cJSON_Delete(shadowed);
         }
         cJSON_Delete(result);
-        return runtime_catalog_answer(NULL, out, out_len);
+        return NULL;
     }
-    return runtime_catalog_answer(result, out, out_len);
+    return result;
 }
 
-RUNTIME_EXPORT int32_t runtime_catalog_merge(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const cJSON *catalogs = cJSON_GetObjectItemCaseSensitive(call.argument, "catalogs");
-    status = cJSON_IsArray(catalogs) ? merge(catalogs, out, out_len) : refuse_catalogs(out, out_len);
-    spisor_discard_call(&call);
-    return status;
+cJSON *runtime_catalog_merge_operation(const cJSON *argument, cJSON **refusal) {
+    const cJSON *catalogs = cJSON_GetObjectItemCaseSensitive(argument, "catalogs");
+    return cJSON_IsArray(catalogs) ? merge(catalogs, refusal)
+                                   : runtime_catalog_refuse_member("catalogs",
+                                                                   "an array of {source, catalog}, each catalog with items",
+                                                                   refusal);
 }

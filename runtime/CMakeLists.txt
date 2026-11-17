@@ -113,7 +113,7 @@ target_include_directories(runtime_identity_also_at PRIVATE ${PROJECT_SOURCE_DIR
 set_target_properties(runtime_identity_also_at PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_identity_also_at)
 
-set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
+set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_definition.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
@@ -144,6 +144,7 @@ set_target_properties(runtime_marketplace_reading_test_hooks PROPERTIES SPISOR_T
 
 add_library(runtime_catalog OBJECT ${runtime_catalog_sources})
 target_link_libraries(runtime_catalog PUBLIC runtime_objects)
+target_include_directories(runtime_catalog PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_catalog PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_catalog)
 

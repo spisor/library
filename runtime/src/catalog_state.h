@@ -17,10 +17,10 @@ typedef struct runtime_catalog_state {
 char *runtime_catalog_state_path(const char *cache, const char *location);
 
 /** The source's path resolved, or its url; freed with free, NULL when memory runs out. */
-char *runtime_catalog_location_of(const runtime_catalog_source *source);
+char *runtime_catalog_location_of(const runtime_catalog_location *source);
 
 /** The url the source's file urls resolve against; freed with free, NULL when it has none. */
-char *runtime_catalog_origin_of(const runtime_catalog_source *source, const char *location);
+char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location);
 
 /** The state kept at path; a missing or unreadable file, or one that is not an object, keeps nothing. */
 void runtime_catalog_read_state(const char *path, runtime_catalog_state *state);

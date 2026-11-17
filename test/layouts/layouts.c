@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "runtime/cache.h"
+#include "runtime/catalog.h"
 #include "runtime/changes.h"
 #include "runtime/commands.h"
 #include "runtime/config.h"
@@ -789,6 +790,106 @@ static void print_cache_layouts(void) {
     SIZE(runtime_cache_definition);
 }
 
+static void print_catalog_layouts(void) {
+    FIELD(runtime_catalog_source, kind);
+    FIELD(runtime_catalog_source, location);
+    SIZE(runtime_catalog_source);
+    FIELD(runtime_catalog_read_argument, size);
+    FIELD(runtime_catalog_read_argument, text);
+    FIELD(runtime_catalog_read_argument, origin);
+    SIZE(runtime_catalog_read_argument);
+    FIELD(runtime_catalog_answer, size);
+    FIELD(runtime_catalog_answer, catalog);
+    FIELD(runtime_catalog_answer, storage);
+    SIZE(runtime_catalog_answer);
+    FIELD(runtime_catalog_sources_argument, size);
+    FIELD(runtime_catalog_sources_argument, settings);
+    SIZE(runtime_catalog_sources_argument);
+    FIELD(runtime_catalog_skipped, index);
+    FIELD(runtime_catalog_skipped, detail);
+    SIZE(runtime_catalog_skipped);
+    FIELD(runtime_catalog_sources_answer, size);
+    FIELD(runtime_catalog_sources_answer, sources);
+    FIELD(runtime_catalog_sources_answer, source_count);
+    FIELD(runtime_catalog_sources_answer, skipped);
+    FIELD(runtime_catalog_sources_answer, skipped_count);
+    FIELD(runtime_catalog_sources_answer, storage);
+    SIZE(runtime_catalog_sources_answer);
+    FIELD(runtime_catalog_reading, source);
+    FIELD(runtime_catalog_reading, catalog);
+    SIZE(runtime_catalog_reading);
+    FIELD(runtime_catalog_merge_argument, size);
+    FIELD(runtime_catalog_merge_argument, catalogs);
+    FIELD(runtime_catalog_merge_argument, catalog_count);
+    SIZE(runtime_catalog_merge_argument);
+    FIELD(runtime_catalog_shadowed, id);
+    FIELD(runtime_catalog_shadowed, source);
+    SIZE(runtime_catalog_shadowed);
+    FIELD(runtime_catalog_merge_answer, size);
+    FIELD(runtime_catalog_merge_answer, catalog);
+    FIELD(runtime_catalog_merge_answer, shadowed);
+    FIELD(runtime_catalog_merge_answer, shadowed_count);
+    FIELD(runtime_catalog_merge_answer, storage);
+    SIZE(runtime_catalog_merge_answer);
+    FIELD(runtime_catalog_check_argument, size);
+    FIELD(runtime_catalog_check_argument, source);
+    FIELD(runtime_catalog_check_argument, cache);
+    FIELD(runtime_catalog_check_argument, now);
+    FIELD(runtime_catalog_check_argument, interval_hours);
+    SIZE(runtime_catalog_check_argument);
+    FIELD(runtime_catalog_check_answer, size);
+    FIELD(runtime_catalog_check_answer, kind);
+    FIELD(runtime_catalog_check_answer, catalog);
+    FIELD(runtime_catalog_check_answer, detail);
+    FIELD(runtime_catalog_check_answer, storage);
+    SIZE(runtime_catalog_check_answer);
+    FIELD(runtime_catalog_current_argument, size);
+    FIELD(runtime_catalog_current_argument, sources);
+    FIELD(runtime_catalog_current_argument, source_count);
+    FIELD(runtime_catalog_current_argument, cache);
+    SIZE(runtime_catalog_current_argument);
+    FIELD(runtime_catalog_enabled, id);
+    FIELD(runtime_catalog_enabled, pin);
+    SIZE(runtime_catalog_enabled);
+    FIELD(runtime_catalog_installed, id);
+    FIELD(runtime_catalog_installed, versions);
+    FIELD(runtime_catalog_installed, version_count);
+    SIZE(runtime_catalog_installed);
+    FIELD(runtime_catalog_resolve_argument, size);
+    FIELD(runtime_catalog_resolve_argument, catalog);
+    FIELD(runtime_catalog_resolve_argument, enabled);
+    FIELD(runtime_catalog_resolve_argument, enabled_count);
+    FIELD(runtime_catalog_resolve_argument, installed);
+    FIELD(runtime_catalog_resolve_argument, installed_count);
+    FIELD(runtime_catalog_resolve_argument, kind);
+    SIZE(runtime_catalog_resolve_argument);
+    FIELD(runtime_catalog_version, id);
+    FIELD(runtime_catalog_version, version);
+    SIZE(runtime_catalog_version);
+    FIELD(runtime_catalog_resolve_answer, size);
+    FIELD(runtime_catalog_resolve_answer, run);
+    FIELD(runtime_catalog_resolve_answer, run_count);
+    FIELD(runtime_catalog_resolve_answer, fetch);
+    FIELD(runtime_catalog_resolve_answer, fetch_count);
+    FIELD(runtime_catalog_resolve_answer, storage);
+    SIZE(runtime_catalog_resolve_answer);
+    FIELD(runtime_catalog_definition, size);
+    FIELD(runtime_catalog_definition, context);
+    FIELD(runtime_catalog_definition, read);
+    FIELD(runtime_catalog_definition, sources);
+    FIELD(runtime_catalog_definition, merge);
+    FIELD(runtime_catalog_definition, check);
+    FIELD(runtime_catalog_definition, current);
+    FIELD(runtime_catalog_definition, resolve);
+    FIELD(runtime_catalog_definition, release_answer);
+    FIELD(runtime_catalog_definition, release_sources_answer);
+    FIELD(runtime_catalog_definition, release_merge_answer);
+    FIELD(runtime_catalog_definition, release_check_answer);
+    FIELD(runtime_catalog_definition, release_resolve_answer);
+    FIELD(runtime_catalog_definition, release_refusal);
+    SIZE(runtime_catalog_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -808,5 +909,6 @@ int main(void) {
     print_lists_layouts();
     print_marketplace_layouts();
     print_cache_layouts();
+    print_catalog_layouts();
     return 0;
 }

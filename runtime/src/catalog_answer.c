@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+#include "json_service.h"
 #include "spisor/json_kind.h"
 
 int32_t runtime_catalog_answer(cJSON *result, uint8_t **out, size_t *out_len) {
@@ -21,6 +22,15 @@ int32_t runtime_catalog_refuse_argument(const char *member, const char *shape, u
     snprintf(message, sizeof message, "the argument carries no usable %s", member);
     snprintf(fix, sizeof fix, "send %s as %s", member, shape);
     return spisor_fail(message, fix, out, out_len);
+}
+
+cJSON *runtime_catalog_refuse_member(const char *member, const char *shape, cJSON **refusal) {
+    char message[256];
+    char fix[512];
+    snprintf(message, sizeof message, "the argument carries no usable %s", member);
+    snprintf(fix, sizeof fix, "send %s as %s", member, shape);
+    *refusal = runtime_refusal(message, fix);
+    return NULL;
 }
 
 const char *runtime_catalog_text_member(const cJSON *argument, const char *name) {

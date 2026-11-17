@@ -9,6 +9,7 @@
 
 #include "catalog.h"
 #include "catalog_call.h"
+#include "catalog_service_call.h"
 #include "catalog_hooks.h"
 #include "catalog_state.h"
 #include "check.h"
@@ -130,7 +131,7 @@ static catalog_answer check_source(const char *kind, const char *location, const
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "now", now);
     cJSON_AddNumberToObject(argument, "intervalHours", 24);
-    return call_catalog(runtime_catalog_check, argument);
+    return catalog_service_call(CATALOG_CHECK, argument);
 }
 
 static const char *kind_of(catalog_answer answer) {
@@ -160,7 +161,7 @@ static cJSON *current_of(cJSON *sources) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "sources", sources);
     cJSON_AddStringToObject(argument, "cache", cache);
-    catalog_answer answer = call_catalog(runtime_catalog_current, argument);
+    catalog_answer answer = catalog_service_call(CATALOG_CURRENT, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "catalog");
     cJSON_Delete(answer.tree);
@@ -442,11 +443,11 @@ static void it_refuses_an_unusable_argument(void) {
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "now", "yesterday");
     cJSON_AddNumberToObject(argument, "intervalHours", 24);
-    catalog_answer answer = call_catalog(runtime_catalog_check, argument);
-    expect_refusal(answer, "now", "now");
+    catalog_answer answer = catalog_service_call(CATALOG_CHECK, argument);
+    expect_cache_refusal_malformed(answer, "now", "now");
     cJSON_Delete(answer.tree);
-    catalog_answer source = call_catalog(runtime_catalog_check, parsed("{\"source\":{\"kind\":\"ftp\"}}"));
-    expect_refusal(source, "source", "source");
+    catalog_answer source = catalog_service_call(CATALOG_CHECK, parsed("{\"source\":{\"kind\":\"ftp\"}}"));
+    expect_cache_refusal_malformed(source, "source", "source");
     cJSON_Delete(source.tree);
 }
 

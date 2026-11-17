@@ -302,4 +302,16 @@ static inline int expect_cache_refusal_refused(catalog_answer answer, const char
     return expect_cache_refusal(answer, SPISOR_REFUSED, fragment, label);
 }
 
+/** expect_cache_refusal of a refusal MALFORMED. */
+static inline int expect_cache_refusal_malformed(catalog_answer answer, const char *fragment, const char *label) {
+    return expect_cache_refusal(answer, SPISOR_MALFORMED, fragment, label);
+}
+
+/** expect_cache_refusal_malformed on an answer no caller keeps, releasing its tree. */
+static inline int expect_malformed_released(catalog_answer answer, const char *fragment, const char *label) {
+    int matched = expect_cache_refusal_malformed(answer, fragment, label);
+    cJSON_Delete(answer.tree);
+    return matched;
+}
+
 #endif

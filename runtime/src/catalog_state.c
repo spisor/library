@@ -26,11 +26,11 @@ char *runtime_catalog_state_path(const char *cache, const char *location) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
 }
 
-char *runtime_catalog_location_of(const runtime_catalog_source *source) {
+char *runtime_catalog_location_of(const runtime_catalog_location *source) {
     return source->local ? runtime_catalog_resolve_path(source->location) : runtime_catalog_copy(source->location);
 }
 
-char *runtime_catalog_origin_of(const runtime_catalog_source *source, const char *location) {
+char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location) {
     return source->local ? runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, location)
                          : runtime_catalog_copy(source->location);
 }

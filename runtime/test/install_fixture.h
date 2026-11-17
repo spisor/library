@@ -23,6 +23,7 @@
 
 #include "cache_call.h"
 #include "catalog_call.h"
+#include "catalog_service_call.h"
 #include "catalog_url.h"
 #include "check.h"
 #include "config.h"

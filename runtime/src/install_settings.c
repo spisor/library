@@ -86,7 +86,7 @@ static int is_listed(const cJSON *entries, const cJSON *source) {
         return -1;
     }
     cJSON *refusal = NULL;
-    cJSON *read = runtime_call_or_refuse(runtime_catalog_sources, call, &refusal);
+    cJSON *read = runtime_call_operation(runtime_catalog_sources_operation, call, &refusal);
     cJSON_Delete(refusal);
     int listed = read == NULL ? -1 : 0;
     const cJSON *sources = cJSON_GetObjectItemCaseSensitive(read, "sources");

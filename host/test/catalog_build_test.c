@@ -45,7 +45,7 @@ static cJSON *read_back(const char *path) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "text", text == NULL ? "" : text);
     cJSON_AddStringToObject(argument, "origin", origin);
-    catalog_answer read = call_catalog(runtime_catalog_read, argument);
+    catalog_answer read = catalog_service_call(CATALOG_READ, argument);
     if (read.status != SPISOR_STATUS_SUCCESS) {
         char *printed = cJSON_PrintUnformatted(read.tree);
         fprintf(stderr, "the catalog was not read back: %s\n", printed);
