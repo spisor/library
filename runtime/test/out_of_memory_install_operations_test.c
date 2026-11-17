@@ -446,8 +446,8 @@ static void host_file_key(char *key, size_t capacity, const char *name) {
  * a hint naming 1.0.0.
  */
 static void prepare_boot(void) {
-    char executable[256];
-    char stub[256];
+    char executable[64];
+    char stub[64];
     char rest[512];
     char marker[1024];
     start_install_base(&base, "operations", "boot");
