@@ -15,6 +15,11 @@
 #include "process_alive.h"
 #include "spisor/file.h"
 
+/** The most characters cJSON prints for one number, its print buffer's size. */
+#define NUMBER_TEXT_WIDTH 26
+/** The bytes cJSON_PrintPreallocated asks for beyond the text, since it cannot measure a number before printing it. */
+#define PREALLOCATED_SLACK 5
+
 runtime_holders_record runtime_no_holders(void) {
     runtime_holders_record none = {NAN, NAN, NAN, NULL, 0};
     return none;
@@ -103,7 +108,7 @@ static int attach(cJSON *object, const char *name, cJSON *item) {
     return 1;
 }
 
-static char *record_text(const runtime_holders_record *record) {
+static cJSON *record_tree(const runtime_holders_record *record) {
     cJSON *object = cJSON_CreateObject();
     cJSON *holders = cJSON_CreateArray();
     int built = object != NULL && attach(object, "pid", number_or_null(record->pid)) &&
@@ -121,7 +126,16 @@ static char *record_text(const runtime_holders_record *record) {
             cJSON_Delete(holder);
         }
     }
-    char *compact = built ? cJSON_PrintUnformatted(object) : NULL;
+    if (!built) {
+        cJSON_Delete(object);
+        return NULL;
+    }
+    return object;
+}
+
+static char *record_text(const runtime_holders_record *record) {
+    cJSON *object = record_tree(record);
+    char *compact = object == NULL ? NULL : cJSON_PrintUnformatted(object);
     cJSON_Delete(object);
     const char *parts[2] = {compact, "\n"};
     char *text = compact == NULL ? NULL : runtime_cache_text(parts, 2);
@@ -160,6 +174,47 @@ spisor_status runtime_write_holders(const char *path, const runtime_holders_reco
     int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     free(text);
     return written ? SPISOR_OK : SPISOR_REFUSED;
+}
+
+int runtime_draft_started_host(const runtime_holders_record *record, runtime_holders_draft *draft) {
+    runtime_holders_record started = *record;
+    started.pid = 0;
+    started.alive_at = 0;
+    started.check_milliseconds = NAN;
+    draft->tree = record_tree(&started);
+    char *printed = draft->tree == NULL ? NULL : cJSON_PrintUnformatted(draft->tree);
+    draft->capacity = printed == NULL ? 0 : strlen(printed) + 2 * NUMBER_TEXT_WIDTH + PREALLOCATED_SLACK + 2;
+    cJSON_free(printed);
+    draft->text = draft->capacity == 0 ? NULL : malloc(draft->capacity);
+    if (draft->text == NULL) {
+        runtime_free_holders_draft(draft);
+        return 0;
+    }
+    return 1;
+}
+
+int runtime_print_started_host(runtime_holders_draft *draft, double pid, double alive_at) {
+    (void)cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(draft->tree, "pid"), pid);
+    (void)cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(draft->tree, "aliveAt"), alive_at);
+    if (!cJSON_PrintPreallocated(draft->tree, draft->text, (int)draft->capacity - 1, 0)) {
+        return 0;
+    }
+    size_t length = strlen(draft->text);
+    draft->text[length] = '\n';
+    draft->text[length + 1] = '\0';
+    return 1;
+}
+
+spisor_status runtime_write_holders_draft(const char *path, const runtime_holders_draft *draft) {
+    return spisor_replace_file(path, (const uint8_t *)draft->text, strlen(draft->text)) ? SPISOR_OK : SPISOR_REFUSED;
+}
+
+void runtime_free_holders_draft(runtime_holders_draft *draft) {
+    cJSON_Delete(draft->tree);
+    free(draft->text);
+    draft->tree = NULL;
+    draft->text = NULL;
+    draft->capacity = 0;
 }
 
 void runtime_keep_live_holders(runtime_holders_record *record, double dropped) {
