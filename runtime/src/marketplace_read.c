@@ -10,6 +10,7 @@
 #include "runtime/fetch.h"
 #include "import_name.h"
 #include "paths.h"
+#include "json_parse.h"
 #include "json_service.h"
 #include "marketplace_check.h"
 #include "marketplace_sources.h"
@@ -144,10 +145,12 @@ static int is_web_page(const char *text, size_t length) {
     return at < length && text[at] == '<';
 }
 
+/** The parsed copy; NULL with *refusal set, or with none when memory ran out. */
 static cJSON *parsed_copy(const reading *order, const char *text, size_t length, cJSON **refusal) {
     size_t skipped = length >= 3 && memcmp(text, BYTE_ORDER_MARK, 3) == 0 ? 3 : 0;
-    cJSON *document = spisor_parse_json((const uint8_t *)text + skipped, length - skipped);
-    if (document != NULL) {
+    int out_of_memory = 0;
+    cJSON *document = spisor_parse_json_reporting((const uint8_t *)text + skipped, length - skipped, &out_of_memory);
+    if (document != NULL || out_of_memory) {
         return document;
     }
     if (is_web_page(text + skipped, length - skipped)) {
@@ -198,6 +201,7 @@ static cJSON *copy_answer(cJSON *document) {
     cJSON *answer = cJSON_CreateObject();
     if (answer == NULL || !cJSON_AddItemToObject(answer, "copy", document)) {
         cJSON_Delete(answer);
+        cJSON_Delete(document);
         return NULL;
     }
     return answer;

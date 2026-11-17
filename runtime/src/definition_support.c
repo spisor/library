@@ -153,6 +153,11 @@ void runtime_overwrite_json_texts(const cJSON *json) {
     }
 }
 
+void runtime_delete_secret_json(cJSON *json) {
+    runtime_overwrite_json_texts(json);
+    cJSON_Delete(json);
+}
+
 void runtime_release_storage(void *storage) {
     spisor_memory_release(storage);
 }

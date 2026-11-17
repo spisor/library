@@ -410,8 +410,13 @@ static void a_token_without_its_host_is_refused_before_any_lookup(void) {
         return;
     }
     catalog_answer answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", TOKEN, NULL, NULL);
-    CHECK(expect_refusal(answer, "tokenHost", "a token with no host"));
+    CHECK(expect_refusal(answer, "token_host", "a token with no host"));
+    CHECK(marketplace_last_status == SPISOR_MALFORMED);
     CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
+    cJSON_Delete(answer.tree);
+    answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", NULL, "github.com", NULL);
+    CHECK(expect_refusal(answer, "token_host", "a host with no token"));
+    CHECK(marketplace_last_status == SPISOR_MALFORMED);
     cJSON_Delete(answer.tree);
     expect_no_request(server);
 }

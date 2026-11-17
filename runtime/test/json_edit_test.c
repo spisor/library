@@ -35,7 +35,7 @@ static void expect_remove(const char *text, const char *key_json, int created_fr
                           const char *label) {
     cJSON *key = parsed(key_json);
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
-    int done = json_edit_remove(text, strlen(text), key, created_from, &edited);
+    int done = json_edit_remove(text, strlen(text), key, created_from, &edited) == JSON_EDIT_DONE;
     check_text(done ? edited.bytes : "(refused)", expected, label);
     free(edited.bytes);
     cJSON_Delete(key);
@@ -49,7 +49,7 @@ static void expect_round_trip(const char *text, const char *key_json, const char
     json_edit_text set = {NULL, 0, {0, 0, 0}};
     json_edit_text removed = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_set(text, strlen(text), key, value, &set) == JSON_EDIT_DONE);
-    CHECK(set.bytes != NULL && json_edit_remove(set.bytes, set.length, key, created_from, &removed));
+    CHECK(set.bytes != NULL && json_edit_remove(set.bytes, set.length, key, created_from, &removed) == JSON_EDIT_DONE);
     check_text(removed.bytes, text, label);
     free(set.bytes);
     free(removed.bytes);
@@ -171,7 +171,7 @@ static void a_value_is_found_and_replaced_by_its_bytes(void) {
     json_span value = {0, 0};
     CHECK(json_edit_find_value(text, strlen(text), key, &value) && value.start == 12 && value.end == 16);
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
-    CHECK(json_edit_replace_value(text, strlen(text), key, "\"x\"", 3, &edited));
+    CHECK(json_edit_replace_value(text, strlen(text), key, "\"x\"", 3, &edited) == JSON_EDIT_DONE);
     check_text(edited.bytes, "{\"a\": {\"b\": \"x\"}}", "replace by bytes");
     free(edited.bytes);
     cJSON_Delete(key);

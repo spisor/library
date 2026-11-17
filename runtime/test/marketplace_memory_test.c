@@ -138,6 +138,13 @@ static void refuses_an_argument_without_what_it_needs(void) {
     cJSON_AddStringToObject(argument, "state", scratch);
     expect_refusal_released(marketplace_call(MARKETPLACE_REMEMBER, argument), "name", "no name");
     CHECK(marketplace_last_status == SPISOR_MALFORMED);
+    argument = cJSON_CreateObject();
+    cJSON_AddStringToObject(argument, "state", "relative/state");
+    cJSON_AddStringToObject(argument, "marketplace", "spisor");
+    cJSON_AddStringToObject(argument, "name", "runtime");
+    cJSON_AddStringToObject(argument, "id", "github:1");
+    expect_refusal_released(marketplace_call(MARKETPLACE_REMEMBER, argument), "state", "a relative state");
+    CHECK(marketplace_last_status == SPISOR_MALFORMED);
 }
 
 static int is_settled(const catalog_answer answer) {

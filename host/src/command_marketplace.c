@@ -5,6 +5,7 @@
 
 #include "catalog_time.h"
 #include "cache_refusal.h"
+#include "definition_support.h"
 #include "host_commands.h"
 #include "host_context.h"
 #include "host_options.h"
@@ -67,7 +68,7 @@ static cJSON *build_argument(const build_inputs *inputs, const char *built) {
                    adds_copy_of(argument, "list", inputs->list) &&
                    adds_copy_of(argument, "previous", inputs->previous);
     if (!is_built) {
-        cJSON_Delete(argument);
+        runtime_delete_secret_json(argument);
         argument = NULL;
     }
     return argument;
@@ -79,8 +80,10 @@ static cJSON *built_copy(const build_inputs *inputs, cJSON **skipped, cJSON **re
         *refusal = runtime_refusal("the current time could not be read", "check the machine's clock");
         return NULL;
     }
-    cJSON *answer =
-        runtime_call_operation(runtime_marketplace_build_operation, build_argument(inputs, built), refusal);
+    cJSON *argument = build_argument(inputs, built);
+    *refusal = NULL;
+    cJSON *answer = argument == NULL ? NULL : runtime_marketplace_build_operation(argument, refusal);
+    runtime_delete_secret_json(argument);
     cJSON *copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
     *skipped = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "skipped");
     cJSON_Delete(answer);

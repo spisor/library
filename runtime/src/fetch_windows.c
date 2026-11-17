@@ -1,3 +1,4 @@
+#include "definition_support.h"
 #include "fetch_transport.h"
 
 #include <stdlib.h>
@@ -181,6 +182,7 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
         snprintf(headers + length, size - (size_t)length, "Authorization: %s\r\n", authorization);
     }
     wchar_t *wide = to_wide(headers);
+    runtime_overwrite(headers, size);
     free(headers);
     return wide;
 }
@@ -193,6 +195,7 @@ static int send_request(const runtime_fetch_request *request, HINTERNET handle, 
     int sent = WinHttpSendRequest(handle, headers[0] == 0 ? WINHTTP_NO_ADDITIONAL_HEADERS : headers,
                                   headers[0] == 0 ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
                WinHttpReceiveResponse(handle, NULL);
+    runtime_overwrite(headers, wcslen(headers) * sizeof *headers);
     free(headers);
     return sent;
 }

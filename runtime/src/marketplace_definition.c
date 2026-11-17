@@ -11,6 +11,8 @@
 #include "marketplace_name_lookup.h"
 #include "marketplace_read.h"
 #include "marketplace_sources.h"
+#include "paths.h"
+#include "spisor/path.h"
 
 #define BUILD_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_build_argument, api_base)
 #define SOURCES_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_sources_argument, settings)
@@ -65,8 +67,7 @@ static spisor_status serve(runtime_json_operation operation, cJSON *call, answer
                            size_t shape, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered = operation(call, &operation_refusal);
-    runtime_overwrite_json_texts(call);
-    cJSON_Delete(call);
+    runtime_delete_secret_json(call);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, shape);
@@ -80,7 +81,7 @@ static spisor_status call_built(spisor_status status, cJSON **call, spisor_refus
     if (status == SPISOR_OK) {
         return SPISOR_OK;
     }
-    cJSON_Delete(*call);
+    runtime_delete_secret_json(*call);
     *call = NULL;
     return status == SPISOR_MALFORMED ? refuse_missing(refusal, what) : status;
 }
@@ -120,6 +121,10 @@ static spisor_status build(void *context, const runtime_marketplace_build_argume
     }
     if (argument->list == NULL || argument->built == NULL) {
         return refuse_missing(refusal, "list or built");
+    }
+    if ((argument->token == NULL) != (argument->token_host == NULL)) {
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries one of token and token_host alone",
+                                 "send token_host, such as github.com, with the token, or neither");
     }
     call = cJSON_CreateObject();
     if (call != NULL && add_text(call, "built", argument->built) && add_text(call, "token", argument->token) &&
@@ -215,6 +220,11 @@ static spisor_status read_source(void *context, const runtime_marketplace_read_a
         snprintf(detail, sizeof detail, "the source %s has no url", argument->id);
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
                                  "ask the plugin a provider source names for its copy; this library reads urls only");
+    }
+    if (argument->text == NULL &&
+        (argument->destination == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, argument->destination))) {
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries neither text nor an absolute destination",
+                                 "send text, the body already fetched, or destination, an absolute path to download into");
     }
     call = cJSON_CreateObject();
     source = call == NULL ? NULL : cJSON_AddObjectToObject(call, "source");
@@ -317,6 +327,9 @@ static spisor_status remember(void *context, const runtime_marketplace_remember_
     }
     if (argument->state == NULL || argument->name == NULL || argument->id == NULL) {
         return refuse_missing(refusal, "state, name or id");
+    }
+    if (!spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, argument->state)) {
+        return runtime_refuse_place(refusal, "state");
     }
     call = cJSON_CreateObject();
     if (call == NULL || !add_text(call, "state", argument->state) ||

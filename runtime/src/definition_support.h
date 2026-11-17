@@ -83,6 +83,9 @@ void runtime_overwrite_texts(const spisor_value *value);
 /** Overwrites every string and key of a JSON tree, as its owner does before deleting a tree that may hold a secret. */
 void runtime_overwrite_json_texts(const cJSON *json);
 
+/** Overwrites every string and key of a JSON tree that may hold a secret, then deletes it. */
+void runtime_delete_secret_json(cJSON *json);
+
 /** Frees a block runtime_pack_texts or another definition helper allocated. */
 void runtime_release_storage(void *storage);
 
