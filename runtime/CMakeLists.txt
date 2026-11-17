@@ -20,7 +20,7 @@ target_compile_definitions(runtime_objects_config_test_hooks PRIVATE SPISOR_CONF
 spisor_strict_warnings(runtime_objects_config_test_hooks)
 set_target_properties(runtime_objects_config_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
-set(runtime_change_reversal_sources src/change_reversal.c src/changes_definition.c src/commands.c src/commands_definition.c)
+set(runtime_change_reversal_sources src/change_reversal.c src/changes_definition.c)
 add_library(runtime_change_reversal OBJECT ${runtime_change_reversal_sources})
 target_link_libraries(runtime_change_reversal PUBLIC runtime_objects)
 target_include_directories(runtime_change_reversal PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -33,6 +33,12 @@ target_include_directories(runtime_change_reversal_test_hooks PRIVATE ${PROJECT_
 target_compile_definitions(runtime_change_reversal_test_hooks PRIVATE SPISOR_CHANGES_TEST_HOOKS)
 spisor_strict_warnings(runtime_change_reversal_test_hooks)
 set_target_properties(runtime_change_reversal_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
+
+add_library(runtime_commands OBJECT src/commands.c src/commands_definition.c)
+target_link_libraries(runtime_commands PUBLIC runtime_change_reversal)
+target_include_directories(runtime_commands PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_commands PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_commands)
 
 if(WIN32)
     set(runtime_path_entry_source src/path_entry_windows.c)
@@ -219,7 +225,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # Whether a definition is exported follows membership here, never which object library holds its source.
-set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_path_entry runtime_secret_store
+set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_commands runtime_path_entry runtime_secret_store
     runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
     runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
     runtime_hosts runtime_ui runtime_install)

@@ -47,23 +47,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     runtime_test(secret_linux_test $<TARGET_OBJECTS:runtime_secret_store_test_hooks>)
 endif()
 
-runtime_test(changes_test $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(changes_test $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>)
 if(NOT WIN32)
     target_link_libraries(changes_test PRIVATE Threads::Threads)
 endif()
 
-runtime_test(path_entry_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(path_entry_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>)
 
 add_executable(command_probe command_probe.c)
 spisor_strict_warnings(command_probe)
 
-runtime_test(commands_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(commands_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>)
 target_compile_definitions(commands_test PRIVATE RUNTIME_PROBE_PATH="$<TARGET_FILE:command_probe>")
 add_dependencies(commands_test command_probe)
 if(WIN32)
     add_dependencies(commands_test runtime_launcher)
 endif()
-runtime_test(lifecycle_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_secret_store>)
+runtime_test(lifecycle_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>)
 if(WIN32)
     add_dependencies(lifecycle_test runtime_launcher)
 endif()
@@ -189,7 +189,7 @@ target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runt
 spisor_strict_warnings(background_fixture)
 
 set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_processes_test_objects}
-    $<TARGET_OBJECTS:runtime_change_reversal>)
+    $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands>)
 foreach(name hosts_test loader_test entry_template_test detect_test lists_test)
     runtime_test(${name} ${runtime_hosts_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
