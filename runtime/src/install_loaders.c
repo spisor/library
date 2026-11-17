@@ -99,8 +99,11 @@ static cJSON *home_call(const runtime_install_run *run, const cJSON *application
     return call;
 }
 
-/** The provenance already recorded for the application, so a later install never rewrites how it was first found. */
-static cJSON *stored_provenance(const runtime_install_run *run, const char *id) {
+/**
+ * The provenance already recorded for the application, so a later install never rewrites how it was first found;
+ * NULL for none, or with *out_of_memory set when memory ran out reading it.
+ */
+static cJSON *stored_provenance(const runtime_install_run *run, const char *id, int *out_of_memory) {
     cJSON *call = runtime_install_places_call(run->places);
     if (call != NULL && cJSON_AddStringToObject(call, "id", id) == NULL) {
         cJSON_Delete(call);
@@ -108,6 +111,7 @@ static cJSON *stored_provenance(const runtime_install_run *run, const char *id) 
     }
     cJSON *refusal = NULL;
     cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, &refusal);
+    *out_of_memory = answer == NULL && refusal == NULL;
     cJSON_Delete(refusal);
     cJSON *application = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(answer, "registration"), "application");
     cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(application, "provenance");
@@ -136,16 +140,15 @@ static cJSON *origin_provenance(const runtime_install_run *run, const catalog_lo
  */
 static cJSON *application_of(const runtime_install_run *run, const catalog_loader *loader, cJSON **refusal) {
     cJSON *application = cJSON_Duplicate(loader->application, 1);
-    cJSON *provenance = stored_provenance(run, loader->id);
+    int failed = 0;
+    cJSON *provenance = stored_provenance(run, loader->id, &failed);
     const cJSON *origin = origin_of(run->report, runtime_install_text(loader->application, "id"));
-    if (provenance == NULL && origin != NULL) {
+    if (!failed && provenance == NULL && origin != NULL) {
         provenance = origin_provenance(run, loader, origin, refusal);
-        if (provenance == NULL && *refusal != NULL) {
-            cJSON_Delete(application);
-            return NULL;
-        }
+        failed = provenance == NULL;
     }
-    if (application == NULL || (provenance != NULL && !cJSON_AddItemToObject(application, "provenance", provenance))) {
+    if (failed || application == NULL ||
+        (provenance != NULL && !cJSON_AddItemToObject(application, "provenance", provenance))) {
         cJSON_Delete(provenance);
         cJSON_Delete(application);
         return NULL;
