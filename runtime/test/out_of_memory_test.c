@@ -5,11 +5,15 @@
 
 #ifdef _WIN32
 #include <process.h>
+#include <windows.h>
+#include "path_entry_windows_hooks.h"
 #define CURRENT_PROCESS_ID _getpid()
+#define SHIM_SUFFIX ".exe"
 #else
 #include <sys/stat.h>
 #include <unistd.h>
 #define CURRENT_PROCESS_ID getpid()
+#define SHIM_SUFFIX ""
 #endif
 
 #include "allocation.h"
@@ -49,6 +53,9 @@
 #define START "2026-10-27T19:00:00.000Z"
 #define CHANGED_FILE "{\"a\":{\"b\":1},\"logging\":true}"
 #define TIME "2026-10-27T19:34:53.123Z"
+#define MARKETPLACE_COPY                                                                                           \
+    "{\"format\":1,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":["                                              \
+    "{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\",\"lastKnown\":\"spisor/runtime\"}]}"
 
 typedef struct scratch {
     char base[1024];
@@ -58,6 +65,7 @@ typedef struct scratch {
     char config_directory[1200];
     char programs[1200];
     char state[1200];
+    char command_state[1200];
 } scratch;
 
 static scratch place;
@@ -74,6 +82,35 @@ static void write_text(const char *directory, const char *name, const char *text
     CHECK(spisor_make_directories(directory) == 1);
     snprintf(path, sizeof path, "%s/%s", directory, name);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+}
+
+#ifdef _WIN32
+static void forget_test_path_value(void) {
+    HKEY key = NULL;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        RegDeleteValueW(key, RUNTIME_PATH_ENTRY_TEST_VALUE);
+        RegCloseKey(key);
+    }
+}
+#else
+static void forget_test_path_value(void) {
+}
+#endif
+
+static void shim_path(const char *name, char *path, size_t capacity) {
+    snprintf(path, capacity, "%s/bin/%s" SHIM_SUFFIX, place.command_state, name);
+}
+
+static void write_shims_of(const char *name) {
+    char shims[1300];
+    char file_name[100];
+    snprintf(shims, sizeof shims, "%s/bin", place.command_state);
+    snprintf(file_name, sizeof file_name, "%s" SHIM_SUFFIX, name);
+    write_text(shims, file_name, "shim");
+#ifdef _WIN32
+    snprintf(file_name, sizeof file_name, "%s.shim", name);
+    write_text(shims, file_name, "shim");
+#endif
 }
 
 /** The files every operation reads, written afresh before each attempt so no attempt sees another's writes. */
@@ -101,6 +138,14 @@ static void fresh_files(void) {
              place.home, place.home, place.config_directory);
     write_text(hosts, "settler.json", record);
     snprintf(record, sizeof record,
+             "{\"id\":\"reverser\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[],\"changes\":["
+             "{\"sequence\":1,\"kind\":\"json-key\",\"state\":\"applied\",\"reversed\":false,"
+             "\"file\":\"%s/p.json\",\"key\":[\"logging\"],\"value\":true,\"previous\":false}],\"nextSequence\":2}",
+             place.home, place.home, place.config_directory);
+    write_text(hosts, "reverser.json", record);
+    snprintf(record, sizeof record,
              "{\"id\":\"commander\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\","
              "\"application\":{\"id\":\"claude\"},\"provenance\":"
              "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
@@ -108,6 +153,17 @@ static void fresh_files(void) {
              "\"requested\":\"cc\",\"owner\":\"host\",\"state\":\"active\"}],\"changes\":[]}",
              place.home, place.home);
     write_text(hosts, "commander.json", record);
+    snprintf(hosts, sizeof hosts, "%s/hosts", place.command_state);
+    write_text(hosts, "commander.json", record);
+    snprintf(record, sizeof record,
+             "{\"id\":\"namer\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
+             "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[{\"name\":\"zz\","
+             "\"requested\":\"zz\",\"owner\":\"host\",\"state\":\"active\"}],\"changes\":[]}",
+             place.home, place.home);
+    write_text(hosts, "namer.json", record);
+    write_shims_of("zz");
+    forget_test_path_value();
 #ifndef _WIN32
     char probe[1300];
     snprintf(probe, sizeof probe, "%s/probe", place.programs);
@@ -267,6 +323,13 @@ static spisor_status fetch_a_file(void) {
     return status;
 }
 
+/** Whether a get left nothing at its destination. */
+static int fetched_nothing(void) {
+    char destination[1400];
+    snprintf(destination, sizeof destination, "%s/fetched/settings.json", place.base);
+    return !spisor_file_exists(destination);
+}
+
 static spisor_status find_on_path(void) {
     const runtime_detect_definition *detect = runtime_detect_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
@@ -345,6 +408,24 @@ static spisor_status apply_a_change(void) {
 /** An apply that first settles a pending record against the file, reading it to find whether its key is there. */
 static spisor_status apply_after_settling(void) {
     return apply_a_change_as("settler");
+}
+
+/** Reverses reverser's one json-key change, whose record carries the previous value but not its bytes. */
+static spisor_status reverse_a_change(void) {
+    const runtime_changes_definition *changes = runtime_changes_definition_of();
+    runtime_changes_reverse_argument argument = SPISOR_INIT(runtime_changes_reverse_argument);
+    runtime_changes_reverse_answer answer = SPISOR_INIT(runtime_changes_reverse_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.state = place.state;
+    argument.host = "reverser";
+    status = changes->reverse(changes->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && answer.reversed != 1) {
+        status = SPISOR_REFUSED;
+    }
+    changes->release_reverse_answer(changes->context, &answer);
+    changes->release_refusal(changes->context, &refusal);
+    return status;
 }
 
 /** Whether host's registration holds at most `count` changes. */
@@ -457,6 +538,21 @@ static spisor_status remember_a_name(void) {
     return status;
 }
 
+static spisor_status read_a_copy(void) {
+    const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
+    runtime_marketplace_read_argument argument = SPISOR_INIT(runtime_marketplace_read_argument);
+    runtime_marketplace_copy_answer answer = SPISOR_INIT(runtime_marketplace_copy_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.id = "spisor";
+    argument.url = "https://example.com/marketplace.json";
+    argument.text = MARKETPLACE_COPY;
+    status = marketplace->read(marketplace->context, &argument, &answer, &refusal);
+    marketplace->release_copy_answer(marketplace->context, &answer);
+    marketplace->release_refusal(marketplace->context, &refusal);
+    return status;
+}
+
 /** Whether a remember left no record of names behind. */
 static int remembered_nothing(void) {
     char record[1300];
@@ -476,6 +572,113 @@ static int appended_nothing(void) {
     char logs[1200];
     snprintf(logs, sizeof logs, "%s/logs", place.home);
     return !spisor_file_exists(logs);
+}
+
+static void command_argument_of(runtime_command_argument *argument, const char *name, char *target, size_t capacity,
+                                const runtime_variable *environment) {
+    snprintf(target, capacity, "%s/probe", place.programs);
+    argument->state = place.command_state;
+    argument->host = "namer";
+    argument->home = place.home;
+    argument->name = name;
+    argument->target = target;
+    argument->environment = environment;
+    argument->environment_count = 2;
+}
+
+/** Asks for cc as namer while commander holds an active cc, so the answer falls back to cc2. */
+static spisor_status request_a_command(void) {
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
+    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char target[1300];
+    spisor_status status;
+    command_argument_of(&argument, "cc", target, sizeof target, environment);
+    status = commands->request(commands->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.name == NULL || strcmp(answer.name, "cc2") != 0)) {
+        status = SPISOR_REFUSED;
+    }
+    commands->release_answer(commands->context, &answer);
+    commands->release_refusal(commands->context, &refusal);
+    return status;
+}
+
+static spisor_status add_a_command(void) {
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
+    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char target[1300];
+    spisor_status status;
+    command_argument_of(&argument, "dd", target, sizeof target, environment);
+    status = commands->add(commands->context, &argument, &answer, &refusal);
+    commands->release_answer(commands->context, &answer);
+    commands->release_refusal(commands->context, &refusal);
+    return status;
+}
+
+static spisor_status rename_zz_to(const char *to) {
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_commands_rename_argument argument = SPISOR_INIT(runtime_commands_rename_argument);
+    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.state = place.command_state;
+    argument.host = "namer";
+    argument.from = "zz";
+    argument.to = to;
+    argument.environment = environment;
+    argument.environment_count = 2;
+    status = commands->rename(commands->context, &argument, &answer, &refusal);
+    commands->release_answer(commands->context, &answer);
+    commands->release_refusal(commands->context, &refusal);
+    return status;
+}
+
+static spisor_status rename_a_command(void) {
+    return rename_zz_to("dd");
+}
+
+/** Answers OK when the rename is refused, as it must be while commander holds an active cc. */
+static spisor_status rename_onto_a_held_name(void) {
+    spisor_status status = rename_zz_to("cc");
+    return status == SPISOR_REFUSED ? SPISOR_OK : status == SPISOR_OK ? SPISOR_REFUSED : status;
+}
+
+static int shim_exists(const char *name) {
+    char path[1400];
+    shim_path(name, path, sizeof path);
+    return spisor_file_exists(path);
+}
+
+/** Whether namer's registration holds exactly its one active command, zz. */
+static int namer_holds_only_zz(void) {
+    cJSON *registration = NULL;
+    CHECK(runtime_registry_load(place.command_state, "namer", &registration) == RUNTIME_REGISTRY_OK);
+    const cJSON *commands = cJSON_GetObjectItemCaseSensitive(registration, "commands");
+    const cJSON *command = cJSON_GetArrayItem(commands, 0);
+    const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "name"));
+    const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "state"));
+    int only = cJSON_GetArraySize(commands) == 1 && name != NULL && strcmp(name, "zz") == 0 && state != NULL &&
+               strcmp(state, "active") == 0;
+    cJSON_Delete(registration);
+    return only;
+}
+
+static int requested_nothing(void) {
+    return namer_holds_only_zz() && !shim_exists("cc") && !shim_exists("cc2");
+}
+
+static int added_nothing(void) {
+    return namer_holds_only_zz() && !shim_exists("dd");
+}
+
+static int renamed_nothing(void) {
+    return namer_holds_only_zz() && shim_exists("zz") && !shim_exists("cc") && !shim_exists("dd");
 }
 
 typedef int (*untouched)(void);
@@ -533,6 +736,7 @@ int main(void) {
     snprintf(place.config_directory, sizeof place.config_directory, "%s/config", place.home);
     snprintf(place.programs, sizeof place.programs, "%s/programs", place.base);
     snprintf(place.state, sizeof place.state, "%s/state", place.base);
+    snprintf(place.command_state, sizeof place.command_state, "%s/command-state", place.base);
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
@@ -551,16 +755,22 @@ int main(void) {
     every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
     every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
     every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
-    every_failure_answers_out_of_memory("fetch's get", fetch_a_file, NULL);
+    every_failure_answers_out_of_memory("fetch's get", fetch_a_file, fetched_nothing);
     every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
     every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
     every_failure_answers_out_of_memory("changes' apply", apply_a_change, changed_nothing);
     every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
                                         settled_and_changed_nothing);
+    every_failure_answers_out_of_memory("changes' reverse", reverse_a_change, NULL);
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
+    every_failure_answers_out_of_memory("commands' request", request_a_command, requested_nothing);
+    every_failure_answers_out_of_memory("commands' add", add_a_command, added_nothing);
+    every_failure_answers_out_of_memory("commands' rename", rename_a_command, renamed_nothing);
+    every_failure_answers_out_of_memory("commands' rename onto a held name", rename_onto_a_held_name, renamed_nothing);
     every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
     every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
     every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
+    every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
@@ -568,6 +778,7 @@ int main(void) {
     spisor_value_release(&second_file);
     spisor_value_release(&plugin_rows);
     spisor_value_release(&catalog_items);
+    forget_test_path_value();
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");
 }

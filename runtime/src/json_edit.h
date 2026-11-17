@@ -36,13 +36,15 @@ json_edit_outcome json_edit_set(const char *text, size_t length, const cJSON *ke
 /**
  * text without the member at key, then without each object from key's depth created_from on that is
  * left empty, whether or not the member was still there, every other byte kept. A removed only member
- * takes the blanks before it, and the braces are emptied when nothing but blanks would stay.
+ * takes the blanks before it, and the braces are emptied when nothing but blanks would stay. MALFORMED when the
+ * text is malformed.
  */
-int json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from, json_edit_text *edited);
+json_edit_outcome json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from,
+                                   json_edit_text *edited);
 
-/** text with the bytes of the value at key replaced by value_text; 0 when the member is absent. */
-int json_edit_replace_value(const char *text, size_t length, const cJSON *key, const char *value_text,
-                            size_t value_length, json_edit_text *edited);
+/** text with the bytes of the value at key replaced by value_text; MALFORMED when the member is absent. */
+json_edit_outcome json_edit_replace_value(const char *text, size_t length, const cJSON *key, const char *value_text,
+                                          size_t value_length, json_edit_text *edited);
 
 /** The span of the value at key; 0 when it is absent or the text is malformed. */
 int json_edit_find_value(const char *text, size_t length, const cJSON *key, json_span *value);

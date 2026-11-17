@@ -52,6 +52,11 @@ static runtime_change_step fail(runtime_change_note *note, const char *reason, c
     return RUNTIME_CHANGE_FAILED;
 }
 
+static runtime_change_step run_out_of_memory(runtime_change_note *note, const char *directory) {
+    write_note(note, "memory ran out", directory);
+    return RUNTIME_CHANGE_OUT_OF_MEMORY;
+}
+
 static wchar_t *to_wide(const char *text) {
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
     wchar_t *wide = length > 0 ? malloc((size_t)length * sizeof(wchar_t)) : NULL;
@@ -312,7 +317,7 @@ runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON 
         step = RUNTIME_CHANGE_UNNEEDED;
     } else {
         *record = new_record(change, holder, &value, present);
-        step = *record != NULL ? RUNTIME_CHANGE_DONE : fail(note, "memory ran out", directory);
+        step = *record != NULL ? RUNTIME_CHANGE_DONE : run_out_of_memory(note, directory);
     }
     close_environment(key, &value);
     return step;

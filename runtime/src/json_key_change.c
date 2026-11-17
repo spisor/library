@@ -449,14 +449,14 @@ static int undo_splice(const cJSON *record, const file_bytes *current, json_edit
 }
 
 /** The previous value's own bytes as the file held them, or failing that the value written in place. */
-static int restore_previous(const cJSON *record, const file_bytes *current, json_edit_text *edited) {
+static json_edit_outcome restore_previous(const cJSON *record, const file_bytes *current, json_edit_text *edited) {
     const char *replaced = text_of(record, "replaced");
     if (replaced != NULL) {
         return json_edit_replace_value(current->bytes, current->length, key_of(record), replaced, strlen(replaced),
                                        edited);
     }
     return json_edit_set(current->bytes, current->length, key_of(record),
-                         cJSON_GetObjectItemCaseSensitive(record, "previous"), edited) == JSON_EDIT_DONE;
+                         cJSON_GetObjectItemCaseSensitive(record, "previous"), edited);
 }
 
 static int created_from(const cJSON *record) {
@@ -478,10 +478,17 @@ static runtime_change_reversal write_undone(const cJSON *record, const file_byte
 /** Undoes only the change's own member in the bytes as they now are: the value put back, or the member removed. */
 static runtime_change_reversal undo_member(const cJSON *record, const file_bytes *current, runtime_change_note *note) {
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
-    int done = cJSON_GetObjectItemCaseSensitive(record, "previous") != NULL
-                   ? restore_previous(record, current, &edited)
-                   : json_edit_remove(current->bytes, current->length, key_of(record), created_from(record), &edited);
-    runtime_change_reversal reversal = done ? write_undone(record, current, &edited, note) : not_reversed(record, note);
+    json_edit_outcome outcome =
+        cJSON_GetObjectItemCaseSensitive(record, "previous") != NULL
+            ? restore_previous(record, current, &edited)
+            : json_edit_remove(current->bytes, current->length, key_of(record), created_from(record), &edited);
+    runtime_change_reversal reversal;
+    if (outcome == JSON_EDIT_OUT_OF_MEMORY) {
+        write_note(note, "memory ran out");
+        reversal = RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY;
+    } else {
+        reversal = outcome == JSON_EDIT_DONE ? write_undone(record, current, &edited, note) : not_reversed(record, note);
+    }
     free(edited.bytes);
     return reversal;
 }

@@ -279,17 +279,21 @@ static spisor_status refuse_unasked_304(const char *url, spisor_refusal *refusal
     return refuse(refusal, message, "send the etag or last_modified the last stored answer carried, or neither");
 }
 
-static spisor_status answer_stored(const char *sha256, uint64_t bytes, const runtime_fetch_answer *received,
-                                   runtime_fetch_get_answer *answer) {
+static void release_get_answer_storage(runtime_fetch_get_answer *answer) {
+    runtime_release_stored_answer(answer, RUNTIME_SHAPE_THROUGH(runtime_fetch_get_answer, storage));
+}
+
+/** Copies the stored answer's texts, taken before the file is moved into place so running out writes nothing. */
+static int take_stored_answer(const char *sha256, uint64_t bytes, const runtime_fetch_answer *received,
+                              runtime_fetch_get_answer *answer) {
     if (!runtime_storage_copy(&answer->storage, sha256, &answer->sha256) ||
         !runtime_storage_copy(&answer->storage, received->etag, &answer->etag) ||
         !runtime_storage_copy(&answer->storage, received->last_modified, &answer->last_modified)) {
-        runtime_release_stored_answer(answer, RUNTIME_SHAPE_THROUGH(runtime_fetch_get_answer, storage));
-        return SPISOR_OUT_OF_MEMORY;
+        release_get_answer_storage(answer);
+        return 0;
     }
-    answer->outcome = RUNTIME_FETCH_GET_STORED;
     answer->bytes = bytes;
-    return SPISOR_OK;
+    return 1;
 }
 
 static spisor_status refuse_hash(const fetch_order *order, const char *actual, spisor_refusal *refusal) {
@@ -325,12 +329,18 @@ static spisor_status settle_received(const fetch_order *order, fetch_files *file
         discard_partial(files);
         return refuse_hash(order, actual, refusal);
     }
+    if (!take_stored_answer(actual, sink->bytes, received, answer)) {
+        discard_partial(files);
+        return SPISOR_OUT_OF_MEMORY;
+    }
     if (!move_into_place(files, order->destination, actual)) {
         discard_partial(files);
+        release_get_answer_storage(answer);
         return refuse_unwritable(order->destination, refusal);
     }
     discard_partial(files);
-    return answer_stored(actual, sink->bytes, received, answer);
+    answer->outcome = RUNTIME_FETCH_GET_STORED;
+    return SPISOR_OK;
 }
 
 static void transfer(const fetch_order *order, url_scheme scheme, runtime_fetch_sink *sink,

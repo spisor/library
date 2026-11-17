@@ -51,6 +51,10 @@ typedef struct command_call {
     char reason[1400];
     const char *fix;
     spisor_status failure;
+    double sequence_before;
+    int sequence_known;
+    int changed;
+    int committed;
 } command_call;
 
 typedef int (*command_step)(command_call *call);
@@ -510,40 +514,48 @@ static int is_registration_file(const runtime_directory_entry *entry) {
            strcmp(entry->name + length - REGISTRATION_SUFFIX_LENGTH, REGISTRATION_SUFFIX) == 0;
 }
 
-static int registration_holds(const char *state, const char *file_name, const char *name) {
+typedef enum name_hold { NAME_FREE, NAME_HELD, NAME_HOLD_OUT_OF_MEMORY } name_hold;
+
+static name_hold registration_holds(const char *state, const char *file_name, const char *name) {
     char id[512];
     size_t id_length = strlen(file_name) - REGISTRATION_SUFFIX_LENGTH;
     if (id_length >= sizeof id) {
-        return 0;
+        return NAME_FREE;
     }
     memcpy(id, file_name, id_length);
     id[id_length] = '\0';
     cJSON *registration = NULL;
-    int holds = runtime_registry_load(state, id, &registration) == RUNTIME_REGISTRY_OK &&
-                active_named(registration, name) != NULL;
+    runtime_registry_answer loaded = runtime_registry_load(state, id, &registration);
+    name_hold hold = loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY ? NAME_HOLD_OUT_OF_MEMORY
+                     : loaded == RUNTIME_REGISTRY_OK && active_named(registration, name) != NULL ? NAME_HELD
+                                                                                                  : NAME_FREE;
     cJSON_Delete(registration);
-    return holds;
+    return hold;
 }
 
 /**
  * @implNote A registration that cannot be read is passed over here; its shims still stand in
  * state/bin, which is_name_held checks on the disk, so its names stay held.
  */
-static int is_held_by_a_command(const char *state, const char *name) {
+static name_hold is_held_by_a_command(const char *state, const char *name) {
     char *directory = joined(state, "hosts");
     runtime_directory_listing listing;
-    if (directory == NULL || !runtime_list_directory(directory, &listing)) {
+    if (directory == NULL) {
+        return NAME_HOLD_OUT_OF_MEMORY;
+    }
+    if (!runtime_list_directory(directory, &listing)) {
         free(directory);
-        return 0;
+        return NAME_FREE;
     }
     free(directory);
-    int held = 0;
-    for (size_t index = 0; index < listing.count && !held; index++) {
-        held = is_registration_file(&listing.entries[index]) &&
-               registration_holds(state, listing.entries[index].name, name);
+    name_hold hold = NAME_FREE;
+    for (size_t index = 0; index < listing.count && hold == NAME_FREE; index++) {
+        if (is_registration_file(&listing.entries[index])) {
+            hold = registration_holds(state, listing.entries[index].name, name);
+        }
     }
     runtime_free_directory_listing(&listing);
-    return held;
+    return hold;
 }
 
 static int is_shim_taken(const command_call *call, const char *name) {
@@ -556,10 +568,25 @@ static int is_shim_taken(const command_call *call, const char *name) {
     return taken;
 }
 
-static int is_name_held(const command_call *call, const char *name) {
-    return is_held_by_a_command(call->state, name) || is_shim_taken(call, name) ||
-           runtime_commands_held_on_path(cJSON_GetObjectItemCaseSensitive(call->argument, "environment"),
-                                         call->shims, name);
+static name_hold is_name_held(const command_call *call, const char *name) {
+    name_hold hold = is_held_by_a_command(call->state, name);
+    if (hold != NAME_FREE) {
+        return hold;
+    }
+    return is_shim_taken(call, name) ||
+                   runtime_commands_held_on_path(cJSON_GetObjectItemCaseSensitive(call->argument, "environment"),
+                                                 call->shims, name)
+               ? NAME_HELD
+               : NAME_FREE;
+}
+
+/** Refuses with fix and reason when name is held; answers 1 when it is free. */
+static int name_is_free(command_call *call, const char *name, const char *fix, const char *reason) {
+    name_hold hold = is_name_held(call, name);
+    if (hold == NAME_HOLD_OUT_OF_MEMORY) {
+        return out_of_memory(call);
+    }
+    return hold == NAME_FREE || refuse(call, fix, reason, name);
 }
 
 /** The requested name when it is free, else the first free of <name>2, <name>3 and so on. */
@@ -570,7 +597,11 @@ static int assign_name(command_call *call, const char *requested) {
         } else {
             snprintf(call->name, sizeof call->name, "%s%d", requested, attempt);
         }
-        if (!is_name_held(call, call->name)) {
+        name_hold hold = is_name_held(call, call->name);
+        if (hold == NAME_HOLD_OUT_OF_MEMORY) {
+            return out_of_memory(call);
+        }
+        if (hold == NAME_FREE) {
             return 1;
         }
     }
@@ -584,6 +615,7 @@ static int apply_change(command_call *call, cJSON *change) {
     }
     runtime_changes_outcome outcome = runtime_changes_apply_held(call->state, call->host, change);
     cJSON_Delete(change);
+    call->changed |= outcome.answer == RUNTIME_CHANGES_RECORDED;
     if (outcome.answer == RUNTIME_CHANGES_RECORDED || outcome.answer == RUNTIME_CHANGES_UNNEEDED) {
         return 1;
     }
@@ -627,6 +659,18 @@ static int make_shim(command_call *call, const char *name) {
            apply_change(call, path_entry_change(call, home)) && write_shim(call, name);
 }
 
+static double newest_sequence(const cJSON *registration) {
+    double newest = 0;
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
+        if (cJSON_IsNumber(sequence) && sequence->valuedouble > newest) {
+            newest = sequence->valuedouble;
+        }
+    }
+    return newest;
+}
+
 static int load_registration(command_call *call) {
     cJSON_Delete(call->registration);
     call->registration = NULL;
@@ -640,6 +684,10 @@ static int load_registration(command_call *call) {
     if (loaded != RUNTIME_REGISTRY_OK) {
         return refuse(call, "repair or restore it", "the registration of host %s could not be read", call->host);
     }
+    if (!call->sequence_known) {
+        call->sequence_before = newest_sequence(call->registration);
+        call->sequence_known = 1;
+    }
     if (!cJSON_IsArray(commands_of(call->registration)) &&
         cJSON_AddArrayToObject(call->registration, "commands") == NULL) {
         return out_of_memory(call);
@@ -649,6 +697,7 @@ static int load_registration(command_call *call) {
 
 static int store_registration(command_call *call) {
     if (runtime_registry_store(call->state, call->registration) == RUNTIME_REGISTRY_OK) {
+        call->committed = 1;
         return 1;
     }
     return refuse(call, "make the registry writable and try again", "the registration of host %s could not be written",
@@ -806,8 +855,8 @@ static int add_step(command_call *call) {
         return 0;
     }
     const char *name = text_of(call->argument, "name");
-    if (is_name_held(call, name)) {
-        return refuse(call, "choose another name, or rename what holds it", "the command name %s is held", name);
+    if (!name_is_free(call, name, "choose another name, or rename what holds it", "the command name %s is held")) {
+        return 0;
     }
     snprintf(call->name, sizeof call->name, "%s", name);
     return give_new_command(call, NULL, "user");
@@ -854,7 +903,7 @@ static int move_command(command_call *call, const char *from, const char *to) {
         return refuse_unknown_command(call, from);
     }
     return moved && set_or_run_out(call, entry, "name", to) && set_or_run_out(call, entry, "owner", "user") &&
-           remove_shim(call, from) && store_registration(call);
+           store_registration(call) && remove_shim(call, from) && store_registration(call);
 }
 
 static int rename_step(command_call *call) {
@@ -872,8 +921,8 @@ static int rename_step(command_call *call) {
     if (strcmp(from, to) == 0) {
         return 1;
     }
-    if (is_name_held(call, to)) {
-        return refuse(call, "choose another name, or rename what holds it", "the command name %s is held", to);
+    if (!name_is_free(call, to, "choose another name, or rename what holds it", "the command name %s is held")) {
+        return 0;
     }
     return move_command(call, from, to);
 }
@@ -905,6 +954,56 @@ static spisor_status refuse_failed(const command_call *call, spisor_refusal *ref
     return runtime_refuse_as(refusal, failure, call->reason, call->fix == NULL ? "try again" : call->fix);
 }
 
+static cJSON *newest_change_of_call(const command_call *call, cJSON *registration) {
+    cJSON *newest = NULL;
+    cJSON *entry;
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
+        int own = cJSON_IsNumber(sequence) && sequence->valuedouble > call->sequence_before &&
+                  !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
+        if (own && (newest == NULL || sequence->valuedouble >
+                                          cJSON_GetObjectItemCaseSensitive(newest, "sequence")->valuedouble)) {
+            newest = entry;
+        }
+    }
+    return newest;
+}
+
+/** Reverses, newest first, one change this call recorded; 0 when none is left or it cannot be reversed. */
+static int reverse_newest_own_change(const command_call *call) {
+    cJSON *registration = NULL;
+    if (runtime_registry_load(call->state, call->host, &registration) != RUNTIME_REGISTRY_OK) {
+        cJSON_Delete(registration);
+        return 0;
+    }
+    int failed = 0;
+    int settled = runtime_changes_settle_pending(registration, &failed);
+    cJSON *entry = failed ? NULL : newest_change_of_call(call, registration);
+    runtime_change_note note = {""};
+    int reversed = entry != NULL &&
+                   runtime_changes_reverse_entry(call->state, call->host, registration, entry, &note, &failed) !=
+                       RUNTIME_CHANGE_NOT_REVERSED &&
+                   !failed && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
+    int stored = (reversed || settled) && runtime_registry_store(call->state, registration) == RUNTIME_REGISTRY_OK;
+    cJSON_Delete(registration);
+    return reversed && stored;
+}
+
+/**
+ * Takes back what a failed call changed before its registration named the result, so a refused or out-of-memory
+ * call leaves the disk as it found it.
+ *
+ * @implNote Best effort: a reversal that itself fails stops here, and its record stays unreversed for the host's
+ * removal to take back.
+ */
+static void reverse_own_changes(const command_call *call) {
+    if (!call->changed || !call->sequence_known || call->committed) {
+        return;
+    }
+    while (reverse_newest_own_change(call)) {
+    }
+}
+
 static spisor_status run_locked(command_call *call, command_step step, spisor_refusal *refusal) {
     spisor_lock *guard = runtime_hosts_lock(call->state);
     if (guard == NULL) {
@@ -912,6 +1011,9 @@ static spisor_status run_locked(command_call *call, command_step step, spisor_re
                                  "check that the hosts directory under the state place can be written");
     }
     int done = step(call);
+    if (!done) {
+        reverse_own_changes(call);
+    }
     spisor_unlock(guard);
     return done ? SPISOR_OK : refuse_failed(call, refusal);
 }

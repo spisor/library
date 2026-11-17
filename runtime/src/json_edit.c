@@ -270,7 +270,7 @@ static json_span removed_span(const char *text, json_span object, const member_p
     return removed;
 }
 
-typedef enum removal { REMOVAL_FAILED, REMOVAL_DONE, REMOVAL_KEPT, REMOVAL_ABSENT } removal;
+typedef enum removal { REMOVAL_MALFORMED, REMOVAL_OUT_OF_MEMORY, REMOVAL_DONE, REMOVAL_KEPT, REMOVAL_ABSENT } removal;
 
 /** Removes the member at depth, an object one only when it is empty; KEPT when it is not, ABSENT when missing. */
 static removal remove_one(const json_edit_text *current, const cJSON *key, int depth, int only_if_empty,
@@ -278,14 +278,14 @@ static removal remove_one(const json_edit_text *current, const cJSON *key, int d
     json_span root;
     json_span object;
     if (!document_root(current->bytes, current->length, &root)) {
-        return REMOVAL_FAILED;
+        return REMOVAL_MALFORMED;
     }
     place_answer reached = locate_object(current->bytes, root, key, depth, &object);
     member_place place = {0};
     place_answer answer =
         reached == PLACE_FOUND ? locate_member(current->bytes, object, segment_at(key, depth), &place) : reached;
     if (answer == PLACE_MALFORMED) {
-        return REMOVAL_FAILED;
+        return REMOVAL_MALFORMED;
     }
     if (answer == PLACE_ABSENT) {
         return REMOVAL_ABSENT;
@@ -296,20 +296,21 @@ static removal remove_one(const json_edit_text *current, const cJSON *key, int d
     }
     return splice(current->bytes, current->length, removed_span(current->bytes, object, &place), "", 0, edited)
                ? REMOVAL_DONE
-               : REMOVAL_FAILED;
+               : REMOVAL_OUT_OF_MEMORY;
 }
 
-int json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from, json_edit_text *edited) {
+json_edit_outcome json_edit_remove(const char *text, size_t length, const cJSON *key, int created_from,
+                                   json_edit_text *edited) {
     json_edit_text current = {NULL, 0, {0, 0, 0}};
     if (!copy_of(text, length, &current)) {
-        return 0;
+        return JSON_EDIT_OUT_OF_MEMORY;
     }
     for (int depth = last_depth(key); depth >= created_from && depth >= 0; depth--) {
         json_edit_text next = {NULL, 0, {0, 0, 0}};
         removal removed = remove_one(&current, key, depth, depth != last_depth(key), &next);
-        if (removed == REMOVAL_FAILED) {
+        if (removed == REMOVAL_MALFORMED || removed == REMOVAL_OUT_OF_MEMORY) {
             free(current.bytes);
-            return 0;
+            return removed == REMOVAL_MALFORMED ? JSON_EDIT_MALFORMED : JSON_EDIT_OUT_OF_MEMORY;
         }
         if (removed == REMOVAL_KEPT) {
             break;
@@ -321,7 +322,7 @@ int json_edit_remove(const char *text, size_t length, const cJSON *key, int crea
         current = next;
     }
     *edited = current;
-    return 1;
+    return JSON_EDIT_DONE;
 }
 
 int json_edit_find_value(const char *text, size_t length, const cJSON *key, json_span *value) {
@@ -337,11 +338,13 @@ int json_edit_find_value(const char *text, size_t length, const cJSON *key, json
     return 1;
 }
 
-int json_edit_replace_value(const char *text, size_t length, const cJSON *key, const char *value_text,
-                            size_t value_length, json_edit_text *edited) {
+json_edit_outcome json_edit_replace_value(const char *text, size_t length, const cJSON *key, const char *value_text,
+                                          size_t value_length, json_edit_text *edited) {
     json_span value;
-    return json_edit_find_value(text, length, key, &value) &&
-           splice(text, length, value, value_text, value_length, edited);
+    if (!json_edit_find_value(text, length, key, &value)) {
+        return JSON_EDIT_MALFORMED;
+    }
+    return splice(text, length, value, value_text, value_length, edited) ? JSON_EDIT_DONE : JSON_EDIT_OUT_OF_MEMORY;
 }
 
 int json_edit_is_empty_object(const char *text, size_t length) {

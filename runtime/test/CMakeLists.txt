@@ -258,7 +258,10 @@ set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $
 runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
-set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 600)
+set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 1800 RESOURCE_LOCK user_path_value)
+if(WIN32)
+    add_dependencies(out_of_memory_test runtime_launcher)
+endif()
 
 runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_link_libraries(json_hooks_race_test PRIVATE ${runtime_fetch_libraries})
