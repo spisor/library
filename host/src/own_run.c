@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include "wide_path.h"
+#include "json_service.h"
 #endif
 
 static int is_separator(char character) {
@@ -118,7 +119,7 @@ static cJSON *run_call(const own_run *run, const char *version) {
 
 static char *recorded(const own_run *run, const char *version) {
     cJSON *refusal = NULL;
-    cJSON *answer = host_call(runtime_processes_record_run, run_call(run, version), &refusal);
+    cJSON *answer = runtime_call_operation(runtime_processes_record_run_operation, run_call(run, version), &refusal);
     const char *record = host_text(answer, "record");
     char *copy = record == NULL ? NULL : malloc(strlen(record) + 1);
     if (copy != NULL) {
@@ -159,7 +160,7 @@ void host_finish_own_run(own_run *run) {
         call = NULL;
     }
     cJSON *refusal = NULL;
-    cJSON_Delete(host_call(runtime_processes_remove_runs, call, &refusal));
+    cJSON_Delete(runtime_call_operation(runtime_processes_remove_runs_operation, call, &refusal));
     cJSON_Delete(refusal);
     free(run->record);
     run->record = NULL;

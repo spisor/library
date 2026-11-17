@@ -24,9 +24,9 @@ typedef struct runtime_processes_request {
 /** Answers the result, or NULL with *refusal set to {message, fix}; NULL with no refusal is out of memory. */
 typedef cJSON *(*runtime_processes_operation)(const runtime_processes_request *request, cJSON **refusal);
 
-/** Parses one json call, checks state and hostId, and serves it through operation. */
-int32_t runtime_processes_serve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len,
-                                runtime_processes_host host, runtime_processes_operation operation);
+/** Checks the argument's state and hostId and serves it through operation, answering as operation answers. */
+cJSON *runtime_processes_serve(const cJSON *argument, runtime_processes_host host,
+                               runtime_processes_operation operation, cJSON **refusal);
 
 /** The refusal of an argument that carries no usable member, saying what shape it takes. */
 cJSON *runtime_processes_argument_refusal(const char *member, const char *shape);
@@ -42,6 +42,13 @@ double runtime_processes_positive_member(const cJSON *argument, const char *name
 
 /** The holders as a JSON array; NULL when memory runs out. */
 cJSON *runtime_processes_holders_array(const double *holders, size_t count);
+
+/**
+ * Writes the holders record at path and answers `answer`, built before the write so memory running out never follows
+ * it; NULL with *refusal set when the file cannot be written, and NULL out of memory, `answer` deleted either way.
+ */
+cJSON *runtime_processes_write_answered(const char *path, const runtime_holders_record *record, cJSON *answer,
+                                        cJSON **refusal);
 
 /** The refusal of a holders file or lock that could not be used under state. */
 cJSON *runtime_processes_state_refusal(const char *what, const char *path);

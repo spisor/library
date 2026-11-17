@@ -69,6 +69,9 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
         return NULL;
     }
     cJSON *answer = record_answer(path);
+    if (answer == NULL) {
+        runtime_remove_run_record(request->state, request->host_id, path);
+    }
     free(path);
     return answer;
 }
@@ -97,12 +100,15 @@ cJSON *runtime_processes_remove_runs_for(const runtime_processes_request *reques
         *refusal = out_of_memory ? NULL : not_a_record(given);
         return NULL;
     }
-    int removed = record == NULL ? runtime_remove_run_records(request->state, request->host_id)
-                                 : runtime_remove_run_record(request->state, request->host_id, record->valuestring);
-    if (!removed) {
+    cJSON *answer = cJSON_CreateObject();
+    int removed = answer != NULL &&
+                  (record == NULL ? runtime_remove_run_records(request->state, request->host_id)
+                                  : runtime_remove_run_record(request->state, request->host_id, record->valuestring));
+    if (answer != NULL && !removed) {
         const char *parts[3] = {"the run records of ", request->host_id, " could not be removed"};
         *refusal = runtime_cache_refusal(parts, 3, WRITABLE_STATE_FIX);
+        cJSON_Delete(answer);
         return NULL;
     }
-    return cJSON_CreateObject();
+    return answer;
 }

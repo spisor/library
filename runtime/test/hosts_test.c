@@ -577,7 +577,7 @@ static void deletes_the_holders_file_of_the_host(void) {
     CHECK(holders != NULL && other != NULL && folder != NULL && spisor_make_directories(folder) == 1);
     runtime_holders_record record = runtime_no_holders();
     CHECK(runtime_add_holder(&record, 1.0));
-    CHECK(runtime_write_holders(holders, &record) && runtime_write_holders(other, &record));
+    CHECK(runtime_write_holders(holders, &record) == SPISOR_OK && runtime_write_holders(other, &record) == SPISOR_OK);
     runtime_free_holders(&record);
     catalog_answer answer = remove_host(&place, HOST_ID);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);

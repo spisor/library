@@ -16,6 +16,7 @@
 #include "holders_lock.h"
 #include "process_alive.h"
 #include "processes.h"
+#include "processes_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 
@@ -171,13 +172,13 @@ static catalog_answer hold(double holder, cJSON *start) {
     cJSON *argument = host_argument(HOST);
     cJSON_AddNumberToObject(argument, "holder", holder);
     cJSON_AddItemToObject(argument, "start", start);
-    return call_catalog(runtime_processes_hold, argument);
+    return processes_call(PROCESSES_HOLD, argument);
 }
 
 static catalog_answer release(double holder) {
     cJSON *argument = host_argument(HOST);
     cJSON_AddNumberToObject(argument, "holder", holder);
-    return call_catalog(runtime_processes_release, argument);
+    return processes_call(PROCESSES_RELEASE, argument);
 }
 
 static catalog_answer prune(double self, double now) {
@@ -185,7 +186,7 @@ static catalog_answer prune(double self, double now) {
     cJSON_AddNumberToObject(argument, "self", self);
     cJSON_AddNumberToObject(argument, "now", now);
     cJSON_AddNumberToObject(argument, "checkMilliseconds", INTERVAL);
-    return call_catalog(runtime_processes_prune, argument);
+    return processes_call(PROCESSES_PRUNE, argument);
 }
 
 static double answered_pid(const catalog_answer *answer) {
@@ -228,7 +229,7 @@ static void it_reads_back_what_was_written_and_reads_as_empty_when_there_is_none
     runtime_holders_record record = {41, 1000, 200, holders, 2};
     char *path = joined(state, "processes/" HOST ".json");
     CHECK(spisor_make_directories(state) == 1);
-    CHECK(runtime_write_holders(path, &record) == 1);
+    CHECK(runtime_write_holders(path, &record) == SPISOR_OK);
     free(path);
     runtime_holders_record back = read_record();
     CHECK(back.pid == 41 && back.alive_at == 1000 && back.check_milliseconds == 200 && holders_are(&back, holders, 2));
@@ -244,12 +245,12 @@ static void it_removes_the_file_once_it_records_neither_a_process_nor_a_holder(v
     char *path = joined(state, "processes/" HOST ".json");
     runtime_holders_record only_pid = runtime_no_holders();
     only_pid.pid = 41;
-    CHECK(runtime_write_holders(path, &only_pid) == 1);
+    CHECK(runtime_write_holders(path, &only_pid) == SPISOR_OK);
     char *text = read_text("processes/" HOST ".json");
     check_text(text, "{\"pid\":41,\"aliveAt\":null,\"checkMilliseconds\":null,\"holders\":[]}\n", "pid only");
     free(text);
     runtime_holders_record none = runtime_no_holders();
-    CHECK(runtime_write_holders(path, &none) == 1);
+    CHECK(runtime_write_holders(path, &none) == SPISOR_OK);
     CHECK(!holders_file_present());
     free(path);
     finish_case();
@@ -280,10 +281,10 @@ static void it_refuses_a_host_id_that_would_place_the_file_outside_the_processes
     cJSON *argument = host_argument("../escape");
     cJSON_AddNumberToObject(argument, "holder", self_pid());
     cJSON_AddItemToObject(argument, "start", sleep_start());
-    catalog_answer answer = call_catalog(runtime_processes_hold, argument);
+    catalog_answer answer = processes_call(PROCESSES_HOLD, argument);
     CHECK(answer.status != 0);
     const char *message = text_at(answer.tree, "message");
-    CHECK(message != NULL && strstr(message, "would record its processes outside") != NULL);
+    CHECK(message != NULL && strstr(message, "plain file name") != NULL);
     check_text(text_at(answer.tree, "fix"), "give the host an id that is a plain file name", "escape fix");
     cJSON_Delete(answer.tree);
     finish_case();
@@ -1044,7 +1045,7 @@ static catalog_answer record_run(const char *host_id, const char *run, const cha
     if (record != NULL) {
         cJSON_AddStringToObject(argument, "record", record);
     }
-    return call_catalog(runtime_processes_record_run, argument);
+    return processes_call(PROCESSES_RECORD_RUN, argument);
 }
 
 static char *recorded_path(const char *host_id, const char *run) {
@@ -1062,7 +1063,7 @@ static char *recorded_path(const char *host_id, const char *run) {
 static cJSON *live_runs(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", state);
-    catalog_answer answer = call_catalog(runtime_processes_live_runs, argument);
+    catalog_answer answer = processes_call(PROCESSES_LIVE_RUNS, argument);
     CHECK(answer.status == 0);
     return answer.tree;
 }
@@ -1155,7 +1156,7 @@ static catalog_answer remove_runs(const char *record) {
     if (record != NULL) {
         cJSON_AddStringToObject(argument, "record", record);
     }
-    return call_catalog(runtime_processes_remove_runs, argument);
+    return processes_call(PROCESSES_REMOVE_RUNS, argument);
 }
 
 static void it_removes_one_run_record_or_every_run_of_the_host(void) {

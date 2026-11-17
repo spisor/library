@@ -3,6 +3,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "processes.h"
+#include "json_service.h"
 
 static cJSON *holder_call(const host_context *context, const char *host_id, double holder) {
     cJSON *call = cJSON_CreateObject();
@@ -17,7 +18,8 @@ static cJSON *holder_call(const host_context *context, const char *host_id, doub
 
 static void release_one(const host_context *context, const char *host_id, double holder) {
     cJSON *refusal = NULL;
-    cJSON_Delete(host_call(runtime_processes_release, holder_call(context, host_id, holder), &refusal));
+    cJSON_Delete(runtime_call_operation(runtime_processes_release_operation, holder_call(context, host_id, holder),
+                                        &refusal));
     cJSON_Delete(refusal);
 }
 
@@ -58,7 +60,7 @@ int host_hold_all(const host_context *context, const cJSON *starts, double holde
             cJSON_Delete(call);
             call = NULL;
         }
-        cJSON *held = host_call(runtime_processes_hold, call, refusal);
+        cJSON *held = runtime_call_operation(runtime_processes_hold_operation, call, refusal);
         if (held == NULL) {
             release_before(context, starts, start, holder);
             return 0;

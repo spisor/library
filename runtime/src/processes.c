@@ -11,6 +11,7 @@
 #include "file_times.h"
 #include "holders_lock.h"
 #include "host_references.h"
+#include "json_service.h"
 #include "paths.h"
 #include "processes_request.h"
 #include "run_records.h"
@@ -123,24 +124,27 @@ cJSON *runtime_processes_with_holders(const runtime_processes_request *request, 
     return answer;
 }
 
-static cJSON *write_refusal(const char *path) {
-    return runtime_processes_state_refusal("the holders file", path);
+cJSON *runtime_processes_write_answered(const char *path, const runtime_holders_record *record, cJSON *answer,
+                                        cJSON **refusal) {
+    spisor_status written = answer == NULL ? SPISOR_OUT_OF_MEMORY : runtime_write_holders(path, record);
+    if (written != SPISOR_OK) {
+        *refusal = written == SPISOR_REFUSED ? runtime_processes_state_refusal("the holders file", path) : NULL;
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
 }
 
 static cJSON *release_step(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
                            cJSON **refusal) {
     runtime_keep_live_holders(record, runtime_processes_pid_member(request->argument, "holder"));
-    if (!runtime_write_holders(path, record)) {
-        *refusal = write_refusal(path);
-        return NULL;
-    }
     cJSON *answer = cJSON_CreateObject();
     if (answer != NULL &&
         !runtime_catalog_attach(answer, "holders", runtime_processes_holders_array(record->holders, record->count))) {
         cJSON_Delete(answer);
-        return NULL;
+        answer = NULL;
     }
-    return answer;
+    return runtime_processes_write_answered(path, record, answer, refusal);
 }
 
 static cJSON *release_for(const runtime_processes_request *request, cJSON **refusal) {
@@ -176,11 +180,7 @@ static cJSON *prune_step(const runtime_processes_request *request, const char *p
         record->check_milliseconds = runtime_processes_positive_member(request->argument, "checkMilliseconds",
                                                                        RUNTIME_DEFAULT_CHECK_MILLISECONDS);
     }
-    if (!runtime_write_holders(path, record)) {
-        *refusal = write_refusal(path);
-        return NULL;
-    }
-    return exit_answer(unheld);
+    return runtime_processes_write_answered(path, record, exit_answer(unheld), refusal);
 }
 
 static cJSON *prune_for(const runtime_processes_request *request, cJSON **refusal) {
@@ -196,18 +196,7 @@ static cJSON *prune_for(const runtime_processes_request *request, cJSON **refusa
     return runtime_processes_with_holders(request, prune_step, refusal);
 }
 
-static int32_t answer_or_refuse(cJSON *answer, cJSON *refusal, uint8_t **out, size_t *out_len) {
-    if (answer != NULL || refusal == NULL) {
-        return runtime_catalog_answer(answer, out, out_len);
-    }
-    int32_t status = spisor_fail(cJSON_GetObjectItemCaseSensitive(refusal, "message")->valuestring,
-                                 cJSON_GetObjectItemCaseSensitive(refusal, "fix")->valuestring, out, out_len);
-    cJSON_Delete(refusal);
-    return status;
-}
-
-static int32_t refuse_host_id(const runtime_processes_request *request, runtime_processes_host host, uint8_t **out,
-                              size_t *out_len) {
+static cJSON *refuse_host_id(const runtime_processes_request *request, runtime_processes_host host, cJSON **refusal) {
     const char *runs[3] = {request->state, "bundles", "runs"};
     char *folder = host == RUNTIME_PROCESSES_RUNS_HOST ? runtime_cache_joined(runs, 3)
                                                        : runtime_processes_folder(request->state);
@@ -215,68 +204,47 @@ static int32_t refuse_host_id(const runtime_processes_request *request, runtime_
     const char *recording = host == RUNTIME_PROCESSES_RUNS_HOST ? "runs" : "processes";
     free(folder == NULL ? NULL : runtime_host_file_path(folder, request->host_id, recording, &problem));
     free(folder);
-    if (problem == NULL) {
-        return runtime_catalog_answer(NULL, out, out_len);
-    }
-    int32_t status = spisor_fail(problem, RUNTIME_PLAIN_HOST_ID_FIX, out, out_len);
+    *refusal = problem == NULL ? NULL : runtime_refusal(problem, RUNTIME_PLAIN_HOST_ID_FIX);
     free(problem);
-    return status;
+    return NULL;
 }
 
-static int32_t serve_request(const cJSON *argument, runtime_processes_host host, runtime_processes_operation operation,
-                             uint8_t **out, size_t *out_len) {
+cJSON *runtime_processes_serve(const cJSON *argument, runtime_processes_host host,
+                               runtime_processes_operation operation, cJSON **refusal) {
     runtime_processes_request request = {argument, runtime_catalog_text_member(argument, "state"),
                                          runtime_catalog_text_member(argument, "hostId")};
     if (request.state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, request.state)) {
-        return runtime_catalog_refuse_argument("state", "the host's absolute state folder", out, out_len);
+        return runtime_catalog_refuse_member("state", "the host's absolute state folder", refusal);
     }
     if (host != RUNTIME_PROCESSES_NO_HOST && request.host_id == NULL) {
-        return runtime_catalog_refuse_argument("hostId", "the id of the host the call is for", out, out_len);
+        return runtime_catalog_refuse_member("hostId", "the id of the host the call is for", refusal);
     }
     if (host != RUNTIME_PROCESSES_NO_HOST && !runtime_is_plain_host_id(request.host_id)) {
-        return refuse_host_id(&request, host, out, out_len);
+        return refuse_host_id(&request, host, refusal);
     }
-    cJSON *refusal = NULL;
-    cJSON *answer = operation(&request, &refusal);
-    return answer_or_refuse(answer, refusal, out, out_len);
+    return operation(&request, refusal);
 }
 
-int32_t runtime_processes_serve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len,
-                                runtime_processes_host host, runtime_processes_operation operation) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    status = serve_request(call.argument, host, operation, out, out_len);
-    spisor_discard_call(&call);
-    return status;
+cJSON *runtime_processes_hold_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, runtime_processes_hold_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_hold(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_BACKGROUND_HOST,
-                                   runtime_processes_hold_for);
+cJSON *runtime_processes_release_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, release_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_release(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_BACKGROUND_HOST, release_for);
+cJSON *runtime_processes_prune_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, prune_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_prune(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_BACKGROUND_HOST, prune_for);
+cJSON *runtime_processes_record_run_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_RUNS_HOST, runtime_processes_record_run_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_record_run(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_RUNS_HOST,
-                                   runtime_processes_record_run_for);
+cJSON *runtime_processes_live_runs_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_NO_HOST, runtime_processes_live_runs_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_live_runs(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_NO_HOST,
-                                   runtime_processes_live_runs_for);
-}
-
-RUNTIME_EXPORT int32_t runtime_processes_remove_runs(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_RUNS_HOST,
-                                   runtime_processes_remove_runs_for);
+cJSON *runtime_processes_remove_runs_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_RUNS_HOST, runtime_processes_remove_runs_for, refusal);
 }

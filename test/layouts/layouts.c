@@ -15,6 +15,7 @@
 #include "runtime/marketplace.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/processes.h"
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
@@ -1348,6 +1349,117 @@ static void print_boot_layouts(void) {
     SIZE(runtime_boot_definition);
 }
 
+static void print_processes_layouts(void) {
+    FIELD(runtime_processes_hold_argument, size);
+    FIELD(runtime_processes_hold_argument, state);
+    FIELD(runtime_processes_hold_argument, host_id);
+    FIELD(runtime_processes_hold_argument, holder);
+    FIELD(runtime_processes_hold_argument, executable);
+    FIELD(runtime_processes_hold_argument, arguments);
+    FIELD(runtime_processes_hold_argument, argument_count);
+    FIELD(runtime_processes_hold_argument, environment);
+    FIELD(runtime_processes_hold_argument, environment_count);
+    FIELD(runtime_processes_hold_argument, directory);
+    SIZE(runtime_processes_hold_argument);
+    FIELD(runtime_processes_hold_answer, size);
+    FIELD(runtime_processes_hold_answer, pid);
+    FIELD(runtime_processes_hold_answer, started);
+    FIELD(runtime_processes_hold_answer, outside_job);
+    FIELD(runtime_processes_hold_answer, storage);
+    SIZE(runtime_processes_hold_answer);
+    FIELD(runtime_processes_holder_argument, size);
+    FIELD(runtime_processes_holder_argument, state);
+    FIELD(runtime_processes_holder_argument, host_id);
+    FIELD(runtime_processes_holder_argument, holder);
+    SIZE(runtime_processes_holder_argument);
+    FIELD(runtime_processes_release_answer, size);
+    FIELD(runtime_processes_release_answer, holders);
+    FIELD(runtime_processes_release_answer, holder_count);
+    FIELD(runtime_processes_release_answer, storage);
+    SIZE(runtime_processes_release_answer);
+    FIELD(runtime_processes_prune_argument, size);
+    FIELD(runtime_processes_prune_argument, state);
+    FIELD(runtime_processes_prune_argument, host_id);
+    FIELD(runtime_processes_prune_argument, self);
+    FIELD(runtime_processes_prune_argument, now);
+    FIELD(runtime_processes_prune_argument, check_milliseconds);
+    SIZE(runtime_processes_prune_argument);
+    FIELD(runtime_processes_prune_answer, size);
+    FIELD(runtime_processes_prune_answer, exit);
+    FIELD(runtime_processes_prune_answer, storage);
+    SIZE(runtime_processes_prune_answer);
+    FIELD(runtime_processes_ready_argument, size);
+    FIELD(runtime_processes_ready_argument, state);
+    FIELD(runtime_processes_ready_argument, host_id);
+    FIELD(runtime_processes_ready_argument, pid);
+    FIELD(runtime_processes_ready_argument, environment);
+    FIELD(runtime_processes_ready_argument, environment_count);
+    FIELD(runtime_processes_ready_argument, refused);
+    FIELD(runtime_processes_ready_argument, fix);
+    SIZE(runtime_processes_ready_argument);
+    FIELD(runtime_processes_await_argument, size);
+    FIELD(runtime_processes_await_argument, state);
+    FIELD(runtime_processes_await_argument, host_id);
+    FIELD(runtime_processes_await_argument, pid);
+    FIELD(runtime_processes_await_argument, timeout_milliseconds);
+    SIZE(runtime_processes_await_argument);
+    FIELD(runtime_processes_await_answer, size);
+    FIELD(runtime_processes_await_answer, environment);
+    FIELD(runtime_processes_await_answer, environment_count);
+    FIELD(runtime_processes_await_answer, storage);
+    SIZE(runtime_processes_await_answer);
+    FIELD(runtime_processes_version, id);
+    FIELD(runtime_processes_version, version);
+    SIZE(runtime_processes_version);
+    FIELD(runtime_processes_record_argument, size);
+    FIELD(runtime_processes_record_argument, state);
+    FIELD(runtime_processes_record_argument, host_id);
+    FIELD(runtime_processes_record_argument, run);
+    FIELD(runtime_processes_record_argument, run_count);
+    FIELD(runtime_processes_record_argument, check_milliseconds);
+    FIELD(runtime_processes_record_argument, record);
+    SIZE(runtime_processes_record_argument);
+    FIELD(runtime_processes_record_answer, size);
+    FIELD(runtime_processes_record_answer, record);
+    FIELD(runtime_processes_record_answer, storage);
+    SIZE(runtime_processes_record_answer);
+    FIELD(runtime_processes_live_argument, size);
+    FIELD(runtime_processes_live_argument, state);
+    FIELD(runtime_processes_live_argument, now);
+    SIZE(runtime_processes_live_argument);
+    FIELD(runtime_processes_run, versions);
+    FIELD(runtime_processes_run, version_count);
+    SIZE(runtime_processes_run);
+    FIELD(runtime_processes_live_answer, size);
+    FIELD(runtime_processes_live_answer, runs);
+    FIELD(runtime_processes_live_answer, run_count);
+    FIELD(runtime_processes_live_answer, storage);
+    SIZE(runtime_processes_live_answer);
+    FIELD(runtime_processes_remove_argument, size);
+    FIELD(runtime_processes_remove_argument, state);
+    FIELD(runtime_processes_remove_argument, host_id);
+    FIELD(runtime_processes_remove_argument, record);
+    SIZE(runtime_processes_remove_argument);
+    FIELD(runtime_processes_definition, size);
+    FIELD(runtime_processes_definition, context);
+    FIELD(runtime_processes_definition, hold);
+    FIELD(runtime_processes_definition, release);
+    FIELD(runtime_processes_definition, prune);
+    FIELD(runtime_processes_definition, ready);
+    FIELD(runtime_processes_definition, await_ready);
+    FIELD(runtime_processes_definition, record_run);
+    FIELD(runtime_processes_definition, live_runs);
+    FIELD(runtime_processes_definition, remove_runs);
+    FIELD(runtime_processes_definition, release_hold_answer);
+    FIELD(runtime_processes_definition, release_release_answer);
+    FIELD(runtime_processes_definition, release_prune_answer);
+    FIELD(runtime_processes_definition, release_await_answer);
+    FIELD(runtime_processes_definition, release_record_answer);
+    FIELD(runtime_processes_definition, release_live_answer);
+    FIELD(runtime_processes_definition, release_refusal);
+    SIZE(runtime_processes_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -1371,5 +1483,6 @@ int main(void) {
     print_install_layouts();
     print_updates_layouts();
     print_boot_layouts();
+    print_processes_layouts();
     return 0;
 }

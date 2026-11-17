@@ -11,6 +11,7 @@
 #include "processes.h"
 #include "service_call.h"
 #include "spisor/file.h"
+#include "json_service.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -40,10 +41,10 @@ static int prune_says_exit(const char *state, const char *host_id, double interv
     cJSON_AddStringToObject(argument, "hostId", host_id);
     cJSON_AddNumberToObject(argument, "self", (double)current_process_id());
     cJSON_AddNumberToObject(argument, "checkMilliseconds", interval);
-    int32_t status = 0;
-    cJSON *answer = runtime_call_service(runtime_processes_prune, argument, &status);
-    cJSON_Delete(argument);
-    int exit_now = status != 0 || !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer, "exit"));
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_call_operation(runtime_processes_prune_operation, argument, &refusal);
+    cJSON_Delete(refusal);
+    int exit_now = answer == NULL || !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer, "exit"));
     cJSON_Delete(answer);
     return exit_now;
 }
@@ -84,14 +85,14 @@ static int run_hold(int count, char **values) {
     cJSON_AddStringToObject(argument, "hostId", values[3]);
     cJSON_AddNumberToObject(argument, "holder", (double)current_process_id());
     cJSON_AddItemToObject(argument, "start", start_of(count, values));
-    int32_t status = 0;
-    cJSON *answer = runtime_call_service(runtime_processes_hold, argument, &status);
-    cJSON_Delete(argument);
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_call_operation(runtime_processes_hold_operation, argument, &refusal);
+    cJSON_Delete(refusal);
     char *text = answer == NULL ? NULL : cJSON_PrintUnformatted(answer);
     cJSON_Delete(answer);
     int written = text != NULL && spisor_replace_file(values[4], (const uint8_t *)text, strlen(text));
     cJSON_free(text);
-    if (status != 0 || !written) {
+    if (!written) {
         return 4;
     }
     pause_milliseconds((long)LONGEST_LIFE_MILLISECONDS);

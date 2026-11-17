@@ -36,7 +36,7 @@ static void remove_run_record(const host_context *context, const char *id, const
         call = NULL;
     }
     cJSON *refusal = NULL;
-    cJSON_Delete(host_call(runtime_processes_remove_runs, call, &refusal));
+    cJSON_Delete(runtime_call_operation(runtime_processes_remove_runs_operation, call, &refusal));
     cJSON_Delete(refusal);
 }
 

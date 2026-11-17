@@ -17,6 +17,7 @@
 #include <windows.h>
 
 #include "host_arguments.h"
+#include "json_service.h"
 #else
 #include <time.h>
 #endif
@@ -74,7 +75,8 @@ static void publish_ready(const host_context *context, const char *host_id) {
         return;
     }
     cJSON *refusal = NULL;
-    cJSON_Delete(host_call(runtime_processes_ready, ready_argument(context, host_id, mode), &refusal));
+    cJSON_Delete(runtime_call_operation(runtime_processes_ready_operation, ready_argument(context, host_id, mode),
+                                         &refusal));
     cJSON_Delete(refusal);
 }
 
@@ -85,7 +87,7 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
     cJSON_AddNumberToObject(argument, "self", host_process_id());
     cJSON_AddNumberToObject(argument, "checkMilliseconds", interval);
     cJSON *refusal = NULL;
-    cJSON *answer = host_call(runtime_processes_prune, argument, &refusal);
+    cJSON *answer = runtime_call_operation(runtime_processes_prune_operation, argument, &refusal);
     int exit_now = answer == NULL || !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer, "exit"));
     cJSON_Delete(answer);
     cJSON_Delete(refusal);
