@@ -58,9 +58,10 @@ int runtime_changes_reverse_newer_held(const char *state, const char *host, doub
 
 /**
  * runtime_changes_reverse_newer_held for exactly the count sequences listed, so a change host recorded between them
- * through another call stays recorded.
+ * through another call stays recorded; *out_of_memory set when memory ran out before all were reversed.
  */
-int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count);
+int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count,
+                                        int *out_of_memory);
 
 /**
  * Reverses entry, one unreversed record in registration of host, held when another unreversed

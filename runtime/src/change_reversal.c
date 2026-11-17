@@ -218,23 +218,27 @@ static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal
     return cJSON_AddNumberToObject(result, "reversed", session->reversed) != NULL || out_of_memory(refusal);
 }
 
-static int reverse_held(reversal_session *session) {
+/** Reverses as the session selects, under the caller's lock; *out_of_memory set when memory stopped it. */
+static int reverse_held(reversal_session *session, int *out_of_memory) {
     cJSON *refusal = NULL;
     session->drifted = cJSON_CreateArray();
     int reversed = session->drifted != NULL && reverse_steps(session, &refusal);
+    *out_of_memory = !reversed && refusal == NULL;
     cJSON_Delete(refusal);
     cJSON_Delete(session->drifted);
     return reversed;
 }
 
 int runtime_changes_reverse_newer_held(const char *state, const char *host, double above) {
+    int out_of_memory = 0;
     reversal_session session = {state, host, NULL, NULL, above, NULL, 0, 1, 0, 0};
-    return reverse_held(&session);
+    return reverse_held(&session, &out_of_memory);
 }
 
-int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count) {
+int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count,
+                                        int *out_of_memory) {
     reversal_session session = {state, host, NULL, NULL, 0, sequences, count, 1, 0, 0};
-    return reverse_held(&session);
+    return reverse_held(&session, out_of_memory);
 }
 
 static cJSON *reverse_host(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
