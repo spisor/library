@@ -677,21 +677,42 @@ static int names_file(const char *path, const char *name) {
            (path[path_length - name_length - 1] == '/' || path[path_length - name_length - 1] == '\\');
 }
 
-/** Whether namer holds an unreversed record of `kind` that names `file`, or any of that kind when `file` is NULL. */
-static int recorded(const cJSON *registration, const char *kind, const char *file) {
+/**
+ * Whether namer holds an unreversed record of `kind` whose `member` names `file`, or any of that kind when `file` is
+ * NULL.
+ */
+static int recorded(const cJSON *registration, const char *kind, const char *member, const char *file) {
     const cJSON *entry;
     cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
         const char *entry_kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind"));
         if (entry_kind != NULL && strcmp(entry_kind, kind) == 0 &&
             !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed")) &&
-            (file == NULL || names_file(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "path")), file))) {
+            (file == NULL || names_file(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, member)), file))) {
             return 1;
         }
     }
     return 0;
 }
 
-/** Whether every shim file and the PATH entry on disk is one namer's registration records unreversed. */
+/** Whether each profile under the home that names the shim folder has an unreversed profile-line record. */
+static int every_profile_line_is_recorded(const cJSON *registration) {
+    static const char *const profiles[] = {".profile", ".bashrc", ".zshrc", ".zprofile"};
+    char shims[1300];
+    int all = 1;
+    snprintf(shims, sizeof shims, "%s/bin", place.command_state);
+    for (size_t index = 0; all && index < sizeof profiles / sizeof profiles[0]; index++) {
+        char profile[1400];
+        size_t length = 0;
+        snprintf(profile, sizeof profile, "%s/%s", place.home, profiles[index]);
+        uint8_t *bytes = spisor_read_file(profile, &length);
+        int names_shims = bytes != NULL && strstr((const char *)bytes, shims) != NULL;
+        free(bytes);
+        all = !names_shims || recorded(registration, "profile-line", "file", profiles[index]);
+    }
+    return all;
+}
+
+/** Whether every shim file, the PATH entry and each profile line on disk is one namer's registration records. */
 static int every_change_is_recorded(void) {
     char shims[1300];
     runtime_directory_listing listing;
@@ -700,10 +721,11 @@ static int every_change_is_recorded(void) {
     CHECK(runtime_registry_load(place.command_state, "namer", &registration) == RUNTIME_REGISTRY_OK);
     int all = runtime_list_directory(shims, &listing);
     for (size_t index = 0; all && index < listing.count; index++) {
-        all = recorded(registration, "file", listing.entries[index].name);
+        all = recorded(registration, "file", "path", listing.entries[index].name);
     }
     runtime_free_directory_listing(&listing);
-    all = all && (!test_path_value_present() || recorded(registration, "path-entry", NULL));
+    all = all && (!test_path_value_present() || recorded(registration, "path-entry", NULL, NULL)) &&
+          every_profile_line_is_recorded(registration);
     cJSON_Delete(registration);
     return all;
 }
@@ -735,10 +757,11 @@ typedef struct failure_case {
 /** Whether one failed attempt answered as the case requires, reporting it when not. */
 static int answered_as_required(const failure_case *each, uint64_t attempt, spisor_status status) {
     if (each->took_effect != NULL && each->took_effect()) {
-        if (status == SPISOR_OK) {
+        if (status == SPISOR_OK && every_change_is_recorded()) {
             return 1;
         }
-        fprintf(stderr, "%s: failing allocation %llu took effect and answered %d\n", each->label,
+        fprintf(stderr, "%s: failing allocation %llu took effect and answered %d, or left a change unrecorded\n",
+                each->label,
                 (unsigned long long)attempt, (int)status);
         return 0;
     }
@@ -830,7 +853,17 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
 }
 
+/** The check must see a profile line nothing records, or it passes whatever a command leaves in a profile. */
+static void an_unrecorded_profile_line_is_seen(void) {
+    char line[1400];
+    fresh_files();
+    snprintf(line, sizeof line, "export PATH=\"%s/bin:$PATH\"\n", place.command_state);
+    write_text(place.home, ".profile", line);
+    CHECK(!every_change_is_recorded());
+}
+
 static void every_command(void) {
+    an_unrecorded_profile_line_is_seen();
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
     every_command_failure("commands' request", request_a_command, NULL, 0);
     every_command_failure("commands' request, memory staying out", request_a_command, NULL, 1);
