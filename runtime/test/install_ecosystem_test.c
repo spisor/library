@@ -357,15 +357,15 @@ static void records_an_https_source_in_the_portable_layer_even_when_its_check_fa
     finish_install_base(&base);
 }
 
-static void refuses_a_source_that_is_neither_local_nor_https(void) {
+static void answers_malformed_for_a_source_that_is_neither_local_nor_https(void) {
     install_base base;
     start_install_base(&base, "ecosystem", "bad-source");
     list_ecosystem(&base);
     catalog_answer answer = install_with(&base, "{\"sources\": [{\"kind\": \"ftp\", \"url\": \"ftp://x\"}]}", NULL);
-    expect_refusal(answer, "no catalog source", "bad source kind");
+    expect_cache_refusal_malformed(answer, "sources", "bad source kind");
     cJSON_Delete(answer.tree);
     answer = install_with(&base, "{\"sources\": [{\"kind\": \"local\"}]}", NULL);
-    expect_refusal(answer, "no catalog source", "local source without a path");
+    expect_cache_refusal_malformed(answer, "sources", "local source without a path");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "bundles"));
     finish_install_base(&base);
@@ -485,10 +485,9 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     finish_install_base(&base);
 }
 
-static void refuses_an_argument_with_no_usable_places(void) {
-    catalog_answer answer = call_catalog(runtime_install_ecosystem, parsed("{\"sources\": [], \"places\": {}, \"environment\": {}}"));
-    expect_refusal(answer, "places", "no places");
-    cJSON_Delete(answer.tree);
+static void answers_malformed_for_an_argument_with_no_usable_places(void) {
+    catalog_answer answer = install_call(INSTALL_ECOSYSTEM, parsed("{\"sources\": [], \"places\": {}, \"environment\": {}}"));
+    expect_malformed_released(answer, "portable", "no places");
 }
 
 /** The base another process of this suite created, its catalog already written, entered by its root folder. */
@@ -733,10 +732,10 @@ int main(int argc, char **argv) {
     registers_the_host_at_install_keeping_its_provenance_on_a_later_install();
     installs_beside_a_cache_laid_out_under_the_old_names();
     records_an_https_source_in_the_portable_layer_even_when_its_check_fails();
-    refuses_a_source_that_is_neither_local_nor_https();
+    answers_malformed_for_a_source_that_is_neither_local_nor_https();
     acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item();
     acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin();
-    refuses_an_argument_with_no_usable_places();
+    answers_malformed_for_an_argument_with_no_usable_places();
     two_concurrent_installs_end_with_one_consistent_registry_and_cache(self_path(argv[0]));
     expect_user_path_unchanged(&guard);
     return check_summary("install_ecosystem_test");

@@ -110,14 +110,28 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
     return references;
 }
 
+/**
+ * Adds a reference to the record `map` under `name`.
+ *
+ * @implNote cJSON_AddItemReferenceToObject leaks the reference it made when the key cannot be copied.
+ */
+static int add_reference(cJSON *object, const char *name, const cJSON *map) {
+    cJSON *reference = cJSON_CreateObjectReference(map->child);
+    if (reference == NULL || !cJSON_AddItemToObject(object, name, reference)) {
+        cJSON_Delete(reference);
+        return 0;
+    }
+    return 1;
+}
+
 static char *references_text(const runtime_host_references *references) {
     cJSON *recorded = cJSON_CreateObject();
-    int built = recorded != NULL && cJSON_AddItemReferenceToObject(recorded, "run", references->run) &&
-                cJSON_AddItemReferenceToObject(recorded, "next", references->next) &&
+    int built = recorded != NULL && add_reference(recorded, "run", references->run) &&
+                add_reference(recorded, "next", references->next) &&
                 (references->rollback == NULL || references->rollback->child == NULL ||
-                 cJSON_AddItemReferenceToObject(recorded, "rollback", references->rollback)) &&
+                 add_reference(recorded, "rollback", references->rollback)) &&
                 (references->rolled_back_from == NULL || references->rolled_back_from->child == NULL ||
-                 cJSON_AddItemReferenceToObject(recorded, "rolledBackFrom", references->rolled_back_from));
+                 add_reference(recorded, "rolledBackFrom", references->rolled_back_from));
     char *pretty = built ? spisor_json_stringify_pretty(recorded) : NULL;
     cJSON_Delete(recorded);
     const char *parts[2] = {pretty, "\n"};
@@ -139,7 +153,7 @@ int runtime_record_host_references(const char *state, const char *host_id, const
     char *path = runtime_host_references_path(state, host_id, problem);
     char *text = path == NULL ? NULL : references_text(references);
     int written = text != NULL && write_text(state, path, text);
-    if (!written && path != NULL) {
+    if (!written && text != NULL) {
         const char *parts[3] = {"the references file ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }

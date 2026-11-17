@@ -115,7 +115,7 @@ set_target_properties(runtime_identity_also_at PROPERTIES POSITION_INDEPENDENT_C
 spisor_strict_warnings(runtime_identity_also_at)
 
 set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_definition.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
-    src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c
+    src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c src/catalog_listed_source.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
 add_library(runtime_install_by_id OBJECT src/install_by_id.c)

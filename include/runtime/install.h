@@ -5,16 +5,17 @@
  * @file
  * runtime's `install` service: what a plugin's manifest depends on by name, the packages an item's install methods
  * name, the steps that install it through one method, what each built-in method finds already installed, a
- * loader's application entry, the JavaScript runtime, an installed application's update or removal, and a loader's
- * registration. A manifest, its `packages` record, a loader's application and a method's options cross as
- * spisor_value, their shapes being their authors'. A size-prefixed
- * struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what
+ * loader's application entry, the JavaScript runtime, an installed application's update or removal, a loader's
+ * registration, a plugin's install by its repo id, and the whole ecosystem's install. A manifest, its `packages`
+ * record, a loader's application and a method's options cross as spisor_value, their shapes being their authors'. A
+ * size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what
  * an answer or a refusal points at is the provider's until the release for its kind.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "runtime/catalog.h"
 #include "runtime/definition.h"
 #include "runtime/environment.h"
 #include "runtime/registry.h"
@@ -339,11 +340,145 @@ typedef struct runtime_install_by_id_answer {
     void *storage;
 } runtime_install_by_id_answer;
 
+/** A method chosen for an application, or skip to leave it uninstalled. An element of an array, so it has no size. */
+typedef struct runtime_install_choice {
+    const char *application;
+    const char *method;
+} runtime_install_choice;
+
+/**
+ * The catalog `sources`, the absolute places, the environment loaders' commands are requested in, the method chosen per
+ * application, the plugins installed and enabled when the settings name none, the plugins asked for, and the platform
+ * as os-arch such as linux-x64, or NULL for this machine's. First shape ends at `platform`.
+ */
+typedef struct runtime_install_ecosystem_argument {
+    uint32_t size;
+    const runtime_catalog_source *sources;
+    size_t source_count;
+    const char *portable;
+    const char *state;
+    const char *cache;
+    const runtime_variable *environment;
+    size_t environment_count;
+    const runtime_install_choice *choices;
+    size_t choice_count;
+    const char *const *defaults;
+    size_t default_count;
+    const char *const *requested;
+    size_t requested_count;
+    const char *platform;
+} runtime_install_ecosystem_argument;
+
+/** An item fetched into the cache now, at its version. An element of an array, so it has no size. */
+typedef struct runtime_install_fetched {
+    const char *id;
+    const char *version;
+} runtime_install_fetched;
+
+/**
+ * What could not be done, under the id of the item, method or catalog it concerns, why and how to fix it. An element
+ * of an array, so it has no size.
+ */
+typedef struct runtime_install_unavailable {
+    const char *id;
+    const char *detail;
+    const char *fix;
+} runtime_install_unavailable;
+
+/**
+ * Where an application came from: the package its method installed or found, its method alone for one found on the
+ * PATH, and the version the method reports, or NULL. Part of an answer, so it has no size.
+ */
+typedef struct runtime_install_origin {
+    runtime_install_package package;
+    const char *version;
+} runtime_install_origin;
+
+/** How an application stands after the install. Append-only: a published value keeps its number. */
+typedef enum runtime_install_application_state {
+    RUNTIME_INSTALL_APPLICATION_INSTALLED = 1,
+    RUNTIME_INSTALL_APPLICATION_DETECTED = 2,
+    RUNTIME_INSTALL_APPLICATION_MISSING = 3,
+    RUNTIME_INSTALL_APPLICATION_SKIPPED = 4,
+    RUNTIME_INSTALL_APPLICATION_FAILED = 5,
+    RUNTIME_INSTALL_APPLICATION_UNAVAILABLE = 6
+} runtime_install_application_state;
+
+/**
+ * A catalog application: its id and runtime_install_application_state; the method it was installed through, or NULL;
+ * where an installed or detected one came from, `origin`, whose package's method is NULL for any other; the methods a missing one
+ * is offered and the --application flag that chooses the first; and the methods that could not serve it, each under its
+ * method's name. An element of an array, so it has no size.
+ */
+typedef struct runtime_install_application {
+    const char *id;
+    uint32_t state;
+    const char *installed_through;
+    runtime_install_origin origin;
+    const char *const *offered;
+    size_t offered_count;
+    const char *flag;
+    const runtime_install_unavailable *unavailable;
+    size_t unavailable_count;
+} runtime_install_application;
+
+/** An application to ask about and the methods offered for it. An element of an array, so it has no size. */
+typedef struct runtime_install_missing {
+    const char *application;
+    const char *const *methods;
+    size_t method_count;
+} runtime_install_missing;
+
+/**
+ * A loader installed and registered: its id, its application's id, its home, the commands it holds and the command
+ * requests refused, and its application entry as install's entry answers it, `detail` and `fix` saying why an entry
+ * was not written. An element of an array, so it has no size.
+ */
+typedef struct runtime_install_loader {
+    const char *id;
+    const char *application;
+    const char *home;
+    const char *const *commands;
+    size_t command_count;
+    const runtime_install_refused_command *refused_commands;
+    size_t refused_command_count;
+    uint32_t entry_written;
+    uint32_t entry_runs_on_javascript_host;
+    const char *entry_detail;
+    const char *entry_fix;
+} runtime_install_loader;
+
+/**
+ * What the install did: the items it fetched, those already cached as id@version, what was unavailable, the plugins it
+ * enabled, every catalog application, the loaders, the applications to ask about, and the JavaScript runtime acquired,
+ * or NULL when nothing this install would start runs on one. First shape ends at `storage`.
+ */
+typedef struct runtime_install_ecosystem_answer {
+    uint32_t size;
+    const runtime_install_fetched *installed;
+    size_t installed_count;
+    const char *const *cached;
+    size_t cached_count;
+    const runtime_install_unavailable *unavailable;
+    size_t unavailable_count;
+    const char *const *enabled;
+    size_t enabled_count;
+    const runtime_install_application *applications;
+    size_t application_count;
+    const runtime_install_loader *loaders;
+    size_t loader_count;
+    const runtime_install_missing *missing;
+    size_t missing_count;
+    const runtime_install_javascript *javascript;
+    void *storage;
+} runtime_install_ecosystem_answer;
+
 /**
  * The install service. Every operation answers MALFORMED for an argument or answer short of its first shape, a
  * required member that is NULL or empty, a place that is not absolute, a count without its array, a text in an array
  * that is NULL, a variable without a name or a value, or a value that is not a well-formed tree of the kind named;
- * and OUT_OF_MEMORY. Only entry, runtime, application, register_loader and by_id write, as each says. The answer arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
+ * and OUT_OF_MEMORY. Only entry, runtime, application, register_loader, by_id and ecosystem write, as each says. The
+ * answer arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
  */
 typedef struct runtime_install_definition {
     uint32_t size;
@@ -445,6 +580,32 @@ typedef struct runtime_install_definition {
      */
     spisor_status (*by_id)(void *context, const runtime_install_by_id_argument *argument,
                            runtime_install_by_id_answer *answer, spisor_refusal *refusal);
+    /**
+     * Installs the ecosystem the catalog sources describe. Every source is checked now. Each catalog application is
+     * found installed or detected, installed through the method its choice names, skipped, missing with the methods
+     * offered for it, or unavailable when no built-in method serves it. Then spisor-host and the runtime library
+     * install at their pins or the catalog's latest, and the plugins the ecosystem settings enable, or `defaults` when
+     * they name none, plus each of `requested`; each installed default or requested plugin the settings never mention
+     * is enabled; each source not yet listed is recorded; spisor-host is registered and its boot hint written. The
+     * loader of every installed or detected application is installed and registered with its commands and its
+     * application entry, and every background host a loader names is installed and registered. koffi,
+     * forebay-library and the JavaScript host install only when something runs on them, and the pinned Node only when
+     * something this install would start runs on JavaScript. Last, the versions now running are recorded.
+     *
+     * Before anything is installed, only the catalog cache is written, by the check of each source. A refusal comes
+     * only then, so a REFUSED answer has installed nothing. From then on an item that cannot be installed is reported
+     * under `unavailable` and the rest still install. Every step is one a repeat finds done, so an OUT_OF_MEMORY answer
+     * may leave any part of the install written, versions in the cache, settings, registrations, boot hints and
+     * entries, each recorded as installing records it, and calling again completes it. The answer is taken before the
+     * running versions are recorded, so OUT_OF_MEMORY never follows that last write.
+     *
+     * @return OK; MALFORMED, also for a source of no known kind, a choice without an application or a method, or a
+     * platform that is not os-arch; REFUSED for a catalog none of the sources yields, an application whose packages
+     * cannot be read, or a choice naming an application the catalog does not list or a method not offered for it;
+     * OUT_OF_MEMORY.
+     */
+    spisor_status (*ecosystem)(void *context, const runtime_install_ecosystem_argument *argument,
+                               runtime_install_ecosystem_answer *answer, spisor_refusal *refusal);
     void (*release_warnings_answer)(void *context, runtime_install_warnings_answer *answer);
     void (*release_packages_answer)(void *context, runtime_install_packages_answer *answer);
     void (*release_plan_answer)(void *context, runtime_install_plan_answer *answer);
@@ -454,6 +615,7 @@ typedef struct runtime_install_definition {
     void (*release_application_answer)(void *context, runtime_install_application_answer *answer);
     void (*release_register_loader_answer)(void *context, runtime_install_register_loader_answer *answer);
     void (*release_by_id_answer)(void *context, runtime_install_by_id_answer *answer);
+    void (*release_ecosystem_answer)(void *context, runtime_install_ecosystem_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
 } runtime_install_definition;
 

@@ -176,7 +176,7 @@ static void refuses_a_choice_naming_a_method_that_is_not_offered_listing_the_one
     start_install_base(&base, "applications", "not-offered");
     list_claude(&base, PACKAGES, "[]", "[]");
     catalog_answer answer = install_with(&base, "{\"choices\": {\"claude\": \"winget\"}}", NULL);
-    expect_refusal(answer, "claude=winget", "not offered");
+    expect_cache_refusal_refused(answer, "claude=winget", "not offered");
     CHECK(strstr(text_at(answer.tree, "message"), "fake, skip") != NULL);
     CHECK(!exists_in(base.cache, "bundles"));
     cJSON_Delete(answer.tree);
@@ -188,7 +188,7 @@ static void refuses_a_choice_naming_an_application_the_catalog_does_not_list(voi
     start_install_base(&base, "applications", "unknown");
     list_claude(&base, PACKAGES, "[]", "[]");
     catalog_answer answer = install_with(&base, "{\"choices\": {\"cursor\": \"fake\"}}", NULL);
-    expect_refusal(answer, "cursor", "unknown application");
+    expect_cache_refusal_refused(answer, "cursor", "unknown application");
     CHECK(strstr(text_at(answer.tree, "message"), "claude") != NULL);
     cJSON_Delete(answer.tree);
     finish_install_base(&base);

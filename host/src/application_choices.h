@@ -7,7 +7,7 @@
 typedef char *(*host_question)(const char *question, void *context);
 
 /**
- * The method chosen for each application of missing, the [{application, methods}] install.ecosystem
+ * The method chosen for each application of missing, the [{application, methods}] install's ecosystem
  * answered, as {id: method}: a number picks that method or skip, a method's name picks it, an empty
  * answer skips, and three answers that are neither skip too. Once ask answers NULL no further application
  * is asked about. NULL when memory runs out.

@@ -40,6 +40,7 @@
 #include "catalog_state.h"
 #include "directory_tree.h"
 #include "fetch_hooks.h"
+#include "host_references.h"
 #include "http_fixture.h"
 #include "scratch_directory.h"
 #include "registry.h"
@@ -1351,6 +1352,85 @@ static void release_json_of(char *json, size_t capacity) {
     snprintf(json, capacity, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
 }
 
+/** A catalog listing the plugin p, whose one file is source.txt, and the file itself. */
+static void a_catalog_with_one_plugin(void) {
+    char bundles[1300];
+    char source[1300];
+    char url[4200];
+    char text[5000];
+    a_file_to_install();
+    snprintf(bundles, sizeof bundles, "%s/bundles", place.state);
+    under_base(source, sizeof source, "source.txt");
+    file_url_of(source, url, sizeof url);
+    snprintf(text, sizeof text,
+             "{\"format\":1,\"items\":{\"p\":{\"kind\":\"plugin\",\"runtime\":\"native\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
+             "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}}}",
+             url);
+    write_text(place.base, "index.json", text);
+    write_text(bundles, "spisor-host.json", "{\"run\":{\"old\":\"0.1.0\"},\"next\":{}}\n");
+}
+
+/**
+ * Whether the ecosystem host's run is p alone, which the install records last: referencing p first adds it to the run
+ * the base holds, and only the record replaces that run.
+ */
+static int recorded_the_run(void) {
+    runtime_host_references references = runtime_read_host_references(place.state, "spisor-host");
+    int recorded = cJSON_HasObjectItem(references.run, "p") && !cJSON_HasObjectItem(references.run, "old");
+    runtime_free_host_references(&references);
+    return recorded;
+}
+
+static int is_only_text(const char *const *texts, size_t count, const char *expected) {
+    return count == 1 && strcmp(texts[0], expected) == 0;
+}
+
+/** Whether the run record no longer names the old version, read without the allocator that may be failing. */
+static int replaced_the_old_run(void) {
+    char path[1400];
+    size_t length = 0;
+    snprintf(path, sizeof path, "%s/bundles/spisor-host.json", place.state);
+    uint8_t *bytes = spisor_read_file(path, &length);
+    int replaced = bytes != NULL && strstr((const char *)bytes, "\"old\"") == NULL;
+    free(bytes);
+    return replaced;
+}
+
+/** Whether the answer installed and enabled p and found only spisor-host and runtime missing from the catalog. */
+static int installed_the_plugin(const runtime_install_ecosystem_answer *answer) {
+    return answer->installed_count == 1 && strcmp(answer->installed[0].id, "p") == 0 &&
+           is_only_text(answer->enabled, answer->enabled_count, "p") && answer->unavailable_count == 2 &&
+           answer->application_count == 0 && answer->javascript == NULL && replaced_the_old_run();
+}
+
+static spisor_status install_the_ecosystem(void) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    static const char *const defaults[1] = {"p"};
+    char cache_place[1100];
+    char index[1300];
+    runtime_catalog_source source;
+    runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
+    runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    local_index_source(&source, index, sizeof index);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.sources = &source;
+    argument.source_count = 1;
+    argument.portable = place.portable;
+    argument.state = place.state;
+    argument.cache = cache_place;
+    argument.defaults = defaults;
+    argument.default_count = 1;
+    argument.platform = "linux-x64";
+    spisor_status status = install->ecosystem(install->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && !installed_the_plugin(&answer)) {
+        status = WRONG_ANSWER;
+    }
+    install->release_ecosystem_answer(install->context, &answer);
+    install->release_refusal(install->context, &refusal);
+    return status;
+}
+
 static void every_install_operation(void) {
     static const char repository[] =
         "{\"id\":5,\"name\":\"greeter\",\"full_name\":\"o/greeter\",\"default_branch\":\"main\"}";
@@ -1373,6 +1453,9 @@ static void every_install_operation(void) {
     every_failure_of(&by_id);
     runtime_fetch_allow_plain_http(0);
     free(http_fixture_stop(server));
+    failure_case ecosystem = {"install's ecosystem", install_the_ecosystem, a_catalog_with_one_plugin, NULL,
+                              recorded_the_run, 0, 1};
+    every_failure_of(&ecosystem);
 }
 
 static void build_cache_and_catalog_values(void) {
@@ -1419,7 +1502,7 @@ static void every_command(void) {
 
 /**
  * With the argument `commands` runs only the commands service, with `cache` only the cache and catalog services, and
- * with `install` only install's by_id, whose cases take most of the time, each as a test of its own.
+ * with `install` only install's by_id and ecosystem, whose cases take most of the time, each as a test of its own.
  */
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();

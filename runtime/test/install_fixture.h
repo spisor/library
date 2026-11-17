@@ -28,6 +28,7 @@
 #include "check.h"
 #include "config.h"
 #include "directory_tree.h"
+#include "install_call.h"
 #include "install_ecosystem.h"
 #include "paths.h"
 #include "platform_key.h"
@@ -322,7 +323,7 @@ static inline cJSON *local_sources(const install_base *base) {
     return sources;
 }
 
-/** install.ecosystem over base's catalog with the members of extra_json added, environment taking PATH as given. */
+/** install's ecosystem over base's catalog with the members of extra_json added, environment taking PATH as given. */
 static inline catalog_answer install_with(const install_base *base, const char *extra_json, cJSON *environment) {
     cJSON *argument = parsed(extra_json);
     if (!cJSON_HasObjectItem(argument, "sources")) {
@@ -330,7 +331,7 @@ static inline catalog_answer install_with(const install_base *base, const char *
     }
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddItemToObject(argument, "environment", environment == NULL ? environment_of(base) : environment);
-    return call_catalog(runtime_install_ecosystem, argument);
+    return install_call(INSTALL_ECOSYSTEM, argument);
 }
 
 static inline cJSON *expect_report(catalog_answer answer, const char *label) {

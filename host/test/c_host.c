@@ -161,7 +161,8 @@ static cJSON *ecosystem_call(const c_host *host, const char *catalog, char **plu
 
 static int install(const c_host *host, const char *catalog, char **plugins, int plugin_count) {
     cJSON *refusal = NULL;
-    cJSON *report = runtime_call_or_refuse(runtime_install_ecosystem, ecosystem_call(host, catalog, plugins, plugin_count), &refusal);
+    cJSON *report = runtime_call_operation(runtime_install_ecosystem_operation,
+                                           ecosystem_call(host, catalog, plugins, plugin_count), &refusal);
     if (report == NULL) {
         return refuse(refusal);
     }
