@@ -5,6 +5,7 @@
 
 #include "cJSON.h"
 #include "spisor/status.h"
+#include "runtime/registry.h"
 #include "spisor/value.h"
 
 /**
@@ -45,5 +46,13 @@ void runtime_storage_release(void *storage);
  * with its `size` and ends at its `storage`. NULL, or an answer short of that shape, is left as it is.
  */
 void runtime_release_stored_answer(void *answer, size_t shape);
+
+/**
+ * A host's provenance as a registration records it, {method, version, location, os, architecture, installedAt,
+ * package?, options?}, in the storage; NULL for JSON that is not an object.
+ *
+ * @return OK; MALFORMED for options no value tree carries; OUT_OF_MEMORY.
+ */
+spisor_status runtime_storage_provenance(void **storage, const cJSON *json, const runtime_registry_provenance **out);
 
 #endif

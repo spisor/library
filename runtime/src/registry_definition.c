@@ -120,27 +120,6 @@ static uint32_t start_runtime_of(const char *runtime) {
     return 0;
 }
 
-static spisor_status fill_provenance(void **storage, const cJSON *json, const runtime_registry_provenance **out) {
-    runtime_registry_provenance *provenance;
-    *out = NULL;
-    if (!cJSON_IsObject(json)) {
-        return SPISOR_OK;
-    }
-    provenance = runtime_storage_take(storage, sizeof *provenance);
-    if (provenance == NULL || !runtime_storage_copy(storage, text_of(json, "method"), &provenance->method) ||
-        !runtime_storage_copy(storage, text_of(json, "version"), &provenance->version) ||
-        !runtime_storage_copy(storage, text_of(json, "location"), &provenance->location) ||
-        !runtime_storage_copy(storage, text_of(json, "os"), &provenance->os) ||
-        !runtime_storage_copy(storage, text_of(json, "architecture"), &provenance->architecture) ||
-        !runtime_storage_copy(storage, text_of(json, "installedAt"), &provenance->installed_at) ||
-        !runtime_storage_copy(storage, text_of(json, "package"), &provenance->package)) {
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    provenance->size = (uint32_t)sizeof *provenance;
-    *out = provenance;
-    return runtime_storage_value(storage, cJSON_GetObjectItemCaseSensitive(json, "options"), &provenance->options);
-}
-
 static spisor_status fill_start(void **storage, const cJSON *json, const runtime_registry_start **out) {
     runtime_registry_start *start;
     *out = NULL;
@@ -170,7 +149,7 @@ static spisor_status fill_registration(void **storage, const cJSON *json, const 
                                        &registration->application);
     }
     if (status == SPISOR_OK) {
-        status = fill_provenance(storage, cJSON_GetObjectItemCaseSensitive(json, "provenance"),
+        status = runtime_storage_provenance(storage, cJSON_GetObjectItemCaseSensitive(json, "provenance"),
                                  &registration->provenance);
     }
     if (status == SPISOR_OK) {

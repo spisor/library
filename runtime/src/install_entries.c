@@ -8,6 +8,7 @@
 #include "catalog_text.h"
 #include "changes.h"
 #include "entry_template.h"
+#include "hosts_lock.h"
 #include "install_support.h"
 #include "install_run.h"
 #include "json_service.h"
@@ -241,6 +242,21 @@ static cJSON *apply_call(const entry_loader *loader, const cJSON *change) {
     return call;
 }
 
+/**
+ * Takes back the changes this entry recorded before one was refused, so a refused entry leaves the loader as it was.
+ *
+ * @implNote An undo, not a guarantee: a reversal memory or the disk stops leaves the rest recorded for the loader's
+ * removal to reverse.
+ */
+static void reverse_recorded(const entry_loader *loader, const cJSON *sequences) {
+    const cJSON *first = cJSON_GetArrayItem(sequences, 0);
+    spisor_lock *guard = first == NULL ? NULL : runtime_hosts_lock(loader->state);
+    if (guard != NULL) {
+        runtime_changes_reverse_newer_held(loader->state, loader->id, first->valuedouble - 1);
+        spisor_unlock(guard);
+    }
+}
+
 static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
     cJSON *sequences = cJSON_CreateArray();
     for (const cJSON *change = sequences == NULL ? NULL : changes->child; change != NULL; change = change->next) {
@@ -251,6 +267,9 @@ static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **
                                       cJSON_AddItemToArray(sequences, cJSON_CreateNumber(sequence->valuedouble)));
         cJSON_Delete(answer);
         if (!kept) {
+            if (*refusal != NULL) {
+                reverse_recorded(loader, sequences);
+            }
             cJSON_Delete(sequences);
             return NULL;
         }
@@ -362,11 +381,7 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
     return answer;
 }
 
-static cJSON *entry_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_entry_operation(const cJSON *argument, cJSON **refusal) {
     return runtime_install_entry(cJSON_GetObjectItemCaseSensitive(argument, "places"),
                                  cJSON_GetObjectItemCaseSensitive(argument, "loader"), refusal);
-}
-
-RUNTIME_EXPORT int32_t runtime_install_entry_json(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, entry_for);
 }

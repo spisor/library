@@ -1,14 +1,10 @@
 #ifndef RUNTIME_INSTALL_RUNTIME_H
 #define RUNTIME_INSTALL_RUNTIME_H
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include "cJSON.h"
-#include "export.h"
 
 /**
- * The JavaScript runtime for platform, as install.runtime answers it; NULL with *refusal set when there is
+ * The JavaScript runtime for platform, as install's runtime answers it; NULL with *refusal set when there is
  * none to reuse and the pin cannot be acquired. environment is the PATH the runtime is looked for on.
  */
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal);
@@ -16,13 +12,13 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const
 /**
  * The executable of the JavaScript runtime <cache>/runtimes/javascript.json records, freed with free. When
  * no record names one that is still a file, as after the PATH's node was upgraded or removed, the runtime
- * is acquired again as install.runtime acquires it, on environment's PATH for this machine, and recorded.
+ * is acquired again as install's runtime acquires it, on environment's PATH for this machine, and recorded.
  * NULL with *refusal set when none can be found or acquired.
  */
 char *runtime_javascript_executable(const char *cache, const cJSON *environment, cJSON **refusal);
 
 /**
- * install.runtime: { cache, environment, platform? } answering { name, version, executable, fetched, source },
+ * install's runtime: { cache, environment, platform? } answering { name, version, executable, fetched, source },
  * in spec 5.3's order: a node on the PATH of environment whose major version is 20 or more, run once with
  * -p process.versions.node under a bounded wait (source "path"), else the pinned Node 26.13.0 for
  * platform (this machine's by default) at <cache>/runtimes/node/<version>/<platform>/ (source
@@ -38,6 +34,6 @@ char *runtime_javascript_executable(const char *cache, const cJSON *environment,
  * into place, so two installs acquiring at once never unpack into one folder; a PATH node is only looked
  * for on this machine's own platform.
  */
-RUNTIME_EXPORT int32_t runtime_install_runtime(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_install_runtime_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

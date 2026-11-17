@@ -6,9 +6,13 @@
 #include "answer_storage.h"
 #include "definition_support.h"
 #include "install.h"
+#include "install_ecosystem.h"
+#include "install_entries.h"
 #include "install_methods.h"
+#include "install_runtime.h"
 #include "install_warnings.h"
 #include "paths.h"
+#include "platform_key.h"
 #include "spisor/path.h"
 
 #define WARNINGS_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_warnings_argument, manifest)
@@ -19,8 +23,18 @@
 #define PLAN_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_plan_answer, storage)
 #define DETECT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_detect_argument, manifest_packages)
 #define DETECT_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_detect_answer, storage)
+#define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_entry_argument, application)
+#define ENTRY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_entry_answer, storage)
+#define RUNTIME_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_runtime_argument, environment_count)
+#define RUNTIME_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_runtime_answer, storage)
+#define APPLICATION_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_application_argument, operation)
+#define APPLICATION_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_application_answer, storage)
+#define REGISTER_LOADER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_argument, version)
+#define REGISTER_LOADER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
 
 static const char *const WARNING_KINDS[] = {NULL, "named-dependency", "unbound-service"};
+static const char *const SOURCES[] = {NULL, "path", "acquired"};
+static const char *const OPERATIONS[] = {NULL, "update", "remove"};
 
 static int is_text(const char *text) {
     return text != NULL && text[0] != '\0';
@@ -401,6 +415,298 @@ static spisor_status detect(void *context, const runtime_install_detect_argument
                                                          DETECT_ANSWER_SHAPE, refusal);
 }
 
+/** Adds `environment` to `call` as the JSON object runtime's path rules read, MALFORMED refused as such. */
+static spisor_status add_environment(cJSON *call, const runtime_variable *environment, size_t count,
+                                     spisor_refusal *refusal) {
+    cJSON *json = NULL;
+    spisor_status status = runtime_environment_json(environment, count, &json);
+    if (status == SPISOR_MALFORMED) {
+        return runtime_refuse_environment(refusal);
+    }
+    if (status == SPISOR_OK && !cJSON_AddItemToObject(call, "environment", json)) {
+        cJSON_Delete(json);
+        status = SPISOR_OUT_OF_MEMORY;
+    }
+    return status;
+}
+
+/** MALFORMED, refused, for a place of `names` that is not absolute; OK when every one is. */
+static spisor_status check_places(const char *const *names, const char *const *places, size_t count,
+                                  spisor_refusal *refusal) {
+    for (size_t index = 0; index < count; index++) {
+        if (!is_place(places[index])) {
+            return runtime_refuse_place(refusal, names[index]);
+        }
+    }
+    return SPISOR_OK;
+}
+
+static int is_application(const spisor_value *application) {
+    const spisor_value *id;
+    if (application == NULL || spisor_value_check(application) != SPISOR_OK ||
+        application->kind != SPISOR_VALUE_RECORD) {
+        return 0;
+    }
+    id = spisor_value_member(application, "id", 2);
+    return id != NULL && id->kind == SPISOR_VALUE_TEXT && id->length > 0;
+}
+
+static spisor_status fill_entry(const cJSON *answered, void *filled) {
+    runtime_install_entry_answer *answer = filled;
+    const cJSON *sequences = cJSON_GetObjectItemCaseSensitive(answered, "sequences");
+    uint64_t *array;
+    const cJSON *sequence;
+    spisor_status status = start_storage(&answer->storage);
+    if (status != SPISOR_OK || !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(sequences),
+                                                           sizeof *array, (void **)&array)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    answer->written = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "written")) ? 1u : 0u;
+    answer->runs_on_javascript_host =
+        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "runsOnJavascriptHost")) ? 1u : 0u;
+    answer->sequences = array;
+    cJSON_ArrayForEach(sequence, sequences) {
+        array[answer->sequence_count++] = (uint64_t)sequence->valuedouble;
+    }
+    status = copy_text(&answer->storage, text_of(answered, "message"), &answer->detail);
+    return status == SPISOR_OK ? copy_text(&answer->storage, text_of(answered, "fix"), &answer->fix) : status;
+}
+
+/** The entry's call, {places: {state, cache}, loader: {id, application, home}}. */
+static spisor_status entry_call(const runtime_install_entry_argument *argument, cJSON **call) {
+    static const char *const names[2] = {"state", "cache"};
+    const char *places[2];
+    cJSON *loader;
+    spisor_status status;
+    places[0] = argument->state;
+    places[1] = argument->cache;
+    *call = places_call(names, places, 2);
+    loader = *call == NULL ? NULL : cJSON_AddObjectToObject(*call, "loader");
+    status = loader != NULL && add_text(loader, "id", argument->loader) && add_text(loader, "home", argument->home)
+                 ? runtime_add_value_json(loader, "application", argument->application, SPISOR_VALUE_RECORD)
+                 : SPISOR_OUT_OF_MEMORY;
+    if (status != SPISOR_OK) {
+        cJSON_Delete(*call);
+        *call = NULL;
+    }
+    return status;
+}
+
+static spisor_status entry(void *context, const runtime_install_entry_argument *argument,
+                           runtime_install_entry_answer *answer, spisor_refusal *refusal) {
+    static const char *const names[3] = {"state", "cache", "loader home"};
+    const char *places[3];
+    cJSON *call = NULL;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, ENTRY_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, ENTRY_ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "install's entry");
+    }
+    places[0] = argument->state;
+    places[1] = argument->cache;
+    places[2] = argument->home;
+    status = check_places(names, places, 3, refusal);
+    if (status == SPISOR_OK && !is_text(argument->loader)) {
+        status = refuse_malformed(refusal, "loader");
+    }
+    if (status == SPISOR_OK && !is_application(argument->application)) {
+        status = refuse_malformed(refusal, "application");
+    }
+    if (status == SPISOR_OK) {
+        status = entry_call(argument, &call);
+    }
+    return status != SPISOR_OK ? status
+                               : runtime_serve_operation(runtime_install_entry_operation, call, fill_entry, answer,
+                                                         ENTRY_ANSWER_SHAPE, refusal);
+}
+
+/** A JavaScript runtime as install's runtime answers it, {name, version, executable, fetched, source}. */
+static spisor_status fill_javascript(void **storage, const cJSON *json, runtime_install_javascript *javascript) {
+    spisor_status status = copy_text(storage, text_of(json, "name"), &javascript->name);
+    if (status == SPISOR_OK) {
+        status = copy_text(storage, text_of(json, "version"), &javascript->version);
+    }
+    if (status == SPISOR_OK) {
+        status = copy_text(storage, text_of(json, "executable"), &javascript->executable);
+    }
+    javascript->fetched = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json, "fetched")) ? 1u : 0u;
+    javascript->source = index_of(SOURCES, 3, text_of(json, "source"));
+    return status;
+}
+
+static spisor_status fill_runtime(const cJSON *answered, void *filled) {
+    runtime_install_runtime_answer *answer = filled;
+    spisor_status status = start_storage(&answer->storage);
+    return status == SPISOR_OK ? fill_javascript(&answer->storage, answered, &answer->javascript) : status;
+}
+
+static spisor_status runtime_call(const runtime_install_runtime_argument *argument, cJSON **call,
+                                  spisor_refusal *refusal) {
+    spisor_status status;
+    *call = cJSON_CreateObject();
+    status = *call == NULL || !add_text(*call, "cache", argument->cache) ||
+                     !add_text(*call, "platform", argument->platform)
+                 ? SPISOR_OUT_OF_MEMORY
+                 : add_environment(*call, argument->environment, argument->environment_count, refusal);
+    if (status != SPISOR_OK) {
+        cJSON_Delete(*call);
+        *call = NULL;
+    }
+    return status;
+}
+
+static spisor_status runtime(void *context, const runtime_install_runtime_argument *argument,
+                             runtime_install_runtime_answer *answer, spisor_refusal *refusal) {
+    cJSON *call = NULL;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, RUNTIME_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, RUNTIME_ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "install's runtime");
+    }
+    status = is_place(argument->cache) ? SPISOR_OK : runtime_refuse_place(refusal, "cache");
+    if (status == SPISOR_OK && argument->platform != NULL && !runtime_is_platform_key(argument->platform)) {
+        status = refuse_malformed(refusal, "platform");
+    }
+    if (status == SPISOR_OK) {
+        status = runtime_call(argument, &call, refusal);
+    }
+    return status != SPISOR_OK ? status
+                               : runtime_serve_operation(runtime_install_runtime_operation, call, fill_runtime, answer,
+                                                         RUNTIME_ANSWER_SHAPE, refusal);
+}
+
+static spisor_status fill_application(const cJSON *answered, void *filled) {
+    runtime_install_application_answer *answer = filled;
+    const cJSON *unrecorded = cJSON_GetObjectItemCaseSensitive(answered, "unrecorded");
+    spisor_status status = start_storage(&answer->storage);
+    answer->operation = index_of(OPERATIONS, 3, text_of(answered, "operation"));
+    if (status == SPISOR_OK) {
+        status = copy_text(&answer->storage, text_of(answered, "version"), &answer->version);
+    }
+    if (status == SPISOR_OK) {
+        status = copy_text(&answer->storage, text_of(unrecorded, "message"), &answer->unrecorded_detail);
+    }
+    return status == SPISOR_OK ? copy_text(&answer->storage, text_of(unrecorded, "fix"), &answer->unrecorded_fix)
+                               : status;
+}
+
+static spisor_status application(void *context, const runtime_install_application_argument *argument,
+                                 runtime_install_application_answer *answer, spisor_refusal *refusal) {
+    static const char *const names[3] = {"portable", "state", "cache"};
+    const char *places[3];
+    cJSON *call;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, APPLICATION_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, APPLICATION_ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "install's application");
+    }
+    places[0] = argument->portable;
+    places[1] = argument->state;
+    places[2] = argument->cache;
+    status = check_places(names, places, 3, refusal);
+    if (status == SPISOR_OK && !is_text(argument->loader)) {
+        status = refuse_malformed(refusal, "loader");
+    }
+    if (status == SPISOR_OK && argument->operation != RUNTIME_INSTALL_UPDATE &&
+        argument->operation != RUNTIME_INSTALL_REMOVE) {
+        status = refuse_malformed(refusal, "operation");
+    }
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = places_call(names, places, 3);
+    if (call != NULL && (!add_text(call, "loader", argument->loader) ||
+                         !add_text(call, "operation", OPERATIONS[argument->operation]))) {
+        cJSON_Delete(call);
+        call = NULL;
+    }
+    return runtime_serve_operation(runtime_install_application_operation, call, fill_application, answer,
+                                   APPLICATION_ANSWER_SHAPE, refusal);
+}
+
+static spisor_status fill_refused_commands(void **storage, const cJSON *array,
+                                           const runtime_install_refused_command **filled, size_t *count) {
+    runtime_install_refused_command *commands;
+    const cJSON *refused;
+    if (!runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(array), sizeof *commands,
+                                    (void **)&commands)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    *filled = commands;
+    cJSON_ArrayForEach(refused, array) {
+        runtime_install_refused_command *command = &commands[(*count)++];
+        if (!runtime_storage_copy(storage, text_of(refused, "name"), &command->name) ||
+            !runtime_storage_copy(storage, text_of(refused, "detail"), &command->detail) ||
+            !runtime_storage_copy(storage, text_of(refused, "fix"), &command->fix)) {
+            return SPISOR_OUT_OF_MEMORY;
+        }
+    }
+    return SPISOR_OK;
+}
+
+static spisor_status fill_register_loader(const cJSON *answered, void *filled) {
+    runtime_install_register_loader_answer *answer = filled;
+    spisor_status status = start_storage(&answer->storage);
+    if (status == SPISOR_OK) {
+        status = runtime_storage_provenance(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "provenance"),
+                                            &answer->provenance);
+    }
+    if (status == SPISOR_OK &&
+        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "commands"),
+                               &answer->commands, &answer->command_count)) {
+        status = SPISOR_OUT_OF_MEMORY;
+    }
+    return status == SPISOR_OK ? fill_refused_commands(&answer->storage,
+                                                       cJSON_GetObjectItemCaseSensitive(answered, "refusedCommands"),
+                                                       &answer->refused_commands, &answer->refused_command_count)
+                               : status;
+}
+
+static spisor_status register_loader_call(const runtime_install_register_loader_argument *argument,
+                                          const char *const *names, const char *const *places, cJSON **call,
+                                          spisor_refusal *refusal) {
+    spisor_status status;
+    *call = places_call(names, places, 3);
+    status = *call == NULL || !add_text(*call, "id", argument->id) || !add_text(*call, "version", argument->version)
+                 ? SPISOR_OUT_OF_MEMORY
+                 : add_environment(*call, argument->environment, argument->environment_count, refusal);
+    if (status != SPISOR_OK) {
+        cJSON_Delete(*call);
+        *call = NULL;
+    }
+    return status;
+}
+
+static spisor_status register_loader(void *context, const runtime_install_register_loader_argument *argument,
+                                     runtime_install_register_loader_answer *answer, spisor_refusal *refusal) {
+    static const char *const names[3] = {"portable", "state", "cache"};
+    const char *places[3];
+    cJSON *call = NULL;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_LOADER_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, REGISTER_LOADER_ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "install's register_loader");
+    }
+    places[0] = argument->portable;
+    places[1] = argument->state;
+    places[2] = argument->cache;
+    status = check_places(names, places, 3, refusal);
+    if (status == SPISOR_OK && (!is_text(argument->id) || !is_text(argument->version))) {
+        status = refuse_malformed(refusal, is_text(argument->id) ? "version" : "loader id");
+    }
+    if (status == SPISOR_OK) {
+        status = register_loader_call(argument, names, places, &call, refusal);
+    }
+    return status != SPISOR_OK ? status
+                               : runtime_serve_operation(runtime_install_register_loader_operation, call,
+                                                         fill_register_loader, answer, REGISTER_LOADER_ANSWER_SHAPE,
+                                                         refusal);
+}
+
 static void release_warnings_answer(void *context, runtime_install_warnings_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, WARNINGS_ANSWER_SHAPE);
@@ -421,6 +727,26 @@ static void release_detect_answer(void *context, runtime_install_detect_answer *
     runtime_release_stored_answer(answer, DETECT_ANSWER_SHAPE);
 }
 
+static void release_entry_answer(void *context, runtime_install_entry_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, ENTRY_ANSWER_SHAPE);
+}
+
+static void release_runtime_answer(void *context, runtime_install_runtime_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, RUNTIME_ANSWER_SHAPE);
+}
+
+static void release_application_answer(void *context, runtime_install_application_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, APPLICATION_ANSWER_SHAPE);
+}
+
+static void release_register_loader_answer(void *context, runtime_install_register_loader_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, REGISTER_LOADER_ANSWER_SHAPE);
+}
+
 static const runtime_install_definition definition = {
     sizeof(runtime_install_definition),
     NULL,
@@ -428,10 +754,18 @@ static const runtime_install_definition definition = {
     packages,
     plan,
     detect,
+    entry,
+    runtime,
+    application,
+    register_loader,
     release_warnings_answer,
     release_packages_answer,
     release_plan_answer,
     release_detect_answer,
+    release_entry_answer,
+    release_runtime_answer,
+    release_application_answer,
+    release_register_loader_answer,
     runtime_release_refusal,
 };
 

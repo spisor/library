@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
 #include "export.h"
 
 /**
@@ -37,22 +38,22 @@
 RUNTIME_EXPORT int32_t runtime_install_ecosystem(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
 
 /**
- * install.application: { places: { portable, state, cache }, loader, operation: "update" | "remove" }
+ * install's application: { places: { portable, state, cache }, loader, operation: "update" | "remove" }
  * updates or removes the application loader is registered for through the method its registration
  * recorded, and answers { operation, version? }; after an update the version the method reports is
  * recorded in the registration's application provenance. Refused, naming where the application came
  * from, when it was found on the PATH or how it was installed is not recorded, since only what an
  * install method installed is that method's to change; the loader stays registered either way.
  */
-RUNTIME_EXPORT int32_t runtime_install_application(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_install_application_operation(const cJSON *argument, cJSON **refusal);
 
 /**
- * install.registerLoader: { places: { portable, state, cache }, environment, id, version } registers the
+ * install's registerLoader: { places: { portable, state, cache }, environment, id, version } registers the
  * loader id at the installed version as install registers it, and answers what hosts.register answers:
  * its application read from that version's host.json, the provenance its registration records kept, and
  * its commands, which run spisor-boot, requested again. What every start of a loader does, a launch or
  * an application's own hook, with no catalog read.
  */
-RUNTIME_EXPORT int32_t runtime_install_register_loader(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_install_register_loader_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

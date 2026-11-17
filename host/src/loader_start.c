@@ -5,6 +5,7 @@
 
 #include "host_output.h"
 #include "install_ecosystem.h"
+#include "json_service.h"
 #include "loader.h"
 #include "processes.h"
 #include "updates.h"
@@ -72,7 +73,7 @@ static cJSON *loader_call(const host_context *context, const char *id, const cha
  */
 static void register_again(const host_context *context, const char *id, const char *version) {
     cJSON *refusal = NULL;
-    cJSON *registered = host_call(runtime_install_register_loader, loader_call(context, id, version, 1), &refusal);
+    cJSON *registered = runtime_call_operation(runtime_install_register_loader_operation, loader_call(context, id, version, 1), &refusal);
     if (registered == NULL) {
         host_write(1, "spisor could not register ");
         host_write(1, id);

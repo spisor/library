@@ -605,7 +605,7 @@ char *runtime_javascript_executable(const char *cache, const cJSON *environment,
     return executable;
 }
 
-static cJSON *runtime_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_runtime_operation(const cJSON *argument, cJSON **refusal) {
     const char *cache = runtime_install_text(argument, "cache");
     const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
@@ -618,8 +618,4 @@ static cJSON *runtime_for(const cJSON *argument, cJSON **refusal) {
     }
     return runtime_acquire_javascript(cache, platform == NULL ? runtime_platform_key() : platform->valuestring,
                                       environment, refusal);
-}
-
-RUNTIME_EXPORT int32_t runtime_install_runtime(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, runtime_for);
 }

@@ -140,3 +140,24 @@ void runtime_release_stored_answer(void *answer, size_t shape) {
     runtime_storage_release(storage);
     memset((char *)answer + sizeof size, 0, shape - sizeof size);
 }
+
+spisor_status runtime_storage_provenance(void **storage, const cJSON *json, const runtime_registry_provenance **out) {
+    runtime_registry_provenance *provenance;
+    *out = NULL;
+    if (!cJSON_IsObject(json)) {
+        return SPISOR_OK;
+    }
+    provenance = runtime_storage_take(storage, sizeof *provenance);
+    if (provenance == NULL || !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "method")), &provenance->method) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "version")), &provenance->version) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "location")), &provenance->location) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "os")), &provenance->os) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "architecture")), &provenance->architecture) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "installedAt")), &provenance->installed_at) ||
+        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(json, "package")), &provenance->package)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    provenance->size = (uint32_t)sizeof *provenance;
+    *out = provenance;
+    return runtime_storage_value(storage, cJSON_GetObjectItemCaseSensitive(json, "options"), &provenance->options);
+}
