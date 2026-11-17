@@ -1,4 +1,3 @@
-#include "hosts_call.h"
 #include "install_fixture.h"
 
 #include <stdint.h>
@@ -13,6 +12,7 @@
 #include "definition_fixture.h"
 #include "directory_tree.h"
 #include "hosts.h"
+#include "hosts_call.h"
 #include "install_hooks.h"
 #include "json_allocation.h"
 #include "file_times.h"

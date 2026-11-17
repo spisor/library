@@ -1,4 +1,3 @@
-#include "hosts_call.h"
 #include "install_fixture.h"
 
 #if !defined(_WIN32)
@@ -15,6 +14,7 @@
 #include "child_process.h"
 #include "host_references.h"
 #include "hosts.h"
+#include "hosts_call.h"
 #include "install_hooks.h"
 #include "install_support.h"
 #include "process_run.h"

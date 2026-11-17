@@ -1,10 +1,10 @@
-#include "hosts_call.h"
 #include "install_fixture.h"
 #include "install_call.h"
 
 #include "boot_stub.h"
 #include "changes.h"
 #include "hosts.h"
+#include "hosts_call.h"
 #include "install_entries.h"
 #include "install_hooks.h"
 #include "tree_snapshot.h"
