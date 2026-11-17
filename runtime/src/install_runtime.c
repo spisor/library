@@ -50,7 +50,9 @@
 #define DOWNLOAD_SECONDS 1800
 #define TAR_MILLISECONDS 600000u
 #define VERSION_MILLISECONDS 10000u
-#define RUNTIME_FIX "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or put Node 20 or newer on the PATH"
+#define RUNTIME_FIX                                                                                    \
+    "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or put Node 20 or newer " \
+    "on the PATH"
 #define AGAIN_FIX "run install again; if it repeats, report the pinned archive"
 #define CACHE_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
 #define STALE_STAGING_MILLISECONDS (24.0 * 3600000.0)
@@ -202,7 +204,10 @@ static unsigned long next_acquisition_number(void) {
 #endif
 }
 
-/** @implNote Named by process and a number no other acquisition of this process takes, so two installs never build in one folder. */
+/**
+ * @implNote Named by process and a number no other acquisition of this process takes, so two installs never build in
+ * one folder.
+ */
 static char *staging_folder(const char *cache, const char *version, const char *platform) {
     char name[128];
     snprintf(name, sizeof name, ".%s-staging-%d-%lu", platform, (int)current_process_id(), next_acquisition_number());
@@ -268,7 +273,8 @@ static char *system_tar(void) {
     char narrow[4 * MAX_PATH];
     int written = length == 0 || length >= MAX_PATH
                       ? 0
-                      : WideCharToMultiByte(CP_UTF8, 0, folder, (int)length, narrow, (int)sizeof narrow - 1, NULL, NULL);
+                      : WideCharToMultiByte(CP_UTF8, 0, folder, (int)length, narrow, (int)sizeof narrow - 1, NULL,
+                                            NULL);
     if (written <= 0) {
         return NULL;
     }
@@ -329,8 +335,8 @@ static cJSON *unpack(const acquisition *runtime) {
     int exit_code = -1;
     char *problem = NULL;
     int ran = arguments != NULL && make_executable_folder(runtime) &&
-              runtime_run_between_files(tar, arguments, TAR_MILLISECONDS, runtime->staged.archive, runtime->staged.executable,
-                                        &exit_code, &problem);
+              runtime_run_between_files(tar, arguments, TAR_MILLISECONDS, runtime->staged.archive,
+                                        runtime->staged.executable, &exit_code, &problem);
     cJSON_Delete(arguments);
     free(tar);
     cJSON *refusal = NULL;
@@ -391,11 +397,13 @@ static int rename_directory(const char *from, const char *to) {
  * first. No lock is held: the staging folder is this process's alone.
  */
 static cJSON *publish(const acquisition *runtime) {
-    if (rename_directory(runtime->staged.directory, runtime->final.directory) || is_unpacked(runtime, &runtime->final)) {
+    if (rename_directory(runtime->staged.directory, runtime->final.directory) ||
+        is_unpacked(runtime, &runtime->final)) {
         return NULL;
     }
     if (runtime_remove_tree(runtime->final.directory) &&
-        (rename_directory(runtime->staged.directory, runtime->final.directory) || is_unpacked(runtime, &runtime->final))) {
+        (rename_directory(runtime->staged.directory, runtime->final.directory) ||
+         is_unpacked(runtime, &runtime->final))) {
         return NULL;
     }
     return refused("the runtime could not be moved into place at ", runtime->final.directory,
@@ -453,7 +461,8 @@ static cJSON *answer_of(const char *version, const char *executable, int fetched
     if (answer == NULL || cJSON_AddStringToObject(answer, "name", RUNTIME_NAME) == NULL ||
         cJSON_AddStringToObject(answer, "version", version) == NULL ||
         cJSON_AddStringToObject(answer, "executable", executable) == NULL ||
-        cJSON_AddBoolToObject(answer, "fetched", fetched) == NULL || cJSON_AddStringToObject(answer, "source", source) == NULL) {
+        cJSON_AddBoolToObject(answer, "fetched", fetched) == NULL ||
+        cJSON_AddStringToObject(answer, "source", source) == NULL) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -510,16 +519,20 @@ static char *trimmed(const char *text) {
     return runtime_catalog_copy_bytes(text, length);
 }
 
-/** The version the node at executable reports, run once with a bounded wait; NULL when it reports none. */
-static char *reported_version(const char *executable) {
+/**
+ * The version the node at executable reports, run once with a bounded wait; NULL when it reports none, or, with
+ * *out_of_memory set, when memory ran out.
+ */
+static char *reported_version(const char *executable, int *out_of_memory) {
     cJSON *arguments = cJSON_CreateArray();
     char *output = NULL;
     char *problem = NULL;
     int exit_code = -1;
-    int ran = arguments != NULL && runtime_install_add_text(arguments, "-p") &&
-              runtime_install_add_text(arguments, "process.versions.node") &&
-              runtime_run_to_exit(executable, arguments, VERSION_MILLISECONDS, &exit_code, &output, &problem);
+    int built = arguments != NULL && runtime_install_add_text(arguments, "-p") &&
+                runtime_install_add_text(arguments, "process.versions.node");
+    int ran = built && runtime_run_to_exit(executable, arguments, VERSION_MILLISECONDS, &exit_code, &output, &problem);
     char *version = ran && exit_code == 0 ? trimmed(output) : NULL;
+    *out_of_memory = !built || (!ran && problem == NULL) || (ran && exit_code == 0 && version == NULL);
     free(problem);
     free(output);
     cJSON_Delete(arguments);
@@ -528,25 +541,31 @@ static char *reported_version(const char *executable) {
 
 /**
  * A compatible node on the PATH of environment, as spec 5.3 orders it before acquiring one; NULL when
- * there is none, its version cannot be read, or its major is below COMPATIBLE_MAJOR.
+ * there is none, its version cannot be read, or its major is below COMPATIBLE_MAJOR, and NULL with
+ * *out_of_memory set when memory ran out finding or probing it, so a missing node is never assumed.
  *
  * @implNote Found by detect's PATH rules and run once, only here at install, never by detection.
  */
-static cJSON *runtime_on_path(const cJSON *environment) {
+static cJSON *runtime_on_path(const cJSON *environment, int *out_of_memory) {
     char *executable = NULL;
-    if (environment != NULL) {
-        runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME, environment, &executable);
-    }
-    char *version = executable == NULL ? NULL : reported_version(executable);
-    cJSON *answer = version != NULL && major_of(version) >= COMPATIBLE_MAJOR ? answer_of(version, executable, 0, "path")
-                                                                            : NULL;
+    runtime_on_path_status found = environment == NULL ? RUNTIME_ON_PATH_ABSENT
+                                                       : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME,
+                                                                              environment, &executable);
+    *out_of_memory = found == RUNTIME_ON_PATH_OUT_OF_MEMORY;
+    char *version = executable == NULL ? NULL : reported_version(executable, out_of_memory);
+    int compatible = version != NULL && major_of(version) >= COMPATIBLE_MAJOR;
+    cJSON *answer = compatible ? answer_of(version, executable, 0, "path") : NULL;
+    *out_of_memory = *out_of_memory || (compatible && answer == NULL);
     free(version);
     free(executable);
     return answer;
 }
 
-/** Records the runtime answered as the one every host started on JavaScript runs with; 1 on success. */
-static int record_runtime(const char *cache, const cJSON *answer) {
+/**
+ * Records the runtime answered as the one every host started on JavaScript runs with; 1 on success, and 0 with
+ * *out_of_memory set when memory ran out.
+ */
+static int record_runtime(const char *cache, const cJSON *answer, int *out_of_memory) {
     const char *folder_segments[2] = {cache, "runtimes"};
     const char *file_segments[3] = {cache, "runtimes", RECORD_FILE};
     char *folder = joined(folder_segments, 2);
@@ -554,7 +573,8 @@ static int record_runtime(const char *cache, const cJSON *answer) {
     char *pretty = spisor_json_stringify_pretty(answer);
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    int recorded = folder != NULL && file != NULL && text != NULL && spisor_make_directories(folder) == 1 &&
+    *out_of_memory = folder == NULL || file == NULL || text == NULL;
+    int recorded = !*out_of_memory && spisor_make_directories(folder) == 1 &&
                    spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == 1;
     free(text);
     free(pretty);
@@ -565,14 +585,19 @@ static int record_runtime(const char *cache, const cJSON *answer) {
 
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal) {
     int this_machine = strcmp(platform, runtime_platform_key()) == 0;
-    cJSON *answer = this_machine ? runtime_on_path(environment) : NULL;
+    int out_of_memory = 0;
+    cJSON *answer = this_machine ? runtime_on_path(environment, &out_of_memory) : NULL;
+    if (out_of_memory) {
+        return NULL;
+    }
     if (answer == NULL) {
         answer = acquire_pinned(cache, platform, refusal);
     }
-    if (answer != NULL && !record_runtime(cache, answer)) {
+    if (answer != NULL && !record_runtime(cache, answer, &out_of_memory)) {
         cJSON_Delete(answer);
         answer = NULL;
-        *refusal = refused("the JavaScript runtime could not be recorded under ", cache, CACHE_FIX);
+        *refusal = out_of_memory ? NULL
+                                 : refused("the JavaScript runtime could not be recorded under ", cache, CACHE_FIX);
     }
     return answer;
 }
@@ -601,10 +626,8 @@ char *runtime_javascript_executable(const char *cache, const cJSON *environment,
     cJSON *acquired = runtime_acquire_javascript(cache, runtime_platform_key(), environment, refusal);
     const char *found = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(acquired, "executable"));
     executable = found == NULL ? NULL : runtime_catalog_copy(found);
-    if (acquired != NULL && executable == NULL) {
+    if (acquired != NULL && found == NULL) {
         *refusal = refused("the JavaScript runtime acquired again could not be read back under ", cache, CACHE_FIX);
-    } else if (acquired == NULL && *refusal == NULL) {
-        *refusal = refused("no JavaScript runtime could be found or acquired for ", cache, RUNTIME_FIX);
     }
     cJSON_Delete(acquired);
     return executable;

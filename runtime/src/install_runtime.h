@@ -5,7 +5,8 @@
 
 /**
  * The JavaScript runtime for platform, as install's runtime answers it; NULL with *refusal set when there is
- * none to reuse and the pin cannot be acquired. environment is the PATH the runtime is looked for on.
+ * none to reuse and the pin cannot be acquired, and NULL alone when memory ran out, then never acquiring one.
+ * environment is the PATH the runtime is looked for on.
  */
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal);
 
@@ -13,7 +14,7 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const
  * The executable of the JavaScript runtime <cache>/runtimes/javascript.json records, freed with free. When
  * no record names one that is still a file, as after the PATH's node was upgraded or removed, the runtime
  * is acquired again as install's runtime acquires it, on environment's PATH for this machine, and recorded.
- * NULL with *refusal set when none can be found or acquired.
+ * NULL with *refusal set when none can be found or acquired, and NULL alone when memory ran out.
  */
 char *runtime_javascript_executable(const char *cache, const cJSON *environment, cJSON **refusal);
 
