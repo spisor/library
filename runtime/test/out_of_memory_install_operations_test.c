@@ -182,20 +182,27 @@ static spisor_status run_update(void) {
     return status;
 }
 
+/** PATH as path_directory and the user's home under both names, so either platform's rule finds it. */
+static void environment_of_path(runtime_variable environment[3]) {
+    environment[0].name = "PATH";
+    environment[0].value = path_directory;
+    environment[1].name = "HOME";
+    environment[1].value = base.user;
+    environment[2].name = "USERPROFILE";
+    environment[2].value = base.user;
+}
+
 static spisor_status run_register_loader(void) {
     runtime_install_register_loader_argument argument = SPISOR_INIT(runtime_install_register_loader_argument);
     runtime_install_register_loader_answer answer = SPISOR_INIT(runtime_install_register_loader_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    runtime_variable environment[2];
-    environment[0].name = "PATH";
-    environment[0].value = path_directory;
-    environment[1].name = "USERPROFILE";
-    environment[1].value = base.user;
+    runtime_variable environment[3];
+    environment_of_path(environment);
     argument.portable = base.portable;
     argument.state = base.state;
     argument.cache = base.cache;
     argument.environment = environment;
-    argument.environment_count = 2;
+    argument.environment_count = 3;
     argument.id = CLAUDE_LOADER;
     argument.version = "1.0.0";
     spisor_status status = install->register_loader(install->context, &argument, &answer, &refusal);
@@ -233,14 +240,11 @@ static spisor_status run_runtime(void) {
     runtime_install_runtime_argument argument = SPISOR_INIT(runtime_install_runtime_argument);
     runtime_install_runtime_answer answer = SPISOR_INIT(runtime_install_runtime_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    runtime_variable environment[2];
-    environment[0].name = "PATH";
-    environment[0].value = path_directory;
-    environment[1].name = "USERPROFILE";
-    environment[1].value = base.user;
+    runtime_variable environment[3];
+    environment_of_path(environment);
     argument.cache = base.cache;
     argument.environment = environment;
-    argument.environment_count = 2;
+    argument.environment_count = 3;
     spisor_status status = install->runtime(install->context, &argument, &answer, &refusal);
     install->release_runtime_answer(install->context, &answer);
     keep_refusal(&refusal);
