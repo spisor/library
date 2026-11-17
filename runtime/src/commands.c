@@ -892,6 +892,21 @@ static int copy_shim_file(command_call *call, const char *from, const char *to, 
     return copied;
 }
 
+/**
+ * Removes the shim of a command already stored under its new name, each file's reversal stored on its own. This is
+ * cleanup after the rename took effect, so a failure leaves that file's record unreversed, to be reversed later, and
+ * the call still answers OK.
+ */
+static void remove_old_shim(command_call *call, const char *from) {
+    for (size_t index = 0; index < SHIM_FILE_COUNT; index++) {
+        if (!remove_shim_file(call, shim_record(call, from, index)) || !store_registration(call)) {
+            call->failure = SPISOR_OK;
+            call->reason[0] = '\0';
+            return;
+        }
+    }
+}
+
 static int move_command(command_call *call, const char *from, const char *to) {
     int moved = 1;
     for (size_t index = 0; index < SHIM_FILE_COUNT && moved; index++) {
@@ -902,8 +917,12 @@ static int move_command(command_call *call, const char *from, const char *to) {
     if (moved && entry == NULL) {
         return refuse_unknown_command(call, from);
     }
-    return moved && set_or_run_out(call, entry, "name", to) && set_or_run_out(call, entry, "owner", "user") &&
-           store_registration(call) && remove_shim(call, from) && store_registration(call);
+    if (!moved || !set_or_run_out(call, entry, "name", to) || !set_or_run_out(call, entry, "owner", "user") ||
+        !store_registration(call)) {
+        return 0;
+    }
+    remove_old_shim(call, from);
+    return 1;
 }
 
 static int rename_step(command_call *call) {
@@ -954,53 +973,15 @@ static spisor_status refuse_failed(const command_call *call, spisor_refusal *ref
     return runtime_refuse_as(refusal, failure, call->reason, call->fix == NULL ? "try again" : call->fix);
 }
 
-static cJSON *newest_change_of_call(const command_call *call, cJSON *registration) {
-    cJSON *newest = NULL;
-    cJSON *entry;
-    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
-        const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
-        int own = cJSON_IsNumber(sequence) && sequence->valuedouble > call->sequence_before &&
-                  !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
-        if (own && (newest == NULL || sequence->valuedouble >
-                                          cJSON_GetObjectItemCaseSensitive(newest, "sequence")->valuedouble)) {
-            newest = entry;
-        }
-    }
-    return newest;
-}
-
-/** Reverses, newest first, one change this call recorded; 0 when none is left or it cannot be reversed. */
-static int reverse_newest_own_change(const command_call *call) {
-    cJSON *registration = NULL;
-    if (runtime_registry_load(call->state, call->host, &registration) != RUNTIME_REGISTRY_OK) {
-        cJSON_Delete(registration);
-        return 0;
-    }
-    int failed = 0;
-    int settled = runtime_changes_settle_pending(registration, &failed);
-    cJSON *entry = failed ? NULL : newest_change_of_call(call, registration);
-    runtime_change_note note = {""};
-    int reversed = entry != NULL &&
-                   runtime_changes_reverse_entry(call->state, call->host, registration, entry, &note, &failed) !=
-                       RUNTIME_CHANGE_NOT_REVERSED &&
-                   !failed && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
-    int stored = (reversed || settled) && runtime_registry_store(call->state, registration) == RUNTIME_REGISTRY_OK;
-    cJSON_Delete(registration);
-    return reversed && stored;
-}
-
 /**
- * Takes back what a failed call changed before its registration named the result, so a refused or out-of-memory
- * call leaves the disk as it found it.
+ * Takes back the changes a call recorded before it failed, so a call the disk refused leaves it as it was.
  *
- * @implNote Best effort: a reversal that itself fails stops here, and its record stays unreversed for the host's
- * removal to take back.
+ * @implNote An undo, not a guarantee: when memory keeps running out the reversal stops too, and what it could not
+ * take back stays recorded for the host's removal to reverse.
  */
 static void reverse_own_changes(const command_call *call) {
-    if (!call->changed || !call->sequence_known || call->committed) {
-        return;
-    }
-    while (reverse_newest_own_change(call)) {
+    if (call->changed && call->sequence_known && !call->committed) {
+        runtime_changes_reverse_newer_held(call->state, call->host, call->sequence_before);
     }
 }
 

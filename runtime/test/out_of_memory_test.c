@@ -8,12 +8,10 @@
 #include <windows.h>
 #include "path_entry_windows_hooks.h"
 #define CURRENT_PROCESS_ID _getpid()
-#define SHIM_SUFFIX ".exe"
 #else
 #include <sys/stat.h>
 #include <unistd.h>
 #define CURRENT_PROCESS_ID getpid()
-#define SHIM_SUFFIX ""
 #endif
 
 #include "allocation.h"
@@ -34,6 +32,7 @@
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
+#include "directory_tree.h"
 #include "scratch_directory.h"
 #include "registry.h"
 #include "spisor/file.h"
@@ -92,26 +91,20 @@ static void forget_test_path_value(void) {
         RegCloseKey(key);
     }
 }
+
+static int test_path_value_present(void) {
+    DWORD size = 0;
+    return RegGetValueW(HKEY_CURRENT_USER, L"Environment", RUNTIME_PATH_ENTRY_TEST_VALUE, RRF_RT_ANY, NULL, NULL,
+                        &size) == ERROR_SUCCESS;
+}
 #else
 static void forget_test_path_value(void) {
 }
-#endif
 
-static void shim_path(const char *name, char *path, size_t capacity) {
-    snprintf(path, capacity, "%s/bin/%s" SHIM_SUFFIX, place.command_state, name);
+static int test_path_value_present(void) {
+    return 0;
 }
-
-static void write_shims_of(const char *name) {
-    char shims[1300];
-    char file_name[100];
-    snprintf(shims, sizeof shims, "%s/bin", place.command_state);
-    snprintf(file_name, sizeof file_name, "%s" SHIM_SUFFIX, name);
-    write_text(shims, file_name, "shim");
-#ifdef _WIN32
-    snprintf(file_name, sizeof file_name, "%s.shim", name);
-    write_text(shims, file_name, "shim");
 #endif
-}
 
 /** The files every operation reads, written afresh before each attempt so no attempt sees another's writes. */
 static void fresh_files(void) {
@@ -158,11 +151,9 @@ static void fresh_files(void) {
     snprintf(record, sizeof record,
              "{\"id\":\"namer\",\"kind\":\"host\",\"version\":\"1\",\"home\":\"%s\",\"provenance\":"
              "{\"method\":\"npm\",\"version\":\"1\",\"location\":\"%s\",\"os\":\"linux\",\"architecture\":\"x64\","
-             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[{\"name\":\"zz\","
-             "\"requested\":\"zz\",\"owner\":\"host\",\"state\":\"active\"}],\"changes\":[]}",
+             "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[],\"changes\":[]}",
              place.home, place.home);
     write_text(hosts, "namer.json", record);
-    write_shims_of("zz");
     forget_test_path_value();
 #ifndef _WIN32
     char probe[1300];
@@ -620,6 +611,20 @@ static spisor_status add_a_command(void) {
     return status;
 }
 
+/** Gives namer the command zz through add, so its shim and PATH entry carry change records. */
+static void add_zz(void) {
+    const runtime_commands_definition *commands = runtime_commands_definition_of();
+    runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
+    runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
+    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char target[1300];
+    command_argument_of(&argument, "zz", target, sizeof target, environment);
+    CHECK(commands->add(commands->context, &argument, &answer, &refusal) == SPISOR_OK);
+    commands->release_answer(commands->context, &answer);
+    commands->release_refusal(commands->context, &refusal);
+}
+
 static spisor_status rename_zz_to(const char *to) {
     const runtime_commands_definition *commands = runtime_commands_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
@@ -649,50 +654,125 @@ static spisor_status rename_onto_a_held_name(void) {
     return status == SPISOR_REFUSED ? SPISOR_OK : status == SPISOR_OK ? SPISOR_REFUSED : status;
 }
 
-static int shim_exists(const char *name) {
-    char path[1400];
-    shim_path(name, path, sizeof path);
-    return spisor_file_exists(path);
-}
+typedef int (*untouched)(void);
 
-/** Whether namer's registration holds exactly its one active command, zz. */
-static int namer_holds_only_zz(void) {
+/** Whether namer's registration holds exactly one active command, named `name`. */
+static int namer_holds_only(const char *name) {
     cJSON *registration = NULL;
     CHECK(runtime_registry_load(place.command_state, "namer", &registration) == RUNTIME_REGISTRY_OK);
     const cJSON *commands = cJSON_GetObjectItemCaseSensitive(registration, "commands");
     const cJSON *command = cJSON_GetArrayItem(commands, 0);
-    const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "name"));
+    const char *held = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "name"));
     const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "state"));
-    int only = cJSON_GetArraySize(commands) == 1 && name != NULL && strcmp(name, "zz") == 0 && state != NULL &&
+    int only = cJSON_GetArraySize(commands) == 1 && held != NULL && strcmp(held, name) == 0 && state != NULL &&
                strcmp(state, "active") == 0;
     cJSON_Delete(registration);
     return only;
 }
 
-static int requested_nothing(void) {
-    return namer_holds_only_zz() && !shim_exists("cc") && !shim_exists("cc2");
+static int names_file(const char *path, const char *name) {
+    size_t path_length = path == NULL ? 0 : strlen(path);
+    size_t name_length = strlen(name);
+    return path_length > name_length && strcmp(path + path_length - name_length, name) == 0 &&
+           (path[path_length - name_length - 1] == '/' || path[path_length - name_length - 1] == '\\');
 }
 
-static int added_nothing(void) {
-    return namer_holds_only_zz() && !shim_exists("dd");
+/** Whether namer holds an unreversed record of `kind` that names `file`, or any of that kind when `file` is NULL. */
+static int recorded(const cJSON *registration, const char *kind, const char *file) {
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const char *entry_kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind"));
+        if (entry_kind != NULL && strcmp(entry_kind, kind) == 0 &&
+            !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed")) &&
+            (file == NULL || names_file(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "path")), file))) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
-static int renamed_nothing(void) {
-    return namer_holds_only_zz() && shim_exists("zz") && !shim_exists("cc") && !shim_exists("dd");
+/** Whether every shim file and the PATH entry on disk is one namer's registration records unreversed. */
+static int every_change_is_recorded(void) {
+    char shims[1300];
+    runtime_directory_listing listing;
+    cJSON *registration = NULL;
+    snprintf(shims, sizeof shims, "%s/bin", place.command_state);
+    CHECK(runtime_registry_load(place.command_state, "namer", &registration) == RUNTIME_REGISTRY_OK);
+    int all = runtime_list_directory(shims, &listing);
+    for (size_t index = 0; all && index < listing.count; index++) {
+        all = recorded(registration, "file", listing.entries[index].name);
+    }
+    runtime_free_directory_listing(&listing);
+    all = all && (!test_path_value_present() || recorded(registration, "path-entry", NULL));
+    cJSON_Delete(registration);
+    return all;
 }
 
-typedef int (*untouched)(void);
+static int kept_zz_and_recorded_all(void) {
+    return namer_holds_only("zz") && every_change_is_recorded();
+}
+
+/** Whether a rename took effect: namer's one active command is dd. */
+static int renamed_to_dd(void) {
+    return namer_holds_only("dd");
+}
+
 
 /**
- * Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says and,
- * with `left_alone` set, that the failure changed nothing it names.
+ * One operation to fail allocation by allocation. `prepare` runs after the fresh files and before the first failure;
+ * `left_alone` names what a failure must not have changed; `took_effect`, when it holds after a failure, means the
+ * call completed and must answer OK; `sticky` fails every allocation after the first failure too.
  */
-static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
+typedef struct failure_case {
+    const char *label;
+    operation run;
+    void (*prepare)(void);
+    untouched left_alone;
+    untouched took_effect;
+    int sticky;
+} failure_case;
+
+/** Whether one failed attempt answered as the case requires, reporting it when not. */
+static int answered_as_required(const failure_case *each, uint64_t attempt, spisor_status status) {
+    if (each->took_effect != NULL && each->took_effect()) {
+        if (status == SPISOR_OK) {
+            return 1;
+        }
+        fprintf(stderr, "%s: failing allocation %llu took effect and answered %d\n", each->label,
+                (unsigned long long)attempt, (int)status);
+        return 0;
+    }
+    if (each->left_alone != NULL && !each->left_alone()) {
+        fprintf(stderr, "%s: failing allocation %llu answered out of memory after it wrote\n", each->label,
+                (unsigned long long)attempt);
+        return 0;
+    }
+    if (status != SPISOR_OUT_OF_MEMORY) {
+        fprintf(stderr, "%s: failing allocation %llu answered %d\n", each->label, (unsigned long long)attempt,
+                (int)status);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says and
+ * as the case adds.
+ */
+static void every_failure_of(const failure_case *each) {
+    const char *label = each->label;
     for (uint64_t attempt = 1; attempt < 100000; attempt++) {
         fresh_files();
+        if (each->prepare != NULL) {
+            each->prepare();
+        }
         int64_t baseline = spisor_memory_live_blocks();
-        spisor_memory_fail_at(attempt);
-        spisor_status status = run();
+        if (each->sticky) {
+            spisor_memory_fail_from(attempt);
+        } else {
+            spisor_memory_fail_at(attempt);
+        }
+        spisor_status status = each->run();
         int failed = spisor_memory_failed();
         spisor_memory_fail_at(0);
         if (spisor_memory_live_blocks() != baseline) {
@@ -710,21 +790,23 @@ static void every_failure_answers_out_of_memory(const char *label, operation run
                    (unsigned long long)(attempt - 1));
             return;
         }
-        if (left_alone != NULL && !left_alone()) {
-            fprintf(stderr, "%s: failing allocation %llu answered out of memory after it wrote\n", label,
-                    (unsigned long long)attempt);
-            check_failures++;
-            return;
-        }
-        if (status != SPISOR_OUT_OF_MEMORY) {
-            fprintf(stderr, "%s: failing allocation %llu answered %d\n", label, (unsigned long long)attempt,
-                    (int)status);
+        if (!answered_as_required(each, attempt, status)) {
             check_failures++;
             return;
         }
     }
     fprintf(stderr, "%s: never ran whole\n", label);
     check_failures++;
+}
+
+static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
+    failure_case each = {label, run, NULL, left_alone, NULL, 0};
+    every_failure_of(&each);
+}
+
+static void every_command_failure(const char *label, operation run, untouched took_effect, int sticky) {
+    failure_case each = {label, run, add_zz, kept_zz_and_recorded_all, took_effect, sticky};
+    every_failure_of(&each);
 }
 
 int main(void) {
@@ -763,10 +845,11 @@ int main(void) {
                                         settled_and_changed_nothing);
     every_failure_answers_out_of_memory("changes' reverse", reverse_a_change, NULL);
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
-    every_failure_answers_out_of_memory("commands' request", request_a_command, requested_nothing);
-    every_failure_answers_out_of_memory("commands' add", add_a_command, added_nothing);
-    every_failure_answers_out_of_memory("commands' rename", rename_a_command, renamed_nothing);
-    every_failure_answers_out_of_memory("commands' rename onto a held name", rename_onto_a_held_name, renamed_nothing);
+    every_command_failure("commands' request", request_a_command, NULL, 0);
+    every_command_failure("commands' request, memory staying out", request_a_command, NULL, 1);
+    every_command_failure("commands' add", add_a_command, NULL, 0);
+    every_command_failure("commands' rename", rename_a_command, renamed_to_dd, 0);
+    every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL, 0);
     every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
     every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
     every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);

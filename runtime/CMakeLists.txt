@@ -1,10 +1,10 @@
 set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c src/log.c src/places.c src/user_home.c
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/changes.c
-    src/hosts_lock.c src/commands.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
+    src/hosts_lock.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
     src/sha256.c src/file_stream.c src/service_call.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
     src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
-    src/log_definition.c src/registry_definition.c src/commands_definition.c)
+    src/log_definition.c src/registry_definition.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -20,13 +20,14 @@ target_compile_definitions(runtime_objects_config_test_hooks PRIVATE SPISOR_CONF
 spisor_strict_warnings(runtime_objects_config_test_hooks)
 set_target_properties(runtime_objects_config_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
-add_library(runtime_change_reversal OBJECT src/change_reversal.c src/changes_definition.c)
+set(runtime_change_reversal_sources src/change_reversal.c src/changes_definition.c src/commands.c src/commands_definition.c)
+add_library(runtime_change_reversal OBJECT ${runtime_change_reversal_sources})
 target_link_libraries(runtime_change_reversal PUBLIC runtime_objects)
 target_include_directories(runtime_change_reversal PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_change_reversal PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_change_reversal)
 
-add_library(runtime_change_reversal_test_hooks OBJECT src/change_reversal.c src/changes_definition.c)
+add_library(runtime_change_reversal_test_hooks OBJECT ${runtime_change_reversal_sources})
 target_link_libraries(runtime_change_reversal_test_hooks PUBLIC runtime_objects)
 target_include_directories(runtime_change_reversal_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(runtime_change_reversal_test_hooks PRIVATE SPISOR_CHANGES_TEST_HOOKS)

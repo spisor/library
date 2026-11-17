@@ -81,7 +81,10 @@ typedef struct runtime_command_answer {
  * lacking a name or a value; REFUSED, with the refusal saying what to repair, when the host is not registered, its
  * registration cannot be read or written, the registry lock cannot be taken, or a change cannot be made; and
  * OUT_OF_MEMORY. Each shim file and PATH entry is recorded as its own change, so an operation stopped part way leaves
- * every change it made recorded and reversible. The answer arguments are required and the refusal may be NULL for
+ * every change it made recorded and reversible. A refused call takes those changes back before it answers, as far as
+ * the disk lets it; an OUT_OF_MEMORY answer may leave some of them recorded, for the host's removal to reverse. A
+ * rename that has stored the new name answers OK even when removing the old shim fails, whose record then stays.
+ * The answer arguments are required and the refusal may be NULL for
  * none. First shape ends at `release_refusal`.
  *
  * @implNote `remove` and not `delete`, so the header stays includable from C++, where `delete` is a keyword.

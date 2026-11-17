@@ -37,6 +37,8 @@ typedef struct reversal_session {
     const char *host;
     cJSON *registration;
     cJSON *drifted;
+    double above;
+    int lock_held;
     int reversed;
     int finished;
 } reversal_session;
@@ -58,12 +60,12 @@ static double sequence_of(const cJSON *entry) {
     return cJSON_IsNumber(sequence) ? sequence->valuedouble : 0;
 }
 
-static cJSON *newest_unreversed(const cJSON *registration) {
+static cJSON *newest_unreversed(const cJSON *registration, double above) {
     cJSON *newest = NULL;
     cJSON *entry;
     cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
         int unreversed = !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
-        if (unreversed && (newest == NULL || sequence_of(entry) > sequence_of(newest))) {
+        if (unreversed && sequence_of(entry) > above && (newest == NULL || sequence_of(entry) > sequence_of(newest))) {
             newest = entry;
         }
     }
@@ -159,7 +161,7 @@ static int reverse_step(reversal_session *session, cJSON **refusal) {
     if (out_of_memory_settling) {
         return out_of_memory(refusal);
     }
-    cJSON *entry = newest_unreversed(session->registration);
+    cJSON *entry = newest_unreversed(session->registration, session->above);
     if (entry == NULL || !may_reverse_another()) {
         return finish(session, settled, refusal);
     }
@@ -173,15 +175,15 @@ static int refuse_unlocked(const char *state, cJSON **refusal) {
 }
 
 /**
- * @implNote The lock is held per change, not across the removal, so another host can apply or
- * reverse between two steps; each step reads every registration afresh under the lock, so its
- * holder check, its act on the disk and its store are one atomic step.
+ * @implNote Unless the caller holds it, the lock is taken per change, not across the removal, so another host can
+ * apply or reverse between two steps; each step reads every registration afresh under the lock, so its holder check,
+ * its act on the disk and its store are one atomic step.
  */
-static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal) {
+static int reverse_steps(reversal_session *session, cJSON **refusal) {
     int going_on = 1;
     while (going_on && !session->finished) {
-        spisor_lock *guard = runtime_hosts_lock(session->state);
-        if (guard == NULL) {
+        spisor_lock *guard = session->lock_held ? NULL : runtime_hosts_lock(session->state);
+        if (!session->lock_held && guard == NULL) {
             return refuse_unlocked(session->state, refusal);
         }
         going_on = reverse_step(session, refusal);
@@ -189,15 +191,29 @@ static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal
         cJSON_Delete(session->registration);
         session->registration = NULL;
     }
-    if (!going_on) {
+    return going_on;
+}
+
+static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal) {
+    if (!reverse_steps(session, refusal)) {
         return 0;
     }
     return cJSON_AddNumberToObject(result, "reversed", session->reversed) != NULL || out_of_memory(refusal);
 }
 
+int runtime_changes_reverse_newer_held(const char *state, const char *host, double above) {
+    cJSON *refusal = NULL;
+    cJSON *drifted = cJSON_CreateArray();
+    reversal_session session = {state, host, NULL, drifted, above, 1, 0, 0};
+    int reversed = drifted != NULL && reverse_steps(&session, &refusal);
+    cJSON_Delete(refusal);
+    cJSON_Delete(drifted);
+    return reversed;
+}
+
 static cJSON *reverse_host(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
     (void)argument;
-    reversal_session session = {state, host, NULL, NULL, 0, 0};
+    reversal_session session = {state, host, NULL, NULL, -1, 0, 0, 0};
     cJSON *result = cJSON_CreateObject();
     session.drifted = result == NULL ? NULL : cJSON_AddArrayToObject(result, "drifted");
     if (session.drifted == NULL || !reverse_all(&session, result, refusal)) {
