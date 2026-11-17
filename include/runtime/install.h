@@ -8,8 +8,8 @@
  * loader's application entry, the JavaScript runtime, an installed application's update or removal, a loader's
  * registration, a plugin's install by its repo id, and the whole ecosystem's install. A manifest, its `packages`
  * record, a loader's application and a method's options cross as spisor_value, their shapes being their authors'. A
- * size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what
- * an answer or a refusal points at is the provider's until the release for its kind.
+ * size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for
+ * the call; what an answer or a refusal points at is the provider's until the release for its kind.
  */
 
 #include <stddef.h>
@@ -406,9 +406,9 @@ typedef enum runtime_install_application_state {
 
 /**
  * A catalog application: its id and runtime_install_application_state; the method it was installed through, or NULL;
- * where an installed or detected one came from, `origin`, whose package's method is NULL for any other; the methods a missing one
- * is offered and the --application flag that chooses the first; and the methods that could not serve it, each under its
- * method's name. An element of an array, so it has no size.
+ * where an installed or detected one came from, `origin`, whose package's method is NULL for any other; the methods a
+ * missing one is offered and the --application flag that chooses the first; and the methods that could not serve it,
+ * each under its method's name. An element of an array, so it has no size.
  */
 typedef struct runtime_install_application {
     const char *id;
@@ -525,8 +525,9 @@ typedef struct runtime_install_definition {
     /**
      * Writes the entry the application declares, every directory, file and settings member a change recorded under
      * the loader's id, so removing the loader reverses all of it. A change already on disk is not recorded again, so
-     * writing an entry twice changes nothing. A refused call takes back the changes it recorded, as far as the disk
-     * lets it; an OUT_OF_MEMORY answer may leave some recorded, for the loader's removal to reverse.
+     * writing an entry twice changes nothing. A refused call takes back exactly the changes it recorded, leaving a
+     * change another call recorded for the loader meanwhile, as far as the disk and memory let it; what they stop,
+     * and what an OUT_OF_MEMORY answer leaves, stays recorded for the loader's removal to reverse.
      *
      * @return OK; MALFORMED, also for an application that is not a record with an id; REFUSED for application facts
      * the loader gets wrong, or a change the disk refuses; OUT_OF_MEMORY.
@@ -574,9 +575,10 @@ typedef struct runtime_install_definition {
      * install finds it, and, once deployed, the plugin, which the next install replaces; the record is written only
      * after the plugin is deployed.
      *
-     * @return OK; MALFORMED, also for an id that is not an id at all; REFUSED for a local id, which has no host to install
-     * from, a repo that cannot be looked up or was renamed during the install, copies naming different primaries, a
-     * release without an index, a file failing its digest, or a deploy or record the disk refuses; OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for an id that is not an id at all; REFUSED for a local id, which has no host to
+     * install from, a repo that cannot be looked up or was renamed during the install, copies naming different
+     * primaries, a release without an index, a file failing its digest, or a deploy or record the disk refuses;
+     * OUT_OF_MEMORY.
      */
     spisor_status (*by_id)(void *context, const runtime_install_by_id_argument *argument,
                            runtime_install_by_id_answer *answer, spisor_refusal *refusal);
