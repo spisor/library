@@ -36,6 +36,8 @@
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 #include "cache_marker.h"
+#include "catalog_path.h"
+#include "catalog_state.h"
 #include "directory_tree.h"
 #include "scratch_directory.h"
 #include "registry.h"
@@ -822,7 +824,8 @@ static int renamed_to_dd(void) {
 /**
  * One operation to fail allocation by allocation. `prepare` runs after the fresh files and before the first failure;
  * `left_alone` names what a failure must not have changed; `took_effect`, when it holds after a failure, means the
- * call completed and must answer OK; `sticky` fails every allocation after the first failure too.
+ * call completed and must answer OK; `sticky` fails every allocation after the first failure too; `answer_checked`
+ * accepts OK, the operation having already turned a wrong OK answer into another status.
  */
 typedef struct failure_case {
     const char *label;
@@ -831,6 +834,7 @@ typedef struct failure_case {
     untouched left_alone;
     untouched took_effect;
     int sticky;
+    int answer_checked;
 } failure_case;
 
 /** Whether one failed attempt answered as the case requires, reporting it when not. */
@@ -843,6 +847,9 @@ static int answered_as_required(const failure_case *each, uint64_t attempt, spis
                 each->label,
                 (unsigned long long)attempt, (int)status);
         return 0;
+    }
+    if (each->answer_checked && status == SPISOR_OK) {
+        return 1;
     }
     if (each->left_alone != NULL && !each->left_alone()) {
         fprintf(stderr, "%s: failing allocation %llu answered out of memory after it wrote\n", each->label,
@@ -902,12 +909,12 @@ static void every_failure_of(const failure_case *each) {
 }
 
 static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
-    failure_case each = {label, run, NULL, left_alone, NULL, 0};
+    failure_case each = {label, run, NULL, left_alone, NULL, 0, 0};
     every_failure_of(&each);
 }
 
 static void every_command_failure(const char *label, operation run, untouched took_effect, int sticky) {
-    failure_case each = {label, run, add_zz, kept_zz_and_recorded_all, took_effect, sticky};
+    failure_case each = {label, run, add_zz, kept_zz_and_recorded_all, took_effect, sticky, 0};
     every_failure_of(&each);
 }
 
@@ -935,6 +942,382 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("install's packages", merge_packages, packages_file_unchanged);
 }
 
+#define CATALOG_INDEX                                                                                              \
+    "{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{" \
+    "\"plugin.json\":{\"url\":\"a/1.0.0/plugin.json\",\"sha256\":\""                                              \
+    "0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1}}}}}}}"
+#define HELLO_SHA256 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+#define WRONG_ANSWER ((spisor_status)99)
+
+static spisor_value_tree install_item = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree catalog_settings = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree catalog_index = SPISOR_INIT(spisor_value_tree);
+
+static void under_base(char *path, size_t capacity, const char *rest) {
+    snprintf(path, capacity, "%s/%s", place.base, rest);
+}
+
+static int exists_under_base(const char *rest) {
+    char path[1400];
+    under_base(path, sizeof path, rest);
+    return spisor_file_exists(path);
+}
+
+static void marked_version(const char *version) {
+    char directory[1300];
+    cJSON *none = cJSON_CreateObject();
+    snprintf(directory, sizeof directory, "%s/cache/bundles/a/%s", place.base, version);
+    write_text(directory, "plugin.json", "{\"importName\":\"a\",\"api\":1}");
+    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == 1);
+    cJSON_Delete(none);
+}
+
+/** a@1.0.0, a@1.1.0 and a@2.0.0 installed, and a host's run naming a@1.1.0, so a sweep removes 1.0.0 alone. */
+static void three_versions_one_referenced(void) {
+    char bundles[1300];
+    marked_version("1.1.0");
+    marked_version("2.0.0");
+    under_base(bundles, sizeof bundles, "sweep-state/bundles");
+    write_text(bundles, "claude-code.json", "{\"run\":{\"a\":\"1.1.0\"},\"next\":{}}");
+}
+
+static int kept_the_referenced_and_the_newest(void) {
+    return exists_under_base("cache/bundles/a/1.1.0/plugin.json") &&
+           exists_under_base("cache/bundles/a/2.0.0/plugin.json");
+}
+
+static spisor_status sweep_the_cache(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    char state_place[1100];
+    runtime_cache_sweep_argument argument = SPISOR_INIT(runtime_cache_sweep_argument);
+    runtime_cache_sweep_answer answer = SPISOR_INIT(runtime_cache_sweep_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    under_base(state_place, sizeof state_place, "sweep-state");
+    argument.cache = cache_place;
+    argument.state = state_place;
+    spisor_status status = cache->sweep(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.removed_count != 1 || exists_under_base("cache/bundles/a/1.0.0/plugin.json") ||
+                                !kept_the_referenced_and_the_newest())) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_sweep_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static spisor_status check_a_version(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char directory[1300];
+    runtime_cache_check_argument argument = SPISOR_INIT(runtime_cache_check_argument);
+    runtime_cache_check_answer answer = SPISOR_INIT(runtime_cache_check_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(directory, sizeof directory, "cache/bundles/a/1.0.0");
+    argument.directory = directory;
+    spisor_status status = cache->check(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && answer.verdict != RUNTIME_CACHE_INTACT) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_check_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static spisor_status list_damaged_versions(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    runtime_cache_place_argument argument = SPISOR_INIT(runtime_cache_place_argument);
+    runtime_cache_damaged_answer answer = SPISOR_INIT(runtime_cache_damaged_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.cache = cache_place;
+    spisor_status status = cache->damaged(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && answer.damaged_count != 0) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_damaged_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static spisor_status locate_a_plugin(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    runtime_cache_plugin plugins[1] = {{"a", "1.0.0"}};
+    runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
+    runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.cache = cache_place;
+    argument.plugins = plugins;
+    argument.plugin_count = 1;
+    spisor_status status = cache->locate(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.located_count != 1 || answer.problem_count != 0)) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_locate_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static spisor_status name_the_platform(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    runtime_cache_platform_answer answer = SPISOR_INIT(runtime_cache_platform_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status = cache->platform(cache->context, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.platform == NULL || answer.platform[0] == 0)) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_platform_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static void a_bundle_to_deploy(void) {
+    char bundle[1300];
+    under_base(bundle, sizeof bundle, "bundle");
+    write_text(bundle, "plugin.json", "{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}");
+    write_text(bundle, "index.js", "export default {};");
+}
+
+static int deployed_nothing(void) {
+    return !exists_under_base("plugins/greeter.json") && !exists_under_base("plugins/greeter.js") &&
+           !exists_under_base("plugins/greeter_identity.json");
+}
+
+static spisor_status deploy_a_bundle(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char bundle[1300];
+    char plugins[1300];
+    runtime_cache_deploy_argument argument = SPISOR_INIT(runtime_cache_deploy_argument);
+    runtime_cache_deploy_answer answer = SPISOR_INIT(runtime_cache_deploy_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(bundle, sizeof bundle, "bundle");
+    under_base(plugins, sizeof plugins, "plugins");
+    argument.directory = bundle;
+    argument.plugin_directory = plugins;
+    argument.id = "github:5";
+    argument.name = "greeter";
+    spisor_status status = cache->deploy(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (deployed_nothing() || answer.import_name == NULL ||
+                                strcmp(answer.import_name, "greeter") != 0)) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_deploy_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static void a_file_to_install(void) {
+    write_text(place.base, "source.txt", "hello");
+}
+
+static int installed_no_marker(void) {
+    return !exists_under_base("cache/bundles/b/1.0.0/.installed.json");
+}
+
+static spisor_status install_a_version(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    runtime_cache_install_argument argument = SPISOR_INIT(runtime_cache_install_argument);
+    runtime_cache_install_answer answer = SPISOR_INIT(runtime_cache_install_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.cache = cache_place;
+    argument.id = "b";
+    argument.item = &install_item.root;
+    argument.version = "1.0.0";
+    argument.platform = "linux-x64";
+    spisor_status status = cache->install(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (installed_no_marker() || answer.fetched_count != 1)) {
+        status = WRONG_ANSWER;
+    }
+    cache->release_install_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
+static int holds_one_item(const spisor_value *catalog) {
+    const spisor_value *items = spisor_value_member(catalog, "items", 5);
+    return items != NULL && items->count == 1;
+}
+
+static spisor_status read_a_catalog(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    runtime_catalog_read_argument argument = SPISOR_INIT(runtime_catalog_read_argument);
+    runtime_catalog_answer answer = SPISOR_INIT(runtime_catalog_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.text = CATALOG_INDEX;
+    argument.origin = "https://catalog.test/index.json";
+    spisor_status status = catalog->read(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && !holds_one_item(answer.catalog)) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
+static spisor_status list_catalog_sources(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    runtime_catalog_sources_argument argument = SPISOR_INIT(runtime_catalog_sources_argument);
+    runtime_catalog_sources_answer answer = SPISOR_INIT(runtime_catalog_sources_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.settings = &catalog_settings.root;
+    spisor_status status = catalog->sources(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.source_count != 2 || answer.skipped_count != 1)) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_sources_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
+static void a_local_index(void) {
+    write_text(place.base, "index.json", CATALOG_INDEX);
+}
+
+static void local_index_source(runtime_catalog_source *source, char *path, size_t capacity) {
+    under_base(path, capacity, "index.json");
+    source->kind = RUNTIME_CATALOG_LOCAL;
+    source->location = path;
+}
+
+static int kept_no_catalog_state(void) {
+    char index[1300];
+    char cache_place[1100];
+    under_base(index, sizeof index, "index.json");
+    under_base(cache_place, sizeof cache_place, "cache");
+    char *location = runtime_catalog_resolve_path(index);
+    char *state = location == NULL ? NULL : runtime_catalog_state_path(cache_place, location);
+    CHECK(state != NULL);
+    int kept_none = state == NULL || !spisor_file_exists(state);
+    free(state);
+    free(location);
+    return kept_none;
+}
+
+static spisor_status check_a_catalog(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    char index[1300];
+    char cache_place[1100];
+    runtime_catalog_source source;
+    runtime_catalog_check_argument argument = SPISOR_INIT(runtime_catalog_check_argument);
+    runtime_catalog_check_answer answer = SPISOR_INIT(runtime_catalog_check_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    local_index_source(&source, index, sizeof index);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.source = &source;
+    argument.cache = cache_place;
+    argument.now = "2026-11-03T08:00:00.000Z";
+    argument.interval_hours = 24;
+    spisor_status status = catalog->check(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.kind != RUNTIME_CATALOG_CHANGED || !holds_one_item(answer.catalog) ||
+                                kept_no_catalog_state())) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_check_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
+static spisor_status read_the_current_catalog(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    char index[1300];
+    char cache_place[1100];
+    runtime_catalog_source source;
+    runtime_catalog_current_argument argument = SPISOR_INIT(runtime_catalog_current_argument);
+    runtime_catalog_answer answer = SPISOR_INIT(runtime_catalog_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    local_index_source(&source, index, sizeof index);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.sources = &source;
+    argument.source_count = 1;
+    argument.cache = cache_place;
+    spisor_status status = catalog->current(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && !holds_one_item(answer.catalog)) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
+static spisor_status resolve_versions(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    const char *versions[1] = {"1.0.0"};
+    runtime_catalog_enabled enabled[1] = {{"a", NULL}};
+    runtime_catalog_installed installed[1] = {{"a", versions, 1}};
+    runtime_catalog_resolve_argument argument = SPISOR_INIT(runtime_catalog_resolve_argument);
+    runtime_catalog_resolve_answer answer = SPISOR_INIT(runtime_catalog_resolve_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.catalog = &catalog_index.root;
+    argument.enabled = enabled;
+    argument.enabled_count = 1;
+    argument.installed = installed;
+    argument.installed_count = 1;
+    argument.kind = RUNTIME_CATALOG_PLUGIN;
+    spisor_status status = catalog->resolve(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.run_count != 1 || answer.fetch_count != 0)) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_resolve_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
+/** A label the cache and catalog cases are narrowed to, from the second argument; empty runs them all. */
+static const char *only_label = "";
+
+static void every_checked_failure(const char *label, operation run, void (*prepare)(void), untouched left_alone) {
+    if (strstr(label, only_label) == NULL) {
+        return;
+    }
+    failure_case each = {label, run, prepare, left_alone, NULL, 0, 1};
+    every_failure_of(&each);
+}
+
+static void every_cache_and_catalog_operation(void) {
+    every_checked_failure("cache's sweep", sweep_the_cache, three_versions_one_referenced,
+                          kept_the_referenced_and_the_newest);
+    every_checked_failure("cache's check", check_a_version, NULL, NULL);
+    every_checked_failure("cache's damaged", list_damaged_versions, NULL, NULL);
+    every_checked_failure("cache's locate", locate_a_plugin, NULL, NULL);
+    every_checked_failure("cache's platform", name_the_platform, NULL, NULL);
+    every_checked_failure("cache's deploy", deploy_a_bundle, a_bundle_to_deploy, deployed_nothing);
+    every_checked_failure("cache's install", install_a_version, a_file_to_install, installed_no_marker);
+    every_checked_failure("catalog's read", read_a_catalog, NULL, NULL);
+    every_checked_failure("catalog's sources", list_catalog_sources, NULL, NULL);
+    every_checked_failure("catalog's check", check_a_catalog, a_local_index, kept_no_catalog_state);
+    every_checked_failure("catalog's current", read_the_current_catalog, a_local_index, NULL);
+    every_checked_failure("catalog's resolve", resolve_versions, NULL, NULL);
+}
+
+static void build_cache_and_catalog_values(void) {
+    char source[1300];
+    char url[4200];
+    char text[5000];
+    under_base(source, sizeof source, "source.txt");
+    file_url_of(source, url, sizeof url);
+    snprintf(text, sizeof text,
+             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}",
+             url);
+    CHECK(value_of_text(text, &install_item));
+    CHECK(value_of_text(CATALOG_INDEX, &catalog_index));
+    CHECK(value_of_text("{\"catalog\":{\"sources\":[{\"kind\":\"local\",\"path\":\"/x.json\"},"
+                        "{\"kind\":\"https\",\"url\":\"https://e.test/c.json\"},{\"kind\":\"nope\"}]}}",
+                        &catalog_settings));
+}
+
+static void release_cache_and_catalog_values(void) {
+    spisor_value_release(&install_item);
+    spisor_value_release(&catalog_index);
+    spisor_value_release(&catalog_settings);
+}
+
 /** The check must see a profile line nothing records, or it passes whatever a command leaves in a profile. */
 static void an_unrecorded_profile_line_is_seen(void) {
     char line[1400];
@@ -954,7 +1337,10 @@ static void every_command(void) {
     every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL, 0);
 }
 
-/** With the argument `commands` runs only the commands service, whose cases take most of the time, as a test of its own. */
+/**
+ * With the argument `commands` runs only the commands service, and with `cache` only the cache and catalog services,
+ * whose cases take most of the time, each as a test of its own.
+ */
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
     snprintf(place.base, sizeof place.base, RUNTIME_SCRATCH_PATH "/out-of-memory-%d", (int)CURRENT_PROCESS_ID);
@@ -979,8 +1365,12 @@ int main(int argc, char **argv) {
     CHECK(value_of_text("{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\"},\"b\":{\"kind\":\"host\"}}}",
                         &whole_catalog));
     CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
+    build_cache_and_catalog_values();
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
         every_command();
+    } else if (argc > 1 && strcmp(argv[1], "cache") == 0) {
+        only_label = argc > 2 ? argv[2] : "";
+        every_cache_and_catalog_operation();
     } else {
         every_service_but_commands();
     }
@@ -993,6 +1383,7 @@ int main(int argc, char **argv) {
     spisor_value_release(&catalog_items);
     spisor_value_release(&whole_catalog);
     spisor_value_release(&manifest_packages);
+    release_cache_and_catalog_values();
     forget_test_path_value();
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");
