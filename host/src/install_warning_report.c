@@ -109,7 +109,7 @@ static void print_warnings_of(const char *plugin_id, cJSON *manifest) {
     cJSON *refusal = NULL;
     cJSON *answer = NULL;
     if (argument != NULL && cJSON_AddItemToObject(argument, "manifest", manifest)) {
-        answer = host_call(runtime_install_warnings, argument, &refusal);
+        answer = runtime_call_operation(runtime_install_warnings_operation, argument, &refusal);
     } else {
         cJSON_Delete(argument);
         cJSON_Delete(manifest);

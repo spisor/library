@@ -90,7 +90,7 @@ static cJSON *mapping_of(const runtime_install_run *run, const cJSON *applicatio
         cJSON_Delete(call);
         return NULL;
     }
-    cJSON *answer = runtime_call_or_refuse(runtime_install_packages, call, refusal);
+    cJSON *answer = runtime_call_operation(runtime_install_packages_operation, call, refusal);
     cJSON *packages = cJSON_DetachItemFromObjectCaseSensitive(answer, "packages");
     cJSON_Delete(answer);
     return packages;
@@ -274,7 +274,7 @@ static cJSON *plan_call(const runtime_install_run *run, const pending_applicatio
 
 /** The origin an install through method records: the package and what the method reports after it. */
 static cJSON *installed_origin(const runtime_install_run *run, const char *id, const char *method, const cJSON *mapped) {
-    cJSON *detection = runtime_install_detection(run->places, id, runtime_install_method_named(method), mapped);
+    cJSON *detection = runtime_install_detection_of(run->places, id, runtime_install_method_named(method), mapped);
     cJSON *origin = cJSON_CreateObject();
     const cJSON *answer = cJSON_GetObjectItemCaseSensitive(detection, "answer");
     const cJSON *version = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "installed"))
@@ -308,7 +308,7 @@ static cJSON *installed_row(const char *id, const char *method, cJSON *origin) {
 static cJSON *install_through(const runtime_install_run *run, const pending_application *pending, const char *method) {
     const char *id = application_id(pending->application);
     cJSON *refusal = NULL;
-    cJSON *plan = runtime_call_or_refuse(runtime_install_plan, plan_call(run, pending, method), &refusal);
+    cJSON *plan = runtime_call_operation(runtime_install_plan_operation, plan_call(run, pending, method), &refusal);
     if (plan == NULL) {
         return refusal == NULL ? NULL : failed_row(id, method, refusal);
     }

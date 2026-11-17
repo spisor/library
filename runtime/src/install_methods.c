@@ -63,7 +63,7 @@ static cJSON *answered_detection(cJSON *detection, const cJSON *mapped, cJSON *a
     return detection;
 }
 
-cJSON *runtime_install_detection(const cJSON *places, const char *item, const runtime_install_method *method,
+cJSON *runtime_install_detection_of(const cJSON *places, const char *item, const runtime_install_method *method,
                                  const cJSON *mapped) {
     cJSON *detection = detection_head(method->name, item);
     if (detection == NULL) {
@@ -105,7 +105,7 @@ static cJSON *packages_call(const cJSON *places, const char *item, const cJSON *
 static int add_detections(cJSON *detections, const cJSON *places, const char *item, const cJSON *packages) {
     for (size_t index = 0; METHODS[index] != NULL; index++) {
         const cJSON *mapped = cJSON_GetObjectItemCaseSensitive(packages, METHODS[index]->name);
-        cJSON *detection = mapped == NULL ? NULL : runtime_install_detection(places, item, METHODS[index], mapped);
+        cJSON *detection = mapped == NULL ? NULL : runtime_install_detection_of(places, item, METHODS[index], mapped);
         if (mapped != NULL && (detection == NULL || !cJSON_AddItemToArray(detections, detection))) {
             cJSON_Delete(detection);
             return 0;
@@ -116,7 +116,7 @@ static int add_detections(cJSON *detections, const cJSON *places, const char *it
 
 cJSON *runtime_install_detections(const cJSON *places, const char *item, const cJSON *manifest_packages,
                                   cJSON **refusal) {
-    cJSON *merged = runtime_call_or_refuse(runtime_install_packages, packages_call(places, item, manifest_packages), refusal);
+    cJSON *merged = runtime_call_operation(runtime_install_packages_operation, packages_call(places, item, manifest_packages), refusal);
     cJSON *detections = merged == NULL ? NULL : cJSON_CreateArray();
     if (detections != NULL &&
         !add_detections(detections, places, item, cJSON_GetObjectItemCaseSensitive(merged, "packages"))) {
@@ -127,7 +127,7 @@ cJSON *runtime_install_detections(const cJSON *places, const char *item, const c
     return detections;
 }
 
-static cJSON *detect_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_detect_operation(const cJSON *argument, cJSON **refusal) {
     const char *item = runtime_install_text(argument, "item");
     const cJSON *manifest_packages = cJSON_GetObjectItemCaseSensitive(argument, "manifestPackages");
     if (item == NULL || item[0] == 0 || runtime_install_place(argument, "cache") == NULL ||
@@ -144,8 +144,4 @@ static cJSON *detect_for(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_install_detect(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, detect_for);
 }

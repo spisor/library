@@ -71,15 +71,11 @@ static cJSON *warnings_of(const cJSON *manifest) {
     return answer;
 }
 
-static cJSON *warnings(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_warnings_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *manifest = cJSON_GetObjectItemCaseSensitive(argument, "manifest");
     if (!cJSON_IsObject(manifest)) {
         *refusal = runtime_refusal("the argument carries no manifest object", "send {\"manifest\": <the plugin.json content>}");
         return NULL;
     }
     return warnings_of(manifest);
-}
-
-RUNTIME_EXPORT int32_t runtime_install_warnings(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, warnings);
 }

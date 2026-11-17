@@ -19,6 +19,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/install.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/marketplace.h"
@@ -55,6 +56,7 @@ static void take_every_definition(void) {
         runtime_marketplace_definition_of();
         runtime_cache_definition_of();
         runtime_catalog_definition_of();
+        runtime_install_definition_of();
     }
 }
 

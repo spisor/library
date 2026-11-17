@@ -16,18 +16,11 @@
 #endif
 
 #include "check.h"
-#include "install.h"
+#include "install_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
 
-typedef struct answer {
-    int32_t status;
-    cJSON *tree;
-    uint8_t *buffer;
-} answer;
-
-typedef int32_t (*export_function)(const uint8_t *, size_t, uint8_t **, size_t *);
+typedef catalog_answer answer;
 
 static char portable[1100];
 
@@ -44,37 +37,29 @@ static void write_packages_file(const char *text) {
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
 }
 
-static answer call_with(export_function function, const char *arguments_json) {
-    answer result = {0, NULL, NULL};
+static answer call_with(install_operation operation, const char *arguments_json) {
     cJSON *argument = cJSON_Parse(arguments_json);
     cJSON *places = cJSON_CreateObject();
     cJSON_AddStringToObject(places, "portable", portable);
     cJSON_AddItemToObject(argument, "places", places);
-    char *text = cJSON_PrintUnformatted(argument);
-    size_t out_len = 0;
-    result.status = function((const uint8_t *)text, strlen(text), &result.buffer, &out_len);
-    result.tree = result.buffer == NULL ? NULL : spisor_parse_json(result.buffer, out_len);
-    free(text);
-    cJSON_Delete(argument);
-    return result;
+    return install_call(operation, argument);
 }
 
 static void finish(answer *result) {
     cJSON_Delete(result->tree);
-    spisor_release(result->buffer);
 }
 
 static void expect_member(const answer *result, const char *member, const char *expected_json, const char *label) {
-    CHECK(result->status == SPISOR_STATUS_SUCCESS);
+    CHECK(result->status == SPISOR_OK);
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(result->tree, member);
     char *actual = item == NULL ? NULL : cJSON_PrintUnformatted(item);
     check_text(actual, expected_json, label);
     free(actual);
 }
 
-static void expect_refused(const answer *result, const char *fragment, const char *label) {
-    if (result->status != SPISOR_STATUS_FAILURE) {
-        fprintf(stderr, "%s: expected a refusal, got status %d\n", label, (int)result->status);
+static void expect_status(const answer *result, spisor_status expected, const char *fragment, const char *label) {
+    if (result->status != (int32_t)expected) {
+        fprintf(stderr, "%s: expected status %d, got status %d\n", label, (int)expected, (int)result->status);
         check_failures++;
         return;
     }
@@ -86,12 +71,20 @@ static void expect_refused(const answer *result, const char *fragment, const cha
     free(text);
 }
 
+static void expect_refused(const answer *result, const char *fragment, const char *label) {
+    expect_status(result, SPISOR_REFUSED, fragment, label);
+}
+
+static void expect_malformed(const answer *result, const char *fragment, const char *label) {
+    expect_status(result, SPISOR_MALFORMED, fragment, label);
+}
+
 static answer packages(const char *arguments_json) {
-    return call_with(runtime_install_packages, arguments_json);
+    return call_with(INSTALL_PACKAGES, arguments_json);
 }
 
 static answer plan(const char *arguments_json) {
-    return call_with(runtime_install_plan, arguments_json);
+    return call_with(INSTALL_PLAN, arguments_json);
 }
 
 #define NPM_MANIFEST "\"manifestPackages\":{\"npm\":\"@vendor/tool\",\"brew\":{\"name\":\"tool\",\"options\":{\"tap\":\"v/t\"}}}"
@@ -157,13 +150,13 @@ static void unreadable_file_that_is_a_directory_is_refused(void) {
 static void bad_arguments_are_refused(void) {
     fresh_portable("arguments");
     answer result = packages("{}");
-    expect_refused(&result, "item", "no item");
+    expect_malformed(&result, "item", "no item");
     finish(&result);
     result = packages("{\"item\":\"tool\",\"manifestPackages\":{\"npm\":3}}");
     expect_refused(&result, "manifestPackages", "a bad manifest mapping");
     finish(&result);
     result = packages("{\"item\":\"tool\",\"manifestPackages\":[]}");
-    expect_refused(&result, "manifestPackages", "a manifest that is not an object");
+    expect_malformed(&result, "manifest packages", "a manifest that is not an object");
     finish(&result);
 }
 
@@ -236,11 +229,11 @@ static void method_without_a_package_is_refused(void) {
 
 static void bad_plan_arguments_are_refused(void) {
     fresh_portable("plan-arguments");
-    answer result = plan("{\"item\":\"tool\",\"methods\":\"npm\",\"chosen\":\"npm\"}");
-    expect_refused(&result, "methods", "methods that is not an array");
+    answer result = plan("{\"item\":\"tool\",\"methods\":[3],\"chosen\":\"npm\"}");
+    expect_malformed(&result, "methods", "a method that is not text");
     finish(&result);
     result = plan("{\"item\":\"tool\",\"methods\":[\"npm\"]}");
-    expect_refused(&result, "chosen", "no chosen method");
+    expect_malformed(&result, "chosen", "no chosen method");
     finish(&result);
 }
 
