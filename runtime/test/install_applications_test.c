@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "install_call.h"
 
 #if !defined(_WIN32)
 #include <sys/stat.h>
@@ -107,7 +108,7 @@ static catalog_answer through_record(const install_base *base, const char *opera
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "loader", LOADER_ID);
     cJSON_AddStringToObject(argument, "operation", operation);
-    return call_catalog(runtime_install_application, argument);
+    return install_call(INSTALL_APPLICATION, argument);
 }
 
 static void asks_nothing_installs_nothing_and_reports_the_exact_flag(void) {
@@ -607,7 +608,7 @@ static void refuses_an_update_and_a_remove_of_a_path_application_naming_where_it
     const char *operations[2] = {"update", "remove"};
     for (int index = 0; index < 2; index++) {
         catalog_answer answer = through_record(&base, operations[index]);
-        expect_refusal(answer, bin, operations[index]);
+        expect_cache_refusal_refused(answer, bin, operations[index]);
         CHECK(text_at(answer.tree, "fix") != NULL && strstr(text_at(answer.tree, "fix"), "whatever installed it") != NULL);
         cJSON_Delete(answer.tree);
     }
@@ -666,7 +667,7 @@ static catalog_answer register_loader(const install_base *base, const char *vers
     cJSON_AddItemToObject(argument, "environment", environment_with_path(base, path));
     cJSON_AddStringToObject(argument, "id", LOADER_ID);
     cJSON_AddStringToObject(argument, "version", version);
-    return call_catalog(runtime_install_register_loader, argument);
+    return install_call(INSTALL_REGISTER_LOADER, argument);
 }
 
 static void registers_an_installed_loader_again_keeping_its_provenance_and_requesting_its_commands(void) {
@@ -701,7 +702,7 @@ static void refuses_to_register_a_loader_version_that_is_not_installed(void) {
     list_claude(&base, PACKAGES, "[]", "[]");
     cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
     catalog_answer refused = register_loader(&base, "9.9.9", base.path);
-    CHECK(refused.status == SPISOR_STATUS_FAILURE && text_at(refused.tree, "fix") != NULL);
+    CHECK(refused.status == SPISOR_REFUSED && text_at(refused.tree, "fix") != NULL);
     cJSON *registration = registration_of(&base, LOADER_ID);
     check_text(text_at(registration, "version"), "1.0.0", "registration untouched");
     cJSON_Delete(registration);

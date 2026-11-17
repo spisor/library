@@ -174,7 +174,7 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
     return answer;
 }
 
-static cJSON *application_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_application_operation(const cJSON *argument, cJSON **refusal) {
     application_operation request = {cJSON_GetObjectItemCaseSensitive(argument, "places"),
                                      runtime_install_text(argument, "loader"), runtime_install_text(argument, "operation")};
     int usable = runtime_install_place(argument, "state") != NULL && runtime_install_place(argument, "cache") != NULL &&
@@ -185,8 +185,4 @@ static cJSON *application_for(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return operate_through_record(&request, refusal);
-}
-
-RUNTIME_EXPORT int32_t runtime_install_application(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, application_for);
 }

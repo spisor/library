@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "install_call.h"
 
 #include "boot_stub.h"
 #include "hosts.h"
@@ -113,7 +114,7 @@ static catalog_answer write_entry(const install_base *base, const char *applicat
         cJSON_AddItemToObject(described, "entry", entry);
     }
     cJSON_AddStringToObject(loader, "home", home);
-    return call_catalog(runtime_install_entry_json, argument);
+    return install_call(INSTALL_ENTRY, argument);
 }
 
 static cJSON *removed(const install_base *base) {
@@ -385,11 +386,30 @@ static void refuses_an_entry_whose_application_facts_were_never_checked(void) {
     cJSON *proxy = cJSON_AddObjectToObject(described, "proxy");
     cJSON_AddNumberToObject(proxy, "placeholder", 5);
     cJSON_AddStringToObject(loader, "home", home);
-    catalog_answer answer = call_catalog(runtime_install_entry_json, argument);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    catalog_answer answer = install_call(INSTALL_ENTRY, argument);
+    CHECK(answer.status == SPISOR_REFUSED);
     CHECK(text_at(answer.tree, "message") != NULL && strstr(text_at(answer.tree, "message"), "/application/proxy/placeholder") != NULL);
     cJSON_Delete(answer.tree);
     CHECK(!spisor_file_exists(home));
+    free(home);
+    finish_install_base(&base);
+}
+
+static void takes_back_what_it_wrote_when_a_later_change_is_refused(void) {
+    install_base base;
+    start_install_base(&base, "entries", "refused-later");
+    char *home = home_of(&base, "sample");
+    register_loader(&base, "sample", home);
+    CHECK(spisor_make_directories(home) == 1);
+    char *root = entry_root(&base);
+    char blocked[2048];
+    snprintf(blocked, sizeof blocked, "%s/hooks/hooks.json", root);
+    CHECK(spisor_make_directories(blocked) == 1);
+    catalog_answer answer = write_entry(&base, "sample", home);
+    CHECK(answer.status == SPISOR_REFUSED);
+    cJSON_Delete(answer.tree);
+    expect_tree(root, "[\"hooks\",\"hooks/hooks.json\"]", "only what was there before");
+    free(root);
     free(home);
     finish_install_base(&base);
 }
@@ -407,5 +427,6 @@ int main(void) {
     answers_not_written_for_an_application_declaring_no_entry();
     refuses_an_entry_whose_application_facts_were_never_checked();
     expect_user_path_unchanged(&guard);
+    takes_back_what_it_wrote_when_a_later_change_is_refused();
     return check_summary("install_entries_test");
 }

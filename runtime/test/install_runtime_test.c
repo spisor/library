@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "install_call.h"
 
 #if !defined(_WIN32)
 #include <fcntl.h>
@@ -97,7 +98,7 @@ static catalog_answer acquire_on(const install_base *base, const char *path) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", base->cache);
     cJSON_AddItemToObject(argument, "environment", environment_with_path(base, path));
-    catalog_answer answer = call_catalog(runtime_install_runtime, argument);
+    catalog_answer answer = install_call(INSTALL_RUNTIME, argument);
     if (answer.status != SPISOR_STATUS_SUCCESS) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);
         fprintf(stderr, "install.runtime answered %d: %s\n", (int)answer.status, printed == NULL ? "(nothing)" : printed);
@@ -222,7 +223,7 @@ static void refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_exe
     runtime_fixture fixture;
     start_runtime(&fixture, "mismatch", "0000000000000000000000000000000000000000000000000000000000000000");
     catalog_answer answer = acquire(&fixture);
-    expect_refusal(answer, NULL, "hash mismatch");
+    expect_cache_refusal_refused(answer, NULL, "hash mismatch");
     cJSON_Delete(answer.tree);
     char *directory = runtime_directory(&fixture);
     char *executable = executable_path(&fixture);
@@ -239,8 +240,8 @@ static void refuses_a_platform_with_no_pinned_build(void) {
     cJSON_AddStringToObject(argument, "cache", base.cache);
     cJSON_AddItemToObject(argument, "environment", environment_of(&base));
     cJSON_AddStringToObject(argument, "platform", "aix-ppc64");
-    catalog_answer answer = call_catalog(runtime_install_runtime, argument);
-    expect_refusal(answer, "aix-ppc64", "no pinned build");
+    catalog_answer answer = install_call(INSTALL_RUNTIME, argument);
+    expect_cache_refusal_refused(answer, "aix-ppc64", "no pinned build");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "runtimes"));
     finish_install_base(&base);

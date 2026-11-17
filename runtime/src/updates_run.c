@@ -114,7 +114,7 @@ static int update_one(const update_run *run, const cJSON *registration, const cJ
         cJSON_AddStringToObject(call, "loader", id);
         cJSON_AddStringToObject(call, "operation", "update");
         refusal = NULL;
-        cJSON *updated = runtime_call_or_refuse(runtime_install_application, call, &refusal);
+        cJSON *updated = runtime_call_operation(runtime_install_application_operation, call, &refusal);
         complete = record(run, "applications", id, updated, refusal);
     }
     return complete;

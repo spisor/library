@@ -8,7 +8,7 @@
     "send {\"places\": {\"portable\", \"state\", \"cache\"}, \"environment\": {<name>: <value>}, \"id\": \"<loader id>\", " \
     "\"version\": \"<installed version>\"}"
 
-static cJSON *register_loader(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_register_loader_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
     const char *id = runtime_install_text(argument, "id");
@@ -24,8 +24,4 @@ static cJSON *register_loader(const cJSON *argument, cJSON **refusal) {
     cJSON *registered = run.report == NULL ? NULL : runtime_install_register_installed_loader(&run, id, version, refusal);
     cJSON_Delete(run.report);
     return registered;
-}
-
-RUNTIME_EXPORT int32_t runtime_install_register_loader(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, register_loader);
 }
