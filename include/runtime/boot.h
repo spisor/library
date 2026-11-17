@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -52,12 +53,6 @@ typedef struct runtime_boot_hint_answer {
     void *storage;
 } runtime_boot_hint_answer;
 
-/** A library id and the version to boot. An element of an array, so it has no size. */
-typedef struct runtime_boot_version {
-    const char *id;
-    const char *version;
-} runtime_boot_version;
-
 /**
  * The libraries the next start of `host_id` boots and its `host` version, NULL to keep the one recorded; with `state`,
  * the place whose registry lock the write holds, NULL for none. First shape ends at `platform`.
@@ -66,7 +61,7 @@ typedef struct runtime_boot_write_argument {
     uint32_t size;
     const char *cache;
     const char *host_id;
-    const runtime_boot_version *libraries;
+    const runtime_item_version *libraries;
     size_t library_count;
     const char *host;
     const char *state;
@@ -113,8 +108,9 @@ typedef struct runtime_boot_place_answer {
 /**
  * The boot service. Every operation answers MALFORMED for an argument short of its first shape, a place or a required
  * text that is NULL or empty, a host id that is not a plain file name, an array whose count has no elements or holds a
- * NULL or empty text or an id twice, or a platform that is not a key; such a call has written nothing. The answer
- * arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
+ * NULL or empty text or an id twice, or a platform that is not a key; such a call has written nothing. The one array
+ * whose texts may be empty is resolve's `arguments`, since a program may take an empty argument; it still refuses NULL.
+ * The answer arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
  */
 typedef struct runtime_boot_definition {
     uint32_t size;

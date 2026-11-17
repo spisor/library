@@ -283,19 +283,18 @@ static void an_explicit_home_wins_over_the_environment(void) {
     release_both(&answer, NULL);
 }
 
-static void the_first_of_a_name_answers_for_it(void) {
+static void a_name_given_twice_is_malformed(void) {
 #if defined(_WIN32)
     runtime_variable environment[] = {LOCAL_APP_DATA, {"SPISOR_HOME", "D:\\first"},
                                                   {"SPISOR_HOME", "D:\\second"}};
-    const char *expected = "D:\\first";
 #else
     runtime_variable environment[] = {{"SPISOR_HOME", "/first"}, {"SPISOR_HOME", "/second"}};
-    const char *expected = "/first";
 #endif
     runtime_places_answer answer = SPISOR_INIT(runtime_places_answer);
-    CHECK(resolve_with(DEFINITION_HOME, environment, COUNT(environment), &answer, NULL) == SPISOR_OK);
-    check_text(answer.portable, expected, "portable");
-    release_both(&answer, NULL);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    CHECK(resolve_with(DEFINITION_HOME, environment, COUNT(environment), &answer, &refusal) == SPISOR_MALFORMED);
+    CHECK(answer.storage == NULL);
+    release_both(&answer, &refusal);
 }
 
 static void windows_without_local_app_data_refuses(void) {
@@ -345,7 +344,7 @@ int main(void) {
     refuses_an_environment_with_no_home();
     an_empty_userprofile_with_home_set_refuses_on_windows();
     an_explicit_home_wins_over_the_environment();
-    the_first_of_a_name_answers_for_it();
+    a_name_given_twice_is_malformed();
     windows_without_local_app_data_refuses();
     refuses_an_argument_or_answer_short_of_its_shape();
     return check_summary("places_test");

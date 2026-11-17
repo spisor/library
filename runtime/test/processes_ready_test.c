@@ -5,6 +5,7 @@
 #include "catalog_call.h"
 #include "check.h"
 #include "directory_tree.h"
+#include "json_service.h"
 #include "cache_call.h"
 #include "processes_call.h"
 #include "processes_ready.h"
@@ -113,6 +114,39 @@ static void it_refuses_a_record_that_is_no_usable_publication(void) {
     runtime_remove_tree(state);
 }
 
+/** The JSON operation's own answer to an unusable environment: a refusal naming it, never memory running out. */
+static void expect_json_environment_refused(const char *label, cJSON *environment) {
+    cJSON *argument = call_with("\"pid\":7");
+    cJSON_AddItemToObject(argument, "environment", environment);
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_call_operation(runtime_processes_ready_operation, argument, &refusal);
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message"));
+    if (answer != NULL || message == NULL || strstr(message, "environment") == NULL) {
+        fprintf(stderr, "ready with %s did not refuse its environment\n", label);
+        check_failures++;
+    }
+    cJSON_Delete(answer);
+    cJSON_Delete(refusal);
+}
+
+static void it_refuses_an_unusable_json_environment_writing_nothing(void) {
+    fresh_state("json-environment");
+    cJSON *holding_equals = cJSON_CreateObject();
+    cJSON *empty_name = cJSON_CreateObject();
+    cJSON *named_twice = cJSON_CreateObject();
+    cJSON_AddStringToObject(holding_equals, "A=B", "1");
+    cJSON_AddStringToObject(empty_name, "", "1");
+    cJSON_AddStringToObject(named_twice, "A", "1");
+    cJSON_AddStringToObject(named_twice, "A", "2");
+    expect_json_environment_refused("a name holding =", holding_equals);
+    expect_json_environment_refused("an empty name", empty_name);
+    expect_json_environment_refused("a name given twice", named_twice);
+    char record[1200];
+    snprintf(record, sizeof record, "%s/processes/" HOST ".ready.json", state);
+    CHECK(!spisor_file_exists(record));
+    runtime_remove_tree(state);
+}
+
 static void it_replaces_the_record_of_an_earlier_pid(void) {
     fresh_state("replace");
     cJSON_Delete(publish("\"pid\":7,\"environment\":{\"A\":\"old\"}").tree);
@@ -134,6 +168,7 @@ int main(void) {
     it_times_out_when_nothing_was_published();
     it_answers_a_published_refusal_as_it_is();
     it_refuses_a_record_that_is_no_usable_publication();
+    it_refuses_an_unusable_json_environment_writing_nothing();
     it_replaces_the_record_of_an_earlier_pid();
     return check_summary("processes_ready_test");
 }

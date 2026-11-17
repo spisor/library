@@ -37,7 +37,7 @@ typedef struct processes_request {
     size_t argument_count;
     runtime_variable *environment;
     size_t environment_count;
-    runtime_processes_version *run;
+    runtime_item_version *run;
     size_t run_count;
 } processes_request;
 
@@ -101,7 +101,7 @@ static inline spisor_status processes_hold_call(const runtime_processes_definiti
     argument.executable = processes_text(start, "executable");
     argument.arguments = read->arguments;
     argument.argument_count = read->argument_count;
-    argument.environment = read->environment;
+    argument.environment = cJSON_HasObjectItem(start, "environment") ? read->environment : NULL;
     argument.environment_count = read->environment_count;
     argument.directory = processes_text(start, "directory");
     status = processes->hold(processes->context, &argument, &answer, refusal);

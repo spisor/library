@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "runtime/install.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -22,12 +23,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/** An id and its version, such as a plugin a start runs. An element of an array, so it has no size. */
-typedef struct runtime_updates_version {
-    const char *id;
-    const char *version;
-} runtime_updates_version;
 
 /** A host default: the plugin a binding starts unless the settings say otherwise. An element of an array. */
 typedef struct runtime_updates_default {
@@ -55,7 +50,7 @@ typedef struct runtime_updates_apply_argument {
     const spisor_value *settings;
     const runtime_updates_default *defaults;
     size_t default_count;
-    const runtime_updates_version *running;
+    const runtime_item_version *running;
     size_t running_count;
     const char *const *libraries;
     size_t library_count;
@@ -68,13 +63,13 @@ typedef struct runtime_updates_apply_argument {
  */
 typedef struct runtime_updates_apply_answer {
     uint32_t size;
-    const runtime_updates_version *plugins;
+    const runtime_item_version *plugins;
     size_t plugin_count;
-    const runtime_updates_version *run;
+    const runtime_item_version *run;
     size_t run_count;
-    const runtime_updates_version *next;
+    const runtime_item_version *next;
     size_t next_count;
-    const runtime_updates_version *rollback;
+    const runtime_item_version *rollback;
     size_t rollback_count;
     const runtime_updates_problem *unrecorded;
     size_t unrecorded_count;
@@ -95,7 +90,7 @@ typedef struct runtime_updates_check_argument {
     const spisor_value *settings;
     const runtime_updates_default *defaults;
     size_t default_count;
-    const runtime_updates_version *damaged;
+    const runtime_item_version *damaged;
     size_t damaged_count;
     const char *platform;
 } runtime_updates_check_argument;
@@ -143,11 +138,11 @@ typedef struct runtime_updates_rollback_argument {
 /** What `host_id` records after the rollback as run, next and rollback. First shape ends at `storage`. */
 typedef struct runtime_updates_rollback_answer {
     uint32_t size;
-    const runtime_updates_version *run;
+    const runtime_item_version *run;
     size_t run_count;
-    const runtime_updates_version *next;
+    const runtime_item_version *next;
     size_t next_count;
-    const runtime_updates_version *rollback;
+    const runtime_item_version *rollback;
     size_t rollback_count;
     void *storage;
 } runtime_updates_rollback_answer;
@@ -163,7 +158,7 @@ typedef struct runtime_updates_recorded_argument {
 /** What the host's last start recorded running, none when it recorded nothing. First shape ends at `storage`. */
 typedef struct runtime_updates_recorded_answer {
     uint32_t size;
-    const runtime_updates_version *run;
+    const runtime_item_version *run;
     size_t run_count;
     void *storage;
 } runtime_updates_recorded_answer;

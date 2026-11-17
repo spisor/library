@@ -10,6 +10,7 @@
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
 #include "runtime/install.h"
+#include "runtime/item_version.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/marketplace.h"
@@ -122,6 +123,9 @@ static void print_places_layouts(void) {
     FIELD(runtime_variable, name);
     FIELD(runtime_variable, value);
     SIZE(runtime_variable);
+    FIELD(runtime_item_version, id);
+    FIELD(runtime_item_version, version);
+    SIZE(runtime_item_version);
     FIELD(runtime_places_resolve_argument, size);
     FIELD(runtime_places_resolve_argument, home);
     FIELD(runtime_places_resolve_argument, environment);
@@ -727,9 +731,6 @@ static void print_cache_layouts(void) {
     FIELD(runtime_cache_damaged_answer, damaged_count);
     FIELD(runtime_cache_damaged_answer, storage);
     SIZE(runtime_cache_damaged_answer);
-    FIELD(runtime_cache_plugin, id);
-    FIELD(runtime_cache_plugin, version);
-    SIZE(runtime_cache_plugin);
     FIELD(runtime_cache_locate_argument, size);
     FIELD(runtime_cache_locate_argument, cache);
     FIELD(runtime_cache_locate_argument, plugins);
@@ -867,9 +868,6 @@ static void print_catalog_layouts(void) {
     FIELD(runtime_catalog_resolve_argument, installed_count);
     FIELD(runtime_catalog_resolve_argument, kind);
     SIZE(runtime_catalog_resolve_argument);
-    FIELD(runtime_catalog_version, id);
-    FIELD(runtime_catalog_version, version);
-    SIZE(runtime_catalog_version);
     FIELD(runtime_catalog_resolve_answer, size);
     FIELD(runtime_catalog_resolve_answer, run);
     FIELD(runtime_catalog_resolve_answer, run_count);
@@ -1068,9 +1066,6 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_ecosystem_argument, requested_count);
     FIELD(runtime_install_ecosystem_argument, platform);
     SIZE(runtime_install_ecosystem_argument);
-    FIELD(runtime_install_fetched, id);
-    FIELD(runtime_install_fetched, version);
-    SIZE(runtime_install_fetched);
     FIELD(runtime_install_unavailable, id);
     FIELD(runtime_install_unavailable, detail);
     FIELD(runtime_install_unavailable, fix);
@@ -1149,9 +1144,6 @@ static void print_install_layouts(void) {
 }
 
 static void print_updates_layouts(void) {
-    FIELD(runtime_updates_version, id);
-    FIELD(runtime_updates_version, version);
-    SIZE(runtime_updates_version);
     FIELD(runtime_updates_default, binding);
     FIELD(runtime_updates_default, plugin);
     SIZE(runtime_updates_default);
@@ -1301,9 +1293,6 @@ static void print_boot_layouts(void) {
     FIELD(runtime_boot_hint_answer, host);
     FIELD(runtime_boot_hint_answer, storage);
     SIZE(runtime_boot_hint_answer);
-    FIELD(runtime_boot_version, id);
-    FIELD(runtime_boot_version, version);
-    SIZE(runtime_boot_version);
     FIELD(runtime_boot_write_argument, size);
     FIELD(runtime_boot_write_argument, cache);
     FIELD(runtime_boot_write_argument, host_id);
@@ -1408,9 +1397,6 @@ static void print_processes_layouts(void) {
     FIELD(runtime_processes_await_answer, environment_count);
     FIELD(runtime_processes_await_answer, storage);
     SIZE(runtime_processes_await_answer);
-    FIELD(runtime_processes_version, id);
-    FIELD(runtime_processes_version, version);
-    SIZE(runtime_processes_version);
     FIELD(runtime_processes_record_argument, size);
     FIELD(runtime_processes_record_argument, state);
     FIELD(runtime_processes_record_argument, host_id);

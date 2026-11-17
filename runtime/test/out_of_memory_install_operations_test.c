@@ -8,6 +8,7 @@
 
 #include "allocation.h"
 #include "catalog_text.h"
+#include "child_process.h"
 #include "definition_fixture.h"
 #include "directory_tree.h"
 #include "hosts.h"
@@ -324,7 +325,7 @@ static void prepare_apply(void) {
 }
 
 static spisor_status run_apply(void) {
-    static const runtime_updates_version running[3] = {
+    static const runtime_item_version running[3] = {
         {"spisor-host", "1.0.0"}, {"runtime", "0.1.0"}, {"koffi", "2.0.0"}};
     static const char *const libraries[2] = {"runtime", "koffi"};
     const runtime_updates_definition *updates = runtime_updates_definition_of();
@@ -484,7 +485,7 @@ static spisor_status run_boot_read(void) {
 }
 
 static spisor_status run_boot_write(void) {
-    static const runtime_boot_version libraries[1] = {{"runtime", "0.1.0"}};
+    static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_boot_definition *boot = runtime_boot_definition_of();
     runtime_boot_write_argument argument = SPISOR_INIT(runtime_boot_write_argument);
     runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
@@ -706,7 +707,7 @@ static spisor_status run_await_ready(void) {
 }
 
 static spisor_status run_record_run(void) {
-    static const runtime_processes_version run[1] = {{"a", "2.0.0"}};
+    static const runtime_item_version run[1] = {{"a", "2.0.0"}};
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_record_argument argument = SPISOR_INIT(runtime_processes_record_argument);
     runtime_processes_record_answer answer = SPISOR_INIT(runtime_processes_record_answer);
@@ -774,6 +775,83 @@ static int removed_nothing_unless_ok(void) {
     return kept && kept_the_live_record();
 }
 
+#define STARTED_HOST "started-host"
+/** How long a host a failed hold might still have started is given to write its marker, which no host may write. */
+#define UNSTARTED_WAIT_MILLISECONDS 1000
+
+static char start_marker[1024];
+static unsigned start_marker_number;
+static int64_t started_pid;
+static int started_host_ran;
+
+/** A state holding nothing for STARTED_HOST, and a marker path no earlier run used, which the started host writes. */
+static void prepare_hold_start(void) {
+    remove(start_marker);
+    start_install_base(&base, "operations", "hold-start");
+    snprintf(start_marker, sizeof start_marker, "%s/hold-start-marker-%d-%u.json", RUNTIME_SCRATCH_PATH,
+             (int)fixture_process_id(), ++start_marker_number);
+    started_pid = 0;
+    started_host_ran = 0;
+    snapshot_left_out = "/state";
+}
+
+static int marker_written(void) {
+    for (int waited = 0; waited < 10000 && !spisor_file_exists(start_marker); waited += 50) {
+        pause_milliseconds(50);
+    }
+    return spisor_file_exists(start_marker);
+}
+
+static spisor_status run_hold_start(void) {
+    const char *const arguments[3] = {"environment", start_marker, "SPISOR_FIXTURE_VALUE"};
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
+    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = STARTED_HOST;
+    argument.holder = (int64_t)fixture_process_id();
+    argument.executable = RUNTIME_BACKGROUND_FIXTURE_PATH;
+    argument.arguments = arguments;
+    argument.argument_count = 3;
+    argument.directory = RUNTIME_SCRATCH_PATH;
+    last_status = processes->hold(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK) {
+        started_pid = answer.pid;
+        started_host_ran = marker_written();
+        kill_pid((long)started_pid);
+        last_status = answer.started ? SPISOR_OK : WRONG_RUN;
+    }
+    processes->release_hold_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static int holders_name_started_host(void) {
+    char *text = text_in(base.state, "processes/" STARTED_HOST ".json");
+    char host[64];
+    snprintf(host, sizeof host, "\"pid\":%lld,", (long long)started_pid);
+    int named = text != NULL && strstr(text, host) != NULL;
+    free(text);
+    return named;
+}
+
+/** Whether an OK hold recorded the host it started, and any other answer started no host and recorded no holder. */
+static int started_and_recorded_or_nothing(void) {
+    int kept;
+    if (last_status == SPISOR_OK) {
+        kept = holders_name_started_host() && started_host_ran;
+    } else {
+        pause_milliseconds(UNSTARTED_WAIT_MILLISECONDS);
+        kept = !spisor_file_exists(start_marker) && !exists_in(base.state, "processes/" STARTED_HOST ".json");
+    }
+    if (!kept) {
+        fprintf(stderr, "processes' hold: an answer of %d %s\n", (int)last_status,
+                last_status == SPISOR_OK ? "did not record the host it started" : "started a host or recorded holders");
+    }
+    return kept;
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -809,12 +887,23 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     return 0;
 }
 
+static int sticky_failures = 0;
+
+/** Fails allocation `attempt`, and with sticky failures every one after it as well. */
+static void fail_allocation(uint64_t attempt) {
+    if (sticky_failures && attempt != 0) {
+        spisor_memory_fail_from(attempt);
+    } else {
+        spisor_memory_fail_at(attempt);
+    }
+}
+
 /** Fails allocation attempt; 1 to go on, 0 after a failure the case does not allow, and *ran_whole when none failed. */
 static int fail_once(const operation_case *each, const clean_run *clean, uint64_t attempt, int *ran_whole) {
     each->prepare();
     int64_t baseline = spisor_memory_live_blocks();
     refusal_detail[0] = 0;
-    spisor_memory_fail_at(attempt);
+    fail_allocation(attempt);
     spisor_status status = each->run();
     *ran_whole = !spisor_memory_failed();
     spisor_memory_fail_at(0);
@@ -881,6 +970,8 @@ int main(int argc, char **argv) {
         {"processes' record_run", prepare_record, run_record_run, recorded_no_new_run_unless_ok},
         {"processes' live_runs", prepare_processes, run_live_runs, kept_the_live_record},
         {"processes' remove_runs", prepare_processes, run_remove_runs, removed_nothing_unless_ok}};
+    static const operation_case hold_start = {"processes' hold starting", prepare_hold_start, run_hold_start,
+                                              started_and_recorded_or_nothing};
     const char *only = argc > 1 ? argv[1] : "";
     uint64_t first = argc > 2 ? strtoull(argv[2], NULL, 10) : 1;
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
@@ -925,6 +1016,12 @@ int main(int argc, char **argv) {
         if (is_selected(only, processes_cases[index].label)) {
             every_failure_of(&processes_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
         }
+    }
+    if (is_selected(only, hold_start.label)) {
+        every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 1;
+        every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 0;
     }
     return check_summary("out_of_memory_install_operations_test");
 }

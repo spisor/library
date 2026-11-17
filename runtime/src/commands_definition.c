@@ -119,6 +119,9 @@ static spisor_status give(runtime_command_operation operation, const runtime_com
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, operation == RUNTIME_COMMAND_ADD ? "commands' add" : "commands' request");
     }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
+    }
     status = command_call(argument, &call, refusal);
     return status == SPISOR_OK ? serve_named(operation, call, answer, refusal) : status;
 }
@@ -143,6 +146,9 @@ static spisor_status rename_command(void *context, const runtime_commands_rename
     if (argument == NULL || !runtime_has_shape(argument->size, RENAME_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "commands' rename");
+    }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
     }
     status = rename_call(argument, &call, refusal);
     return status == SPISOR_OK ? serve_named(RUNTIME_COMMAND_RENAME, call, answer, refusal) : status;

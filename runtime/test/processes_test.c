@@ -743,6 +743,38 @@ static void it_starts_the_host_in_the_environment_and_directory_given(void) {
     finish_case();
 }
 
+/** What the host saw, started with `environment` as its start's environment, or with none for NULL. */
+static cJSON *environment_seen(const char *case_name, cJSON *environment) {
+    fresh_state(case_name);
+    char *answer_path = joined(state, "environment.json");
+    const char *arguments[3] = {"environment", answer_path, "SPISOR_FIXTURE_VALUE"};
+    cJSON *start = start_of(arguments, 3);
+    if (environment != NULL) {
+        cJSON_AddItemToObject(start, "environment", environment);
+    }
+    hold_starting(start);
+    CHECK(wait_until(answer_written, answer_path, 10000));
+    pause_milliseconds(100);
+    cJSON *seen = read_json_file(answer_path);
+    free(answer_path);
+    return seen;
+}
+
+static void it_starts_the_host_in_the_callers_environment_when_given_none(void) {
+    cJSON *seen = environment_seen("inherited-environment", NULL);
+    CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(seen, "path")));
+    cJSON_Delete(seen);
+    finish_case();
+}
+
+static void it_starts_the_host_in_an_empty_environment_when_given_no_variables(void) {
+    cJSON *seen = environment_seen("empty-environment", cJSON_CreateObject());
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(seen, "path")));
+    CHECK(cJSON_IsNull(cJSON_GetObjectItemCaseSensitive(seen, "value")));
+    cJSON_Delete(seen);
+    finish_case();
+}
+
 static int prune_exits(double self, double now) {
     catalog_answer answer = prune(self, now);
     CHECK(answer.status == 0);
@@ -1205,6 +1237,8 @@ int main(void) {
     it_holds_once_however_often_the_same_holder_asks();
     it_refuses_a_start_it_cannot_run_leaving_nothing_held();
     it_starts_the_host_in_the_environment_and_directory_given();
+    it_starts_the_host_in_the_callers_environment_when_given_none();
+    it_starts_the_host_in_an_empty_environment_when_given_no_variables();
     it_keeps_running_while_a_holder_lives_and_exits_once_the_last_dies();
     it_prunes_a_dead_holder_and_keeps_the_live_ones();
     it_exits_without_touching_the_record_when_another_process_is_the_host();

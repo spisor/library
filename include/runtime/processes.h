@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "runtime/environment.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -24,8 +25,9 @@ extern "C" {
 
 /**
  * Process `holder` holding the background host `host_id`, started when no process recorded for it runs as the
- * absolute `executable` with its arguments, the environment that replaces the caller's, in `directory`, NULL for the
- * state. First shape ends at `directory`.
+ * absolute `executable` with its arguments, in `directory`, NULL for the state. A NULL `environment` with a count of 0
+ * inherits the caller's environment; any other replaces it, so variables given with a count of 0 start the host with
+ * an empty one. First shape ends at `directory`.
  */
 typedef struct runtime_processes_hold_argument {
     uint32_t size;
@@ -121,12 +123,6 @@ typedef struct runtime_processes_await_answer {
     void *storage;
 } runtime_processes_await_answer;
 
-/** An item id and the version a start runs. An element of an array, so it has no size. */
-typedef struct runtime_processes_version {
-    const char *id;
-    const char *version;
-} runtime_processes_version;
-
 /**
  * What this process runs as a start of `host_id`, stamped by a timer every `check_milliseconds`, 0 for 5000; with
  * `record`, a path an earlier call answered, that record is stamped again instead, NULL to write a new one. First shape
@@ -136,7 +132,7 @@ typedef struct runtime_processes_record_argument {
     uint32_t size;
     const char *state;
     const char *host_id;
-    const runtime_processes_version *run;
+    const runtime_item_version *run;
     size_t run_count;
     double check_milliseconds;
     const char *record;
@@ -158,7 +154,7 @@ typedef struct runtime_processes_live_argument {
 
 /** What one live start runs. An element of an array, so it has no size. */
 typedef struct runtime_processes_run {
-    const runtime_processes_version *versions;
+    const runtime_item_version *versions;
     size_t version_count;
 } runtime_processes_run;
 
@@ -182,9 +178,11 @@ typedef struct runtime_processes_remove_argument {
  * The processes service. Every operation answers MALFORMED for an argument short of its first shape, a state that is
  * not absolute, a host id that is not a plain file name, a required text that is NULL or empty, a process id that is
  * not above zero, a time that is negative or not finite, an array whose count has no elements or holds a NULL or empty
- * text or an id twice; such a call has written nothing. Memory running out never reads as a process that is gone or a
- * record that is not live, so it never deletes a record of a live process and never starts a second host. The answer
- * arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
+ * text or an id twice, or an environment as runtime/environment.h refuses one; such a call has written nothing. The one
+ * array whose texts may be empty is hold's `arguments`, since a program may take an empty argument; it still refuses
+ * NULL. Memory running out never reads as a process that is gone or a record that is not live, so it never deletes a
+ * record of a live process and never starts a second host. The answer arguments are required and the refusal may be
+ * NULL for none. First shape ends at `release_refusal`.
  */
 typedef struct runtime_processes_definition {
     uint32_t size;
@@ -194,7 +192,8 @@ typedef struct runtime_processes_definition {
      * no process recorded for it runs by its stamp.
      *
      * @return OK; MALFORMED; REFUSED when the holders or the lock cannot be used under the state, or the host cannot
-     * be started; OUT_OF_MEMORY, having started nothing and recorded no holder.
+     * be started; OUT_OF_MEMORY, having started nothing and recorded no holder. A host it started whose record then
+     * cannot be written is stopped before it answers REFUSED, so no answer but OK leaves a host running unrecorded.
      */
     spisor_status (*hold)(void *context, const runtime_processes_hold_argument *argument,
                           runtime_processes_hold_answer *answer, spisor_refusal *refusal);

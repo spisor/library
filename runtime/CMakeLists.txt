@@ -166,7 +166,7 @@ set_target_properties(runtime_catalog_refresh_test_hooks PROPERTIES SPISOR_TEST_
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
     src/cache_deploy.c src/cache_definition.c src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
     src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
-    src/alive_stamp.c)
+    src/alive_stamp.c src/definition_host_target.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
 target_link_libraries(runtime_cache PUBLIC runtime_objects)
 target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)

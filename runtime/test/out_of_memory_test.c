@@ -1048,7 +1048,7 @@ static spisor_status list_damaged_versions(void) {
 static spisor_status locate_a_plugin(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char cache_place[1100];
-    runtime_cache_plugin plugins[1] = {{"a", "1.0.0"}};
+    runtime_item_version plugins[1] = {{"a", "1.0.0"}};
     runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
     runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);

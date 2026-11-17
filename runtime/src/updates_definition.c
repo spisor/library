@@ -13,6 +13,7 @@
 #include "spisor/path.h"
 #include "updates.h"
 
+#define HEADER "the updates header"
 #define APPLY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_apply_argument, platform)
 #define APPLY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_apply_answer, storage)
 #define CHECK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_check_argument, platform)
@@ -35,14 +36,6 @@ typedef struct host_target {
     const char *platform;
 } host_target;
 
-static int is_text(const char *text) {
-    return text != NULL && text[0] != '\0';
-}
-
-static int is_place(const char *place) {
-    return is_text(place) && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place);
-}
-
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
 }
@@ -56,64 +49,13 @@ static uint32_t index_of(const char *const *names, uint32_t count, const char *n
     return 0;
 }
 
-static spisor_status refuse_malformed(spisor_refusal *refusal, const char *member) {
-    char detail[160];
-    char fix[200];
-    snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
-    snprintf(fix, sizeof fix, "send %s as the updates header describes it", member);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
-}
-
 static spisor_status check_target(const host_target *target, spisor_refusal *refusal) {
-    if (!is_place(target->state) || !is_place(target->cache)) {
-        return runtime_refuse_place(refusal, is_place(target->state) ? "cache" : "state");
+    spisor_status status;
+    if (!runtime_is_place(target->state) || !runtime_is_place(target->cache)) {
+        return runtime_refuse_place(refusal, runtime_is_place(target->state) ? "cache" : "state");
     }
-    if (!is_text(target->host_id)) {
-        return refuse_malformed(refusal, "host_id");
-    }
-    if (!runtime_is_plain_host_id(target->host_id)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the host id is not a plain file name",
-                                 RUNTIME_PLAIN_HOST_ID_FIX);
-    }
-    if (target->platform != NULL && !runtime_is_platform_key(target->platform)) {
-        return refuse_malformed(refusal, "platform");
-    }
-    return SPISOR_OK;
-}
-
-/** Whether `count` texts are each present and not empty, and, when `unique`, each given once. */
-static int are_texts(const char *const *texts, size_t count, int unique) {
-    if (count > 0 && texts == NULL) {
-        return 0;
-    }
-    for (size_t index = 0; index < count; index++) {
-        if (!is_text(texts[index])) {
-            return 0;
-        }
-        for (size_t earlier = 0; unique && earlier < index; earlier++) {
-            if (strcmp(texts[earlier], texts[index]) == 0) {
-                return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-static int are_versions(const runtime_updates_version *versions, size_t count) {
-    if (count > 0 && versions == NULL) {
-        return 0;
-    }
-    for (size_t index = 0; index < count; index++) {
-        if (!is_text(versions[index].id) || !is_text(versions[index].version)) {
-            return 0;
-        }
-        for (size_t earlier = 0; earlier < index; earlier++) {
-            if (strcmp(versions[earlier].id, versions[index].id) == 0) {
-                return 0;
-            }
-        }
-    }
-    return 1;
+    status = runtime_check_host_id(refusal, target->host_id, HEADER);
+    return status == SPISOR_OK ? runtime_check_platform(refusal, target->platform, HEADER) : status;
 }
 
 static int are_defaults(const runtime_updates_default *defaults, size_t count) {
@@ -121,7 +63,7 @@ static int are_defaults(const runtime_updates_default *defaults, size_t count) {
         return 0;
     }
     for (size_t index = 0; index < count; index++) {
-        if (!is_text(defaults[index].binding) || !is_text(defaults[index].plugin)) {
+        if (!runtime_is_text(defaults[index].binding) || !runtime_is_text(defaults[index].plugin)) {
             return 0;
         }
         for (size_t earlier = 0; earlier < index; earlier++) {
@@ -139,7 +81,7 @@ static spisor_status check_settings(const spisor_value *settings, spisor_refusal
     if (status == SPISOR_OK && settings != NULL && settings->kind != SPISOR_VALUE_RECORD) {
         status = SPISOR_MALFORMED;
     }
-    return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "settings") : status;
+    return status == SPISOR_MALFORMED ? runtime_refuse_member(refusal, "settings", HEADER) : status;
 }
 
 static int add_text(cJSON *object, const char *name, const char *text) {
@@ -158,7 +100,7 @@ static int add_texts(cJSON *object, const char *name, const char *const *texts, 
     return array != NULL;
 }
 
-static int add_versions(cJSON *object, const char *name, const runtime_updates_version *versions, size_t count) {
+static int add_versions(cJSON *object, const char *name, const runtime_item_version *versions, size_t count) {
     cJSON *map = cJSON_AddObjectToObject(object, name);
     for (size_t index = 0; map != NULL && index < count; index++) {
         if (!add_text(map, versions[index].id, versions[index].version)) {
@@ -178,7 +120,7 @@ static int add_defaults(cJSON *object, const runtime_updates_default *defaults, 
     return map != NULL;
 }
 
-static int add_damaged(cJSON *object, const runtime_updates_version *damaged, size_t count) {
+static int add_damaged(cJSON *object, const runtime_item_version *damaged, size_t count) {
     cJSON *array = cJSON_AddArrayToObject(object, "problems");
     for (size_t index = 0; array != NULL && index < count; index++) {
         cJSON *entry = cJSON_CreateObject();
@@ -216,9 +158,9 @@ static spisor_status add_settings(cJSON **call, const spisor_value *settings) {
     return status;
 }
 
-static spisor_status fill_versions(void **storage, const cJSON *object, const runtime_updates_version **filled,
+static spisor_status fill_versions(void **storage, const cJSON *object, const runtime_item_version **filled,
                                    size_t *count) {
-    runtime_updates_version *versions;
+    runtime_item_version *versions;
     const cJSON *member;
     if (!runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(object), sizeof *versions,
                                     (void **)&versions)) {
@@ -226,7 +168,7 @@ static spisor_status fill_versions(void **storage, const cJSON *object, const ru
     }
     *filled = versions;
     cJSON_ArrayForEach(member, object) {
-        runtime_updates_version *each = &versions[(*count)++];
+        runtime_item_version *each = &versions[(*count)++];
         if (!runtime_storage_copy(storage, member->string, &each->id) ||
             !runtime_storage_copy(storage, cJSON_GetStringValue(member), &each->version)) {
             return SPISOR_OUT_OF_MEMORY;
@@ -278,16 +220,12 @@ static spisor_status fill_texts(void **storage, const cJSON *array, const char *
     return runtime_storage_texts(storage, array, texts, count) ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
 }
 
-static spisor_status start_storage(void **storage) {
-    return runtime_storage_take(storage, 1) == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-}
-
 static const cJSON *member_of(const cJSON *object, const char *name) {
     return cJSON_GetObjectItemCaseSensitive(object, name);
 }
 
 /** The references run, next and rollback of `answered` into the three arrays given. */
-static spisor_status fill_references(void **storage, const cJSON *answered, runtime_updates_version const **arrays[3],
+static spisor_status fill_references(void **storage, const cJSON *answered, runtime_item_version const **arrays[3],
                                      size_t *counts[3]) {
     static const char *const names[3] = {"run", "next", "rollback"};
     spisor_status status = SPISOR_OK;
@@ -299,9 +237,9 @@ static spisor_status fill_references(void **storage, const cJSON *answered, runt
 
 static spisor_status fill_apply(const cJSON *answered, void *filled) {
     runtime_updates_apply_answer *answer = filled;
-    runtime_updates_version const **arrays[3] = {&answer->run, &answer->next, &answer->rollback};
+    runtime_item_version const **arrays[3] = {&answer->run, &answer->next, &answer->rollback};
     size_t *counts[3] = {&answer->run_count, &answer->next_count, &answer->rollback_count};
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status == SPISOR_OK) {
         status = fill_versions(&answer->storage, member_of(answered, "plugins"), &answer->plugins,
                                &answer->plugin_count);
@@ -324,13 +262,13 @@ static spisor_status check_apply(const runtime_updates_apply_argument *argument,
     host_target target = {argument->state, argument->cache, argument->host_id, argument->platform};
     spisor_status status = check_target(&target, refusal);
     if (status == SPISOR_OK && !are_defaults(argument->defaults, argument->default_count)) {
-        status = refuse_malformed(refusal, "defaults");
+        status = runtime_refuse_member(refusal, "defaults", HEADER);
     }
-    if (status == SPISOR_OK && !are_versions(argument->running, argument->running_count)) {
-        status = refuse_malformed(refusal, "running");
+    if (status == SPISOR_OK && !runtime_are_item_versions(argument->running, argument->running_count)) {
+        status = runtime_refuse_member(refusal, "running", HEADER);
     }
-    if (status == SPISOR_OK && !are_texts(argument->libraries, argument->library_count, 1)) {
-        status = refuse_malformed(refusal, "libraries");
+    if (status == SPISOR_OK && !runtime_are_texts(argument->libraries, argument->library_count, 1)) {
+        status = runtime_refuse_member(refusal, "libraries", HEADER);
     }
     return status == SPISOR_OK ? check_settings(argument->settings, refusal) : status;
 }
@@ -406,21 +344,21 @@ static spisor_status fill_check(const cJSON *answered, void *filled) {
     runtime_updates_check_answer *answer = filled;
     check_parts parts = {&answer->sources, &answer->source_count, &answer->fetched, &answer->fetched_count,
                          &answer->refused, &answer->refused_count, &answer->removed, &answer->removed_count};
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     return status == SPISOR_OK ? fill_check_parts(&answer->storage, answered, &parts) : status;
 }
 
 static spisor_status check_check(const runtime_updates_check_argument *argument, spisor_refusal *refusal) {
     host_target target = {argument->state, argument->cache, argument->host_id, argument->platform};
     spisor_status status = check_target(&target, refusal);
-    if (status == SPISOR_OK && !is_text(argument->now)) {
-        status = refuse_malformed(refusal, "now");
+    if (status == SPISOR_OK && !runtime_is_text(argument->now)) {
+        status = runtime_refuse_member(refusal, "now", HEADER);
     }
     if (status == SPISOR_OK && !are_defaults(argument->defaults, argument->default_count)) {
-        status = refuse_malformed(refusal, "defaults");
+        status = runtime_refuse_member(refusal, "defaults", HEADER);
     }
-    if (status == SPISOR_OK && !are_versions(argument->damaged, argument->damaged_count)) {
-        status = refuse_malformed(refusal, "damaged");
+    if (status == SPISOR_OK && !runtime_are_item_versions(argument->damaged, argument->damaged_count)) {
+        status = runtime_refuse_member(refusal, "damaged", HEADER);
     }
     return status == SPISOR_OK ? check_settings(argument->settings, refusal) : status;
 }
@@ -454,9 +392,9 @@ static spisor_status check(void *context, const runtime_updates_check_argument *
 
 static spisor_status fill_rollback(const cJSON *answered, void *filled) {
     runtime_updates_rollback_answer *answer = filled;
-    runtime_updates_version const **arrays[3] = {&answer->run, &answer->next, &answer->rollback};
+    runtime_item_version const **arrays[3] = {&answer->run, &answer->next, &answer->rollback};
     size_t *counts[3] = {&answer->run_count, &answer->next_count, &answer->rollback_count};
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     return status == SPISOR_OK ? fill_references(&answer->storage, answered, arrays, counts) : status;
 }
 
@@ -472,8 +410,8 @@ static spisor_status rollback(void *context, const runtime_updates_rollback_argu
     }
     target = (host_target){argument->state, argument->cache, argument->host_id, NULL};
     status = check_target(&target, refusal);
-    if (status == SPISOR_OK && !is_text(argument->item)) {
-        status = refuse_malformed(refusal, "item");
+    if (status == SPISOR_OK && !runtime_is_text(argument->item)) {
+        status = runtime_refuse_member(refusal, "item", HEADER);
     }
     if (status != SPISOR_OK) {
         return status;
@@ -489,7 +427,7 @@ static spisor_status rollback(void *context, const runtime_updates_rollback_argu
 
 static spisor_status fill_recorded(const cJSON *answered, void *filled) {
     runtime_updates_recorded_answer *answer = filled;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     return status == SPISOR_OK
                ? fill_versions(&answer->storage, member_of(answered, "run"), &answer->run, &answer->run_count)
                : status;
@@ -561,7 +499,7 @@ static spisor_status fill_applications(void **storage, const cJSON *object,
 
 static spisor_status fill_run(const cJSON *answered, void *filled) {
     runtime_updates_run_answer *answer = filled;
-    spisor_status status = start_storage(&answer->storage);
+    spisor_status status = runtime_start_storage(&answer->storage);
     if (status == SPISOR_OK) {
         status = fill_host_checks(&answer->storage, member_of(answered, "checks"), &answer->checks,
                                   &answer->check_count);
@@ -594,13 +532,14 @@ static spisor_status run(void *context, const runtime_updates_run_argument *argu
         !RUNTIME_IS_EMPTY_ANSWER(answer, RUN_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "updates' run");
     }
-    if (!is_place(argument->portable) || !is_place(argument->state) || !is_place(argument->cache)) {
-        return runtime_refuse_place(refusal, !is_place(argument->portable) ? "portable"
-                                             : !is_place(argument->state)  ? "state"
-                                                                           : "cache");
+    if (!runtime_is_place(argument->portable) || !runtime_is_place(argument->state) ||
+        !runtime_is_place(argument->cache)) {
+        return runtime_refuse_place(refusal, !runtime_is_place(argument->portable) ? "portable"
+                                             : !runtime_is_place(argument->state)  ? "state"
+                                                                                   : "cache");
     }
-    if (!is_text(argument->now)) {
-        return refuse_malformed(refusal, "now");
+    if (!runtime_is_text(argument->now)) {
+        return runtime_refuse_member(refusal, "now", HEADER);
     }
     return runtime_serve_operation(runtime_updates_run_operation, run_call(argument), fill_run, answer,
                                    RUN_ANSWER_SHAPE, refusal);

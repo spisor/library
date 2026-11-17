@@ -17,6 +17,7 @@
 
 #include "runtime/catalog.h"
 #include "runtime/definition.h"
+#include "runtime/item_version.h"
 #include "runtime/environment.h"
 #include "runtime/registry.h"
 #include "spisor/status.h"
@@ -369,12 +370,6 @@ typedef struct runtime_install_ecosystem_argument {
     const char *platform;
 } runtime_install_ecosystem_argument;
 
-/** An item fetched into the cache now, at its version. An element of an array, so it has no size. */
-typedef struct runtime_install_fetched {
-    const char *id;
-    const char *version;
-} runtime_install_fetched;
-
 /**
  * What could not be done, under the id of the item, method or catalog it concerns, why and how to fix it. An element
  * of an array, so it has no size.
@@ -455,7 +450,7 @@ typedef struct runtime_install_loader {
  */
 typedef struct runtime_install_ecosystem_answer {
     uint32_t size;
-    const runtime_install_fetched *installed;
+    const runtime_item_version *installed;
     size_t installed_count;
     const char *const *cached;
     size_t cached_count;

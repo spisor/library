@@ -35,12 +35,22 @@ cJSON *runtime_processes_state_refusal(const char *what, const char *path) {
     return runtime_cache_refusal(parts, 4, WRITABLE_STATE_FIX);
 }
 
+static int is_named_earlier(const cJSON *environment, const cJSON *variable) {
+    for (const cJSON *earlier = environment->child; earlier != variable; earlier = earlier->next) {
+        if (strcmp(earlier->string, variable->string) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int runtime_processes_is_environment(const cJSON *environment) {
     if (!cJSON_IsObject(environment)) {
         return 0;
     }
     for (const cJSON *variable = environment->child; variable != NULL; variable = variable->next) {
-        if (!cJSON_IsString(variable) || *variable->string == 0 || strchr(variable->string, '=') != NULL) {
+        if (!cJSON_IsString(variable) || *variable->string == 0 || strchr(variable->string, '=') != NULL ||
+            is_named_earlier(environment, variable)) {
             return 0;
         }
     }
