@@ -60,7 +60,7 @@ static int is_hash_map(const cJSON *files) {
  * when memory ran out reading it.
  */
 static cJSON *recorded_hashes(const char *path, int *out_of_memory) {
-    cJSON *marker = runtime_read_node_json_noting(path, out_of_memory);
+    cJSON *marker = runtime_read_node_json(path, out_of_memory);
     cJSON *files = cJSON_IsObject(marker) ? cJSON_GetObjectItemCaseSensitive(marker, "files") : NULL;
     cJSON *hashes = is_hash_map(files) ? cJSON_DetachItemViaPointer(marker, files) : NULL;
     cJSON_Delete(marker);
@@ -342,10 +342,13 @@ cJSON *runtime_cache_check_version_sizes(const char *directory) {
         free(path);
         return kind_only("absent");
     }
-    cJSON *marker = runtime_read_node_json(path);
+    int out_of_memory;
+    cJSON *marker = runtime_read_node_json(path, &out_of_memory);
     const cJSON *files = cJSON_IsObject(marker) ? cJSON_GetObjectItemCaseSensitive(marker, "files") : NULL;
     cJSON *answer;
-    if (!is_hash_map(files)) {
+    if (out_of_memory) {
+        answer = NULL;
+    } else if (!is_hash_map(files)) {
         const char *parts[3] = {"the completion marker ", path, " is not readable"};
         answer = damaged(runtime_cache_text(parts, 3), NULL);
     } else {

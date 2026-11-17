@@ -81,8 +81,9 @@ static int copy_record(const cJSON *value, runtime_holders_record *record) {
 
 int runtime_read_holders(const char *path, runtime_holders_record *record) {
     *record = runtime_no_holders();
-    cJSON *value = runtime_read_node_json(path);
-    int read = !is_holders_record(value) || copy_record(value, record);
+    int out_of_memory;
+    cJSON *value = runtime_read_node_json(path, &out_of_memory);
+    int read = !out_of_memory && (!is_holders_record(value) || copy_record(value, record));
     cJSON_Delete(value);
     if (!read) {
         runtime_free_holders(record);

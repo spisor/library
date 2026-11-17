@@ -45,11 +45,14 @@ cJSON *runtime_updates_recorded_for(const runtime_updates_request *request, cJSO
     if (!spisor_file_exists(path)) {
         answer = run_answer(NULL);
     } else {
-        cJSON *recorded = runtime_read_node_json(path);
+        int out_of_memory;
+        cJSON *recorded = runtime_read_node_json(path, &out_of_memory);
         const cJSON *run = NULL;
         const cJSON *next = NULL;
         const cJSON *rollback = NULL;
-        if (runtime_host_references_of(recorded, &run, &next, &rollback)) {
+        if (out_of_memory) {
+            answer = NULL;
+        } else if (runtime_host_references_of(recorded, &run, &next, &rollback)) {
             answer = run_answer(run);
         } else {
             *refusal = unreadable(request, path);

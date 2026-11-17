@@ -20,14 +20,18 @@ static cJSON *refused(const char *const *parts, size_t count) {
     return runtime_cache_refusal(parts, count, RUNTIME_REINSTALL_FIX);
 }
 
-/** The version the hint names, a copy freed with free; NULL with *refusal set when there is none. */
+/**
+ * The version the hint names, a copy freed with free; NULL with *refusal set when there is none, and with *refusal
+ * NULL when memory runs out.
+ */
 static char *hinted_version(const char *cache, const char *host_id, cJSON **refusal) {
-    cJSON *hint = runtime_read_boot_hint(cache, host_id);
+    int out_of_memory;
+    cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
     const cJSON *host = cJSON_GetObjectItemCaseSensitive(hint, "host");
     const char *parts[1] = {cJSON_IsString(host) ? host->valuestring : NULL};
     char *version = parts[0] == NULL ? NULL : runtime_cache_text(parts, 1);
     cJSON_Delete(hint);
-    if (parts[0] == NULL) {
+    if (parts[0] == NULL && !out_of_memory) {
         const char *message[4] = {"no host version is recorded for ", host_id, " in ", cache};
         *refusal = refused(message, 4);
     }
@@ -79,10 +83,11 @@ static char *executable_key(const char *host_id, const char *platform) {
     return runtime_cache_text(parts, 4);
 }
 
-static int marker_lists(const char *directory, const char *key) {
+static int marker_lists(const char *directory, const char *key, int *out_of_memory) {
     const char *segments[2] = {directory, RUNTIME_INSTALL_MARKER};
     char *path = runtime_cache_joined(segments, 2);
-    cJSON *marker = path == NULL ? NULL : runtime_read_node_json(path);
+    *out_of_memory = path == NULL;
+    cJSON *marker = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     int listed = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(marker, "files"), key) != NULL;
     cJSON_Delete(marker);
     free(path);
@@ -92,7 +97,12 @@ static int marker_lists(const char *directory, const char *key) {
 static char *executable_in(const char *directory, const char *host_id, const char *platform, cJSON **refusal) {
     char *key = executable_key(host_id, platform);
     char *executable = key == NULL ? NULL : runtime_cache_resolve(directory, (const char *const *)&key, 1);
-    if (executable != NULL && (!marker_lists(directory, key) || !spisor_file_exists(executable))) {
+    int out_of_memory = 0;
+    int listed = executable != NULL && marker_lists(directory, key, &out_of_memory);
+    if (out_of_memory) {
+        free(executable);
+        executable = NULL;
+    } else if (executable != NULL && (!listed || !spisor_file_exists(executable))) {
         const char *message[6] = {host_id, " in ", directory, " carries no executable for ", platform,
                                   ", so it cannot be started"};
         *refusal = refused(message, 6);

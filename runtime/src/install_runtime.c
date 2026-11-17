@@ -577,20 +577,25 @@ cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const
     return answer;
 }
 
-static char *recorded_executable(const char *cache) {
+/** The executable recorded under cache, NULL when none is, and NULL with *out_of_memory set when memory runs out. */
+static char *recorded_executable(const char *cache, int *out_of_memory) {
     const char *segments[3] = {cache, "runtimes", RECORD_FILE};
     char *record = joined(segments, 3);
-    cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record);
+    *out_of_memory = record == NULL;
+    cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record, out_of_memory);
     const char *executable = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(recorded, "executable"));
-    char *copy = executable != NULL && runtime_is_followed_file(executable, 0) ? runtime_catalog_copy(executable) : NULL;
+    int followed = executable != NULL && runtime_is_followed_file(executable, 0);
+    char *copy = followed ? runtime_catalog_copy(executable) : NULL;
+    *out_of_memory = *out_of_memory || (followed && copy == NULL);
     cJSON_Delete(recorded);
     free(record);
     return copy;
 }
 
 char *runtime_javascript_executable(const char *cache, const cJSON *environment, cJSON **refusal) {
-    char *executable = recorded_executable(cache);
-    if (executable != NULL) {
+    int out_of_memory;
+    char *executable = recorded_executable(cache, &out_of_memory);
+    if (executable != NULL || out_of_memory) {
         return executable;
     }
     cJSON *acquired = runtime_acquire_javascript(cache, runtime_platform_key(), environment, refusal);

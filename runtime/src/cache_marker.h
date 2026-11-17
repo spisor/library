@@ -44,7 +44,7 @@ cJSON *runtime_cache_check_version(const char *directory);
 /**
  * runtime_cache_check_version's answer from sizes alone: whether the marker is readable and every file it
  * names is present inside directory with the size its install recorded, a marker recording none being
- * damaged.
+ * damaged; NULL when memory runs out.
  *
  * @implNote A start runs this rather than hashing: hashing every file of spisor-host's version cost each
  * SessionStart about 55 ms on Windows. A same-size corruption is left to install, update and status,

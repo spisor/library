@@ -265,8 +265,10 @@ typedef struct runtime_cache_definition {
     /**
      * Deletes every version no reference, live run record or boot hint under the places names, keeping each id's
      * newest installed version, per platform for a library, as the rollback. Holds the registry lock for its whole
-     * call. A version that cannot be removed is skipped for the next sweep, so an OUT_OF_MEMORY answer may have
-     * removed some versions, each of them one the sweep was removing.
+     * call. It reads every reference and decides every removal before it removes anything, so a sweep that runs out
+     * of memory reading a reference removes nothing; one that runs out later may have removed some versions, each of
+     * them one the sweep was removing, never a referenced one or a kept rollback. A version that cannot be removed is
+     * skipped for the next sweep.
      *
      * @return OK; MALFORMED; REFUSED when the registry lock cannot be taken; OUT_OF_MEMORY.
      */

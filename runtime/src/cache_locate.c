@@ -102,11 +102,14 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
     }
     int added = 1;
     if (spisor_file_exists(manifest_path)) {
-        cJSON *manifest = runtime_read_node_json(manifest_path);
+        int out_of_memory = 0;
+        cJSON *manifest = runtime_read_node_json(manifest_path, &out_of_memory);
         const char *named = cJSON_IsObject(manifest) ? text_of(manifest, "version") : NULL;
         int failed = 0;
         char *entry = named != NULL && strcmp(named, place->version) == 0 ? entry_of(place->directory, manifest, &failed) : NULL;
-        if (named == NULL || strcmp(named, place->version) != 0) {
+        if (out_of_memory) {
+            added = 0;
+        } else if (named == NULL || strcmp(named, place->version) != 0) {
             added = add_other_version(problems, place, named);
         } else {
             added = !failed && add_located(located, place, manifest_path, entry);

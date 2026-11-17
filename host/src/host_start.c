@@ -143,12 +143,15 @@ static char *hinted_version(const host_context *context, const char *id) {
     return version;
 }
 
-static char *entry_of_bundle(const char *directory) {
+/** The entry the bundle's host.json names, NULL when it names none, and NULL with *out_of_memory set when memory runs out. */
+static char *entry_of_bundle(const char *directory, int *out_of_memory) {
     const char *segments[2] = {directory, "host.json"};
     char *path = joined(segments, 2);
-    cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path);
+    *out_of_memory = path == NULL;
+    cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     const char *entry = host_text(standard, "entry");
     char *copy = entry == NULL ? NULL : malloc(strlen(entry) + 1);
+    *out_of_memory = *out_of_memory || (entry != NULL && copy == NULL);
     if (copy != NULL) {
         strcpy(copy, entry);
     }
@@ -165,9 +168,11 @@ cJSON *host_session_start_of(const host_context *context, const char *loader_id,
         return NULL;
     }
     char *directory = installed_version(context, HOST_JAVASCRIPT_HOST_ID, version, refusal);
-    char *entry = directory == NULL ? NULL : entry_of_bundle(directory);
-    cJSON *start = directory == NULL ? NULL
-                                     : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, loader_id, refusal);
+    int out_of_memory = 0;
+    char *entry = directory == NULL ? NULL : entry_of_bundle(directory, &out_of_memory);
+    cJSON *start = directory == NULL || out_of_memory
+                       ? NULL
+                       : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, loader_id, refusal);
     free(entry);
     free(directory);
     free(version);

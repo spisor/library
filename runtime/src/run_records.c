@@ -5,9 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "allocation.h"
 #include "alive_stamp.h"
 #include "cache_folders.h"
 #include "directory_tree.h"
+#include "file_reading.h"
 #include "file_times.h"
 #include "host_references.h"
 #include "node_json_file.h"
@@ -118,14 +120,6 @@ runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, cons
     return stamped ? RUNTIME_RUN_STAMPED : RUNTIME_RUN_UNWRITABLE;
 }
 
-static cJSON *parsed_record(const uint8_t *bytes, size_t length) {
-    size_t decoded_length = 0;
-    uint8_t *decoded = spisor_decode_utf8_lossy(bytes, length, &decoded_length);
-    cJSON *record = decoded == NULL ? NULL : spisor_parse_json(decoded, decoded_length);
-    free(decoded);
-    return record;
-}
-
 static int is_live_record(const cJSON *record, double now) {
     return cJSON_IsObject(record) && runtime_is_version_map(cJSON_GetObjectItemCaseSensitive(record, "run")) &&
            runtime_is_stamp_fresh(runtime_number_or_nan(record, "pid"), runtime_number_or_nan(record, "aliveAt"),
@@ -135,20 +129,22 @@ static int is_live_record(const cJSON *record, double now) {
 /** Adds what the record at path runs when it is live; deletes it otherwise. 0 when memory runs out. */
 static int add_live_run(cJSON *runs, const char *path, double now) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     if (bytes == NULL) {
-        return 1;
+        return outcome != SPISOR_READ_OUT_OF_MEMORY;
     }
-    cJSON *record = parsed_record(bytes, length);
-    free(bytes);
-    int added = 1;
-    if (is_live_record(record, now)) {
+    int out_of_memory;
+    cJSON *record = runtime_parse_node_json(bytes, length, &out_of_memory);
+    spisor_memory_release(bytes);
+    int added = !out_of_memory;
+    if (added && is_live_record(record, now)) {
         cJSON *run = cJSON_DetachItemFromObjectCaseSensitive(record, "run");
         added = run != NULL && cJSON_AddItemToArray(runs, run);
         if (!added) {
             cJSON_Delete(run);
         }
-    } else {
+    } else if (added) {
         runtime_remove_file_entry(path);
     }
     cJSON_Delete(record);

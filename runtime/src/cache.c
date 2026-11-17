@@ -82,9 +82,12 @@ cJSON *runtime_cache_check_operation(const cJSON *argument, cJSON **refusal) {
 /** {name: item}, which takes item, NULL when memory runs out. */
 static cJSON *answer_of(const char *name, cJSON *item) {
     cJSON *answer = item == NULL ? NULL : cJSON_CreateObject();
-    if (answer == NULL || !runtime_catalog_attach(answer, name, item)) {
-        cJSON_Delete(answer);
+    if (answer == NULL) {
         cJSON_Delete(item);
+        return NULL;
+    }
+    if (!runtime_catalog_attach(answer, name, item)) {
+        cJSON_Delete(answer);
         return NULL;
     }
     return answer;

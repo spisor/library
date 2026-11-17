@@ -20,8 +20,12 @@ static char *record_path(const cJSON *places, int folder_only) {
 
 static cJSON *read_installed(const cJSON *places) {
     char *path = record_path(places, 0);
-    cJSON *installed = path == NULL ? NULL : runtime_read_node_json(path);
+    int out_of_memory = path == NULL;
+    cJSON *installed = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
     free(path);
+    if (out_of_memory) {
+        return NULL;
+    }
     if (!cJSON_IsObject(installed)) {
         cJSON_Delete(installed);
         installed = cJSON_CreateObject();
