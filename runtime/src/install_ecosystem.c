@@ -230,28 +230,57 @@ static cJSON *plugin_targets(const ecosystem *install) {
 }
 
 /** @implNote Only an id the settings never mention is enabled unasked, so a plugin the user turned off stays off. */
-static int enable_choice(ecosystem *install, const char *id, const cJSON *mentioned) {
+static int needs_enabling(const ecosystem *install, const char *id, const cJSON *mentioned) {
     int asked = runtime_install_holds(install->requested, id);
-    if ((!asked && runtime_install_holds(mentioned, id)) || runtime_install_plugin_enabled(install->values, id)) {
+    return (asked || !runtime_install_holds(mentioned, id)) && !runtime_install_plugin_enabled(install->values, id);
+}
+
+/** Reports refusal, which it deletes, under each of ids; 0 when memory ran out. */
+static int report_each_refused(ecosystem *install, const cJSON *ids, cJSON *refusal) {
+    int reported = runtime_is_refusal(refusal);
+    for (const cJSON *id = ids->child; reported && id != NULL; id = id->next) {
+        reported = runtime_install_report_unavailable(install->run.report, id->valuestring,
+                                                      runtime_install_text(refusal, "message"),
+                                                      runtime_install_text(refusal, "fix"));
+    }
+    cJSON_Delete(refusal);
+    return reported;
+}
+
+/**
+ * @implNote One write enables every plugin this install enables, after all of them are installed: which plugins to
+ * install is read from the settings, so a repeat after a failure must find them as this install found them or as it
+ * left them, never with only some of the plugins enabled.
+ */
+static int enable_all(ecosystem *install, const cJSON *enabling) {
+    if (cJSON_GetArraySize(enabling) == 0) {
         return 1;
     }
     cJSON *refusal = NULL;
-    int enabled = runtime_install_enable_plugin(&install->settings, id, "portable", &refusal);
-    if (!enabled) {
-        return refusal != NULL && runtime_install_report_refusal(install->run.report, id, refusal);
+    if (!runtime_install_enable_plugins(&install->settings, enabling, &refusal)) {
+        return report_each_refused(install, enabling, refusal);
     }
-    return runtime_install_add_text(cJSON_GetObjectItemCaseSensitive(install->run.report, "enabled"), id);
+    cJSON *enabled = cJSON_GetObjectItemCaseSensitive(install->run.report, "enabled");
+    int reported = 1;
+    for (const cJSON *id = enabling->child; reported && id != NULL; id = id->next) {
+        reported = runtime_install_add_text(enabled, id->valuestring);
+    }
+    return reported;
 }
 
 static int install_plugins(ecosystem *install) {
     cJSON *targets = plugin_targets(install);
     cJSON *mentioned = targets == NULL ? NULL : mentioned_plugins(install->values);
-    int installed = mentioned != NULL;
+    cJSON *enabling = mentioned == NULL ? NULL : cJSON_CreateArray();
+    int installed = enabling != NULL;
     for (const cJSON *target = installed ? targets->child : NULL; installed && target != NULL; target = target->next) {
         const char *id = runtime_install_text(target, "id");
         installed = install_referenced(install, target, "plugin") &&
-                    (!cJSON_HasObjectItem(install->running, id) || enable_choice(install, id, mentioned));
+                    (!cJSON_HasObjectItem(install->running, id) || !needs_enabling(install, id, mentioned) ||
+                     runtime_install_add_text(enabling, id));
     }
+    installed = installed && enable_all(install, enabling);
+    cJSON_Delete(enabling);
     cJSON_Delete(mentioned);
     cJSON_Delete(targets);
     return installed;
