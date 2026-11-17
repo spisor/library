@@ -5,6 +5,7 @@
 
 #include "catalog.h"
 #include "catalog_call.h"
+#include "catalog_service_call.h"
 #include "catalog_check.h"
 #include "catalog_fold.h"
 #include "catalog_schema.h"
@@ -32,7 +33,7 @@ static catalog_answer read_index(const char *text, const char *origin) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "text", text);
     cJSON_AddStringToObject(argument, "origin", origin);
-    return call_catalog(runtime_catalog_read, argument);
+    return catalog_service_call(CATALOG_READ, argument);
 }
 
 static catalog_answer read_fixture(const char *name, const char *origin) {
@@ -67,7 +68,7 @@ static void expect_recorded_refusal(catalog_answer answer, const cJSON *expected
     const char *prefix = text_at(expected, "detailStartsWith");
     const char *fix = text_at(expected, "fix");
     const char *message = text_at(answer.tree, "message");
-    if (answer.status != SPISOR_STATUS_FAILURE || message == NULL) {
+    if (answer.status != SPISOR_REFUSED || message == NULL) {
         fprintf(stderr, "%s: expected a refusal, got status %d\n", name, (int)answer.status);
         check_failures++;
         return;
@@ -196,8 +197,8 @@ static void it_answers_each_item_s_runtime(void) {
 }
 
 static void it_refuses_an_unusable_argument(void) {
-    expect_refusal_released(call_catalog(runtime_catalog_read, parsed("{\"origin\":\"" ORIGIN "\"}")), "text", "no text");
-    expect_refusal_released(call_catalog(runtime_catalog_read, parsed("{\"text\":\"{}\"}")), "origin", "no origin");
+    expect_malformed_released(catalog_service_call(CATALOG_READ, parsed("{\"origin\":\"" ORIGIN "\"}")), "text", "no text");
+    expect_malformed_released(catalog_service_call(CATALOG_READ, parsed("{\"text\":\"{}\"}")), "origin", "no origin");
 }
 
 static void every_url_resolves_as_node_does(void) {

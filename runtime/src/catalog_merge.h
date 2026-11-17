@@ -8,7 +8,7 @@
 
 /** One source's catalog, as read. */
 typedef struct runtime_catalog_reading {
-    runtime_catalog_source source;
+    runtime_catalog_location source;
     const cJSON *catalog;
 } runtime_catalog_reading;
 

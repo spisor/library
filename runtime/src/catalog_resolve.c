@@ -3,7 +3,6 @@
 #include "catalog.h"
 #include "catalog_answer.h"
 #include "catalog_semver.h"
-#include "spisor/json_kind.h"
 
 static const char *const KINDS[] = {"plugin", "host", "library"};
 
@@ -124,35 +123,22 @@ static cJSON *resolved(const cJSON *catalog, const cJSON *enabled, const cJSON *
     return result;
 }
 
-static int32_t resolve(const cJSON *argument, uint8_t **out, size_t *out_len) {
+cJSON *runtime_catalog_resolve_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(argument, "catalog");
     const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(argument, "enabled");
     const cJSON *installed = cJSON_GetObjectItemCaseSensitive(argument, "installed");
     const char *kind = kind_of(argument);
     if (!cJSON_IsObject(catalog) || !cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(catalog, "items"))) {
-        return runtime_catalog_refuse_argument("catalog", "a catalog with items, as catalog.read answers it", out,
-                                               out_len);
+        return runtime_catalog_refuse_member("catalog", "a catalog with items, as catalog.read answers it", refusal);
     }
     if (!cJSON_IsArray(enabled) || !usable_enabled(enabled)) {
-        return runtime_catalog_refuse_argument("enabled", "an array of {id, pin?}", out, out_len);
+        return runtime_catalog_refuse_member("enabled", "an array of {id, pin?}", refusal);
     }
     if (!cJSON_IsObject(installed)) {
-        return runtime_catalog_refuse_argument("installed", "an object of each id's installed versions", out,
-                                               out_len);
+        return runtime_catalog_refuse_member("installed", "an object of each id's installed versions", refusal);
     }
     if (kind == NULL) {
-        return runtime_catalog_refuse_argument("kind", "plugin, host or library, or leave it out", out, out_len);
+        return runtime_catalog_refuse_member("kind", "plugin, host or library, or leave it out", refusal);
     }
-    return runtime_catalog_answer(resolved(catalog, enabled, installed, kind), out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_catalog_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    status = resolve(call.argument, out, out_len);
-    spisor_discard_call(&call);
-    return status;
+    return resolved(catalog, enabled, installed, kind);
 }

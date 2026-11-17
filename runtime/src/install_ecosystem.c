@@ -94,7 +94,7 @@ static cJSON *check_call(const ecosystem *install, const cJSON *source, const ch
 /** @implNote An install is asked for, so it checks every source now rather than waiting out the update interval. */
 static int check_source(ecosystem *install, const cJSON *source, const char *now) {
     cJSON *refusal = NULL;
-    cJSON *checked = runtime_call_or_refuse(runtime_catalog_check, check_call(install, source, now), &refusal);
+    cJSON *checked = runtime_call_operation(runtime_catalog_check_operation, check_call(install, source, now), &refusal);
     const char *kind = runtime_install_text(checked, "kind");
     int recorded = checked == NULL ? runtime_install_report_refusal(install->run.report, "catalog", refusal)
                    : kind != NULL && strcmp(kind, "failed") == 0
@@ -112,7 +112,7 @@ static cJSON *current_catalog(const ecosystem *install, const cJSON *sources, cJ
         cJSON_Delete(call);
         return NULL;
     }
-    cJSON *answer = runtime_call_or_refuse(runtime_catalog_current, call, refusal);
+    cJSON *answer = runtime_call_operation(runtime_catalog_current_operation, call, refusal);
     cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(answer, "catalog");
     cJSON_Delete(answer);
     return catalog;
@@ -413,7 +413,7 @@ static int read_argument(const cJSON *argument, ecosystem *install) {
 
 /** Whether sources is an array of catalog sources as catalog.sources reads them; 0 with *refusal set otherwise. */
 static int are_sources(const cJSON *sources, cJSON **refusal) {
-    runtime_catalog_source *read = NULL;
+    runtime_catalog_location *read = NULL;
     size_t count = 0;
     char *problem = NULL;
     int usable = cJSON_IsArray(sources) && runtime_catalog_sources_of(sources, &read, &count, &problem);

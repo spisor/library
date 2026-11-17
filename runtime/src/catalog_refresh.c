@@ -75,7 +75,7 @@ static unsigned long next_download_number(void) {
 
 /** Everything one check of one source works with. */
 typedef struct check_order {
-    runtime_catalog_source source;
+    runtime_catalog_location source;
     const char *cache;
     char now[RUNTIME_CATALOG_TIME_SIZE];
     double now_milliseconds;
@@ -282,49 +282,52 @@ static cJSON *checked(check_order *order) {
     return order->source.local ? check_local(order) : check_https(order);
 }
 
-static int32_t read_check_order(const cJSON *argument, check_order *order, uint8_t **out, size_t *out_len) {
+/** Reads the argument into order: 1, or 0 with *refusal set, NULL when memory ran out. */
+static int read_check_order(const cJSON *argument, check_order *order, cJSON **refusal) {
     memset(order, 0, sizeof *order);
     char *problem = NULL;
     int usable = runtime_catalog_source_of(cJSON_GetObjectItemCaseSensitive(argument, "source"), &order->source, &problem);
+    int out_of_memory = !usable && problem == NULL;
     free(problem);
+    if (out_of_memory) {
+        return 0;
+    }
     if (!usable) {
-        return runtime_catalog_refuse_argument("source", "{kind: \"local\", path} or {kind: \"https\", url}", out, out_len);
+        runtime_catalog_refuse_member("source", "{kind: \"local\", path} or {kind: \"https\", url}", refusal);
+        return 0;
     }
     order->cache = runtime_catalog_text_member(argument, "cache");
     if (order->cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, order->cache)) {
-        return runtime_catalog_refuse_argument("cache", "the absolute path of the cache place", out, out_len);
+        runtime_catalog_refuse_member("cache", "the absolute path of the cache place", refusal);
+        return 0;
     }
     const char *now = runtime_catalog_text_member(argument, "now");
     if (now == NULL || !runtime_catalog_parse_time(now, &order->now_milliseconds) ||
         !runtime_catalog_format_time(order->now_milliseconds, order->now)) {
-        return runtime_catalog_refuse_argument("now", "an ISO 8601 time, as toISOString writes it", out, out_len);
+        runtime_catalog_refuse_member("now", "an ISO 8601 time, as toISOString writes it", refusal);
+        return 0;
     }
     const cJSON *interval = cJSON_GetObjectItemCaseSensitive(argument, "intervalHours");
     if (!cJSON_IsNumber(interval)) {
-        return runtime_catalog_refuse_argument("intervalHours", "a number of hours", out, out_len);
+        runtime_catalog_refuse_member("intervalHours", "a number of hours", refusal);
+        return 0;
     }
     order->interval_hours = interval->valuedouble;
-    return SPISOR_STATUS_SUCCESS;
+    return 1;
 }
 
-RUNTIME_EXPORT int32_t runtime_catalog_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
+cJSON *runtime_catalog_check_operation(const cJSON *argument, cJSON **refusal) {
     check_order order;
-    status = read_check_order(call.argument, &order, out, out_len);
-    if (status == SPISOR_STATUS_SUCCESS) {
-        status = runtime_catalog_answer(checked(&order), out, out_len);
+    cJSON *answer = NULL;
+    if (read_check_order(argument, &order, refusal)) {
+        answer = checked(&order);
         free_order(&order);
     }
-    spisor_discard_call(&call);
-    return status;
+    return answer;
 }
 
 /** The source's catalog as it stands, with no request: a local index on disk, an https one as last kept. */
-static cJSON *current_catalog(const runtime_catalog_source *source, const char *cache) {
+static cJSON *current_catalog(const runtime_catalog_location *source, const char *cache) {
     check_order order;
     memset(&order, 0, sizeof order);
     order.source = *source;
@@ -347,7 +350,7 @@ static cJSON *current_catalog(const runtime_catalog_source *source, const char *
     return catalog;
 }
 
-static cJSON *current(const runtime_catalog_source *sources, size_t count, const char *cache) {
+static cJSON *current(const runtime_catalog_location *sources, size_t count, const char *cache) {
     runtime_catalog_reading *readings = malloc((count + 1) * sizeof *readings);
     if (readings == NULL) {
         return NULL;
@@ -373,28 +376,23 @@ static cJSON *current(const runtime_catalog_source *sources, size_t count, const
     return result;
 }
 
-RUNTIME_EXPORT int32_t runtime_catalog_current(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    const cJSON *listed = cJSON_GetObjectItemCaseSensitive(call.argument, "sources");
-    const char *cache = runtime_catalog_text_member(call.argument, "cache");
-    runtime_catalog_source *sources = NULL;
+cJSON *runtime_catalog_current_operation(const cJSON *argument, cJSON **refusal) {
+    const cJSON *listed = cJSON_GetObjectItemCaseSensitive(argument, "sources");
+    const char *cache = runtime_catalog_text_member(argument, "cache");
+    runtime_catalog_location *sources = NULL;
     size_t count = 0;
     char *problem = NULL;
+    cJSON *answer = NULL;
     if (!cJSON_IsArray(listed) || !runtime_catalog_sources_of(listed, &sources, &count, &problem)) {
-        status = problem == NULL && cJSON_IsArray(listed)
-                     ? runtime_catalog_answer(NULL, out, out_len)
-                     : runtime_catalog_refuse_argument("sources", "an array of catalog sources", out, out_len);
+        if (problem != NULL || !cJSON_IsArray(listed)) {
+            runtime_catalog_refuse_member("sources", "an array of catalog sources", refusal);
+        }
     } else if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache)) {
-        status = runtime_catalog_refuse_argument("cache", "the absolute path of the cache place", out, out_len);
+        runtime_catalog_refuse_member("cache", "the absolute path of the cache place", refusal);
     } else {
-        status = runtime_catalog_answer(current(sources, count, cache), out, out_len);
+        answer = current(sources, count, cache);
     }
     free(problem);
     free(sources);
-    spisor_discard_call(&call);
-    return status;
+    return answer;
 }

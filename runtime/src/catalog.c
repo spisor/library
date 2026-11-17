@@ -5,47 +5,42 @@
 
 #include "catalog_answer.h"
 #include "catalog_read.h"
-#include "spisor/json_kind.h"
+#include "json_service.h"
 
-static int32_t refuse_index(const runtime_catalog_refusal *refusal, uint8_t **out, size_t *out_len) {
+/**
+ * The refusal of an index the schema or the rules refuse, naming the JSON pointer at fault; NULL out of memory, which
+ * the reader reports as a refusal with the out-of-memory fix.
+ */
+static cJSON *refuse_index(const runtime_catalog_refusal *refusal) {
+    if (refusal->fix == NULL || strcmp(refusal->fix, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX) == 0) {
+        return NULL;
+    }
     char *message = runtime_catalog_refusal_message(refusal);
-    int32_t status = message == NULL ? runtime_catalog_answer(NULL, out, out_len)
-                                     : spisor_fail(message, refusal->fix, out, out_len);
+    cJSON *refused = message == NULL ? NULL : runtime_refusal(message, refusal->fix);
     free(message);
-    return status;
+    return refused;
 }
 
-static int32_t read_catalog(const cJSON *argument, uint8_t **out, size_t *out_len) {
+cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal) {
     const char *text = runtime_catalog_text_member(argument, "text");
     const char *origin = runtime_catalog_text_member(argument, "origin");
     if (text == NULL) {
-        return runtime_catalog_refuse_argument("text", "the catalog index's text", out, out_len);
+        return runtime_catalog_refuse_member("text", "the catalog index's text", refusal);
     }
     if (origin == NULL || origin[0] == 0) {
-        return runtime_catalog_refuse_argument("origin", "the url the index was read from", out, out_len);
+        return runtime_catalog_refuse_member("origin", "the url the index was read from", refusal);
     }
-    runtime_catalog_refusal refusal;
-    cJSON *catalog = runtime_catalog_read_text(text, strlen(text), origin, &refusal);
+    runtime_catalog_refusal index_refusal;
+    cJSON *catalog = runtime_catalog_read_text(text, strlen(text), origin, &index_refusal);
     if (catalog == NULL) {
-        int32_t status = refuse_index(&refusal, out, out_len);
-        runtime_catalog_free_refusal(&refusal);
-        return status;
+        *refusal = refuse_index(&index_refusal);
+        runtime_catalog_free_refusal(&index_refusal);
+        return NULL;
     }
     cJSON *result = cJSON_CreateObject();
     if (!runtime_catalog_attach(result, "catalog", catalog)) {
         cJSON_Delete(result);
-        return runtime_catalog_answer(NULL, out, out_len);
+        return NULL;
     }
-    return runtime_catalog_answer(result, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_catalog_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    status = read_catalog(call.argument, out, out_len);
-    spisor_discard_call(&call);
-    return status;
+    return result;
 }

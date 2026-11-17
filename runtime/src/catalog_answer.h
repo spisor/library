@@ -12,6 +12,9 @@ int32_t runtime_catalog_answer(cJSON *result, uint8_t **out, size_t *out_len);
 /** Refuses an argument that carries no usable member, saying what shape it takes. */
 int32_t runtime_catalog_refuse_argument(const char *member, const char *shape, uint8_t **out, size_t *out_len);
 
+/** Sets *refusal to the refusal of an argument that carries no usable member and answers NULL; *refusal is NULL out of memory. */
+cJSON *runtime_catalog_refuse_member(const char *member, const char *shape, cJSON **refusal);
+
 /** Adds item to object under name; on failure item is freed. 0 when item is NULL or the add fails. */
 int runtime_catalog_attach(cJSON *object, const char *name, cJSON *item);
 

@@ -4,6 +4,7 @@
 
 #include "catalog.h"
 #include "catalog_call.h"
+#include "catalog_service_call.h"
 #include "catalog_semver.h"
 #include "check.h"
 #include "spisor/json_kind.h"
@@ -23,7 +24,7 @@ static catalog_answer resolved(const char *items, const char *enabled, const cha
     if (kind != NULL) {
         cJSON_AddStringToObject(argument, "kind", kind);
     }
-    return call_catalog(runtime_catalog_resolve, argument);
+    return catalog_service_call(CATALOG_RESOLVE, argument);
 }
 
 static void expect_resolved(const char *items, const char *enabled, const char *installed, const char *expected_json,
@@ -93,10 +94,10 @@ static void it_resolves_the_kind_asked_for(void) {
 
 static void it_refuses_an_unusable_argument(void) {
     catalog_answer kind = resolved("{}", "[]", "{}", "gadget");
-    expect_refusal(kind, "kind", "kind");
+    expect_cache_refusal_malformed(kind, "kind", "kind");
     cJSON_Delete(kind.tree);
     catalog_answer enabled = resolved("{}", "[{\"pin\":\"1.0.0\"}]", "{}", NULL);
-    expect_refusal(enabled, "enabled", "enabled");
+    expect_cache_refusal_malformed(enabled, "enabled", "enabled");
     cJSON_Delete(enabled.tree);
 }
 

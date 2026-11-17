@@ -29,7 +29,7 @@ static const char *string_member(const cJSON *object, const char *name) {
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
-int runtime_catalog_source_of(const cJSON *entry, runtime_catalog_source *source, char **problem) {
+int runtime_catalog_source_of(const cJSON *entry, runtime_catalog_location *source, char **problem) {
     *problem = NULL;
     if (!cJSON_IsObject(entry)) {
         *problem = runtime_catalog_copy(NOT_AN_OBJECT);
@@ -52,7 +52,7 @@ int runtime_catalog_source_of(const cJSON *entry, runtime_catalog_source *source
     return 0;
 }
 
-cJSON *runtime_catalog_source_json(const runtime_catalog_source *source) {
+cJSON *runtime_catalog_source_json(const runtime_catalog_location *source) {
     cJSON *written = cJSON_CreateObject();
     int built = written != NULL && cJSON_AddStringToObject(written, "kind", source->local ? "local" : "https") != NULL &&
                 cJSON_AddStringToObject(written, source->local ? "path" : "url", source->location) != NULL;
@@ -63,7 +63,7 @@ cJSON *runtime_catalog_source_json(const runtime_catalog_source *source) {
     return written;
 }
 
-int runtime_catalog_sources_of(const cJSON *array, runtime_catalog_source **sources, size_t *count, char **problem) {
+int runtime_catalog_sources_of(const cJSON *array, runtime_catalog_location **sources, size_t *count, char **problem) {
     *problem = NULL;
     *count = 0;
     *sources = malloc(((size_t)cJSON_GetArraySize(array) + 1) * sizeof **sources);
