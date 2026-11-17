@@ -13,7 +13,8 @@
  * @file
  * Loads the built shared runtime as a consumer would and requires every `runtime_*_definition_of` that
  * a header under `include/runtime` declares to be among its exports. The names come from the headers at configure time, so a
- * service added later is checked without this file changing.
+ * service added later is checked without this file changing, and there must be one per header that includes
+ * `runtime/definition.h`, so a declaration the configure step failed to read is caught.
  */
 
 static const char *const declared_symbols[] = {RUNTIME_DEFINITION_SYMBOLS};
@@ -56,7 +57,7 @@ static void every_declared_definition_is_exported(void) {
         return;
     }
     size_t count = sizeof declared_symbols / sizeof declared_symbols[0];
-    CHECK(count > 0);
+    CHECK(count == RUNTIME_DEFINITION_HEADER_COUNT);
     for (size_t index = 0; index < count; index++) {
         if (!exports(library, declared_symbols[index])) {
             fprintf(stderr, "%s is declared but not exported\n", declared_symbols[index]);
