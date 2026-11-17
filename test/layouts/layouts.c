@@ -16,6 +16,7 @@
 #include "runtime/marketplace.h"
 #include "runtime/paths.h"
 #include "runtime/places.h"
+#include "runtime/hosts.h"
 #include "runtime/processes.h"
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
@@ -1339,6 +1340,81 @@ static void print_boot_layouts(void) {
     SIZE(runtime_boot_definition);
 }
 
+static void print_hosts_layouts(void) {
+    FIELD(runtime_hosts_command, name);
+    FIELD(runtime_hosts_command, target);
+    FIELD(runtime_hosts_command, arguments);
+    FIELD(runtime_hosts_command, argument_count);
+    SIZE(runtime_hosts_command);
+    FIELD(runtime_hosts_register_argument, size);
+    FIELD(runtime_hosts_register_argument, state);
+    FIELD(runtime_hosts_register_argument, registration);
+    FIELD(runtime_hosts_register_argument, commands);
+    FIELD(runtime_hosts_register_argument, command_count);
+    FIELD(runtime_hosts_register_argument, environment);
+    FIELD(runtime_hosts_register_argument, environment_count);
+    SIZE(runtime_hosts_register_argument);
+    FIELD(runtime_hosts_remove_answer, size);
+    FIELD(runtime_hosts_remove_answer, reversed);
+    FIELD(runtime_hosts_remove_answer, drifted);
+    FIELD(runtime_hosts_remove_answer, drifted_count);
+    FIELD(runtime_hosts_remove_answer, forgotten);
+    FIELD(runtime_hosts_remove_answer, storage);
+    SIZE(runtime_hosts_remove_answer);
+    FIELD(runtime_hosts_provenance_argument, size);
+    FIELD(runtime_hosts_provenance_argument, origin);
+    FIELD(runtime_hosts_provenance_argument, binary);
+    FIELD(runtime_hosts_provenance_argument, home);
+    FIELD(runtime_hosts_provenance_argument, environment);
+    FIELD(runtime_hosts_provenance_argument, environment_count);
+    FIELD(runtime_hosts_provenance_argument, now);
+    SIZE(runtime_hosts_provenance_argument);
+    FIELD(runtime_hosts_provenance_answer, size);
+    FIELD(runtime_hosts_provenance_answer, provenance);
+    FIELD(runtime_hosts_provenance_answer, storage);
+    SIZE(runtime_hosts_provenance_answer);
+    FIELD(runtime_hosts_start_argument, size);
+    FIELD(runtime_hosts_start_argument, environment);
+    FIELD(runtime_hosts_start_argument, environment_count);
+    FIELD(runtime_hosts_start_argument, host_id);
+    FIELD(runtime_hosts_start_argument, layer);
+    FIELD(runtime_hosts_start_argument, libraries);
+    FIELD(runtime_hosts_start_argument, library_count);
+    FIELD(runtime_hosts_start_argument, session);
+    SIZE(runtime_hosts_start_argument);
+    FIELD(runtime_hosts_timers, record_run_milliseconds);
+    FIELD(runtime_hosts_timers, prune_failures_before_exit);
+    FIELD(runtime_hosts_timers, update_check_milliseconds);
+    SIZE(runtime_hosts_timers);
+    FIELD(runtime_hosts_start_answer, size);
+    FIELD(runtime_hosts_start_answer, places);
+    FIELD(runtime_hosts_start_answer, version);
+    FIELD(runtime_hosts_start_answer, home);
+    FIELD(runtime_hosts_start_answer, requires_command);
+    FIELD(runtime_hosts_start_answer, application);
+    FIELD(runtime_hosts_start_answer, settings);
+    FIELD(runtime_hosts_start_answer, plan);
+    FIELD(runtime_hosts_start_answer, reused_recorded_run);
+    FIELD(runtime_hosts_start_answer, timers);
+    FIELD(runtime_hosts_start_answer, no_color);
+    FIELD(runtime_hosts_start_answer, storage);
+    SIZE(runtime_hosts_start_answer);
+    FIELD(runtime_hosts_definition, size);
+    FIELD(runtime_hosts_definition, context);
+    FIELD(runtime_hosts_definition, register_host);
+    FIELD(runtime_hosts_definition, list);
+    FIELD(runtime_hosts_definition, remove);
+    FIELD(runtime_hosts_definition, provenance);
+    FIELD(runtime_hosts_definition, start);
+    FIELD(runtime_hosts_definition, release_register_answer);
+    FIELD(runtime_hosts_definition, release_listing);
+    FIELD(runtime_hosts_definition, release_remove_answer);
+    FIELD(runtime_hosts_definition, release_provenance_answer);
+    FIELD(runtime_hosts_definition, release_start_answer);
+    FIELD(runtime_hosts_definition, release_refusal);
+    SIZE(runtime_hosts_definition);
+}
+
 static void print_processes_layouts(void) {
     FIELD(runtime_processes_hold_argument, size);
     FIELD(runtime_processes_hold_argument, state);
@@ -1471,5 +1547,6 @@ int main(void) {
     print_updates_layouts();
     print_boot_layouts();
     print_processes_layouts();
+    print_hosts_layouts();
     return 0;
 }

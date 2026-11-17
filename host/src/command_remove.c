@@ -32,7 +32,7 @@ static cJSON *sweep_call(const host_context *context) {
  */
 static int remove_host(const host_context *context, const char *id) {
     cJSON *refusal = NULL;
-    cJSON *removed = host_call(runtime_hosts_remove, remove_call(context, id), &refusal);
+    cJSON *removed = runtime_call_operation(runtime_hosts_remove_operation, remove_call(context, id), &refusal);
     cJSON *swept = removed == NULL ? NULL : runtime_call_operation(runtime_cache_sweep_operation, sweep_call(context), &refusal);
     cJSON *summary = swept == NULL ? NULL : cJSON_CreateObject();
     if (summary == NULL || !cJSON_AddItemToObject(summary, "removed", removed)) {

@@ -1,10 +1,7 @@
 #ifndef RUNTIME_HOSTS_START_H
 #define RUNTIME_HOSTS_START_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include "export.h"
+#include "cJSON.h"
 
 /** How many turns of a held host's process timer may fail in a row before it stops, since it can no longer tell whether anyone holds it. */
 #define RUNTIME_PRUNE_FAILURES_BEFORE_EXIT 6
@@ -29,8 +26,11 @@
  * a run record of its own and as plugins that run less the running ids, and then answers no next or
  * rollback. timers are answered to the session start alone. noColor is whether environment carries NO_COLOR
  * at all. A refused session start publishes its refusal to the ready record of hostId, as processes.ready
- * does, once its places have resolved.
+ * does, once its places have resolved. An answer that cannot be built removes the run record its plan wrote.
  */
-RUNTIME_EXPORT int32_t runtime_hosts_start(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_hosts_start_operation(const cJSON *argument, cJSON **refusal);
+
+/** Removes the run record plan, a start's plan, names as written for host_id in state. */
+void runtime_hosts_start_undo(const char *state, const char *host_id, const cJSON *plan);
 
 #endif

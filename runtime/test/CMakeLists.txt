@@ -162,7 +162,7 @@ runtime_test(cache_deploy_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:
     $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(cache_deploy_test PRIVATE ${runtime_fetch_libraries})
 
-foreach(name cache_locate_test cache_id_key_test hosts_start_test)
+foreach(name cache_locate_test cache_id_key_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
         $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
@@ -181,15 +181,11 @@ spisor_strict_warnings(background_fixture)
 
 set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_processes_test_objects}
     $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands>)
-foreach(name hosts_test loader_test entry_template_test detect_test lists_test)
+foreach(name loader_test entry_template_test detect_test lists_test)
     runtime_test(${name} ${runtime_hosts_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
-if(WIN32)
-    add_dependencies(hosts_test runtime_launcher)
-endif()
-set_tests_properties(hosts_test PROPERTIES RESOURCE_LOCK user_path_value)
 
 foreach(name ui_navigation_test ui_settings_view_test ui_render_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
@@ -215,16 +211,16 @@ spisor_strict_warnings(node_probe)
 set(runtime_install_by_id_objects $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at>)
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
-    ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
+    $<TARGET_OBJECTS:runtime_hosts_definition> ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
 set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
-foreach(name updates_test boot_hint_test boot_unlistable_test)
+foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test)
     runtime_test(${name} ${runtime_install_plain_http_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()
 foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
-        install_ecosystem_test install_applications_test)
+        install_ecosystem_test install_applications_test hosts_test)
     runtime_test(${name} ${runtime_install_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -232,6 +228,10 @@ foreach(name install_test install_warnings_test install_methods_test install_ent
         add_dependencies(${name} runtime_launcher)
     endif()
 endforeach()
+if(WIN32)
+    add_dependencies(hosts_test runtime_launcher)
+endif()
+set_tests_properties(hosts_test PROPERTIES RESOURCE_LOCK user_path_value)
 runtime_test(install_by_id_test http_fixture.c ${runtime_install_plain_http_test_objects})
 target_link_libraries(install_by_id_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(install_by_id_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

@@ -286,8 +286,8 @@ typedef struct runtime_install_refused_command {
 } runtime_install_refused_command;
 
 /**
- * The provenance the loader's registration keeps, the commands it holds, and the command requests refused. First
- * shape ends at `storage`.
+ * The provenance a host's registration keeps, the commands it holds, and the command requests refused, as install's
+ * register_loader and hosts' register_host answer them. First shape ends at `storage`.
  */
 typedef struct runtime_install_register_loader_answer {
     uint32_t size;

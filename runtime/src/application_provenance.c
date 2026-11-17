@@ -103,6 +103,6 @@ static cJSON *provenance_for(const cJSON *argument, cJSON **refusal) {
     return provenance;
 }
 
-RUNTIME_EXPORT int32_t runtime_hosts_provenance(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, provenance_for);
+cJSON *runtime_hosts_provenance_operation(const cJSON *argument, cJSON **refusal) {
+    return provenance_for(argument, refusal);
 }

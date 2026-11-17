@@ -235,27 +235,28 @@ static spisor_status fill_references(void **storage, const cJSON *answered, runt
     return status;
 }
 
-static spisor_status fill_apply(const cJSON *answered, void *filled) {
-    runtime_updates_apply_answer *answer = filled;
+spisor_status runtime_fill_apply_plan(void **storage, const cJSON *answered, runtime_updates_apply_answer *answer) {
     runtime_item_version const **arrays[3] = {&answer->run, &answer->next, &answer->rollback};
     size_t *counts[3] = {&answer->run_count, &answer->next_count, &answer->rollback_count};
-    spisor_status status = runtime_start_storage(&answer->storage);
+    spisor_status status = fill_versions(storage, member_of(answered, "plugins"), &answer->plugins,
+                                         &answer->plugin_count);
     if (status == SPISOR_OK) {
-        status = fill_versions(&answer->storage, member_of(answered, "plugins"), &answer->plugins,
-                               &answer->plugin_count);
+        status = fill_references(storage, answered, arrays, counts);
     }
     if (status == SPISOR_OK) {
-        status = fill_references(&answer->storage, answered, arrays, counts);
-    }
-    if (status == SPISOR_OK) {
-        status = fill_problems(&answer->storage, member_of(answered, "unrecorded"), &answer->unrecorded,
+        status = fill_problems(storage, member_of(answered, "unrecorded"), &answer->unrecorded,
                                &answer->unrecorded_count);
     }
-    if (status == SPISOR_OK && !runtime_storage_copy(&answer->storage, text_of(answered, "runRecord"),
-                                                     &answer->run_record)) {
+    if (status == SPISOR_OK && !runtime_storage_copy(storage, text_of(answered, "runRecord"), &answer->run_record)) {
         status = SPISOR_OUT_OF_MEMORY;
     }
     return status;
+}
+
+static spisor_status fill_apply(const cJSON *answered, void *filled) {
+    runtime_updates_apply_answer *answer = filled;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    return status == SPISOR_OK ? runtime_fill_apply_plan(&answer->storage, answered, answer) : status;
 }
 
 static spisor_status check_apply(const runtime_updates_apply_argument *argument, spisor_refusal *refusal) {

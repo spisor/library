@@ -218,11 +218,12 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
                 runtime_catalog_attach(plan, "run", cJSON_Duplicate(run, 1)) &&
                 runtime_catalog_attach(plan, "unrecorded", cJSON_CreateArray()) &&
                 cJSON_AddStringToObject(plan, "runRecord", record) != NULL;
-    free(record);
     if (!built) {
+        runtime_remove_run_record(context->state, context->argument.host_id, record);
         cJSON_Delete(plan);
-        return NULL;
+        plan = NULL;
     }
+    free(record);
     return plan;
 }
 
@@ -281,29 +282,34 @@ static int carries_no_color(const cJSON *environment) {
 static cJSON *running_identity(const start_context *context, const cJSON *plan) {
     const char *planned_version = string_of(cJSON_GetObjectItemCaseSensitive(plan, "run"), context->argument.host_id);
     cJSON *identity = cJSON_Duplicate(context->identity, 1);
-    if (identity != NULL && planned_version != NULL &&
-        !cJSON_ReplaceItemInObjectCaseSensitive(identity, "version", cJSON_CreateString(planned_version))) {
+    cJSON *version = identity == NULL || planned_version == NULL ? NULL : cJSON_CreateString(planned_version);
+    if (planned_version != NULL &&
+        (version == NULL || !cJSON_ReplaceItemInObjectCaseSensitive(identity, "version", version))) {
+        cJSON_Delete(version);
         cJSON_Delete(identity);
         return NULL;
     }
     return identity;
 }
 
-/** The answer of a start that planned plan, taking plan, which is freed when the answer cannot be built. */
+/**
+ * The answer of a start that planned plan, taking plan. When the answer cannot be built the run record plan wrote is
+ * removed before plan is freed, so a start answers OUT_OF_MEMORY only with no run record of its own left.
+ *
+ * @implNote plan is attached last under a constant key, which allocates nothing, so nothing can fail after it.
+ */
 static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL) {
-        cJSON_Delete(plan);
-        return NULL;
-    }
-    int built = runtime_catalog_attach(answer, "plan", plan) &&
-                runtime_catalog_attach(answer, "places", cJSON_Duplicate(context->places, 1)) &&
+    int built = answer != NULL && runtime_catalog_attach(answer, "places", cJSON_Duplicate(context->places, 1)) &&
                 runtime_catalog_attach(answer, "identity", running_identity(context, plan)) &&
                 runtime_catalog_attach(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
                 (!context->argument.session || runtime_catalog_attach(answer, "timers", timers())) &&
-                cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL;
+                cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL &&
+                cJSON_AddItemToObjectCS(answer, "plan", plan);
     if (!built) {
+        runtime_hosts_start_undo(context->state, context->argument.host_id, plan);
+        cJSON_Delete(plan);
         cJSON_Delete(answer);
         return NULL;
     }
@@ -347,6 +353,10 @@ static cJSON *start_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_hosts_start(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, start_for);
+cJSON *runtime_hosts_start_operation(const cJSON *argument, cJSON **refusal) {
+    return start_for(argument, refusal);
+}
+
+void runtime_hosts_start_undo(const char *state, const char *host_id, const cJSON *plan) {
+    runtime_remove_run_record(state, host_id, string_of(plan, "runRecord"));
 }

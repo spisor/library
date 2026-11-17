@@ -2,11 +2,11 @@
 
 #include "boot_stub.h"
 #include "config.h"
-#include "hosts.h"
 #include "install_ecosystem.h"
 #include "install_run.h"
 #include "catalog_answer.h"
 #include "json_service.h"
+#include "registry.h"
 #include "updates.h"
 
 #define PATH_METHOD "path"
@@ -45,7 +45,7 @@ static int append_copy(cJSON *array, const cJSON *item) {
 
 /** The registrations hosts.list answers, spisor-host first, so the catalog check it makes serves the rest. */
 static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
-    cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(run), refusal);
+    cJSON *listed = runtime_call_operation(runtime_registry_list_hosts, places_call(run), refusal);
     cJSON *registrations = listed == NULL ? NULL : cJSON_CreateArray();
     for (int pass = 0; registrations != NULL && pass < 2; pass++) {
         const cJSON *row;

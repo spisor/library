@@ -203,21 +203,32 @@ static spisor_status serve_registration(runtime_json_operation operation, cJSON 
     return status;
 }
 
-static spisor_status register_json(const runtime_registry_register_argument *argument, cJSON **call,
-                                   spisor_refusal *refusal) {
-    cJSON *registration = NULL;
+spisor_status runtime_registration_record_json(const runtime_registration *registration, cJSON **json,
+                                               spisor_refusal *refusal) {
     const char *defect;
     spisor_status status;
-    *call = NULL;
-    if (argument->registration == NULL || !runtime_has_shape(argument->registration->size, REGISTRATION_SHAPE)) {
+    *json = NULL;
+    if (registration == NULL || !runtime_has_shape(registration->size, REGISTRATION_SHAPE)) {
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the registration is absent or short of its first shape",
                                  REGISTRATION_FIX);
     }
-    status = registration_json(argument->registration, &registration);
-    defect = status == SPISOR_OK ? runtime_registration_defect(registration) : NULL;
+    status = registration_json(registration, json);
+    defect = status == SPISOR_OK ? runtime_registration_defect(*json) : NULL;
     if (status == SPISOR_MALFORMED || defect != NULL) {
-        cJSON_Delete(registration);
+        cJSON_Delete(*json);
+        *json = NULL;
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, defect != NULL ? defect : UNUSABLE_PARTS, REGISTRATION_FIX);
+    }
+    return status;
+}
+
+static spisor_status register_json(const runtime_registry_register_argument *argument, cJSON **call,
+                                   spisor_refusal *refusal) {
+    cJSON *registration = NULL;
+    spisor_status status = runtime_registration_record_json(argument->registration, &registration, refusal);
+    *call = NULL;
+    if (status == SPISOR_MALFORMED) {
+        return status;
     }
     *call = status == SPISOR_OK ? places_argument(argument->state, NULL) : NULL;
     if (*call == NULL || !cJSON_AddItemToObject(*call, "registration", registration)) {

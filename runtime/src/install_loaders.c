@@ -130,7 +130,7 @@ static cJSON *origin_provenance(const runtime_install_run *run, const catalog_lo
         cJSON_Delete(call);
         return NULL;
     }
-    return runtime_call_or_refuse(runtime_hosts_provenance, call, refusal);
+    return runtime_call_operation(runtime_hosts_provenance_operation, call, refusal);
 }
 
 /**
@@ -421,7 +421,7 @@ static cJSON *register_loader(runtime_install_run *run, catalog_loader *loader) 
         return report_loader_refusal(run, loader->id, refusal, NULL) ? cJSON_CreateArray() : NULL;
     }
     cJSON *call = register_call(run, loader, &refusal);
-    cJSON *registered = call == NULL ? NULL : runtime_call_or_refuse(runtime_hosts_register, call, &refusal);
+    cJSON *registered = call == NULL ? NULL : runtime_call_operation(runtime_hosts_register_operation, call, &refusal);
     if (registered == NULL) {
         return report_loader_refusal(run, loader->id, refusal, NULL) ? cJSON_CreateArray() : NULL;
     }
@@ -538,7 +538,7 @@ cJSON *runtime_install_register_installed_loader(const runtime_install_run *run,
                                                  cJSON **refusal) {
     catalog_loader loader = {id, NULL, version, NULL, NULL};
     cJSON *call = learn(run, &loader, refusal) ? register_call(run, &loader, refusal) : NULL;
-    cJSON *registered = call == NULL ? NULL : runtime_call_or_refuse(runtime_hosts_register, call, refusal);
+    cJSON *registered = call == NULL ? NULL : runtime_call_operation(runtime_hosts_register_operation, call, refusal);
     cJSON_Delete(loader.standard);
     free(loader.home);
     return registered;

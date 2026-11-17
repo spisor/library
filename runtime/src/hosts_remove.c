@@ -28,6 +28,8 @@ typedef struct removal {
     const char *state;
     const char *cache;
     const char *id;
+    runtime_hosts_before_forget before_forget;
+    void *before_forget_context;
 } removal;
 
 static cJSON *host_request(const removal *request, const char *member) {
@@ -78,11 +80,12 @@ static cJSON *refuse_leftover(const removal *request, const char *what) {
     return runtime_cache_refusal(parts, 5, STATE_FIX);
 }
 
+/** Adds the forget's flag under a constant key, which allocates nothing, so nothing can fail once forgotten. */
 static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal) {
     cJSON *forgotten = runtime_call_operation(runtime_registry_forget_locked, host_request(request, "id"), refusal);
     cJSON *flag = cJSON_DetachItemFromObjectCaseSensitive(forgotten, "forgotten");
     cJSON_Delete(forgotten);
-    if (flag == NULL || !cJSON_AddItemToObject(answer, "forgotten", flag)) {
+    if (flag == NULL || !cJSON_AddItemToObjectCS(answer, "forgotten", flag)) {
         cJSON_Delete(flag);
         cJSON_Delete(answer);
         return NULL;
@@ -105,6 +108,8 @@ static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, 
         *refusal = refuse_leftover(request, "references file or a run record");
     } else if (!remove_boot_hint(request)) {
         *refusal = refuse_leftover(request, "boot hint");
+    } else if (request->before_forget != NULL && !request->before_forget(answer, request->before_forget_context)) {
+        *refusal = NULL;
     } else {
         answer = forget_into(request, answer, refusal);
         spisor_unlock(guard);
@@ -128,7 +133,8 @@ static cJSON *remove_host(const removal *request, cJSON **refusal) {
     return remove_recorded_and_forget(request, answer, refusal);
 }
 
-static cJSON *remove_for(const cJSON *argument, cJSON **refusal) {
+static cJSON *remove_for(const cJSON *argument, runtime_hosts_before_forget before_forget, void *context,
+                         cJSON **refusal) {
     const char *state = cJSON_GetStringValue(
         cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state"));
     const char *cache = cJSON_GetStringValue(
@@ -146,10 +152,15 @@ static cJSON *remove_for(const cJSON *argument, cJSON **refusal) {
                                    RUNTIME_PLAIN_HOST_ID_FIX);
         return NULL;
     }
-    removal request = {argument, state, cache, id};
+    removal request = {argument, state, cache, id, before_forget, context};
     return remove_host(&request, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_hosts_remove(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, remove_for);
+cJSON *runtime_hosts_remove_operation(const cJSON *argument, cJSON **refusal) {
+    return remove_for(argument, NULL, NULL, refusal);
+}
+
+cJSON *runtime_hosts_remove_preparing(const cJSON *argument, runtime_hosts_before_forget before_forget, void *context,
+                                      cJSON **refusal) {
+    return remove_for(argument, before_forget, context, refusal);
 }

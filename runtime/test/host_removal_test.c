@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "updates_fixture.h"
 
 #define LOADER "fixture-loader"
@@ -14,7 +15,7 @@ static catalog_answer remove_host(const char *host) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "id", host);
-    return call_catalog(runtime_hosts_remove, argument);
+    return hosts_call(HOSTS_REMOVE, argument);
 }
 
 static void expect_nothing_recorded_for(const char *host, const char *label) {

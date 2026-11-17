@@ -177,6 +177,6 @@ static cJSON *register_for(const cJSON *argument, cJSON **refusal) {
     return answer == NULL ? NULL : request_commands(argument, identity, home, answer, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_hosts_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, register_for);
+cJSON *runtime_hosts_register_operation(const cJSON *argument, cJSON **refusal) {
+    return register_for(argument, refusal);
 }
