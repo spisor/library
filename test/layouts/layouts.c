@@ -17,6 +17,7 @@
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
+#include "runtime/updates.h"
 #include "spisor/json_kind.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -1145,6 +1146,142 @@ static void print_install_layouts(void) {
     SIZE(runtime_install_definition);
 }
 
+static void print_updates_layouts(void) {
+    FIELD(runtime_updates_version, id);
+    FIELD(runtime_updates_version, version);
+    SIZE(runtime_updates_version);
+    FIELD(runtime_updates_default, binding);
+    FIELD(runtime_updates_default, plugin);
+    SIZE(runtime_updates_default);
+    FIELD(runtime_updates_problem, id);
+    FIELD(runtime_updates_problem, detail);
+    FIELD(runtime_updates_problem, fix);
+    SIZE(runtime_updates_problem);
+    FIELD(runtime_updates_apply_argument, size);
+    FIELD(runtime_updates_apply_argument, state);
+    FIELD(runtime_updates_apply_argument, cache);
+    FIELD(runtime_updates_apply_argument, host_id);
+    FIELD(runtime_updates_apply_argument, settings);
+    FIELD(runtime_updates_apply_argument, defaults);
+    FIELD(runtime_updates_apply_argument, default_count);
+    FIELD(runtime_updates_apply_argument, running);
+    FIELD(runtime_updates_apply_argument, running_count);
+    FIELD(runtime_updates_apply_argument, libraries);
+    FIELD(runtime_updates_apply_argument, library_count);
+    FIELD(runtime_updates_apply_argument, platform);
+    SIZE(runtime_updates_apply_argument);
+    FIELD(runtime_updates_apply_answer, size);
+    FIELD(runtime_updates_apply_answer, plugins);
+    FIELD(runtime_updates_apply_answer, plugin_count);
+    FIELD(runtime_updates_apply_answer, run);
+    FIELD(runtime_updates_apply_answer, run_count);
+    FIELD(runtime_updates_apply_answer, next);
+    FIELD(runtime_updates_apply_answer, next_count);
+    FIELD(runtime_updates_apply_answer, rollback);
+    FIELD(runtime_updates_apply_answer, rollback_count);
+    FIELD(runtime_updates_apply_answer, unrecorded);
+    FIELD(runtime_updates_apply_answer, unrecorded_count);
+    FIELD(runtime_updates_apply_answer, run_record);
+    FIELD(runtime_updates_apply_answer, storage);
+    SIZE(runtime_updates_apply_answer);
+    FIELD(runtime_updates_check_argument, size);
+    FIELD(runtime_updates_check_argument, state);
+    FIELD(runtime_updates_check_argument, cache);
+    FIELD(runtime_updates_check_argument, host_id);
+    FIELD(runtime_updates_check_argument, now);
+    FIELD(runtime_updates_check_argument, settings);
+    FIELD(runtime_updates_check_argument, defaults);
+    FIELD(runtime_updates_check_argument, default_count);
+    FIELD(runtime_updates_check_argument, damaged);
+    FIELD(runtime_updates_check_argument, damaged_count);
+    FIELD(runtime_updates_check_argument, platform);
+    SIZE(runtime_updates_check_argument);
+    FIELD(runtime_updates_source_check, outcome);
+    FIELD(runtime_updates_source_check, detail);
+    SIZE(runtime_updates_source_check);
+    FIELD(runtime_updates_check_answer, size);
+    FIELD(runtime_updates_check_answer, sources);
+    FIELD(runtime_updates_check_answer, source_count);
+    FIELD(runtime_updates_check_answer, fetched);
+    FIELD(runtime_updates_check_answer, fetched_count);
+    FIELD(runtime_updates_check_answer, refused);
+    FIELD(runtime_updates_check_answer, refused_count);
+    FIELD(runtime_updates_check_answer, removed);
+    FIELD(runtime_updates_check_answer, removed_count);
+    FIELD(runtime_updates_check_answer, storage);
+    SIZE(runtime_updates_check_answer);
+    FIELD(runtime_updates_rollback_argument, size);
+    FIELD(runtime_updates_rollback_argument, state);
+    FIELD(runtime_updates_rollback_argument, cache);
+    FIELD(runtime_updates_rollback_argument, host_id);
+    FIELD(runtime_updates_rollback_argument, item);
+    SIZE(runtime_updates_rollback_argument);
+    FIELD(runtime_updates_rollback_answer, size);
+    FIELD(runtime_updates_rollback_answer, run);
+    FIELD(runtime_updates_rollback_answer, run_count);
+    FIELD(runtime_updates_rollback_answer, next);
+    FIELD(runtime_updates_rollback_answer, next_count);
+    FIELD(runtime_updates_rollback_answer, rollback);
+    FIELD(runtime_updates_rollback_answer, rollback_count);
+    FIELD(runtime_updates_rollback_answer, storage);
+    SIZE(runtime_updates_rollback_answer);
+    FIELD(runtime_updates_recorded_argument, size);
+    FIELD(runtime_updates_recorded_argument, state);
+    FIELD(runtime_updates_recorded_argument, cache);
+    FIELD(runtime_updates_recorded_argument, host_id);
+    SIZE(runtime_updates_recorded_argument);
+    FIELD(runtime_updates_recorded_answer, size);
+    FIELD(runtime_updates_recorded_answer, run);
+    FIELD(runtime_updates_recorded_answer, run_count);
+    FIELD(runtime_updates_recorded_answer, storage);
+    SIZE(runtime_updates_recorded_answer);
+    FIELD(runtime_updates_run_argument, size);
+    FIELD(runtime_updates_run_argument, portable);
+    FIELD(runtime_updates_run_argument, state);
+    FIELD(runtime_updates_run_argument, cache);
+    FIELD(runtime_updates_run_argument, now);
+    SIZE(runtime_updates_run_argument);
+    FIELD(runtime_updates_host_check, host_id);
+    FIELD(runtime_updates_host_check, sources);
+    FIELD(runtime_updates_host_check, source_count);
+    FIELD(runtime_updates_host_check, fetched);
+    FIELD(runtime_updates_host_check, fetched_count);
+    FIELD(runtime_updates_host_check, refused);
+    FIELD(runtime_updates_host_check, refused_count);
+    FIELD(runtime_updates_host_check, removed);
+    FIELD(runtime_updates_host_check, removed_count);
+    SIZE(runtime_updates_host_check);
+    FIELD(runtime_updates_application, loader);
+    FIELD(runtime_updates_application, operation);
+    FIELD(runtime_updates_application, version);
+    FIELD(runtime_updates_application, unrecorded_detail);
+    FIELD(runtime_updates_application, unrecorded_fix);
+    SIZE(runtime_updates_application);
+    FIELD(runtime_updates_run_answer, size);
+    FIELD(runtime_updates_run_answer, checks);
+    FIELD(runtime_updates_run_answer, check_count);
+    FIELD(runtime_updates_run_answer, applications);
+    FIELD(runtime_updates_run_answer, application_count);
+    FIELD(runtime_updates_run_answer, refused);
+    FIELD(runtime_updates_run_answer, refused_count);
+    FIELD(runtime_updates_run_answer, storage);
+    SIZE(runtime_updates_run_answer);
+    FIELD(runtime_updates_definition, size);
+    FIELD(runtime_updates_definition, context);
+    FIELD(runtime_updates_definition, apply);
+    FIELD(runtime_updates_definition, check);
+    FIELD(runtime_updates_definition, rollback);
+    FIELD(runtime_updates_definition, recorded);
+    FIELD(runtime_updates_definition, run);
+    FIELD(runtime_updates_definition, release_apply_answer);
+    FIELD(runtime_updates_definition, release_check_answer);
+    FIELD(runtime_updates_definition, release_rollback_answer);
+    FIELD(runtime_updates_definition, release_recorded_answer);
+    FIELD(runtime_updates_definition, release_run_answer);
+    FIELD(runtime_updates_definition, release_refusal);
+    SIZE(runtime_updates_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -1166,5 +1303,6 @@ int main(void) {
     print_cache_layouts();
     print_catalog_layouts();
     print_install_layouts();
+    print_updates_layouts();
     return 0;
 }

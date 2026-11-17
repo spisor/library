@@ -13,6 +13,8 @@
 #define SPISOR_HOST "spisor-host"
 #define TEST_HOST "test-host"
 
+static int record_out_of_memory;
+
 static cJSON *no_settings(void) {
     return settings_with("{}");
 }
@@ -89,7 +91,7 @@ static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_refere
     start_base("references-remove");
     record_references(TEST_HOST, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{}}");
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
-    char *record = runtime_record_run(state, TEST_HOST, run, 5000);
+    char *record = runtime_record_run(state, TEST_HOST, run, 5000, &record_out_of_memory);
     CHECK(record != NULL && spisor_file_exists(record));
     CHECK(runtime_remove_host_references(state, TEST_HOST) == 1);
     CHECK(!exists_in(state, "bundles/" TEST_HOST ".json"));
@@ -670,7 +672,7 @@ static void it_refuses_a_rollback_no_switch_kept_a_version_for(void) {
     start_base("rollback-none");
     record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{}}");
     catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
-    expect_refusal(rolled, "no version of spisor-host is kept for rollback", "no rollback");
+    expect_cache_refusal(rolled, SPISOR_REFUSED, "no version of spisor-host is kept for rollback", "no rollback");
     cJSON_Delete(rolled.tree);
     finish_base();
 }
@@ -680,7 +682,7 @@ static void it_refuses_a_rollback_to_a_version_that_is_no_longer_installed_intac
     record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
     catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
-    expect_refusal(rolled, "is not installed intact", "rollback gone");
+    expect_cache_refusal(rolled, SPISOR_REFUSED, "is not installed intact", "rollback gone");
     expect_references(SPISOR_HOST,
                       "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                       "\":\"1.0.0\"}}",
@@ -726,16 +728,21 @@ static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_
     record_references(SPISOR_HOST, "{\"run\":{\"" SPISOR_HOST "\":\"2.0.0\"},\"next\":{},\"rollback\":{\"" SPISOR_HOST
                                     "\":\"1.0.0\"}}");
     catalog_answer rolled = rollback_of(SPISOR_HOST, SPISOR_HOST);
-    expect_refusal(rolled, "is not installed intact", "hashed before the lock");
+    expect_cache_refusal(rolled, SPISOR_REFUSED, "is not installed intact", "hashed before the lock");
     cJSON_Delete(rolled.tree);
     finish_base();
 }
 
+static void expect_not_plain(catalog_answer answer, const char *label) {
+    expect_cache_refusal(answer, SPISOR_MALFORMED, "not a plain file name", label);
+    cJSON_Delete(answer.tree);
+}
+
 static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     start_base("escape-id");
-    expect_refusal_released(apply_plain("../escape", "{}"), "outside", "apply escape");
-    expect_refusal_released(check_with("../escape", no_settings(), "{}"), "outside", "check escape");
-    expect_refusal_released(rollback_of("../escape", "a"), "outside", "rollback escape");
+    expect_not_plain(apply_plain("../escape", "{}"), "apply escape");
+    expect_not_plain(check_with("../escape", no_settings(), "{}"), "check escape");
+    expect_not_plain(rollback_of("../escape", "a"), "rollback escape");
     finish_base();
 }
 
@@ -898,8 +905,8 @@ static void it_passes_on_the_refusal_of_a_service_it_calls(void) {
     cJSON_AddStringToObject(argument, "hostId", TEST_HOST);
     cJSON_AddStringToObject(argument, "now", "yesterday");
     cJSON_AddItemToObject(argument, "settings", no_settings());
-    catalog_answer checked = call_catalog(runtime_updates_check, argument);
-    expect_refusal(checked, "no usable now", "catalog.check's own refusal");
+    catalog_answer checked = updates_call(UPDATES_CHECK, argument);
+    expect_cache_refusal(checked, SPISOR_REFUSED, "no usable now", "catalog.check's own refusal");
     cJSON_Delete(checked.tree);
     finish_base();
 }
@@ -967,12 +974,12 @@ static void it_refuses_to_answer_a_recorded_run_its_references_file_cannot_tell(
     start_base("recorded-damaged");
     record_references(TEST_HOST, "{\"run\": {\"a\": ");
     catalog_answer unparsed = recorded_of(TEST_HOST);
-    expect_refusal(unparsed, "bundles", "unparsed references");
+    expect_cache_refusal(unparsed, SPISOR_REFUSED, "bundles", "unparsed references");
     CHECK(text_at(unparsed.tree, "fix") != NULL && strstr(text_at(unparsed.tree, "fix"), TEST_HOST ".json") != NULL);
     cJSON_Delete(unparsed.tree);
     record_references(TEST_HOST, "{\"run\": 5, \"next\": {}}");
     catalog_answer misshapen = recorded_of(TEST_HOST);
-    expect_refusal(misshapen, "could not be read", "misshapen references");
+    expect_cache_refusal(misshapen, SPISOR_REFUSED, "could not be read", "misshapen references");
     cJSON_Delete(misshapen.tree);
     finish_base();
 }

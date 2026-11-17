@@ -53,7 +53,8 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
 /**
  * Records references for host_id as JSON.stringify({run, next, rollback?, rolledBackFrom?}, null, 2) and a
  * newline, leaving rollback and rolledBackFrom out when they are NULL or empty. 1 on success; 0 with *problem set as
- * runtime_host_references_path sets it, or naming the file that could not be written.
+ * runtime_host_references_path sets it, or naming the file that could not be written, and with *problem NULL when
+ * memory runs out.
  *
  * @implNote Replaced at once, so a sweep never reads half a file and takes it for none. A caller
  * changing what it read holds the registry lock around the read and this write, so two writers of one

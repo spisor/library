@@ -25,7 +25,7 @@
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
-#include "updates.h"
+#include "updates_call.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -314,7 +314,7 @@ static inline catalog_answer apply_unregistered(const char *host, cJSON *setting
     cJSON_AddStringToObject(argument, "hostId", host);
     cJSON_AddItemToObject(argument, "settings", settings);
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
-    return call_catalog(runtime_updates_apply, argument);
+    return updates_call(UPDATES_APPLY, argument);
 }
 
 static inline catalog_answer apply_with(const char *host, cJSON *settings, const char *extra_json) {
@@ -329,7 +329,7 @@ static inline catalog_answer check_unregistered(const char *host, cJSON *setting
     cJSON_AddStringToObject(argument, "now", "2026-11-04T12:00:00.000Z");
     cJSON_AddItemToObject(argument, "settings", settings);
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
-    return call_catalog(runtime_updates_check, argument);
+    return updates_call(UPDATES_CHECK, argument);
 }
 
 static inline catalog_answer check_with(const char *host, cJSON *settings, const char *extra_json) {
@@ -343,14 +343,14 @@ static inline catalog_answer rollback_of(const char *host, const char *item) {
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
     cJSON_AddStringToObject(argument, "item", item);
-    return call_catalog(runtime_updates_rollback, argument);
+    return updates_call(UPDATES_ROLLBACK, argument);
 }
 
 static inline catalog_answer recorded_of(const char *host) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_json());
     cJSON_AddStringToObject(argument, "hostId", host);
-    return call_catalog(runtime_updates_recorded, argument);
+    return updates_call(UPDATES_RECORDED, argument);
 }
 
 static inline catalog_answer sweep_cache(void) {

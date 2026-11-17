@@ -45,7 +45,8 @@ static cJSON *apply(const host_context *context, const char *id, loader_start *s
     cJSON *settings = host_settings_of(context, host_text(start->registration, "home"), refusal);
     const char *registered = host_text(start->registration, "version");
     cJSON *applied = settings == NULL ? NULL
-                                      : host_call(runtime_updates_apply, apply_call(context, id, registered, settings), refusal);
+                                      : runtime_call_operation(runtime_updates_apply_operation,
+                                                               apply_call(context, id, registered, settings), refusal);
     const char *record = host_text(applied, "runRecord");
     if (record != NULL) {
         remove_run_record(context, id, record);

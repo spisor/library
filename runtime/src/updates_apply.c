@@ -76,10 +76,11 @@ static int switch_host(const runtime_updates_request *request, const runtime_hos
     const char *current = runtime_map_version(recorded->run, request->host_id);
     current = current != NULL ? current : runtime_map_version(running_of(request), request->host_id);
     const char *scheduled = runtime_map_version(recorded->next, request->host_id);
+    int out_of_memory = 0;
     int switching = scheduled != NULL && (current == NULL || strcmp(scheduled, current) != 0) &&
-                    runtime_bundle_is_sized(request->cache, request->host_id, scheduled);
+                    runtime_bundle_is_sized(request->cache, request->host_id, scheduled, &out_of_memory);
     const char *version = switching ? scheduled : current;
-    if (!start_references(recorded, record)) {
+    if (out_of_memory || !start_references(recorded, record)) {
         return 0;
     }
     if (scheduled != NULL && version != NULL && strcmp(scheduled, version) == 0) {
@@ -108,11 +109,12 @@ static int add_fetches(cJSON *next, const cJSON *fetch, const cJSON *rolled_back
  * exactly that version and the one it rolled back to is still installed intact, which then holds.
  */
 static const char *plugin_version(const runtime_updates_request *request, const runtime_host_references *recorded,
-                                  const char *id, const char *resolved) {
+                                  const char *id, const char *resolved, int *out_of_memory) {
     const char *previous = runtime_map_version(recorded->run, id);
     const char *rolled_away = runtime_map_version(recorded->rolled_back_from, id);
     int holds = rolled_away != NULL && previous != NULL && strcmp(resolved, rolled_away) == 0 &&
-                strcmp(previous, rolled_away) != 0 && runtime_bundle_is_sized(request->cache, id, previous);
+                strcmp(previous, rolled_away) != 0 &&
+                runtime_bundle_is_sized(request->cache, id, previous, out_of_memory);
     return holds ? previous : resolved;
 }
 
@@ -121,9 +123,10 @@ static int add_plugins(const runtime_updates_request *request, const runtime_hos
                        const cJSON *resolved, start_record *record) {
     int added = record->plugins != NULL;
     for (const cJSON *entry = resolved == NULL ? NULL : resolved->child; added && entry != NULL; entry = entry->next) {
-        const char *version = plugin_version(request, recorded, entry->string, entry->valuestring);
+        int out_of_memory = 0;
+        const char *version = plugin_version(request, recorded, entry->string, entry->valuestring, &out_of_memory);
         const char *previous = runtime_map_version(recorded->run, entry->string);
-        added = runtime_map_set(record->plugins, entry->string, version) &&
+        added = !out_of_memory && runtime_map_set(record->plugins, entry->string, version) &&
                 runtime_map_set(record->references.run, entry->string, version) &&
                 (previous == NULL || strcmp(previous, version) == 0 ||
                  runtime_map_set(record->references.rollback, entry->string, previous));
@@ -148,12 +151,17 @@ static int complete_run(const runtime_updates_request *request, const runtime_ho
     return completed;
 }
 
-/** The libraries the next start boots, in the order the host names them, or NULL when one is not installed. */
-static cJSON *booted_libraries(const cJSON *ids, const cJSON *resolved) {
+/**
+ * The libraries the next start boots, in the order the host names them, or NULL when one is not installed, and NULL
+ * with *out_of_memory set to 1 when memory runs out.
+ */
+static cJSON *booted_libraries(const cJSON *ids, const cJSON *resolved, int *out_of_memory) {
     cJSON *libraries = cJSON_CreateObject();
+    *out_of_memory = libraries == NULL;
     for (const cJSON *id = ids->child; libraries != NULL && id != NULL; id = id->next) {
         const char *version = cJSON_IsString(id) ? runtime_map_version(resolved, id->valuestring) : NULL;
         if (cJSON_IsString(id) && (version == NULL || !runtime_map_set(libraries, id->valuestring, version))) {
+            *out_of_memory = version != NULL;
             cJSON_Delete(libraries);
             libraries = NULL;
         }
@@ -204,8 +212,10 @@ static int hint_libraries(const runtime_updates_request *request, const start_pl
                             ? NULL
                             : runtime_updates_resolve(plan->catalog, candidates, installed, "library", refusal);
     const cJSON *resolved = cJSON_GetObjectItemCaseSensitive(resolution, "run");
-    cJSON *versions = resolved == NULL ? NULL : booted_libraries(ids, resolved);
-    int hinted = resolved != NULL && schedule_changed(record->references.next, running_of(request), resolved);
+    int out_of_memory = 0;
+    cJSON *versions = resolved == NULL ? NULL : booted_libraries(ids, resolved, &out_of_memory);
+    int hinted = resolved != NULL && !out_of_memory &&
+                 schedule_changed(record->references.next, running_of(request), resolved);
     char *problem = NULL;
     cJSON *libraries = hinted && versions != NULL
                            ? runtime_boot_hint_libraries(request->cache, versions, request->platform, &problem)
@@ -267,12 +277,16 @@ cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON *
     start_record record = {{NULL, NULL, NULL, NULL}, NULL, cJSON_CreateObject(), cJSON_CreateArray()};
     spisor_lock *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock_registered(request, refusal);
     int recorded = guard != NULL && record_start(request, &plan, &record, refusal);
+    int out_of_memory = 0;
     char *run_record = recorded ? runtime_record_run(request->state, request->host_id, record.references.run,
-                                                     RUNTIME_DEFAULT_CHECK_MILLISECONDS)
+                                                     RUNTIME_DEFAULT_CHECK_MILLISECONDS, &out_of_memory)
                                 : NULL;
     spisor_unlock(guard);
     cJSON *answer = run_record == NULL ? NULL : started(&record, run_record);
-    if (recorded && run_record == NULL) {
+    if (run_record != NULL && answer == NULL) {
+        runtime_remove_run_record(request->state, request->host_id, run_record);
+    }
+    if (recorded && run_record == NULL && !out_of_memory) {
         *refusal = runtime_updates_unrecorded(unrecorded_run(request));
     }
     free(run_record);

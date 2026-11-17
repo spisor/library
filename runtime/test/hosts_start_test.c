@@ -9,6 +9,8 @@
 #define RECORDED_RUN                                                                                                \
     "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\",\"a\":\"0.9.0\"}"
 
+static int record_out_of_memory;
+
 static char user_home[1400];
 static char application_home[1400];
 static char portable[1400];
@@ -86,7 +88,7 @@ static void record_a_previous_start(void) {
 
 static char *record_a_live_run(void) {
     cJSON *run = parsed(RECORDED_RUN);
-    char *record = runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS);
+    char *record = runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory);
     cJSON_Delete(run);
     CHECK(record != NULL);
     return record;
@@ -263,7 +265,7 @@ static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(v
     char references[1024];
     snprintf(references, sizeof references, "{\"run\":%s,\"next\":{}}", text);
     record_references(TEST_HOST, references);
-    free(runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
+    free(runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory));
     catalog_answer started = start_host(0);
     expect_success(started, "plugin case");
     expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Koffi\":\"3.0.0\"}", "case kept");
@@ -279,7 +281,7 @@ static void a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorde
     enable_plugin_a();
     record_a_previous_start();
     cJSON *other = parsed("{\"Test-Host\":\"1.0.0\"}");
-    free(runtime_record_run(state, "other-host", other, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
+    free(runtime_record_run(state, "other-host", other, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory));
     cJSON_Delete(other);
     catalog_answer started = start_host(0);
     expect_success(started, "host case");

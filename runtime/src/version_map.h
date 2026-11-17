@@ -13,17 +13,19 @@ int runtime_map_set(cJSON *map, const char *id, const char *version);
 int runtime_map_merge(cJSON *into, const cJSON *from);
 
 /**
- * Whether the bundle version is installed in cache with every file still carrying its recorded size and hash.
+ * Whether the bundle version is installed in cache with every file still carrying its recorded size and hash; 0 with
+ * *out_of_memory set to 1 when memory ran out finding out, and to 0 otherwise.
  *
  * @implNote Hashes every file of the version, so it never runs under the registry lock or on a start path;
  * those check runtime_bundle_is_sized.
  */
-int runtime_bundle_is_intact(const char *cache, const char *id, const char *version);
+int runtime_bundle_is_intact(const char *cache, const char *id, const char *version, int *out_of_memory);
 
 /**
  * Whether the bundle version is installed in cache with every file present at its recorded size: the check
- * a start makes, and the one repeated under the registry lock after a full check made before it.
+ * a start makes, and the one repeated under the registry lock after a full check made before it. *out_of_memory as
+ * runtime_bundle_is_intact sets it.
  */
-int runtime_bundle_is_sized(const char *cache, const char *id, const char *version);
+int runtime_bundle_is_sized(const char *cache, const char *id, const char *version, int *out_of_memory);
 
 #endif

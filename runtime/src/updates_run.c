@@ -5,6 +5,7 @@
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "install_run.h"
+#include "catalog_answer.h"
 #include "json_service.h"
 #include "updates.h"
 
@@ -32,6 +33,16 @@ static cJSON *places_call(const update_run *run) {
     return call;
 }
 
+/** Appends a copy of item to array; 0 when memory runs out. */
+static int append_copy(cJSON *array, const cJSON *item) {
+    cJSON *copy = cJSON_Duplicate(item, 1);
+    if (copy == NULL || !cJSON_AddItemToArray(array, copy)) {
+        cJSON_Delete(copy);
+        return 0;
+    }
+    return 1;
+}
+
 /** The registrations hosts.list answers, spisor-host first, so the catalog check it makes serves the rest. */
 static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
     cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(run), refusal);
@@ -41,8 +52,10 @@ static cJSON *registrations_of(const update_run *run, cJSON **refusal) {
         cJSON_ArrayForEach(row, cJSON_GetObjectItemCaseSensitive(listed, "hosts")) {
             const cJSON *registration = cJSON_GetObjectItemCaseSensitive(row, "registration");
             const char *id = text_of(registration, "id");
-            if (id != NULL && (strcmp(id, RUNTIME_ECOSYSTEM_HOST_ID) == 0) == (pass == 0)) {
-                cJSON_AddItemToArray(registrations, cJSON_Duplicate(registration, 1));
+            if (registrations != NULL && id != NULL && (strcmp(id, RUNTIME_ECOSYSTEM_HOST_ID) == 0) == (pass == 0) &&
+                !append_copy(registrations, registration)) {
+                cJSON_Delete(registrations);
+                registrations = NULL;
             }
         }
     }
@@ -69,13 +82,27 @@ static cJSON *check_call(const update_run *run, const cJSON *registration, const
     }
     cJSON_DeleteItemFromObjectCaseSensitive(settings, "catalog");
     const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(ecosystem, "catalog");
-    if (catalog != NULL) {
-        cJSON_AddItemToObject(settings, "catalog", cJSON_Duplicate(catalog, 1));
-    }
     cJSON *call = places_call(run);
-    cJSON_AddStringToObject(call, "hostId", text_of(registration, "id"));
-    cJSON_AddStringToObject(call, "now", run->now);
-    cJSON_AddItemToObject(call, "settings", settings);
+    int built = call != NULL &&
+                (catalog == NULL || runtime_catalog_attach(settings, "catalog", cJSON_Duplicate(catalog, 1))) &&
+                cJSON_AddStringToObject(call, "hostId", text_of(registration, "id")) != NULL &&
+                cJSON_AddStringToObject(call, "now", run->now) != NULL;
+    if (!built || !cJSON_AddItemToObject(call, "settings", settings)) {
+        cJSON_Delete(settings);
+        cJSON_Delete(call);
+        return NULL;
+    }
+    return call;
+}
+
+/** install's application call updating the loader `id`; NULL when memory runs out. */
+static cJSON *update_call(const update_run *run, const char *id) {
+    cJSON *call = places_call(run);
+    if (call == NULL || cJSON_AddStringToObject(call, "loader", id) == NULL ||
+        cJSON_AddStringToObject(call, "operation", "update") == NULL) {
+        cJSON_Delete(call);
+        return NULL;
+    }
     return call;
 }
 
@@ -107,14 +134,11 @@ static int update_one(const update_run *run, const cJSON *registration, const cJ
     cJSON *refusal = NULL;
     cJSON *check = check_call(run, registration, ecosystem, &refusal);
     int settings_read = check != NULL;
-    cJSON *checked = settings_read ? runtime_call_or_refuse(runtime_updates_check, check, &refusal) : NULL;
+    cJSON *checked = settings_read ? runtime_call_operation(runtime_updates_check_operation, check, &refusal) : NULL;
     int complete = record(run, "checks", id, checked, refusal);
     if (complete && settings_read && has_method_application(registration)) {
-        cJSON *call = places_call(run);
-        cJSON_AddStringToObject(call, "loader", id);
-        cJSON_AddStringToObject(call, "operation", "update");
         refusal = NULL;
-        cJSON *updated = runtime_call_operation(runtime_install_application_operation, call, &refusal);
+        cJSON *updated = runtime_call_operation(runtime_install_application_operation, update_call(run, id), &refusal);
         complete = record(run, "applications", id, updated, refusal);
     }
     return complete;
@@ -130,7 +154,7 @@ static cJSON *summary_of(void) {
     return summary;
 }
 
-static cJSON *run_updates(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_updates_run_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
     const char *now = text_of(argument, "now");
     if (!cJSON_IsObject(places) || text_of(places, "portable") == NULL || text_of(places, "state") == NULL ||
@@ -157,8 +181,4 @@ static cJSON *run_updates(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return run.summary;
-}
-
-RUNTIME_EXPORT int32_t runtime_updates_run(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, run_updates);
 }

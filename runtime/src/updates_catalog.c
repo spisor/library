@@ -14,7 +14,7 @@ static cJSON *answered_member(runtime_json_operation operation, cJSON *argument,
 
 static cJSON *argument_with(const char *member, const cJSON *value) {
     cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && !cJSON_AddItemReferenceToObject(argument, member, (cJSON *)value)) {
+    if (argument != NULL && !runtime_add_reference(argument, member, value)) {
         cJSON_Delete(argument);
         return NULL;
     }
@@ -23,8 +23,8 @@ static cJSON *argument_with(const char *member, const cJSON *value) {
 
 cJSON *runtime_updates_sources(const cJSON *settings, cJSON **refusal) {
     cJSON *empty = cJSON_IsObject(settings) ? NULL : cJSON_CreateObject();
-    cJSON *sources = answered_member(runtime_catalog_sources_operation, argument_with("settings", empty == NULL ? settings : empty),
-                                     "sources", refusal);
+    cJSON *sources = answered_member(runtime_catalog_sources_operation,
+                                     argument_with("settings", empty == NULL ? settings : empty), "sources", refusal);
     cJSON_Delete(empty);
     return sources;
 }
@@ -41,8 +41,8 @@ cJSON *runtime_updates_current_catalog(const cJSON *sources, const char *cache, 
 cJSON *runtime_updates_resolve(const cJSON *catalog, const cJSON *candidates, const cJSON *installed, const char *kind,
                                cJSON **refusal) {
     cJSON *argument = argument_with("catalog", catalog);
-    int built = argument != NULL && cJSON_AddItemReferenceToObject(argument, "enabled", (cJSON *)candidates) &&
-                cJSON_AddItemReferenceToObject(argument, "installed", (cJSON *)installed) &&
+    int built = argument != NULL && runtime_add_reference(argument, "enabled", candidates) &&
+                runtime_add_reference(argument, "installed", installed) &&
                 cJSON_AddStringToObject(argument, "kind", kind) != NULL;
     if (!built) {
         cJSON_Delete(argument);

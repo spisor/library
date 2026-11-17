@@ -2,6 +2,7 @@
 #define RUNTIME_BOOT_HINT_H
 
 #include "cJSON.h"
+#include "spisor/status.h"
 
 /**
  * cache/hosts/<host_id>.json, freed with free; NULL with *problem set (freed with free) when host_id is
@@ -51,13 +52,14 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
                             char **problem);
 
 /**
- * Makes version the host bundle the next start of host_id runs, keeping the libraries its hint names. 1
- * when that is recorded, and when host_id has no readable hint, which is left as it is.
+ * Makes version the host bundle the next start of host_id runs, keeping the libraries its hint names. OK when that
+ * is recorded, and when host_id has no readable hint, which is left as it is; REFUSED when it cannot be written;
+ * OUT_OF_MEMORY.
  *
  * @implNote Any readable hint is switched, whatever libraries it names: a native host boots through a
  * hint whose libraries may be empty. A host with no hint at all has never been
  * installed to boot through one, and none is invented for it.
  */
-int runtime_hint_host_version(const char *cache, const char *host_id, const char *version);
+spisor_status runtime_hint_host_version(const char *cache, const char *host_id, const char *version);
 
 #endif

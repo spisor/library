@@ -10,25 +10,28 @@
  * Records that this process runs run as a start of host_id, as
  * JSON.stringify({pid, aliveAt, checkMilliseconds, run}) and a newline in its own file under
  * state/bundles/runs/<host_id>/, and answers that file's path, freed with free. NULL when host_id is no
- * plain file name, the file cannot be written or memory runs out.
+ * plain file name or the file cannot be written, and NULL with *out_of_memory set to 1 when memory runs out.
  *
  * @implNote One file per start, named by the process id and a number no other start of this process
  * takes, so two starts of one host on different versions never overwrite each other's: a sweep keeps
  * every version any live start names. The language layer stamps it again on its own timer and removes
  * it when the start stops.
  */
-char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds);
+char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
+                         int *out_of_memory);
 
 /**
  * Whether record is the path of one run record of host_id, a .json file named directly inside its
- * folder under state/bundles/runs/, as runtime_record_run answers it.
+ * folder under state/bundles/runs/, as runtime_record_run answers it; 0 with *out_of_memory set to 1 when memory
+ * ran out finding out, and to 0 otherwise.
  */
-int runtime_is_run_record_of(const char *state, const char *host_id, const char *record);
+int runtime_is_run_record_of(const char *state, const char *host_id, const char *record, int *out_of_memory);
 
 typedef enum runtime_run_stamp {
     RUNTIME_RUN_STAMPED,
     RUNTIME_RUN_NOT_A_RECORD,
-    RUNTIME_RUN_UNWRITABLE
+    RUNTIME_RUN_UNWRITABLE,
+    RUNTIME_RUN_OUT_OF_MEMORY
 } runtime_run_stamp;
 
 /**

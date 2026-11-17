@@ -1,6 +1,7 @@
 #include "segment.h"
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -56,4 +57,35 @@ char *runtime_portable_segment(const char *name) {
         return NULL;
     }
     return trimmed;
+}
+
+/** The code point at text[*index], advancing past it; a byte that starts no whole sequence counts as U+FFFD alone. */
+static uint32_t next_code_point(const char *text, size_t *index) {
+    const unsigned char *bytes = (const unsigned char *)text + *index;
+    size_t count = bytes[0] < 0x80 ? 1 : bytes[0] >= 0xF0 ? 4 : bytes[0] >= 0xE0 ? 3 : 2;
+    for (size_t offset = 1; offset < count; offset++) {
+        if ((bytes[offset] & 0xC0) != 0x80) {
+            *index += 1;
+            return 0xFFFD;
+        }
+    }
+    return spisor_utf8_next(text, index);
+}
+
+/** Whether no JavaScript space starts or ends text, read without allocating. */
+static int is_trimmed(const char *text) {
+    size_t index = 0;
+    uint32_t last = 0;
+    while (text[index] != '\0') {
+        size_t start = index;
+        last = next_code_point(text, &index);
+        if (start == 0 && spisor_is_javascript_space(last)) {
+            return 0;
+        }
+    }
+    return !spisor_is_javascript_space(last);
+}
+
+int runtime_is_portable_segment(const char *name) {
+    return is_trimmed(name) && is_portable(name);
 }

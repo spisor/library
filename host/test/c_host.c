@@ -200,7 +200,7 @@ static int update(const c_host *host) {
     cJSON *call = places_call(host);
     cJSON_AddStringToObject(call, "now", now);
     cJSON *refusal = NULL;
-    cJSON *summary = runtime_call_or_refuse(runtime_updates_run, call, &refusal);
+    cJSON *summary = runtime_call_operation(runtime_updates_run_operation, call, &refusal);
     if (summary == NULL) {
         return refuse(refusal);
     }

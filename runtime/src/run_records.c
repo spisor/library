@@ -71,17 +71,22 @@ static char *record_path(const char *folder) {
     return runtime_cache_joined(segments, 2);
 }
 
-static int write_record(const char *path, const cJSON *run, double check_milliseconds) {
+/** Writes the record; 0 with *out_of_memory set to 1 when memory ran out building its text. */
+static int write_record(const char *path, const cJSON *run, double check_milliseconds, int *out_of_memory) {
     char *text = record_text(run, check_milliseconds);
+    *out_of_memory = text == NULL;
     int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     free(text);
     return written;
 }
 
-char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds) {
+char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
+                         int *out_of_memory) {
     char *folder = runs_folder(state, host_id);
-    char *path = folder != NULL && spisor_make_directories(folder) ? record_path(folder) : NULL;
-    int written = path != NULL && write_record(path, run, check_milliseconds);
+    int made = folder != NULL && spisor_make_directories(folder);
+    char *path = made ? record_path(folder) : NULL;
+    *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || (made && path == NULL);
+    int written = path != NULL && write_record(path, run, check_milliseconds, out_of_memory);
     free(folder);
     if (!written) {
         free(path);
@@ -97,14 +102,14 @@ static int is_record_name(const char *name) {
 }
 
 /** @implNote Compared after both are joined the same way, so the path answered earlier matches as given. */
-int runtime_is_run_record_of(const char *state, const char *host_id, const char *record) {
+int runtime_is_run_record_of(const char *state, const char *host_id, const char *record, int *out_of_memory) {
+    int absolute = record != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, record);
     char *folder = runs_folder(state, host_id);
-    char *normal = record == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, record)
-                       ? NULL
-                       : runtime_cache_joined(&record, 1);
+    char *normal = absolute ? runtime_cache_joined(&record, 1) : NULL;
     size_t length = folder == NULL ? 0 : strlen(folder);
     int inside = folder != NULL && normal != NULL && strncmp(normal, folder, length) == 0 &&
                  (normal[length] == '/' || normal[length] == '\\') && is_record_name(normal + length + 1);
+    *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || (absolute && normal == NULL);
     free(normal);
     free(folder);
     return inside;
@@ -112,12 +117,17 @@ int runtime_is_run_record_of(const char *state, const char *host_id, const char 
 
 runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
                                     double check_milliseconds) {
-    if (!runtime_is_run_record_of(state, host_id, record)) {
-        return RUNTIME_RUN_NOT_A_RECORD;
+    int out_of_memory = 0;
+    if (!runtime_is_run_record_of(state, host_id, record, &out_of_memory)) {
+        return out_of_memory ? RUNTIME_RUN_OUT_OF_MEMORY : RUNTIME_RUN_NOT_A_RECORD;
     }
     char *folder = runs_folder(state, host_id);
-    int stamped = folder != NULL && spisor_make_directories(folder) && write_record(record, run, check_milliseconds);
+    int stamped = folder != NULL && spisor_make_directories(folder) &&
+                  write_record(record, run, check_milliseconds, &out_of_memory);
     free(folder);
+    if (folder == NULL || out_of_memory) {
+        return RUNTIME_RUN_OUT_OF_MEMORY;
+    }
     return stamped ? RUNTIME_RUN_STAMPED : RUNTIME_RUN_UNWRITABLE;
 }
 
@@ -190,5 +200,7 @@ int runtime_remove_run_records(const char *state, const char *host_id) {
 }
 
 int runtime_remove_run_record(const char *state, const char *host_id, const char *record) {
-    return runtime_is_run_record_of(state, host_id, record) && runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE;
+    int out_of_memory = 0;
+    return runtime_is_run_record_of(state, host_id, record, &out_of_memory) &&
+           runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE;
 }
