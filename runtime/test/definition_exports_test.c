@@ -12,7 +12,7 @@
 /**
  * @file
  * Loads the built shared runtime as a consumer would and requires every `runtime_*_definition_of` that
- * `include/runtime/*.h` declares to be among its exports. The names come from the headers at configure time, so a
+ * a header under `include/runtime` declares to be among its exports. The names come from the headers at configure time, so a
  * service added later is checked without this file changing.
  */
 
