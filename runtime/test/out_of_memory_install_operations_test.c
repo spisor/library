@@ -338,6 +338,7 @@ static spisor_status run_apply(void) {
     argument.settings = &updates_settings.root;
     argument.running = running;
     argument.running_count = 3;
+    argument.writes_boot_hint = 1;
     argument.libraries = libraries;
     argument.library_count = 2;
     last_status = updates->apply(updates->context, &argument, &answer, &refusal);
@@ -404,6 +405,30 @@ static spisor_status run_recorded(void) {
     return last_status;
 }
 
+static const char *version_in(const char *place, const char *rest, const char *outer, const char *inner) {
+    static char version[64];
+    char *text = text_in(place, rest);
+    cJSON *tree = text == NULL ? NULL : cJSON_Parse(text);
+    const cJSON *map = inner == NULL ? tree : cJSON_GetObjectItemCaseSensitive(tree, outer);
+    const char *found = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(map, inner == NULL ? outer : inner));
+    snprintf(version, sizeof version, "%s", found == NULL ? "" : found);
+    cJSON_Delete(tree);
+    free(text);
+    return version;
+}
+
+/** Whether an OK rollback rolled the references and the hint back, and any other answer left both as prepared. */
+static int rolled_back_whole_or_not_at_all(void) {
+    const char *expected = last_status == SPISOR_OK ? "1.0.0" : "2.0.0";
+    int references = strcmp(version_in(base.state, "bundles/spisor-host.json", "run", "spisor-host"), expected) == 0;
+    int hint = strcmp(version_in(base.cache, "hosts/spisor-host.json", "host", NULL), expected) == 0;
+    if (!references || !hint) {
+        fprintf(stderr, "updates' rollback: an answer of %d left the references %s and the hint %s\n",
+                (int)last_status, references ? "as expected" : "otherwise", hint ? "as expected" : "otherwise");
+    }
+    return references && hint;
+}
+
 /** spisor-host running 1.0.0 while the local catalog lists 2.0.0, so a check fetches it, schedules it and sweeps. */
 static void prepare_check(void) {
     start_install_base(&base, "operations", "check");
@@ -414,6 +439,39 @@ static void prepare_check(void) {
     write_in(base.state, "hosts/spisor-host.json", "{\"id\":\"spisor-host\"}");
     write_in(base.state, "bundles/spisor-host.json", "{\"run\":{\"spisor-host\":\"1.0.0\"},\"next\":{}}");
     settings_reading_the_catalog();
+}
+
+/** The check base with spisor-host registered at a home of its own, as a run reads every registration's settings. */
+static void prepare_run(void) {
+    prepare_check();
+    char *home = joined(base.user, "homes/spisor-host");
+    CHECK(spisor_make_directories(home) == 1);
+    cJSON *registration = cJSON_CreateObject();
+    cJSON_AddStringToObject(registration, "id", "spisor-host");
+    cJSON_AddStringToObject(registration, "home", home);
+    char *text = cJSON_PrintUnformatted(registration);
+    write_in(base.state, "hosts/spisor-host.json", text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    free(home);
+}
+
+static spisor_status run_run(void) {
+    const runtime_updates_definition *updates = runtime_updates_definition_of();
+    runtime_updates_run_argument argument = SPISOR_INIT(runtime_updates_run_argument);
+    runtime_updates_run_answer answer = SPISOR_INIT(runtime_updates_run_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.portable = base.portable;
+    argument.state = base.state;
+    argument.cache = base.cache;
+    argument.now = "2026-11-04T12:00:00.000Z";
+    last_status = updates->run(updates->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.check_count != 1) {
+        last_status = WRONG_RUN;
+    }
+    updates->release_run_answer(updates->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
 }
 
 static spisor_status run_check(void) {
@@ -888,6 +946,7 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
 }
 
 static int sticky_failures = 0;
+static int every_failure_answered = 0;
 
 /** Fails allocation `attempt`, and with sticky failures every one after it as well. */
 static void fail_allocation(uint64_t attempt) {
@@ -913,6 +972,11 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
                 (unsigned long long)attempt, (long long)(spisor_memory_live_blocks() - baseline));
     }
     kept = kept && (each->untouched == NULL || each->untouched());
+    if (kept && every_failure_answered && !*ran_whole && status != SPISOR_OUT_OF_MEMORY) {
+        fprintf(stderr, "%s: failing allocation %llu answered %d \"%s\"\n", each->label, (unsigned long long)attempt,
+                (int)status, refusal_detail);
+        kept = 0;
+    }
     if (kept && (status != SPISOR_OUT_OF_MEMORY || *ran_whole)) {
         kept = matches_clean(clean, status, each->label, attempt);
     }
@@ -953,7 +1017,9 @@ int main(int argc, char **argv) {
     static const operation_case found = {"runtime", prepare_runtime, run_runtime, acquired_nothing};
     static const operation_case registered = {"register_loader", prepare_path_application, run_register_loader, NULL};
     static const operation_case applied = {"updates' apply", prepare_apply, run_apply, recorded_no_run_unless_applied};
-    static const operation_case rolled = {"updates' rollback", prepare_rollback, run_rollback, NULL};
+    static const operation_case rolled = {"updates' rollback", prepare_rollback, run_rollback,
+                                          rolled_back_whole_or_not_at_all};
+    static const operation_case ran = {"updates' run", prepare_run, run_run, NULL};
     static const operation_case read = {"updates' recorded", prepare_rollback, run_recorded, NULL};
     static const operation_case checked = {"updates' check", prepare_check, run_check, NULL};
     static const operation_case boot_cases[4] = {{"boot's read", prepare_boot, run_boot_read, NULL},
@@ -999,13 +1065,26 @@ int main(int argc, char **argv) {
         every_failure_of(&applied, SPISOR_OK, first == 0 ? 1 : first, last);
     }
     if (is_selected(only, rolled.label)) {
+        every_failure_answered = 1;
         every_failure_of(&rolled, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 1;
+        every_failure_of(&rolled, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 0;
+        every_failure_answered = 0;
     }
     if (is_selected(only, read.label)) {
         every_failure_of(&read, SPISOR_OK, first == 0 ? 1 : first, last);
     }
-    if (is_selected(only, checked.label)) {
-        every_failure_of(&checked, SPISOR_OK, first == 0 ? 1 : first, last);
+    for (size_t index = 0; index < 2; index++) {
+        const operation_case *each = index == 0 ? &checked : &ran;
+        if (is_selected(only, each->label)) {
+            every_failure_answered = 1;
+            every_failure_of(each, SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 1;
+            every_failure_of(each, SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 0;
+            every_failure_answered = 0;
+        }
     }
     for (size_t index = 0; index < 4; index++) {
         if (is_selected(only, boot_cases[index].label)) {

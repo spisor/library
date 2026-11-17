@@ -188,6 +188,7 @@ static inline spisor_status updates_apply_call(const runtime_updates_definition 
     argument.default_count = read->default_count;
     argument.running = read->running;
     argument.running_count = read->running_count;
+    argument.writes_boot_hint = cJSON_HasObjectItem(request, "libraries") ? 1 : 0;
     argument.libraries = read->libraries;
     argument.library_count = read->library_count;
     argument.platform = updates_text(request, "platform");

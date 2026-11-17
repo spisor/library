@@ -155,8 +155,8 @@ static cJSON *apply_argument(const start_context *context) {
 }
 
 static runtime_updates_request updates_request(const start_context *context, const cJSON *argument) {
-    runtime_updates_request request = {argument, context->state, context->cache, context->argument.host_id,
-                                       runtime_platform_key()};
+    runtime_updates_request request = {
+        argument, context->state, context->cache, context->argument.host_id, runtime_platform_key(), NULL, NULL};
     return request;
 }
 

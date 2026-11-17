@@ -160,6 +160,28 @@ int runtime_record_host_references(const char *state, const char *host_id, const
     return written;
 }
 
+int runtime_draft_host_references(const char *state, const char *host_id, const runtime_host_references *references,
+                                  runtime_references_draft *draft, char **problem) {
+    draft->path = runtime_host_references_path(state, host_id, problem);
+    draft->text = draft->path == NULL ? NULL : references_text(references);
+    if (draft->text == NULL) {
+        runtime_free_references_draft(draft);
+        return 0;
+    }
+    return 1;
+}
+
+int runtime_write_references_draft(const runtime_references_draft *draft) {
+    return spisor_replace_file(draft->path, (const uint8_t *)draft->text, strlen(draft->text));
+}
+
+void runtime_free_references_draft(runtime_references_draft *draft) {
+    free(draft->path);
+    free(draft->text);
+    draft->path = NULL;
+    draft->text = NULL;
+}
+
 int runtime_remove_host_references(const char *state, const char *host_id) {
     char *problem = NULL;
     char *path = runtime_host_references_path(state, host_id, &problem);

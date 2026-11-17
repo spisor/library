@@ -83,10 +83,16 @@ static cJSON *refuse_host_id(const char *state, const char *host_id, cJSON **ref
     return NULL;
 }
 
-static cJSON *serve_request(const cJSON *argument, runtime_updates_operation operation, cJSON **refusal) {
+static cJSON *serve_filling(const cJSON *argument, runtime_updates_operation operation,
+                           runtime_updates_precommit precommit, void *context, cJSON **refusal) {
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    runtime_updates_request request = {argument, absolute_place(places, "state"), absolute_place(places, "cache"),
-                                       runtime_catalog_text_member(argument, "hostId"), platform_member(argument)};
+    runtime_updates_request request = {argument,
+                                       absolute_place(places, "state"),
+                                       absolute_place(places, "cache"),
+                                       runtime_catalog_text_member(argument, "hostId"),
+                                       platform_member(argument),
+                                       precommit,
+                                       context};
     if (request.state == NULL || request.cache == NULL) {
         return runtime_catalog_refuse_member("places", "the host's places, with an absolute state and cache", refusal);
     }
@@ -102,6 +108,10 @@ static cJSON *serve_request(const cJSON *argument, runtime_updates_operation ope
     return operation(&request, refusal);
 }
 
+static cJSON *serve_request(const cJSON *argument, runtime_updates_operation operation, cJSON **refusal) {
+    return serve_filling(argument, operation, NULL, NULL, refusal);
+}
+
 cJSON *runtime_updates_apply_operation(const cJSON *argument, cJSON **refusal) {
     return serve_request(argument, runtime_updates_apply_for, refusal);
 }
@@ -112,6 +122,11 @@ cJSON *runtime_updates_check_operation(const cJSON *argument, cJSON **refusal) {
 
 cJSON *runtime_updates_rollback_operation(const cJSON *argument, cJSON **refusal) {
     return serve_request(argument, runtime_updates_rollback_for, refusal);
+}
+
+cJSON *runtime_updates_rollback_filling(const cJSON *argument, runtime_updates_precommit fill, void *context,
+                                       cJSON **refusal) {
+    return serve_filling(argument, runtime_updates_rollback_for, fill, context, refusal);
 }
 
 cJSON *runtime_updates_recorded_operation(const cJSON *argument, cJSON **refusal) {

@@ -16,16 +16,19 @@
 
 #define ABANDONED_AFTER_MILLISECONDS (24.0 * 3600000.0)
 
+/** What one sweep reads and dooms, and whether memory ran out while it judged a version, which keeps every one. */
 typedef struct sweep_scope {
     const char *cache;
     const cJSON *referenced;
     double now;
     cJSON *doomed;
+    int out_of_memory;
 } sweep_scope;
 
-static int is_referenced(const sweep_scope *scope, const char *id, const char *version) {
+static int is_referenced(sweep_scope *scope, const char *id, const char *version) {
     const char *parts[3] = {id, "@", version};
     char *name = runtime_cache_text(parts, 3);
+    scope->out_of_memory |= name == NULL;
     int referenced = name == NULL || cJSON_GetObjectItemCaseSensitive(scope->referenced, name) != NULL;
     free(name);
     return referenced;
@@ -68,10 +71,13 @@ static int doom_unkept(sweep_scope *scope, const cJSON *installed, const char *p
     return doomed;
 }
 
-static int is_abandoned(const sweep_scope *scope, const char *const *segments, size_t count) {
+static int is_abandoned(sweep_scope *scope, const char *const *segments, size_t count) {
     char *directory = runtime_cache_joined(segments, count);
+    runtime_cache_presence presence = directory == NULL ? RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY
+                                                        : runtime_cache_has_marker(directory);
+    scope->out_of_memory |= presence == RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY;
     double newest = 0;
-    int abandoned = directory != NULL && runtime_cache_has_marker(directory) == RUNTIME_CACHE_NOT_PRESENT &&
+    int abandoned = presence == RUNTIME_CACHE_NOT_PRESENT &&
                     runtime_newest_change(directory, &newest) && scope->now - newest > ABANDONED_AFTER_MILLISECONDS;
     free(directory);
     return abandoned;
@@ -179,9 +185,10 @@ static cJSON *remove_all(const char *cache, const cJSON *doomed) {
 cJSON *runtime_cache_sweep_versions(const char *cache, const char *state) {
     double now = runtime_now_milliseconds();
     cJSON *referenced = runtime_cache_referenced(cache, state, now);
-    sweep_scope scope = {cache, referenced, now, cJSON_CreateArray()};
+    sweep_scope scope = {cache, referenced, now, cJSON_CreateArray(), 0};
     cJSON *removed = NULL;
-    if (referenced != NULL && scope.doomed != NULL && doom_bundles(&scope) && doom_libraries(&scope)) {
+    if (referenced != NULL && scope.doomed != NULL && doom_bundles(&scope) && doom_libraries(&scope) &&
+        !scope.out_of_memory) {
         removed = remove_all(cache, scope.doomed);
     }
     cJSON_Delete(scope.doomed);

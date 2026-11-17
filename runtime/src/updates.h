@@ -2,6 +2,7 @@
 #define RUNTIME_UPDATES_H
 
 #include "cJSON.h"
+#include "updates_request.h"
 
 /**
  * @file
@@ -54,6 +55,13 @@ cJSON *runtime_updates_check_operation(const cJSON *argument, cJSON **refusal);
  * version is no longer installed intact.
  */
 cJSON *runtime_updates_rollback_operation(const cJSON *argument, cJSON **refusal);
+
+/**
+ * As runtime_updates_rollback_operation, calling `fill` with the answer and `context` before anything is written, so
+ * a consumer copying the answer runs out of memory before the rollback rather than after it.
+ */
+cJSON *runtime_updates_rollback_filling(const cJSON *argument, runtime_updates_precommit fill, void *context,
+                                       cJSON **refusal);
 
 /**
  * updates' recorded: {places, hostId} answers {run}, what hostId's last start recorded running, an empty

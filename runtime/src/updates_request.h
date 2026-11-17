@@ -4,13 +4,21 @@
 #include "cJSON.h"
 #include "hosts_lock.h"
 
-/** One updates call: its argument, the places it acts in, the host it acts for and the platform key. */
+/** Fills a consumer's answer from an answer about to be committed; 0 when memory runs out, which stops the commit. */
+typedef int (*runtime_updates_precommit)(const cJSON *answer, void *context);
+
+/**
+ * One updates call: its argument, the places it acts in, the host it acts for and the platform key, and, for a
+ * rollback, what fills a consumer's answer before anything is written, NULL for none.
+ */
 typedef struct runtime_updates_request {
     const cJSON *argument;
     const char *state;
     const char *cache;
     const char *host_id;
     const char *platform;
+    runtime_updates_precommit precommit;
+    void *precommit_context;
 } runtime_updates_request;
 
 /** An updates operation: its answer, or NULL with *refusal set to {message, fix}, or NULL when memory ran out. */

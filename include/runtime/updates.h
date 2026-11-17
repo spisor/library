@@ -39,8 +39,9 @@ typedef struct runtime_updates_problem {
 
 /**
  * A start of `host_id` with its merged `settings`, a record or NULL; its host `defaults`; the other versions it runs
- * beside its plugins, such as the libraries it loaded; and the ids of the libraries it boots with, NULL to leave its
- * boot hint alone. First shape ends at `platform`.
+ * beside its plugins, such as the libraries it loaded; and whether to write its boot hint, 0 or 1, with the ids of the
+ * libraries it boots with, none recording a hint naming no library. Only `writes_boot_hint` decides whether the hint is
+ * written; libraries given while it is 0 are MALFORMED. First shape ends at `platform`.
  */
 typedef struct runtime_updates_apply_argument {
     uint32_t size;
@@ -52,6 +53,7 @@ typedef struct runtime_updates_apply_argument {
     size_t default_count;
     const runtime_item_version *running;
     size_t running_count;
+    uint32_t writes_boot_hint;
     const char *const *libraries;
     size_t library_count;
     const char *platform;
@@ -259,9 +261,10 @@ typedef struct runtime_updates_definition {
      *
      * @return OK; MALFORMED; REFUSED when no rollback is kept for the item, that version is no longer installed intact,
      * the host is not registered, the registry lock cannot be taken, or the references or the boot hint cannot be
-     * written, having written nothing; OUT_OF_MEMORY. The references are recorded before the hint and recorded as
-     * they were again when the hint cannot be switched, so only memory running out during that undo leaves them
-     * rolled back with the hint unswitched.
+     * written, having written nothing; OUT_OF_MEMORY, having rolled nothing back. The answer and the undo are built
+     * before the references are recorded, and the references are recorded as they were again when the hint cannot be
+     * switched, so OUT_OF_MEMORY never follows a rollback that stands; only an undo whose write fails leaves them
+     * rolled back with the hint unswitched, answering OUT_OF_MEMORY.
      */
     spisor_status (*rollback)(void *context, const runtime_updates_rollback_argument *argument,
                               runtime_updates_rollback_answer *answer, spisor_refusal *refusal);

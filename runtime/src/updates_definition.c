@@ -267,7 +267,9 @@ static spisor_status check_apply(const runtime_updates_apply_argument *argument,
     if (status == SPISOR_OK && !runtime_are_item_versions(argument->running, argument->running_count)) {
         status = runtime_refuse_member(refusal, "running", HEADER);
     }
-    if (status == SPISOR_OK && !runtime_are_texts(argument->libraries, argument->library_count, 1)) {
+    if (status == SPISOR_OK && (argument->writes_boot_hint > 1 ||
+                                (!argument->writes_boot_hint && argument->library_count > 0) ||
+                                !runtime_are_texts(argument->libraries, argument->library_count, 1))) {
         status = runtime_refuse_member(refusal, "libraries", HEADER);
     }
     return status == SPISOR_OK ? check_settings(argument->settings, refusal) : status;
@@ -279,7 +281,7 @@ static cJSON *apply_call(const runtime_updates_apply_argument *argument) {
     int built = call != NULL &&
                 add_defaults(call, argument->defaults, argument->default_count) &&
                 add_versions(call, "running", argument->running, argument->running_count) &&
-                (argument->libraries == NULL ||
+                (!argument->writes_boot_hint ||
                  add_texts(call, "libraries", argument->libraries, argument->library_count));
     if (!built) {
         cJSON_Delete(call);
@@ -398,6 +400,25 @@ static spisor_status fill_rollback(const cJSON *answered, void *filled) {
     return status == SPISOR_OK ? fill_references(&answer->storage, answered, arrays, counts) : status;
 }
 
+static int fill_rollback_before_commit(const cJSON *answered, void *filled) {
+    return fill_rollback(answered, filled) == SPISOR_OK;
+}
+
+/** Serves `call`, which it deletes, filling the answer before the rollback is recorded. */
+static spisor_status serve_rollback(cJSON *call, runtime_updates_rollback_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered = call == NULL ? NULL
+                                   : runtime_updates_rollback_filling(call, fill_rollback_before_commit, answer,
+                                                                      &operation_refusal);
+    cJSON_Delete(call);
+    if (answered == NULL) {
+        runtime_release_stored_answer(answer, ROLLBACK_ANSWER_SHAPE);
+        return runtime_refuse_json(refusal, operation_refusal);
+    }
+    cJSON_Delete(answered);
+    return SPISOR_OK;
+}
+
 static spisor_status rollback(void *context, const runtime_updates_rollback_argument *argument,
                               runtime_updates_rollback_answer *answer, spisor_refusal *refusal) {
     host_target target;
@@ -421,8 +442,7 @@ static spisor_status rollback(void *context, const runtime_updates_rollback_argu
         cJSON_Delete(call);
         call = NULL;
     }
-    return runtime_serve_operation(runtime_updates_rollback_operation, call, fill_rollback, answer,
-                                   ROLLBACK_ANSWER_SHAPE, refusal);
+    return serve_rollback(call, answer, refusal);
 }
 
 static spisor_status fill_recorded(const cJSON *answered, void *filled) {

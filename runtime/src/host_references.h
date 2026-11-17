@@ -63,6 +63,24 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
 int runtime_record_host_references(const char *state, const char *host_id, const runtime_host_references *references,
                                    char **problem);
 
+/** A references file's path and text, built before a write that must not be stopped by memory running out. */
+typedef struct runtime_references_draft {
+    char *path;
+    char *text;
+} runtime_references_draft;
+
+/**
+ * Drafts references for host_id as runtime_record_host_references records them. 1; 0 with *problem set as
+ * runtime_host_references_path sets it, and with *problem NULL when memory runs out.
+ */
+int runtime_draft_host_references(const char *state, const char *host_id, const runtime_host_references *references,
+                                  runtime_references_draft *draft, char **problem);
+
+/** Writes a draft whose folder exists, replaced at once and allocating nothing more; 0 when it cannot be written. */
+int runtime_write_references_draft(const runtime_references_draft *draft);
+
+void runtime_free_references_draft(runtime_references_draft *draft);
+
 /** Deletes host_id's file and every run record of its starts; a host that recorded none counts as removed. */
 int runtime_remove_host_references(const char *state, const char *host_id);
 

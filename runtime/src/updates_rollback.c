@@ -76,37 +76,60 @@ static char *kept_version(const runtime_updates_request *request, const char *it
     return version;
 }
 
+/** The answer and the undo of a rollback, both built before it is recorded; 0 with *refusal set or out of memory. */
+static int prepare_rollback(const runtime_updates_request *request, const runtime_host_references *rolled,
+                            const runtime_host_references *before, cJSON **answer, runtime_references_draft *undo,
+                            cJSON **refusal) {
+    char *problem = NULL;
+    *answer = rolled_answer(rolled);
+    if (*answer == NULL || !runtime_draft_host_references(request->state, request->host_id, before, undo, &problem)) {
+        *refusal = problem == NULL ? NULL : runtime_updates_unrecorded(problem);
+        cJSON_Delete(*answer);
+        *answer = NULL;
+        return 0;
+    }
+    if (request->precommit != NULL && !request->precommit(*answer, request->precommit_context)) {
+        runtime_free_references_draft(undo);
+        cJSON_Delete(*answer);
+        *answer = NULL;
+        return 0;
+    }
+    return 1;
+}
+
 /**
- * Records `rolled` over what the host recorded, `before`, then switches item's boot hint to version, recording
- * `before` again when the hint cannot be switched: the answer, or NULL with *refusal set, or NULL out of memory.
+ * Records `rolled` over what the host recorded, then switches item's boot hint to version, writing back what it
+ * recorded before when the hint cannot be switched: the answer, or NULL with *refusal set, or NULL out of memory.
+ *
+ * @implNote The answer, the consumer's copy of it and the undo's text are all built before the references are
+ * recorded, so memory running out never follows a rollback that stands, and a retry never rolls back twice.
  */
 static cJSON *record_rollback(const runtime_updates_request *request, const char *item, const char *version,
                               const runtime_host_references *rolled, const runtime_host_references *before,
                               cJSON **refusal) {
     char *problem = NULL;
-    cJSON *answer = rolled_answer(rolled);
-    if (answer == NULL) {
+    cJSON *answer = NULL;
+    runtime_references_draft undo = {NULL, NULL};
+    if (!prepare_rollback(request, rolled, before, &answer, &undo, refusal)) {
         return NULL;
     }
     if (!runtime_record_host_references(request->state, request->host_id, rolled, &problem)) {
         *refusal = runtime_updates_unrecorded(problem);
         cJSON_Delete(answer);
-        return NULL;
+        answer = NULL;
+    } else {
+        spisor_status hinted = runtime_hint_host_version(request->cache, item, version);
+        if (hinted != SPISOR_OK) {
+            cJSON_Delete(answer);
+            answer = NULL;
+        }
+        if (hinted != SPISOR_OK && runtime_write_references_draft(&undo) && hinted == SPISOR_REFUSED) {
+            const char *parts[3] = {"the boot hint of ", item, " could not be written under the cache"};
+            *refusal = runtime_updates_unrecorded(runtime_cache_text(parts, 3));
+        }
     }
-    spisor_status hinted = runtime_hint_host_version(request->cache, item, version);
-    if (hinted == SPISOR_OK) {
-        return answer;
-    }
-    cJSON_Delete(answer);
-    if (!runtime_record_host_references(request->state, request->host_id, before, &problem)) {
-        free(problem);
-        return NULL;
-    }
-    if (hinted == SPISOR_REFUSED) {
-        const char *parts[3] = {"the boot hint of ", item, " could not be written under the cache"};
-        *refusal = runtime_updates_unrecorded(runtime_cache_text(parts, 3));
-    }
-    return NULL;
+    runtime_free_references_draft(&undo);
+    return answer;
 }
 
 /**

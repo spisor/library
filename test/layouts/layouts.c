@@ -1160,6 +1160,7 @@ static void print_updates_layouts(void) {
     FIELD(runtime_updates_apply_argument, default_count);
     FIELD(runtime_updates_apply_argument, running);
     FIELD(runtime_updates_apply_argument, running_count);
+    FIELD(runtime_updates_apply_argument, writes_boot_hint);
     FIELD(runtime_updates_apply_argument, libraries);
     FIELD(runtime_updates_apply_argument, library_count);
     FIELD(runtime_updates_apply_argument, platform);
