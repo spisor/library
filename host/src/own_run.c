@@ -10,12 +10,12 @@
 #include "own_executable.h"
 #include "paths.h"
 #include "processes.h"
+#include "json_service.h"
 
 #if defined(_WIN32)
 #include <windows.h>
 
 #include "wide_path.h"
-#include "json_service.h"
 #endif
 
 static int is_separator(char character) {

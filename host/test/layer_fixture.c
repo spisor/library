@@ -9,6 +9,7 @@
 #include "cJSON.h"
 #include "file_times.h"
 #include "host_context.h"
+#include "json_service.h"
 #include "processes.h"
 #include "processes_ready.h"
 #include "spisor/file.h"
@@ -17,7 +18,6 @@
 #include <windows.h>
 
 #include "host_arguments.h"
-#include "json_service.h"
 #else
 #include <time.h>
 #endif
