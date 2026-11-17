@@ -45,6 +45,9 @@ static size_t text_count(const cJSON *list) {
 
 #if defined(_WIN32)
 
+/** How long a cancelled host is waited for once terminated, which a suspended process never nears. */
+#define CANCEL_WAIT_MILLISECONDS 10000
+
 typedef struct windows_start {
     wchar_t *application;
     wchar_t *line;
@@ -96,8 +99,10 @@ static char *windows_problem(const char *executable, DWORD error) {
     return problem_of(executable, reason);
 }
 
-int runtime_start_detached(const runtime_detached_start *start, double *pid, int *outside_job, char **problem) {
+int runtime_start_detached(const runtime_detached_start *start, runtime_detached_host *host, char **problem) {
     *problem = NULL;
+    memset(host, 0, sizeof *host);
+    host->executable = start->executable;
     windows_start prepared;
     if (!prepare_windows_start(start, &prepared)) {
         free_windows_start(&prepared);
@@ -105,11 +110,11 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
         return 0;
     }
     DWORD flags = CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT |
-                  EXTENDED_STARTUPINFO_PRESENT;
+                  EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED;
     PROCESS_INFORMATION information;
-    *outside_job = create_process(&prepared, flags | CREATE_BREAKAWAY_FROM_JOB, &information);
-    DWORD error = *outside_job ? ERROR_SUCCESS : GetLastError();
-    int started = *outside_job || (error == ERROR_ACCESS_DENIED && create_process(&prepared, flags, &information));
+    host->outside_job = create_process(&prepared, flags | CREATE_BREAKAWAY_FROM_JOB, &information);
+    DWORD error = host->outside_job ? ERROR_SUCCESS : GetLastError();
+    int started = host->outside_job || (error == ERROR_ACCESS_DENIED && create_process(&prepared, flags, &information));
     if (!started) {
         *problem = windows_problem(start->executable, error == ERROR_ACCESS_DENIED ? GetLastError() : error);
     }
@@ -117,24 +122,43 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
     if (!started) {
         return 0;
     }
-    CloseHandle(information.hThread);
-    CloseHandle(information.hProcess);
-    *pid = (double)information.dwProcessId;
+    host->process = information.hProcess;
+    host->thread = information.hThread;
+    host->pid = (double)information.dwProcessId;
     return 1;
 }
 
-void runtime_stop_detached(double pid) {
-    HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid);
-    if (process != NULL) {
-        TerminateProcess(process, 1);
-        CloseHandle(process);
+static void close_host(runtime_detached_host *host) {
+    CloseHandle(host->thread);
+    CloseHandle(host->process);
+    host->thread = NULL;
+    host->process = NULL;
+}
+
+int runtime_release_detached(runtime_detached_host *host, char **problem) {
+    *problem = NULL;
+    int resumed = ResumeThread(host->thread) != (DWORD)-1;
+    if (!resumed) {
+        *problem = windows_problem(host->executable, GetLastError());
+        TerminateProcess(host->process, 1);
     }
+    close_host(host);
+    return resumed;
+}
+
+void runtime_cancel_detached(runtime_detached_host *host) {
+    TerminateProcess(host->process, 1);
+    WaitForSingleObject(host->process, CANCEL_WAIT_MILLISECONDS);
+    close_host(host);
 }
 
 #else
 
 #define LAST_SIGNAL 64
 #define HANDBACK_MILLISECONDS 5000
+/** How long a held host waits to be told to run, far past any record write, before it ends unrun. */
+#define GO_MILLISECONDS 60000
+#define GO 'g'
 
 static void free_list(char **list, size_t count) {
     for (size_t index = 0; list != NULL && index < count; index++) {
@@ -253,8 +277,29 @@ static size_t read_all(int descriptor, void *bytes, size_t length) {
     return got;
 }
 
+/**
+ * Whether the caller said go before it closed the pipe, in the host between fork and exec, so only async-signal-safe
+ * calls; a caller gone or silent past GO_MILLISECONDS counts as no.
+ */
+static int is_told_to_go(int go) {
+    struct pollfd waiting = {go, POLLIN, 0};
+    char said = 0;
+    int ready;
+    do {
+        ready = poll(&waiting, 1, GO_MILLISECONDS);
+    } while (ready < 0 && errno == EINTR);
+    ssize_t read_now;
+    do {
+        read_now = ready > 0 ? read(go, &said, 1) : 0;
+    } while (read_now < 0 && errno == EINTR);
+    return read_now == 1 && said == GO;
+}
+
 /** In the started host itself, between fork and exec: only async-signal-safe calls. */
-static void become_host(const char *directory, char **arguments, char **environment, int failure) {
+static void become_host(const char *directory, char **arguments, char **environment, int go, int failure) {
+    if (!is_told_to_go(go)) {
+        _exit(0);
+    }
     struct sigaction default_action;
     memset(&default_action, 0, sizeof default_action);
     default_action.sa_handler = SIG_DFL;
@@ -277,12 +322,12 @@ static void become_host(const char *directory, char **arguments, char **environm
 }
 
 /** The first child: a new session, then the host as its child, whose pid it hands back before it exits. */
-static void start_in_new_session(const char *directory, char **arguments, char **environment, int pid_end,
+static void start_in_new_session(const char *directory, char **arguments, char **environment, int pid_end, int go,
                                  int failure) {
     setsid();
     pid_t host = fork();
     if (host == 0) {
-        become_host(directory, arguments, environment, failure);
+        become_host(directory, arguments, environment, go, failure);
     }
     if (host > 0) {
         write_all(pid_end, &host, sizeof host);
@@ -290,60 +335,96 @@ static void start_in_new_session(const char *directory, char **arguments, char *
     _exit(host > 0 ? 0 : 1);
 }
 
-/**
- * @implNote The failure pipe reaches its end when the host execs; a write end some other process carried
- * away would hold that end back, so a wait past HANDBACK_MILLISECONDS counts as started rather than
- * keeping the holders lock for ever. A failed exec writes at once, well inside it.
- */
-static int await_host(pid_t first, int pid_end, int failure, double *pid, int *error) {
-    pid_t host = 0;
-    int got_pid = read_all(pid_end, &host, sizeof host) == sizeof host;
-    *error = 0;
-    int failed = read_all(failure, error, sizeof *error) == sizeof *error;
-    while (waitpid(first, NULL, 0) < 0 && errno == EINTR) {
+/** The three pipes a start hands the host: its pid back, go forward, and why its exec failed back. */
+typedef struct start_pipes {
+    int pid[2];
+    int go[2];
+    int failure[2];
+} start_pipes;
+
+static void close_end(int *end) {
+    if (*end >= 0) {
+        close(*end);
+        *end = -1;
     }
-    if (got_pid && !failed) {
-        *pid = (double)host;
-    }
-    return got_pid && !failed;
 }
 
-static int spawn_detached(const char *directory, char **arguments, char **environment, double *pid, int *error) {
-    int pid_pipe[2];
-    int failure_pipe[2];
-    if (!close_on_exec_pipe(pid_pipe)) {
-        *error = errno;
+static void close_pipes(start_pipes *pipes) {
+    for (int end = 0; end < 2; end++) {
+        close_end(&pipes->pid[end]);
+        close_end(&pipes->go[end]);
+        close_end(&pipes->failure[end]);
+    }
+}
+
+static int open_pipes(start_pipes *pipes) {
+    start_pipes closed = {{-1, -1}, {-1, -1}, {-1, -1}};
+    *pipes = closed;
+    if (!close_on_exec_pipe(pipes->pid) || !close_on_exec_pipe(pipes->go) || !close_on_exec_pipe(pipes->failure)) {
+        int error = errno;
+        close_pipes(pipes);
+        errno = error;
         return 0;
     }
-    if (!close_on_exec_pipe(failure_pipe)) {
+    return 1;
+}
+
+/** Reads the host's pid the first child hands back, then reaps that child. */
+static int await_pid(pid_t first, int pid_end, double *pid) {
+    pid_t host = 0;
+    int got_pid = read_all(pid_end, &host, sizeof host) == sizeof host;
+    while (waitpid(first, NULL, 0) < 0 && errno == EINTR) {
+    }
+    if (got_pid) {
+        *pid = (double)host;
+    }
+    return got_pid;
+}
+
+static int spawn_detached(const char *directory, char **arguments, char **environment, runtime_detached_host *host,
+                          int *error) {
+    start_pipes pipes;
+    if (!open_pipes(&pipes)) {
         *error = errno;
-        close(pid_pipe[0]);
-        close(pid_pipe[1]);
         return 0;
     }
     pid_t first = fork();
     if (first == 0) {
-        start_in_new_session(directory, arguments, environment, pid_pipe[1], failure_pipe[1]);
+        close(pipes.pid[0]);
+        close(pipes.go[1]);
+        close(pipes.failure[0]);
+        start_in_new_session(directory, arguments, environment, pipes.pid[1], pipes.go[0], pipes.failure[1]);
     }
-    close(pid_pipe[1]);
-    close(failure_pipe[1]);
-    int started = first > 0 && await_host(first, pid_pipe[0], failure_pipe[0], pid, error);
-    if (first < 0) {
-        *error = errno;
+    *error = first < 0 ? errno : 0;
+    close_end(&pipes.pid[1]);
+    close_end(&pipes.go[0]);
+    close_end(&pipes.failure[1]);
+    int started = first > 0 && await_pid(first, pipes.pid[0], &host->pid);
+    if (started) {
+        host->go = pipes.go[1];
+        host->failure = pipes.failure[0];
+        pipes.go[1] = -1;
+        pipes.failure[0] = -1;
     }
-    close(pid_pipe[0]);
-    close(failure_pipe[0]);
+    close_pipes(&pipes);
     return started;
 }
 
-int runtime_start_detached(const runtime_detached_start *start, double *pid, int *outside_job, char **problem) {
+int runtime_start_detached(const runtime_detached_start *start, runtime_detached_host *host, char **problem) {
     *problem = NULL;
-    *outside_job = 1;
+    host->pid = 0;
+    host->outside_job = 1;
+    host->executable = start->executable;
+    host->process = NULL;
+    host->thread = NULL;
+    host->go = -1;
+    host->failure = -1;
     char **arguments = argument_list(start->executable, start->arguments);
     char **environment = start->environment == NULL ? NULL : environment_list(start->environment);
     int error = ENOMEM;
     int started = arguments != NULL && (start->environment == NULL || environment != NULL) &&
-                  spawn_detached(start->directory, arguments, environment == NULL ? environ : environment, pid, &error);
+                  spawn_detached(start->directory, arguments, environment == NULL ? environ : environment, host,
+                                 &error);
     if (!started) {
         *problem = problem_of(start->executable, error == 0 ? "it did not start" : strerror(error));
     }
@@ -352,8 +433,28 @@ int runtime_start_detached(const runtime_detached_start *start, double *pid, int
     return started;
 }
 
-void runtime_stop_detached(double pid) {
-    kill((pid_t)pid, SIGKILL);
+/**
+ * @implNote The failure pipe reaches its end when the host execs; a write end some other process carried away would
+ * hold that end back, so a wait past HANDBACK_MILLISECONDS counts as started rather than keeping the holders lock for
+ * ever. A failed exec writes at once, well inside it.
+ */
+int runtime_release_detached(runtime_detached_host *host, char **problem) {
+    const char go = GO;
+    int error = 0;
+    *problem = NULL;
+    write_all(host->go, &go, 1);
+    close_end(&host->go);
+    int failed = read_all(host->failure, &error, sizeof error) == sizeof error;
+    close_end(&host->failure);
+    if (failed) {
+        *problem = problem_of(host->executable, strerror(error));
+    }
+    return !failed;
+}
+
+void runtime_cancel_detached(runtime_detached_host *host) {
+    close_end(&host->go);
+    close_end(&host->failure);
 }
 
 #endif
