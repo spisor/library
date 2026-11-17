@@ -65,18 +65,34 @@ static uint32_t index_of(const char *const *names, uint32_t count, const char *n
     return 0;
 }
 
-/** The catalog under `name`; MALFORMED for one that is not a well-formed record with an items record. */
-static spisor_status add_catalog(cJSON *call, const char *name, const spisor_value *catalog) {
+/** Whether catalog is a well-formed record with an items record: OK, MALFORMED, or OUT_OF_MEMORY from the walk. */
+static spisor_status check_catalog(const spisor_value *catalog) {
     const spisor_value *items = catalog == NULL ? NULL : spisor_value_member(catalog, "items", 5);
-    if (items == NULL || items->kind != SPISOR_VALUE_RECORD) {
+    if (items == NULL || items->kind != SPISOR_VALUE_RECORD || catalog->kind != SPISOR_VALUE_RECORD) {
         return SPISOR_MALFORMED;
     }
+    return spisor_value_check(catalog);
+}
+
+static spisor_status add_catalog(cJSON *call, const char *name, const spisor_value *catalog) {
     return runtime_add_value_json(call, name, catalog, SPISOR_VALUE_RECORD);
 }
 
 static int is_source(const runtime_catalog_source *source) {
     return source != NULL && source->kind >= RUNTIME_CATALOG_LOCAL && source->kind <= RUNTIME_CATALOG_HTTPS &&
            is_text(source->location);
+}
+
+static int are_sources(const runtime_catalog_source *listed, size_t count) {
+    if (count > 0 && listed == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!is_source(&listed[index])) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /** The source as {kind, path} or {kind, url}; NULL when memory runs out. */
@@ -197,18 +213,25 @@ static spisor_status sources(void *context, const runtime_catalog_sources_argume
     return runtime_serve_operation(runtime_catalog_sources_operation, call, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
 }
 
-static spisor_status add_readings(cJSON *call, const runtime_catalog_merge_argument *argument) {
-    cJSON *catalogs = cJSON_AddArrayToObject(call, "catalogs");
-    spisor_status status = catalogs == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+/** Whether every reading has a source and a catalog: OK, MALFORMED, or OUT_OF_MEMORY from a catalog's walk. */
+static spisor_status check_readings(const runtime_catalog_merge_argument *argument) {
     if (argument->catalog_count > 0 && argument->catalogs == NULL) {
         return SPISOR_MALFORMED;
     }
+    spisor_status status = SPISOR_OK;
     for (size_t index = 0; status == SPISOR_OK && index < argument->catalog_count; index++) {
         const runtime_catalog_reading *reading = &argument->catalogs[index];
-        cJSON *entry = is_source(&reading->source) ? cJSON_CreateObject() : NULL;
-        if (!is_source(&reading->source)) {
-            return SPISOR_MALFORMED;
-        }
+        status = is_source(&reading->source) ? check_catalog(reading->catalog) : SPISOR_MALFORMED;
+    }
+    return status;
+}
+
+static spisor_status add_readings(cJSON *call, const runtime_catalog_merge_argument *argument) {
+    cJSON *catalogs = cJSON_AddArrayToObject(call, "catalogs");
+    spisor_status status = catalogs == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    for (size_t index = 0; status == SPISOR_OK && index < argument->catalog_count; index++) {
+        const runtime_catalog_reading *reading = &argument->catalogs[index];
+        cJSON *entry = cJSON_CreateObject();
         status = add_to_array(catalogs, entry);
         if (status == SPISOR_OK && !add_member(entry, "source", source_json(&reading->source))) {
             status = SPISOR_OUT_OF_MEMORY;
@@ -251,11 +274,15 @@ static spisor_status merge(void *context, const runtime_catalog_merge_argument *
         !RUNTIME_IS_EMPTY_ANSWER(answer, MERGE_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "catalog's merge");
     }
+    status = check_readings(argument);
+    if (status != SPISOR_OK) {
+        return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "catalogs, each a source and its items") : status;
+    }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY : add_readings(call, argument);
     if (status != SPISOR_OK) {
         cJSON_Delete(call);
-        return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "catalogs, each a source and its items") : status;
+        return status;
     }
     return runtime_serve_operation(runtime_catalog_merge_operation, call, fill_merge, answer, MERGE_ANSWER_SHAPE, refusal);
 }
@@ -327,11 +354,8 @@ static spisor_status check(void *context, const runtime_catalog_check_argument *
 static spisor_status add_sources(cJSON *call, const runtime_catalog_source *listed, size_t count) {
     cJSON *array = cJSON_AddArrayToObject(call, "sources");
     spisor_status status = array == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-    if (count > 0 && listed == NULL) {
-        return SPISOR_MALFORMED;
-    }
     for (size_t index = 0; status == SPISOR_OK && index < count; index++) {
-        status = is_source(&listed[index]) ? add_to_array(array, source_json(&listed[index])) : SPISOR_MALFORMED;
+        status = add_to_array(array, source_json(&listed[index]));
     }
     return status;
 }
@@ -345,8 +369,8 @@ static spisor_status current(void *context, const runtime_catalog_current_argume
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "catalog's current");
     }
-    if (!is_place(argument->cache)) {
-        return refuse_malformed(refusal, "cache");
+    if (!is_place(argument->cache) || !are_sources(argument->sources, argument->source_count)) {
+        return refuse_malformed(refusal, !is_place(argument->cache) ? "cache" : "sources");
     }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY : add_sources(call, argument->sources, argument->source_count);
@@ -355,23 +379,63 @@ static spisor_status current(void *context, const runtime_catalog_current_argume
     }
     if (status != SPISOR_OK) {
         cJSON_Delete(call);
-        return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "sources") : status;
+        return status;
     }
     return runtime_serve_operation(runtime_catalog_current_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
 }
 
+static int are_enabled(const runtime_catalog_resolve_argument *argument) {
+    if (argument->enabled_count > 0 && argument->enabled == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < argument->enabled_count; index++) {
+        if (!is_text(argument->enabled[index].id)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int is_installed_entry(const runtime_catalog_resolve_argument *argument, size_t index) {
+    const runtime_catalog_installed *installed = &argument->installed[index];
+    if (!is_text(installed->id) || (installed->version_count > 0 && installed->versions == NULL)) {
+        return 0;
+    }
+    for (size_t earlier = 0; earlier < index; earlier++) {
+        if (strcmp(argument->installed[earlier].id, installed->id) == 0) {
+            return 0;
+        }
+    }
+    for (size_t version = 0; version < installed->version_count; version++) {
+        if (installed->versions[version] == NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int are_installed(const runtime_catalog_resolve_argument *argument) {
+    if (argument->installed_count > 0 && argument->installed == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < argument->installed_count; index++) {
+        if (!is_installed_entry(argument, index)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/** Whether the whole resolve call is well formed, checked before anything is built for it. */
+static spisor_status check_resolve(const runtime_catalog_resolve_argument *argument) {
+    return are_enabled(argument) && are_installed(argument) ? check_catalog(argument->catalog) : SPISOR_MALFORMED;
+}
+
 static spisor_status add_enabled(cJSON *call, const runtime_catalog_resolve_argument *argument) {
     cJSON *array = cJSON_AddArrayToObject(call, "enabled");
-    if (argument->enabled_count > 0 && argument->enabled == NULL) {
-        return SPISOR_MALFORMED;
-    }
     for (size_t index = 0; array != NULL && index < argument->enabled_count; index++) {
         const runtime_catalog_enabled *enabled = &argument->enabled[index];
         cJSON *entry = cJSON_CreateObject();
-        if (!is_text(enabled->id)) {
-            cJSON_Delete(entry);
-            return SPISOR_MALFORMED;
-        }
         if (add_to_array(array, entry) != SPISOR_OK || cJSON_AddStringToObject(entry, "id", enabled->id) == NULL ||
             (enabled->pin != NULL && cJSON_AddStringToObject(entry, "pin", enabled->pin) == NULL)) {
             return SPISOR_OUT_OF_MEMORY;
@@ -382,21 +446,10 @@ static spisor_status add_enabled(cJSON *call, const runtime_catalog_resolve_argu
 
 static spisor_status add_installed(cJSON *call, const runtime_catalog_resolve_argument *argument) {
     cJSON *object = cJSON_AddObjectToObject(call, "installed");
-    if (argument->installed_count > 0 && argument->installed == NULL) {
-        return SPISOR_MALFORMED;
-    }
     for (size_t index = 0; object != NULL && index < argument->installed_count; index++) {
         const runtime_catalog_installed *installed = &argument->installed[index];
-        cJSON *versions;
-        if (!is_text(installed->id) || cJSON_GetObjectItemCaseSensitive(object, installed->id) != NULL ||
-            (installed->version_count > 0 && installed->versions == NULL)) {
-            return SPISOR_MALFORMED;
-        }
-        versions = cJSON_AddArrayToObject(object, installed->id);
+        cJSON *versions = cJSON_AddArrayToObject(object, installed->id);
         for (size_t version = 0; versions != NULL && version < installed->version_count; version++) {
-            if (installed->versions[version] == NULL) {
-                return SPISOR_MALFORMED;
-            }
             if (add_to_array(versions, cJSON_CreateString(installed->versions[version])) != SPISOR_OK) {
                 return SPISOR_OUT_OF_MEMORY;
             }
@@ -465,12 +518,16 @@ static spisor_status resolve(void *context, const runtime_catalog_resolve_argume
     if (argument->kind < RUNTIME_CATALOG_PLUGIN || argument->kind > RUNTIME_CATALOG_LIBRARY) {
         return refuse_malformed(refusal, "kind");
     }
+    status = check_resolve(argument);
+    if (status != SPISOR_OK) {
+        return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "items, enabled items or installed versions")
+                                          : status;
+    }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY : resolve_call(argument, call);
     if (status != SPISOR_OK) {
         cJSON_Delete(call);
-        return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "items, enabled items or installed versions")
-                                          : status;
+        return status;
     }
     return runtime_serve_operation(runtime_catalog_resolve_operation, call, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
 }

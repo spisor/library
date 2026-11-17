@@ -28,28 +28,37 @@ static const char *platform_member(const cJSON *argument) {
 #define CACHE_SHAPE "the cache folder's path"
 #define PLATFORM_SHAPE "a platform key such as linux-x64, or leave it out"
 
-cJSON *runtime_cache_install_operation(const cJSON *argument, cJSON **refusal) {
+runtime_cache_installation *runtime_cache_install_storing(const cJSON *argument, cJSON **refusal) {
     const char *cache = nonempty_text(argument, "cache");
     const char *id = nonempty_text(argument, "id");
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "item");
     const char *version = nonempty_text(argument, "version");
     const char *platform = platform_member(argument);
     if (cache == NULL) {
-        return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
+        runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
+        return NULL;
     }
     if (id == NULL) {
-        return runtime_catalog_refuse_member("id", "the catalog item's id", refusal);
+        runtime_catalog_refuse_member("id", "the catalog item's id", refusal);
+        return NULL;
     }
     if (!cJSON_IsObject(item)) {
-        return runtime_catalog_refuse_member("item", "the catalog item as catalog.read answered it", refusal);
+        runtime_catalog_refuse_member("item", "the catalog item as catalog.read answered it", refusal);
+        return NULL;
     }
     if (version == NULL) {
-        return runtime_catalog_refuse_member("version", "one of the versions the item lists", refusal);
+        runtime_catalog_refuse_member("version", "one of the versions the item lists", refusal);
+        return NULL;
     }
     if (platform == NULL) {
-        return runtime_catalog_refuse_member("platform", PLATFORM_SHAPE, refusal);
+        runtime_catalog_refuse_member("platform", PLATFORM_SHAPE, refusal);
+        return NULL;
     }
-    return runtime_cache_install_version(cache, id, item, version, platform, refusal);
+    return runtime_cache_store_version(cache, id, item, version, platform, refusal);
+}
+
+cJSON *runtime_cache_install_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_cache_finish_installation(runtime_cache_install_storing(argument, refusal), refusal);
 }
 
 cJSON *runtime_cache_installed_operation(const cJSON *argument, cJSON **refusal) {

@@ -193,7 +193,9 @@ static const cJSON **merged_keys(const version_files *files, cJSON **merged, siz
     const cJSON *parts[2] = {files->shared, files->own};
     for (size_t part = 0; *merged != NULL && part < 2; part++) {
         for (const cJSON *member = parts[part] == NULL ? NULL : parts[part]->child; member != NULL; member = member->next) {
-            if (!cJSON_AddItemToObject(*merged, member->string, cJSON_CreateNull())) {
+            cJSON *placeholder = cJSON_CreateNull();
+            if (!cJSON_AddItemToObject(*merged, member->string, placeholder)) {
+                cJSON_Delete(placeholder);
                 cJSON_Delete(*merged);
                 *merged = NULL;
                 break;

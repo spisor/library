@@ -2,6 +2,7 @@
 #define RUNTIME_CACHE_MARKER_H
 
 #include "cJSON.h"
+#include "spisor/status.h"
 
 /** The file an install writes last, so its presence means every file it names was stored and verified. */
 #define RUNTIME_INSTALL_MARKER ".installed.json"
@@ -27,13 +28,13 @@ runtime_cache_presence runtime_cache_has_files(const char *directory);
 
 /**
  * Writes directory's completion marker naming hashes, an object of file keys to SHA-256s, and sizes, an
- * object of the same keys to byte counts, as JSON.stringify({files, sizes}, null, 2) and a newline. 1 on
- * success.
+ * object of the same keys to byte counts, as JSON.stringify({files, sizes}, null, 2) and a newline: OK;
+ * REFUSED when it could not be written; OUT_OF_MEMORY, having written nothing.
  *
  * @implNote Written beside its name and renamed; when the rename fails because another host sharing the
  * cache holds the marker it just wrote, a marker already holding these bytes is accepted.
  */
-int runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes);
+spisor_status runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes);
 
 /**
  * Whether the version in directory finished installing and every file still has its recorded hash:

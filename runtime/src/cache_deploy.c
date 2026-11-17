@@ -6,7 +6,10 @@
 
 #include "cache_place.h"
 #include "directory_tree.h"
+#include "allocation.h"
 #include "cache_refusal.h"
+#include "file_reading.h"
+#include "json_parse.h"
 #include "identity.h"
 #include "import_name.h"
 #include "json_service.h"
@@ -20,7 +23,11 @@
 #define MODULE_MARKER_NAME "package.json"
 #define MODULE_MARKER_TEXT "{\"type\":\"module\"}\n"
 
-typedef struct deployment {
+/** The files a deploy writes into pluginDir, each resolved before the first is written. */
+typedef enum destination_index { MANIFEST_DESTINATION, ENTRY_DESTINATION, IDENTITY_DESTINATION, MARKER_DESTINATION,
+                                 DESTINATION_COUNT } destination_index;
+
+struct runtime_cache_deployment {
     const char *directory;
     const char *plugin_directory;
     char *resolved_directory;
@@ -35,7 +42,14 @@ typedef struct deployment {
     uint8_t *entry_bytes;
     size_t entry_length;
     int has_entry;
-} deployment;
+    uint8_t *identity_bytes;
+    size_t identity_length;
+    char *destinations[DESTINATION_COUNT];
+    int out_of_memory;
+};
+
+typedef runtime_cache_deployment deployment;
+
 
 static int ends_with_ignoring_case(const char *text, const char *suffix) {
     size_t text_length = strlen(text);
@@ -59,6 +73,22 @@ static const char *text_member(const cJSON *object, const char *member) {
 static cJSON *refuse(cJSON **refusal, const char *message, const char *fix) {
     *refusal = runtime_refusal(message, fix);
     return NULL;
+}
+
+/** Reads the file at path through the binary's allocator, noting in plan when memory ran out. */
+static uint8_t *read_noting(deployment *plan, const char *path, size_t *length) {
+    spisor_read_outcome outcome = SPISOR_READ_OUT_OF_MEMORY;
+    uint8_t *bytes = path == NULL ? NULL : spisor_read_file_reporting(path, length, &outcome);
+    plan->out_of_memory = plan->out_of_memory || outcome == SPISOR_READ_OUT_OF_MEMORY;
+    return bytes;
+}
+
+/** Refuses unless memory ran out, which answers out of memory with no refusal. */
+static int refuse_unless_out_of_memory(deployment *plan, cJSON **refusal, const char *message, const char *fix) {
+    if (!plan->out_of_memory) {
+        refuse(refusal, message, fix);
+    }
+    return 0;
 }
 
 /** Resolves both directories, as cache_plan does, and refuses a pluginDir that is the bundle or lies inside it or around it. */
@@ -105,12 +135,16 @@ static int read_arguments(const cJSON *argument, deployment *plan, cJSON **refus
 static int read_manifest(deployment *plan, cJSON **refusal) {
     const char *segments[1] = {MANIFEST_NAME};
     char *path = runtime_cache_resolve(plan->directory, segments, 1);
-    plan->manifest_bytes = path == NULL ? NULL : spisor_read_file(path, &plan->manifest_length);
-    plan->manifest = plan->manifest_bytes == NULL ? NULL : spisor_parse_json(plan->manifest_bytes, plan->manifest_length);
+    int out_of_memory = 0;
+    plan->manifest_bytes = read_noting(plan, path, &plan->manifest_length);
+    plan->manifest = plan->manifest_bytes == NULL
+                         ? NULL
+                         : spisor_parse_json_reporting(plan->manifest_bytes, plan->manifest_length, &out_of_memory);
+    plan->out_of_memory = plan->out_of_memory || out_of_memory;
     free(path);
     if (plan->manifest == NULL || !cJSON_IsObject(plan->manifest)) {
-        refuse(refusal, "the bundle has no plugin.json that holds a JSON object", "install the plugin again, or point directory at an installed bundle");
-        return 0;
+        return refuse_unless_out_of_memory(plan, refusal, "the bundle has no plugin.json that holds a JSON object",
+                                           "install the plugin again, or point directory at an installed bundle");
     }
     plan->import_name = text_member(plan->manifest, "importName");
     if (plan->import_name == NULL || !runtime_is_import_name(plan->import_name)) {
@@ -135,20 +169,24 @@ static int read_entry(deployment *plan, cJSON **refusal) {
     char *path = runtime_cache_resolve(plan->directory, segments, 1);
     int inside = path != NULL && runtime_cache_is_strictly_inside(plan->directory, path);
     int identity_like = ends_with_ignoring_case(entry, IDENTITY_SUFFIX);
-    plan->entry_bytes = inside && !identity_like ? spisor_read_file(path, &plan->entry_length) : NULL;
+    plan->out_of_memory = path == NULL;
+    plan->entry_bytes = inside && !identity_like ? read_noting(plan, path, &plan->entry_length) : NULL;
     plan->has_entry = plan->entry_bytes != NULL;
     free(path);
     if (!plan->has_entry) {
-        refuse(refusal, "the plugin.json entry is not a file inside the bundle that can be deployed",
-               "name an entry below the bundle that exists and is not named like an identity file");
+        return refuse_unless_out_of_memory(plan, refusal,
+                                           "the plugin.json entry is not a file inside the bundle that can be deployed",
+                                           "name an entry below the bundle that exists and is not named like an identity file");
     }
-    return plan->has_entry;
+    return 1;
 }
 
-static char *destination(const deployment *plan, const char *suffix) {
+/** The destination for suffix inside pluginDir, NULL when it would lie outside or memory runs out, which plan notes. */
+static char *destination(deployment *plan, const char *suffix) {
     const char *file_parts[2] = {plan->import_name, suffix};
     char *file_name = runtime_cache_text(file_parts, 2);
     char *path = file_name == NULL ? NULL : runtime_cache_resolve(plan->plugin_directory, (const char *const *)&file_name, 1);
+    plan->out_of_memory = plan->out_of_memory || path == NULL;
     if (path != NULL && !runtime_cache_is_strictly_inside(plan->plugin_directory, path)) {
         free(path);
         path = NULL;
@@ -157,27 +195,26 @@ static char *destination(const deployment *plan, const char *suffix) {
     return path;
 }
 
-static int write_destination(const deployment *plan, const char *suffix, const uint8_t *bytes, size_t length) {
-    char *path = destination(plan, suffix);
-    int written = path != NULL && spisor_replace_file(path, bytes, length);
-    free(path);
-    return written;
+static int write_destination(const deployment *plan, destination_index index, const uint8_t *bytes, size_t length) {
+    return spisor_replace_file(plan->destinations[index], bytes, length);
 }
 
-static int destinations_are_inside(const deployment *plan) {
+/** Resolves every destination, 0 when one lies outside pluginDir or memory runs out. */
+static int resolve_destinations(deployment *plan) {
     static const char *const suffixes[] = {MANIFEST_SUFFIX, ENTRY_SUFFIX, IDENTITY_SUFFIX};
     for (size_t index = 0; index < sizeof suffixes / sizeof suffixes[0]; index++) {
-        char *path = destination(plan, suffixes[index]);
-        int inside = path != NULL;
-        free(path);
-        if (!inside) {
+        plan->destinations[index] = destination(plan, suffixes[index]);
+        if (plan->destinations[index] == NULL) {
             return 0;
         }
     }
-    return 1;
+    const char *segments[1] = {MODULE_MARKER_NAME};
+    plan->destinations[MARKER_DESTINATION] = runtime_cache_resolve(plan->plugin_directory, segments, 1);
+    plan->out_of_memory = plan->destinations[MARKER_DESTINATION] == NULL;
+    return !plan->out_of_memory;
 }
 
-static uint8_t *identity_bytes(const deployment *plan, size_t *length) {
+static uint8_t *identity_bytes(deployment *plan, size_t *length) {
     cJSON *identity = cJSON_CreateObject();
     int built = identity != NULL && cJSON_AddStringToObject(identity, "id", plan->identity_id) != NULL &&
                 cJSON_AddStringToObject(identity, "name", plan->identity_name) != NULL;
@@ -187,42 +224,35 @@ static uint8_t *identity_bytes(const deployment *plan, size_t *length) {
     return (uint8_t *)text;
 }
 
-static int write_identity(const deployment *plan) {
-    size_t length = 0;
-    uint8_t *bytes = identity_bytes(plan, &length);
-    int written = bytes != NULL && write_destination(plan, IDENTITY_SUFFIX, bytes, length);
-    cJSON_free(bytes);
-    return written;
+static int exists_at(const deployment *plan, destination_index index) {
+    return spisor_file_exists(plan->destinations[index]);
 }
 
-static int exists_at(const deployment *plan, const char *suffix) {
-    char *path = destination(plan, suffix);
-    int exists = path != NULL && spisor_file_exists(path);
-    free(path);
-    return exists;
-}
-
-static char *recorded_id(const deployment *plan) {
-    char *path = destination(plan, IDENTITY_SUFFIX);
+static char *recorded_id(deployment *plan) {
     size_t length = 0;
-    uint8_t *bytes = path == NULL ? NULL : spisor_read_file(path, &length);
-    cJSON *identity = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
+    uint8_t *bytes = read_noting(plan, plan->destinations[IDENTITY_DESTINATION], &length);
+    int out_of_memory = 0;
+    cJSON *identity = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
     const char *id = text_member(identity, "id");
     char *copy = id == NULL ? NULL : runtime_cache_text(&id, 1);
+    plan->out_of_memory = plan->out_of_memory || out_of_memory || (id != NULL && copy == NULL);
     cJSON_Delete(identity);
-    free(bytes);
-    free(path);
+    spisor_memory_release(bytes);
     return copy;
 }
 
 /** Refuses to put one plugin over another: code already there with no identity, or a different one, is another plugin's. */
-static int is_not_another_plugin(const deployment *plan, cJSON **refusal) {
-    int has_code = exists_at(plan, MANIFEST_SUFFIX) || exists_at(plan, ENTRY_SUFFIX);
-    int has_identity = exists_at(plan, IDENTITY_SUFFIX);
+static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
+    int has_code = exists_at(plan, MANIFEST_DESTINATION) || exists_at(plan, ENTRY_DESTINATION);
+    int has_identity = exists_at(plan, IDENTITY_DESTINATION);
     if (!has_code && !has_identity) {
         return 1;
     }
     char *recorded = recorded_id(plan);
+    if (plan->out_of_memory) {
+        free(recorded);
+        return 0;
+    }
     int same = recorded != NULL && (strcmp(recorded, plan->identity_id) == 0 ||
                                     (plan->replaces != NULL && strcmp(recorded, plan->replaces) == 0));
     if (!same) {
@@ -239,66 +269,89 @@ static int is_not_another_plugin(const deployment *plan, cJSON **refusal) {
     return same;
 }
 
-static int remove_destination(const deployment *plan, const char *suffix) {
-    char *path = destination(plan, suffix);
-    int gone = path != NULL && runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
-    free(path);
-    return gone;
-}
-
-static int write_module_marker(const deployment *plan) {
-    const char *segments[1] = {MODULE_MARKER_NAME};
-    char *path = runtime_cache_resolve(plan->plugin_directory, segments, 1);
-    int written = path != NULL && spisor_replace_file(path, (const uint8_t *)MODULE_MARKER_TEXT, strlen(MODULE_MARKER_TEXT));
-    free(path);
-    return written;
+static int remove_destination(const deployment *plan, destination_index index) {
+    return runtime_remove_file_entry(plan->destinations[index]) == RUNTIME_ENTRY_DONE;
 }
 
 /** The identity goes first and returns last, so a failure part way leaves a plugin with no identity rather than a wrong one. */
-static int write_files(const deployment *plan, cJSON **refusal) {
-    int written = spisor_make_directories(plan->plugin_directory) && remove_destination(plan, IDENTITY_SUFFIX) &&
-                  (plan->has_entry || remove_destination(plan, ENTRY_SUFFIX)) &&
-                  (!plan->has_entry || write_destination(plan, ENTRY_SUFFIX, plan->entry_bytes, plan->entry_length)) &&
-                  write_destination(plan, MANIFEST_SUFFIX, plan->manifest_bytes, plan->manifest_length) &&
-                  write_module_marker(plan) && write_identity(plan);
+static int write_files(deployment *plan, cJSON **refusal) {
+    int written =
+        spisor_make_directories(plan->plugin_directory) && remove_destination(plan, IDENTITY_DESTINATION) &&
+        (plan->has_entry || remove_destination(plan, ENTRY_DESTINATION)) &&
+        (!plan->has_entry || write_destination(plan, ENTRY_DESTINATION, plan->entry_bytes, plan->entry_length)) &&
+        write_destination(plan, MANIFEST_DESTINATION, plan->manifest_bytes, plan->manifest_length) &&
+        write_destination(plan, MARKER_DESTINATION, (const uint8_t *)MODULE_MARKER_TEXT, strlen(MODULE_MARKER_TEXT)) &&
+        write_destination(plan, IDENTITY_DESTINATION, plan->identity_bytes, plan->identity_length);
     if (!written) {
-        refuse(refusal, "the plugin could not be written into pluginDir",
-               "free the plugin's files or point pluginDir at a writable directory, then try again");
+        refuse_unless_out_of_memory(plan, refusal, "the plugin could not be written into pluginDir",
+                                    "free the plugin's files or point pluginDir at a writable directory, then try again");
     }
     return written;
-}
-
-static cJSON *import_name_answer(const deployment *plan) {
-    cJSON *answer = cJSON_CreateObject();
-    if (answer != NULL && cJSON_AddStringToObject(answer, "importName", plan->import_name) == NULL) {
-        cJSON_Delete(answer);
-        answer = NULL;
-    }
-    return answer;
 }
 
 static int is_deployable(deployment *plan, const cJSON *argument, cJSON **refusal) {
     if (!read_arguments(argument, plan, refusal) || !read_manifest(plan, refusal) || !read_entry(plan, refusal)) {
         return 0;
     }
-    if (!destinations_are_inside(plan)) {
-        refuse(refusal, "the import name would be written outside pluginDir", "use an import name the schema accepts");
-        return 0;
+    if (!resolve_destinations(plan)) {
+        return refuse_unless_out_of_memory(plan, refusal, "the import name would be written outside pluginDir",
+                                           "use an import name the schema accepts");
     }
-    return is_not_another_plugin(plan, refusal);
+    plan->identity_bytes = identity_bytes(plan, &plan->identity_length);
+    return plan->identity_bytes != NULL && is_not_another_plugin(plan, refusal);
+}
+
+void runtime_cache_free_deployment(runtime_cache_deployment *plan) {
+    if (plan == NULL) {
+        return;
+    }
+    cJSON_Delete(plan->manifest);
+    free(plan->resolved_directory);
+    free(plan->resolved_plugin_directory);
+    spisor_memory_release(plan->manifest_bytes);
+    spisor_memory_release(plan->entry_bytes);
+    cJSON_free(plan->identity_bytes);
+    for (size_t index = 0; index < DESTINATION_COUNT; index++) {
+        free(plan->destinations[index]);
+    }
+    free(plan);
+}
+
+runtime_cache_deployment *runtime_cache_plan_deployment(const cJSON *argument, cJSON **refusal) {
+    deployment *plan = calloc(1, sizeof *plan);
+    *refusal = NULL;
+    if (plan != NULL && !is_deployable(plan, argument, refusal)) {
+        runtime_cache_free_deployment(plan);
+        plan = NULL;
+    }
+    return plan;
+}
+
+const char *runtime_cache_deployment_import_name(const runtime_cache_deployment *plan) {
+    return plan->import_name;
+}
+
+int runtime_cache_carry_out_deployment(runtime_cache_deployment *plan, cJSON **refusal) {
+    *refusal = NULL;
+    return write_files(plan, refusal);
+}
+
+static cJSON *import_name_answer(const char *import_name) {
+    cJSON *answer = cJSON_CreateObject();
+    if (answer != NULL && cJSON_AddStringToObject(answer, "importName", import_name) == NULL) {
+        cJSON_Delete(answer);
+        answer = NULL;
+    }
+    return answer;
 }
 
 cJSON *runtime_cache_deploy_operation(const cJSON *argument, cJSON **refusal) {
-    deployment plan;
-    memset(&plan, 0, sizeof plan);
-    cJSON *answer = NULL;
-    if (is_deployable(&plan, argument, refusal) && write_files(&plan, refusal)) {
-        answer = import_name_answer(&plan);
+    runtime_cache_deployment *plan = runtime_cache_plan_deployment(argument, refusal);
+    cJSON *answer = plan == NULL ? NULL : import_name_answer(plan->import_name);
+    if (answer != NULL && !runtime_cache_carry_out_deployment(plan, refusal)) {
+        cJSON_Delete(answer);
+        answer = NULL;
     }
-    cJSON_Delete(plan.manifest);
-    free(plan.resolved_directory);
-    free(plan.resolved_plugin_directory);
-    free(plan.manifest_bytes);
-    free(plan.entry_bytes);
+    runtime_cache_free_deployment(plan);
     return answer;
 }

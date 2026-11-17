@@ -122,7 +122,7 @@ static void installed_bundle(void) {
     cJSON *none = cJSON_CreateObject();
     snprintf(directory, sizeof directory, "%s/cache/bundles/a/1.0.0", place.base);
     write_text(directory, "plugin.json", "{\"importName\":\"a\",\"api\":1,\"version\":\"1.0.0\"}");
-    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == 1);
+    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == SPISOR_OK);
     cJSON_Delete(none);
 }
 
@@ -969,7 +969,7 @@ static void marked_version(const char *version) {
     cJSON *none = cJSON_CreateObject();
     snprintf(directory, sizeof directory, "%s/cache/bundles/a/%s", place.base, version);
     write_text(directory, "plugin.json", "{\"importName\":\"a\",\"api\":1}");
-    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == 1);
+    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == SPISOR_OK);
     cJSON_Delete(none);
 }
 

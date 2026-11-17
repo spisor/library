@@ -18,4 +18,17 @@
  */
 cJSON *runtime_cache_deploy_operation(const cJSON *argument, cJSON **refusal);
 
+/** A deploy checked and ready to write, so a caller can build its answer before the first file is written. */
+typedef struct runtime_cache_deployment runtime_cache_deployment;
+
+/** Checks everything cache's deploy checks, writing nothing: the plan, or NULL with *refusal set, NULL with it NULL out of memory. */
+runtime_cache_deployment *runtime_cache_plan_deployment(const cJSON *argument, cJSON **refusal);
+
+const char *runtime_cache_deployment_import_name(const runtime_cache_deployment *plan);
+
+/** Writes the planned files: 1, or 0 with *refusal set, or with it NULL when memory ran out. */
+int runtime_cache_carry_out_deployment(runtime_cache_deployment *plan, cJSON **refusal);
+
+void runtime_cache_free_deployment(runtime_cache_deployment *plan);
+
 #endif

@@ -218,8 +218,9 @@ typedef struct runtime_cache_definition {
      * Stores every file the item's version lists for the platform, fetching only what is not already stored with its
      * hash, and writes the marker last.
      *
-     * @return OK; MALFORMED, also for an item that is not a well-formed record; REFUSED when the item does not list
-     * the version, a file cannot be fetched or does not carry its hash, or a destination escapes the cache. A refused
+     * @return OK; MALFORMED, also for an item that is not a well-formed record or an empty platform; REFUSED when the
+     * item does not list the version, a file cannot be fetched or does not carry its hash, a destination escapes the
+     * cache, or the marker cannot be written; OUT_OF_MEMORY. A refused
      * or OUT_OF_MEMORY install leaves no marker, so nothing runs the version, and may leave files it stored, which the
      * next install of it keeps.
      */
@@ -280,7 +281,7 @@ typedef struct runtime_cache_definition {
      *
      * @return OK; MALFORMED, also for an id that is not an identity id; REFUSED when the folder holds no installed
      * plugin, its import name is not one the schema accepts, another plugin is deployed under that name, or a file
-     * cannot be written.
+     * cannot be written; OUT_OF_MEMORY, having written nothing.
      */
     spisor_status (*deploy)(void *context, const runtime_cache_deploy_argument *argument,
                             runtime_cache_deploy_answer *answer, spisor_refusal *refusal);

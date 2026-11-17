@@ -152,14 +152,17 @@ static int holds_text(const char *path, const char *text) {
     return same;
 }
 
-int runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes) {
+spisor_status runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes) {
     char *path = marker_path(directory);
     char *text = path == NULL ? NULL : marker_text(hashes, sizes);
-    int written =
-        text != NULL && (spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text));
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    if (text != NULL) {
+        int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text);
+        status = written ? SPISOR_OK : SPISOR_REFUSED;
+    }
     free(text);
     free(path);
-    return written;
+    return status;
 }
 
 static cJSON *kind_only(const char *kind) {
