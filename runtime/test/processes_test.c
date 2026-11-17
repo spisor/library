@@ -357,7 +357,7 @@ static void hold_lock_for_a_while(void) {
 
 static void enter_lock(void) {
     runtime_holders_guard *guard = take_lock();
-    events.entered = 1;
+    events.entered = guard != NULL;
     runtime_unlock_holders(guard);
 }
 
@@ -494,6 +494,41 @@ static void it_waits_for_an_empty_lock_until_it_is_ten_seconds_old(void) {
     join_thread(waiting);
     finish_case();
 }
+
+#if defined(_WIN32)
+/** Opens the lock as a reader does and deletes it through that handle, so its name stays until the handle closes. */
+static HANDLE open_lock_deleted(void) {
+    char *path = lock_path();
+    wchar_t wide[1024];
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 1024);
+    free(path);
+    HANDLE handle = CreateFileW(wide, DELETE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    FILE_DISPOSITION_INFO disposition = {TRUE};
+    CHECK(handle != INVALID_HANDLE_VALUE &&
+          SetFileInformationByHandle(handle, FileDispositionInfo, &disposition, sizeof disposition));
+    return handle;
+}
+
+static DWORD WINAPI close_after_a_while(LPVOID handle) {
+    pause_milliseconds(300);
+    CloseHandle(handle);
+    return 0;
+}
+
+static void it_waits_for_a_lock_whose_name_is_still_being_deleted(void) {
+    fresh_state("lock-delete-pending");
+    write_lock(number_text(self_pid()), 0);
+    HANDLE closer = CreateThread(NULL, 0, close_after_a_while, open_lock_deleted(), 0, NULL);
+    runtime_holders_guard *guard = take_lock();
+    CHECK(guard != NULL);
+    runtime_unlock_holders(guard);
+    WaitForSingleObject(closer, 30000);
+    CloseHandle(closer);
+    CHECK(!present("processes/" HOST ".lock"));
+    finish_case();
+}
+#endif
 
 static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void) {
     fresh_state("lock-directory");
@@ -1150,6 +1185,9 @@ int main(void) {
     it_leaves_a_lock_that_is_no_longer_its_own();
     it_waits_for_a_fresh_lock_a_live_process_holds();
     it_waits_for_an_empty_lock_until_it_is_ten_seconds_old();
+#if defined(_WIN32)
+    it_waits_for_a_lock_whose_name_is_still_being_deleted();
+#endif
     it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting();
     it_keeps_a_live_pid_stamped_within_three_of_its_checks();
     it_starts_a_host_when_a_live_pid_s_stamp_is_older_than_three_checks();

@@ -54,8 +54,8 @@ typedef enum runtime_entry_outcome {
 
 /**
  * Creates path as a new file holding length bytes, executable by its owner on POSIX when asked.
- * EXISTS when anything, a link included, already stands at path, which is left untouched; DONE when
- * created. The parent must exist.
+ * EXISTS when anything, a link or a file being deleted that something still holds open included, already
+ * stands at path, which is left untouched; DONE when created. The parent must exist.
  */
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable);
 
