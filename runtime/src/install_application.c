@@ -19,7 +19,10 @@ typedef struct application_operation {
     const char *operation;
 } application_operation;
 
-static cJSON *registration_of(const application_operation *request, cJSON **refusal) {
+typedef enum version_record { VERSION_RECORDED, VERSION_UNRECORDED, VERSION_OUT_OF_MEMORY } version_record;
+
+/** The loader's registration, or NULL: *absent set when none is registered, else *refusal set, or NULL for memory. */
+static cJSON *registration_of(const application_operation *request, int *absent, cJSON **refusal) {
     cJSON *call = runtime_install_places_call(request->places);
     if (call != NULL && cJSON_AddStringToObject(call, "id", request->loader) == NULL) {
         cJSON_Delete(call);
@@ -27,6 +30,7 @@ static cJSON *registration_of(const application_operation *request, cJSON **refu
     }
     cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, refusal);
     cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
+    *absent = answer != NULL && registration == NULL;
     cJSON_Delete(answer);
     return registration;
 }
@@ -39,33 +43,43 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix_ve
     return refusal;
 }
 
-/** @implNote A route that is path or missing was never an install method's to change, so it says where the application came from rather than guessing. */
-static cJSON *route_refusal(const cJSON *application, const char *operation) {
+/**
+ * Whether the application's route is refused, *refusal then set, or NULL when memory ran out building it.
+ *
+ * @implNote A route that is path or missing was never an install method's to change, so it says where the application
+ * came from rather than guessing.
+ */
+static int route_refused(const cJSON *application, const char *operation, cJSON **refusal) {
     const char *id = runtime_install_text(application, "id");
     const cJSON *provenance = cJSON_GetObjectItemCaseSensitive(application, "provenance");
     const char *method = runtime_install_text(provenance, "method");
     const char *verb = strcmp(operation, "update") == 0 ? "update " : "remove ";
     if (method == NULL) {
         const char *parts[3] = {"how ", id, " was installed is not recorded"};
-        return refused(parts, 3, verb, id);
+        *refusal = refused(parts, 3, verb, id);
+        return 1;
     }
     if (strcmp(method, "path") == 0) {
         const char *location = runtime_install_text(provenance, "location");
-        const char *parts[4] = {id, " was found on this machine at ", location == NULL ? "an unrecorded place" : location,
+        const char *parts[4] = {id, " was found on this machine at ",
+                                location == NULL ? "an unrecorded place" : location,
                                 ", not installed through an install method"};
-        return refused(parts, 4, verb, id);
+        *refusal = refused(parts, 4, verb, id);
+        return 1;
     }
     if (runtime_install_text(provenance, "package") == NULL) {
         const char *parts[5] = {"the record of ", id, " names method ", method, " and no package"};
-        return refused(parts, 5, verb, id);
+        *refusal = refused(parts, 5, verb, id);
+        return 1;
     }
-    return NULL;
+    return 0;
 }
 
 static cJSON *recorded_application(const application_operation *request, cJSON **registration, cJSON **refusal) {
-    *registration = registration_of(request, refusal);
+    int absent = 0;
+    *registration = registration_of(request, &absent, refusal);
     if (*registration == NULL) {
-        if (*refusal == NULL) {
+        if (absent) {
             const char *parts[2] = {"no host is registered as ", request->loader};
             *refusal = runtime_cache_refusal(parts, 2, "name a registered loader");
         }
@@ -77,13 +91,13 @@ static cJSON *recorded_application(const application_operation *request, cJSON *
         *refusal = runtime_cache_refusal(parts, 2, "name the loader of the application");
         return NULL;
     }
-    *refusal = route_refusal(application, request->operation);
-    return *refusal == NULL ? application : NULL;
+    return route_refused(application, request->operation, refusal) ? NULL : application;
 }
 
 static cJSON *mapped_of(const cJSON *provenance) {
     cJSON *mapped = cJSON_CreateObject();
-    if (mapped == NULL || !runtime_install_copy_into(mapped, "name", cJSON_GetObjectItemCaseSensitive(provenance, "package")) ||
+    if (mapped == NULL ||
+        !runtime_install_copy_into(mapped, "name", cJSON_GetObjectItemCaseSensitive(provenance, "package")) ||
         !runtime_install_copy_into(mapped, "options", cJSON_GetObjectItemCaseSensitive(provenance, "options"))) {
         cJSON_Delete(mapped);
         return NULL;
@@ -91,13 +105,12 @@ static cJSON *mapped_of(const cJSON *provenance) {
     return mapped;
 }
 
-/** The version the method reports for the package now, or NULL when it reports none. */
+/** The version the method reports for the package now, or NULL when it reports none or, *failed set, memory ran out. */
 static char *reported_version(const application_operation *request, const cJSON *application, const char *method,
-                              const cJSON *mapped) {
+                              const cJSON *mapped, int *failed) {
     const runtime_install_method *found = runtime_install_method_named(method);
-    cJSON *detection = found == NULL ? NULL
-                                     : runtime_install_detection_of(request->places, runtime_install_text(application, "id"),
-                                                                 found, mapped);
+    const char *id = runtime_install_text(application, "id");
+    cJSON *detection = found == NULL ? NULL : runtime_install_detection_of(request->places, id, found, mapped);
     const cJSON *answer = cJSON_GetObjectItemCaseSensitive(detection, "answer");
     const char *version = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "installed"))
                               ? runtime_install_text(answer, "version")
@@ -106,6 +119,7 @@ static char *reported_version(const application_operation *request, const cJSON 
     if (copy != NULL) {
         strcpy(copy, version);
     }
+    *failed = (found != NULL && detection == NULL) || (version != NULL && copy == NULL);
     cJSON_Delete(detection);
     return copy;
 }
@@ -115,26 +129,35 @@ static char *reported_version(const application_operation *request, const cJSON 
  * read again right before the write and only application.provenance.version differs from it; a change
  * made since the operation began is kept.
  */
-static int record_version(const application_operation *request, const char *version) {
+static version_record record_version(const application_operation *request, const char *version) {
     cJSON *refusal = NULL;
-    cJSON *registration = registration_of(request, &refusal);
-    cJSON_Delete(refusal);
-    refusal = NULL;
-    cJSON *provenance = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(registration, "application"), "provenance");
+    int absent = 0;
+    cJSON *registration = registration_of(request, &absent, &refusal);
+    cJSON *application = cJSON_GetObjectItemCaseSensitive(registration, "application");
+    cJSON *provenance = cJSON_GetObjectItemCaseSensitive(application, "provenance");
+    if (provenance == NULL) {
+        int memory_ran_out = registration == NULL && !absent && refusal == NULL;
+        cJSON_Delete(refusal);
+        cJSON_Delete(registration);
+        return memory_ran_out ? VERSION_OUT_OF_MEMORY : VERSION_UNRECORDED;
+    }
     cJSON_DeleteItemFromObjectCaseSensitive(provenance, "version");
-    cJSON *call = provenance == NULL || cJSON_AddStringToObject(provenance, "version", version) == NULL
+    cJSON *call = cJSON_AddStringToObject(provenance, "version", version) == NULL
                       ? NULL
                       : runtime_install_places_call(request->places);
-    int built = call != NULL && cJSON_AddItemToObject(call, "registration", registration);
-    if (!built) {
+    if (call == NULL || !cJSON_AddItemToObject(call, "registration", registration)) {
         cJSON_Delete(registration);
         cJSON_Delete(call);
-        return 0;
+        return VERSION_OUT_OF_MEMORY;
     }
     cJSON *registered = runtime_call_operation(runtime_registry_register_host, call, &refusal);
+    int memory_ran_out = registered == NULL && refusal == NULL;
     cJSON_Delete(refusal);
     cJSON_Delete(registered);
-    return registered != NULL;
+    if (memory_ran_out) {
+        return VERSION_OUT_OF_MEMORY;
+    }
+    return registered != NULL ? VERSION_RECORDED : VERSION_UNRECORDED;
 }
 
 /**
@@ -143,9 +166,10 @@ static int record_version(const application_operation *request, const char *vers
  */
 static cJSON *answer_of(const char *operation, const char *version, int recorded) {
     cJSON *answer = cJSON_CreateObject();
-    cJSON *unrecorded = recorded ? NULL
-                                 : runtime_refusal("the updated version could not be recorded in the loader's registration",
-                                                   "run install again to record how the application was installed");
+    cJSON *unrecorded =
+        recorded ? NULL
+                 : runtime_refusal("the updated version could not be recorded in the loader's registration",
+                                   "run install again to record how the application was installed");
     if (answer == NULL || cJSON_AddStringToObject(answer, "operation", operation) == NULL ||
         (version != NULL && cJSON_AddStringToObject(answer, "version", version) == NULL) ||
         (!recorded && (unrecorded == NULL || !cJSON_AddItemToObject(answer, "unrecorded", unrecorded)))) {
@@ -165,9 +189,14 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
     const char *method = runtime_install_text(provenance, "method");
     cJSON *mapped = application == NULL ? NULL : mapped_of(provenance);
     int done = mapped != NULL && runtime_install_operate(request->places, method, request->operation, mapped, refusal);
-    char *version = done && strcmp(request->operation, "update") == 0 ? reported_version(request, application, method, mapped)
-                                                                        : NULL;
-    cJSON *answer = done ? answer_of(request->operation, version, version == NULL || record_version(request, version)) : NULL;
+    int failed = 0;
+    char *version = done && strcmp(request->operation, "update") == 0
+                        ? reported_version(request, application, method, mapped, &failed)
+                        : NULL;
+    version_record record = version == NULL ? VERSION_RECORDED : record_version(request, version);
+    cJSON *answer = done && !failed && record != VERSION_OUT_OF_MEMORY
+                        ? answer_of(request->operation, version, record == VERSION_RECORDED)
+                        : NULL;
     free(version);
     cJSON_Delete(mapped);
     cJSON_Delete(registration);
@@ -176,7 +205,8 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
 
 cJSON *runtime_install_application_operation(const cJSON *argument, cJSON **refusal) {
     application_operation request = {cJSON_GetObjectItemCaseSensitive(argument, "places"),
-                                     runtime_install_text(argument, "loader"), runtime_install_text(argument, "operation")};
+                                     runtime_install_text(argument, "loader"),
+                                     runtime_install_text(argument, "operation")};
     int usable = runtime_install_place(argument, "state") != NULL && runtime_install_place(argument, "cache") != NULL &&
                  request.loader != NULL && request.loader[0] != 0 && request.operation != NULL &&
                  (strcmp(request.operation, "update") == 0 || strcmp(request.operation, "remove") == 0);
