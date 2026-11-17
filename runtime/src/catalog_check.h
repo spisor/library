@@ -25,7 +25,7 @@ extern const runtime_catalog_schema_properties runtime_catalog_schema_property_s
 extern const size_t runtime_catalog_schema_property_set_count;
 
 /**
- * Whether document satisfies catalog.schema.json; when it does not, the refusal ajv's first error gives.
+ * Whether document satisfies catalog.schema.json: OK; REFUSED with the refusal ajv's first error gives; OUT_OF_MEMORY.
  *
  * @implNote A hand-written check, not a schema interpreter: it visits keywords in the order ajv's
  * compiled draft-07 validator does (keywords of any type, then type, then the type's own keywords:
@@ -34,6 +34,6 @@ extern const size_t runtime_catalog_schema_property_set_count;
  * propertyNames as the pattern, with the key appended raw. Every value it holds of the schema is in
  * catalog_schema.h or the property sets above, which a test compares against the schema file.
  */
-int runtime_catalog_check_schema(const cJSON *document, runtime_catalog_refusal *refusal);
+spisor_status runtime_catalog_check_schema(const cJSON *document, runtime_catalog_refusal *refusal);
 
 #endif

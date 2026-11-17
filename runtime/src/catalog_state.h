@@ -2,6 +2,7 @@
 #define RUNTIME_CATALOG_STATE_H
 
 #include "catalog_source.h"
+#include "spisor/status.h"
 
 /** What the cache keeps about one catalog source between starts; any member may be NULL. */
 typedef struct runtime_catalog_state {
@@ -22,11 +23,29 @@ char *runtime_catalog_location_of(const runtime_catalog_location *source);
 /** The url the source's file urls resolve against; freed with free, NULL when it has none. */
 char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location);
 
-/** The state kept at path; a missing or unreadable file, or one that is not an object, keeps nothing. */
-void runtime_catalog_read_state(const char *path, runtime_catalog_state *state);
+/**
+ * The state kept at path; a missing or unreadable file, or one that is not an object, keeps nothing. 0 with state
+ * empty when memory runs out, 1 otherwise.
+ */
+int runtime_catalog_read_state(const char *path, runtime_catalog_state *state);
 
-/** Writes state as JSON.stringify(state, null, 2) and a newline, replacing the file at once. 1 on success. */
-int runtime_catalog_write_state(const char *path, const runtime_catalog_state *state);
+/**
+ * Writes state as JSON.stringify(state, null, 2) and a newline, replacing the file at once: OK; REFUSED when the file
+ * could not be written; OUT_OF_MEMORY.
+ */
+spisor_status runtime_catalog_write_state(const char *path, const runtime_catalog_state *state);
+
+/** The state a check decided to keep for the source at location, under path; every member NULL when it keeps none. */
+typedef struct runtime_catalog_kept_state {
+    char *path;
+    char *location;
+    runtime_catalog_state state;
+} runtime_catalog_kept_state;
+
+/** Writes kept when it holds a state, as runtime_catalog_write_state answers; OK when it holds none. */
+spisor_status runtime_catalog_keep_state(const runtime_catalog_kept_state *kept);
+
+void runtime_catalog_free_kept_state(runtime_catalog_kept_state *kept);
 
 void runtime_catalog_free_state(runtime_catalog_state *state);
 

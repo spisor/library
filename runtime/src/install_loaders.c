@@ -452,20 +452,26 @@ static cJSON *loader_background(runtime_install_run *run, const char *id, const 
     return background;
 }
 
-/** How the bundle starts, when its host.json names an entry inside it: {runtime, entry}; NULL otherwise. */
-static cJSON *start_of(const runtime_install_run *run, const char *id, const char *version) {
+/**
+ * How the bundle starts, when its host.json names an entry inside it: {runtime, entry}; NULL otherwise, and NULL with
+ * *out_of_memory set when memory runs out.
+ */
+static cJSON *start_of(const runtime_install_run *run, const char *id, const char *version, int *out_of_memory) {
     const char *segments[5] = {run->cache, "bundles", id, version, "host.json"};
     char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 5);
-    cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path);
+    *out_of_memory = path == NULL;
+    cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     free(path);
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(run->catalog, "items"), id);
     const char *entry = runtime_install_text(standard, "entry");
     const char *runtime = runtime_install_text(item, "runtime");
     cJSON *start = entry == NULL || runtime == NULL ? NULL : cJSON_CreateObject();
+    *out_of_memory = *out_of_memory || (entry != NULL && runtime != NULL && start == NULL);
     if (start != NULL && (cJSON_AddStringToObject(start, "runtime", runtime) == NULL ||
                           cJSON_AddStringToObject(start, "entry", entry) == NULL)) {
         cJSON_Delete(start);
         start = NULL;
+        *out_of_memory = 1;
     }
     cJSON_Delete(standard);
     return start;
@@ -477,7 +483,10 @@ static int register_background(runtime_install_run *run, const char *id, cJSON *
     if (version == NULL) {
         return !out_of_memory;
     }
-    cJSON *start = start_of(run, id, version);
+    cJSON *start = start_of(run, id, version, &out_of_memory);
+    if (out_of_memory) {
+        return 0;
+    }
     cJSON *refusal = NULL;
     int done = runtime_install_register_own_host(run->places, id, version, start, &refusal) &&
                reference_version(run, id, id, version, &refusal);

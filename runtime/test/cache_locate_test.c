@@ -26,7 +26,7 @@ static void installed(const char *id, const char *version, bundle shape) {
         cJSON_AddStringToObject(hashes, names[index], sha256);
         cJSON_AddNumberToObject(sizes, names[index], (double)strlen(contents[index]));
     }
-    CHECK(runtime_cache_write_marker(directory, hashes, sizes) == 1);
+    CHECK(runtime_cache_write_marker(directory, hashes, sizes) == SPISOR_OK);
     cJSON_Delete(sizes);
     cJSON_Delete(hashes);
     free(directory);

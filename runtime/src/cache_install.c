@@ -60,8 +60,10 @@ static int store_one(const runtime_cache_placement *placement, const char *id, c
 static int mark_complete(const runtime_cache_plan *plan, const char *id, const char *version,
                          const install_record *record, cJSON **refusal) {
     int has_directory = plan->count > 0 || spisor_make_directories(plan->directory);
-    if (has_directory && runtime_cache_write_marker(plan->directory, record->hashes, record->sizes)) {
-        return 1;
+    spisor_status status =
+        has_directory ? runtime_cache_write_marker(plan->directory, record->hashes, record->sizes) : SPISOR_REFUSED;
+    if (status != SPISOR_REFUSED) {
+        return status == SPISOR_OK;
     }
     const char *parts[7] = {"file " RUNTIME_INSTALL_MARKER " of ", id, "@", version, ": the completion marker in ",
                             plan->directory, " could not be written"};
@@ -85,29 +87,79 @@ static cJSON *answer_of(const runtime_cache_plan *plan, const char *id, const ch
     return answer;
 }
 
-static cJSON *install_planned(const runtime_cache_plan *plan, const char *id, const char *version, cJSON **refusal) {
-    install_record record = {cJSON_CreateArray(), cJSON_CreateArray(), cJSON_CreateObject(), cJSON_CreateObject()};
-    int stored = record.fetched != NULL && record.cached != NULL && record.hashes != NULL && record.sizes != NULL;
-    for (size_t index = 0; stored && index < plan->count; index++) {
-        stored = store_one(&plan->placements[index], id, version, &record, refusal);
+struct runtime_cache_installation {
+    runtime_cache_plan plan;
+    const char *id;
+    const char *version;
+    install_record record;
+    cJSON *answer;
+};
+
+void runtime_cache_free_installation(runtime_cache_installation *installation) {
+    if (installation == NULL) {
+        return;
     }
-    cJSON *answer = stored && mark_complete(plan, id, version, &record, refusal)
-                        ? answer_of(plan, id, version, &record)
-                        : NULL;
-    cJSON_Delete(record.fetched);
-    cJSON_Delete(record.cached);
-    cJSON_Delete(record.hashes);
-    cJSON_Delete(record.sizes);
+    runtime_cache_free_plan(&installation->plan);
+    cJSON_Delete(installation->record.fetched);
+    cJSON_Delete(installation->record.cached);
+    cJSON_Delete(installation->record.hashes);
+    cJSON_Delete(installation->record.sizes);
+    cJSON_Delete(installation->answer);
+    free(installation);
+}
+
+static int store_planned(runtime_cache_installation *installation, cJSON **refusal) {
+    install_record *record = &installation->record;
+    *record = (install_record){cJSON_CreateArray(), cJSON_CreateArray(), cJSON_CreateObject(), cJSON_CreateObject()};
+    int stored = record->fetched != NULL && record->cached != NULL && record->hashes != NULL && record->sizes != NULL;
+    for (size_t index = 0; stored && index < installation->plan.count; index++) {
+        stored = store_one(&installation->plan.placements[index], installation->id, installation->version, record,
+                           refusal);
+    }
+    installation->answer =
+        stored ? answer_of(&installation->plan, installation->id, installation->version, record) : NULL;
+    return installation->answer != NULL;
+}
+
+runtime_cache_installation *runtime_cache_store_version(const char *cache, const char *id, const cJSON *item,
+                                                        const char *version, const char *platform, cJSON **refusal) {
+    runtime_cache_installation *installation = calloc(1, sizeof *installation);
+    if (installation == NULL) {
+        return NULL;
+    }
+    installation->id = id;
+    installation->version = version;
+    if (!runtime_cache_plan_install(cache, id, item, version, platform, &installation->plan, refusal)) {
+        free(installation);
+        return NULL;
+    }
+    if (!store_planned(installation, refusal)) {
+        runtime_cache_free_installation(installation);
+        return NULL;
+    }
+    return installation;
+}
+
+const cJSON *runtime_cache_installation_answer(const runtime_cache_installation *installation) {
+    return installation->answer;
+}
+
+int runtime_cache_mark_installation(const runtime_cache_installation *installation, cJSON **refusal) {
+    return mark_complete(&installation->plan, installation->id, installation->version, &installation->record, refusal);
+}
+
+cJSON *runtime_cache_finish_installation(runtime_cache_installation *installation, cJSON **refusal) {
+    cJSON *answer = NULL;
+    if (installation != NULL && runtime_cache_mark_installation(installation, refusal)) {
+        answer = installation->answer;
+        installation->answer = NULL;
+    }
+    runtime_cache_free_installation(installation);
     return answer;
 }
 
 cJSON *runtime_cache_install_version(const char *cache, const char *id, const cJSON *item, const char *version,
                                      const char *platform, cJSON **refusal) {
-    runtime_cache_plan plan;
-    if (!runtime_cache_plan_install(cache, id, item, version, platform, &plan, refusal)) {
-        return NULL;
-    }
-    cJSON *answer = install_planned(&plan, id, version, refusal);
-    runtime_cache_free_plan(&plan);
-    return answer;
+    return runtime_cache_finish_installation(runtime_cache_store_version(cache, id, item, version, platform, refusal),
+                                             refusal);
 }

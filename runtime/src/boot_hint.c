@@ -72,7 +72,24 @@ static cJSON *hinted_libraries(const cJSON *value) {
     return libraries;
 }
 
-cJSON *runtime_boot_hint_of(const cJSON *recorded) {
+static int is_hint(const cJSON *recorded) {
+    const cJSON *libraries = cJSON_GetObjectItemCaseSensitive(recorded, "libraries");
+    if (!cJSON_IsObject(recorded) || !cJSON_IsObject(libraries)) {
+        return 0;
+    }
+    for (const cJSON *entry = libraries->child; entry != NULL; entry = entry->next) {
+        if (!is_hinted_library(entry)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+cJSON *runtime_boot_hint_of(const cJSON *recorded, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!is_hint(recorded)) {
+        return NULL;
+    }
     const cJSON *host = cJSON_GetObjectItemCaseSensitive(recorded, "host");
     cJSON *hint = cJSON_IsObject(recorded) ? cJSON_CreateObject() : NULL;
     cJSON *libraries = hint == NULL ? NULL : hinted_libraries(cJSON_GetObjectItemCaseSensitive(recorded, "libraries"));
@@ -84,6 +101,7 @@ cJSON *runtime_boot_hint_of(const cJSON *recorded) {
                 (!cJSON_IsString(host) || cJSON_AddStringToObject(hint, "host", host->valuestring) != NULL);
     if (!built) {
         cJSON_Delete(hint);
+        *out_of_memory = 1;
         return NULL;
     }
     return hint;
@@ -222,24 +240,30 @@ cJSON *runtime_boot_hint_libraries(const char *cache, const cJSON *versions, con
     return libraries;
 }
 
-cJSON *runtime_read_boot_hint(const char *cache, const char *host_id) {
+cJSON *runtime_read_boot_hint(const char *cache, const char *host_id, int *out_of_memory) {
     char *problem = NULL;
     char *path = runtime_boot_hint_path(cache, host_id, &problem);
+    *out_of_memory = path == NULL && problem == NULL;
     free(problem);
-    cJSON *recorded = path == NULL ? NULL : runtime_read_node_json(path);
+    cJSON *recorded = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     free(path);
-    cJSON *hint = runtime_boot_hint_of(recorded);
+    cJSON *hint = *out_of_memory ? NULL : runtime_boot_hint_of(recorded, out_of_memory);
     cJSON_Delete(recorded);
     return hint;
 }
 
-/** The host version a write records: the one given, else the one the hint already names, else none. */
-static char *recorded_host(const char *cache, const char *host_id, const char *host) {
-    cJSON *hint = host == NULL ? runtime_read_boot_hint(cache, host_id) : NULL;
+/**
+ * The host version a write records: the one given, else the one the hint already names, else none, NULL with
+ * *out_of_memory set to 1 when memory runs out.
+ */
+static char *recorded_host(const char *cache, const char *host_id, const char *host, int *out_of_memory) {
+    *out_of_memory = 0;
+    cJSON *hint = host == NULL ? runtime_read_boot_hint(cache, host_id, out_of_memory) : NULL;
     const cJSON *kept = cJSON_GetObjectItemCaseSensitive(hint, "host");
     const char *version = host != NULL ? host : cJSON_IsString(kept) ? kept->valuestring : NULL;
     const char *parts[1] = {version};
     char *copy = version == NULL ? NULL : runtime_cache_text(parts, 1);
+    *out_of_memory = *out_of_memory || (version != NULL && copy == NULL);
     cJSON_Delete(hint);
     return copy;
 }
@@ -267,10 +291,11 @@ static int write_text(const char *cache, const char *path, const char *text) {
 int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON *libraries, const char *host,
                             char **problem) {
     char *path = runtime_boot_hint_path(cache, host_id, problem);
-    char *version = path == NULL ? NULL : recorded_host(cache, host_id, host);
-    char *text = path == NULL ? NULL : hint_text(libraries, version);
+    int out_of_memory = 0;
+    char *version = path == NULL ? NULL : recorded_host(cache, host_id, host, &out_of_memory);
+    char *text = path == NULL || out_of_memory ? NULL : hint_text(libraries, version);
     int written = text != NULL && write_text(cache, path, text);
-    if (!written && path != NULL) {
+    if (!written && path != NULL && text != NULL) {
         const char *parts[3] = {"the boot hint ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }
@@ -281,9 +306,10 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
 }
 
 int runtime_hint_host_version(const char *cache, const char *host_id, const char *version) {
-    cJSON *hint = runtime_read_boot_hint(cache, host_id);
+    int out_of_memory;
+    cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
     if (hint == NULL) {
-        return 1;
+        return !out_of_memory;
     }
     char *problem = NULL;
     int written = runtime_write_boot_hint(cache, host_id, cJSON_GetObjectItemCaseSensitive(hint, "libraries"),

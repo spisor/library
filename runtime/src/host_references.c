@@ -90,8 +90,12 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
     if (path == NULL) {
         return none;
     }
-    cJSON *recorded = runtime_read_node_json(path);
+    int out_of_memory;
+    cJSON *recorded = runtime_read_node_json(path, &out_of_memory);
     free(path);
+    if (out_of_memory) {
+        return none;
+    }
     const cJSON *run = NULL;
     const cJSON *next = NULL;
     const cJSON *rollback = NULL;

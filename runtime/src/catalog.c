@@ -7,14 +7,8 @@
 #include "catalog_read.h"
 #include "json_service.h"
 
-/**
- * The refusal of an index the schema or the rules refuse, naming the JSON pointer at fault; NULL out of memory, which
- * the reader reports as a refusal with the out-of-memory fix.
- */
+/** The refusal of an index the schema or the rules refuse, naming the JSON pointer at fault; NULL out of memory. */
 static cJSON *refuse_index(const runtime_catalog_refusal *refusal) {
-    if (refusal->fix == NULL || strcmp(refusal->fix, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX) == 0) {
-        return NULL;
-    }
     char *message = runtime_catalog_refusal_message(refusal);
     cJSON *refused = message == NULL ? NULL : runtime_refusal(message, refusal->fix);
     free(message);
@@ -31,9 +25,10 @@ cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal) {
         return runtime_catalog_refuse_member("origin", "the url the index was read from", refusal);
     }
     runtime_catalog_refusal index_refusal;
-    cJSON *catalog = runtime_catalog_read_text(text, strlen(text), origin, &index_refusal);
-    if (catalog == NULL) {
-        *refusal = refuse_index(&index_refusal);
+    cJSON *catalog = NULL;
+    spisor_status status = runtime_catalog_read_text(text, strlen(text), origin, &catalog, &index_refusal);
+    if (status != SPISOR_OK) {
+        *refusal = status == SPISOR_REFUSED ? refuse_index(&index_refusal) : NULL;
         runtime_catalog_free_refusal(&index_refusal);
         return NULL;
     }

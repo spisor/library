@@ -37,20 +37,22 @@ static int add_hinted_libraries(cJSON *referenced, const cJSON *libraries) {
     return added;
 }
 
-static cJSON *read_entry(const char *folder, const char *name) {
+static cJSON *read_entry(const char *folder, const char *name, int *out_of_memory) {
     const char *segments[2] = {folder, name};
     char *path = runtime_cache_joined(segments, 2);
-    cJSON *value = path == NULL ? NULL : runtime_read_node_json(path);
+    *out_of_memory = path == NULL;
+    cJSON *value = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     free(path);
     return value;
 }
 
 static int add_hint(cJSON *referenced, const char *hosts, const char *name) {
     size_t id_length = strlen(name) - strlen(RUNTIME_JSON_EXTENSION);
-    cJSON *recorded = id_length == 0 ? NULL : read_entry(hosts, name);
-    cJSON *hint = runtime_boot_hint_of(recorded);
+    int out_of_memory = 0;
+    cJSON *recorded = id_length == 0 ? NULL : read_entry(hosts, name, &out_of_memory);
+    cJSON *hint = out_of_memory ? NULL : runtime_boot_hint_of(recorded, &out_of_memory);
     cJSON_Delete(recorded);
-    int added = 1;
+    int added = !out_of_memory;
     if (hint != NULL) {
         const cJSON *host = cJSON_GetObjectItemCaseSensitive(hint, "host");
         added = add_hinted_libraries(referenced, cJSON_GetObjectItemCaseSensitive(hint, "libraries"));
@@ -83,12 +85,13 @@ static int add_hints(cJSON *referenced, const char *cache) {
 }
 
 static int add_host_references(cJSON *referenced, const char *folder, const char *name) {
-    cJSON *recorded = read_entry(folder, name);
+    int out_of_memory;
+    cJSON *recorded = read_entry(folder, name, &out_of_memory);
     const cJSON *run = NULL;
     const cJSON *next = NULL;
     const cJSON *rollback = NULL;
-    int added = 1;
-    if (runtime_host_references_of(recorded, &run, &next, &rollback)) {
+    int added = !out_of_memory;
+    if (added && runtime_host_references_of(recorded, &run, &next, &rollback)) {
         added = add_version_map(referenced, run) && add_version_map(referenced, next) &&
                 add_version_map(referenced, rollback);
     }

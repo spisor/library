@@ -60,7 +60,7 @@ static int is_hash_map(const cJSON *files) {
  * when memory ran out reading it.
  */
 static cJSON *recorded_hashes(const char *path, int *out_of_memory) {
-    cJSON *marker = runtime_read_node_json_noting(path, out_of_memory);
+    cJSON *marker = runtime_read_node_json(path, out_of_memory);
     cJSON *files = cJSON_IsObject(marker) ? cJSON_GetObjectItemCaseSensitive(marker, "files") : NULL;
     cJSON *hashes = is_hash_map(files) ? cJSON_DetachItemViaPointer(marker, files) : NULL;
     cJSON_Delete(marker);
@@ -152,14 +152,17 @@ static int holds_text(const char *path, const char *text) {
     return same;
 }
 
-int runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes) {
+spisor_status runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes) {
     char *path = marker_path(directory);
     char *text = path == NULL ? NULL : marker_text(hashes, sizes);
-    int written =
-        text != NULL && (spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text));
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    if (text != NULL) {
+        int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text);
+        status = written ? SPISOR_OK : SPISOR_REFUSED;
+    }
     free(text);
     free(path);
-    return written;
+    return status;
 }
 
 static cJSON *kind_only(const char *kind) {
@@ -342,10 +345,13 @@ cJSON *runtime_cache_check_version_sizes(const char *directory) {
         free(path);
         return kind_only("absent");
     }
-    cJSON *marker = runtime_read_node_json(path);
+    int out_of_memory;
+    cJSON *marker = runtime_read_node_json(path, &out_of_memory);
     const cJSON *files = cJSON_IsObject(marker) ? cJSON_GetObjectItemCaseSensitive(marker, "files") : NULL;
     cJSON *answer;
-    if (!is_hash_map(files)) {
+    if (out_of_memory) {
+        answer = NULL;
+    } else if (!is_hash_map(files)) {
         const char *parts[3] = {"the completion marker ", path, " is not readable"};
         answer = damaged(runtime_cache_text(parts, 3), NULL);
     } else {

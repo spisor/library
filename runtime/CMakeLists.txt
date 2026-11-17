@@ -150,11 +150,13 @@ spisor_strict_warnings(runtime_catalog)
 
 add_library(runtime_catalog_refresh OBJECT src/catalog_refresh.c)
 target_link_libraries(runtime_catalog_refresh PUBLIC runtime_objects)
+target_include_directories(runtime_catalog_refresh PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_catalog_refresh PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_catalog_refresh)
 
 add_library(runtime_catalog_refresh_test_hooks OBJECT src/catalog_refresh.c)
 target_link_libraries(runtime_catalog_refresh_test_hooks PUBLIC runtime_objects)
+target_include_directories(runtime_catalog_refresh_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(runtime_catalog_refresh_test_hooks PRIVATE SPISOR_CATALOG_TEST_HOOKS)
 spisor_strict_warnings(runtime_catalog_refresh_test_hooks)
 set_target_properties(runtime_catalog_refresh_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)

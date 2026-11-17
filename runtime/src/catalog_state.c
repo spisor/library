@@ -3,9 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "allocation.h"
 #include "catalog_path.h"
 #include "catalog_text.h"
 #include "catalog_url.h"
+#include "file_reading.h"
+#include "json_parse.h"
 #include "paths.h"
 #include "sha256.h"
 #include "spisor/file.h"
@@ -40,18 +43,29 @@ static char *copied_member(const cJSON *object, const char *name) {
     return cJSON_IsString(item) ? runtime_catalog_copy(item->valuestring) : NULL;
 }
 
-void runtime_catalog_read_state(const char *path, runtime_catalog_state *state) {
+static int copied_every_member(const cJSON *kept, runtime_catalog_state *state) {
+    state->etag = copied_member(kept, "etag");
+    state->checked_at = copied_member(kept, "checkedAt");
+    state->index = copied_member(kept, "index");
+    return (state->etag != NULL || !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(kept, "etag"))) &&
+           (state->checked_at != NULL || !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(kept, "checkedAt"))) &&
+           (state->index != NULL || !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(kept, "index")));
+}
+
+int runtime_catalog_read_state(const char *path, runtime_catalog_state *state) {
     memset(state, 0, sizeof *state);
-    size_t length;
-    uint8_t *bytes = spisor_read_file(path, &length);
-    cJSON *kept = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
-    if (cJSON_IsObject(kept)) {
-        state->etag = copied_member(kept, "etag");
-        state->checked_at = copied_member(kept, "checkedAt");
-        state->index = copied_member(kept, "index");
+    size_t length = 0;
+    spisor_read_outcome outcome;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
+    int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
+    cJSON *kept = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    spisor_memory_release(bytes);
+    if (cJSON_IsObject(kept) && !copied_every_member(kept, state)) {
+        runtime_catalog_free_state(state);
+        out_of_memory = 1;
     }
     cJSON_Delete(kept);
+    return !out_of_memory;
 }
 
 static int add_optional(cJSON *object, const char *name, const char *value) {
@@ -65,34 +79,42 @@ static char *parent_of(const char *path) {
     return last == NULL ? NULL : runtime_catalog_copy_bytes(path, (size_t)(last - path));
 }
 
-static int replace_with_text(const char *path, const char *text) {
+static spisor_status replace_with_text(const char *path, const char *text) {
     char *parent = parent_of(path);
-    int written = parent != NULL && spisor_make_directories(parent);
-    free(parent);
-    if (!written) {
-        return 0;
-    }
     size_t length = strlen(text);
-    char *bytes = malloc(length + 2);
-    if (bytes == NULL) {
-        return 0;
+    char *bytes = parent == NULL ? NULL : malloc(length + 2);
+    spisor_status status = bytes == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    if (bytes != NULL && spisor_make_directories(parent)) {
+        memcpy(bytes, text, length);
+        bytes[length] = '\n';
+        status = spisor_replace_file(path, (const uint8_t *)bytes, length + 1) ? SPISOR_OK : SPISOR_REFUSED;
     }
-    memcpy(bytes, text, length);
-    bytes[length] = '\n';
-    written = spisor_replace_file(path, (const uint8_t *)bytes, length + 1);
     free(bytes);
-    return written;
+    free(parent);
+    return status;
 }
 
-int runtime_catalog_write_state(const char *path, const runtime_catalog_state *state) {
+spisor_status runtime_catalog_write_state(const char *path, const runtime_catalog_state *state) {
     cJSON *object = cJSON_CreateObject();
     int built = object != NULL && add_optional(object, "etag", state->etag) &&
                 add_optional(object, "checkedAt", state->checked_at) && add_optional(object, "index", state->index);
     char *text = built ? spisor_json_stringify_pretty(object) : NULL;
     cJSON_Delete(object);
-    int written = text != NULL && replace_with_text(path, text);
+    spisor_status status = text == NULL ? SPISOR_OUT_OF_MEMORY : replace_with_text(path, text);
     free(text);
-    return written;
+    return status;
+}
+
+spisor_status runtime_catalog_keep_state(const runtime_catalog_kept_state *kept) {
+    return kept->path == NULL ? SPISOR_OK : runtime_catalog_write_state(kept->path, &kept->state);
+}
+
+void runtime_catalog_free_kept_state(runtime_catalog_kept_state *kept) {
+    free(kept->path);
+    free(kept->location);
+    runtime_catalog_free_state(&kept->state);
+    kept->path = NULL;
+    kept->location = NULL;
 }
 
 void runtime_catalog_free_state(runtime_catalog_state *state) {

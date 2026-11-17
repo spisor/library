@@ -2,6 +2,7 @@
 #define RUNTIME_CACHE_H
 
 #include "cJSON.h"
+#include "cache_install.h"
 
 /**
  * @file
@@ -20,6 +21,12 @@
  * install of the same version stores only what is still missing.
  */
 cJSON *runtime_cache_install_operation(const cJSON *argument, cJSON **refusal);
+
+/**
+ * runtime_cache_install_operation short of its completion marker, for runtime_cache_mark_installation to write once the
+ * caller's answer stands; the argument outlives the installation.
+ */
+runtime_cache_installation *runtime_cache_install_storing(const cJSON *argument, cJSON **refusal);
 
 /**
  * cache's installed: {cache, platform?} answers {bundles, libraries}, each id's versions whose install

@@ -28,6 +28,7 @@
 struct runtime_catalog_checker {
     runtime_catalog_text pointer;
     runtime_catalog_refusal *refusal;
+    spisor_status status;
 };
 
 typedef runtime_catalog_checker checker;
@@ -59,12 +60,14 @@ static int fail(checker *check, const char *message, const char *fix, const char
         runtime_catalog_text_add_character(&path, '/');
         runtime_catalog_text_add(&path, appended);
     }
-    return runtime_catalog_refuse(check->refusal, runtime_catalog_text_finish(&detail), fix,
-                                  runtime_catalog_text_finish(&path));
+    check->status = runtime_catalog_refuse(check->refusal, runtime_catalog_text_finish(&detail), fix,
+                                           runtime_catalog_text_finish(&path));
+    return 0;
 }
 
 static int fail_out_of_memory(checker *check) {
-    return runtime_catalog_refuse(check->refusal, NULL, RUNTIME_CATALOG_OUT_OF_MEMORY_FIX, NULL);
+    check->status = SPISOR_OUT_OF_MEMORY;
+    return 0;
 }
 
 static int fail_type(checker *check, const char *type) {
@@ -128,12 +131,19 @@ static int is_one_of(const cJSON *value, const char *const *allowed) {
     return 0;
 }
 
+/**
+ * Whether value is the const, compared without parsing it, so the check allocates nothing.
+ *
+ * @implNote Every const of the schema is a number or a string with no escape in it, the two shapes this reads.
+ */
 static int equals_constant(const cJSON *value, runtime_catalog_constant_index index) {
     const char *json = runtime_catalog_schema_constants[index].value;
-    cJSON *constant = spisor_parse_json((const uint8_t *)json, strlen(json));
-    int equal = value != NULL && constant != NULL && cJSON_Compare(value, constant, 1);
-    cJSON_Delete(constant);
-    return equal;
+    size_t length = strlen(json);
+    if (json[0] == '"') {
+        return cJSON_IsString(value) && strlen(value->valuestring) == length - 2 &&
+               strncmp(value->valuestring, json + 1, length - 2) == 0;
+    }
+    return cJSON_IsNumber(value) && value->valuedouble == strtod(json, NULL);
 }
 
 static const cJSON *member_of(const cJSON *object, const char *name) {
@@ -198,17 +208,18 @@ static int check_map(checker *check, const cJSON *object, key_rule key_valid, ru
     return valid;
 }
 
-/** Whether value passes rule, without reporting, as an anyOf branch is tried. */
-static int passes_quietly(const cJSON *value, value_rule rule) {
+/** Whether value passes rule, without reporting, as an anyOf branch is tried: OK, REFUSED or OUT_OF_MEMORY. */
+static spisor_status passes_quietly(const cJSON *value, value_rule rule) {
     runtime_catalog_refusal refusal;
     memset(&refusal, 0, sizeof refusal);
     checker quiet;
     runtime_catalog_text_start(&quiet.pointer);
     quiet.refusal = &refusal;
+    quiet.status = SPISOR_OK;
     int passes = rule(&quiet, value);
     runtime_catalog_text_discard(&quiet.pointer);
     runtime_catalog_free_refusal(&refusal);
-    return passes;
+    return passes ? SPISOR_OK : quiet.status;
 }
 
 static size_t code_point_count(const char *text) {
@@ -390,8 +401,12 @@ static int check_package_object(checker *check, const cJSON *value) {
 }
 
 static int check_package(checker *check, const cJSON *value) {
-    int passes = passes_quietly(value, check_string) || passes_quietly(value, check_package_object);
-    return passes ? 1 : fail(check, "must match a schema in anyOf", FIX_PACKAGE, NULL);
+    spisor_status as_name = passes_quietly(value, check_string);
+    spisor_status passes = as_name == SPISOR_REFUSED ? passes_quietly(value, check_package_object) : as_name;
+    if (passes == SPISOR_OUT_OF_MEMORY) {
+        return fail_out_of_memory(check);
+    }
+    return passes == SPISOR_OK ? 1 : fail(check, "must match a schema in anyOf", FIX_PACKAGE, NULL);
 }
 
 static int check_packages(checker *check, const cJSON *value) {
@@ -467,12 +482,13 @@ const runtime_catalog_schema_properties runtime_catalog_schema_property_sets[] =
 const size_t runtime_catalog_schema_property_set_count =
     sizeof runtime_catalog_schema_property_sets / sizeof runtime_catalog_schema_property_sets[0];
 
-int runtime_catalog_check_schema(const cJSON *document, runtime_catalog_refusal *refusal) {
+spisor_status runtime_catalog_check_schema(const cJSON *document, runtime_catalog_refusal *refusal) {
     checker check;
     runtime_catalog_text_start(&check.pointer);
     check.refusal = refusal;
+    check.status = SPISOR_OK;
     int valid = check_object(&check, document) && has_required(&check, document, REQUIRED_ROOT) &&
                 check_properties(&check, document, ROOT_PROPERTIES);
     runtime_catalog_text_discard(&check.pointer);
-    return valid;
+    return valid ? SPISOR_OK : check.status;
 }
