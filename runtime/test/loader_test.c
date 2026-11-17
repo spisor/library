@@ -9,6 +9,7 @@
 #include "catalog_call.h"
 #include "check.h"
 #include "loader.h"
+#include "loader_call.h"
 #include "service_scratch.h"
 
 static const char *VALID_STANDARD =
@@ -44,7 +45,7 @@ static cJSON *packages_of(cJSON *standard) {
 static cJSON *issues_of(cJSON *standard) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "standard", standard);
-    catalog_answer answer = call_catalog(runtime_loader_check, request);
+    catalog_answer answer = loader_call(LOADER_CHECK, request);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON *issues = cJSON_DetachItemFromObject(answer.tree, "issues");
     cJSON_Delete(answer.tree);
@@ -236,7 +237,7 @@ static catalog_answer home_answer(const char *home, cJSON *environment) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "home", parsed(home));
     cJSON_AddItemToObject(request, "environment", environment);
-    return call_catalog(runtime_loader_home, request);
+    return loader_call(LOADER_HOME, request);
 }
 
 static void check_home(const char *home, cJSON *environment, const char *expected, const char *source) {
@@ -251,7 +252,7 @@ static void check_home_refused(const char *home, cJSON *environment, const char 
     catalog_answer answer = home_answer(home, environment);
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
     const char *fix = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fix"));
-    if (answer.status != SPISOR_STATUS_FAILURE || message == NULL || strstr(message, named) == NULL || fix == NULL ||
+    if (answer.status != SPISOR_REFUSED || message == NULL || strstr(message, named) == NULL || fix == NULL ||
         fix[0] == '\0') {
         fprintf(stderr, "%s: expected a refusal naming %s, got status %d %s\n", label, named, (int)answer.status,
                 message == NULL ? "(no message)" : message);
@@ -401,7 +402,7 @@ static void refuses_a_home_candidate_with_no_user_home_to_expand_against(void) {
 
 static void refuses_a_home_that_is_no_standard_home(void) {
     catalog_answer answer = home_answer("{\"candidates\": []}", cJSON_CreateObject());
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_MALFORMED);
     cJSON_Delete(answer.tree);
 }
 
@@ -410,7 +411,7 @@ static catalog_answer installed_answer(const char *cache, const char *id, const 
     cJSON_AddStringToObject(cJSON_AddObjectToObject(request, "places"), "cache", cache);
     cJSON_AddStringToObject(request, "id", id);
     cJSON_AddStringToObject(request, "version", version);
-    return call_catalog(runtime_loader_installed, request);
+    return loader_call(LOADER_INSTALLED, request);
 }
 
 static void write_manifest(const char *cache, const char *text) {
@@ -438,17 +439,17 @@ static void refuses_an_installed_bundle_that_carries_no_standard(void) {
     scratch_in(cache, sizeof cache, "loader", "uninstalled");
     catalog_answer answer = installed_answer(cache, "claude-loader", "1.0.0");
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
-    CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL && strstr(message, "host.json") != NULL &&
+    CHECK(answer.status == SPISOR_REFUSED && message != NULL && strstr(message, "host.json") != NULL &&
           strstr(message, "could not be read") != NULL);
     cJSON_Delete(answer.tree);
     write_manifest(cache, "{\"application\": {}}");
     answer = installed_answer(cache, "claude-loader", "1.0.0");
     message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
-    CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL &&
+    CHECK(answer.status == SPISOR_REFUSED && message != NULL &&
           strstr(message, "is not a loader standard: /application/id") != NULL);
     cJSON_Delete(answer.tree);
     answer = installed_answer(cache, "../claude-loader", "1.0.0");
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_MALFORMED);
     cJSON_Delete(answer.tree);
 }
 

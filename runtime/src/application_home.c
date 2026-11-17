@@ -181,6 +181,6 @@ static cJSON *home_for(const cJSON *argument, cJSON **refusal) {
                                     cJSON_GetObjectItemCaseSensitive(argument, "environment"), refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_loader_home(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, home_for);
+cJSON *runtime_loader_home_operation(const cJSON *argument, cJSON **refusal) {
+    return home_for(argument, refusal);
 }

@@ -278,7 +278,8 @@ static cJSON *loader_row(const runtime_install_run *run, const catalog_loader *l
 
 /** Reads the loader's standard and its home; 0 with *refusal set when either cannot be read. */
 static int learn(const runtime_install_run *run, catalog_loader *loader, cJSON **refusal) {
-    cJSON *answer = runtime_call_or_refuse(runtime_loader_installed, standard_call(run, loader->id, loader->version), refusal);
+    cJSON *answer = runtime_call_operation(runtime_loader_installed_operation,
+                                           standard_call(run, loader->id, loader->version), refusal);
     loader->standard = cJSON_DetachItemFromObjectCaseSensitive(answer, "standard");
     cJSON_Delete(answer);
     if (loader->standard == NULL) {
@@ -287,7 +288,7 @@ static int learn(const runtime_install_run *run, catalog_loader *loader, cJSON *
     if (loader->application == NULL) {
         loader->application = cJSON_GetObjectItemCaseSensitive(loader->standard, "application");
     }
-    cJSON *home = runtime_call_or_refuse(runtime_loader_home, home_call(run, loader->application), refusal);
+    cJSON *home = runtime_call_operation(runtime_loader_home_operation, home_call(run, loader->application), refusal);
     const char *path = runtime_install_text(home, "home");
     loader->home = path == NULL ? NULL : runtime_catalog_copy(path);
     cJSON_Delete(home);
