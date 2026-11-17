@@ -25,14 +25,18 @@ static char *joined(const char *const *segments, size_t count) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
 }
 
-/** The spisor-boot the hinted spisor-host build carries, or NULL when there is none. */
-static char *carried_stub(const char *cache) {
+/**
+ * The spisor-boot the hinted spisor-host build carries, or NULL when there is none, and NULL with *out_of_memory set
+ * to 1 when memory runs out.
+ */
+static char *carried_stub(const char *cache, int *out_of_memory) {
     cJSON *refusal = NULL;
     cJSON *resolved = runtime_resolve_booted_host(cache, RUNTIME_ECOSYSTEM_HOST_ID, runtime_platform_key(), &refusal);
-    cJSON_Delete(refusal);
     const char *segments[3] = {cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(resolved, "directory")),
                                runtime_platform_key(), RUNTIME_BOOT_STUB_NAME};
     char *carried = segments[0] == NULL ? NULL : joined(segments, 3);
+    *out_of_memory = (resolved == NULL && refusal == NULL) || (segments[0] != NULL && carried == NULL);
+    cJSON_Delete(refusal);
     cJSON_Delete(resolved);
     if (carried != NULL && !spisor_file_exists(carried)) {
         free(carried);
@@ -58,33 +62,31 @@ static int copy_runnable(const char *source, const char *destination) {
 
 static cJSON *placement(const char *stub, int placed) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer != NULL && (cJSON_AddBoolToObject(answer, "placed", placed) == NULL || cJSON_AddStringToObject(answer, "path", stub) == NULL)) {
+    if (answer != NULL && (cJSON_AddBoolToObject(answer, "placed", placed) == NULL ||
+                           cJSON_AddStringToObject(answer, "path", stub) == NULL)) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-static cJSON *place(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal) {
     const char *cache = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "cache"));
     if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache)) {
         *refusal = runtime_refusal("the argument carries no usable cache", "send {\"cache\": \"<absolute directory>\"}");
         return NULL;
     }
+    int out_of_memory = 0;
     char *stub = runtime_boot_stub_path(cache);
-    char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(cache);
-    cJSON *answer = NULL;
-    if (carried != NULL && !copy_runnable(carried, stub)) {
+    char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(cache, &out_of_memory);
+    cJSON *answer = stub == NULL || out_of_memory ? NULL : placement(stub, carried != NULL);
+    if (answer != NULL && carried != NULL && !copy_runnable(carried, stub)) {
         const char *parts[2] = {"spisor-boot could not be put at ", stub};
+        cJSON_Delete(answer);
+        answer = NULL;
         *refusal = runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
-    } else if (stub != NULL) {
-        answer = placement(stub, carried != NULL);
     }
     free(carried);
     free(stub);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_boot_place(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, place);
 }

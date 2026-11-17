@@ -12,6 +12,7 @@
 #include "host_service.h"
 #include "host_output.h"
 #include "json_allocation.h"
+#include "json_service.h"
 #include "own_executable.h"
 #include "paths.h"
 #include "spisor/path.h"
@@ -59,9 +60,8 @@ static int boot(int count, char **arguments) {
     }
     char *cache = own_cache();
     cJSON *refusal = NULL;
-    cJSON *resolved = cache == NULL ? NULL
-                                    : host_call(runtime_boot_resolve, resolve_call(cache, arguments[0], count - 1, arguments + 1),
-                                                &refusal);
+    cJSON *call = cache == NULL ? NULL : resolve_call(cache, arguments[0], count - 1, arguments + 1);
+    cJSON *resolved = call == NULL ? NULL : runtime_call_operation(runtime_boot_resolve_operation, call, &refusal);
     free(cache);
     if (resolved != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
         const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};

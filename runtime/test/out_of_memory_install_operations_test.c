@@ -14,6 +14,7 @@
 #include "install_hooks.h"
 #include "json_allocation.h"
 #include "platform_key.h"
+#include "runtime/boot.h"
 #include "runtime/install.h"
 #include "runtime/updates.h"
 #include "timestamp_text.h"
@@ -431,6 +432,126 @@ static spisor_status run_check(void) {
     return last_status;
 }
 
+/** The file key of `name` inside a host version's folder for this machine, with .exe on Windows. */
+static void host_file_key(char *key, size_t capacity, const char *name) {
+#if defined(_WIN32)
+    snprintf(key, capacity, "%s/%s.exe", runtime_platform_key(), name);
+#else
+    snprintf(key, capacity, "%s/%s", runtime_platform_key(), name);
+#endif
+}
+
+/**
+ * spisor-host 1.0.0 installed with its executable and a spisor-boot recorded at their sizes, a library installed, and
+ * a hint naming 1.0.0.
+ */
+static void prepare_boot(void) {
+    char executable[256];
+    char stub[256];
+    char rest[512];
+    char marker[1024];
+    start_install_base(&base, "operations", "boot");
+    host_file_key(executable, sizeof executable, "spisor-host");
+    host_file_key(stub, sizeof stub, "spisor-boot");
+    snprintf(rest, sizeof rest, "bundles/spisor-host/1.0.0/%s", executable);
+    write_in(base.cache, rest, "x");
+    snprintf(rest, sizeof rest, "bundles/spisor-host/1.0.0/%s", stub);
+    write_in(base.cache, rest, "y");
+    snprintf(marker, sizeof marker,
+             "{\"files\":{\"%s\":\"%s\",\"%s\":\"%s\"},\"sizes\":{\"%s\":1,\"%s\":1}}", executable,
+             UNREACHABLE_SHA256, stub, UNREACHABLE_SHA256, executable, stub);
+    write_in(base.cache, "bundles/spisor-host/1.0.0/.installed.json", marker);
+    mark_library("runtime", "0.1.0");
+    write_in(base.cache, "hosts/spisor-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+}
+
+static spisor_status run_boot_read(void) {
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_host_argument argument = SPISOR_INIT(runtime_boot_host_argument);
+    runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.cache = base.cache;
+    argument.host_id = "spisor-host";
+    last_status = boot->read(boot->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (!answer.hinted || answer.host == NULL || strcmp(answer.host, "1.0.0") != 0)) {
+        last_status = WRONG_RUN;
+    }
+    boot->release_hint_answer(boot->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_boot_write(void) {
+    static const runtime_boot_version libraries[1] = {{"runtime", "0.1.0"}};
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_write_argument argument = SPISOR_INIT(runtime_boot_write_argument);
+    runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.cache = base.cache;
+    argument.host_id = "spisor-host";
+    argument.libraries = libraries;
+    argument.library_count = 1;
+    argument.state = base.state;
+    last_status = boot->write(boot->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.library_count != 1 || answer.host == NULL)) {
+        last_status = WRONG_RUN;
+    }
+    boot->release_hint_answer(boot->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_boot_resolve(void) {
+    static const char *const arguments[1] = {"--version"};
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_resolve_argument argument = SPISOR_INIT(runtime_boot_resolve_argument);
+    runtime_boot_resolve_answer answer = SPISOR_INIT(runtime_boot_resolve_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.cache = base.cache;
+    argument.host_id = "spisor-host";
+    argument.arguments = arguments;
+    argument.argument_count = 1;
+    last_status = boot->resolve(boot->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.argument_count != 1 || answer.executable == NULL)) {
+        last_status = WRONG_RUN;
+    }
+    boot->release_resolve_answer(boot->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_boot_place(void) {
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_place_argument argument = SPISOR_INIT(runtime_boot_place_argument);
+    runtime_boot_place_answer answer = SPISOR_INIT(runtime_boot_place_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.cache = base.cache;
+    last_status = boot->place(boot->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && !answer.placed) {
+        last_status = WRONG_RUN;
+    }
+    boot->release_place_answer(boot->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** Whether a place that did not answer OK left no spisor-boot in cache/boot, as its header promises. */
+static int placed_nothing_unless_placed(void) {
+    if (last_status != SPISOR_OK && exists_in(base.cache, "boot")) {
+        runtime_directory_listing listing = {NULL, 0};
+        char *folder = joined(base.cache, "boot");
+        CHECK(runtime_list_directory(folder, &listing) == 1);
+        free(folder);
+        int empty = listing.count == 0;
+        runtime_free_directory_listing(&listing);
+        if (!empty) {
+            fprintf(stderr, "boot's place: an answer of %d left spisor-boot in place\n", (int)last_status);
+        }
+        return empty;
+    }
+    return 1;
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -524,6 +645,11 @@ int main(int argc, char **argv) {
     static const operation_case rolled = {"updates' rollback", prepare_rollback, run_rollback, NULL};
     static const operation_case read = {"updates' recorded", prepare_rollback, run_recorded, NULL};
     static const operation_case checked = {"updates' check", prepare_check, run_check, NULL};
+    static const operation_case boot_cases[4] = {{"boot's read", prepare_boot, run_boot_read, NULL},
+                                                 {"boot's write", prepare_boot, run_boot_write, NULL},
+                                                 {"boot's resolve", prepare_boot, run_boot_resolve, NULL},
+                                                 {"boot's place", prepare_boot, run_boot_place,
+                                                  placed_nothing_unless_placed}};
     const char *only = argc > 1 ? argv[1] : "";
     uint64_t first = argc > 2 ? strtoull(argv[2], NULL, 10) : 1;
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
@@ -558,6 +684,11 @@ int main(int argc, char **argv) {
     }
     if (is_selected(only, checked.label)) {
         every_failure_of(&checked, SPISOR_OK, first == 0 ? 1 : first, last);
+    }
+    for (size_t index = 0; index < 4; index++) {
+        if (is_selected(only, boot_cases[index].label)) {
+            every_failure_of(&boot_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+        }
     }
     return check_summary("out_of_memory_install_operations_test");
 }

@@ -168,7 +168,7 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
     }
     print_json(report);
     cJSON_Delete(report);
-    cJSON *placed = runtime_call_or_refuse(runtime_boot_place, cache_call(host), &refusal);
+    cJSON *placed = runtime_call_operation(runtime_boot_place_operation, cache_call(host), &refusal);
     cJSON_Delete(placed);
     return placed == NULL ? refuse(refusal) : 0;
 }

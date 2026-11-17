@@ -1,25 +1,47 @@
 #ifndef RUNTIME_BOOT_H
 #define RUNTIME_BOOT_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include "export.h"
-
-/** boot.read: {cache, hostId} answers {hint?: {libraries, host?}}, no hint when none is readable. */
-RUNTIME_EXPORT int32_t runtime_boot_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+#include "cJSON.h"
 
 /**
- * boot.write: {cache, hostId, libraries, host?, state?} records the libraries and host bundle version the
+ * @file
+ * The boot service's operations over JSON, for runtime's own callers: each answers its result, or NULL with *refusal
+ * set to {message, fix}, or with it NULL when memory runs out.
+ */
+
+/** boot's read: {cache, hostId} answers {hint?: {libraries, host?}}, no hint when none is readable. */
+cJSON *runtime_boot_read_operation(const cJSON *argument, cJSON **refusal);
+
+/**
+ * boot's write: {cache, hostId, libraries, host?, state?, platform?} records the libraries and host bundle version the
  * next start of hostId boots, keeping the recorded host version when host is left out, and answers {hint}.
  *
  * @implNote Keeping the recorded host is a read-modify-write, so with state it holds the registry lock
  * under it, the one updates holds while it switches a hint, and a write never reverts a switch.
  */
-RUNTIME_EXPORT int32_t runtime_boot_write(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_boot_write_operation(const cJSON *argument, cJSON **refusal);
+
+/** A boot write prepared and holding its lock, not yet written. */
+typedef struct runtime_boot_hint_write runtime_boot_hint_write;
 
 /**
- * boot.resolve: {cache, hostId, arguments?, platform?} answers {executable, arguments, version, directory}:
+ * boot's write up to its one file write: the call checked, the libraries resolved, the lock taken and the answer
+ * built, so a caller can take what it answers before anything is written. NULL with *refusal set, or with it NULL
+ * when memory runs out.
+ */
+runtime_boot_hint_write *runtime_boot_prepare_write(const cJSON *argument, cJSON **refusal);
+
+/** The {hint} a prepared write answers once committed, borrowed from it. */
+const cJSON *runtime_boot_write_answer(const runtime_boot_hint_write *write);
+
+/** Writes the hint; 1, or 0 with *refusal set, or with it NULL when memory runs out. */
+int runtime_boot_commit_write(runtime_boot_hint_write *write, cJSON **refusal);
+
+/** Releases the lock and what a prepared write holds. NULL does nothing. */
+void runtime_boot_free_write(runtime_boot_hint_write *write);
+
+/**
+ * boot's resolve: {cache, hostId, arguments?, platform?} answers {executable, arguments, version, directory}:
  * the native host executable of the version hostId's hint names,
  * cache/bundles/<hostId>/<version>/<platform>/<hostId>, with .exe on a win32 platform, and the
  * arguments to run it with, those given passed through.
@@ -28,16 +50,16 @@ RUNTIME_EXPORT int32_t runtime_boot_write(const uint8_t *in, size_t in_len, uint
  * longer carry their recorded hashes, is refused with the reinstall fix: no version is ever guessed, so
  * a command never runs something other than what install and updates chose.
  */
-RUNTIME_EXPORT int32_t runtime_boot_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_boot_resolve_operation(const cJSON *argument, cJSON **refusal);
 
 /**
- * boot.place: {cache} copies the spisor-boot the hinted spisor-host version carries to cache/boot when
+ * boot's place: {cache} copies the spisor-boot the hinted spisor-host version carries to cache/boot when
  * none is there yet, made runnable, and answers {placed, path}; placed is false when one was already there
  * or no hinted version carries one. A copy that cannot be written is refused.
  *
  * @implNote Never replaces a stub that is there: spisor-boot runs every command, and how a running one is
  * replaced is the launcher update's to decide.
  */
-RUNTIME_EXPORT int32_t runtime_boot_place(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

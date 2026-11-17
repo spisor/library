@@ -6,6 +6,7 @@
 #endif
 
 #include "boot.h"
+#include "boot_call.h"
 #include "boot_hint.h"
 #include "hint_fixture.h"
 #include "cache.h"
@@ -305,7 +306,7 @@ static void installs_beside_a_cache_laid_out_under_the_old_names(void) {
     cJSON_Delete(install_defaults(&base, ""));
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", base.cache);
-    catalog_answer placed = call_catalog(runtime_boot_place, argument);
+    catalog_answer placed = boot_call(BOOT_PLACE, argument);
     CHECK(placed.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(placed.tree, "placed")));
     char *stub = text_in(base.cache, "boot/spisor-boot" EXECUTABLE_SUFFIX);
     check_text(stub, "stub", "spisor-boot placed");

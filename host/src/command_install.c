@@ -128,7 +128,7 @@ static cJSON *place_boot_stub(const host_context *context) {
         argument = NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *placed = host_call(runtime_boot_place, argument, &refusal);
+    cJSON *placed = runtime_call_operation(runtime_boot_place_operation, argument, &refusal);
     cJSON_Delete(placed);
     if (placed == NULL && refusal == NULL) {
         const char *parts[1] = {"spisor-host ran out of memory"};

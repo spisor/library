@@ -162,7 +162,7 @@ runtime_test(cache_deploy_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:
     $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(cache_deploy_test PRIVATE ${runtime_fetch_libraries})
 
-foreach(name boot_hint_test cache_locate_test cache_id_key_test hosts_start_test)
+foreach(name cache_locate_test cache_id_key_test hosts_start_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
         $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
@@ -219,7 +219,7 @@ set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
 set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
-foreach(name updates_test boot_unlistable_test)
+foreach(name updates_test boot_hint_test boot_unlistable_test)
     runtime_test(${name} ${runtime_install_plain_http_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()

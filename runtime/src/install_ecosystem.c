@@ -316,7 +316,8 @@ static int write_hint(ecosystem *install, const char *host_id, const char *const
         return 1;
     }
     cJSON *refusal = NULL;
-    cJSON *hint = runtime_call_or_refuse(runtime_boot_write, hint_call(install, host_id, libraries, count), &refusal);
+    cJSON *hint = runtime_call_operation(runtime_boot_write_operation, hint_call(install, host_id, libraries, count),
+                                         &refusal);
     cJSON_Delete(hint);
     return hint != NULL || (refusal != NULL && runtime_install_report_refusal(install->run.report, host_id, refusal));
 }
