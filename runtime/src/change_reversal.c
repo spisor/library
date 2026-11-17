@@ -38,6 +38,8 @@ typedef struct reversal_session {
     cJSON *registration;
     cJSON *drifted;
     double above;
+    const double *listed;
+    size_t listed_count;
     int lock_held;
     int reversed;
     int finished;
@@ -60,12 +62,27 @@ static double sequence_of(const cJSON *entry) {
     return cJSON_IsNumber(sequence) ? sequence->valuedouble : 0;
 }
 
-static cJSON *newest_unreversed(const cJSON *registration, double above) {
+/** Whether the session may reverse entry: one of its listed sequences when it lists any, else any above `above`. */
+static int is_selected(const reversal_session *session, const cJSON *entry) {
+    double sequence = sequence_of(entry);
+    if (session->listed == NULL) {
+        return sequence > session->above;
+    }
+    for (size_t index = 0; index < session->listed_count; index++) {
+        if (session->listed[index] == sequence) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static cJSON *newest_unreversed(const reversal_session *session) {
     cJSON *newest = NULL;
     cJSON *entry;
-    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(session->registration, "changes")) {
         int unreversed = !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "reversed"));
-        if (unreversed && sequence_of(entry) > above && (newest == NULL || sequence_of(entry) > sequence_of(newest))) {
+        if (unreversed && is_selected(session, entry) &&
+            (newest == NULL || sequence_of(entry) > sequence_of(newest))) {
             newest = entry;
         }
     }
@@ -161,7 +178,7 @@ static int reverse_step(reversal_session *session, cJSON **refusal) {
     if (out_of_memory_settling) {
         return out_of_memory(refusal);
     }
-    cJSON *entry = newest_unreversed(session->registration, session->above);
+    cJSON *entry = newest_unreversed(session);
     if (entry == NULL || !may_reverse_another()) {
         return finish(session, settled, refusal);
     }
@@ -201,19 +218,28 @@ static int reverse_all(reversal_session *session, cJSON *result, cJSON **refusal
     return cJSON_AddNumberToObject(result, "reversed", session->reversed) != NULL || out_of_memory(refusal);
 }
 
-int runtime_changes_reverse_newer_held(const char *state, const char *host, double above) {
+static int reverse_held(reversal_session *session) {
     cJSON *refusal = NULL;
-    cJSON *drifted = cJSON_CreateArray();
-    reversal_session session = {state, host, NULL, drifted, above, 1, 0, 0};
-    int reversed = drifted != NULL && reverse_steps(&session, &refusal);
+    session->drifted = cJSON_CreateArray();
+    int reversed = session->drifted != NULL && reverse_steps(session, &refusal);
     cJSON_Delete(refusal);
-    cJSON_Delete(drifted);
+    cJSON_Delete(session->drifted);
     return reversed;
+}
+
+int runtime_changes_reverse_newer_held(const char *state, const char *host, double above) {
+    reversal_session session = {state, host, NULL, NULL, above, NULL, 0, 1, 0, 0};
+    return reverse_held(&session);
+}
+
+int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count) {
+    reversal_session session = {state, host, NULL, NULL, 0, sequences, count, 1, 0, 0};
+    return reverse_held(&session);
 }
 
 static cJSON *reverse_host(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
     (void)argument;
-    reversal_session session = {state, host, NULL, NULL, -1, 0, 0, 0};
+    reversal_session session = {state, host, NULL, NULL, -1, NULL, 0, 0, 0, 0};
     cJSON *result = cJSON_CreateObject();
     session.drifted = result == NULL ? NULL : cJSON_AddArrayToObject(result, "drifted");
     if (session.drifted == NULL || !reverse_all(&session, result, refusal)) {

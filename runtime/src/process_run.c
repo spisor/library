@@ -75,6 +75,7 @@ typedef struct windows_run {
     HANDLE output_write;
     LPPROC_THREAD_ATTRIBUTE_LIST attributes;
     HANDLE inherited[3];
+    int out_of_memory;
 } windows_run;
 
 static int open_output_pipe(windows_run *run) {
@@ -96,6 +97,7 @@ static int prepare(windows_run *run, int capture) {
     run->inherited[0] = run->null;
     run->inherited[1] = run->output_write;
     run->attributes = runtime_windows_handle_list(run->inherited, capture ? 2 : 1);
+    run->out_of_memory = run->attributes == NULL;
     return run->attributes != NULL;
 }
 
@@ -121,6 +123,7 @@ static int prepare_between_files(windows_run *run, const char *input, const char
     run->inherited[1] = run->input;
     run->inherited[2] = run->output_write;
     run->attributes = runtime_windows_handle_list(run->inherited, 3);
+    run->out_of_memory = run->attributes == NULL;
     return run->attributes != NULL;
 }
 
@@ -213,6 +216,7 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
     run_output collected = {{0}, 0};
     int started = application != NULL && line != NULL && prepared && create(application, line, run, &information);
     DWORD error = started ? ERROR_SUCCESS : GetLastError();
+    int out_of_memory = application == NULL || line == NULL || run->out_of_memory;
     int exited = 0;
     if (started) {
         close_handle(&run->output_write);
@@ -223,7 +227,7 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
     release(run);
     free(line);
     free(application);
-    if (!started) {
+    if (!started && !out_of_memory) {
         char reason[64];
         snprintf(reason, sizeof reason, "Windows error %lu", (unsigned long)error);
         *problem = problem_of(executable, reason);
@@ -397,7 +401,11 @@ static int run_with(const char *executable, const cJSON *arguments, unsigned tim
     double deadline = now_milliseconds() + timeout_milliseconds;
     int ends[2] = {-1, -1};
     char **list = argument_list(executable, arguments);
-    if (list == NULL || (output != NULL && !open_output_pipe(ends))) {
+    if (list == NULL) {
+        return 0;
+    }
+    if (output != NULL && !open_output_pipe(ends)) {
+        *problem = problem_of(executable, strerror(errno));
         free(list);
         return 0;
     }
@@ -412,7 +420,7 @@ static int run_with(const char *executable, const cJSON *arguments, unsigned tim
     if (ends[0] >= 0) {
         close(ends[0]);
     }
-    if (error != 0) {
+    if (error != 0 && error != ENOMEM) {
         *problem = problem_of(executable, strerror(error));
     } else if (!exited) {
         *problem = problem_of(executable, "it did not exit in time and was stopped");

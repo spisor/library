@@ -49,7 +49,7 @@ static cJSON *detect(const cJSON *places, const cJSON *mapped, cJSON **refusal) 
     (void)refusal;
     cJSON *installed = read_installed(places);
     const char *version = runtime_install_text(installed, runtime_install_text(mapped, "name"));
-    cJSON *answer = cJSON_CreateObject();
+    cJSON *answer = installed == NULL ? NULL : cJSON_CreateObject();
     if (answer != NULL && (cJSON_AddBoolToObject(answer, "installed", version != NULL) == NULL ||
                            (version != NULL && cJSON_AddStringToObject(answer, "version", version) == NULL))) {
         cJSON_Delete(answer);

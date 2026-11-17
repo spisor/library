@@ -9,9 +9,9 @@
 #include "allocation.h"
 #include "json_allocation.h"
 #include "runtime/install.h"
+#include "timestamp_text.h"
 
 #define BINARY "claude-binary"
-#define TIMESTAMP_PLACEHOLDER "<time>"
 
 /**
  * @implNote A repeat is a second install, so only every REPEAT_EVERY-th OUT_OF_MEMORY answer is repeated, while an OK
@@ -41,7 +41,7 @@ static void prepare_ecosystem(install_base *base) {
     list_plugin(base, "announcer", "1.0.0", "native");
     list_plugin(base, "viewer", "1.0.0", "native");
     list_plugin(base, "wanted", "1.0.0", "native");
-    list_loader(base, "claude-loader", "1.0.0", application_json("claude", BINARY, "{}"), "[]", 0, "[]");
+    list_loader(base, "claude-loader", "1.0.0", application_with_hook_entry("claude", BINARY, "{}"), "[]", 0, "[]");
     write_catalog(base);
     place_binary(base);
 }
@@ -97,56 +97,11 @@ static spisor_status install_ecosystem(const install_base *base) {
     return status;
 }
 
-static int is_digits(const char *text, size_t count) {
-    for (size_t index = 0; index < count; index++) {
-        if (text[index] < '0' || text[index] > '9') {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-/** The length of the ISO 8601 UTC timestamp starting text, or 0 when none starts it. */
-static size_t timestamp_length(const char *text, size_t remaining) {
-    if (remaining < 20 || !is_digits(text, 4) || text[4] != '-' || !is_digits(text + 5, 2) || text[7] != '-' ||
-        !is_digits(text + 8, 2) || text[10] != 'T' || !is_digits(text + 11, 2) || text[13] != ':' ||
-        !is_digits(text + 14, 2) || text[16] != ':' || !is_digits(text + 17, 2)) {
-        return 0;
-    }
-    size_t length = 19;
-    if (text[length] == '.') {
-        length++;
-        while (length < remaining && is_digits(text + length, 1)) {
-            length++;
-        }
-    }
-    return length < remaining && text[length] == 'Z' ? length + 1 : 0;
-}
-
-/** content with every timestamp replaced, so two installs at different times read alike. */
-static char *without_timestamps(const uint8_t *content, size_t length) {
-    char *normalized = malloc(length + 1);
-    size_t written = 0;
-    for (size_t index = 0; normalized != NULL && index < length;) {
-        size_t matched = timestamp_length((const char *)content + index, length - index);
-        if (matched > 0) {
-            memcpy(normalized + written, TIMESTAMP_PLACEHOLDER, sizeof TIMESTAMP_PLACEHOLDER - 1);
-            written += sizeof TIMESTAMP_PLACEHOLDER - 1;
-            index += matched;
-        } else {
-            normalized[written++] = (char)content[index++];
-        }
-    }
-    if (normalized != NULL) {
-        normalized[written] = 0;
-    }
-    return normalized;
-}
-
 static void add_file(cJSON *snapshot, const char *path, const char *relative) {
     size_t length = 0;
     uint8_t *content = spisor_read_file(path, &length);
-    char *normalized = content == NULL ? NULL : without_timestamps(content, length);
+    size_t normalized_length = 0;
+    char *normalized = content == NULL ? NULL : without_timestamps(content, length, &normalized_length);
     cJSON_AddStringToObject(snapshot, relative, normalized == NULL ? "(unreadable)" : normalized);
     free(normalized);
     free(content);
