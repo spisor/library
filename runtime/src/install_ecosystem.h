@@ -5,10 +5,10 @@
 #include <stdint.h>
 
 #include "cJSON.h"
-#include "export.h"
+#include "spisor/status.h"
 
 /**
- * install.ecosystem: { sources, places: { portable, state, cache }, environment, choices?, defaults?,
+ * install's ecosystem: { sources, places: { portable, state, cache }, environment, choices?, defaults?,
  * requested?, platform? } installs the ecosystem from catalog sources and answers the report
  * { installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }.
  *
@@ -35,7 +35,17 @@
  * reference first under a short lock, then stored unlocked, so a sweep running meanwhile keeps
  * it and two installs at once end with one consistent registry and cache.
  */
-RUNTIME_EXPORT int32_t runtime_install_ecosystem(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_install_ecosystem_operation(const cJSON *argument, cJSON **refusal);
+
+/** Takes a finished report into `taken`: OK, or OUT_OF_MEMORY to stop the install before its last write. */
+typedef spisor_status (*runtime_install_ecosystem_taker)(const cJSON *report, void *taken);
+
+/**
+ * runtime_install_ecosystem_operation, handing the finished report to `take` before the running versions are recorded,
+ * and again when that record's refusal adds to it; NULL with no refusal when `take` runs out of memory.
+ */
+cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken,
+                                        cJSON **refusal);
 
 /**
  * install's application: { places: { portable, state, cache }, loader, operation: "update" | "remove" }

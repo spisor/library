@@ -567,10 +567,11 @@ static spisor_status refuse_path(const char *file_path, const char *key, spisor_
                              fix);
 }
 
-static cJSON *child_object_for_write(cJSON *node, const char *segment) {
+static cJSON *child_object_for_write(cJSON *node, const char *segment, int *out_of_memory) {
     cJSON *child = cJSON_GetObjectItemCaseSensitive(node, segment);
     if (child == NULL) {
         child = cJSON_AddObjectToObject(node, segment);
+        *out_of_memory = child == NULL;
     }
     return cJSON_IsObject(child) ? child : NULL;
 }
@@ -597,12 +598,14 @@ static place_status place_value(cJSON *root, const char *key, const cJSON *value
     cJSON *node = root;
     char *segment = path;
     char *dot;
+    int out_of_memory = 0;
     while (node != NULL && (dot = strchr(segment, '.')) != NULL) {
         *dot = '\0';
-        node = child_object_for_write(node, segment);
+        node = child_object_for_write(node, segment, &out_of_memory);
         segment = dot + 1;
     }
-    place_status status = node == NULL            ? CROSSES_NON_OBJECT
+    place_status status = out_of_memory           ? PLACE_OUT_OF_MEMORY
+                          : node == NULL          ? CROSSES_NON_OBJECT
                           : attach_value(node, segment, value) ? PLACED
                                                                : PLACE_OUT_OF_MEMORY;
     free(path);

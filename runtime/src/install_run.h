@@ -3,7 +3,7 @@
 
 #include "cJSON.h"
 
-/** One install.ecosystem call: what it was given, the catalog it read and the report it is filling. */
+/** One call of install's ecosystem: what it was given, the catalog it read and the report it is filling. */
 typedef struct runtime_install_run {
     const cJSON *places;
     const char *portable;

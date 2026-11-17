@@ -11,6 +11,7 @@
 #include "install_by_name.h"
 #include "install_ecosystem.h"
 #include "install_warning_report.h"
+#include "json_service.h"
 #include "terminal_question.h"
 
 #define CHOICE_REFUSAL_PREFIX "the choice"
@@ -145,10 +146,12 @@ static cJSON *place_boot_stub(const host_context *context) {
  */
 static int install_through(const host_context *context, const cJSON *sources, const cJSON *plugins, cJSON *choices) {
     cJSON *refusal = NULL;
-    cJSON *report = host_call(runtime_install_ecosystem, ecosystem_call(context, sources, plugins, choices), &refusal);
+    cJSON *report = runtime_call_operation(runtime_install_ecosystem_operation,
+                                           ecosystem_call(context, sources, plugins, choices), &refusal);
     if (report != NULL && merge_asked(choices, report)) {
         cJSON_Delete(report);
-        report = host_call(runtime_install_ecosystem, ecosystem_call(context, sources, plugins, choices), &refusal);
+        report = runtime_call_operation(runtime_install_ecosystem_operation,
+                                        ecosystem_call(context, sources, plugins, choices), &refusal);
     }
     if (report == NULL) {
         const char *message = host_text(refusal, "message");

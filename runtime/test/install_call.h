@@ -30,7 +30,8 @@ typedef enum install_operation {
     INSTALL_RUNTIME,
     INSTALL_APPLICATION,
     INSTALL_REGISTER_LOADER,
-    INSTALL_BY_ID
+    INSTALL_BY_ID,
+    INSTALL_ECOSYSTEM
 } install_operation;
 
 static inline const char *install_place_of(const cJSON *request, const char *name) {
@@ -376,6 +377,144 @@ static inline spisor_status install_by_id_call(const runtime_install_definition 
     return status;
 }
 
+/** The request's choices object as choices, held until the call's answer is turned into JSON. */
+static inline const runtime_install_choice *install_choices_of(catalog_request *held, const cJSON *choices,
+                                                               size_t *count) {
+    runtime_install_choice *listed;
+    const cJSON *choice;
+    *count = 0;
+    if (choices == NULL) {
+        return NULL;
+    }
+    listed = catalog_request_block(held, (size_t)cJSON_GetArraySize(choices), sizeof *listed);
+    cJSON_ArrayForEach(choice, choices) {
+        listed[*count].application = choice->string;
+        listed[(*count)++].method = cJSON_GetStringValue(choice);
+    }
+    return listed;
+}
+
+static inline cJSON *install_unavailable_json(const runtime_install_unavailable *rows, size_t count,
+                                              const char *id_name) {
+    cJSON *array = cJSON_CreateArray();
+    for (size_t index = 0; index < count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        cache_add_text(row, id_name, rows[index].id);
+        cache_add_text(row, "message", rows[index].detail);
+        cache_add_text(row, "fix", rows[index].fix);
+        CHECK(cJSON_AddItemToArray(array, row));
+    }
+    return array;
+}
+
+static inline cJSON *install_settled_application_json(const runtime_install_application *application) {
+    static const char *const states[] = {"", "installed", "detected", "missing", "skipped", "failed", "unavailable"};
+    cJSON *json = cJSON_CreateObject();
+    cache_add_text(json, "id", application->id);
+    cache_add_text(json, "state", application->state < 7 ? states[application->state] : "");
+    cache_add_text(json, "installedThrough", application->installed_through);
+    if (application->origin.package.method != NULL) {
+        cJSON *origin = cJSON_AddObjectToObject(json, "origin");
+        cache_add_text(origin, "method", application->origin.package.method);
+        cache_add_text(origin, "package", application->origin.package.name);
+        install_add_value(origin, "options", application->origin.package.options);
+        cache_add_text(origin, "version", application->origin.version);
+    }
+    if (application->offered != NULL) {
+        CHECK(cJSON_AddItemToObject(json, "offered", cache_texts_json(application->offered, application->offered_count)));
+    }
+    cache_add_text(json, "flag", application->flag);
+    if (application->unavailable_count > 0) {
+        CHECK(cJSON_AddItemToObject(json, "unavailable", install_unavailable_json(application->unavailable,
+                                                                                  application->unavailable_count,
+                                                                                  "method")));
+    }
+    return json;
+}
+
+static inline cJSON *install_loader_json(const runtime_install_loader *loader) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *entry;
+    cache_add_text(json, "id", loader->id);
+    cache_add_text(json, "application", loader->application);
+    cache_add_text(json, "home", loader->home);
+    CHECK(cJSON_AddItemToObject(json, "commands", cache_texts_json(loader->commands, loader->command_count)));
+    CHECK(cJSON_AddItemToObject(json, "refusedCommands", install_refused_commands_json(loader->refused_commands,
+                                                                                        loader->refused_command_count)));
+    entry = cJSON_AddObjectToObject(json, "entry");
+    CHECK(cJSON_AddBoolToObject(entry, "written", loader->entry_written != 0) != NULL);
+    if (loader->entry_runs_on_javascript_host) {
+        CHECK(cJSON_AddTrueToObject(entry, "runsOnJavascriptHost") != NULL);
+    }
+    cache_add_text(entry, "message", loader->entry_detail);
+    cache_add_text(entry, "fix", loader->entry_fix);
+    return json;
+}
+
+static inline cJSON *install_report_rows_json(const runtime_install_ecosystem_answer *answer) {
+    cJSON *report = cJSON_CreateObject();
+    cJSON *installed = cJSON_AddArrayToObject(report, "installed");
+    cJSON *applications;
+    cJSON *loaders;
+    cJSON *missing;
+    for (size_t index = 0; index < answer->installed_count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        cache_add_text(row, "id", answer->installed[index].id);
+        cache_add_text(row, "version", answer->installed[index].version);
+        CHECK(cJSON_AddItemToArray(installed, row));
+    }
+    CHECK(cJSON_AddItemToObject(report, "cached", cache_texts_json(answer->cached, answer->cached_count)));
+    CHECK(cJSON_AddItemToObject(report, "unavailable",
+                                install_unavailable_json(answer->unavailable, answer->unavailable_count, "id")));
+    CHECK(cJSON_AddItemToObject(report, "enabled", cache_texts_json(answer->enabled, answer->enabled_count)));
+    applications = cJSON_AddArrayToObject(report, "applications");
+    for (size_t index = 0; index < answer->application_count; index++) {
+        CHECK(cJSON_AddItemToArray(applications, install_settled_application_json(&answer->applications[index])));
+    }
+    loaders = cJSON_AddArrayToObject(report, "loaders");
+    for (size_t index = 0; index < answer->loader_count; index++) {
+        CHECK(cJSON_AddItemToArray(loaders, install_loader_json(&answer->loaders[index])));
+    }
+    missing = cJSON_AddArrayToObject(report, "missing");
+    for (size_t index = 0; index < answer->missing_count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        cache_add_text(row, "application", answer->missing[index].application);
+        CHECK(cJSON_AddItemToObject(row, "methods", cache_texts_json(answer->missing[index].methods,
+                                                                     answer->missing[index].method_count)));
+        CHECK(cJSON_AddItemToArray(missing, row));
+    }
+    return report;
+}
+
+static inline spisor_status install_ecosystem_call(const runtime_install_definition *install, const cJSON *request,
+                                                   catalog_request *held, cJSON **tree, spisor_refusal *refusal) {
+    runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
+    runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
+    spisor_status status;
+    argument.sources = catalog_sources_of(held, cJSON_GetObjectItemCaseSensitive(request, "sources"),
+                                          &argument.source_count);
+    argument.portable = install_place_of(request, "portable");
+    argument.state = install_place_of(request, "state");
+    argument.cache = install_place_of(request, "cache");
+    argument.environment = install_environment_of(held, request, &argument.environment_count);
+    argument.choices = install_choices_of(held, cJSON_GetObjectItemCaseSensitive(request, "choices"),
+                                          &argument.choice_count);
+    argument.defaults = install_texts_of(held, cJSON_GetObjectItemCaseSensitive(request, "defaults"),
+                                         &argument.default_count);
+    argument.requested = install_texts_of(held, cJSON_GetObjectItemCaseSensitive(request, "requested"),
+                                          &argument.requested_count);
+    argument.platform = cache_member_text(request, "platform");
+    status = install->ecosystem(install->context, &argument, &answer, refusal);
+    if (status == SPISOR_OK) {
+        *tree = install_report_rows_json(&answer);
+        if (answer.javascript != NULL) {
+            CHECK(cJSON_AddItemToObject(*tree, "javascript", install_javascript_json(answer.javascript)));
+        }
+    }
+    install->release_ecosystem_answer(install->context, &answer);
+    return status;
+}
+
 /** Calls the operation with the request, which it deletes, answering its status and its answer or refusal as JSON. */
 static inline catalog_answer install_call(install_operation operation, cJSON *request) {
     typedef spisor_status (*caller)(const runtime_install_definition *, const cJSON *, catalog_request *, cJSON **,
@@ -384,7 +523,7 @@ static inline catalog_answer install_call(install_operation operation, cJSON *re
                                      install_plan_call,        install_detect_call,
                                      install_entry_call,       install_runtime_call,
                                      install_application_call, install_register_loader_call,
-                                     install_by_id_call};
+                                     install_by_id_call,       install_ecosystem_call};
     const runtime_install_definition *install = runtime_install_definition_of();
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     catalog_request held;

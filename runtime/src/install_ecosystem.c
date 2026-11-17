@@ -42,6 +42,8 @@ typedef struct ecosystem {
     const cJSON *requested;
     cJSON *values;
     cJSON *running;
+    runtime_install_ecosystem_taker take;
+    void *taken;
 } ecosystem;
 
 static int is_foundation(const char *id) {
@@ -375,6 +377,20 @@ static int record_run(ecosystem *install) {
            (refusal != NULL && runtime_install_report_refusal(install->run.report, RUNTIME_ECOSYSTEM_HOST_ID, refusal));
 }
 
+static int take_report(ecosystem *install) {
+    return install->take == NULL || install->take(install->run.report, install->taken) == SPISOR_OK;
+}
+
+static int unavailable_count(const ecosystem *install) {
+    return cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(install->run.report, "unavailable"));
+}
+
+/** Records the run with the report taken first, and taken again when the record's refusal adds to it. */
+static int record_run_taken(ecosystem *install) {
+    int before = unavailable_count(install);
+    return take_report(install) && record_run(install) && (unavailable_count(install) == before || take_report(install));
+}
+
 static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal) {
     static const char *const host_ids[1] = {RUNTIME_ECOSYSTEM_HOST_ID};
     static const char *const library_ids[1] = {RUNTIME_LIBRARY_ID};
@@ -388,7 +404,7 @@ static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal
         return 0;
     }
     cJSON *background = runtime_install_loaders(&install->run);
-    int done = background != NULL && install_javascript(install, background) && record_run(install);
+    int done = background != NULL && install_javascript(install, background) && record_run_taken(install);
     cJSON_Delete(background);
     return done;
 }
@@ -427,12 +443,14 @@ static int are_sources(const cJSON *sources, cJSON **refusal) {
     return usable;
 }
 
-static cJSON *ecosystem_for(const cJSON *argument, cJSON **refusal) {
+static cJSON *ecosystem_for(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken, cJSON **refusal) {
     if (!are_sources(cJSON_GetObjectItemCaseSensitive(argument, "sources"), refusal)) {
         return NULL;
     }
     ecosystem install;
     memset(&install, 0, sizeof install);
+    install.take = take;
+    install.taken = taken;
     if (!read_argument(argument, &install)) {
         *refusal = runtime_refusal("the argument carries no usable sources, places, environment or choices", ECOSYSTEM_FIX);
         return NULL;
@@ -459,6 +477,11 @@ static cJSON *ecosystem_for(const cJSON *argument, cJSON **refusal) {
     return report;
 }
 
-RUNTIME_EXPORT int32_t runtime_install_ecosystem(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, ecosystem_for);
+cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken,
+                                        cJSON **refusal) {
+    return ecosystem_for(argument, take, taken, refusal);
+}
+
+cJSON *runtime_install_ecosystem_operation(const cJSON *argument, cJSON **refusal) {
+    return ecosystem_for(argument, NULL, NULL, refusal);
 }
