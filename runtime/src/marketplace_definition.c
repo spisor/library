@@ -328,7 +328,7 @@ static spisor_status remember(void *context, const runtime_marketplace_remember_
     if (argument->state == NULL || argument->name == NULL || argument->id == NULL) {
         return refuse_missing(refusal, "state, name or id");
     }
-    if (!spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, argument->state)) {
+    if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
     }
     call = cJSON_CreateObject();

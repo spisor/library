@@ -50,6 +50,13 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
 runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change);
 
 /**
+ * Reverses, newest first, every unreversed change of host whose sequence is above `above`, as the reverse request
+ * does, for a caller that already holds runtime_hosts_lock. Answers 1 once none is left, 0 when one could not be
+ * reversed or memory ran out, the rest then left recorded.
+ */
+int runtime_changes_reverse_newer_held(const char *state, const char *host, double above);
+
+/**
  * Reverses entry, one unreversed record in registration of host, held when another unreversed
  * record of its target exists (a registration that cannot be read counts as one), and marks it
  * reversed, and drifted when it drifted, in registration, which the caller stores. The caller holds

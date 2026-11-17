@@ -7,10 +7,14 @@
 static uint64_t countdown;
 static uint64_t attempts;
 static int failed;
+static int sticky;
 static int64_t live_blocks;
 
 static int fails_now(void) {
     attempts++;
+    if (failed && sticky) {
+        return 1;
+    }
     if (countdown == 0) {
         return 0;
     }
@@ -45,6 +49,12 @@ void spisor_memory_fail_at(uint64_t attempt) {
     countdown = attempt;
     attempts = 0;
     failed = 0;
+    sticky = 0;
+}
+
+void spisor_memory_fail_from(uint64_t attempt) {
+    spisor_memory_fail_at(attempt);
+    sticky = 1;
 }
 
 int spisor_memory_failed(void) {
