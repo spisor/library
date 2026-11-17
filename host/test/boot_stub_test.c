@@ -3,6 +3,7 @@
 #include "holders.h"
 #include "processes.h"
 #include "processes_request.h"
+#include "json_service.h"
 
 static char *stub_of(const host_world *world) {
     return joined(world->base.cache, "boot/spisor-boot" EXECUTABLE_ENDING);
@@ -179,9 +180,11 @@ static void keeps_the_spisor_host_version_a_launch_runs_through_a_sweep_until_it
 static char *live_runs(const host_world *world) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "state", world->base.state);
-    catalog_answer answer = call_catalog(runtime_processes_live_runs, argument);
-    char *printed = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(answer.tree, "runs"));
-    cJSON_Delete(answer.tree);
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_call_operation(runtime_processes_live_runs_operation, argument, &refusal);
+    char *printed = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(answer, "runs"));
+    cJSON_Delete(answer);
+    cJSON_Delete(refusal);
     return printed;
 }
 
@@ -209,7 +212,7 @@ static cJSON *drop_this_test(const runtime_processes_request *request, const cha
     (void)request;
     (void)refusal;
     runtime_keep_live_holders(record, (double)fixture_process_id());
-    return runtime_write_holders(path, record) ? cJSON_CreateObject() : NULL;
+    return runtime_write_holders(path, record) == SPISOR_OK ? cJSON_CreateObject() : NULL;
 }
 
 /** Releases this test's hold as a launcher does: under the holders lock, keeping what the host recorded. */

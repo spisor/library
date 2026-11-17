@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#include "spisor/status.h"
+
 /**
  * The process running one background host and the processes holding it, each by its pid. alive_at is
  * when the host last said it runs, in epoch milliseconds, and check_milliseconds how often it says so;
@@ -38,11 +40,12 @@ int runtime_read_holders(const char *path, runtime_holders_record *record);
 
 /**
  * Records record at path as JSON.stringify({pid, aliveAt, checkMilliseconds, holders}) and a newline,
- * removing the file once it names neither a process nor a holder. 1 on success.
+ * removing the file once it names neither a process nor a holder. OK; REFUSED when the file cannot be written or
+ * removed; OUT_OF_MEMORY, having written nothing.
  *
  * @implNote Replaced at once, so a reader never sees half a record.
  */
-int runtime_write_holders(const char *path, const runtime_holders_record *record);
+spisor_status runtime_write_holders(const char *path, const runtime_holders_record *record);
 
 /** Drops every holder whose process is no longer alive, and every one equal to dropped. */
 void runtime_keep_live_holders(runtime_holders_record *record, double dropped);

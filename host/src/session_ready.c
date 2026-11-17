@@ -6,6 +6,7 @@
 #include "paths.h"
 #include "processes_ready.h"
 #include "ready_timeout.h"
+#include "json_service.h"
 
 static cJSON *await_argument(const host_context *context, const char *host_id, double pid) {
     cJSON *argument = cJSON_CreateObject();
@@ -20,7 +21,8 @@ static cJSON *await_argument(const host_context *context, const char *host_id, d
 }
 
 cJSON *host_await_session_environment(const host_context *context, const char *host_id, double pid, cJSON **refusal) {
-    cJSON *answer = host_call(runtime_processes_await_ready, await_argument(context, host_id, pid), refusal);
+    cJSON *argument = await_argument(context, host_id, pid);
+    cJSON *answer = runtime_call_operation(runtime_processes_await_ready_operation, argument, refusal);
     cJSON *environment = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "environment");
     cJSON_Delete(answer);
     return environment;

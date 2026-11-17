@@ -108,9 +108,10 @@ static char *record_text(const runtime_holders_record *record) {
     cJSON *holders = cJSON_CreateArray();
     int built = object != NULL && attach(object, "pid", number_or_null(record->pid)) &&
                 attach(object, "aliveAt", number_or_null(record->alive_at)) &&
-                attach(object, "checkMilliseconds", number_or_null(record->check_milliseconds)) &&
-                attach(object, "holders", holders);
-    if (object == NULL) {
+                attach(object, "checkMilliseconds", number_or_null(record->check_milliseconds));
+    if (built) {
+        built = attach(object, "holders", holders);
+    } else {
         cJSON_Delete(holders);
     }
     for (size_t index = 0; built && index < record->count; index++) {
@@ -145,14 +146,20 @@ static int make_parent(const char *path) {
     return made;
 }
 
-int runtime_write_holders(const char *path, const runtime_holders_record *record) {
+spisor_status runtime_write_holders(const char *path, const runtime_holders_record *record) {
     if (isnan(record->pid) && record->count == 0) {
-        return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
+        return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE ? SPISOR_OK : SPISOR_REFUSED;
     }
-    char *text = make_parent(path) ? record_text(record) : NULL;
-    int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    if (!make_parent(path)) {
+        return SPISOR_REFUSED;
+    }
+    char *text = record_text(record);
+    if (text == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     free(text);
-    return written;
+    return written ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 void runtime_keep_live_holders(runtime_holders_record *record, double dropped) {

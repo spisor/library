@@ -13,9 +13,11 @@
 #include "hosts.h"
 #include "install_hooks.h"
 #include "json_allocation.h"
+#include "file_times.h"
 #include "platform_key.h"
 #include "runtime/boot.h"
 #include "runtime/install.h"
+#include "runtime/processes.h"
 #include "runtime/updates.h"
 #include "timestamp_text.h"
 #include "tree_snapshot.h"
@@ -552,6 +554,226 @@ static int placed_nothing_unless_placed(void) {
     return 1;
 }
 
+#define BACKGROUND_HOST "background-host"
+#define GONE_PID 2147480000.0
+#define STAMPED_AT 1800000000000.0
+
+static char prepared_holders[512];
+static char live_record[1024];
+static double live_stamp;
+
+/** The holders file of BACKGROUND_HOST naming this process as the host and as a holder, and one holder long gone. */
+static void prepare_processes(void) {
+    start_install_base(&base, "operations", "processes");
+    live_stamp = runtime_now_milliseconds();
+    snprintf(prepared_holders, sizeof prepared_holders,
+             "{\"pid\":%d,\"aliveAt\":%.0f,\"checkMilliseconds\":600000,\"holders\":[%d,%.0f]}\n",
+             (int)fixture_process_id(), live_stamp, (int)fixture_process_id(), GONE_PID);
+    write_in(base.state, "processes/" BACKGROUND_HOST ".json", prepared_holders);
+    snprintf(live_record, sizeof live_record, "bundles/runs/%s/%d.1-1.json", BACKGROUND_HOST,
+             (int)fixture_process_id());
+    char text[512];
+    snprintf(text, sizeof text,
+             "{\"pid\":%d,\"aliveAt\":%.0f,\"checkMilliseconds\":600000,\"run\":{\"a\":\"1.0.0\"}}\n",
+             (int)fixture_process_id(), STAMPED_AT);
+    write_in(base.state, live_record, text);
+    snprintf(text, sizeof text,
+             "{\"pid\":%.0f,\"aliveAt\":%.0f,\"checkMilliseconds\":5000,\"run\":{\"a\":\"0.9.0\"}}\n", GONE_PID,
+             STAMPED_AT);
+    write_in(base.state, "bundles/runs/" BACKGROUND_HOST "/gone.json", text);
+    snprintf(text, sizeof text, "{\"pid\":%d,\"environment\":{\"PORT\":\"1\"}}\n", (int)fixture_process_id());
+    write_in(base.state, "processes/" BACKGROUND_HOST ".ready.json", text);
+    snapshot_left_out = "/state/processes";
+}
+
+/** As prepare_processes, leaving out the state, whose holders and new run records carry the time. */
+static void prepare_record(void) {
+    prepare_processes();
+    snapshot_left_out = "/state";
+}
+
+/** Whether a call that did not answer OK left the holders file as prepared. */
+static int holders_unchanged_unless_ok(void) {
+    char *text = text_in(base.state, "processes/" BACKGROUND_HOST ".json");
+    int kept = last_status == SPISOR_OK || (text != NULL && strcmp(text, prepared_holders) == 0);
+    free(text);
+    if (!kept) {
+        fprintf(stderr, "processes: an answer of %d changed the holders file\n", (int)last_status);
+    }
+    return kept;
+}
+
+/** Whether the run record of this live process is still there, whatever was answered. */
+static int kept_the_live_record(void) {
+    if (!exists_in(base.state, live_record)) {
+        fprintf(stderr, "processes: an answer of %d deleted a live run record\n", (int)last_status);
+        return 0;
+    }
+    return 1;
+}
+
+static const runtime_processes_definition *processes_service(void) {
+    return runtime_processes_definition_of();
+}
+
+static spisor_status run_hold(void) {
+    static const char *const arguments[1] = {"--background"};
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
+    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.holder = (int64_t)fixture_process_id();
+    argument.executable = base.cache;
+    argument.arguments = arguments;
+    argument.argument_count = 1;
+    last_status = processes->hold(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.started || answer.pid != (int64_t)fixture_process_id())) {
+        last_status = WRONG_RUN;
+    }
+    processes->release_hold_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_release(void) {
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_holder_argument argument = SPISOR_INIT(runtime_processes_holder_argument);
+    runtime_processes_release_answer answer = SPISOR_INIT(runtime_processes_release_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.holder = (int64_t)fixture_process_id();
+    last_status = processes->release(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.holder_count != 0) {
+        last_status = WRONG_RUN;
+    }
+    processes->release_release_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_prune(void) {
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_prune_argument argument = SPISOR_INIT(runtime_processes_prune_argument);
+    runtime_processes_prune_answer answer = SPISOR_INIT(runtime_processes_prune_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.self = (int64_t)fixture_process_id();
+    argument.now = live_stamp + 1;
+    last_status = processes->prune(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.exit) {
+        last_status = WRONG_RUN;
+    }
+    processes->release_prune_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_ready(void) {
+    static const runtime_variable environment[1] = {{"PORT", "2"}};
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_ready_argument argument = SPISOR_INIT(runtime_processes_ready_argument);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.pid = (int64_t)fixture_process_id();
+    argument.environment = environment;
+    argument.environment_count = 1;
+    last_status = processes->ready(processes->context, &argument, &refusal);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_await_ready(void) {
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_await_argument argument = SPISOR_INIT(runtime_processes_await_argument);
+    runtime_processes_await_answer answer = SPISOR_INIT(runtime_processes_await_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.pid = (int64_t)fixture_process_id();
+    argument.timeout_milliseconds = 200;
+    last_status = processes->await_ready(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.environment_count != 1) {
+        last_status = WRONG_RUN;
+    }
+    processes->release_await_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_record_run(void) {
+    static const runtime_processes_version run[1] = {{"a", "2.0.0"}};
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_record_argument argument = SPISOR_INIT(runtime_processes_record_argument);
+    runtime_processes_record_answer answer = SPISOR_INIT(runtime_processes_record_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.run = run;
+    argument.run_count = 1;
+    last_status = processes->record_run(processes->context, &argument, &answer, &refusal);
+    processes->release_record_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** Whether a record_run that did not answer OK left only the two prepared run records. */
+static int recorded_no_new_run_unless_ok(void) {
+    runtime_directory_listing listing = {NULL, 0};
+    char *runs = joined(base.state, "bundles/runs/" BACKGROUND_HOST);
+    CHECK(runtime_list_directory(runs, &listing) == 1);
+    free(runs);
+    int kept = last_status == SPISOR_OK || listing.count == 2;
+    runtime_free_directory_listing(&listing);
+    if (!kept) {
+        fprintf(stderr, "processes' record_run: an answer of %d left a new run record\n", (int)last_status);
+    }
+    return kept;
+}
+
+static spisor_status run_live_runs(void) {
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_live_argument argument = SPISOR_INIT(runtime_processes_live_argument);
+    runtime_processes_live_answer answer = SPISOR_INIT(runtime_processes_live_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.now = STAMPED_AT + 1;
+    last_status = processes->live_runs(processes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.run_count != 1) {
+        last_status = WRONG_RUN;
+    }
+    processes->release_live_answer(processes->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_remove_runs(void) {
+    const runtime_processes_definition *processes = processes_service();
+    runtime_processes_remove_argument argument = SPISOR_INIT(runtime_processes_remove_argument);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char *gone = joined(base.state, "bundles/runs/" BACKGROUND_HOST "/gone.json");
+    argument.state = base.state;
+    argument.host_id = BACKGROUND_HOST;
+    argument.record = gone;
+    last_status = processes->remove_runs(processes->context, &argument, &refusal);
+    free(gone);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** Whether a remove_runs that did not answer OK left the record it was asked to delete. */
+static int removed_nothing_unless_ok(void) {
+    int kept = last_status == SPISOR_OK || exists_in(base.state, "bundles/runs/" BACKGROUND_HOST "/gone.json");
+    if (!kept) {
+        fprintf(stderr, "processes' remove_runs: an answer of %d deleted the record\n", (int)last_status);
+    }
+    return kept && kept_the_live_record();
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -650,6 +872,15 @@ int main(int argc, char **argv) {
                                                  {"boot's resolve", prepare_boot, run_boot_resolve, NULL},
                                                  {"boot's place", prepare_boot, run_boot_place,
                                                   placed_nothing_unless_placed}};
+    static const operation_case processes_cases[8] = {
+        {"processes' hold", prepare_processes, run_hold, holders_unchanged_unless_ok},
+        {"processes' release", prepare_processes, run_release, NULL},
+        {"processes' prune", prepare_processes, run_prune, holders_unchanged_unless_ok},
+        {"processes' ready", prepare_processes, run_ready, NULL},
+        {"processes' await_ready", prepare_processes, run_await_ready, NULL},
+        {"processes' record_run", prepare_record, run_record_run, recorded_no_new_run_unless_ok},
+        {"processes' live_runs", prepare_processes, run_live_runs, kept_the_live_record},
+        {"processes' remove_runs", prepare_processes, run_remove_runs, removed_nothing_unless_ok}};
     const char *only = argc > 1 ? argv[1] : "";
     uint64_t first = argc > 2 ? strtoull(argv[2], NULL, 10) : 1;
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
@@ -688,6 +919,11 @@ int main(int argc, char **argv) {
     for (size_t index = 0; index < 4; index++) {
         if (is_selected(only, boot_cases[index].label)) {
             every_failure_of(&boot_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+        }
+    }
+    for (size_t index = 0; index < 8; index++) {
+        if (is_selected(only, processes_cases[index].label)) {
+            every_failure_of(&processes_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
         }
     }
     return check_summary("out_of_memory_install_operations_test");

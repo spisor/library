@@ -97,11 +97,7 @@ static cJSON *hold_step(const runtime_processes_request *request, const char *pa
         record->alive_at = floor(runtime_now_milliseconds());
         record->check_milliseconds = NAN;
     }
-    if (!runtime_write_holders(path, record)) {
-        *refusal = runtime_processes_state_refusal("the holders file", path);
-        return NULL;
-    }
-    return held_answer(record->pid, !running, outside_job);
+    return runtime_processes_write_answered(path, record, held_answer(record->pid, !running, outside_job), refusal);
 }
 
 cJSON *runtime_processes_hold_for(const runtime_processes_request *request, cJSON **refusal) {

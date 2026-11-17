@@ -12,6 +12,7 @@
 #include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "file_times.h"
+#include "node_json_file.h"
 #include "processes_request.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -76,7 +77,7 @@ static cJSON *publication_refusal(const cJSON *argument) {
 
 static int copy_member(cJSON *record, const cJSON *argument, const char *name) {
     const cJSON *member = cJSON_GetObjectItemCaseSensitive(argument, name);
-    return member == NULL || cJSON_AddItemToObject(record, name, cJSON_Duplicate(member, 1));
+    return member == NULL || runtime_catalog_attach(record, name, cJSON_Duplicate(member, 1));
 }
 
 static cJSON *record_of(const cJSON *argument) {
@@ -94,25 +95,30 @@ static cJSON *record_of(const cJSON *argument) {
     return record;
 }
 
-static int write_record(const runtime_processes_request *request, const char *path, const cJSON *record) {
+/** Writes the record at path; REFUSED when it cannot be written, OUT_OF_MEMORY having written nothing. */
+static spisor_status write_record(const runtime_processes_request *request, const char *path, const cJSON *record) {
     char *text = cJSON_PrintUnformatted(record);
-    char *folder = runtime_processes_folder(request->state);
-    int written = text != NULL && folder != NULL && spisor_make_directories(folder) &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    char *folder = text == NULL ? NULL : runtime_processes_folder(request->state);
+    spisor_status status = folder == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    if (status == SPISOR_OK && (!spisor_make_directories(folder) ||
+                                !spisor_replace_file(path, (const uint8_t *)text, strlen(text)))) {
+        status = SPISOR_REFUSED;
+    }
     free(folder);
     cJSON_free(text);
-    return written;
+    return status;
 }
 
 static cJSON *ready_for(const runtime_processes_request *request, cJSON **refusal) {
     *refusal = publication_refusal(request->argument);
     cJSON *record = *refusal == NULL ? record_of(request->argument) : NULL;
     char *path = record == NULL ? NULL : ready_path(request);
-    cJSON *answer = NULL;
-    if (path != NULL && !write_record(request, path, record)) {
-        *refusal = runtime_processes_state_refusal("the ready record", path);
-    } else if (path != NULL) {
-        answer = cJSON_CreateObject();
+    cJSON *answer = path == NULL ? NULL : cJSON_CreateObject();
+    spisor_status written = answer == NULL ? SPISOR_OUT_OF_MEMORY : write_record(request, path, record);
+    if (written != SPISOR_OK) {
+        *refusal = written == SPISOR_REFUSED ? runtime_processes_state_refusal("the ready record", path) : NULL;
+        cJSON_Delete(answer);
+        answer = NULL;
     }
     free(path);
     cJSON_Delete(record);
@@ -145,14 +151,6 @@ int runtime_publish_ready_refusal(const char *state, const char *host_id, const 
     return published;
 }
 
-/** The record at path, or NULL when there is none or it is not yet readable whole. */
-static cJSON *read_record(const char *path) {
-    size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
-    cJSON *record = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
-    return record;
-}
 
 static int is_record_of(const cJSON *record, double pid) {
     const cJSON *recorded = cJSON_GetObjectItemCaseSensitive(record, "pid");
@@ -163,7 +161,7 @@ static cJSON *environment_answer(const cJSON *record) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(record, "environment");
     cJSON *answer = cJSON_CreateObject();
     cJSON *copy = runtime_processes_is_environment(environment) ? cJSON_Duplicate(environment, 1) : cJSON_CreateObject();
-    if (answer == NULL || !runtime_catalog_attach(answer, "environment", copy)) {
+    if (!runtime_catalog_attach(answer, "environment", copy)) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -198,12 +196,13 @@ static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **
     double started = runtime_now_milliseconds();
     cJSON *answer = NULL;
     int settled = 0;
-    while (path != NULL && !settled) {
-        cJSON *record = read_record(path);
-        settled = is_record_of(record, pid);
-        if (settled && is_refusal_record(record)) {
+    int out_of_memory = path == NULL;
+    while (!out_of_memory && !settled) {
+        cJSON *record = runtime_read_node_json(path, &out_of_memory);
+        settled = out_of_memory || is_record_of(record, pid);
+        if (!out_of_memory && settled && is_refusal_record(record)) {
             *refusal = published_refusal(record);
-        } else if (settled) {
+        } else if (!out_of_memory && settled) {
             answer = environment_answer(record);
         }
         cJSON_Delete(record);
@@ -218,10 +217,10 @@ static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_ready(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_BACKGROUND_HOST, ready_for);
+cJSON *runtime_processes_ready_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, ready_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_processes_await_ready(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_processes_serve(in, in_len, out, out_len, RUNTIME_PROCESSES_BACKGROUND_HOST, await_ready_for);
+cJSON *runtime_processes_await_ready_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, await_ready_for, refusal);
 }
