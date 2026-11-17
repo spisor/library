@@ -237,17 +237,37 @@ static int write_all(HANDLE handle, const uint8_t *bytes, size_t length) {
     return 1;
 }
 
+#define DELETE_PENDING_STATUS ((LONG)0xC0000056L)
+
+typedef LONG(WINAPI *nt_status_reader)(void);
+
+static nt_status_reader resolve_nt_status_reader(void) {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    return ntdll == NULL ? NULL : (nt_status_reader)(void *)GetProcAddress(ntdll, "RtlGetLastNtStatus");
+}
+
+/**
+ * Whether a create that failed met a file deleted while something still holds it open: its name stands until
+ * the last handle closes, and Win32 reports that only as access denied.
+ * @implNote reader is resolved before the failing call, since resolving it afterwards could overwrite the status.
+ */
+static int met_a_file_being_deleted(DWORD error, nt_status_reader reader) {
+    return error == ERROR_ACCESS_DENIED && reader != NULL && reader() == DELETE_PENDING_STATUS;
+}
+
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
     (void)executable;
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
         return RUNTIME_ENTRY_FAILED;
     }
+    nt_status_reader reader = resolve_nt_status_reader();
     HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
         free(wide);
-        int exists = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
+        int exists = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ||
+                     met_a_file_being_deleted(error, reader);
         return exists ? RUNTIME_ENTRY_EXISTS : RUNTIME_ENTRY_FAILED;
     }
     int written = write_all(handle, bytes, length);

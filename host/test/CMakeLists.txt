@@ -1,3 +1,5 @@
+spisor_bound_tests()
+
 set(host_test_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>
     $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook> $<TARGET_OBJECTS:host_marketplace_lookup_test_hook>)
 
@@ -68,12 +70,15 @@ host_test(hook_without_javascript)
 add_dependencies(hook_without_javascript javascript_trap)
 target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
     CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
+# Windows PowerShell runs take up to 631 s on a windows-latest runner, against 28 s on a workstation.
+set(install_script_timeout_seconds 1200)
+set_tests_properties(host_install_script_test PROPERTIES TIMEOUT ${install_script_timeout_seconds})
 if(WIN32)
     find_program(SPISOR_PWSH pwsh)
     if(SPISOR_PWSH)
         add_test(NAME host_install_script_test_pwsh COMMAND install_script_test)
         set_tests_properties(host_install_script_test_pwsh PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value
-            ENVIRONMENT "INSTALL_SCRIPT_POWERSHELL=${SPISOR_PWSH}")
+            ENVIRONMENT "INSTALL_SCRIPT_POWERSHELL=${SPISOR_PWSH}" TIMEOUT ${install_script_timeout_seconds})
     endif()
 endif()
 

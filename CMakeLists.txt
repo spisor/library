@@ -56,6 +56,8 @@ add_subdirectory(testing)
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     enable_testing()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_timeouts.cmake)
+    spisor_refuse_unbounded_tests("${CMAKE_CURRENT_SOURCE_DIR}")
     add_subdirectory(test)
     add_subdirectory(runtime)
     add_subdirectory(host)
