@@ -290,6 +290,53 @@ static void it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_
     finish_base();
 }
 
+/** Applies spisor-host's start through the definition, writing its boot hint as asked with the libraries given. */
+static spisor_status apply_hinting(uint32_t writes_boot_hint, const char *const *libraries, size_t count) {
+    static const runtime_item_version running[1] = {{SPISOR_HOST, "1.0.0"}};
+    const runtime_updates_definition *updates = runtime_updates_definition_of();
+    runtime_updates_apply_argument argument = SPISOR_INIT(runtime_updates_apply_argument);
+    runtime_updates_apply_answer answer = SPISOR_INIT(runtime_updates_apply_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = state;
+    argument.cache = cache;
+    argument.host_id = SPISOR_HOST;
+    argument.running = running;
+    argument.running_count = 1;
+    argument.writes_boot_hint = writes_boot_hint;
+    argument.libraries = libraries;
+    argument.library_count = count;
+    argument.platform = PLATFORM;
+    register_host(SPISOR_HOST);
+    spisor_status status = updates->apply(updates->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK) {
+        CHECK(runtime_remove_file_entry(answer.run_record) == RUNTIME_ENTRY_DONE);
+    }
+    updates->release_apply_answer(updates->context, &answer);
+    updates->release_refusal(updates->context, &refusal);
+    return status;
+}
+
+static void it_writes_the_boot_hint_only_when_asked_whatever_libraries_it_is_given(void) {
+    static const char *const none[1] = {NULL};
+    start_base("hint-asked");
+    write_catalog();
+    CHECK(apply_hinting(0, none, 0) == SPISOR_OK);
+    CHECK(!exists_in(cache, "hosts/" SPISOR_HOST ".json"));
+    CHECK(apply_hinting(1, NULL, 0) == SPISOR_OK);
+    expect_hinted_versions(SPISOR_HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}", "a hint naming no library");
+    finish_base();
+}
+
+static void it_refuses_libraries_given_without_the_hint_and_a_flag_other_than_0_or_1(void) {
+    static const char *const libraries[1] = {"runtime"};
+    start_base("hint-refused");
+    write_catalog();
+    CHECK(apply_hinting(0, libraries, 1) == SPISOR_MALFORMED);
+    CHECK(apply_hinting(2, NULL, 0) == SPISOR_MALFORMED);
+    CHECK(!exists_in(cache, "hosts/" SPISOR_HOST ".json"));
+    finish_base();
+}
+
 static void it_writes_no_hint_while_a_library_the_host_boots_with_is_not_installed(void) {
     start_base("libraries-missing");
     list_library("runtime", "0.1.0", "0.1.0");
@@ -997,6 +1044,8 @@ int main(void) {
     it_keeps_the_versions_the_host_already_scheduled_for_its_next_start();
     it_hints_the_host_version_scheduled_for_the_next_start_only_once_it_is_installed_intact();
     it_writes_no_hint_while_a_library_the_host_boots_with_is_not_installed();
+    it_writes_the_boot_hint_only_when_asked_whatever_libraries_it_is_given();
+    it_refuses_libraries_given_without_the_hint_and_a_flag_other_than_0_or_1();
 
     it_schedules_a_newer_loader_and_spisor_host_for_the_next_start_which_then_runs_both();
     it_holds_a_host_to_its_pin();

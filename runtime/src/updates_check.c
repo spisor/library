@@ -122,22 +122,34 @@ static int add_host_targets(cJSON *targets, const check_plan *plan, const cJSON 
     return added;
 }
 
-/** Whether check, which it frees, answers damaged. */
-static int is_damaged(cJSON *check) {
+/** What a version check found on disk, memory running out told apart from a version that is sound. */
+typedef enum disk_state {
+    DISK_SOUND,
+    DISK_DAMAGED,
+    DISK_OUT_OF_MEMORY
+} disk_state;
+
+/** What check, which it frees, found: NULL is memory running out. */
+static disk_state disk_state_of(cJSON *check) {
     const cJSON *kind = cJSON_GetObjectItemCaseSensitive(check, "kind");
-    int damaged = cJSON_IsString(kind) && strcmp(kind->valuestring, "damaged") == 0;
+    disk_state state = check == NULL ? DISK_OUT_OF_MEMORY
+                       : cJSON_IsString(kind) && strcmp(kind->valuestring, "damaged") == 0 ? DISK_DAMAGED
+                                                                                            : DISK_SOUND;
     cJSON_Delete(check);
-    return damaged;
+    return state;
 }
 
-/** Whether the installed bundle version has a file whose size or hash differs from the marker; an absent version has not. */
-static int is_damaged_on_disk(const char *cache, const char *id, const char *version) {
+/** Whether the installed version has a file whose size or hash differs from the marker; an absent one has not. */
+static disk_state damage_on_disk(const char *cache, const char *id, const char *version) {
     const char *segments[4] = {cache, "bundles", id, version};
     char *directory = runtime_cache_joined(segments, 4);
-    int damaged = directory != NULL && (is_damaged(runtime_cache_check_version_sizes(directory)) ||
-                                        is_damaged(runtime_cache_check_version(directory)));
+    disk_state state = directory == NULL ? DISK_OUT_OF_MEMORY
+                                         : disk_state_of(runtime_cache_check_version_sizes(directory));
+    if (state == DISK_SOUND) {
+        state = disk_state_of(runtime_cache_check_version(directory));
+    }
     free(directory);
-    return damaged;
+    return state;
 }
 
 /**
@@ -150,9 +162,10 @@ static int is_damaged_on_disk(const char *cache, const char *id, const char *ver
 static int add_unstartable_targets(cJSON *targets, const char *cache, const cJSON *run) {
     int added = 1;
     for (const cJSON *entry = run == NULL ? NULL : run->child; added && entry != NULL; entry = entry->next) {
-        if (cJSON_IsString(entry) && is_damaged_on_disk(cache, entry->string, entry->valuestring)) {
-            added = add_target(targets, entry->string, entry->valuestring, NULL);
-        }
+        disk_state state =
+            cJSON_IsString(entry) ? damage_on_disk(cache, entry->string, entry->valuestring) : DISK_SOUND;
+        added = state != DISK_OUT_OF_MEMORY &&
+                (state != DISK_DAMAGED || add_target(targets, entry->string, entry->valuestring, NULL));
     }
     return added;
 }

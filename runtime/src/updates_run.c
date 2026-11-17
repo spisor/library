@@ -113,16 +113,25 @@ static int has_method_application(const cJSON *registration) {
     return method != NULL && strcmp(method, PATH_METHOD) != 0;
 }
 
-/** Adds the answer under id to the summary's member, or the refusal with id to refused; 0 when memory runs out. */
+static int add_answer(const update_run *run, const char *member, const char *id, cJSON *answer) {
+    return cJSON_AddItemToObject(cJSON_GetObjectItemCaseSensitive(run->summary, member), id, answer);
+}
+
+static int add_refusal(const update_run *run, const char *id, cJSON *refusal) {
+    return refusal != NULL && cJSON_AddStringToObject(refusal, "id", id) != NULL &&
+           cJSON_AddItemToArray(cJSON_GetObjectItemCaseSensitive(run->summary, "refused"), refusal);
+}
+
+/**
+ * Adds the answer under id to the summary's member, or the refusal with id to refused, deleting whichever it was
+ * given when it cannot be added; 0 when memory runs out.
+ */
 static int record(const update_run *run, const char *member, const char *id, cJSON *answer, cJSON *refusal) {
-    if (answer != NULL) {
-        return cJSON_AddItemToObject(cJSON_GetObjectItemCaseSensitive(run->summary, member), id, answer);
+    int added = answer != NULL ? add_answer(run, member, id, answer) : add_refusal(run, id, refusal);
+    if (!added) {
+        cJSON_Delete(answer != NULL ? answer : refusal);
     }
-    if (refusal == NULL || cJSON_AddStringToObject(refusal, "id", id) == NULL) {
-        cJSON_Delete(refusal);
-        return 0;
-    }
-    return cJSON_AddItemToArray(cJSON_GetObjectItemCaseSensitive(run->summary, "refused"), refusal);
+    return added;
 }
 
 /**
