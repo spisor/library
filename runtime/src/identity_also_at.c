@@ -229,7 +229,11 @@ static cJSON *read_start_copy(const char *id, const char *api_base, cJSON **refu
 }
 
 static int adds_copy(cJSON *files, const char *id, cJSON *file) {
-    return file != NULL && cJSON_AddItemToObject(files, id, file) != 0;
+    if (file == NULL || !cJSON_AddItemToObject(files, id, file)) {
+        cJSON_Delete(file);
+        return 0;
+    }
+    return 1;
 }
 
 static int reads_listed_copies(cJSON *files, const cJSON *start_file, const char *api_base) {

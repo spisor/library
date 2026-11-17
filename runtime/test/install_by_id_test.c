@@ -13,7 +13,7 @@
 #include "check.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
-#include "install_by_id.h"
+#include "install_call.h"
 #include "paths.h"
 #include "service_scratch.h"
 #include "sha256.h"
@@ -138,11 +138,11 @@ static catalog_answer install_with(const char *id, const char *extra_json) {
     cJSON_AddStringToObject(argument, "apiBase", api_base);
     free(plugins);
     free(cache);
-    return call_catalog(runtime_install_by_id, argument);
+    return install_call(INSTALL_BY_ID, argument);
 }
 
 static int succeeded(const catalog_answer answer, const char *label) {
-    int matched = answer.status == SPISOR_STATUS_SUCCESS;
+    int matched = answer.status == SPISOR_OK;
     if (!matched) {
         const char *message = text_at(answer.tree, "message");
         fprintf(stderr, "%s: expected success, got status %d and \"%s\"\n", label, (int)answer.status,
@@ -236,7 +236,7 @@ static void an_id_key_lands_in_its_folder_on_windows_paths(void) {
 static void a_tampered_file_is_refused_and_nothing_is_deployed(void) {
     plugin_folder = "plugins-tampered";
     catalog_answer answer = install_with("github:10", NULL);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_REFUSED);
     CHECK(text_at(answer.tree, "message") != NULL && strstr(text_at(answer.tree, "message"), "index.js") != NULL);
     CHECK(!exists_in_scratch("cache/bundles/github+10/1.0.0/.installed.json"));
     CHECK(!exists_in_scratch("plugins-tampered"));
@@ -247,7 +247,8 @@ static void a_tampered_file_is_refused_and_nothing_is_deployed(void) {
 static void a_name_taken_during_the_install_is_refused_and_nothing_is_installed(void) {
     plugin_folder = "plugins-taken";
     catalog_answer answer = install_with("github:9", NULL);
-    CHECK(expect_refusal_released(answer, "when the install began", "taken name"));
+    CHECK(expect_cache_refusal_refused(answer, "when the install began", "taken name"));
+    cJSON_Delete(answer.tree);
     CHECK(!exists_in_scratch("cache/bundles/github+9"));
     CHECK(!exists_in_scratch("plugins-taken"));
     plugin_folder = NULL;
@@ -350,7 +351,7 @@ static void a_mirror_installs_from_the_primary_and_deploys_its_name(void) {
 
 static void copies_naming_different_primaries_stop_the_install(void) {
     catalog_answer answer = install_with("github:13", NULL);
-    CHECK(expect_refusal(answer, "different primaries", "disagreement"));
+    CHECK(expect_cache_refusal_refused(answer, "different primaries", "disagreement"));
     CHECK(!exists_in_scratch("cache/bundles/github+13"));
     CHECK(!exists_in_scratch("plugins-github-13"));
     cJSON_Delete(answer.tree);
@@ -384,7 +385,7 @@ static void a_folder_id_installs_again(void) {
 
 static void a_refusal_from_the_copies_other_than_nothing_readable_stops_the_install(void) {
     catalog_answer answer = install_with("github:15", NULL);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_REFUSED);
     CHECK(!exists_in_scratch("cache/bundles/github+15"));
     CHECK(!exists_in_scratch("plugins-github-15"));
     cJSON_Delete(answer.tree);
@@ -423,18 +424,18 @@ static void an_accepted_change_of_primary_replaces_the_deployed_plugin(void) {
 
 static void a_release_without_an_index_is_refused_naming_it(void) {
     catalog_answer answer = install_with("github:8", NULL);
-    CHECK(expect_refusal(answer, "weivel-index.json", "no index asset"));
+    CHECK(expect_cache_refusal_refused(answer, "weivel-index.json", "no index asset"));
     cJSON_Delete(answer.tree);
 }
 
 static void refuses_a_local_id_and_a_missing_argument(void) {
     catalog_answer answer = install_with("local:greeter", NULL);
-    CHECK(expect_refusal(answer, "no repo host", "local id"));
+    CHECK(expect_cache_refusal_refused(answer, "no repo host", "local id"));
     cJSON_Delete(answer.tree);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "id", "github:5");
-    answer = call_catalog(runtime_install_by_id, argument);
-    CHECK(expect_refusal(answer, "cache", "no cache"));
+    answer = install_call(INSTALL_BY_ID, argument);
+    CHECK(expect_cache_refusal_malformed(answer, "cache", "no cache"));
     cJSON_Delete(answer.tree);
 }
 

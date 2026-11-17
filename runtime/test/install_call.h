@@ -29,7 +29,8 @@ typedef enum install_operation {
     INSTALL_ENTRY,
     INSTALL_RUNTIME,
     INSTALL_APPLICATION,
-    INSTALL_REGISTER_LOADER
+    INSTALL_REGISTER_LOADER,
+    INSTALL_BY_ID
 } install_operation;
 
 static inline const char *install_place_of(const cJSON *request, const char *name) {
@@ -341,6 +342,40 @@ static inline spisor_status install_register_loader_call(const runtime_install_d
     return status;
 }
 
+static inline spisor_status install_by_id_call(const runtime_install_definition *install, const cJSON *request,
+                                               catalog_request *held, cJSON **tree, spisor_refusal *refusal) {
+    runtime_install_by_id_argument argument = SPISOR_INIT(runtime_install_by_id_argument);
+    runtime_install_by_id_answer answer = SPISOR_INIT(runtime_install_by_id_answer);
+    spisor_status status;
+    (void)held;
+    argument.id = cache_member_text(request, "id");
+    argument.cache = cache_member_text(request, "cache");
+    argument.plugin_directory = cache_member_text(request, "pluginDir");
+    argument.version = cache_member_text(request, "version");
+    argument.last_known = cache_member_text(request, "lastKnown");
+    argument.accept_primary = cache_member_text(request, "acceptPrimary");
+    argument.api_base = cache_member_text(request, "apiBase");
+    status = install->by_id(install->context, &argument, &answer, refusal);
+    if (status == SPISOR_OK) {
+        *tree = cJSON_CreateObject();
+        cache_add_text(*tree, "id", answer.id);
+        cache_add_text(*tree, "name", answer.name);
+        cache_add_text(*tree, "fullName", answer.full_name);
+        CHECK(cJSON_AddItemToObject(*tree, "ids", cache_texts_json(answer.ids, answer.id_count)));
+        cache_add_text(*tree, "primary", answer.primary);
+        CHECK(cJSON_AddBoolToObject(*tree, "primaryConfirmed", answer.primary_confirmed != 0) != NULL);
+        if (answer.needs_user_acceptance) {
+            cache_add_text(*tree, "recordedPrimary", answer.recorded_primary);
+            CHECK(cJSON_AddTrueToObject(*tree, "needsUserAcceptance") != NULL);
+        }
+        cache_add_text(*tree, "version", answer.version);
+        cache_add_text(*tree, "commit", answer.commit);
+        cache_add_text(*tree, "sha256", answer.sha256);
+    }
+    install->release_by_id_answer(install->context, &answer);
+    return status;
+}
+
 /** Calls the operation with the request, which it deletes, answering its status and its answer or refusal as JSON. */
 static inline catalog_answer install_call(install_operation operation, cJSON *request) {
     typedef spisor_status (*caller)(const runtime_install_definition *, const cJSON *, catalog_request *, cJSON **,
@@ -348,7 +383,8 @@ static inline catalog_answer install_call(install_operation operation, cJSON *re
     static const caller callers[] = {install_warnings_call,    install_packages_call,
                                      install_plan_call,        install_detect_call,
                                      install_entry_call,       install_runtime_call,
-                                     install_application_call, install_register_loader_call};
+                                     install_application_call, install_register_loader_call,
+                                     install_by_id_call};
     const runtime_install_definition *install = runtime_install_definition_of();
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     catalog_request held;

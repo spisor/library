@@ -21,7 +21,8 @@ endif()
 spisor_strict_warnings(fake_application)
 
 set(c_host_runtime_objects $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>
-    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+    $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_path_entry_test_hooks> $<TARGET_OBJECTS:runtime_install_test_hooks>)
 host_executable(c_host c-host c_host.c ${c_host_runtime_objects})

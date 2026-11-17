@@ -9,6 +9,7 @@
 #include "definition_support.h"
 #include "fetch_transport.h"
 #include "identity.h"
+#include "json_parse.h"
 #include "json_service.h"
 #include "spisor/json_kind.h"
 
@@ -158,7 +159,11 @@ static void fail_status(lookup_failure *failure, const runtime_fetch_answer *ans
 }
 
 static cJSON *parse_body(const uint8_t *body, size_t length, const char *url, cJSON **refusal) {
-    cJSON *repository = spisor_parse_json(body, length);
+    int out_of_memory = 0;
+    cJSON *repository = spisor_parse_json_reporting(body, length, &out_of_memory);
+    if (out_of_memory) {
+        return NULL;
+    }
     if (!cJSON_IsObject(repository)) {
         cJSON_Delete(repository);
         return refuse(refusal, "check that the host is the repo host the id names", "%s did not answer a repository", url);

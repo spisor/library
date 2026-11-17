@@ -1,13 +1,11 @@
 #ifndef RUNTIME_INSTALL_BY_ID_H
 #define RUNTIME_INSTALL_BY_ID_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include "export.h"
+#include "cJSON.h"
+#include "spisor/status.h"
 
 /**
- * install.byId: {id, cache, pluginDir, version?, lastKnown?, acceptPrimary?, apiBase?} installs the plugin the repo id
+ * install's byId: {id, cache, pluginDir, version?, lastKnown?, acceptPrimary?, apiBase?} installs the plugin the repo id
  * names into cache, deploys it into pluginDir under its import name, and answers {id, name, fullName, version,
  * commit, sha256, ids, primary, primaryConfirmed}. id, name and fullName are those of the repo it was installed
  * from, which is the verified primary and so can differ from the id asked for. commit is the commit the index states
@@ -29,6 +27,16 @@
  * A primary that differs from the recorded one installs nothing and answers {id, name, fullName, ids, primary,
  * primaryConfirmed, recordedPrimary, needsUserAcceptance: true}, unless acceptPrimary names the new primary.
  */
-RUNTIME_EXPORT int32_t runtime_install_by_id(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_install_by_id_operation(const cJSON *argument, cJSON **refusal);
+
+/** Takes an installed answer into `taken`: OK, or OUT_OF_MEMORY to stop the install before its record is written. */
+typedef spisor_status (*runtime_install_by_id_taker)(const cJSON *answer, void *taken);
+
+/**
+ * runtime_install_by_id_operation, handing an installed answer to `take` before the record is written, so a caller
+ * holds what it answers before the last write; NULL with no refusal when `take` runs out of memory.
+ */
+cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id_taker take, void *taken,
+                                    cJSON **refusal);
 
 #endif

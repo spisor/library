@@ -14,7 +14,9 @@
 #include "identity.h"
 #include "identity_also_at.h"
 #include "identity_resolve.h"
+#include "json_parse.h"
 #include "json_service.h"
+#include "node_json_file.h"
 #include "platform_key.h"
 #include "runtime/identity.h"
 #include "sha256.h"
@@ -39,6 +41,8 @@ typedef struct install_request {
     const char *api_base;
     const char *accept_primary;
     char *recorded_primary;
+    runtime_install_by_id_taker take;
+    void *taken;
 } install_request;
 
 typedef struct release_index {
@@ -250,41 +254,55 @@ static char *record_path(const install_request *request) {
     return path;
 }
 
-/** Reads the primary recorded for the id; 1 when there is none or it reads, 0 with a refusal when the record is unusable. */
+/**
+ * Reads the primary recorded for the id; 1 when there is none or it reads, 0 with a refusal when the record is unusable,
+ * or without one out of memory.
+ */
 static int read_recorded_primary(install_request *request, cJSON **refusal) {
     char *path = record_path(request);
-    size_t length = 0;
+    int out_of_memory = path == NULL;
     int present = path != NULL && spisor_file_exists(path);
-    uint8_t *bytes = present ? spisor_read_file(path, &length) : NULL;
-    cJSON *record = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
+    cJSON *record = present ? runtime_read_node_json(path, &out_of_memory) : NULL;
     const char *primary = text_of(record, "primary");
     if (primary != NULL) {
         request->recorded_primary = runtime_cache_text(&primary, 1);
-    } else if (present) {
+        out_of_memory = request->recorded_primary == NULL;
+    } else if (present && !out_of_memory) {
         refuse(refusal, "delete the record so the next install records it again", "%s holds no recorded primary", path);
     }
     cJSON_Delete(record);
-    free(bytes);
     free(path);
-    return !present || primary != NULL;
+    return !out_of_memory && (!present || primary != NULL);
 }
 
-static int write_record(const install_request *request, const cJSON *set) {
+static int add_copy(cJSON *answer, const char *member, const cJSON *value) {
+    cJSON *copy = cJSON_Duplicate(value, 1);
+    if (copy == NULL || !cJSON_AddItemToObject(answer, member, copy)) {
+        cJSON_Delete(copy);
+        return 0;
+    }
+    return 1;
+}
+
+/** OK once the record is written, REFUSED when the disk refuses it, OUT_OF_MEMORY before anything is written. */
+static spisor_status write_record(const install_request *request, const cJSON *set) {
     cJSON *record = cJSON_CreateObject();
-    int built = record != NULL &&
-                cJSON_AddItemToObject(record, "ids", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(set, "ids"), 1)) &&
+    int built = record != NULL && add_copy(record, "ids", cJSON_GetObjectItemCaseSensitive(set, "ids")) &&
                 cJSON_AddStringToObject(record, "primary", text_of(set, "primary")) != NULL;
     char *text = built ? cJSON_Print(record) : NULL;
     char *path = text == NULL ? NULL : record_path(request);
     const char *parent_segment[1] = {".."};
     char *directory = path == NULL ? NULL : runtime_cache_resolve(path, parent_segment, 1);
-    int written = directory != NULL && spisor_make_directories(directory) &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    spisor_status status = directory == NULL                  ? SPISOR_OUT_OF_MEMORY
+                           : spisor_make_directories(directory) &&
+                                   spisor_replace_file(path, (const uint8_t *)text, strlen(text))
+                               ? SPISOR_OK
+                               : SPISOR_REFUSED;
     free(directory);
     free(path);
     cJSON_free(text);
     cJSON_Delete(record);
-    return written;
+    return status;
 }
 
 static int needs_user_acceptance(const install_request *request, const cJSON *set, int *needed, cJSON **refusal) {
@@ -335,8 +353,9 @@ static char *find_index_url(const install_request *request, const cJSON *reposit
     }
     size_t length = 0;
     uint8_t *bytes = fetch_bytes(url, RELEASE_CAPACITY, &length, refusal);
-    int fetched = bytes != NULL;
-    cJSON *release = fetched ? spisor_parse_json(bytes, length) : NULL;
+    int out_of_memory = 0;
+    cJSON *release = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    int fetched = bytes != NULL && !out_of_memory;
     free(bytes);
     const char *asset_url = release == NULL ? NULL : index_asset_url(release);
     if (fetched && asset_url == NULL) {
@@ -374,7 +393,8 @@ static void refuse_catalog(runtime_catalog_refusal *catalog_refusal, const char 
 
 /** The index's one item, checked as a catalog item with its file urls resolved against the index's own url. */
 static cJSON *read_catalog(const char *id, const char *url, const uint8_t *bytes, size_t length, cJSON **refusal) {
-    cJSON *item = spisor_parse_json(bytes, length);
+    int out_of_memory = 0;
+    cJSON *item = spisor_parse_json_reporting(bytes, length, &out_of_memory);
     cJSON *wrapped = cJSON_IsObject(item) ? catalog_around(id, item) : NULL;
     char *text = wrapped == NULL ? NULL : cJSON_PrintUnformatted(wrapped);
     runtime_catalog_refusal catalog_refusal;
@@ -387,7 +407,7 @@ static cJSON *read_catalog(const char *id, const char *url, const uint8_t *bytes
         runtime_catalog_free_refusal(&catalog_refusal);
     } else if (text == NULL && item != NULL && !cJSON_IsObject(item)) {
         refuse(refusal, "publish the catalog item as a JSON object", "%s is not a JSON object", url);
-    } else if (text == NULL && item == NULL) {
+    } else if (text == NULL && item == NULL && !out_of_memory) {
         refuse(refusal, "publish the catalog item as JSON", "%s is not JSON", url);
     }
     cJSON_free(text);
@@ -495,7 +515,7 @@ static cJSON *set_answer(const install_request *request, const cJSON *repository
     cJSON *answer = cJSON_CreateObject();
     int built = answer != NULL && add_text(answer, "id", request->id) && add_text(answer, "name", text_of(repository, "name")) &&
                 add_text(answer, "fullName", text_of(repository, "fullName")) &&
-                cJSON_AddItemToObject(answer, "ids", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(set, "ids"), 1)) &&
+                add_copy(answer, "ids", cJSON_GetObjectItemCaseSensitive(set, "ids")) &&
                 add_text(answer, "primary", text_of(set, "primary")) &&
                 cJSON_AddBoolToObject(answer, "primaryConfirmed", cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed"))) != NULL;
     if (!built) {
@@ -530,6 +550,11 @@ static cJSON *installed_answer(const install_request *request, const cJSON *repo
     return answer;
 }
 
+/** Hands the answer to the request's taker before the record is written, so no answer is lost after it. */
+static spisor_status take_answer(const install_request *request, const cJSON *answer) {
+    return request->take == NULL ? SPISOR_OK : request->take(answer, request->taken);
+}
+
 /** Installs from source, the repo the verified set names as primary, and records the set under the id that was asked for. */
 static cJSON *install_verified(const install_request *request, const install_request *source, const cJSON *repository,
                                const cJSON *set, cJSON **refusal) {
@@ -545,9 +570,15 @@ static cJSON *install_verified(const install_request *request, const install_req
     if (read_release_index(source, repository, &index, refusal)) {
         const char *version = install_and_deploy(source, repository, &index, refusal);
         answer = version == NULL ? NULL : installed_answer(source, repository, set, &index, version);
-        if (answer != NULL && !write_record(request, set)) {
+        spisor_status recorded = answer == NULL ? SPISOR_OK : take_answer(request, answer);
+        if (recorded == SPISOR_OK && answer != NULL) {
+            recorded = write_record(request, set);
+        }
+        if (recorded == SPISOR_REFUSED) {
             refuse(refusal, "free the cache's identities folder or point cache at a writable directory, then install again",
                    "the primary of %s could not be recorded", request->repo_id);
+        }
+        if (recorded != SPISOR_OK) {
             cJSON_Delete(answer);
             answer = NULL;
         }
@@ -608,9 +639,17 @@ static cJSON *install_from_set(const install_request *request, const cJSON *repo
     return answer;
 }
 
-static cJSON *install_by_id(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_install_by_id_operation(const cJSON *argument, cJSON **refusal) {
+    return runtime_install_by_id_taking(argument, NULL, NULL, refusal);
+}
+
+cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id_taker take, void *taken,
+                                    cJSON **refusal) {
     install_request request;
-    if (!read_request(argument, &request, refusal) || !read_recorded_primary(&request, refusal)) {
+    int read = read_request(argument, &request, refusal);
+    request.take = take;
+    request.taken = taken;
+    if (!read || !read_recorded_primary(&request, refusal)) {
         free(request.recorded_primary);
         free((char *)request.repo_id);
         return NULL;
@@ -623,8 +662,4 @@ static cJSON *install_by_id(const cJSON *argument, cJSON **refusal) {
     free(request.recorded_primary);
     free((char *)request.repo_id);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_install_by_id(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, install_by_id);
 }

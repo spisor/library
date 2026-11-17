@@ -162,15 +162,6 @@ runtime_test(cache_deploy_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:
     $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 target_link_libraries(cache_deploy_test PRIVATE ${runtime_fetch_libraries})
 
-runtime_test(install_by_id_test http_fixture.c $<TARGET_OBJECTS:runtime_install_by_id>
-    $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_cache>
-    $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
-    $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(install_by_id_test PRIVATE ${runtime_fetch_libraries})
-if(WIN32)
-    target_link_libraries(install_by_id_test PRIVATE Ws2_32)
-endif()
-
 foreach(name updates_test boot_hint_test boot_unlistable_test cache_locate_test cache_id_key_test hosts_start_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
         $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
@@ -221,8 +212,13 @@ target_link_libraries(processes_ready_test PRIVATE ${runtime_fetch_libraries})
 add_executable(node_probe node_probe.c)
 spisor_strict_warnings(node_probe)
 
+set(runtime_install_by_id_objects $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_identity_also_at>)
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
-    ${runtime_hosts_test_objects})
+    ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
+# A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
+set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
+list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
 foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
         install_ecosystem_test install_applications_test)
     runtime_test(${name} ${runtime_install_test_objects})
@@ -232,6 +228,13 @@ foreach(name install_test install_warnings_test install_methods_test install_ent
         add_dependencies(${name} runtime_launcher)
     endif()
 endforeach()
+runtime_test(install_by_id_test http_fixture.c ${runtime_install_plain_http_test_objects})
+target_link_libraries(install_by_id_test PRIVATE ${runtime_fetch_libraries})
+target_include_directories(install_by_id_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+if(WIN32)
+    target_link_libraries(install_by_id_test PRIVATE Ws2_32)
+    add_dependencies(install_by_id_test runtime_launcher)
+endif()
 target_compile_definitions(install_runtime_test PRIVATE RUNTIME_NODE_PROBE_PATH="$<TARGET_FILE:node_probe>")
 add_dependencies(install_runtime_test node_probe)
 set_tests_properties(install_entries_test install_ecosystem_test install_applications_test PROPERTIES
@@ -253,15 +256,21 @@ spisor_strict_warnings(settings_lock_test)
 target_compile_definitions(settings_lock_test PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
 add_test(NAME settings_lock_test COMMAND settings_lock_test)
 
-set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
-    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> ${runtime_install_test_objects})
-runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
+set(runtime_marketplace_test_objects $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading>)
+set(runtime_definition_test_objects ${runtime_marketplace_test_objects} ${runtime_install_test_objects})
+runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting http_fixture.c ${runtime_marketplace_test_objects}
+    ${runtime_install_plain_http_test_objects})
 target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(out_of_memory_test PRIVATE Ws2_32)
+endif()
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_tests_properties(out_of_memory_test PROPERTIES TIMEOUT 600 RESOURCE_LOCK user_path_value)
 add_test(NAME out_of_memory_commands_test COMMAND out_of_memory_test commands)
 set_tests_properties(out_of_memory_commands_test PROPERTIES TIMEOUT 1800 RESOURCE_LOCK user_path_value)
 add_test(NAME out_of_memory_cache_test COMMAND out_of_memory_test cache)
+add_test(NAME out_of_memory_install_test COMMAND out_of_memory_test install)
+set_tests_properties(out_of_memory_install_test PROPERTIES TIMEOUT 1800 RESOURCE_LOCK user_path_value)
 set_tests_properties(out_of_memory_cache_test PROPERTIES TIMEOUT 1800 RESOURCE_LOCK user_path_value)
 if(WIN32)
     add_dependencies(out_of_memory_test runtime_launcher)
