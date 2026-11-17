@@ -1,13 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "catalog_call.h"
-#include "install_warnings.h"
+#include "install_call.h"
 
 static catalog_answer warnings_of(const char *manifest_json) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "manifest", parsed(manifest_json));
-    return call_catalog(runtime_install_warnings, argument);
+    return install_call(INSTALL_WARNINGS, argument);
 }
 
 static void expect_contains_text(const char *text, const char *part, const char *label) {
@@ -70,7 +69,7 @@ static void says_nothing_for_a_manifest_with_neither(void) {
 
 static void refuses_a_call_without_a_manifest_object(void) {
     cJSON *argument = cJSON_CreateObject();
-    expect_refusal_released(call_catalog(runtime_install_warnings, argument), "manifest", "no manifest");
+    expect_malformed_released(install_call(INSTALL_WARNINGS, argument), "manifest", "no manifest");
 }
 
 int main(void) {

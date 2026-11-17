@@ -26,6 +26,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/install.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/marketplace.h"
@@ -54,6 +55,7 @@
 
 #define START "2026-10-27T19:00:00.000Z"
 #define CHANGED_FILE "{\"a\":{\"b\":1},\"logging\":true}"
+#define PACKAGES_FILE "{\"tool\":{\"brew\":{\"name\":\"tool\",\"options\":{\"tap\":\"v/t\"}}}}"
 #define TIME "2026-10-27T19:34:53.123Z"
 #define MARKETPLACE_COPY                                                                                           \
     "{\"format\":1,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":["                                              \
@@ -79,6 +81,7 @@ static spisor_value_tree second_file = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree plugin_rows = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree catalog_items = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree whole_catalog = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree manifest_packages = SPISOR_INIT(spisor_value_tree);
 
 static void write_text(const char *directory, const char *name, const char *text) {
     char path[1400];
@@ -126,6 +129,7 @@ static void fresh_files(void) {
     write_text(place.config_directory, "p.json", CHANGED_FILE);
     write_text(place.config_directory, "settings.json", "{\"logConsole\":true,\"ui\":{\"size\":2}}");
     write_text(place.portable, "settings.json", "{\"ui\":{\"theme\":\"dark\"}}");
+    write_text(place.portable, "packages.json", PACKAGES_FILE);
     write_text(place.programs, "probe", "");
     char record[8192];
     char hosts[1300];
@@ -178,6 +182,33 @@ static void fresh_files(void) {
 }
 
 typedef spisor_status (*operation)(void);
+
+static spisor_status merge_packages(void) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    runtime_install_packages_argument argument = SPISOR_INIT(runtime_install_packages_argument);
+    runtime_install_packages_answer answer = SPISOR_INIT(runtime_install_packages_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.portable = place.portable;
+    argument.item = "tool";
+    argument.manifest_packages = &manifest_packages.root;
+    status = install->packages(install->context, &argument, &answer, &refusal);
+    CHECK(status != SPISOR_OK || (answer.package_count == 2 && answer.packages[1].options != NULL));
+    install->release_packages_answer(install->context, &answer);
+    install->release_refusal(install->context, &refusal);
+    return status;
+}
+
+/** Whether the user's packages.json still holds what it held. */
+static int packages_file_unchanged(void) {
+    char file[1300];
+    size_t length = 0;
+    snprintf(file, sizeof file, "%s/packages.json", place.portable);
+    uint8_t *bytes = spisor_read_file(file, &length);
+    int unchanged = bytes != NULL && length == strlen(PACKAGES_FILE) && memcmp(bytes, PACKAGES_FILE, length) == 0;
+    free(bytes);
+    return unchanged;
+}
 
 static spisor_status resolve_paths(void) {
     const runtime_paths_definition *paths = runtime_paths_definition_of();
@@ -901,6 +932,7 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
     every_failure_answers_out_of_memory("cache's installed", list_installed_versions, NULL);
     every_failure_answers_out_of_memory("catalog's merge", merge_catalogs, NULL);
+    every_failure_answers_out_of_memory("install's packages", merge_packages, packages_file_unchanged);
 }
 
 /** The check must see a profile line nothing records, or it passes whatever a command leaves in a profile. */
@@ -946,6 +978,7 @@ int main(int argc, char **argv) {
                         &catalog_items));
     CHECK(value_of_text("{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\"},\"b\":{\"kind\":\"host\"}}}",
                         &whole_catalog));
+    CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
         every_command();
     } else {
@@ -959,6 +992,7 @@ int main(int argc, char **argv) {
     spisor_value_release(&plugin_rows);
     spisor_value_release(&catalog_items);
     spisor_value_release(&whole_catalog);
+    spisor_value_release(&manifest_packages);
     forget_test_path_value();
     CHECK(runtime_remove_tree(place.base) == 1);
     return check_summary("out_of_memory_test");

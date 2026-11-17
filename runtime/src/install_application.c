@@ -96,7 +96,7 @@ static char *reported_version(const application_operation *request, const cJSON 
                               const cJSON *mapped) {
     const runtime_install_method *found = runtime_install_method_named(method);
     cJSON *detection = found == NULL ? NULL
-                                     : runtime_install_detection(request->places, runtime_install_text(application, "id"),
+                                     : runtime_install_detection_of(request->places, runtime_install_text(application, "id"),
                                                                  found, mapped);
     const cJSON *answer = cJSON_GetObjectItemCaseSensitive(detection, "answer");
     const char *version = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "installed"))

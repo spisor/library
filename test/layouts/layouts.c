@@ -8,6 +8,7 @@
 #include "runtime/detect.h"
 #include "runtime/fetch.h"
 #include "runtime/identity.h"
+#include "runtime/install.h"
 #include "runtime/lists.h"
 #include "runtime/log.h"
 #include "runtime/marketplace.h"
@@ -890,6 +891,84 @@ static void print_catalog_layouts(void) {
     SIZE(runtime_catalog_definition);
 }
 
+static void print_install_layouts(void) {
+    FIELD(runtime_install_warnings_argument, size);
+    FIELD(runtime_install_warnings_argument, manifest);
+    SIZE(runtime_install_warnings_argument);
+    FIELD(runtime_install_warning, kind);
+    FIELD(runtime_install_warning, subject);
+    FIELD(runtime_install_warning, detail);
+    SIZE(runtime_install_warning);
+    FIELD(runtime_install_warnings_answer, size);
+    FIELD(runtime_install_warnings_answer, warnings);
+    FIELD(runtime_install_warnings_answer, warning_count);
+    FIELD(runtime_install_warnings_answer, storage);
+    SIZE(runtime_install_warnings_answer);
+    FIELD(runtime_install_packages_argument, size);
+    FIELD(runtime_install_packages_argument, portable);
+    FIELD(runtime_install_packages_argument, item);
+    FIELD(runtime_install_packages_argument, manifest_packages);
+    SIZE(runtime_install_packages_argument);
+    FIELD(runtime_install_package, method);
+    FIELD(runtime_install_package, name);
+    FIELD(runtime_install_package, options);
+    SIZE(runtime_install_package);
+    FIELD(runtime_install_packages_answer, size);
+    FIELD(runtime_install_packages_answer, packages);
+    FIELD(runtime_install_packages_answer, package_count);
+    FIELD(runtime_install_packages_answer, storage);
+    SIZE(runtime_install_packages_answer);
+    FIELD(runtime_install_plan_argument, size);
+    FIELD(runtime_install_plan_argument, portable);
+    FIELD(runtime_install_plan_argument, item);
+    FIELD(runtime_install_plan_argument, manifest_packages);
+    FIELD(runtime_install_plan_argument, methods);
+    FIELD(runtime_install_plan_argument, method_count);
+    FIELD(runtime_install_plan_argument, chosen);
+    FIELD(runtime_install_plan_argument, installed_providers);
+    FIELD(runtime_install_plan_argument, installed_provider_count);
+    FIELD(runtime_install_plan_argument, catalog);
+    SIZE(runtime_install_plan_argument);
+    FIELD(runtime_install_step, kind);
+    FIELD(runtime_install_step, provider);
+    FIELD(runtime_install_step, package);
+    SIZE(runtime_install_step);
+    FIELD(runtime_install_plan_answer, size);
+    FIELD(runtime_install_plan_answer, steps);
+    FIELD(runtime_install_plan_answer, step_count);
+    FIELD(runtime_install_plan_answer, storage);
+    SIZE(runtime_install_plan_answer);
+    FIELD(runtime_install_detect_argument, size);
+    FIELD(runtime_install_detect_argument, portable);
+    FIELD(runtime_install_detect_argument, cache);
+    FIELD(runtime_install_detect_argument, item);
+    FIELD(runtime_install_detect_argument, manifest_packages);
+    SIZE(runtime_install_detect_argument);
+    FIELD(runtime_install_detection, item);
+    FIELD(runtime_install_detection, package);
+    FIELD(runtime_install_detection, installed);
+    FIELD(runtime_install_detection, version);
+    FIELD(runtime_install_detection, refused);
+    SIZE(runtime_install_detection);
+    FIELD(runtime_install_detect_answer, size);
+    FIELD(runtime_install_detect_answer, detections);
+    FIELD(runtime_install_detect_answer, detection_count);
+    FIELD(runtime_install_detect_answer, storage);
+    SIZE(runtime_install_detect_answer);
+    FIELD(runtime_install_definition, size);
+    FIELD(runtime_install_definition, context);
+    FIELD(runtime_install_definition, warnings);
+    FIELD(runtime_install_definition, packages);
+    FIELD(runtime_install_definition, plan);
+    FIELD(runtime_install_definition, detect);
+    FIELD(runtime_install_definition, release_warnings_answer);
+    FIELD(runtime_install_definition, release_packages_answer);
+    FIELD(runtime_install_definition, release_plan_answer);
+    FIELD(runtime_install_definition, release_detect_answer);
+    FIELD(runtime_install_definition, release_refusal);
+    SIZE(runtime_install_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -910,5 +989,6 @@ int main(void) {
     print_marketplace_layouts();
     print_cache_layouts();
     print_catalog_layouts();
+    print_install_layouts();
     return 0;
 }

@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "install_call.h"
 
 #include "install_ecosystem.h"
 #include "install_methods.h"
@@ -10,13 +11,13 @@ static catalog_answer detect_with(const install_base *base, const char *manifest
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "item", ITEM);
     cJSON_AddItemToObject(argument, "manifestPackages", parsed(manifest_packages_json));
-    return call_catalog(runtime_install_detect, argument);
+    return install_call(INSTALL_DETECT, argument);
 }
 
 static void expect_detections(const install_base *base, const char *manifest_packages_json, const char *expected_json,
                               const char *label) {
     catalog_answer answer = detect_with(base, manifest_packages_json);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_json(cJSON_GetObjectItemCaseSensitive(answer.tree, "detections"), expected_json, label);
     cJSON_Delete(answer.tree);
 }
@@ -104,9 +105,7 @@ static void refuses_an_operation_no_built_in_method_serves(void) {
 
 static void refuses_a_detect_with_no_usable_places(void) {
     cJSON *argument = parsed("{\"places\": {\"portable\": \"relative\"}, \"item\": \"tool\"}");
-    catalog_answer answer = call_catalog(runtime_install_detect, argument);
-    expect_refusal(answer, "places", "no places");
-    cJSON_Delete(answer.tree);
+    expect_malformed_released(install_call(INSTALL_DETECT, argument), "place", "no places");
 }
 
 int main(void) {

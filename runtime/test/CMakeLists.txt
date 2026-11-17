@@ -21,7 +21,7 @@ runtime_test_with_allocator(reader_with_counting_allocator_test spisor_allocator
 target_compile_definitions(reader_with_counting_allocator_test PRIVATE
     SPISOR_VECTOR_READER_VECTOR_PATH="${PROJECT_SOURCE_DIR}/test/vectors/vector-reader.json")
 
-foreach(name paths_test settings_test log_test places_test install_test)
+foreach(name paths_test settings_test log_test places_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_secret_store>)
 endforeach()
 
@@ -125,8 +125,6 @@ if(WIN32)
     target_link_libraries(marketplace_memory_test PRIVATE Ws2_32)
 endif()
 
-runtime_test(install_warnings_test $<TARGET_OBJECTS:runtime_secret_store>)
-
 set(SPISOR_MARKETPLACE_TEMPLATES_PATH "" CACHE PATH "Folder holding the six marketplace-template-<host> checkouts; the test skips when empty")
 runtime_test(marketplace_templates_test $<TARGET_OBJECTS:runtime_secret_store>)
 target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE_TEMPLATES_PATH="${SPISOR_MARKETPLACE_TEMPLATES_PATH}")
@@ -225,8 +223,8 @@ spisor_strict_warnings(node_probe)
 
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
     ${runtime_hosts_test_objects})
-foreach(name install_methods_test install_entries_test install_runtime_test install_ecosystem_test
-        install_applications_test)
+foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
+        install_ecosystem_test install_applications_test)
     runtime_test(${name} ${runtime_install_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -256,7 +254,7 @@ target_compile_definitions(settings_lock_test PRIVATE RUNTIME_SCRATCH_PATH="${CM
 add_test(NAME settings_lock_test COMMAND settings_lock_test)
 
 set(runtime_definition_test_objects $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
-    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> ${runtime_hosts_test_objects})
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading> ${runtime_install_test_objects})
 runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

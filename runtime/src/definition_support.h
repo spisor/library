@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "json_service.h"
 #include "runtime/environment.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -22,6 +23,20 @@ int runtime_has_shape(uint32_t size, size_t shape);
 /** Zeroes every field of an answer after its `size`, through its first shape of `shape` bytes. */
 #define RUNTIME_CLEAR_ANSWER(answer, shape) \
     memset((char *)(answer) + sizeof((answer)->size), 0, (shape) - sizeof((answer)->size))
+
+/** Fills an answer from what an operation answered; a fill that fails may leave blocks in the answer's storage. */
+typedef spisor_status (*runtime_answer_filler)(const cJSON *answered, void *answer);
+
+/**
+ * Serves `call`, which it deletes, through `operation`, filling with `fill` an answer whose first shape of
+ * `answer_shape` bytes ends at its `storage`. A refusal answers as runtime_refuse_json answers it, and a failed fill
+ * releases what it took, so a failed answer holds nothing.
+ */
+spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *call, runtime_answer_filler fill,
+                                      void *answer, size_t answer_shape, spisor_refusal *refusal);
+
+/** Adds `value`, a well-formed tree of `kind`, to `call` as JSON under `name`; MALFORMED for NULL or any other value. */
+spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor_value *value, spisor_value_kind kind);
 
 /** Fills the refusal and answers `status`, or OUT_OF_MEMORY when the refusal could not be filled. */
 spisor_status runtime_refuse_as(spisor_refusal *refusal, spisor_status status, const char *detail, const char *fix);

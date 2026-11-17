@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "json_service.h"
 #include "paths.h"
 #include "spisor/json_file.h"
-#include "spisor/json_kind.h"
 #include "spisor/path.h"
 
 #define MARKETPLACE_METHOD "marketplace"
@@ -197,44 +197,25 @@ static install_status packages_of(const cJSON *argument, cJSON **merged, refusal
     return status;
 }
 
-static int32_t out_of_memory(uint8_t **out, size_t *out_len) {
-    *out = NULL;
-    *out_len = 0;
-    return SPISOR_STATUS_OUT_OF_MEMORY;
-}
-
-static int32_t answer_member(const char *name, cJSON *value, uint8_t **out, size_t *out_len) {
-    cJSON *result = cJSON_CreateObject();
-    if (result == NULL || !cJSON_AddItemToObject(result, name, value)) {
-        cJSON_Delete(value);
-        cJSON_Delete(result);
-        return out_of_memory(out, out_len);
-    }
-    int32_t status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
-}
-
-static int32_t answer_failure(install_status status, const refusal *reason, uint8_t **out, size_t *out_len) {
+/** The answer {name: value} for OK, else NULL with *refused set for REFUSED; deletes value on every path but OK. */
+static cJSON *answer_of(install_status status, const char *name, cJSON *value, const refusal *reason, cJSON **refused) {
+    cJSON *result = status == INSTALL_OK ? cJSON_CreateObject() : NULL;
     if (status == INSTALL_REFUSED) {
-        return spisor_fail(reason->message, reason->fix, out, out_len);
+        *refused = runtime_refusal(reason->message, reason->fix);
     }
-    return out_of_memory(out, out_len);
+    if (result != NULL && cJSON_AddItemToObject(result, name, value)) {
+        return result;
+    }
+    cJSON_Delete(value);
+    cJSON_Delete(result);
+    return NULL;
 }
 
-RUNTIME_EXPORT int32_t runtime_install_packages(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t parsed = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (parsed != SPISOR_STATUS_SUCCESS) {
-        return parsed;
-    }
+cJSON *runtime_install_packages_operation(const cJSON *argument, cJSON **refused) {
     refusal reason;
     cJSON *merged = NULL;
-    install_status status = packages_of(call.argument, &merged, &reason);
-    int32_t answered = status == INSTALL_OK ? answer_member("packages", merged, out, out_len)
-                                            : answer_failure(status, &reason, out, out_len);
-    spisor_discard_call(&call);
-    return answered;
+    install_status status = packages_of(argument, &merged, &reason);
+    return answer_of(status, "packages", merged, &reason, refused);
 }
 
 static int lists_text(const cJSON *list, const char *text) {
@@ -414,20 +395,9 @@ static install_status plan_of(const cJSON *argument, cJSON *steps, refusal *reas
     return status == INSTALL_OK ? plan_for(argument, &request, steps, reason) : status;
 }
 
-RUNTIME_EXPORT int32_t runtime_install_plan(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    spisor_call call;
-    int32_t parsed = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (parsed != SPISOR_STATUS_SUCCESS) {
-        return parsed;
-    }
+cJSON *runtime_install_plan_operation(const cJSON *argument, cJSON **refused) {
     refusal reason;
     cJSON *steps = cJSON_CreateArray();
-    install_status status = steps == NULL ? INSTALL_OUT_OF_MEMORY : plan_of(call.argument, steps, &reason);
-    int32_t answered = status == INSTALL_OK ? answer_member("steps", steps, out, out_len)
-                                            : answer_failure(status, &reason, out, out_len);
-    if (status != INSTALL_OK) {
-        cJSON_Delete(steps);
-    }
-    spisor_discard_call(&call);
-    return answered;
+    install_status status = steps == NULL ? INSTALL_OUT_OF_MEMORY : plan_of(argument, steps, &reason);
+    return answer_of(status, "steps", steps, &reason, refused);
 }

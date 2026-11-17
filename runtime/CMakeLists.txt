@@ -205,8 +205,8 @@ target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_ui)
 
-set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_application.c src/install_applications.c src/install_ecosystem.c
-    src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
+set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_application.c src/install_applications.c
+    src/install_definition.c src/install_ecosystem.c src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
     src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
     src/process_run.c src/updates_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})
