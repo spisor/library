@@ -5,6 +5,36 @@
 #include <string.h>
 
 #include "allocation.h"
+#include "answer_storage.h"
+#include "json_value.h"
+
+spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *call, runtime_answer_filler fill,
+                                      void *answer, size_t answer_shape, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
+    spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
+    if (answered != NULL && status != SPISOR_OK) {
+        runtime_release_stored_answer(answer, answer_shape);
+    }
+    cJSON_Delete(answered);
+    return status;
+}
+
+spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor_value *value, spisor_value_kind kind) {
+    cJSON *json = NULL;
+    spisor_status status = value == NULL ? SPISOR_MALFORMED : spisor_value_check(value);
+    if (status == SPISOR_OK && value->kind != (uint32_t)kind) {
+        status = SPISOR_MALFORMED;
+    }
+    if (status == SPISOR_OK) {
+        status = spisor_json_of_value(value, &json);
+    }
+    if (status == SPISOR_OK && !cJSON_AddItemToObject(call, name, json)) {
+        cJSON_Delete(json);
+        status = SPISOR_OUT_OF_MEMORY;
+    }
+    return status;
+}
 
 int runtime_has_shape(uint32_t size, size_t shape) {
     return size >= shape;

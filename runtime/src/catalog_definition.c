@@ -28,8 +28,6 @@ static const char *const SOURCE_KINDS[] = {NULL, "local", "https"};
 static const char *const CHECK_KINDS[] = {NULL, "skipped", "unchanged", "changed", "failed"};
 static const char *const ITEM_KINDS[] = {NULL, "plugin", "host", "library"};
 
-typedef spisor_status (*answer_filler)(const cJSON *answered, void *answer);
-
 static int is_text(const char *text) {
     return text != NULL && text[0] != '\0';
 }
@@ -67,48 +65,13 @@ static uint32_t index_of(const char *const *names, uint32_t count, const char *n
     return 0;
 }
 
-/** Serves `call`, which it deletes, filling the answer with `fill`; a failed fill releases what it took. */
-static spisor_status serve(runtime_json_operation operation, cJSON *call, answer_filler fill, void *answer,
-                           size_t answer_shape, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered;
-    spisor_status status;
-    if (call == NULL) {
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    answered = runtime_call_operation(operation, call, &operation_refusal);
-    status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
-    if (answered != NULL && status != SPISOR_OK) {
-        runtime_release_stored_answer(answer, answer_shape);
-    }
-    cJSON_Delete(answered);
-    return status;
-}
-
-/** Adds `value` to `call` as JSON under `name`; MALFORMED for a value that is not a well-formed record. */
-static spisor_status add_record(cJSON *call, const char *name, const spisor_value *value) {
-    cJSON *json = NULL;
-    spisor_status status = value == NULL ? SPISOR_MALFORMED : spisor_value_check(value);
-    if (status == SPISOR_OK && value->kind != SPISOR_VALUE_RECORD) {
-        status = SPISOR_MALFORMED;
-    }
-    if (status == SPISOR_OK) {
-        status = spisor_json_of_value(value, &json);
-    }
-    if (status == SPISOR_OK && !cJSON_AddItemToObject(call, name, json)) {
-        cJSON_Delete(json);
-        status = SPISOR_OUT_OF_MEMORY;
-    }
-    return status;
-}
-
 /** The catalog under `name`; MALFORMED for one that is not a well-formed record with an items record. */
 static spisor_status add_catalog(cJSON *call, const char *name, const spisor_value *catalog) {
     const spisor_value *items = catalog == NULL ? NULL : spisor_value_member(catalog, "items", 5);
     if (items == NULL || items->kind != SPISOR_VALUE_RECORD) {
         return SPISOR_MALFORMED;
     }
-    return add_record(call, name, catalog);
+    return runtime_add_value_json(call, name, catalog, SPISOR_VALUE_RECORD);
 }
 
 static int is_source(const runtime_catalog_source *source) {
@@ -182,7 +145,7 @@ static spisor_status read_catalog(void *context, const runtime_catalog_read_argu
         cJSON_Delete(call);
         call = NULL;
     }
-    return serve(runtime_catalog_read_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_read_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_sources(const cJSON *answered, void *filled) {
@@ -226,12 +189,12 @@ static spisor_status sources(void *context, const runtime_catalog_sources_argume
         return runtime_refuse_shape(refusal, "catalog's sources");
     }
     call = cJSON_CreateObject();
-    status = call == NULL ? SPISOR_OUT_OF_MEMORY : add_record(call, "settings", argument->settings);
+    status = call == NULL ? SPISOR_OUT_OF_MEMORY : runtime_add_value_json(call, "settings", argument->settings, SPISOR_VALUE_RECORD);
     if (status != SPISOR_OK) {
         cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "settings record") : status;
     }
-    return serve(runtime_catalog_sources_operation, call, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_sources_operation, call, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status add_readings(cJSON *call, const runtime_catalog_merge_argument *argument) {
@@ -294,7 +257,7 @@ static spisor_status merge(void *context, const runtime_catalog_merge_argument *
         cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "catalogs, each a source and its items") : status;
     }
-    return serve(runtime_catalog_merge_operation, call, fill_merge, answer, MERGE_ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_merge_operation, call, fill_merge, answer, MERGE_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_check(const cJSON *answered, void *filled) {
@@ -330,7 +293,7 @@ static spisor_status check(void *context, const runtime_catalog_check_argument *
         cJSON_Delete(call);
         call = NULL;
     }
-    return serve(runtime_catalog_check_operation, call, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_check_operation, call, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status add_sources(cJSON *call, const runtime_catalog_source *listed, size_t count) {
@@ -366,7 +329,7 @@ static spisor_status current(void *context, const runtime_catalog_current_argume
         cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "sources") : status;
     }
-    return serve(runtime_catalog_current_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_current_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
 }
 
 static spisor_status add_enabled(cJSON *call, const runtime_catalog_resolve_argument *argument) {
@@ -481,7 +444,7 @@ static spisor_status resolve(void *context, const runtime_catalog_resolve_argume
         return status == SPISOR_MALFORMED ? refuse_malformed(refusal, "items, enabled items or installed versions")
                                           : status;
     }
-    return serve(runtime_catalog_resolve_operation, call, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
+    return runtime_serve_operation(runtime_catalog_resolve_operation, call, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
 }
 
 static void release_answer(void *context, runtime_catalog_answer *answer) {
