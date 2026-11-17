@@ -520,8 +520,10 @@ static void it_waits_for_a_lock_whose_name_is_still_being_deleted(void) {
     fresh_state("lock-delete-pending");
     write_lock(number_text(self_pid()), 0);
     HANDLE closer = CreateThread(NULL, 0, close_after_a_while, open_lock_deleted(), 0, NULL);
+    double started = runtime_now_milliseconds();
     runtime_holders_guard *guard = take_lock();
     CHECK(guard != NULL);
+    CHECK(runtime_now_milliseconds() - started >= 250);
     runtime_unlock_holders(guard);
     WaitForSingleObject(closer, 30000);
     CloseHandle(closer);

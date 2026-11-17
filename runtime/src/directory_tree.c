@@ -241,18 +241,31 @@ static int write_all(HANDLE handle, const uint8_t *bytes, size_t length) {
 
 typedef LONG(WINAPI *nt_status_reader)(void);
 
-static nt_status_reader resolve_nt_status_reader(void) {
+static INIT_ONCE nt_status_reader_once = INIT_ONCE_STATIC_INIT;
+static nt_status_reader resolved_nt_status_reader = NULL;
+
+static BOOL CALLBACK resolve_nt_status_reader(PINIT_ONCE once, PVOID unused, PVOID *unused_context) {
+    (void)once;
+    (void)unused;
+    (void)unused_context;
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-    return ntdll == NULL ? NULL : (nt_status_reader)(void *)GetProcAddress(ntdll, "RtlGetLastNtStatus");
+    resolved_nt_status_reader =
+        ntdll == NULL ? NULL : (nt_status_reader)(void *)GetProcAddress(ntdll, "RtlGetLastNtStatus");
+    return TRUE;
+}
+
+/** @implNote Resolved before the call whose status it reads, since resolving afterwards could overwrite it. */
+static nt_status_reader nt_status_reader_of_process(void) {
+    InitOnceExecuteOnce(&nt_status_reader_once, resolve_nt_status_reader, NULL, NULL);
+    return resolved_nt_status_reader;
 }
 
 /**
  * Whether a create that failed met a file deleted while something still holds it open: its name stands until
  * the last handle closes, and Win32 reports that only as access denied.
- * @implNote reader is resolved before the failing call, since resolving it afterwards could overwrite the status.
  */
-static int met_a_file_being_deleted(DWORD error, nt_status_reader reader) {
-    return error == ERROR_ACCESS_DENIED && reader != NULL && reader() == DELETE_PENDING_STATUS;
+static int met_a_file_being_deleted(DWORD error, LONG status) {
+    return error == ERROR_ACCESS_DENIED && status == DELETE_PENDING_STATUS;
 }
 
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
@@ -261,13 +274,14 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
     if (wide == NULL) {
         return RUNTIME_ENTRY_FAILED;
     }
-    nt_status_reader reader = resolve_nt_status_reader();
+    nt_status_reader reader = nt_status_reader_of_process();
     HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
+        LONG status = reader == NULL ? 0 : reader();
         free(wide);
         int exists = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ||
-                     met_a_file_being_deleted(error, reader);
+                     met_a_file_being_deleted(error, status);
         return exists ? RUNTIME_ENTRY_EXISTS : RUNTIME_ENTRY_FAILED;
     }
     int written = write_all(handle, bytes, length);
