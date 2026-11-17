@@ -303,6 +303,7 @@ static void refuses_a_provider_source_and_an_unusable_call(void) {
     cJSON_Delete(bad_id.tree);
     catalog_answer neither = marketplace_call(
         MARKETPLACE_READ, parsed("{\"source\":{\"id\":\"ok\",\"url\":\"https://e.com/m.json\"}}"));
+    CHECK(marketplace_last_status == SPISOR_MALFORMED);
     expect_refusal(neither, "text", "neither text nor destination");
     cJSON_Delete(neither.tree);
 }
