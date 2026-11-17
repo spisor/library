@@ -10,7 +10,6 @@
 #include <wchar.h>
 #include <windows.h>
 
-#include "hosts_call.h"
 #include "path_entry_windows_hooks.h"
 #endif
 
@@ -26,6 +25,7 @@
 #include "holders.h"
 #include "host_references.h"
 #include "hosts.h"
+#include "hosts_call.h"
 #include "platform_key.h"
 #include "processes.h"
 #include "registry.h"

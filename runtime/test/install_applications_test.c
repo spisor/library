@@ -1,4 +1,3 @@
-#include "hosts_call.h"
 #include "install_fixture.h"
 #include "install_call.h"
 
@@ -9,6 +8,7 @@
 #include "boot_stub.h"
 #include "config.h"
 #include "hosts.h"
+#include "hosts_call.h"
 #include "install_ecosystem.h"
 #include "install_methods.h"
 #include "install_support.h"
