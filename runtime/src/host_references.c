@@ -24,10 +24,7 @@ int runtime_host_references_of(const cJSON *recorded, const cJSON **run, const c
 }
 
 int runtime_is_plain_host_id(const char *host_id) {
-    char *segment = runtime_portable_segment(host_id);
-    int plain = segment != NULL && strcmp(segment, host_id) == 0;
-    free(segment);
-    return plain;
+    return runtime_is_portable_segment(host_id);
 }
 
 static char *outside_problem(const char *folder, const char *host_id, const char *recording) {
@@ -72,14 +69,25 @@ static cJSON *copy_or_empty(const cJSON *map) {
     return map == NULL ? cJSON_CreateObject() : cJSON_Duplicate(map, 1);
 }
 
-static cJSON *copy_if_kept(const cJSON *map) {
-    return runtime_is_version_map(map) && map->child != NULL ? cJSON_Duplicate(map, 1) : NULL;
+static int is_kept(const cJSON *map) {
+    return runtime_is_version_map(map) && map->child != NULL;
 }
 
+static cJSON *copy_if_kept(const cJSON *map) {
+    return is_kept(map) ? cJSON_Duplicate(map, 1) : NULL;
+}
+
+/** Owned copies of the members; every member NULL when memory runs out copying any of them. */
 static runtime_host_references copied(const cJSON *run, const cJSON *next, const cJSON *rollback,
                                       const cJSON *rolled_back_from) {
     runtime_host_references references = {copy_or_empty(run), copy_or_empty(next), copy_if_kept(rollback),
                                           copy_if_kept(rolled_back_from)};
+    int whole = references.run != NULL && references.next != NULL &&
+                (references.rollback != NULL || !is_kept(rollback)) &&
+                (references.rolled_back_from != NULL || !is_kept(rolled_back_from));
+    if (!whole) {
+        runtime_free_host_references(&references);
+    }
     return references;
 }
 
@@ -127,8 +135,10 @@ static char *references_text(const runtime_host_references *references) {
     return text;
 }
 
-static int write_text(const char *state, const char *path, const char *text) {
+/** Writes the references' text; 0 with *out_of_memory set to 1 when memory ran out naming their folder. */
+static int write_text(const char *state, const char *path, const char *text, int *out_of_memory) {
     char *folder = bundles_folder(state);
+    *out_of_memory = folder == NULL;
     int written = folder != NULL && spisor_make_directories(folder) &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     free(folder);
@@ -139,8 +149,9 @@ int runtime_record_host_references(const char *state, const char *host_id, const
                                    char **problem) {
     char *path = runtime_host_references_path(state, host_id, problem);
     char *text = path == NULL ? NULL : references_text(references);
-    int written = text != NULL && write_text(state, path, text);
-    if (!written && text != NULL) {
+    int out_of_memory = 0;
+    int written = text != NULL && write_text(state, path, text, &out_of_memory);
+    if (!written && text != NULL && !out_of_memory) {
         const char *parts[3] = {"the references file ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }

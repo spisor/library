@@ -4,6 +4,7 @@
 
 #include "cache_refusal.h"
 #include "catalog_answer.h"
+#include "json_service.h"
 #include "host_references.h"
 #include "platform_key.h"
 #include "spisor/json_kind.h"
@@ -74,75 +75,45 @@ static const char *platform_member(const cJSON *argument) {
     return cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring) ? platform->valuestring : NULL;
 }
 
-static int32_t answer_or_refuse(cJSON *answer, cJSON *refusal, uint8_t **out, size_t *out_len) {
-    if (answer != NULL || refusal == NULL) {
-        return runtime_catalog_answer(answer, out, out_len);
-    }
-    int32_t status = spisor_fail(cJSON_GetObjectItemCaseSensitive(refusal, "message")->valuestring,
-                                 cJSON_GetObjectItemCaseSensitive(refusal, "fix")->valuestring, out, out_len);
-    cJSON_Delete(refusal);
-    return status;
-}
-
-static int32_t refuse_host_id(const char *state, const char *host_id, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_host_id(const char *state, const char *host_id, cJSON **refusal) {
     char *problem = NULL;
     free(runtime_host_references_path(state, host_id, &problem));
-    if (problem == NULL) {
-        return runtime_catalog_answer(NULL, out, out_len);
-    }
-    int32_t status = spisor_fail(problem, RUNTIME_PLAIN_HOST_ID_FIX, out, out_len);
+    *refusal = problem == NULL ? NULL : runtime_refusal(problem, RUNTIME_PLAIN_HOST_ID_FIX);
     free(problem);
-    return status;
+    return NULL;
 }
 
-static int32_t serve_request(const cJSON *argument, runtime_updates_operation operation, uint8_t **out,
-                             size_t *out_len) {
+static cJSON *serve_request(const cJSON *argument, runtime_updates_operation operation, cJSON **refusal) {
     const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
     runtime_updates_request request = {argument, absolute_place(places, "state"), absolute_place(places, "cache"),
                                        runtime_catalog_text_member(argument, "hostId"), platform_member(argument)};
     if (request.state == NULL || request.cache == NULL) {
-        return runtime_catalog_refuse_argument("places", "the host's places, with an absolute state and cache", out,
-                                               out_len);
+        return runtime_catalog_refuse_member("places", "the host's places, with an absolute state and cache", refusal);
     }
     if (request.host_id == NULL) {
-        return runtime_catalog_refuse_argument("hostId", "the id of the host the call is for", out, out_len);
+        return runtime_catalog_refuse_member("hostId", "the id of the host the call is for", refusal);
     }
     if (!runtime_is_plain_host_id(request.host_id)) {
-        return refuse_host_id(request.state, request.host_id, out, out_len);
+        return refuse_host_id(request.state, request.host_id, refusal);
     }
     if (request.platform == NULL) {
-        return runtime_catalog_refuse_argument("platform", "a platform key such as linux-x64, or leave it out", out,
-                                               out_len);
+        return runtime_catalog_refuse_member("platform", "a platform key such as linux-x64, or leave it out", refusal);
     }
-    cJSON *refusal = NULL;
-    cJSON *answer = operation(&request, &refusal);
-    return answer_or_refuse(answer, refusal, out, out_len);
+    return operation(&request, refusal);
 }
 
-static int32_t serve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len,
-                     runtime_updates_operation operation) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
-    }
-    status = serve_request(call.argument, operation, out, out_len);
-    spisor_discard_call(&call);
-    return status;
+cJSON *runtime_updates_apply_operation(const cJSON *argument, cJSON **refusal) {
+    return serve_request(argument, runtime_updates_apply_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_updates_apply(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, runtime_updates_apply_for);
+cJSON *runtime_updates_check_operation(const cJSON *argument, cJSON **refusal) {
+    return serve_request(argument, runtime_updates_check_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_updates_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, runtime_updates_check_for);
+cJSON *runtime_updates_rollback_operation(const cJSON *argument, cJSON **refusal) {
+    return serve_request(argument, runtime_updates_rollback_for, refusal);
 }
 
-RUNTIME_EXPORT int32_t runtime_updates_rollback(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, runtime_updates_rollback_for);
-}
-
-RUNTIME_EXPORT int32_t runtime_updates_recorded(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, runtime_updates_recorded_for);
+cJSON *runtime_updates_recorded_operation(const cJSON *argument, cJSON **refusal) {
+    return serve_request(argument, runtime_updates_recorded_for, refusal);
 }

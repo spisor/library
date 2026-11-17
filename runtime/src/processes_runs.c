@@ -34,7 +34,9 @@ static cJSON *stamp_again(const runtime_processes_request *request, const char *
                           double check, cJSON **refusal) {
     runtime_run_stamp stamped = runtime_stamp_run(request->state, request->host_id, record, run, check);
     if (stamped != RUNTIME_RUN_STAMPED) {
-        *refusal = stamped == RUNTIME_RUN_NOT_A_RECORD ? not_a_record(record) : unwritable(request->host_id);
+        *refusal = stamped == RUNTIME_RUN_NOT_A_RECORD ? not_a_record(record)
+                   : stamped == RUNTIME_RUN_UNWRITABLE ? unwritable(request->host_id)
+                                                       : NULL;
         return NULL;
     }
     return record_answer(record);
@@ -60,9 +62,10 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
     if (record != NULL) {
         return stamp_again(request, record->valuestring, run, check, refusal);
     }
-    char *path = runtime_record_run(request->state, request->host_id, run, check);
+    int out_of_memory = 0;
+    char *path = runtime_record_run(request->state, request->host_id, run, check, &out_of_memory);
     if (path == NULL) {
-        *refusal = unwritable(request->host_id);
+        *refusal = out_of_memory ? NULL : unwritable(request->host_id);
         return NULL;
     }
     cJSON *answer = record_answer(path);
@@ -86,9 +89,12 @@ cJSON *runtime_processes_live_runs_for(const runtime_processes_request *request,
 
 cJSON *runtime_processes_remove_runs_for(const runtime_processes_request *request, cJSON **refusal) {
     const cJSON *record = cJSON_GetObjectItemCaseSensitive(request->argument, "record");
-    if (record != NULL && (!cJSON_IsString(record) ||
-                           !runtime_is_run_record_of(request->state, request->host_id, record->valuestring))) {
-        *refusal = not_a_record(cJSON_IsString(record) ? record->valuestring : "a value that is no path");
+    int out_of_memory = 0;
+    if (record != NULL &&
+        (!cJSON_IsString(record) ||
+         !runtime_is_run_record_of(request->state, request->host_id, record->valuestring, &out_of_memory))) {
+        const char *given = cJSON_IsString(record) ? record->valuestring : "a value that is no path";
+        *refusal = out_of_memory ? NULL : not_a_record(given);
         return NULL;
     }
     int removed = record == NULL ? runtime_remove_run_records(request->state, request->host_id)

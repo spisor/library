@@ -206,9 +206,11 @@ static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
 }
 
 static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON **refusal) {
-    char *record = runtime_record_run(context->state, context->argument.host_id, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS);
+    int out_of_memory = 0;
+    char *record = runtime_record_run(context->state, context->argument.host_id, run,
+                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS, &out_of_memory);
     if (record == NULL) {
-        *refusal = unwritable_run_record(context->argument.host_id);
+        *refusal = out_of_memory ? NULL : unwritable_run_record(context->argument.host_id);
         return NULL;
     }
     cJSON *plan = cJSON_CreateObject();

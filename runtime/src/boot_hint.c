@@ -281,8 +281,10 @@ static char *hint_text(const cJSON *libraries, const char *host) {
     return text;
 }
 
-static int write_text(const char *cache, const char *path, const char *text) {
+/** Writes the hint's text; 0 with *out_of_memory set to 1 when memory ran out naming its folder. */
+static int write_text(const char *cache, const char *path, const char *text, int *out_of_memory) {
     char *folder = hosts_folder(cache);
+    *out_of_memory = folder == NULL;
     int written = folder != NULL && spisor_make_directories(folder) &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     free(folder);
@@ -295,8 +297,8 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
     int out_of_memory = 0;
     char *version = path == NULL ? NULL : recorded_host(cache, host_id, host, &out_of_memory);
     char *text = path == NULL || out_of_memory ? NULL : hint_text(libraries, version);
-    int written = text != NULL && write_text(cache, path, text);
-    if (!written && path != NULL && text != NULL) {
+    int written = text != NULL && write_text(cache, path, text, &out_of_memory);
+    if (!written && path != NULL && text != NULL && !out_of_memory) {
         const char *parts[3] = {"the boot hint ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }
@@ -306,16 +308,17 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
     return written;
 }
 
-int runtime_hint_host_version(const char *cache, const char *host_id, const char *version) {
+spisor_status runtime_hint_host_version(const char *cache, const char *host_id, const char *version) {
     int out_of_memory;
     cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
     if (hint == NULL) {
-        return !out_of_memory;
+        return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
     }
     char *problem = NULL;
     int written = runtime_write_boot_hint(cache, host_id, cJSON_GetObjectItemCaseSensitive(hint, "libraries"),
                                           version, &problem);
+    spisor_status status = written ? SPISOR_OK : problem == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
     free(problem);
     cJSON_Delete(hint);
-    return written;
+    return status;
 }

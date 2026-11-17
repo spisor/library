@@ -13,4 +13,7 @@
  */
 char *runtime_portable_segment(const char *name);
 
+/** Whether name is a portable path segment as it stands, as runtime_portable_segment would answer it unchanged. */
+int runtime_is_portable_segment(const char *name);
+
 #endif

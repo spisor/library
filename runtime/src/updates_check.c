@@ -276,7 +276,7 @@ static int names(const cJSON *map, const char *id, const char *version) {
     return named != NULL && strcmp(named, version) == 0;
 }
 
-typedef enum hint_switch { HINT_UNCHANGED, HINT_SWITCHED, HINT_UNWRITTEN } hint_switch;
+typedef enum hint_switch { HINT_UNCHANGED, HINT_SWITCHED, HINT_UNWRITTEN, HINT_OUT_OF_MEMORY } hint_switch;
 
 /**
  * Switches a kept-current host's boot hint to version once it is installed, when the host's references
@@ -288,16 +288,22 @@ typedef enum hint_switch { HINT_UNCHANGED, HINT_SWITCHED, HINT_UNWRITTEN } hint_
  */
 static hint_switch switch_hint(const runtime_updates_request *request, const char *id, const char *version,
                                cJSON **refusal) {
-    if (!runtime_bundle_is_intact(request->cache, id, version)) {
-        return HINT_UNCHANGED;
+    int out_of_memory = 0;
+    if (!runtime_bundle_is_intact(request->cache, id, version, &out_of_memory)) {
+        return out_of_memory ? HINT_OUT_OF_MEMORY : HINT_UNCHANGED;
     }
     spisor_lock *guard = runtime_updates_lock(request, refusal);
     runtime_host_references recorded = guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
                                                      : runtime_read_host_references(request->state, request->host_id);
     int still_named = recorded.run != NULL && (names(recorded.run, id, version) || names(recorded.next, id, version));
-    hint_switch outcome = HINT_UNCHANGED;
-    if (still_named && runtime_bundle_is_sized(request->cache, id, version)) {
-        outcome = runtime_hint_host_version(request->cache, id, version) ? HINT_SWITCHED : HINT_UNWRITTEN;
+    hint_switch outcome = (guard == NULL && *refusal == NULL) || (guard != NULL && recorded.run == NULL)
+                              ? HINT_OUT_OF_MEMORY
+                              : HINT_UNCHANGED;
+    if (still_named && runtime_bundle_is_sized(request->cache, id, version, &out_of_memory)) {
+        spisor_status hinted = runtime_hint_host_version(request->cache, id, version);
+        outcome = hinted == SPISOR_OK ? HINT_SWITCHED : hinted == SPISOR_REFUSED ? HINT_UNWRITTEN : HINT_OUT_OF_MEMORY;
+    } else if (out_of_memory) {
+        outcome = HINT_OUT_OF_MEMORY;
     }
     runtime_free_host_references(&recorded);
     spisor_unlock(guard);
@@ -335,7 +341,7 @@ static int install_target(const runtime_updates_request *request, const check_pl
         done = refusal != NULL ? add_refused(progress->refused, name, runtime_map_version(refusal, "message"),
                                              runtime_map_version(refusal, "fix"))
                : outcome == HINT_UNWRITTEN ? report_unwritten_hint(progress, name, id, version)
-                                           : 1;
+                                           : outcome != HINT_OUT_OF_MEMORY;
         cJSON_Delete(refusal);
     }
     cJSON_Delete(answer);
@@ -386,15 +392,20 @@ static int plan_check(const runtime_updates_request *request, const char *now, c
     return plan->catalog != NULL && plan_targets(request, plan, refusal);
 }
 
+/** Attaches *member to answer, taking it either way; 0 when answer is NULL or memory runs out. */
+static int attach_taken(cJSON *answer, const char *name, cJSON **member) {
+    cJSON *item = *member;
+    *member = NULL;
+    return runtime_catalog_attach(answer, name, item);
+}
+
 static cJSON *answer_of(check_progress *progress, cJSON *removed) {
     cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && runtime_catalog_attach(answer, "checked", progress->checked);
-    progress->checked = NULL;
-    built = built && runtime_catalog_attach(answer, "fetched", progress->fetched);
-    progress->fetched = NULL;
-    built = built && runtime_catalog_attach(answer, "refused", progress->refused);
-    progress->refused = NULL;
-    if (!built || !runtime_catalog_attach(answer, "removed", removed)) {
+    int built = attach_taken(answer, "checked", &progress->checked);
+    built = attach_taken(answer, "fetched", &progress->fetched) && built;
+    built = attach_taken(answer, "refused", &progress->refused) && built;
+    built = attach_taken(answer, "removed", &removed) && built;
+    if (!built) {
         cJSON_Delete(answer);
         return NULL;
     }

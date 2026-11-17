@@ -45,9 +45,9 @@ static void it_records_nothing_for_a_removed_host_and_refuses_its_updates(void) 
 
     catalog_answer applied =
         apply_unregistered(LOADER, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}");
-    expect_refusal(applied, "is not registered", "apply after removal");
+    expect_cache_refusal(applied, SPISOR_REFUSED, "is not registered", "apply after removal");
     catalog_answer checked = check_unregistered(LOADER, no_settings(), "{}");
-    expect_refusal(checked, "is not registered", "check after removal");
+    expect_cache_refusal(checked, SPISOR_REFUSED, "is not registered", "check after removal");
     expect_nothing_recorded_for(LOADER, "after its updates");
     cJSON_Delete(started.tree);
     cJSON_Delete(removed.tree);

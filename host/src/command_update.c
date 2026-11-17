@@ -3,6 +3,7 @@
 #include "host_commands.h"
 #include "host_context.h"
 #include "host_output.h"
+#include "json_service.h"
 #include "updates.h"
 
 #define UPDATE_FIX "see each one's fix under refused above, then update again"
@@ -20,7 +21,7 @@ static cJSON *run_call(const host_context *context) {
 /** updates.run, which checks every registered host and updates each method-installed application; prints {checks, applications, refused}. */
 static int update_everything(const host_context *context) {
     cJSON *refusal = NULL;
-    cJSON *summary = host_call(runtime_updates_run, run_call(context), &refusal);
+    cJSON *summary = runtime_call_operation(runtime_updates_run_operation, run_call(context), &refusal);
     if (summary == NULL) {
         return host_refuse(refusal);
     }
