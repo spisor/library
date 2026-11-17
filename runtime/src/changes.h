@@ -57,6 +57,12 @@ runtime_changes_outcome runtime_changes_apply_held(const char *state, const char
 int runtime_changes_reverse_newer_held(const char *state, const char *host, double above);
 
 /**
+ * runtime_changes_reverse_newer_held for exactly the count sequences listed, so a change host recorded between them
+ * through another call stays recorded.
+ */
+int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count);
+
+/**
  * Reverses entry, one unreversed record in registration of host, held when another unreversed
  * record of its target exists (a registration that cannot be read counts as one), and marks it
  * reversed, and drifted when it drifted, in registration, which the caller stores. The caller holds

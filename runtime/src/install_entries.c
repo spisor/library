@@ -161,7 +161,10 @@ static int declares_entry_root(const cJSON *directories) {
     return 0;
 }
 
-/** @implNote The directory above entryRoot is this runtime's own layout, so an entry cannot declare it and removal must still take it. */
+/**
+ * @implNote The directory above entryRoot is this runtime's own layout, so an entry cannot declare it and removal must
+ * still take it.
+ */
 static int add_directories(const entry_context *context, const cJSON *directories, cJSON *changes) {
     if (declares_entry_root(directories) && !add_directory(changes, runtime_catalog_copy(context->entries))) {
         return 0;
@@ -203,9 +206,15 @@ static cJSON *setting_change(const entry_context *context, const cJSON *setting)
         cJSON_Delete(change);
         return NULL;
     }
-    cJSON_AddItemToObject(change, "key", key);
-    cJSON_AddItemToObject(change, "value", value);
-    if (cJSON_AddBoolToObject(change, "create", 1) == NULL) {
+    int key_added = cJSON_AddItemToObject(change, "key", key);
+    int value_added = key_added && cJSON_AddItemToObject(change, "value", value);
+    if (!key_added) {
+        cJSON_Delete(key);
+    }
+    if (!value_added) {
+        cJSON_Delete(value);
+    }
+    if (!value_added || cJSON_AddBoolToObject(change, "create", 1) == NULL) {
         cJSON_Delete(change);
         return NULL;
     }
@@ -242,38 +251,79 @@ static cJSON *apply_call(const entry_loader *loader, const cJSON *change) {
     return call;
 }
 
+#ifdef SPISOR_INSTALL_TEST_HOOKS
+#include "install_hooks.h"
+
+static void (*after_recorded)(void) = NULL;
+
+void runtime_install_after_entry_change(void (*hook)(void)) {
+    after_recorded = hook;
+}
+
+static void run_after_recorded(void) {
+    if (after_recorded != NULL) {
+        after_recorded();
+    }
+}
+#else
+static void run_after_recorded(void) {
+}
+#endif
+
+/** The sequences one entry call recorded, held apart from its answer so a refusal can always name them. */
+typedef struct recorded_sequences {
+    double *values;
+    size_t count;
+} recorded_sequences;
+
 /**
- * Takes back the changes this entry recorded before one was refused, so a refused entry leaves the loader as it was.
+ * Takes back exactly the changes this entry recorded before one was refused, so a refused entry leaves the loader as
+ * it was, and a change another call recorded for the loader meanwhile stays.
  *
  * @implNote An undo, not a guarantee: a reversal memory or the disk stops leaves the rest recorded for the loader's
  * removal to reverse.
  */
-static void reverse_recorded(const entry_loader *loader, const cJSON *sequences) {
-    const cJSON *first = cJSON_GetArrayItem(sequences, 0);
-    spisor_lock *guard = first == NULL ? NULL : runtime_hosts_lock(loader->state);
+static void reverse_recorded(const entry_loader *loader, const recorded_sequences *recorded) {
+    spisor_lock *guard = recorded->count == 0 ? NULL : runtime_hosts_lock(loader->state);
     if (guard != NULL) {
-        runtime_changes_reverse_newer_held(loader->state, loader->id, first->valuedouble - 1);
+        runtime_changes_reverse_listed_held(loader->state, loader->id, recorded->values, recorded->count);
         spisor_unlock(guard);
     }
 }
 
+/** Applies one change, keeping its sequence when it was recorded; 0 with *refusal set, or NULL for memory. */
+static int apply_one(const entry_loader *loader, const cJSON *change, recorded_sequences *recorded, cJSON *sequences,
+                     cJSON **refusal) {
+    cJSON *answer = runtime_call_operation(runtime_changes_apply_request, apply_call(loader, change), refusal);
+    const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(answer, "sequence");
+    int is_new = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "recorded")) && cJSON_IsNumber(sequence);
+    if (is_new) {
+        recorded->values[recorded->count++] = sequence->valuedouble;
+    }
+    int kept = answer != NULL &&
+               (!is_new || cJSON_AddItemToArray(sequences, cJSON_CreateNumber(sequence->valuedouble)));
+    cJSON_Delete(answer);
+    if (kept && is_new) {
+        run_after_recorded();
+    }
+    return kept;
+}
+
 static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
-    cJSON *sequences = cJSON_CreateArray();
+    int change_count = cJSON_GetArraySize(changes);
+    recorded_sequences recorded = {malloc(sizeof(double) * (size_t)(change_count > 0 ? change_count : 1)), 0};
+    cJSON *sequences = recorded.values == NULL ? NULL : cJSON_CreateArray();
     for (const cJSON *change = sequences == NULL ? NULL : changes->child; change != NULL; change = change->next) {
-        cJSON *answer = runtime_call_operation(runtime_changes_apply_request, apply_call(loader, change), refusal);
-        const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(answer, "sequence");
-        int kept = answer != NULL && (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "recorded")) ||
-                                      !cJSON_IsNumber(sequence) ||
-                                      cJSON_AddItemToArray(sequences, cJSON_CreateNumber(sequence->valuedouble)));
-        cJSON_Delete(answer);
-        if (!kept) {
+        if (!apply_one(loader, change, &recorded, sequences, refusal)) {
             if (*refusal != NULL) {
-                reverse_recorded(loader, sequences);
+                reverse_recorded(loader, &recorded);
             }
             cJSON_Delete(sequences);
-            return NULL;
+            sequences = NULL;
+            break;
         }
     }
+    free(recorded.values);
     return sequences;
 }
 
@@ -320,13 +370,15 @@ static int read_loader(const cJSON *places, const cJSON *loader, entry_loader *r
     if (read->label == NULL) {
         read->label = read->application;
     }
-    return read->state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->state) && read->cache != NULL &&
-           spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->cache) && read->id != NULL && read->id[0] != 0 &&
-           read->application != NULL && read->home != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->home);
+    return read->state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->state) &&
+           read->cache != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->cache) && read->id != NULL &&
+           read->id[0] != 0 && read->application != NULL && read->home != NULL &&
+           spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->home);
 }
 
 static char *with_issue(char *message, const cJSON *issue) {
-    const char *parts[6] = {message, " (", runtime_install_text(issue, "path"), ": ", runtime_install_text(issue, "detail"), ")"};
+    const char *parts[6] = {message, " (", runtime_install_text(issue, "path"), ": ",
+                            runtime_install_text(issue, "detail"), ")"};
     char *extended = runtime_cache_text(parts, 6);
     free(message);
     return extended;
@@ -376,7 +428,9 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
         return not_written(&read);
     }
     cJSON *changes = cJSON_CreateArray();
-    cJSON *answer = changes != NULL && add_declared_changes(&read, changes) ? written(applied(&read, changes, refusal), read.entry) : NULL;
+    cJSON *answer = changes != NULL && add_declared_changes(&read, changes)
+                        ? written(applied(&read, changes, refusal), read.entry)
+                        : NULL;
     cJSON_Delete(changes);
     return answer;
 }
