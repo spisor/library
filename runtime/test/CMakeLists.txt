@@ -1,3 +1,5 @@
+spisor_bound_tests()
+
 function(runtime_test_with_allocator name allocator)
     add_executable(${name} ${name}.c ${ARGN} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
     target_link_libraries(${name} PRIVATE runtime_objects ${allocator} ${runtime_secret_store_libraries}
