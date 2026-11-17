@@ -61,6 +61,27 @@ int runtime_install_enable_plugin(const runtime_install_settings *settings, cons
     return enabled;
 }
 
+static cJSON *enabled_plugins(const cJSON *ids) {
+    cJSON *plugins = cJSON_CreateObject();
+    for (const cJSON *id = plugins == NULL ? NULL : ids->child; id != NULL; id = id->next) {
+        cJSON *choice = cJSON_AddObjectToObject(plugins, id->valuestring);
+        if (choice == NULL || cJSON_AddTrueToObject(choice, "enabled") == NULL) {
+            cJSON_Delete(plugins);
+            return NULL;
+        }
+    }
+    return plugins;
+}
+
+int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, cJSON **refusal) {
+    cJSON *plugins = enabled_plugins(ids);
+    *refusal = NULL;
+    int enabled = plugins != NULL && runtime_merge_ecosystem_setting(settings->home, settings->portable, "plugins",
+                                                                     plugins, RUNTIME_SETTINGS_LAYER_PORTABLE, refusal);
+    cJSON_Delete(plugins);
+    return enabled;
+}
+
 /** The catalog.sources list values carry, or NULL when they carry none. */
 static const cJSON *listed_in(const cJSON *values) {
     const cJSON *sources = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(values, "catalog"), "sources");

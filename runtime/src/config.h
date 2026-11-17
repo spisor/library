@@ -50,7 +50,8 @@ char *runtime_ecosystem_settings_file_holding(const char *home, const char *port
  * declaration under its key as {type?, layer?}, a layer being "application" or "portable". `places` NULL is a host
  * with no secret store. `key` is what get and set read, `value` and `layer` (a runtime_settings_layer) what set
  * writes. `previous_tree`, an empty tree or NULL, is where set also answers the previous value as a tree, built
- * before it writes.
+ * before it writes. `merges` 1 makes set merge `value` into what the layer's file holds at `key`, as runtime_merge
+ * applies a file over defaults, instead of replacing it.
  */
 typedef struct runtime_config_request {
     const char *home;
@@ -64,6 +65,7 @@ typedef struct runtime_config_request {
     const cJSON *value;
     uint32_t layer;
     spisor_value_tree *previous_tree;
+    int merges;
 } runtime_config_request;
 
 /** A request for the settings of home over portable, every other field NULL or the default layer. */
@@ -88,5 +90,9 @@ cJSON *runtime_ecosystem_settings_values(const char *home, const char *portable,
 /** Writes one ecosystem setting as settings' set writes it; 1, or 0 with *refusal set as above. */
 int runtime_set_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
                                   uint32_t layer, cJSON **refusal);
+
+/** As runtime_set_ecosystem_setting, merging value into what the layer holds at key in the one write. */
+int runtime_merge_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
+                                    uint32_t layer, cJSON **refusal);
 
 #endif

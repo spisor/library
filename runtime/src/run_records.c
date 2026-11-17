@@ -9,6 +9,7 @@
 #include "alive_stamp.h"
 #include "cache_folders.h"
 #include "directory_tree.h"
+#include "json_service.h"
 #include "file_reading.h"
 #include "file_times.h"
 #include "host_references.h"
@@ -51,7 +52,7 @@ static char *record_text(const cJSON *run, double check_milliseconds) {
     int built = record != NULL && cJSON_AddNumberToObject(record, "pid", (double)current_process_id()) != NULL &&
                 cJSON_AddNumberToObject(record, "aliveAt", floor(runtime_now_milliseconds())) != NULL &&
                 cJSON_AddNumberToObject(record, "checkMilliseconds", check_milliseconds) != NULL &&
-                cJSON_AddItemReferenceToObject(record, "run", (cJSON *)run);
+                runtime_add_reference(record, "run", run);
     char *compact = built ? cJSON_PrintUnformatted(record) : NULL;
     cJSON_Delete(record);
     char *text = compact == NULL ? NULL : malloc(strlen(compact) + 2);

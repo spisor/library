@@ -227,7 +227,8 @@ static cJSON *detected_origin(const char *id, const cJSON *detections) {
 
 static cJSON *settled_row(const char *id, const char *state, const cJSON *detections) {
     cJSON *row = row_head(id, state);
-    if (row != NULL && strcmp(state, "detected") == 0 && !cJSON_AddItemToObject(row, "origin", detected_origin(id, detections))) {
+    if (row != NULL && strcmp(state, "detected") == 0 &&
+        !runtime_install_move_into(row, "origin", detected_origin(id, detections))) {
         cJSON_Delete(row);
         return NULL;
     }

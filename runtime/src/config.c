@@ -652,17 +652,25 @@ static spisor_status refuse_write(const char *file_path, spisor_refusal *refusal
     return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings file could not be written", fix);
 }
 
-static spisor_status store_value(const config_target *target, settings_file *file, const char *key,
-                                 const cJSON *value, spisor_refusal *refusal) {
+static place_status place_request(cJSON *root, const runtime_config_request *request) {
+    cJSON *merged = request->merges ? runtime_merge(runtime_walk(root, request->key), request->value) : NULL;
+    const cJSON *value = request->merges ? merged : request->value;
+    place_status placed = value == NULL ? PLACE_OUT_OF_MEMORY : place_value(root, request->key, value);
+    cJSON_Delete(merged);
+    return placed;
+}
+
+static spisor_status store_value(const config_target *target, settings_file *file,
+                                 const runtime_config_request *request, spisor_refusal *refusal) {
     int refused;
     cJSON *root = writable_root(file, &refused);
     if (root == NULL) {
         return refused ? refuse_file(target->file, refusal) : SPISOR_OUT_OF_MEMORY;
     }
-    place_status placed = place_value(root, key, value);
+    place_status placed = place_request(root, request);
     spisor_status status = SPISOR_OK;
     if (placed == CROSSES_NON_OBJECT) {
-        status = refuse_path(target->file, key, refusal);
+        status = refuse_path(target->file, request->key, refusal);
     } else if (placed == PLACE_OUT_OF_MEMORY) {
         status = SPISOR_OUT_OF_MEMORY;
     } else if (!write_settings(target, root)) {
@@ -778,7 +786,7 @@ static spisor_status store_locked(const runtime_config_request *request, const c
     spisor_status status = read_previous(request, &files, previous, refusal);
     layer_write chosen = chosen_layer(layer, targets, &files);
     if (status == SPISOR_OK) {
-        status = store_value(chosen.target, chosen.file, request->key, request->value, refusal);
+        status = store_value(chosen.target, chosen.file, request, refusal);
     }
     free_layers(&files);
     if (status != SPISOR_OK) {
@@ -941,18 +949,30 @@ cJSON *runtime_ecosystem_settings_values(const char *home, const char *portable,
     return values;
 }
 
-int runtime_set_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
-                                  uint32_t layer, cJSON **refusal) {
-    runtime_config_request request = runtime_config_request_of(home, portable);
+static int set_ecosystem_setting(runtime_config_request *request, const char *key, const cJSON *value, uint32_t layer,
+                                 cJSON **refusal) {
     spisor_refusal refused = SPISOR_INIT(spisor_refusal);
     cJSON *previous = NULL;
     int secret = 0;
     spisor_status status;
-    request.key = key;
-    request.value = value;
-    request.layer = layer;
-    status = runtime_config_set_value(&request, &previous, &secret, &refused);
+    request->key = key;
+    request->value = value;
+    request->layer = layer;
+    status = runtime_config_set_value(request, &previous, &secret, &refused);
     cJSON_Delete(previous);
     *refusal = refusal_json(status, &refused);
     return status == SPISOR_OK;
+}
+
+int runtime_set_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
+                                  uint32_t layer, cJSON **refusal) {
+    runtime_config_request request = runtime_config_request_of(home, portable);
+    return set_ecosystem_setting(&request, key, value, layer, refusal);
+}
+
+int runtime_merge_ecosystem_setting(const char *home, const char *portable, const char *key, const cJSON *value,
+                                    uint32_t layer, cJSON **refusal) {
+    runtime_config_request request = runtime_config_request_of(home, portable);
+    request.merges = 1;
+    return set_ecosystem_setting(&request, key, value, layer, refusal);
 }

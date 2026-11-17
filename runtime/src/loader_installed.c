@@ -6,10 +6,10 @@
 
 #include "cache_folders.h"
 #include "host_references.h"
+#include "json_parse.h"
 #include "json_service.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
 #include "spisor/path.h"
 
 #define INSTALLED_FIX "install the host bundle again, so its host.json carries a loader standard"
@@ -57,14 +57,15 @@ static cJSON *read_standard(const char *file, cJSON **refusal) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(file, &length);
     int readable = bytes != NULL;
-    cJSON *manifest = readable ? spisor_parse_json(bytes, length) : NULL;
+    int out_of_memory = 0;
+    cJSON *manifest = readable ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
     free(bytes);
-    if (manifest == NULL) {
+    if (manifest == NULL && !out_of_memory) {
         *refusal = refusal_naming(file, "could not be read: ", "",
                                   readable ? "it is not JSON" : "the file is missing or unreadable");
         return NULL;
     }
-    return checked_standard(file, manifest, refusal);
+    return manifest == NULL ? NULL : checked_standard(file, manifest, refusal);
 }
 
 static int is_plain(const char *text) {

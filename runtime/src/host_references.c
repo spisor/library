@@ -6,6 +6,7 @@
 #include "cache_folders.h"
 #include "cache_refusal.h"
 #include "directory_tree.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "run_records.h"
 #include "segment.h"
@@ -110,28 +111,14 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
     return references;
 }
 
-/**
- * Adds a reference to the record `map` under `name`.
- *
- * @implNote cJSON_AddItemReferenceToObject leaks the reference it made when the key cannot be copied.
- */
-static int add_reference(cJSON *object, const char *name, const cJSON *map) {
-    cJSON *reference = cJSON_CreateObjectReference(map->child);
-    if (reference == NULL || !cJSON_AddItemToObject(object, name, reference)) {
-        cJSON_Delete(reference);
-        return 0;
-    }
-    return 1;
-}
-
 static char *references_text(const runtime_host_references *references) {
     cJSON *recorded = cJSON_CreateObject();
-    int built = recorded != NULL && add_reference(recorded, "run", references->run) &&
-                add_reference(recorded, "next", references->next) &&
+    int built = recorded != NULL && runtime_add_reference(recorded, "run", references->run) &&
+                runtime_add_reference(recorded, "next", references->next) &&
                 (references->rollback == NULL || references->rollback->child == NULL ||
-                 add_reference(recorded, "rollback", references->rollback)) &&
+                 runtime_add_reference(recorded, "rollback", references->rollback)) &&
                 (references->rolled_back_from == NULL || references->rolled_back_from->child == NULL ||
-                 add_reference(recorded, "rolledBackFrom", references->rolled_back_from));
+                 runtime_add_reference(recorded, "rolledBackFrom", references->rolled_back_from));
     char *pretty = built ? spisor_json_stringify_pretty(recorded) : NULL;
     cJSON_Delete(recorded);
     const char *parts[2] = {pretty, "\n"};

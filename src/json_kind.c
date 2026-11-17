@@ -87,7 +87,7 @@ int32_t spisor_fail(const char *message, const char *fix, uint8_t **out, size_t 
 }
 
 void spisor_release(uint8_t *buffer) {
-    free(buffer);
+    spisor_memory_release(buffer);
 }
 
 typedef enum document_refusal {

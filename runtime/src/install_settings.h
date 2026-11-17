@@ -33,6 +33,12 @@ int runtime_install_enable_plugin(const runtime_install_settings *settings, cons
                                   cJSON **refusal);
 
 /**
+ * Writes plugins.<id>.enabled as true for every id of ids, an array of strings, into the portable layer in one write,
+ * so a reader sees all of them or none; 1 on success, else as above.
+ */
+int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, cJSON **refusal);
+
+/**
  * Appends each of sources that catalog.sources does not list yet, never replacing one that is: a local
  * source to the application layer, which starts from the merged list, and an https source to the
  * portable layer and to the application layer too whenever that has a list of its own. 1 on success.
