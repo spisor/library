@@ -109,6 +109,14 @@ static void register_entry_loader(void) {
     free(home);
 }
 
+static void declare_hook_entry(void) {
+    cJSON *declared = application_with_hook_entry("sample", "sample-binary", "{}");
+    char *text = cJSON_PrintUnformatted(declared);
+    CHECK(value_of_text(text, &application));
+    cJSON_free(text);
+    cJSON_Delete(declared);
+}
+
 /** A registered loader whose application declares the hook entry, a settings member among its changes. */
 static void prepare_entry(void) {
     start_install_base(&base, "operations", "entry");
@@ -116,11 +124,14 @@ static void prepare_entry(void) {
     CHECK(spisor_make_directories(homes) == 1);
     free(homes);
     register_entry_loader();
-    cJSON *declared = application_with_hook_entry("sample", "sample-binary", "{}");
-    char *text = cJSON_PrintUnformatted(declared);
-    CHECK(value_of_text(text, &application));
-    cJSON_free(text);
-    cJSON_Delete(declared);
+    declare_hook_entry();
+}
+
+/** As prepare_entry with the home's parent missing, so the disk refuses the home after the entry recorded changes. */
+static void prepare_refused_entry(void) {
+    start_install_base(&base, "operations", "entry-refused");
+    register_entry_loader();
+    declare_hook_entry();
 }
 
 static spisor_status run_entry(void) {
@@ -341,9 +352,10 @@ static int is_selected(const char *only, const char *label) {
     return strncmp(label, only, strlen(only)) == 0;
 }
 
-/** With a label's start as the first argument runs only the cases it starts, failing allocations first to last if given. */
+/** With a label's start as the first argument runs only the cases it starts, failing allocations first to last. */
 int main(int argc, char **argv) {
     static const operation_case entry = {"entry", prepare_entry, run_entry, NULL};
+    static const operation_case refused_entry = {"entry refused", prepare_refused_entry, run_entry, NULL};
     static const operation_case update = {"application", prepare_fake_application, run_update, NULL};
     static const operation_case path_update = {"application on path", prepare_path_application, run_update, NULL};
     static const operation_case found = {"runtime", prepare_runtime, run_runtime, acquired_nothing};
@@ -353,8 +365,11 @@ int main(int argc, char **argv) {
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
     spisor_json_use_library_allocator();
     install = runtime_install_definition_of();
-    if (is_selected(only, entry.label)) {
+    if (is_selected(only, entry.label) && strcmp(only, refused_entry.label) != 0) {
         every_failure_of(&entry, SPISOR_OK, first == 0 ? 1 : first, last);
+    }
+    if (is_selected(only, refused_entry.label)) {
+        every_failure_of(&refused_entry, SPISOR_REFUSED, first == 0 ? 1 : first, last);
     }
     if (is_selected(only, update.label) && strcmp(only, path_update.label) != 0) {
         every_failure_of(&update, SPISOR_OK, first == 0 ? 1 : first, last);

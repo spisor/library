@@ -525,9 +525,10 @@ typedef struct runtime_install_definition {
     /**
      * Writes the entry the application declares, every directory, file and settings member a change recorded under
      * the loader's id, so removing the loader reverses all of it. A change already on disk is not recorded again, so
-     * writing an entry twice changes nothing. A refused call takes back exactly the changes it recorded, leaving a
-     * change another call recorded for the loader meanwhile, as far as the disk and memory let it; what they stop,
-     * and what an OUT_OF_MEMORY answer leaves, stays recorded for the loader's removal to reverse.
+     * writing an entry twice changes nothing. A refused call takes its changes back as far as the disk lets it,
+     * exactly the ones it recorded, leaving a change another call recorded for the loader meanwhile. Memory running
+     * out, also while taking them back, answers OUT_OF_MEMORY, and what it leaves stays recorded for the loader's
+     * removal to reverse.
      *
      * @return OK; MALFORMED, also for an application that is not a record with an id; REFUSED for application facts
      * the loader gets wrong, or a change the disk refuses; OUT_OF_MEMORY.

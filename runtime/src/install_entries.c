@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "allocation.h"
 #include "boot_stub.h"
 #include "cache_refusal.h"
 #include "catalog_text.h"
@@ -278,17 +279,18 @@ typedef struct recorded_sequences {
 
 /**
  * Takes back exactly the changes this entry recorded before one was refused, so a refused entry leaves the loader as
- * it was, and a change another call recorded for the loader meanwhile stays.
- *
- * @implNote An undo, not a guarantee: a reversal memory or the disk stops leaves the rest recorded for the loader's
- * removal to reverse.
+ * it was, and a change another call recorded for the loader meanwhile stays. Answers 0 when memory ran out first,
+ * the rest then left recorded for the loader's removal to reverse; what the disk stops stays recorded the same way.
  */
-static void reverse_recorded(const entry_loader *loader, const recorded_sequences *recorded) {
+static int reverse_recorded(const entry_loader *loader, const recorded_sequences *recorded) {
+    int out_of_memory = 0;
     spisor_lock *guard = recorded->count == 0 ? NULL : runtime_hosts_lock(loader->state);
     if (guard != NULL) {
-        runtime_changes_reverse_listed_held(loader->state, loader->id, recorded->values, recorded->count);
+        runtime_changes_reverse_listed_held(loader->state, loader->id, recorded->values, recorded->count,
+                                            &out_of_memory);
         spisor_unlock(guard);
     }
+    return !out_of_memory;
 }
 
 /** Applies one change, keeping its sequence when it was recorded; 0 with *refusal set, or NULL for memory. */
@@ -311,19 +313,21 @@ static int apply_one(const entry_loader *loader, const cJSON *change, recorded_s
 
 static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
     int change_count = cJSON_GetArraySize(changes);
-    recorded_sequences recorded = {malloc(sizeof(double) * (size_t)(change_count > 0 ? change_count : 1)), 0};
+    size_t capacity = change_count > 0 ? (size_t)change_count : 1;
+    recorded_sequences recorded = {spisor_memory_allocate(sizeof(double) * capacity), 0};
     cJSON *sequences = recorded.values == NULL ? NULL : cJSON_CreateArray();
     for (const cJSON *change = sequences == NULL ? NULL : changes->child; change != NULL; change = change->next) {
         if (!apply_one(loader, change, &recorded, sequences, refusal)) {
-            if (*refusal != NULL) {
-                reverse_recorded(loader, &recorded);
+            if (*refusal != NULL && !reverse_recorded(loader, &recorded)) {
+                cJSON_Delete(*refusal);
+                *refusal = NULL;
             }
             cJSON_Delete(sequences);
             sequences = NULL;
             break;
         }
     }
-    free(recorded.values);
+    spisor_memory_release(recorded.values);
     return sequences;
 }
 
