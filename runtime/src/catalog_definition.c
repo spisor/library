@@ -271,6 +271,34 @@ static spisor_status fill_check(const cJSON *answered, void *filled) {
     return catalog == NULL ? SPISOR_OK : fill_catalog(&answer->storage, catalog, &answer->catalog);
 }
 
+/**
+ * Serves check with its answer filled before the state the check keeps is written, so an answer that runs out of
+ * memory keeps nothing and the next check still answers changed.
+ */
+static spisor_status serve_check(cJSON *call, runtime_catalog_check_answer *answer, spisor_refusal *refusal) {
+    runtime_catalog_kept_state kept;
+    cJSON *operation_refusal = NULL;
+    memset(&kept, 0, sizeof kept);
+    cJSON *answered = call == NULL ? NULL : runtime_catalog_check_deciding(call, &operation_refusal, &kept);
+    cJSON_Delete(call);
+    spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill_check(answered, answer);
+    cJSON_Delete(answered);
+    status = status == SPISOR_OK ? runtime_catalog_keep_state(&kept) : status;
+    if (status != SPISOR_OK && answered != NULL) {
+        runtime_release_stored_answer(answer, CHECK_ANSWER_SHAPE);
+    }
+    if (status == SPISOR_REFUSED) {
+        answered = runtime_catalog_unkept_answer(&kept);
+        status = answered == NULL ? SPISOR_OUT_OF_MEMORY : fill_check(answered, answer);
+        if (status != SPISOR_OK) {
+            runtime_release_stored_answer(answer, CHECK_ANSWER_SHAPE);
+        }
+        cJSON_Delete(answered);
+    }
+    runtime_catalog_free_kept_state(&kept);
+    return status;
+}
+
 static spisor_status check(void *context, const runtime_catalog_check_argument *argument,
                            runtime_catalog_check_answer *answer, spisor_refusal *refusal) {
     cJSON *call;
@@ -293,7 +321,7 @@ static spisor_status check(void *context, const runtime_catalog_check_argument *
         cJSON_Delete(call);
         call = NULL;
     }
-    return runtime_serve_operation(runtime_catalog_check_operation, call, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
+    return serve_check(call, answer, refusal);
 }
 
 static spisor_status add_sources(cJSON *call, const runtime_catalog_source *listed, size_t count) {

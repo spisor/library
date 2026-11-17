@@ -2,6 +2,7 @@
 #define RUNTIME_CATALOG_H
 
 #include "cJSON.h"
+#include "catalog_state.h"
 
 /**
  * @file
@@ -30,6 +31,15 @@ cJSON *runtime_catalog_merge_operation(const cJSON *argument, cJSON **refusal);
  * @implNote A failed check never moves checkedAt, so the next start asks again.
  */
 cJSON *runtime_catalog_check_operation(const cJSON *argument, cJSON **refusal);
+
+/**
+ * runtime_catalog_check_operation without its write: the state the check keeps goes to *kept, empty when it keeps
+ * none or the answer is NULL, for the caller to write with runtime_catalog_keep_state once its own answer stands.
+ */
+cJSON *runtime_catalog_check_deciding(const cJSON *argument, cJSON **refusal, runtime_catalog_kept_state *kept);
+
+/** The failed answer of a check whose kept state could not be written; NULL out of memory. */
+cJSON *runtime_catalog_unkept_answer(const runtime_catalog_kept_state *kept);
 
 /** catalog's current: {sources, cache} answers {catalog}, every source's current index merged, with no request. */
 cJSON *runtime_catalog_current_operation(const cJSON *argument, cJSON **refusal);

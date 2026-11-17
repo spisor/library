@@ -378,9 +378,13 @@ static cJSON *read_catalog(const char *id, const char *url, const uint8_t *bytes
     cJSON *wrapped = cJSON_IsObject(item) ? catalog_around(id, item) : NULL;
     char *text = wrapped == NULL ? NULL : cJSON_PrintUnformatted(wrapped);
     runtime_catalog_refusal catalog_refusal;
-    cJSON *catalog = text == NULL ? NULL : runtime_catalog_read_text(text, strlen(text), url, &catalog_refusal);
-    if (text != NULL && catalog == NULL) {
+    cJSON *catalog = NULL;
+    spisor_status status =
+        text == NULL ? SPISOR_OK : runtime_catalog_read_text(text, strlen(text), url, &catalog, &catalog_refusal);
+    if (status == SPISOR_REFUSED) {
         refuse_catalog(&catalog_refusal, url, refusal);
+    } else if (status == SPISOR_OUT_OF_MEMORY) {
+        runtime_catalog_free_refusal(&catalog_refusal);
     } else if (text == NULL && item != NULL && !cJSON_IsObject(item)) {
         refuse(refusal, "publish the catalog item as a JSON object", "%s is not a JSON object", url);
     } else if (text == NULL && item == NULL) {
