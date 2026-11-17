@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "definition_support.h"
 #include "identity.h"
 #include "identity_resolve.h"
 #include "import_name.h"
@@ -194,7 +195,7 @@ static cJSON *resolve_argument(const char *id, const build_request *request) {
     if (argument == NULL || cJSON_AddStringToObject(argument, "id", id) == NULL ||
         (request->api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", request->api_base) == NULL) ||
         (request->token != NULL && cJSON_AddStringToObject(argument, "token", request->token) == NULL)) {
-        cJSON_Delete(argument);
+        runtime_delete_secret_json(argument);
         return NULL;
     }
     return argument;
@@ -215,7 +216,7 @@ static lookup_result resolved(const char *repository_id, const build_request *re
     cJSON *lookup_refusal = NULL;
     cJSON *argument = resolve_argument(repository_id, request);
     result.answer = argument == NULL ? NULL : runtime_identity_lookup(argument, &lookup_refusal);
-    cJSON_Delete(argument);
+    runtime_delete_secret_json(argument);
     if (result.answer == NULL && runtime_is_refusal(lookup_refusal)) {
         snprintf(result.reason, sizeof result.reason, "it cannot be looked up: %s", text_of(lookup_refusal, "message"));
         result.status = runtime_identity_refusal_status(lookup_refusal);

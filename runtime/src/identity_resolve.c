@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "definition_support.h"
 #include "fetch_transport.h"
 #include "identity.h"
 #include "json_service.h"
@@ -173,6 +174,7 @@ static cJSON *lookup(const char *url, const char *token, lookup_failure *failure
     }
     uint8_t *body = malloc(BODY_CAPACITY);
     if (body == NULL) {
+        runtime_overwrite(authorization, sizeof authorization);
         return NULL;
     }
     runtime_fetch_sink sink;
@@ -180,6 +182,7 @@ static cJSON *lookup(const char *url, const char *token, lookup_failure *failure
     runtime_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
     runtime_fetch_into_memory(url, token == NULL ? NULL : authorization, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    runtime_overwrite(authorization, sizeof authorization);
     cJSON *repository = NULL;
     if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
         repository = parse_body(body, (size_t)sink.bytes, url, &failure->refusal);

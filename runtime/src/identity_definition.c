@@ -120,7 +120,7 @@ static cJSON *lookup_argument(const char *id, const char *last_known, const char
     cJSON *argument = cJSON_CreateObject();
     if (argument == NULL || !add_text(argument, "id", id) || !add_text(argument, "lastKnown", last_known) ||
         !add_text(argument, "token", token) || !add_text(argument, "apiBase", api_base)) {
-        cJSON_Delete(argument);
+        runtime_delete_secret_json(argument);
         return NULL;
     }
     return argument;
@@ -165,8 +165,7 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
         return SPISOR_OUT_OF_MEMORY;
     }
     found = runtime_identity_lookup(call, &found_refusal);
-    runtime_overwrite_json_texts(call);
-    cJSON_Delete(call);
+    runtime_delete_secret_json(call);
     status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_repository(found, answer);
     cJSON_Delete(found);
     return status;

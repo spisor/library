@@ -67,8 +67,7 @@ static spisor_status serve(runtime_json_operation operation, cJSON *call, answer
                            size_t shape, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered = operation(call, &operation_refusal);
-    runtime_overwrite_json_texts(call);
-    cJSON_Delete(call);
+    runtime_delete_secret_json(call);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, shape);
@@ -82,7 +81,7 @@ static spisor_status call_built(spisor_status status, cJSON **call, spisor_refus
     if (status == SPISOR_OK) {
         return SPISOR_OK;
     }
-    cJSON_Delete(*call);
+    runtime_delete_secret_json(*call);
     *call = NULL;
     return status == SPISOR_MALFORMED ? refuse_missing(refusal, what) : status;
 }

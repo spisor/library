@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include "definition_support.h"
 #include "fetch_transport.h"
 
 #include <dlfcn.h>
@@ -50,7 +51,11 @@ enum {
 };
 
 typedef void curl_handle;
-typedef struct curl_list curl_list;
+/** curl's public struct curl_slist, laid out here so a header line holding a token can be overwritten. */
+typedef struct curl_list {
+    char *data;
+    struct curl_list *next;
+} curl_list;
 typedef size_t (*curl_data_function)(char *, size_t, size_t, void *);
 
 typedef struct curl_api {
@@ -241,6 +246,12 @@ static size_t take_body(char *bytes, size_t size, size_t count, void *context) {
     return runtime_fetch_sink_take(state->sink, (const uint8_t *)bytes, length) ? length : 0;
 }
 
+static void overwrite_header_lines(curl_list *headers) {
+    for (curl_list *line = headers; line != NULL; line = line->next) {
+        runtime_overwrite(line->data, strlen(line->data));
+    }
+}
+
 static curl_list *request_headers(const curl_api *api, const runtime_fetch_request *request, int *built) {
     curl_list *headers = NULL;
     *built = 1;
@@ -256,6 +267,9 @@ static curl_list *request_headers(const curl_api *api, const runtime_fetch_reque
             snprintf(line, size, "%s%s", names[index], values[index]);
         }
         curl_list *grown = line == NULL ? NULL : api->slist_append(headers, line);
+        if (line != NULL) {
+            runtime_overwrite(line, size);
+        }
         free(line);
         *built = grown != NULL;
         headers = grown != NULL ? grown : headers;
@@ -342,6 +356,7 @@ static void perform(const curl_api *api, curl_handle *curl, const runtime_fetch_
     } else {
         settle(api, request, api->easy_perform(curl), state, error_buffer);
     }
+    overwrite_header_lines(headers);
     api->slist_free_all(headers);
 }
 
