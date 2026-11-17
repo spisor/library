@@ -101,7 +101,7 @@ const char *runtime_install_item(const cJSON *catalog, const cJSON *target, cons
         return NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_or_refuse(runtime_cache_install, install_call(item, id, version, cache), &refusal);
+    cJSON *answer = runtime_call_operation(runtime_cache_install_operation, install_call(item, id, version, cache), &refusal);
     if (answer == NULL) {
         *out_of_memory = !runtime_install_report_refusal(report, id, refusal);
         return NULL;

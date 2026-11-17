@@ -21,6 +21,7 @@
 #define fixture_process_id() getpid()
 #endif
 
+#include "cache_call.h"
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"

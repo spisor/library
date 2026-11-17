@@ -637,7 +637,7 @@ static inline void sweep(const host_world *world) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", world->base.cache);
     cJSON_AddStringToObject(argument, "state", world->base.state);
-    catalog_answer swept = call_catalog(runtime_cache_sweep, argument);
+    catalog_answer swept = cache_call(CACHE_SWEEP, argument);
     CHECK(swept.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(swept.tree);
 }

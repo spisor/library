@@ -7,13 +7,13 @@
 #include "cache_marker.h"
 #include "identity.h"
 
-typedef int (*version_test)(const char *directory);
+typedef runtime_cache_presence (*version_test)(const char *directory);
 
-static int is_marked(const char *cache, const char *root, const char *id, const char *version, const char *platform,
+static runtime_cache_presence is_marked(const char *cache, const char *root, const char *id, const char *version, const char *platform,
                      version_test test) {
     const char *segments[5] = {cache, root, id, version, platform};
     char *directory = runtime_cache_joined(segments, platform == NULL ? 4 : 5);
-    int marked = directory != NULL && test(directory);
+    runtime_cache_presence marked = directory == NULL ? RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY : test(directory);
     free(directory);
     return marked;
 }
@@ -26,7 +26,12 @@ static cJSON *marked_versions(const char *cache, const char *root, const char *i
     cJSON *version = versions == NULL ? NULL : versions->child;
     while (version != NULL) {
         cJSON *next = version->next;
-        if (!is_marked(cache, root, id, version->valuestring, platform, test)) {
+        runtime_cache_presence marked = is_marked(cache, root, id, version->valuestring, platform, test);
+        if (marked == RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY) {
+            cJSON_Delete(versions);
+            return NULL;
+        }
+        if (marked == RUNTIME_CACHE_NOT_PRESENT) {
             cJSON_Delete(cJSON_DetachItemViaPointer(versions, version));
         }
         version = next;

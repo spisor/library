@@ -224,7 +224,7 @@ static void installs_from_the_index_into_a_bundle_with_every_file(void) {
     cJSON_AddStringToObject(argument, "id", "greeter");
     cJSON_AddItemToObject(argument, "item", cJSON_Duplicate(item_of(catalog, "greeter"), 1));
     cJSON_AddStringToObject(argument, "version", "1.0.0");
-    catalog_answer installed = call_catalog(runtime_cache_install, argument);
+    catalog_answer installed = cache_call(CACHE_INSTALL, argument);
     CHECK(installed.status == SPISOR_STATUS_SUCCESS);
     expect_json(cJSON_GetObjectItemCaseSensitive(installed.tree, "fetched"), "[\"index.js\",\"package.json\",\"plugin.json\"]",
                 "every file fetched");

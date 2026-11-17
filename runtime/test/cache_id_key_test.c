@@ -26,13 +26,13 @@ static void installed_in_folder(const char *folder, const char *version) {
     free(directory);
 }
 
-static catalog_answer call_with_cache(catalog_function function, const char *extra_member, cJSON *extra) {
+static catalog_answer call_with_cache(cache_operation operation, const char *extra_member, cJSON *extra) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     if (extra_member != NULL) {
         cJSON_AddItemToObject(argument, extra_member, extra);
     }
-    return call_catalog(function, argument);
+    return cache_call(operation, argument);
 }
 
 static void lists_an_id_key_by_its_id_and_a_name_by_its_name(void) {
@@ -40,7 +40,7 @@ static void lists_an_id_key_by_its_id_and_a_name_by_its_name(void) {
     installed_in_folder("github+5", "1.0.0");
     installed_in_folder("github+5", "2.0.0");
     installed_in_folder("plain", "1.0.0");
-    catalog_answer answer = call_with_cache(runtime_cache_installed, NULL, NULL);
+    catalog_answer answer = call_with_cache(CACHE_INSTALLED, NULL, NULL);
     expect_member_json(answer.tree, "bundles", "{\"github:5\":[\"1.0.0\",\"2.0.0\"],\"plain\":[\"1.0.0\"]}", "installed");
     cJSON_Delete(answer.tree);
     finish_base();
@@ -49,7 +49,7 @@ static void lists_an_id_key_by_its_id_and_a_name_by_its_name(void) {
 static void locates_an_id_key_in_its_folder(void) {
     start_base("id-key-locate");
     installed_in_folder("github+5", "1.0.0");
-    catalog_answer answer = call_with_cache(runtime_cache_locate, "plugins", parsed("{\"github:5\":\"1.0.0\"}"));
+    catalog_answer answer = call_with_cache(CACHE_LOCATE, "plugins", parsed("{\"github:5\":\"1.0.0\"}"));
     const cJSON *found = value_at(answer.tree, "located");
     CHECK(cJSON_GetArraySize(found) == 1);
     check_text(text_at(found->child, "id"), "github:5", "located id");
@@ -62,7 +62,7 @@ static void locates_an_id_key_in_its_folder(void) {
 static void finds_no_damage_in_an_id_key(void) {
     start_base("id-key-damaged");
     installed_in_folder("github+5", "1.0.0");
-    catalog_answer answer = call_with_cache(runtime_cache_damaged, NULL, NULL);
+    catalog_answer answer = call_with_cache(CACHE_DAMAGED, NULL, NULL);
     expect_member_json(answer.tree, "damaged", "[]", "damaged");
     cJSON_Delete(answer.tree);
     finish_base();
@@ -77,7 +77,7 @@ static void sweeps_an_id_key_keeping_what_a_reference_names_and_the_newest(void)
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "state", state);
-    catalog_answer answer = call_catalog(runtime_cache_sweep, argument);
+    catalog_answer answer = cache_call(CACHE_SWEEP, argument);
     expect_member_json(answer.tree, "removed", "[\"github:5@1.5.0\"]", "removed");
     cJSON_Delete(answer.tree);
     CHECK(exists_in(cache, "bundles/github+5/1.0.0"));

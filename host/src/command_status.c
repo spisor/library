@@ -3,6 +3,7 @@
 #include "host_context.h"
 #include "host_output.h"
 #include "hosts.h"
+#include "json_service.h"
 
 static cJSON *cache_call(const host_context *context) {
     cJSON *argument = cJSON_CreateObject();
@@ -13,10 +14,10 @@ static cJSON *cache_call(const host_context *context) {
     return argument;
 }
 
-/** Adds member of what function answers for the cache to status; 0 with *refusal set when it refused. */
-static int add_cache_answer(cJSON *status, const host_context *context, runtime_json_function function, const char *member,
+/** Adds member of what operation answers for the cache to status; 0 with *refusal set when it refused. */
+static int add_cache_answer(cJSON *status, const host_context *context, runtime_json_operation operation, const char *member,
                             cJSON **refusal) {
-    cJSON *answer = host_call(function, cache_call(context), refusal);
+    cJSON *answer = runtime_call_operation(operation, cache_call(context), refusal);
     cJSON *value = member == NULL ? answer : cJSON_DetachItemFromObjectCaseSensitive(answer, member);
     if (member != NULL) {
         cJSON_Delete(answer);
@@ -43,8 +44,8 @@ static int refuse_damaged(const cJSON *damaged) {
 static int print_status(const host_context *context) {
     cJSON *refusal = NULL;
     cJSON *status = host_call(runtime_hosts_list, host_places_argument(context), &refusal);
-    if (status == NULL || !add_cache_answer(status, context, runtime_cache_installed, NULL, &refusal) ||
-        !add_cache_answer(status, context, runtime_cache_damaged, "damaged", &refusal)) {
+    if (status == NULL || !add_cache_answer(status, context, runtime_cache_installed_operation, NULL, &refusal) ||
+        !add_cache_answer(status, context, runtime_cache_damaged_operation, "damaged", &refusal)) {
         cJSON_Delete(status);
         return host_refuse(refusal);
     }

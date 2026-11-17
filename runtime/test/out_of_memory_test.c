@@ -18,6 +18,7 @@
 #include "check.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
+#include "runtime/cache.h"
 #include "runtime/changes.h"
 #include "runtime/commands.h"
 #include "runtime/config.h"
@@ -32,6 +33,7 @@
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
+#include "cache_marker.h"
 #include "directory_tree.h"
 #include "scratch_directory.h"
 #include "registry.h"
@@ -107,6 +109,16 @@ static int test_path_value_present(void) {
 #endif
 
 /** The files every operation reads, written afresh before each attempt so no attempt sees another's writes. */
+/** A bundle version installed in the cache place, with a marker that records no files. */
+static void installed_bundle(void) {
+    char directory[1300];
+    cJSON *none = cJSON_CreateObject();
+    snprintf(directory, sizeof directory, "%s/cache/bundles/a/1.0.0", place.base);
+    write_text(directory, "plugin.json", "{\"importName\":\"a\",\"api\":1,\"version\":\"1.0.0\"}");
+    CHECK(none != NULL && runtime_cache_write_marker(directory, none, none) == 1);
+    cJSON_Delete(none);
+}
+
 static void fresh_files(void) {
     start_empty_directory(place.base);
     write_text(place.config_directory, "p.json", CHANGED_FILE);
@@ -154,6 +166,7 @@ static void fresh_files(void) {
              "\"installedAt\":\"2026-11-02T10:00:00Z\"},\"requiresCommand\":false,\"commands\":[],\"changes\":[]}",
              place.home, place.home);
     write_text(hosts, "namer.json", record);
+    installed_bundle();
     forget_test_path_value();
 #ifndef _WIN32
     char probe[1300];
@@ -551,6 +564,22 @@ static int remembered_nothing(void) {
     return !spisor_file_exists(record);
 }
 
+static spisor_status list_installed_versions(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    runtime_cache_place_argument argument = SPISOR_INIT(runtime_cache_place_argument);
+    runtime_cache_installed_answer answer = SPISOR_INIT(runtime_cache_installed_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    snprintf(cache_place, sizeof cache_place, "%s/cache", place.base);
+    argument.cache = cache_place;
+    status = cache->installed(cache->context, &argument, &answer, &refusal);
+    CHECK(status != SPISOR_OK || (answer.bundle_count == 1 && answer.bundles[0].version_count == 1));
+    cache->release_installed_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
 /** Whether a register left no record behind. */
 static int registered_nothing(void) {
     char record[1300];
@@ -851,6 +880,7 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
     every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
     every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
+    every_failure_answers_out_of_memory("cache's installed", list_installed_versions, NULL);
 }
 
 /** The check must see a profile line nothing records, or it passes whatever a command leaves in a profile. */

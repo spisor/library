@@ -71,7 +71,7 @@ static int doom_unkept(sweep_scope *scope, const cJSON *installed, const char *p
 static int is_abandoned(const sweep_scope *scope, const char *const *segments, size_t count) {
     char *directory = runtime_cache_joined(segments, count);
     double newest = 0;
-    int abandoned = directory != NULL && !runtime_cache_has_marker(directory) &&
+    int abandoned = directory != NULL && runtime_cache_has_marker(directory) == RUNTIME_CACHE_NOT_PRESENT &&
                     runtime_newest_change(directory, &newest) && scope->now - newest > ABANDONED_AFTER_MILLISECONDS;
     free(directory);
     return abandoned;

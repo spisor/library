@@ -560,7 +560,7 @@ static void expect_intact(const install_base *base, const char *rest) {
     char *directory = joined(base->cache, rest);
     cJSON_AddStringToObject(argument, "directory", directory);
     free(directory);
-    catalog_answer answer = call_catalog(runtime_cache_check, argument);
+    catalog_answer answer = cache_call(CACHE_CHECK, argument);
     check_text(text_at(answer.tree, "kind"), "intact", rest);
     cJSON_Delete(answer.tree);
 }
