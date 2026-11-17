@@ -298,10 +298,52 @@ typedef struct runtime_install_register_loader_answer {
 } runtime_install_register_loader_answer;
 
 /**
+ * The plugin to install by its repo `id`, such as github:5 or github:5/kernel, the absolute `cache` place it is
+ * installed into and the absolute `plugin_directory` it is deployed into. `version` is the one to install, or NULL for
+ * the release index's latest; `last_known` the owner/name a previous lookup saw, asked only when the number cannot be
+ * looked up, or NULL; `accept_primary` the new primary the user accepted, or NULL; `api_base` the repo host's API
+ * address, honoured only by a test build, or NULL. First shape ends at `api_base`.
+ */
+typedef struct runtime_install_by_id_argument {
+    uint32_t size;
+    const char *id;
+    const char *cache;
+    const char *plugin_directory;
+    const char *version;
+    const char *last_known;
+    const char *accept_primary;
+    const char *api_base;
+} runtime_install_by_id_argument;
+
+/**
+ * The repo installed from, which is the verified primary and so can differ from the id asked for: its `id`, `name`
+ * and `full_name`, the `ids` of its verified set, its `primary`, and whether a copy confirmed that primary. When the
+ * primary differs from the one recorded for the id and the user has not accepted it, `needs_user_acceptance` is set,
+ * `recorded_primary` names the recorded one and nothing was installed; otherwise `version`, `commit` (empty when the
+ * index states none) and `sha256`, the release index's digest, say what was. First shape ends at `storage`.
+ */
+typedef struct runtime_install_by_id_answer {
+    uint32_t size;
+    const char *id;
+    const char *name;
+    const char *full_name;
+    const char *const *ids;
+    size_t id_count;
+    const char *primary;
+    uint32_t primary_confirmed;
+    uint32_t needs_user_acceptance;
+    const char *recorded_primary;
+    const char *version;
+    const char *commit;
+    const char *sha256;
+    void *storage;
+} runtime_install_by_id_answer;
+
+/**
  * The install service. Every operation answers MALFORMED for an argument or answer short of its first shape, a
  * required member that is NULL or empty, a place that is not absolute, a count without its array, a text in an array
  * that is NULL, a variable without a name or a value, or a value that is not a well-formed tree of the kind named;
- * and OUT_OF_MEMORY. Only entry, runtime, application and register_loader write, as each says. The answer arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
+ * and OUT_OF_MEMORY. Only entry, runtime, application, register_loader and by_id write, as each says. The answer arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
  */
 typedef struct runtime_install_definition {
     uint32_t size;
@@ -387,6 +429,22 @@ typedef struct runtime_install_definition {
      */
     spisor_status (*register_loader)(void *context, const runtime_install_register_loader_argument *argument,
                                      runtime_install_register_loader_answer *answer, spisor_refusal *refusal);
+    /**
+     * Installs the plugin the repo id names into the cache from its primary's latest release, checking every file
+     * against the release index's digest, deploys it into the plugin directory under its import name, and records the
+     * verified set and primary under the cache's identities for the id asked for. A new version comes only from a
+     * confirmed primary, never a mirror; when the set cannot be read, or names a primary no copy confirms, the id asked
+     * for is the primary, unconfirmed. A primary that differs from the recorded one installs nothing until
+     * `accept_primary` names it. A REFUSED or OUT_OF_MEMORY answer may leave the version in the cache, where a later
+     * install finds it, and, once deployed, the plugin, which the next install replaces; the record is written only
+     * after the plugin is deployed.
+     *
+     * @return OK; MALFORMED, also for an id that is not an id at all; REFUSED for a local id, which has no host to install
+     * from, a repo that cannot be looked up or was renamed during the install, copies naming different primaries, a
+     * release without an index, a file failing its digest, or a deploy or record the disk refuses; OUT_OF_MEMORY.
+     */
+    spisor_status (*by_id)(void *context, const runtime_install_by_id_argument *argument,
+                           runtime_install_by_id_answer *answer, spisor_refusal *refusal);
     void (*release_warnings_answer)(void *context, runtime_install_warnings_answer *answer);
     void (*release_packages_answer)(void *context, runtime_install_packages_answer *answer);
     void (*release_plan_answer)(void *context, runtime_install_plan_answer *answer);
@@ -395,6 +453,7 @@ typedef struct runtime_install_definition {
     void (*release_runtime_answer)(void *context, runtime_install_runtime_answer *answer);
     void (*release_application_answer)(void *context, runtime_install_application_answer *answer);
     void (*release_register_loader_answer)(void *context, runtime_install_register_loader_answer *answer);
+    void (*release_by_id_answer)(void *context, runtime_install_by_id_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
 } runtime_install_definition;
 

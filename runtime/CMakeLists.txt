@@ -104,6 +104,7 @@ set_target_properties(runtime_fetch_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 add_library(runtime_identity_resolve OBJECT src/identity_resolve.c)
 target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
+target_include_directories(runtime_identity_resolve PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_identity_resolve PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_identity_resolve)
 
@@ -119,6 +120,7 @@ set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_defini
     src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
 add_library(runtime_install_by_id OBJECT src/install_by_id.c)
 target_link_libraries(runtime_install_by_id PUBLIC runtime_objects)
+target_include_directories(runtime_install_by_id PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_install_by_id PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_install_by_id)
 

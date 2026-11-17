@@ -1022,6 +1022,30 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_register_loader_answer, refused_command_count);
     FIELD(runtime_install_register_loader_answer, storage);
     SIZE(runtime_install_register_loader_answer);
+    FIELD(runtime_install_by_id_argument, size);
+    FIELD(runtime_install_by_id_argument, id);
+    FIELD(runtime_install_by_id_argument, cache);
+    FIELD(runtime_install_by_id_argument, plugin_directory);
+    FIELD(runtime_install_by_id_argument, version);
+    FIELD(runtime_install_by_id_argument, last_known);
+    FIELD(runtime_install_by_id_argument, accept_primary);
+    FIELD(runtime_install_by_id_argument, api_base);
+    SIZE(runtime_install_by_id_argument);
+    FIELD(runtime_install_by_id_answer, size);
+    FIELD(runtime_install_by_id_answer, id);
+    FIELD(runtime_install_by_id_answer, name);
+    FIELD(runtime_install_by_id_answer, full_name);
+    FIELD(runtime_install_by_id_answer, ids);
+    FIELD(runtime_install_by_id_answer, id_count);
+    FIELD(runtime_install_by_id_answer, primary);
+    FIELD(runtime_install_by_id_answer, primary_confirmed);
+    FIELD(runtime_install_by_id_answer, needs_user_acceptance);
+    FIELD(runtime_install_by_id_answer, recorded_primary);
+    FIELD(runtime_install_by_id_answer, version);
+    FIELD(runtime_install_by_id_answer, commit);
+    FIELD(runtime_install_by_id_answer, sha256);
+    FIELD(runtime_install_by_id_answer, storage);
+    SIZE(runtime_install_by_id_answer);
     FIELD(runtime_install_definition, size);
     FIELD(runtime_install_definition, context);
     FIELD(runtime_install_definition, warnings);
@@ -1032,6 +1056,7 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_definition, runtime);
     FIELD(runtime_install_definition, application);
     FIELD(runtime_install_definition, register_loader);
+    FIELD(runtime_install_definition, by_id);
     FIELD(runtime_install_definition, release_warnings_answer);
     FIELD(runtime_install_definition, release_packages_answer);
     FIELD(runtime_install_definition, release_plan_answer);
@@ -1040,6 +1065,7 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_definition, release_runtime_answer);
     FIELD(runtime_install_definition, release_application_answer);
     FIELD(runtime_install_definition, release_register_loader_answer);
+    FIELD(runtime_install_definition, release_by_id_answer);
     FIELD(runtime_install_definition, release_refusal);
     SIZE(runtime_install_definition);
 }

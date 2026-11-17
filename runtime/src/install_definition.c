@@ -5,7 +5,9 @@
 
 #include "answer_storage.h"
 #include "definition_support.h"
+#include "identity.h"
 #include "install.h"
+#include "install_by_id.h"
 #include "install_ecosystem.h"
 #include "install_entries.h"
 #include "install_methods.h"
@@ -31,6 +33,8 @@
 #define APPLICATION_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_application_answer, storage)
 #define REGISTER_LOADER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_argument, version)
 #define REGISTER_LOADER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
+#define BY_ID_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_by_id_argument, api_base)
+#define BY_ID_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_by_id_answer, storage)
 
 static const char *const WARNING_KINDS[] = {NULL, "named-dependency", "unbound-service"};
 static const char *const SOURCES[] = {NULL, "path", "acquired"};
@@ -707,6 +711,119 @@ static spisor_status register_loader(void *context, const runtime_install_regist
                                                          refusal);
 }
 
+static spisor_status copy_member(void **storage, const cJSON *answered, const char *name, const char **copy) {
+    return copy_text(storage, text_of(answered, name), copy);
+}
+
+static uint32_t is_true(const cJSON *answered, const char *name) {
+    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, name)) ? 1u : 0u;
+}
+
+static spisor_status fill_by_id(const cJSON *answered, void *filled) {
+    static const char *const names[7] = {"id", "name", "fullName", "primary", "recordedPrimary", "version", "commit"};
+    runtime_install_by_id_answer *answer = filled;
+    const char **copies[7];
+    spisor_status status = start_storage(&answer->storage);
+    copies[0] = &answer->id;
+    copies[1] = &answer->name;
+    copies[2] = &answer->full_name;
+    copies[3] = &answer->primary;
+    copies[4] = &answer->recorded_primary;
+    copies[5] = &answer->version;
+    copies[6] = &answer->commit;
+    for (size_t index = 0; status == SPISOR_OK && index < 7; index++) {
+        status = copy_member(&answer->storage, answered, names[index], copies[index]);
+    }
+    if (status == SPISOR_OK) {
+        status = copy_member(&answer->storage, answered, "sha256", &answer->sha256);
+    }
+    if (status == SPISOR_OK && !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "ids"),
+                                                      &answer->ids, &answer->id_count)) {
+        status = SPISOR_OUT_OF_MEMORY;
+    }
+    answer->primary_confirmed = is_true(answered, "primaryConfirmed");
+    answer->needs_user_acceptance = is_true(answered, "needsUserAcceptance");
+    return status;
+}
+
+static int is_repo_id(const char *id) {
+    runtime_identity parsed;
+    return is_text(id) && runtime_identity_parse_id(id, &parsed);
+}
+
+/** Whether every optional text of the argument is NULL or not empty. */
+static int are_optional_texts(const runtime_install_by_id_argument *argument) {
+    const char *const optional[4] = {argument->version, argument->last_known, argument->accept_primary,
+                                     argument->api_base};
+    for (size_t index = 0; index < 4; index++) {
+        if (optional[index] != NULL && optional[index][0] == '\0') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static spisor_status by_id_call(const runtime_install_by_id_argument *argument, cJSON **call) {
+    *call = cJSON_CreateObject();
+    if (*call == NULL || !add_text(*call, "id", argument->id) || !add_text(*call, "cache", argument->cache) ||
+        !add_text(*call, "pluginDir", argument->plugin_directory) || !add_text(*call, "version", argument->version) ||
+        !add_text(*call, "lastKnown", argument->last_known) ||
+        !add_text(*call, "acceptPrimary", argument->accept_primary) || !add_text(*call, "apiBase", argument->api_base)) {
+        cJSON_Delete(*call);
+        *call = NULL;
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return SPISOR_OK;
+}
+
+/**
+ * Serves byId, its answer filled before the record of the primary is written whenever there is one to write, so an
+ * answer that runs out of memory leaves no record; one answered without a record, a user acceptance, fills after.
+ */
+static spisor_status serve_by_id(cJSON *call, runtime_install_by_id_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered = call == NULL ? NULL : runtime_install_by_id_taking(call, fill_by_id, answer, &operation_refusal);
+    spisor_status status = SPISOR_OK;
+    cJSON_Delete(call);
+    if (answered == NULL) {
+        runtime_release_stored_answer(answer, BY_ID_ANSWER_SHAPE);
+        status = runtime_refuse_json(refusal, operation_refusal);
+    } else if (answer->storage == NULL) {
+        status = fill_by_id(answered, answer);
+        if (status != SPISOR_OK) {
+            runtime_release_stored_answer(answer, BY_ID_ANSWER_SHAPE);
+        }
+    }
+    cJSON_Delete(answered);
+    return status;
+}
+
+static spisor_status by_id(void *context, const runtime_install_by_id_argument *argument,
+                           runtime_install_by_id_answer *answer, spisor_refusal *refusal) {
+    static const char *const names[2] = {"cache", "plugin directory"};
+    const char *places[2];
+    cJSON *call = NULL;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !runtime_has_shape(argument->size, BY_ID_SHAPE) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, BY_ID_ANSWER_SHAPE)) {
+        return runtime_refuse_shape(refusal, "install's by_id");
+    }
+    places[0] = argument->cache;
+    places[1] = argument->plugin_directory;
+    status = check_places(names, places, 2, refusal);
+    if (status == SPISOR_OK && !is_repo_id(argument->id)) {
+        status = refuse_malformed(refusal, "id");
+    }
+    if (status == SPISOR_OK && !are_optional_texts(argument)) {
+        status = refuse_malformed(refusal, "version, last known name, accepted primary or api base");
+    }
+    if (status == SPISOR_OK) {
+        status = by_id_call(argument, &call);
+    }
+    return status != SPISOR_OK ? status : serve_by_id(call, answer, refusal);
+}
+
 static void release_warnings_answer(void *context, runtime_install_warnings_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, WARNINGS_ANSWER_SHAPE);
@@ -747,6 +864,11 @@ static void release_register_loader_answer(void *context, runtime_install_regist
     runtime_release_stored_answer(answer, REGISTER_LOADER_ANSWER_SHAPE);
 }
 
+static void release_by_id_answer(void *context, runtime_install_by_id_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, BY_ID_ANSWER_SHAPE);
+}
+
 static const runtime_install_definition definition = {
     sizeof(runtime_install_definition),
     NULL,
@@ -758,6 +880,7 @@ static const runtime_install_definition definition = {
     runtime,
     application,
     register_loader,
+    by_id,
     release_warnings_answer,
     release_packages_answer,
     release_plan_answer,
@@ -766,6 +889,7 @@ static const runtime_install_definition definition = {
     release_runtime_answer,
     release_application_answer,
     release_register_loader_answer,
+    release_by_id_answer,
     runtime_release_refusal,
 };
 

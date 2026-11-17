@@ -225,7 +225,8 @@ static int install_found(const host_context *context, const host_name_request *r
         free(plugin_directory);
         return code;
     }
-    cJSON *installed = host_call(runtime_install_by_id, install_call(context, found->id, plugin_directory, request->accepted_primary), &refusal);
+    cJSON *installed = runtime_call_operation(runtime_install_by_id_operation,
+                                               install_call(context, found->id, plugin_directory, request->accepted_primary), &refusal);
     free(plugin_directory);
     if (installed == NULL) {
         return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);

@@ -39,6 +39,8 @@
 #include "catalog_path.h"
 #include "catalog_state.h"
 #include "directory_tree.h"
+#include "fetch_hooks.h"
+#include "http_fixture.h"
 #include "scratch_directory.h"
 #include "registry.h"
 #include "spisor/file.h"
@@ -1295,6 +1297,84 @@ static void every_cache_and_catalog_operation(void) {
     every_checked_failure("catalog's resolve", resolve_versions, NULL, NULL);
 }
 
+#define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
+#define PLUGIN_ENTRY "export default {};"
+#define RELEASE_INDEX                                                                                              \
+    "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"        \
+    "\"plugin.json\":{\"url\":\"plugin.json\",\"sha256\":"                                                         \
+    "\"6ef2fa406ca66093ba8b6348f8b0547fc59e0d34de3bcddee40baaa4ece95cb3\",\"size\":74},"                         \
+    "\"dist/index.js\":{\"url\":\"index.js\",\"sha256\":"                                                          \
+    "\"9f085b1079ab38f776bbb3930dfd067a838ca3e0483aff8625f88837e8ed964c\",\"size\":18}}}}}"
+
+static char by_id_api_base[64];
+
+static void a_release_to_install(void) {
+    char release[1300];
+    under_base(release, sizeof release, "release");
+    write_text(release, "plugin.json", PLUGIN_MANIFEST);
+    write_text(release, "index.js", PLUGIN_ENTRY);
+    write_text(release, "weivel-index.json", RELEASE_INDEX);
+}
+
+static int installed_by_id(void) {
+    return exists_under_base("plugins/greeter.json") && exists_under_base("cache/identities/github+5.json");
+}
+
+static spisor_status install_by_id(void) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    char cache_place[1100];
+    char plugins[1100];
+    runtime_install_by_id_argument argument = SPISOR_INIT(runtime_install_by_id_argument);
+    runtime_install_by_id_answer answer = SPISOR_INIT(runtime_install_by_id_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    under_base(plugins, sizeof plugins, "plugins");
+    argument.id = "github:5";
+    argument.cache = cache_place;
+    argument.plugin_directory = plugins;
+    argument.api_base = by_id_api_base;
+    spisor_status status = install->by_id(install->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (!installed_by_id() || answer.version == NULL || strcmp(answer.version, "1.0.0") != 0)) {
+        status = WRONG_ANSWER;
+    }
+    install->release_by_id_answer(install->context, &answer);
+    install->release_refusal(install->context, &refusal);
+    return status;
+}
+
+/** The release the loopback fake answers for github:5, its index a file under the base. */
+static void release_json_of(char *json, size_t capacity) {
+    char index[1300];
+    char url[4200];
+    under_base(index, sizeof index, "release/weivel-index.json");
+    file_url_of(index, url, sizeof url);
+    snprintf(json, capacity, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
+}
+
+static void every_install_operation(void) {
+    static const char repository[] =
+        "{\"id\":5,\"name\":\"greeter\",\"full_name\":\"o/greeter\",\"default_branch\":\"main\"}";
+    static char release_json[4400];
+    release_json_of(release_json, sizeof release_json);
+    http_route routes[] = {
+        {"/repositories/5", 200, NULL, repository, sizeof repository - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/o/greeter/HEAD/.weivel/also-at.json", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        {"/repos/o/greeter/releases/latest", 200, NULL, release_json, strlen(release_json), HTTP_ROUTE_BODY_LENGTH,
+         NULL, NULL, 0, 0},
+    };
+    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
+    CHECK(server != NULL);
+    if (server == NULL) {
+        return;
+    }
+    runtime_fetch_allow_plain_http(1);
+    snprintf(by_id_api_base, sizeof by_id_api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
+    failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0, 0};
+    every_failure_of(&by_id);
+    runtime_fetch_allow_plain_http(0);
+    free(http_fixture_stop(server));
+}
+
 static void build_cache_and_catalog_values(void) {
     char source[1300];
     char url[4200];
@@ -1338,8 +1418,8 @@ static void every_command(void) {
 }
 
 /**
- * With the argument `commands` runs only the commands service, and with `cache` only the cache and catalog services,
- * whose cases take most of the time, each as a test of its own.
+ * With the argument `commands` runs only the commands service, with `cache` only the cache and catalog services, and
+ * with `install` only install's by_id, whose cases take most of the time, each as a test of its own.
  */
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
@@ -1368,6 +1448,8 @@ int main(int argc, char **argv) {
     build_cache_and_catalog_values();
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
         every_command();
+    } else if (argc > 1 && strcmp(argv[1], "install") == 0) {
+        every_install_operation();
     } else if (argc > 1 && strcmp(argv[1], "cache") == 0) {
         only_label = argc > 2 ? argv[2] : "";
         every_cache_and_catalog_operation();
