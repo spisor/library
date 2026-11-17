@@ -165,35 +165,34 @@ static spisor_status apply(void *context, const runtime_changes_apply_argument *
     return status_of_outcome(&outcome, answer, refusal);
 }
 
-static spisor_status fill_drifted(const cJSON *drifted, runtime_changes_reverse_answer *answer) {
+spisor_status runtime_fill_drifted(void **storage, const cJSON *drifted, const runtime_change_drift **out,
+                                  size_t *count) {
     runtime_change_drift *filled;
     const cJSON *entry;
     size_t index = 0;
-    if (!runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(drifted), sizeof *filled,
-                                    (void **)&filled)) {
+    if (!runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(drifted), sizeof *filled, (void **)&filled)) {
         return SPISOR_OUT_OF_MEMORY;
     }
     cJSON_ArrayForEach(entry, drifted) {
         const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
         filled[index].sequence = cJSON_IsNumber(sequence) ? (uint64_t)sequence->valuedouble : 0;
-        if (!runtime_storage_copy(&answer->storage,
-                                  cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind")),
+        if (!runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind")),
                                   &filled[index].kind) ||
-            !runtime_storage_copy(&answer->storage,
-                                  cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "detail")),
+            !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "detail")),
                                   &filled[index].detail)) {
             return SPISOR_OUT_OF_MEMORY;
         }
         index++;
     }
-    answer->drifted = filled;
-    answer->drifted_count = index;
+    *out = filled;
+    *count = index;
     return SPISOR_OK;
 }
 
 static spisor_status fill_reversed(const cJSON *reversed, runtime_changes_reverse_answer *answer) {
     const cJSON *count = cJSON_GetObjectItemCaseSensitive(reversed, "reversed");
-    spisor_status status = fill_drifted(cJSON_GetObjectItemCaseSensitive(reversed, "drifted"), answer);
+    spisor_status status = runtime_fill_drifted(&answer->storage, cJSON_GetObjectItemCaseSensitive(reversed, "drifted"),
+                                                &answer->drifted, &answer->drifted_count);
     if (status != SPISOR_OK) {
         runtime_release_stored_answer(answer, REVERSE_ANSWER_SHAPE);
         return status;

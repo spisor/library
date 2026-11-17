@@ -2,8 +2,8 @@
 #include "host_commands.h"
 #include "host_context.h"
 #include "host_output.h"
-#include "hosts.h"
 #include "json_service.h"
+#include "registry.h"
 
 static cJSON *cache_call(const host_context *context) {
     cJSON *argument = cJSON_CreateObject();
@@ -43,7 +43,7 @@ static int refuse_damaged(const cJSON *damaged) {
  */
 static int print_status(const host_context *context) {
     cJSON *refusal = NULL;
-    cJSON *status = host_call(runtime_hosts_list, host_places_argument(context), &refusal);
+    cJSON *status = runtime_call_operation(runtime_registry_list_hosts, host_places_argument(context), &refusal);
     if (status == NULL || !add_cache_answer(status, context, runtime_cache_installed_operation, NULL, &refusal) ||
         !add_cache_answer(status, context, runtime_cache_damaged_operation, "damaged", &refusal)) {
         cJSON_Delete(status);

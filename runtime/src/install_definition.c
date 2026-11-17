@@ -661,7 +661,7 @@ static spisor_status fill_refused_commands(void **storage, const cJSON *array,
     return SPISOR_OK;
 }
 
-static spisor_status fill_register_loader(const cJSON *answered, void *filled) {
+spisor_status runtime_fill_register_answer(const cJSON *answered, void *filled) {
     runtime_install_register_loader_answer *answer = filled;
     spisor_status status = runtime_start_storage(&answer->storage);
     if (status == SPISOR_OK) {
@@ -720,8 +720,8 @@ static spisor_status register_loader(void *context, const runtime_install_regist
     }
     return status != SPISOR_OK ? status
                                : runtime_serve_operation(runtime_install_register_loader_operation, call,
-                                                         fill_register_loader, answer, REGISTER_LOADER_ANSWER_SHAPE,
-                                                         refusal);
+                                                         runtime_fill_register_answer, answer,
+                                                         REGISTER_LOADER_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status copy_member(void **storage, const cJSON *answered, const char *name, const char **copy) {

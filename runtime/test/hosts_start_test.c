@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "updates_fixture.h"
 
 #include "hosts_start.h"
@@ -67,7 +68,7 @@ static catalog_answer start_host_in(cJSON *environment, int session) {
     cJSON_AddItemToObject(argument, "layer", parsed("{\"id\":\"" LAYER "\",\"version\":\"2.0.0\"}"));
     cJSON_AddItemToObject(argument, "libraries", parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"));
     cJSON_AddBoolToObject(argument, "session", session);
-    return call_catalog(runtime_hosts_start, argument);
+    return hosts_call(HOSTS_START, argument);
 }
 
 static catalog_answer start_host(int session) {
@@ -192,7 +193,7 @@ static void the_running_map_names_the_host_the_layer_and_every_library(void) {
 static void expect_not_registered(catalog_answer answer, const char *label) {
     char message[2000];
     snprintf(message, sizeof message, "the host " TEST_HOST " is not registered in %s", state);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_REFUSED);
     check_text(text_at(answer.tree, "message"), message, label);
     expect_fix(answer, REINSTALL_FIX, label);
 }
@@ -355,7 +356,7 @@ static void the_identity_version_is_the_one_the_plan_runs(void) {
 static void a_refused_session_start_publishes_its_refusal(void) {
     start_world("start-refusal-published");
     catalog_answer started = start_host(1);
-    CHECK(started.status == SPISOR_STATUS_FAILURE);
+    CHECK(started.status == SPISOR_REFUSED);
     char *path = joined(state, "processes/" TEST_HOST ".ready.json");
     cJSON *record = read_json_file(path);
     CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(record, "pid")) == (double)current_process_id());
@@ -370,7 +371,7 @@ static void a_refused_session_start_publishes_its_refusal(void) {
 static void a_refused_non_session_start_publishes_nothing(void) {
     start_world("start-refusal-unpublished");
     catalog_answer started = start_host(0);
-    CHECK(started.status == SPISOR_STATUS_FAILURE);
+    CHECK(started.status == SPISOR_REFUSED);
     CHECK(!exists_in(state, "processes/" TEST_HOST ".ready.json"));
     cJSON_Delete(started.tree);
     finish_base();

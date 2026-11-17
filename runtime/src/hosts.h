@@ -1,13 +1,17 @@
 #ifndef RUNTIME_HOSTS_H
 #define RUNTIME_HOSTS_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include "export.h"
+#include "cJSON.h"
 
 /**
- * hosts.register: { places: { state }, identity, provenance, environment } answering
+ * @file
+ * The hosts service's operations over JSON, for runtime's own callers: each answers its result, or NULL with
+ * *refusal set to {message, fix}, or with it NULL when memory runs out. hosts' list is registry's,
+ * runtime_registry_list_hosts.
+ */
+
+/**
+ * hosts' register: { places: { state }, identity, provenance, environment } answering
  * { provenance, commands, refusedCommands }, what every start of a host does. identity is
  * { id, version, home?, application?, requiresCommand, commands: [{ name, target, arguments }], start? },
  * start being { runtime, entry }, how a launcher starts the host from its bundle. The host is registered
@@ -18,13 +22,10 @@
  * @implNote An environment without a user home is refused before anything is registered when identity
  * asks for a command, since the shims' PATH entry is written into that home.
  */
-RUNTIME_EXPORT int32_t runtime_hosts_register(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
-
-/** hosts.list: { places: { state } } answering { hosts, unreadable } as registry.list does. */
-RUNTIME_EXPORT int32_t runtime_hosts_list(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_hosts_register_operation(const cJSON *argument, cJSON **refusal);
 
 /**
- * hosts.remove: { places: { state, cache }, id } answering { reversed, drifted, forgotten }. Reverses
+ * hosts' remove: { places: { state, cache }, id } answering { reversed, drifted, forgotten }. Reverses
  * every change the host recorded, then deletes its references file, its run records and its holders
  * file, then forgets its registration.
  *
@@ -32,10 +33,20 @@ RUNTIME_EXPORT int32_t runtime_hosts_list(const uint8_t *in, size_t in_len, uint
  * that fails leaves the registration, and with it the record of what is left to undo, for another
  * attempt; the registration goes last, so a failure before it leaves everything for the next attempt.
  */
-RUNTIME_EXPORT int32_t runtime_hosts_remove(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_hosts_remove_operation(const cJSON *argument, cJSON **refusal);
 
 /**
- * hosts.provenance: { origin: { method, package?, options?, version? }, application: { binary }, home,
+ * Called with remove's answer as it stands, holding reversed and drifted, right before the registration is forgotten;
+ * 0 stops the removal there as memory running out, the registration kept.
+ */
+typedef int (*runtime_hosts_before_forget)(const cJSON *answer, void *context);
+
+/** runtime_hosts_remove_operation, calling before_forget, with context, last before the forget. */
+cJSON *runtime_hosts_remove_preparing(const cJSON *argument, runtime_hosts_before_forget before_forget, void *context,
+                                      cJSON **refusal);
+
+/**
+ * hosts' provenance: { origin: { method, package?, options?, version? }, application: { binary }, home,
  * environment, now? } answering the provenance an application's registration records: origin's
  * members, the location, this build's os and architecture as Node names them, and installedAt, now
  * (milliseconds since the epoch, the current time by default) as toISOString writes it.
@@ -43,6 +54,6 @@ RUNTIME_EXPORT int32_t runtime_hosts_remove(const uint8_t *in, size_t in_len, ui
  * @implNote The location is the binary on the PATH of environment when there is one, else home, since
  * an install method reports no path.
  */
-RUNTIME_EXPORT int32_t runtime_hosts_provenance(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_hosts_provenance_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

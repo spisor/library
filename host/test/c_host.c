@@ -14,6 +14,7 @@
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "json_service.h"
+#include "registry.h"
 #include "spisor/json_write.h"
 #include "updates.h"
 
@@ -175,7 +176,7 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
 
 static int status(const c_host *host) {
     cJSON *refusal = NULL;
-    cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(host), &refusal);
+    cJSON *listed = runtime_call_operation(runtime_registry_list_hosts, places_call(host), &refusal);
     cJSON *installed = listed == NULL ? NULL : runtime_call_operation(runtime_cache_installed_operation, cache_call(host), &refusal);
     cJSON *found = installed == NULL ? NULL : runtime_call_operation(runtime_cache_damaged_operation, cache_call(host), &refusal);
     if (found == NULL) {
@@ -214,7 +215,7 @@ static int remove_host(const c_host *host, const char *id) {
     cJSON *call = places_call(host);
     cJSON_AddStringToObject(call, "id", id);
     cJSON *refusal = NULL;
-    cJSON *removed = runtime_call_or_refuse(runtime_hosts_remove, call, &refusal);
+    cJSON *removed = runtime_call_operation(runtime_hosts_remove_operation, call, &refusal);
     if (removed == NULL) {
         return refuse(refusal);
     }

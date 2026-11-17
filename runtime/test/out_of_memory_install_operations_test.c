@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "install_fixture.h"
 
 #include <stdint.h>
@@ -116,7 +117,7 @@ static void register_entry_loader(void) {
     cJSON_AddItemToObject(argument, "identity", loader_identity(home));
     cJSON_AddItemToObject(argument, "provenance", catalog_provenance());
     cJSON_AddItemToObject(argument, "environment", environment_of(&base));
-    catalog_answer answer = call_catalog(runtime_hosts_register, argument);
+    catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
     free(home);
@@ -910,6 +911,193 @@ static int started_and_recorded_or_nothing(void) {
     return kept;
 }
 
+#define OOM_HOST "oom-host"
+#define PROVENANCE_NOW 1762128000000.0
+
+static char register_home[1024];
+static char register_target[1024];
+
+static const runtime_hosts_definition *hosts_service(void) {
+    return runtime_hosts_definition_of();
+}
+
+/** A binary on a PATH of its own for a command's shim to run, and no user Path entry an earlier attempt left. */
+static void prepare_register(void) {
+#if defined(_WIN32)
+    delete_test_path_value();
+#endif
+    start_install_base(&base, "operations", "hosts-register");
+    path_directory = place_binary(base.path);
+    snprintf(register_home, sizeof register_home, "%s/homes/oom", base.user);
+#if defined(_WIN32)
+    snprintf(register_target, sizeof register_target, "%s/" BINARY ".cmd", path_directory);
+#else
+    snprintf(register_target, sizeof register_target, "%s/" BINARY, path_directory);
+#endif
+}
+
+static spisor_status run_register(void) {
+    static const char *const command_arguments[1] = {"--serve"};
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_registry_provenance provenance = SPISOR_INIT(runtime_registry_provenance);
+    runtime_registration registration = SPISOR_INIT(runtime_registration);
+    runtime_hosts_command command = {"oomhost", register_target, command_arguments, 1};
+    runtime_hosts_register_argument argument = SPISOR_INIT(runtime_hosts_register_argument);
+    runtime_install_register_loader_answer answer = SPISOR_INIT(runtime_install_register_loader_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_variable environment[3];
+    environment_of_path(environment);
+    provenance.method = "catalog";
+    provenance.version = "1.0.0";
+    provenance.location = base.cache;
+    provenance.os = "linux";
+    provenance.architecture = "x64";
+    provenance.installed_at = "2026-11-03T00:00:00.000Z";
+    registration.id = OOM_HOST;
+    registration.version = "1.0.0";
+    registration.home = register_home;
+    registration.provenance = &provenance;
+    argument.state = base.state;
+    argument.registration = &registration;
+    argument.commands = &command;
+    argument.command_count = 1;
+    argument.environment = environment;
+    argument.environment_count = 3;
+    last_status = hosts->register_host(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.command_count != 1 || answer.provenance == NULL)) {
+        last_status = WRONG_RUN;
+    }
+    hosts->release_register_answer(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static void prepare_list(void) {
+    start_install_base(&base, "operations", "hosts-list");
+    register_entry_loader();
+}
+
+static spisor_status run_list(void) {
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_registry_list_argument argument = SPISOR_INIT(runtime_registry_list_argument);
+    runtime_registry_listing answer = SPISOR_INIT(runtime_registry_listing);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    last_status = hosts->list(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.host_count != 1) {
+        last_status = WRONG_RUN;
+    }
+    hosts->release_listing(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** The entry loader registered with its entry written, so a removal has recorded changes to reverse. */
+static void prepare_remove(void) {
+    prepare_entry();
+    CHECK(run_entry() == SPISOR_OK);
+}
+
+static spisor_status run_remove(void) {
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_registry_forget_argument argument = SPISOR_INIT(runtime_registry_forget_argument);
+    runtime_hosts_remove_answer answer = SPISOR_INIT(runtime_hosts_remove_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = base.state;
+    argument.cache = base.cache;
+    argument.id = ENTRY_LOADER;
+    last_status = hosts->remove(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.reversed == 0 || !answer.forgotten)) {
+        last_status = WRONG_RUN;
+    }
+    hosts->release_remove_answer(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** Whether a removal that did not answer OK kept the registration, and with it what is left to undo. */
+static int kept_the_registration_unless_removed(void) {
+    int kept = last_status == SPISOR_OK || exists_in(base.state, "hosts/" ENTRY_LOADER ".json");
+    if (!kept) {
+        fprintf(stderr, "hosts' remove: an answer of %d forgot the registration\n", (int)last_status);
+    }
+    return kept;
+}
+
+static void prepare_provenance(void) {
+    start_install_base(&base, "operations", "hosts-provenance");
+    path_directory = place_binary(base.path);
+}
+
+static spisor_status run_provenance(void) {
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_install_origin origin = {{"npm", "oom-package", NULL}, "1.0.0"};
+    runtime_hosts_provenance_argument argument = SPISOR_INIT(runtime_hosts_provenance_argument);
+    runtime_hosts_provenance_answer answer = SPISOR_INIT(runtime_hosts_provenance_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_variable environment[3];
+    environment_of_path(environment);
+    argument.origin = &origin;
+    argument.binary = BINARY;
+    argument.home = base.user;
+    argument.environment = environment;
+    argument.environment_count = 3;
+    argument.now = PROVENANCE_NOW;
+    last_status = hosts->provenance(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.provenance == NULL || answer.provenance->location == NULL)) {
+        last_status = WRONG_RUN;
+    }
+    hosts->release_provenance_answer(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** updates' apply world, spisor-host registered with a version and a home, so a start plans and records a run. */
+static void prepare_start(void) {
+    cJSON *registration = cJSON_CreateObject();
+    char *home;
+    char *text;
+    prepare_apply();
+    home = joined(base.user, "application");
+    cJSON_AddStringToObject(registration, "id", "spisor-host");
+    cJSON_AddStringToObject(registration, "kind", "host");
+    cJSON_AddStringToObject(registration, "version", "1.0.0");
+    cJSON_AddStringToObject(registration, "home", home);
+    text = cJSON_PrintUnformatted(registration);
+    write_in(base.state, "hosts/spisor-host.json", text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    free(home);
+}
+
+static spisor_status run_start(void) {
+    static const runtime_item_version layer = {"koffi", "2.0.0"};
+    static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_hosts_start_argument argument = SPISOR_INIT(runtime_hosts_start_argument);
+    runtime_hosts_start_answer answer = SPISOR_INIT(runtime_hosts_start_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_variable environment[5] = {{"HOME", base.user},
+                                       {"USERPROFILE", base.user},
+                                       {"SPISOR_HOME", base.portable},
+                                       {"SPISOR_STATE", base.state},
+                                       {"SPISOR_CACHE", base.cache}};
+    argument.environment = environment;
+    argument.environment_count = 5;
+    argument.host_id = "spisor-host";
+    argument.layer = &layer;
+    argument.libraries = libraries;
+    argument.library_count = 1;
+    argument.session = 1;
+    last_status = hosts->start(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.plan == NULL || answer.plan->run_record == NULL || answer.timers == NULL)) {
+        last_status = WRONG_RUN;
+    }
+    hosts->release_start_answer(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -1036,6 +1224,12 @@ int main(int argc, char **argv) {
         {"processes' record_run", prepare_record, run_record_run, recorded_no_new_run_unless_ok},
         {"processes' live_runs", prepare_processes, run_live_runs, kept_the_live_record},
         {"processes' remove_runs", prepare_processes, run_remove_runs, removed_nothing_unless_ok}};
+    static const operation_case hosts_cases[5] = {
+        {"hosts' register_host", prepare_register, run_register, NULL},
+        {"hosts' list", prepare_list, run_list, NULL},
+        {"hosts' remove", prepare_remove, run_remove, kept_the_registration_unless_removed},
+        {"hosts' provenance", prepare_provenance, run_provenance, NULL},
+        {"hosts' start", prepare_start, run_start, recorded_no_run_unless_applied}};
     static const operation_case hold_start = {"processes' hold starting", prepare_hold_start, run_hold_start,
                                               started_and_recorded_or_nothing};
     const char *only = argc > 1 ? argv[1] : "";
@@ -1101,6 +1295,14 @@ int main(int argc, char **argv) {
         sticky_failures = 1;
         every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
         sticky_failures = 0;
+    }
+    for (size_t index = 0; index < 5; index++) {
+        if (is_selected(only, hosts_cases[index].label)) {
+            every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 1;
+            every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 0;
+        }
     }
     return check_summary("out_of_memory_install_operations_test");
 }

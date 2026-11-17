@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "install_fixture.h"
 
 #if !defined(_WIN32)
@@ -669,7 +670,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(child_exit_code(&second) == 0);
     cJSON *listed = cJSON_CreateObject();
     cJSON_AddItemToObject(listed, "places", places_of(&base));
-    catalog_answer hosts = call_catalog(runtime_hosts_list, listed);
+    catalog_answer hosts = hosts_call(HOSTS_LIST, listed);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(hosts.tree, "hosts")) == 3);
     expect_json(cJSON_GetObjectItemCaseSensitive(hosts.tree, "unreadable"), "[]", "no unreadable registration");
     cJSON_Delete(hosts.tree);

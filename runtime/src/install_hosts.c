@@ -31,8 +31,8 @@ cJSON *runtime_install_catalog_provenance(const char *cache, const char *id, con
     const char *segments[4] = {cache, "bundles", id, version};
     char *location = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 4);
     cJSON *provenance = location == NULL ? NULL
-                                         : runtime_call_or_refuse(runtime_hosts_provenance, provenance_call(location, version),
-                                                                  refusal);
+                                         : runtime_call_operation(runtime_hosts_provenance_operation,
+                                                                  provenance_call(location, version), refusal);
     free(location);
     return provenance;
 }
@@ -67,7 +67,7 @@ int runtime_install_register_own_host(const cJSON *places, const char *id, const
         cJSON_Delete(call);
         return 0;
     }
-    cJSON *registered = runtime_call_or_refuse(runtime_hosts_register, call, refusal);
+    cJSON *registered = runtime_call_operation(runtime_hosts_register_operation, call, refusal);
     cJSON_Delete(registered);
     return registered != NULL;
 }

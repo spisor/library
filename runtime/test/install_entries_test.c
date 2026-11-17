@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "install_fixture.h"
 #include "install_call.h"
 
@@ -98,7 +99,7 @@ static void register_loader(const install_base *base, const char *application, c
     cJSON_AddStringToObject(provenance, "architecture", "x64");
     cJSON_AddStringToObject(provenance, "installedAt", "2026-11-03T00:00:00.000Z");
     cJSON_AddItemToObject(argument, "environment", environment_of(base));
-    catalog_answer answer = call_catalog(runtime_hosts_register, argument);
+    catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
 }
@@ -123,7 +124,7 @@ static cJSON *removed(const install_base *base) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "id", LOADER_ID);
-    catalog_answer answer = call_catalog(runtime_hosts_remove, argument);
+    catalog_answer answer = hosts_call(HOSTS_REMOVE, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     return answer.tree;
 }

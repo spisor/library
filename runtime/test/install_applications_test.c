@@ -1,3 +1,4 @@
+#include "hosts_call.h"
 #include "install_fixture.h"
 #include "install_call.h"
 
@@ -98,7 +99,7 @@ static void remove_host_id(const install_base *base, const char *id) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "id", id);
-    catalog_answer answer = call_catalog(runtime_hosts_remove, argument);
+    catalog_answer answer = hosts_call(HOSTS_REMOVE, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
 }

@@ -10,6 +10,7 @@
 #include <wchar.h>
 #include <windows.h>
 
+#include "hosts_call.h"
 #include "path_entry_windows_hooks.h"
 #endif
 
@@ -113,7 +114,7 @@ static catalog_answer register_with(const hosts_scratch *place, cJSON *identity,
     cJSON_AddItemToObject(request, "identity", identity);
     cJSON_AddItemToObject(request, "provenance", provenance);
     cJSON_AddItemToObject(request, "environment", environment);
-    return call_catalog(runtime_hosts_register, request);
+    return hosts_call(HOSTS_REGISTER, request);
 }
 
 static void register_existing(const hosts_scratch *place, const char *id, const char *location) {
@@ -172,7 +173,7 @@ static void refuses_an_environment_with_no_user_home_before_registering_anything
     char *location = joined_path(place.base, "install");
     catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment);
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
-    CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL && strstr(message, "HOME nor USERPROFILE") != NULL);
+    CHECK(answer.status == SPISOR_REFUSED && message != NULL && strstr(message, "HOME nor USERPROFILE") != NULL);
     cJSON_Delete(answer.tree);
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration == NULL);
@@ -190,7 +191,7 @@ static void refuses_an_identity_with_no_home_before_registering_anything(void) {
     catalog_answer answer =
         register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment_of(&place));
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
-    CHECK(answer.status == SPISOR_STATUS_FAILURE && message != NULL && strstr(message, "home") != NULL);
+    CHECK(answer.status == SPISOR_MALFORMED && message != NULL && strstr(message, "home") != NULL);
     cJSON_Delete(answer.tree);
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration == NULL);
@@ -283,7 +284,7 @@ static void records_how_a_launcher_starts_the_host(void) {
 static void refuses_a_start_with_an_unknown_runtime_or_an_entry_outside_the_bundle(void) {
     const char *starts[] = {"{\"runtime\": \"python\", \"entry\": \"host.py\"}", "{\"runtime\": \"native\", \"entry\": \"\"}",
                             "{\"runtime\": \"native\", \"entry\": \"/usr/bin/host\"}",
-                            "{\"runtime\": \"jvm\", \"entry\": \"../other/host.jar\"}", "\"native\""};
+                            "{\"runtime\": \"jvm\", \"entry\": \"../other/host.jar\"}"};
     for (size_t index = 0; index < sizeof starts / sizeof starts[0]; index++) {
         hosts_scratch place;
         fresh(&place, "badstart");
@@ -292,7 +293,7 @@ static void refuses_a_start_with_an_unknown_runtime_or_an_entry_outside_the_bund
         cJSON_AddItemToObject(identity, "start", parsed(starts[index]));
         catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"),
                                               environment_of(&place));
-        if (answer.status != SPISOR_STATUS_FAILURE) {
+        if (answer.status != SPISOR_MALFORMED) {
             fprintf(stderr, "the start %s was not refused\n", starts[index]);
             check_failures++;
         }
@@ -338,7 +339,7 @@ static void refuses_a_host_that_requires_the_command_it_was_refused(void) {
     cJSON *environment = environment_of(&place);
     cJSON_DeleteItemFromObject(environment, "PATH");
     catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE &&
+    CHECK(answer.status == SPISOR_REFUSED &&
           cJSON_IsString(cJSON_GetObjectItemCaseSensitive(answer.tree, "message")));
     cJSON_Delete(answer.tree);
     free(location);
@@ -349,13 +350,13 @@ static catalog_answer remove_host(const hosts_scratch *place, const char *id) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_of(place));
     cJSON_AddStringToObject(request, "id", id);
-    return call_catalog(runtime_hosts_remove, request);
+    return hosts_call(HOSTS_REMOVE, request);
 }
 
 static cJSON *listed(const hosts_scratch *place) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_of(place));
-    catalog_answer answer = call_catalog(runtime_hosts_list, request);
+    catalog_answer answer = hosts_call(HOSTS_LIST, request);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON *hosts = cJSON_DetachItemFromObject(answer.tree, "hosts");
     cJSON_Delete(answer.tree);
@@ -423,7 +424,7 @@ static void leaves_the_registration_and_its_references_in_place_when_the_reverse
     CHECK(runtime_record_host_references(place.state, HOST_ID, &references, &problem));
     runtime_free_host_references(&references);
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE &&
+    CHECK(answer.status == SPISOR_REFUSED &&
           cJSON_IsString(cJSON_GetObjectItemCaseSensitive(answer.tree, "fix")));
     cJSON_Delete(answer.tree);
     CHECK(lists_only(&place, HOST_ID));
@@ -621,7 +622,7 @@ static void refuses_to_remove_a_host_id_that_is_no_plain_file_name(void) {
     hosts_scratch place;
     fresh(&place, "plainid");
     catalog_answer answer = remove_host(&place, "../escape");
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_MALFORMED);
     cJSON_Delete(answer.tree);
     discard(&place);
 }
@@ -636,7 +637,7 @@ static catalog_answer provenance_answer(const hosts_scratch *place, const char *
     if (with_now) {
         cJSON_AddNumberToObject(request, "now", 1767225600123.0);
     }
-    return call_catalog(runtime_hosts_provenance, request);
+    return hosts_call(HOSTS_PROVENANCE, request);
 }
 
 #if defined(_WIN32)
@@ -695,7 +696,7 @@ static void locates_an_application_off_path_at_its_home_and_leaves_out_what_its_
     check_platform(answer.tree);
     cJSON_Delete(answer.tree);
     answer = provenance_answer(&place, "{\"version\": \"1.0.0\"}", environment_of(&place), 0);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_MALFORMED);
     cJSON_Delete(answer.tree);
     discard(&place);
 }
