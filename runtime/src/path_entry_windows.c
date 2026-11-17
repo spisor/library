@@ -141,11 +141,17 @@ static int read_path_value(HKEY key, path_value *value) {
     return 0;
 }
 
+#ifdef SPISOR_PATH_ENTRY_TEST_HOOKS
+/** The test value is read by no program, so nothing is told it changed, which keeps a test from waiting on windows. */
+static void announce_environment_change(void) {
+}
+#else
 static void announce_environment_change(void) {
     DWORD_PTR result = 0;
     SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment", SMTO_ABORTIFHUNG,
                         BROADCAST_TIMEOUT_MILLISECONDS, &result);
 }
+#endif
 
 static int store_path_text(HKEY key, DWORD type, const wchar_t *text) {
     DWORD size = (DWORD)((wcslen(text) + 1) * sizeof(wchar_t));

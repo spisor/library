@@ -809,7 +809,38 @@ static void every_command_failure(const char *label, operation run, untouched to
     every_failure_of(&each);
 }
 
-int main(void) {
+static void every_service_but_commands(void) {
+    every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
+    every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
+    every_failure_answers_out_of_memory("secrets' set", set_secret, NULL);
+    every_failure_answers_out_of_memory("config's set", set_config, NULL);
+    every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
+    every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
+    every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
+    every_failure_answers_out_of_memory("fetch's get", fetch_a_file, fetched_nothing);
+    every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
+    every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
+    every_failure_answers_out_of_memory("changes' apply", apply_a_change, changed_nothing);
+    every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
+                                        settled_and_changed_nothing);
+    every_failure_answers_out_of_memory("changes' reverse", reverse_a_change, NULL);
+    every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
+    every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
+    every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
+    every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
+}
+
+static void every_command(void) {
+    every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
+    every_command_failure("commands' request", request_a_command, NULL, 0);
+    every_command_failure("commands' request, memory staying out", request_a_command, NULL, 1);
+    every_command_failure("commands' add", add_a_command, NULL, 0);
+    every_command_failure("commands' rename", rename_a_command, renamed_to_dd, 0);
+    every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL, 0);
+}
+
+/** With the argument `commands` runs only the commands service, whose cases take most of the time, as a test of its own. */
+int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
     snprintf(place.base, sizeof place.base, RUNTIME_SCRATCH_PATH "/out-of-memory-%d", (int)CURRENT_PROCESS_ID);
     snprintf(place.home, sizeof place.home, "%s/home", place.base);
@@ -830,30 +861,11 @@ int main(void) {
                         "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
                         "\"opencode\",\"binary\":\"absent\"}}}",
                         &catalog_items));
-    every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
-    every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
-    every_failure_answers_out_of_memory("secrets' set", set_secret, NULL);
-    every_failure_answers_out_of_memory("config's set", set_config, NULL);
-    every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
-    every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
-    every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
-    every_failure_answers_out_of_memory("fetch's get", fetch_a_file, fetched_nothing);
-    every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
-    every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
-    every_failure_answers_out_of_memory("changes' apply", apply_a_change, changed_nothing);
-    every_failure_answers_out_of_memory("changes' apply after settling", apply_after_settling,
-                                        settled_and_changed_nothing);
-    every_failure_answers_out_of_memory("changes' reverse", reverse_a_change, NULL);
-    every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
-    every_command_failure("commands' request", request_a_command, NULL, 0);
-    every_command_failure("commands' request, memory staying out", request_a_command, NULL, 1);
-    every_command_failure("commands' add", add_a_command, NULL, 0);
-    every_command_failure("commands' rename", rename_a_command, renamed_to_dd, 0);
-    every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL, 0);
-    every_failure_answers_out_of_memory("lists' plugins", list_plugins, NULL);
-    every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
-    every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
-    every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
+    if (argc > 1 && strcmp(argv[1], "commands") == 0) {
+        every_command();
+    } else {
+        every_service_but_commands();
+    }
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
