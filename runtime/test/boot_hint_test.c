@@ -17,7 +17,7 @@ static catalog_answer read_hint(const char *host) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "hostId", host);
-    return call_catalog(runtime_boot_read, argument);
+    return boot_call(BOOT_READ, argument);
 }
 
 static catalog_answer write_hint_on(const char *host, const char *libraries_json, const char *version,
@@ -32,7 +32,7 @@ static catalog_answer write_hint_on(const char *host, const char *libraries_json
     if (platform != NULL) {
         cJSON_AddStringToObject(argument, "platform", platform);
     }
-    return call_catalog(runtime_boot_write, argument);
+    return boot_call(BOOT_WRITE, argument);
 }
 
 static catalog_answer write_hint_through_boot(const char *host, const char *libraries_json, const char *version) {
@@ -171,7 +171,7 @@ static void expect_refused_folder(const char *const *files, size_t count, const 
     place_library("runtime", "0.1.0", "linux-x64", files, count);
     catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", "1.0.0", "linux-x64");
     char *folder = library_folder("runtime", "0.1.0", "linux-x64");
-    expect_refusal(written, folder, label);
+    expect_cache_refusal(written, SPISOR_REFUSED, folder, label);
     expect_fix(written, REINSTALL_FIX, label);
     CHECK(!exists_in(cache, "hosts/spisor-host.json"));
     cJSON_Delete(written.tree);
@@ -231,7 +231,7 @@ static void it_reads_back_what_it_wrote(void) {
 static void it_refuses_a_platform_that_is_no_platform_key(void) {
     start_base("hint-bad-platform");
     catalog_answer written = write_hint_on(HOST, LIBRARIES, "1.0.0", "Linux_x64");
-    expect_refusal(written, "platform", "bad platform");
+    expect_cache_refusal(written, SPISOR_MALFORMED, "platform", "bad platform");
     cJSON_Delete(written.tree);
     finish_base();
 }
@@ -286,9 +286,10 @@ static void it_reads_a_host_that_is_no_text_as_none(void) {
 
 static void it_refuses_a_host_id_that_would_record_its_libraries_outside_the_hosts_folder(void) {
     start_base("hint-escape");
-    expect_refusal_released(write_hint_through_boot("../escape", LIBRARIES, "1.0.0"), "outside", "escape write");
-    expect_refusal_released(read_hint("../escape"), "outside", "escape read");
-    expect_refusal_released(read_hint(""), NULL, "empty id");
+    expect_malformed_released(write_hint_through_boot("../escape", LIBRARIES, "1.0.0"), "plain file name",
+                              "escape write");
+    expect_malformed_released(read_hint("../escape"), "plain file name", "escape read");
+    expect_malformed_released(read_hint(""), NULL, "empty id");
     CHECK(!exists_in(scratch, "escape.json"));
     finish_base();
 }
@@ -316,7 +317,7 @@ static void it_names_the_windows_executable_with_its_extension(void) {
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "hostId", HOST);
     cJSON_AddStringToObject(argument, "platform", "win32-x64");
-    catalog_answer resolved = call_catalog(runtime_boot_resolve, argument);
+    catalog_answer resolved = boot_call(BOOT_RESOLVE, argument);
     expect_success(resolved, "windows");
     const char *executable = text_at(resolved.tree, "executable");
     CHECK(executable != NULL && strstr(executable, "spisor-host.exe") != NULL && spisor_file_exists(executable));
@@ -327,7 +328,7 @@ static void it_names_the_windows_executable_with_its_extension(void) {
 static void it_refuses_when_no_host_id_is_given(void) {
     start_base("resolve-no-id");
     catalog_answer resolved = resolve_boot(NULL, NULL);
-    expect_refusal(resolved, "host id", "no id");
+    expect_cache_refusal(resolved, SPISOR_MALFORMED, "host_id", "no id");
     cJSON_Delete(resolved.tree);
     finish_base();
 }
@@ -336,7 +337,7 @@ static void it_refuses_with_the_reinstall_fix_when_there_is_no_hint(void) {
     start_base("resolve-no-hint");
     install_host("1.0.0");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "no host version is recorded for spisor-host", "no hint");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "no host version is recorded for spisor-host", "no hint");
     expect_fix(resolved, REINSTALL_FIX, "no hint fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -347,7 +348,7 @@ static void it_refuses_with_the_reinstall_fix_when_the_hint_is_corrupt_never_pic
     install_host("1.0.0");
     write_hint(HOST, "{ not json");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "no host version is recorded", "corrupt");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "no host version is recorded", "corrupt");
     expect_fix(resolved, REINSTALL_FIX, "corrupt fix");
     CHECK(text_at(resolved.tree, "executable") == NULL);
     cJSON_Delete(resolved.tree);
@@ -358,7 +359,7 @@ static void it_refuses_a_hint_that_names_a_version_outside_the_bundles_folder(vo
     start_base("resolve-outside");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"../../escape\"}");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "is not a version", "outside");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "is not a version", "outside");
     expect_fix(resolved, REINSTALL_FIX, "outside fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -370,8 +371,8 @@ static void it_refuses_a_host_bundle_whose_file_no_longer_has_its_recorded_size(
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
     write_in(cache, "bundles/spisor-host/1.0.0/" PLATFORM "/spisor-host", "resized");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "was not started", "resized");
-    expect_refusal(resolved, "has 7 bytes, but its install recorded 17", "resized size");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "was not started", "resized");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "has 7 bytes, but its install recorded 17", "resized size");
     expect_fix(resolved, REINSTALL_FIX, "resized fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -405,7 +406,7 @@ static void it_refuses_a_host_bundle_whose_marker_records_no_sizes(void) {
     cJSON_free(text);
     cJSON_Delete(marker);
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "records no size for", "no sizes");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "records no size for", "no sizes");
     expect_fix(resolved, REINSTALL_FIX, "no sizes fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -416,7 +417,7 @@ static void it_refuses_when_the_version_the_hint_names_is_not_installed(void) {
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"9.9.9\"}");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "is not installed", "absent");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "is not installed", "absent");
     expect_fix(resolved, REINSTALL_FIX, "absent fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -427,7 +428,7 @@ static void it_refuses_an_installed_version_that_carries_no_executable_for_the_p
     mark_installed("bundles", HOST, "1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
     catalog_answer resolved = resolve_boot(HOST, NULL);
-    expect_refusal(resolved, "carries no executable", "no executable");
+    expect_cache_refusal(resolved, SPISOR_REFUSED, "carries no executable", "no executable");
     expect_fix(resolved, REINSTALL_FIX, "no executable fix");
     cJSON_Delete(resolved.tree);
     finish_base();
@@ -467,7 +468,7 @@ static void write_with_state(locked_write *job) {
     cJSON_AddStringToObject(argument, "hostId", HOST);
     cJSON_AddItemToObject(argument, "libraries", parsed(LIBRARIES));
     cJSON_AddStringToObject(argument, "state", state);
-    job->answer = call_catalog(runtime_boot_write, argument);
+    job->answer = boot_call(BOOT_WRITE, argument);
 }
 
 #if defined(_WIN32)

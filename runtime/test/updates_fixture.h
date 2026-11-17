@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "boot.h"
+#include "boot_call.h"
 #include "cache.h"
 #include "cache_call.h"
 #include "catalog_call.h"
@@ -370,7 +370,7 @@ static inline catalog_answer resolve_boot(const char *host, const char *argument
         cJSON_AddItemToObject(argument, "arguments", parsed(arguments_json));
     }
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
-    return call_catalog(runtime_boot_resolve, argument);
+    return boot_call(BOOT_RESOLVE, argument);
 }
 
 static inline int expect_success(catalog_answer answer, const char *label) {

@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "runtime/boot.h"
 #include "runtime/cache.h"
 #include "runtime/catalog.h"
 #include "runtime/changes.h"
@@ -1282,6 +1283,71 @@ static void print_updates_layouts(void) {
     SIZE(runtime_updates_definition);
 }
 
+static void print_boot_layouts(void) {
+    FIELD(runtime_boot_host_argument, size);
+    FIELD(runtime_boot_host_argument, cache);
+    FIELD(runtime_boot_host_argument, host_id);
+    SIZE(runtime_boot_host_argument);
+    FIELD(runtime_boot_library, id);
+    FIELD(runtime_boot_library, version);
+    FIELD(runtime_boot_library, directory);
+    FIELD(runtime_boot_library, binary);
+    SIZE(runtime_boot_library);
+    FIELD(runtime_boot_hint_answer, size);
+    FIELD(runtime_boot_hint_answer, hinted);
+    FIELD(runtime_boot_hint_answer, libraries);
+    FIELD(runtime_boot_hint_answer, library_count);
+    FIELD(runtime_boot_hint_answer, host);
+    FIELD(runtime_boot_hint_answer, storage);
+    SIZE(runtime_boot_hint_answer);
+    FIELD(runtime_boot_version, id);
+    FIELD(runtime_boot_version, version);
+    SIZE(runtime_boot_version);
+    FIELD(runtime_boot_write_argument, size);
+    FIELD(runtime_boot_write_argument, cache);
+    FIELD(runtime_boot_write_argument, host_id);
+    FIELD(runtime_boot_write_argument, libraries);
+    FIELD(runtime_boot_write_argument, library_count);
+    FIELD(runtime_boot_write_argument, host);
+    FIELD(runtime_boot_write_argument, state);
+    FIELD(runtime_boot_write_argument, platform);
+    SIZE(runtime_boot_write_argument);
+    FIELD(runtime_boot_resolve_argument, size);
+    FIELD(runtime_boot_resolve_argument, cache);
+    FIELD(runtime_boot_resolve_argument, host_id);
+    FIELD(runtime_boot_resolve_argument, arguments);
+    FIELD(runtime_boot_resolve_argument, argument_count);
+    FIELD(runtime_boot_resolve_argument, platform);
+    SIZE(runtime_boot_resolve_argument);
+    FIELD(runtime_boot_resolve_answer, size);
+    FIELD(runtime_boot_resolve_answer, executable);
+    FIELD(runtime_boot_resolve_answer, arguments);
+    FIELD(runtime_boot_resolve_answer, argument_count);
+    FIELD(runtime_boot_resolve_answer, version);
+    FIELD(runtime_boot_resolve_answer, directory);
+    FIELD(runtime_boot_resolve_answer, storage);
+    SIZE(runtime_boot_resolve_answer);
+    FIELD(runtime_boot_place_argument, size);
+    FIELD(runtime_boot_place_argument, cache);
+    SIZE(runtime_boot_place_argument);
+    FIELD(runtime_boot_place_answer, size);
+    FIELD(runtime_boot_place_answer, placed);
+    FIELD(runtime_boot_place_answer, path);
+    FIELD(runtime_boot_place_answer, storage);
+    SIZE(runtime_boot_place_answer);
+    FIELD(runtime_boot_definition, size);
+    FIELD(runtime_boot_definition, context);
+    FIELD(runtime_boot_definition, read);
+    FIELD(runtime_boot_definition, write);
+    FIELD(runtime_boot_definition, resolve);
+    FIELD(runtime_boot_definition, place);
+    FIELD(runtime_boot_definition, release_hint_answer);
+    FIELD(runtime_boot_definition, release_resolve_answer);
+    FIELD(runtime_boot_definition, release_place_answer);
+    FIELD(runtime_boot_definition, release_refusal);
+    SIZE(runtime_boot_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -1304,5 +1370,6 @@ int main(void) {
     print_catalog_layouts();
     print_install_layouts();
     print_updates_layouts();
+    print_boot_layouts();
     return 0;
 }

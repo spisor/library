@@ -4,77 +4,76 @@
 
 #include "boot_hint.h"
 #include "boot_resolve.h"
+#include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "host_references.h"
 #include "hosts_lock.h"
+#include "json_service.h"
 #include "platform_key.h"
 #include "registry.h"
-#include "spisor/json_kind.h"
 
 #define HOST_ID_FIRST_FIX "pass the host id first: spisor-boot <host-id> <arguments>"
+#define WRITABLE_CACHE_FIX "check that SPISOR_CACHE names a writable folder, then try again"
 
-typedef int32_t (*boot_service)(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
-                                size_t *out_len);
+/** A boot hint write held between its preparation and its commit: the registry lock, and what it records. */
+struct runtime_boot_hint_write {
+    spisor_lock *guard;
+    const char *cache;
+    const char *host_id;
+    cJSON *libraries;
+    char *host;
+    cJSON *answer;
+};
 
 static const char *nonempty_text(const cJSON *argument, const char *member) {
     const char *text = runtime_catalog_text_member(argument, member);
     return text != NULL && text[0] != 0 ? text : NULL;
 }
 
-static int32_t refuse_problem(char *problem, const char *fix, uint8_t **out, size_t *out_len) {
-    if (problem == NULL) {
-        return runtime_catalog_answer(NULL, out, out_len);
-    }
-    int32_t status = spisor_fail(problem, fix, out, out_len);
+/** Sets *refusal to problem with fix, taking problem; *refusal stays NULL for a NULL problem, memory running out. */
+static cJSON *refuse_problem(char *problem, const char *fix, cJSON **refusal) {
+    *refusal = problem == NULL ? NULL : runtime_refusal(problem, fix);
     free(problem);
-    return status;
+    return NULL;
 }
 
-static int32_t refuse_answer(cJSON *refusal, uint8_t **out, size_t *out_len) {
-    if (refusal == NULL) {
-        return runtime_catalog_answer(NULL, out, out_len);
+/** The argument's cache and host id, or NULL with *refusal set as every boot operation refuses them. */
+static const char *checked_host(const cJSON *argument, const char **cache, cJSON **refusal) {
+    const char *host_id = nonempty_text(argument, "hostId");
+    *cache = nonempty_text(argument, "cache");
+    if (*cache == NULL) {
+        runtime_catalog_refuse_member("cache", "the cache folder's path", refusal);
+        return NULL;
     }
-    int32_t status = spisor_fail(cJSON_GetObjectItemCaseSensitive(refusal, "message")->valuestring,
-                                 cJSON_GetObjectItemCaseSensitive(refusal, "fix")->valuestring, out, out_len);
-    cJSON_Delete(refusal);
-    return status;
-}
-
-static int32_t serve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len, boot_service service) {
-    spisor_call call;
-    int32_t status = spisor_parse_call(in, in_len, 0, &call, out, out_len);
-    if (status != SPISOR_STATUS_SUCCESS) {
-        return status;
+    if (host_id == NULL) {
+        *refusal = runtime_refusal("no host id was given", HOST_ID_FIRST_FIX);
+        return NULL;
     }
-    const char *cache = nonempty_text(call.argument, "cache");
-    const char *host_id = nonempty_text(call.argument, "hostId");
-    if (cache == NULL) {
-        status = runtime_catalog_refuse_argument("cache", "the cache folder's path", out, out_len);
-    } else if (host_id == NULL) {
-        status = spisor_fail("no host id was given", HOST_ID_FIRST_FIX, out, out_len);
-    } else if (!runtime_is_plain_host_id(host_id)) {
+    if (!runtime_is_plain_host_id(host_id)) {
         char *problem = NULL;
-        free(runtime_boot_hint_path(cache, host_id, &problem));
-        status = refuse_problem(problem, RUNTIME_PLAIN_HOST_ID_FIX, out, out_len);
-    } else {
-        status = service(call.argument, cache, host_id, out, out_len);
+        free(runtime_boot_hint_path(*cache, host_id, &problem));
+        refuse_problem(problem, RUNTIME_PLAIN_HOST_ID_FIX, refusal);
+        return NULL;
     }
-    spisor_discard_call(&call);
-    return status;
+    return host_id;
 }
 
-static int32_t read_hint(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
-                         size_t *out_len) {
-    (void)argument;
-    int out_of_memory;
-    cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
-    cJSON *answer = out_of_memory ? NULL : cJSON_CreateObject();
+static cJSON *hint_answer(cJSON *hint) {
+    cJSON *answer = cJSON_CreateObject();
     if (answer == NULL || (hint != NULL && !cJSON_AddItemToObject(answer, "hint", hint))) {
         cJSON_Delete(answer);
         cJSON_Delete(hint);
-        answer = NULL;
+        return NULL;
     }
-    return runtime_catalog_answer(answer, out, out_len);
+    return answer;
+}
+
+cJSON *runtime_boot_read_operation(const cJSON *argument, cJSON **refusal) {
+    const char *cache = NULL;
+    const char *host_id = checked_host(argument, &cache, refusal);
+    int out_of_memory = 0;
+    cJSON *hint = host_id == NULL ? NULL : runtime_read_boot_hint(cache, host_id, &out_of_memory);
+    return host_id == NULL || out_of_memory ? NULL : hint_answer(hint);
 }
 
 static const char *platform_member(const cJSON *argument) {
@@ -97,47 +96,123 @@ static int is_version_map(const cJSON *value) {
     return 1;
 }
 
-static int32_t write_resolved_hint(const cJSON *argument, const char *cache, const char *host_id,
-                                   const cJSON *libraries, uint8_t **out, size_t *out_len) {
+static cJSON *refuse_write_argument(const cJSON *argument, cJSON **refusal) {
     const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
-    const char *state = nonempty_text(argument, "state");
-    spisor_lock *guard = state == NULL ? NULL : runtime_hosts_lock(state);
-    if (state != NULL && guard == NULL) {
-        return spisor_fail("the registry lock under the state folder could not be taken",
-                           "check that SPISOR_STATE names a writable folder, then try again", out, out_len);
-    }
-    char *problem = NULL;
-    int written = runtime_write_boot_hint(cache, host_id, libraries, host == NULL ? NULL : host->valuestring, &problem);
-    int32_t status = written ? read_hint(argument, cache, host_id, out, out_len)
-                             : refuse_problem(problem, "check that SPISOR_CACHE names a writable folder, then try again",
-                                              out, out_len);
-    spisor_unlock(guard);
-    return status;
-}
-
-static int32_t write_hint(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
-                          size_t *out_len) {
-    const cJSON *versions = cJSON_GetObjectItemCaseSensitive(argument, "libraries");
-    const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
-    const char *platform = platform_member(argument);
-    if (!is_version_map(versions)) {
-        return runtime_catalog_refuse_argument("libraries", "an object of library id to version", out, out_len);
+    if (!is_version_map(cJSON_GetObjectItemCaseSensitive(argument, "libraries"))) {
+        return runtime_catalog_refuse_member("libraries", "an object of library id to version", refusal);
     }
     if (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0)) {
-        return runtime_catalog_refuse_argument("host", "the host bundle version, or leave it out", out, out_len);
+        return runtime_catalog_refuse_member("host", "the host bundle version, or leave it out", refusal);
     }
-    if (platform == NULL) {
-        return runtime_catalog_refuse_argument("platform", "a platform key such as linux-x64, or leave it out", out,
-                                               out_len);
+    return runtime_catalog_refuse_member("platform", "a platform key such as linux-x64, or leave it out", refusal);
+}
+
+/** The host version the write records: the one given, else the one the hint names now; *out_of_memory as it reads. */
+static char *recorded_host(const char *cache, const char *host_id, const cJSON *given, int *out_of_memory) {
+    cJSON *hint = given == NULL ? runtime_read_boot_hint(cache, host_id, out_of_memory) : NULL;
+    const cJSON *host = given != NULL ? given : cJSON_GetObjectItemCaseSensitive(hint, "host");
+    const char *parts[1] = {cJSON_GetStringValue(host)};
+    char *copy = parts[0] == NULL ? NULL : runtime_cache_text(parts, 1);
+    *out_of_memory = *out_of_memory || (parts[0] != NULL && copy == NULL);
+    cJSON_Delete(hint);
+    return copy;
+}
+
+/** {hint: {libraries, host?}}, the hint the write records, built before it is written; NULL out of memory. */
+static cJSON *written_answer(const cJSON *libraries, const char *host) {
+    cJSON *hint = cJSON_CreateObject();
+    int built = hint != NULL && runtime_catalog_attach(hint, "libraries", cJSON_Duplicate(libraries, 1)) &&
+                (host == NULL || cJSON_AddStringToObject(hint, "host", host) != NULL);
+    if (!built) {
+        cJSON_Delete(hint);
+        return NULL;
+    }
+    return hint_answer(hint);
+}
+
+void runtime_boot_free_write(runtime_boot_hint_write *write) {
+    if (write != NULL) {
+        spisor_unlock(write->guard);
+        cJSON_Delete(write->libraries);
+        free(write->host);
+        cJSON_Delete(write->answer);
+        free(write);
+    }
+}
+
+/** Takes the registry lock under state, when given, and reads the host version the write keeps. */
+static runtime_boot_hint_write *held_write(const cJSON *argument, runtime_boot_hint_write *write, cJSON **refusal) {
+    const char *state = nonempty_text(argument, "state");
+    int out_of_memory = 0;
+    write->guard = state == NULL ? NULL : runtime_hosts_lock(state);
+    if (state != NULL && write->guard == NULL) {
+        *refusal = runtime_refusal("the registry lock under the state folder could not be taken",
+                                   "check that SPISOR_STATE names a writable folder, then try again");
+        runtime_boot_free_write(write);
+        return NULL;
+    }
+    write->host = recorded_host(write->cache, write->host_id, cJSON_GetObjectItemCaseSensitive(argument, "host"),
+                                &out_of_memory);
+    write->answer = out_of_memory ? NULL : written_answer(write->libraries, write->host);
+    if (write->answer == NULL) {
+        runtime_boot_free_write(write);
+        return NULL;
+    }
+    return write;
+}
+
+runtime_boot_hint_write *runtime_boot_prepare_write(const cJSON *argument, cJSON **refusal) {
+    const char *cache = NULL;
+    const char *host_id = checked_host(argument, &cache, refusal);
+    const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
+    const char *platform = platform_member(argument);
+    if (host_id == NULL) {
+        return NULL;
+    }
+    if (!is_version_map(cJSON_GetObjectItemCaseSensitive(argument, "libraries")) || platform == NULL ||
+        (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0))) {
+        refuse_write_argument(argument, refusal);
+        return NULL;
     }
     char *problem = NULL;
-    cJSON *libraries = runtime_boot_hint_libraries(cache, versions, platform, &problem);
+    runtime_boot_hint_write *write = calloc(1, sizeof *write);
+    cJSON *libraries = write == NULL ? NULL
+                                     : runtime_boot_hint_libraries(
+                                           cache, cJSON_GetObjectItemCaseSensitive(argument, "libraries"), platform,
+                                           &problem);
     if (libraries == NULL) {
-        return refuse_problem(problem, RUNTIME_REINSTALL_FIX, out, out_len);
+        free(write);
+        refuse_problem(problem, RUNTIME_REINSTALL_FIX, refusal);
+        return NULL;
     }
-    int32_t status = write_resolved_hint(argument, cache, host_id, libraries, out, out_len);
-    cJSON_Delete(libraries);
-    return status;
+    write->cache = cache;
+    write->host_id = host_id;
+    write->libraries = libraries;
+    return held_write(argument, write, refusal);
+}
+
+const cJSON *runtime_boot_write_answer(const runtime_boot_hint_write *write) {
+    return write->answer;
+}
+
+int runtime_boot_commit_write(runtime_boot_hint_write *write, cJSON **refusal) {
+    char *problem = NULL;
+    if (runtime_write_boot_hint(write->cache, write->host_id, write->libraries, write->host, &problem)) {
+        return 1;
+    }
+    refuse_problem(problem, WRITABLE_CACHE_FIX, refusal);
+    return 0;
+}
+
+cJSON *runtime_boot_write_operation(const cJSON *argument, cJSON **refusal) {
+    runtime_boot_hint_write *write = runtime_boot_prepare_write(argument, refusal);
+    cJSON *answer = NULL;
+    if (write != NULL && runtime_boot_commit_write(write, refusal)) {
+        answer = write->answer;
+        write->answer = NULL;
+    }
+    runtime_boot_free_write(write);
+    return answer;
 }
 
 static int is_string_array(const cJSON *value) {
@@ -152,38 +227,25 @@ static int is_string_array(const cJSON *value) {
     return 1;
 }
 
-static int32_t resolve(const cJSON *argument, const char *cache, const char *host_id, uint8_t **out,
-                       size_t *out_len) {
+cJSON *runtime_boot_resolve_operation(const cJSON *argument, cJSON **refusal) {
+    const char *cache = NULL;
+    const char *host_id = checked_host(argument, &cache, refusal);
     const char *platform = platform_member(argument);
     const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(argument, "arguments");
+    if (host_id == NULL) {
+        return NULL;
+    }
     if (platform == NULL) {
-        return runtime_catalog_refuse_argument("platform", "a platform key such as linux-x64, or leave it out", out,
-                                               out_len);
+        return runtime_catalog_refuse_member("platform", "a platform key such as linux-x64, or leave it out", refusal);
     }
     if (arguments != NULL && !is_string_array(arguments)) {
-        return runtime_catalog_refuse_argument("arguments", "an array of strings, or leave it out", out, out_len);
+        return runtime_catalog_refuse_member("arguments", "an array of strings, or leave it out", refusal);
     }
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_resolve_booted_host(cache, host_id, platform, &refusal);
-    if (answer == NULL) {
-        return refuse_answer(refusal, out, out_len);
-    }
-    cJSON *passed = arguments == NULL ? cJSON_CreateArray() : cJSON_Duplicate(arguments, 1);
-    if (!runtime_catalog_attach(answer, "arguments", passed)) {
+    cJSON *answer = runtime_resolve_booted_host(cache, host_id, platform, refusal);
+    cJSON *passed = answer == NULL ? NULL : arguments == NULL ? cJSON_CreateArray() : cJSON_Duplicate(arguments, 1);
+    if (answer != NULL && !runtime_catalog_attach(answer, "arguments", passed)) {
         cJSON_Delete(answer);
         answer = NULL;
     }
-    return runtime_catalog_answer(answer, out, out_len);
-}
-
-RUNTIME_EXPORT int32_t runtime_boot_read(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, read_hint);
-}
-
-RUNTIME_EXPORT int32_t runtime_boot_write(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, write_hint);
-}
-
-RUNTIME_EXPORT int32_t runtime_boot_resolve(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return serve(in, in_len, out, out_len, resolve);
+    return answer;
 }

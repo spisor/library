@@ -46,8 +46,8 @@ static void a_boot_write_refuses_a_library_folder_it_cannot_list(void) {
     cJSON_AddStringToObject(argument, "hostId", HOST);
     cJSON_AddItemToObject(argument, "libraries", parsed("{\"runtime\":\"0.1.0\"}"));
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
-    catalog_answer written = call_catalog(runtime_boot_write, argument);
-    CHECK(written.status == SPISOR_STATUS_FAILURE);
+    catalog_answer written = boot_call(BOOT_WRITE, argument);
+    CHECK(written.status == SPISOR_REFUSED);
     expect_could_not_list(text_at(written.tree, "message"), folder, "boot.write");
     CHECK(!exists_in(cache, "hosts/" HOST ".json"));
     make_listable(folder);

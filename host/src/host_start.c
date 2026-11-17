@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "boot.h"
+#include "json_service.h"
 #include "cache.h"
 #include "cache_marker.h"
 #include "cache_place.h"
@@ -132,7 +133,7 @@ static char *hinted_version(const host_context *context, const char *id) {
         argument = NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *read = host_call(runtime_boot_read, argument, &refusal);
+    cJSON *read = runtime_call_operation(runtime_boot_read_operation, argument, &refusal);
     cJSON_Delete(refusal);
     const char *host = host_text(cJSON_GetObjectItemCaseSensitive(read, "hint"), "host");
     char *version = host == NULL ? NULL : malloc(strlen(host) + 1);

@@ -733,16 +733,11 @@ static void it_refuses_a_rollback_to_a_version_whose_files_kept_their_sizes_but_
     finish_base();
 }
 
-static void expect_not_plain(catalog_answer answer, const char *label) {
-    expect_cache_refusal(answer, SPISOR_MALFORMED, "not a plain file name", label);
-    cJSON_Delete(answer.tree);
-}
-
 static void it_refuses_a_host_id_that_is_no_plain_file_name(void) {
     start_base("escape-id");
-    expect_not_plain(apply_plain("../escape", "{}"), "apply escape");
-    expect_not_plain(check_with("../escape", no_settings(), "{}"), "check escape");
-    expect_not_plain(rollback_of("../escape", "a"), "rollback escape");
+    expect_malformed_released(apply_plain("../escape", "{}"), "plain file name", "apply escape");
+    expect_malformed_released(check_with("../escape", no_settings(), "{}"), "plain file name", "check escape");
+    expect_malformed_released(rollback_of("../escape", "a"), "plain file name", "rollback escape");
     finish_base();
 }
 
