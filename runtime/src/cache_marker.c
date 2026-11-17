@@ -55,45 +55,65 @@ static int is_hash_map(const cJSON *files) {
     return 1;
 }
 
-/** The marker's files member, detached, or NULL when the marker is missing or not a map of hashes. */
-static cJSON *recorded_hashes(const char *path) {
-    cJSON *marker = runtime_read_node_json(path);
+/**
+ * The marker's files member, detached, or NULL when the marker is missing or not a map of hashes, *out_of_memory set
+ * when memory ran out reading it.
+ */
+static cJSON *recorded_hashes(const char *path, int *out_of_memory) {
+    cJSON *marker = runtime_read_node_json_noting(path, out_of_memory);
     cJSON *files = cJSON_IsObject(marker) ? cJSON_GetObjectItemCaseSensitive(marker, "files") : NULL;
     cJSON *hashes = is_hash_map(files) ? cJSON_DetachItemViaPointer(marker, files) : NULL;
     cJSON_Delete(marker);
     return hashes;
 }
 
-int runtime_cache_has_marker(const char *directory) {
+static cJSON *hashes_in(const char *directory, int *out_of_memory) {
     char *path = marker_path(directory);
-    cJSON *hashes = path == NULL ? NULL : recorded_hashes(path);
+    cJSON *hashes = path == NULL ? NULL : recorded_hashes(path, out_of_memory);
+    *out_of_memory = path == NULL || *out_of_memory;
     free(path);
-    int present = hashes != NULL;
-    cJSON_Delete(hashes);
-    return present;
+    return hashes;
 }
 
-static int names_present_files(const char *directory, const cJSON *hashes) {
+runtime_cache_presence runtime_cache_has_marker(const char *directory) {
+    int out_of_memory = 0;
+    cJSON *hashes = hashes_in(directory, &out_of_memory);
+    runtime_cache_presence presence = out_of_memory     ? RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY
+                                      : hashes != NULL ? RUNTIME_CACHE_PRESENT
+                                                       : RUNTIME_CACHE_NOT_PRESENT;
+    cJSON_Delete(hashes);
+    return presence;
+}
+
+static runtime_cache_presence names_present_files(const char *directory, const cJSON *hashes) {
     const char *none = NULL;
     char *resolved_directory = runtime_cache_resolve(directory, &none, 0);
-    int present = resolved_directory != NULL;
-    for (const cJSON *member = present ? hashes->child : NULL; present && member != NULL; member = member->next) {
+    runtime_cache_presence presence =
+        resolved_directory != NULL ? RUNTIME_CACHE_PRESENT : RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY;
+    for (const cJSON *member = resolved_directory != NULL ? hashes->child : NULL;
+         presence == RUNTIME_CACHE_PRESENT && member != NULL; member = member->next) {
         const char *key = member->string;
         char *path = runtime_cache_resolve(resolved_directory, &key, 1);
-        present = path != NULL && runtime_cache_is_strictly_inside(resolved_directory, path) && spisor_file_exists(path);
+        if (path == NULL) {
+            presence = RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY;
+        } else if (!runtime_cache_is_strictly_inside(resolved_directory, path) || !spisor_file_exists(path)) {
+            presence = RUNTIME_CACHE_NOT_PRESENT;
+        }
         free(path);
     }
     free(resolved_directory);
-    return present;
+    return presence;
 }
 
-int runtime_cache_has_files(const char *directory) {
-    char *path = marker_path(directory);
-    cJSON *hashes = path == NULL ? NULL : recorded_hashes(path);
-    free(path);
-    int present = hashes != NULL && names_present_files(directory, hashes);
+runtime_cache_presence runtime_cache_has_files(const char *directory) {
+    int out_of_memory = 0;
+    cJSON *hashes = hashes_in(directory, &out_of_memory);
+    runtime_cache_presence presence = out_of_memory ? RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY
+                                      : hashes == NULL
+                                          ? RUNTIME_CACHE_NOT_PRESENT
+                                          : names_present_files(directory, hashes);
     cJSON_Delete(hashes);
-    return present;
+    return presence;
 }
 
 static int add_copy(cJSON *marker, const char *name, const cJSON *value) {
@@ -232,9 +252,12 @@ cJSON *runtime_cache_check_version(const char *directory) {
         free(path);
         return kind_only("absent");
     }
-    cJSON *hashes = recorded_hashes(path);
+    int out_of_memory = 0;
+    cJSON *hashes = recorded_hashes(path, &out_of_memory);
     cJSON *answer;
-    if (hashes == NULL) {
+    if (out_of_memory) {
+        answer = NULL;
+    } else if (hashes == NULL) {
         const char *parts[3] = {"the completion marker ", path, " is not readable"};
         answer = damaged(runtime_cache_text(parts, 3), NULL);
     } else {

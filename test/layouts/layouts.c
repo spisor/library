@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "runtime/cache.h"
 #include "runtime/changes.h"
 #include "runtime/commands.h"
 #include "runtime/config.h"
@@ -667,6 +668,127 @@ static void print_marketplace_layouts(void) {
     SIZE(runtime_marketplace_definition);
 }
 
+static void print_cache_layouts(void) {
+    FIELD(runtime_cache_install_argument, size);
+    FIELD(runtime_cache_install_argument, cache);
+    FIELD(runtime_cache_install_argument, id);
+    FIELD(runtime_cache_install_argument, item);
+    FIELD(runtime_cache_install_argument, version);
+    FIELD(runtime_cache_install_argument, platform);
+    SIZE(runtime_cache_install_argument);
+    FIELD(runtime_cache_install_answer, size);
+    FIELD(runtime_cache_install_answer, id);
+    FIELD(runtime_cache_install_answer, version);
+    FIELD(runtime_cache_install_answer, directory);
+    FIELD(runtime_cache_install_answer, fetched);
+    FIELD(runtime_cache_install_answer, fetched_count);
+    FIELD(runtime_cache_install_answer, cached);
+    FIELD(runtime_cache_install_answer, cached_count);
+    FIELD(runtime_cache_install_answer, storage);
+    SIZE(runtime_cache_install_answer);
+    FIELD(runtime_cache_place_argument, size);
+    FIELD(runtime_cache_place_argument, cache);
+    FIELD(runtime_cache_place_argument, platform);
+    SIZE(runtime_cache_place_argument);
+    FIELD(runtime_cache_versions, id);
+    FIELD(runtime_cache_versions, versions);
+    FIELD(runtime_cache_versions, version_count);
+    SIZE(runtime_cache_versions);
+    FIELD(runtime_cache_installed_answer, size);
+    FIELD(runtime_cache_installed_answer, bundles);
+    FIELD(runtime_cache_installed_answer, bundle_count);
+    FIELD(runtime_cache_installed_answer, libraries);
+    FIELD(runtime_cache_installed_answer, library_count);
+    FIELD(runtime_cache_installed_answer, storage);
+    SIZE(runtime_cache_installed_answer);
+    FIELD(runtime_cache_check_argument, size);
+    FIELD(runtime_cache_check_argument, directory);
+    SIZE(runtime_cache_check_argument);
+    FIELD(runtime_cache_check_answer, size);
+    FIELD(runtime_cache_check_answer, verdict);
+    FIELD(runtime_cache_check_answer, detail);
+    FIELD(runtime_cache_check_answer, fix);
+    FIELD(runtime_cache_check_answer, file);
+    FIELD(runtime_cache_check_answer, storage);
+    SIZE(runtime_cache_check_answer);
+    FIELD(runtime_cache_damage, id);
+    FIELD(runtime_cache_damage, version);
+    FIELD(runtime_cache_damage, detail);
+    FIELD(runtime_cache_damage, fix);
+    FIELD(runtime_cache_damage, file);
+    SIZE(runtime_cache_damage);
+    FIELD(runtime_cache_damaged_answer, size);
+    FIELD(runtime_cache_damaged_answer, damaged);
+    FIELD(runtime_cache_damaged_answer, damaged_count);
+    FIELD(runtime_cache_damaged_answer, storage);
+    SIZE(runtime_cache_damaged_answer);
+    FIELD(runtime_cache_plugin, id);
+    FIELD(runtime_cache_plugin, version);
+    SIZE(runtime_cache_plugin);
+    FIELD(runtime_cache_locate_argument, size);
+    FIELD(runtime_cache_locate_argument, cache);
+    FIELD(runtime_cache_locate_argument, plugins);
+    FIELD(runtime_cache_locate_argument, plugin_count);
+    SIZE(runtime_cache_locate_argument);
+    FIELD(runtime_cache_located, id);
+    FIELD(runtime_cache_located, version);
+    FIELD(runtime_cache_located, directory);
+    FIELD(runtime_cache_located, manifest);
+    FIELD(runtime_cache_located, entry);
+    SIZE(runtime_cache_located);
+    FIELD(runtime_cache_locate_answer, size);
+    FIELD(runtime_cache_locate_answer, located);
+    FIELD(runtime_cache_locate_answer, located_count);
+    FIELD(runtime_cache_locate_answer, problems);
+    FIELD(runtime_cache_locate_answer, problem_count);
+    FIELD(runtime_cache_locate_answer, storage);
+    SIZE(runtime_cache_locate_answer);
+    FIELD(runtime_cache_platform_answer, size);
+    FIELD(runtime_cache_platform_answer, platform);
+    FIELD(runtime_cache_platform_answer, storage);
+    SIZE(runtime_cache_platform_answer);
+    FIELD(runtime_cache_sweep_argument, size);
+    FIELD(runtime_cache_sweep_argument, cache);
+    FIELD(runtime_cache_sweep_argument, state);
+    SIZE(runtime_cache_sweep_argument);
+    FIELD(runtime_cache_sweep_answer, size);
+    FIELD(runtime_cache_sweep_answer, removed);
+    FIELD(runtime_cache_sweep_answer, removed_count);
+    FIELD(runtime_cache_sweep_answer, storage);
+    SIZE(runtime_cache_sweep_answer);
+    FIELD(runtime_cache_deploy_argument, size);
+    FIELD(runtime_cache_deploy_argument, directory);
+    FIELD(runtime_cache_deploy_argument, plugin_directory);
+    FIELD(runtime_cache_deploy_argument, id);
+    FIELD(runtime_cache_deploy_argument, name);
+    FIELD(runtime_cache_deploy_argument, replaces);
+    SIZE(runtime_cache_deploy_argument);
+    FIELD(runtime_cache_deploy_answer, size);
+    FIELD(runtime_cache_deploy_answer, import_name);
+    FIELD(runtime_cache_deploy_answer, storage);
+    SIZE(runtime_cache_deploy_answer);
+    FIELD(runtime_cache_definition, size);
+    FIELD(runtime_cache_definition, context);
+    FIELD(runtime_cache_definition, install);
+    FIELD(runtime_cache_definition, installed);
+    FIELD(runtime_cache_definition, check);
+    FIELD(runtime_cache_definition, damaged);
+    FIELD(runtime_cache_definition, locate);
+    FIELD(runtime_cache_definition, platform);
+    FIELD(runtime_cache_definition, sweep);
+    FIELD(runtime_cache_definition, deploy);
+    FIELD(runtime_cache_definition, release_install_answer);
+    FIELD(runtime_cache_definition, release_installed_answer);
+    FIELD(runtime_cache_definition, release_check_answer);
+    FIELD(runtime_cache_definition, release_damaged_answer);
+    FIELD(runtime_cache_definition, release_locate_answer);
+    FIELD(runtime_cache_definition, release_platform_answer);
+    FIELD(runtime_cache_definition, release_sweep_answer);
+    FIELD(runtime_cache_definition, release_deploy_answer);
+    FIELD(runtime_cache_definition, release_refusal);
+    SIZE(runtime_cache_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -685,5 +807,6 @@ int main(void) {
     print_commands_layouts();
     print_lists_layouts();
     print_marketplace_layouts();
+    print_cache_layouts();
     return 0;
 }

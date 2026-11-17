@@ -8,6 +8,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "install_warnings.h"
+#include "json_service.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -70,7 +71,7 @@ static cJSON *located_plugins(const host_context *context, cJSON *plugins) {
         return NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *answer = host_call(runtime_cache_locate, argument, &refusal);
+    cJSON *answer = runtime_call_operation(runtime_cache_locate_operation, argument, &refusal);
     cJSON_Delete(refusal);
     return answer;
 }

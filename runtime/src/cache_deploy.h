@@ -1,13 +1,10 @@
 #ifndef RUNTIME_CACHE_DEPLOY_H
 #define RUNTIME_CACHE_DEPLOY_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#include "export.h"
+#include "cJSON.h"
 
 /**
- * cache.deploy: {directory, pluginDir, identity: {id, name}} puts the plugin installed in directory where a host loads
+ * cache's deploy: {directory, pluginDir, identity: {id, name}} puts the plugin installed in directory where a host loads
  * it from, as pluginDir/<importName>.json, pluginDir/<importName>.js when its plugin.json names an entry, and
  * pluginDir/<importName>_identity.json holding {id, name} as the argument gives them, and answers {importName}.
  * replaces, when given, is an id whose deployed plugin of this import name this one may replace; no other identity
@@ -19,6 +16,6 @@
  * import name grammar of plugin.schema.json, Windows reserved names included, before any path is formed, and
  * everything is checked before the first file is written, so a refusal writes nothing.
  */
-RUNTIME_EXPORT int32_t runtime_cache_deploy(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_cache_deploy_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

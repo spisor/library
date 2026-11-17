@@ -11,6 +11,7 @@
 
 #include "boot.h"
 #include "cache.h"
+#include "cache_call.h"
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"
@@ -243,7 +244,7 @@ static inline void install_listed(const char *id, const char *version) {
     cJSON_AddItemToObject(argument, "item", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(catalog_items, id), 1));
     cJSON_AddStringToObject(argument, "version", version);
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
-    catalog_answer answer = call_catalog(runtime_cache_install, argument);
+    catalog_answer answer = cache_call(CACHE_INSTALL, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
 }
@@ -356,7 +357,7 @@ static inline catalog_answer sweep_cache(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "state", state);
-    return call_catalog(runtime_cache_sweep, argument);
+    return cache_call(CACHE_SWEEP, argument);
 }
 
 static inline catalog_answer resolve_boot(const char *host, const char *arguments_json) {

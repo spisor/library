@@ -6,8 +6,15 @@
 /** The file an install writes last, so its presence means every file it names was stored and verified. */
 #define RUNTIME_INSTALL_MARKER ".installed.json"
 
+/** What a check of a version's folder found. */
+typedef enum runtime_cache_presence {
+    RUNTIME_CACHE_NOT_PRESENT = 0,
+    RUNTIME_CACHE_PRESENT = 1,
+    RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY = 2
+} runtime_cache_presence;
+
 /** Whether directory holds a readable completion marker, without re-hashing the files it names. */
-int runtime_cache_has_marker(const char *directory);
+runtime_cache_presence runtime_cache_has_marker(const char *directory);
 
 /**
  * Whether directory holds a readable completion marker and every file it names is present inside
@@ -16,7 +23,7 @@ int runtime_cache_has_marker(const char *directory);
  * @implNote A sweep that removes a version while an install of it is completing can leave the marker
  * behind its files, so a marker alone does not mean the version can run.
  */
-int runtime_cache_has_files(const char *directory);
+runtime_cache_presence runtime_cache_has_files(const char *directory);
 
 /**
  * Writes directory's completion marker naming hashes, an object of file keys to SHA-256s, and sizes, an

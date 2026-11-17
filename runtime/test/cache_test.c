@@ -8,6 +8,7 @@
 
 #include "cache.h"
 #include "cache_damaged.h"
+#include "cache_call.h"
 #include "catalog_call.h"
 #include "catalog_path.h"
 #include "catalog_url.h"
@@ -171,20 +172,20 @@ static catalog_answer install(const char *id, cJSON *item, const char *version, 
     if (platform != NULL) {
         cJSON_AddStringToObject(argument, "platform", platform);
     }
-    return call_catalog(runtime_cache_install, argument);
+    return cache_call(CACHE_INSTALL, argument);
 }
 
 static catalog_answer check_directory(const char *directory) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "directory", directory);
-    return call_catalog(runtime_cache_check, argument);
+    return cache_call(CACHE_CHECK, argument);
 }
 
 static catalog_answer sweep(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "state", state);
-    return call_catalog(runtime_cache_sweep, argument);
+    return cache_call(CACHE_SWEEP, argument);
 }
 
 static catalog_answer installed(const char *platform) {
@@ -193,7 +194,7 @@ static catalog_answer installed(const char *platform) {
     if (platform != NULL) {
         cJSON_AddStringToObject(argument, "platform", platform);
     }
-    return call_catalog(runtime_cache_installed, argument);
+    return cache_call(CACHE_INSTALLED, argument);
 }
 
 static void expect_tree(const cJSON *actual, const char *expected_json, const char *label) {
@@ -218,7 +219,7 @@ static void expect_answer(catalog_answer answer, const char *expected_json, cons
 }
 
 static void expect_refused(catalog_answer answer, const char *fragment, const char *label) {
-    expect_refusal(answer, fragment, label);
+    expect_cache_refusal(answer, SPISOR_REFUSED, fragment, label);
     cJSON_Delete(answer.tree);
 }
 
@@ -329,9 +330,9 @@ static void it_refuses_a_source_serving_other_bytes_naming_the_url_and_the_expec
     char expected_sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(INDEX_JS, expected_sha256);
     catalog_answer answer = install("a", single_file_item(reference), "1.0.0", "linux-x64");
-    expect_refusal(answer, expected_sha256, "other bytes hash");
-    expect_refusal(answer, url, "other bytes url");
-    expect_refusal(answer, "p.js", "other bytes file");
+    expect_cache_refusal_refused(answer, expected_sha256, "other bytes hash");
+    expect_cache_refusal_refused(answer, url, "other bytes url");
+    expect_cache_refusal_refused(answer, "p.js", "other bytes file");
     cJSON_Delete(answer.tree);
     expect_absent_in_cache("bundles/a/1.0.0/p.js", "other bytes");
     expect_listing("bundles/a/1.0.0", "[]", "other bytes writes nothing");
@@ -496,7 +497,7 @@ static void it_reports_nothing_for_a_version_whose_marker_is_gone(void) {
 static cJSON *damaged_in_cache(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
-    catalog_answer answer = call_catalog(runtime_cache_damaged, argument);
+    catalog_answer answer = cache_call(CACHE_DAMAGED, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON *damaged = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "damaged");
     cJSON_Delete(answer.tree);
@@ -645,7 +646,7 @@ static void it_installs_a_library_s_files_for_the_platform_into_its_library_dire
 static void it_refuses_an_item_not_built_for_this_platform_with_the_fix(void) {
     start_cache("not-built");
     catalog_answer answer = install("liba", linux_only_library(), "2.0.0", "win32-x64");
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_REFUSED);
     check_text(text_at(answer.tree, "message"), "not built for win32-x64", "not built message");
     check_text(text_at(answer.tree, "fix"), "use a platform the item lists, or ask its publisher for a win32-x64 build",
                "not built fix");
@@ -693,9 +694,9 @@ static void it_refuses_a_mismatched_file_naming_the_item_the_file_and_the_expect
     char expected_sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(PLUGIN_JSON, expected_sha256);
     catalog_answer answer = install("a", item_of("plugin", "1.0.0", version_with_files(files)), "1.0.0", "linux-x64");
-    expect_refusal(answer, "a@1.0.0", "lying item");
-    expect_refusal(answer, "file plugin.json", "lying file");
-    expect_refusal(answer, expected_sha256, "lying hash");
+    expect_cache_refusal_refused(answer, "a@1.0.0", "lying item");
+    expect_cache_refusal_refused(answer, "file plugin.json", "lying file");
+    expect_cache_refusal_refused(answer, expected_sha256, "lying hash");
     cJSON_Delete(answer.tree);
     finish_cache();
 }
@@ -1369,7 +1370,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
 /* cache.platform and the arguments */
 
 static void it_answers_this_build_s_platform_key_as_node_spells_it(void) {
-    catalog_answer answer = call_catalog(runtime_cache_platform, cJSON_CreateObject());
+    catalog_answer answer = cache_call(CACHE_PLATFORM, cJSON_CreateObject());
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     const char *platform = text_at(answer.tree, "platform");
 #if defined(_WIN32) && defined(_M_X64)
@@ -1388,7 +1389,7 @@ static void it_answers_this_build_s_platform_key_as_node_spells_it(void) {
 
 static void it_installs_for_this_machine_s_platform_when_none_is_given(void) {
     start_cache("default-platform");
-    catalog_answer platform_answer = call_catalog(runtime_cache_platform, cJSON_CreateObject());
+    catalog_answer platform_answer = cache_call(CACHE_PLATFORM, cJSON_CreateObject());
     const char *platform = text_at(platform_answer.tree, "platform");
     cJSON *entry = cJSON_CreateObject();
     cJSON *files = cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(entry, "platforms"), platform), "files");
@@ -1403,22 +1404,27 @@ static void it_installs_for_this_machine_s_platform_when_none_is_given(void) {
     finish_cache();
 }
 
-static void it_refuses_an_unusable_argument(void) {
-    expect_refused(call_catalog(runtime_cache_install, parsed("{\"id\":\"a\",\"item\":{},\"version\":\"1.0.0\"}")), "cache",
-                   "install without cache");
-    expect_refused(call_catalog(runtime_cache_install, parsed("{\"cache\":\"/c\",\"item\":{},\"version\":\"1.0.0\"}")), "id",
-                   "install without id");
-    expect_refused(call_catalog(runtime_cache_install, parsed("{\"cache\":\"/c\",\"id\":\"a\",\"version\":\"1.0.0\"}")), "item",
-                   "install without item");
-    expect_refused(call_catalog(runtime_cache_install, parsed("{\"cache\":\"/c\",\"id\":\"a\",\"item\":{}}")), "version",
-                   "install without version");
-    expect_refused(call_catalog(runtime_cache_install,
-                                parsed("{\"cache\":\"/c\",\"id\":\"a\",\"item\":{},\"version\":\"1.0.0\",\"platform\":1}")),
-                   "platform", "install with a platform that is not text");
-    expect_refused(call_catalog(runtime_cache_installed, parsed("{}")), "cache", "installed without cache");
-    expect_refused(call_catalog(runtime_cache_check, parsed("{}")), "directory", "check without directory");
-    expect_refused(call_catalog(runtime_cache_sweep, parsed("{\"cache\":\"/c\"}")), "state", "sweep without state");
-    expect_refused(call_catalog(runtime_cache_sweep, parsed("{\"state\":\"/s\"}")), "cache", "sweep without cache");
+static void expect_malformed(catalog_answer answer, const char *fragment, const char *label) {
+    expect_cache_refusal(answer, SPISOR_MALFORMED, fragment, label);
+    cJSON_Delete(answer.tree);
+}
+
+static void it_refuses_an_unusable_argument_as_malformed(void) {
+    expect_malformed(cache_call(CACHE_INSTALL, parsed("{\"id\":\"a\",\"item\":{},\"version\":\"1.0.0\"}")), "cache",
+                     "install without cache");
+    expect_malformed(cache_call(CACHE_INSTALL, parsed("{\"cache\":\"/c\",\"item\":{},\"version\":\"1.0.0\"}")), "id",
+                     "install without id");
+    expect_malformed(cache_call(CACHE_INSTALL, parsed("{\"cache\":\"/c\",\"id\":\"a\",\"version\":\"1.0.0\"}")), "item",
+                     "install without item");
+    expect_malformed(cache_call(CACHE_INSTALL, parsed("{\"cache\":\"/c\",\"id\":\"a\",\"item\":[],\"version\":\"1.0.0\"}")),
+                     "item", "install with an item that is not a record");
+    expect_malformed(cache_call(CACHE_INSTALL, parsed("{\"cache\":\"/c\",\"id\":\"a\",\"item\":{}}")), "version",
+                     "install without version");
+    expect_malformed(cache_call(CACHE_INSTALLED, parsed("{}")), "cache", "installed without cache");
+    expect_malformed(cache_call(CACHE_DAMAGED, parsed("{}")), "cache", "damaged without cache");
+    expect_malformed(cache_call(CACHE_CHECK, parsed("{}")), "directory", "check without directory");
+    expect_malformed(cache_call(CACHE_SWEEP, parsed("{\"cache\":\"/c\"}")), "state", "sweep without state");
+    expect_malformed(cache_call(CACHE_SWEEP, parsed("{\"state\":\"/s\"}")), "cache", "sweep without cache");
 }
 
 int main(void) {
@@ -1490,6 +1496,6 @@ int main(void) {
 
     it_answers_this_build_s_platform_key_as_node_spells_it();
     it_installs_for_this_machine_s_platform_when_none_is_given();
-    it_refuses_an_unusable_argument();
+    it_refuses_an_unusable_argument_as_malformed();
     return check_summary("cache_test");
 }

@@ -288,7 +288,7 @@ static int is_deployable(deployment *plan, const cJSON *argument, cJSON **refusa
     return is_not_another_plugin(plan, refusal);
 }
 
-static cJSON *deploy(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_cache_deploy_operation(const cJSON *argument, cJSON **refusal) {
     deployment plan;
     memset(&plan, 0, sizeof plan);
     cJSON *answer = NULL;
@@ -301,8 +301,4 @@ static cJSON *deploy(const cJSON *argument, cJSON **refusal) {
     free(plan.manifest_bytes);
     free(plan.entry_bytes);
     return answer;
-}
-
-RUNTIME_EXPORT int32_t runtime_cache_deploy(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, deploy);
 }

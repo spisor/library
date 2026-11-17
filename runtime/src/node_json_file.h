@@ -9,6 +9,9 @@
  */
 cJSON *runtime_read_node_json(const char *path);
 
+/** runtime_read_node_json, setting *out_of_memory to 1 when memory ran out parsing, and to 0 otherwise. */
+cJSON *runtime_read_node_json_noting(const char *path, int *out_of_memory);
+
 /** Whether every member of object is a string, the shape of an id-to-version map. */
 int runtime_is_version_map(const cJSON *value);
 

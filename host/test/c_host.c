@@ -175,8 +175,8 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
 static int status(const c_host *host) {
     cJSON *refusal = NULL;
     cJSON *listed = runtime_call_or_refuse(runtime_hosts_list, places_call(host), &refusal);
-    cJSON *installed = listed == NULL ? NULL : runtime_call_or_refuse(runtime_cache_installed, cache_call(host), &refusal);
-    cJSON *found = installed == NULL ? NULL : runtime_call_or_refuse(runtime_cache_damaged, cache_call(host), &refusal);
+    cJSON *installed = listed == NULL ? NULL : runtime_call_operation(runtime_cache_installed_operation, cache_call(host), &refusal);
+    cJSON *found = installed == NULL ? NULL : runtime_call_operation(runtime_cache_damaged_operation, cache_call(host), &refusal);
     if (found == NULL) {
         cJSON_Delete(installed);
         cJSON_Delete(listed);
@@ -219,7 +219,7 @@ static int remove_host(const c_host *host, const char *id) {
     }
     cJSON *sweep = cache_call(host);
     cJSON_AddStringToObject(sweep, "state", host->state);
-    cJSON *swept = runtime_call_or_refuse(runtime_cache_sweep, sweep, &refusal);
+    cJSON *swept = runtime_call_operation(runtime_cache_sweep_operation, sweep, &refusal);
     if (swept == NULL) {
         cJSON_Delete(removed);
         return refuse(refusal);

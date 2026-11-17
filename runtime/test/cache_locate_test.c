@@ -36,7 +36,7 @@ static catalog_answer located(const char *plugins_json) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddItemToObject(argument, "plugins", parsed(plugins_json));
-    return call_catalog(runtime_cache_locate, argument);
+    return cache_call(CACHE_LOCATE, argument);
 }
 
 static const cJSON *only(const cJSON *tree, const char *member, const char *label) {
@@ -135,12 +135,13 @@ static void it_reports_an_id_that_would_name_a_folder_outside_the_bundles(void) 
     finish_base();
 }
 
-static void it_refuses_an_argument_with_no_plugins_object(void) {
+static void it_refuses_a_plugin_without_its_version_as_malformed(void) {
     start_base("locate-argument");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
-    catalog_answer answer = call_catalog(runtime_cache_locate, argument);
-    expect_refusal(answer, "plugins", "no plugins");
+    cJSON_AddItemToObject(argument, "plugins", parsed("{\"a\":1}"));
+    catalog_answer answer = cache_call(CACHE_LOCATE, argument);
+    expect_cache_refusal(answer, SPISOR_MALFORMED, "version", "a plugin without its version");
     cJSON_Delete(answer.tree);
     finish_base();
 }
@@ -153,6 +154,6 @@ int main(void) {
     it_reports_a_version_with_a_file_not_at_its_recorded_size_naming_the_file();
     it_locates_a_version_whose_files_kept_their_sizes_without_hashing_them();
     it_reports_an_id_that_would_name_a_folder_outside_the_bundles();
-    it_refuses_an_argument_with_no_plugins_object();
+    it_refuses_a_plugin_without_its_version_as_malformed();
     return check_summary("cache_locate_test");
 }

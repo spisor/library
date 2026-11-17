@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache_deploy.h"
+#include "cache_call.h"
 #include "catalog_call.h"
 #include "check.h"
 #include "service_scratch.h"
@@ -62,7 +63,7 @@ static catalog_answer deploy_with(const char *identity_json, const char *replace
     }
     free(plugin_directory);
     free(directory);
-    return call_catalog(runtime_cache_deploy, argument);
+    return cache_call(CACHE_DEPLOY, argument);
 }
 
 static void expect_file(const char *relative, const char *expected, const char *label) {
@@ -133,7 +134,7 @@ static void refuses_an_import_name_that_fails_the_grammar_and_writes_nothing(voi
         write_bundle(manifest, "index.js", "export default {};");
         char *before = tree_snapshot(scratch, NULL);
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-        CHECK(expect_refusal(answer, "import name", refused[index]));
+        CHECK(expect_cache_refusal_refused(answer, "import name", refused[index]));
         expect_nothing_written_beside_the_bundle(before, refused[index]);
         free(before);
         cJSON_Delete(answer.tree);
@@ -159,7 +160,7 @@ static void refuses_a_missing_import_name_and_writes_nothing(void) {
     write_bundle("{\"api\":1}", NULL, NULL);
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(expect_refusal(answer, "import name", "no import name"));
+    CHECK(expect_cache_refusal_refused(answer, "import name", "no import name"));
     expect_nothing_written_beside_the_bundle(before, "no import name");
     free(before);
     cJSON_Delete(answer.tree);
@@ -175,7 +176,7 @@ static void refuses_an_entry_that_leaves_the_bundle_or_is_named_like_an_identity
         write_in_scratch("outside.js", "export default {};");
         char *before = tree_snapshot(scratch, NULL);
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-        CHECK(expect_refusal(answer, "entry", entries[index]));
+        CHECK(expect_cache_refusal_refused(answer, "entry", entries[index]));
         expect_nothing_written_beside_the_bundle(before, entries[index]);
         free(before);
         cJSON_Delete(answer.tree);
@@ -201,7 +202,7 @@ static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     cJSON_Delete(answer.tree);
 }
 
-static void refuses_an_identity_id_outside_the_grammar_and_writes_nothing(void) {
+static void refuses_an_identity_id_outside_the_grammar_as_malformed_and_writes_nothing(void) {
     const char *ids[] = {"calendar", "github:../x", "github:1/..", ""};
     for (size_t index = 0; index < sizeof ids / sizeof ids[0]; index++) {
         start_case("bad-identity");
@@ -210,7 +211,7 @@ static void refuses_an_identity_id_outside_the_grammar_and_writes_nothing(void) 
         char identity[128];
         snprintf(identity, sizeof identity, "{\"id\":\"%s\",\"name\":\"greeter\"}", ids[index]);
         catalog_answer answer = deploy_with(identity, NULL);
-        CHECK(answer.status == SPISOR_STATUS_FAILURE);
+        CHECK(answer.status == SPISOR_MALFORMED);
         expect_nothing_written_beside_the_bundle(before, ids[index]);
         free(before);
         cJSON_Delete(answer.tree);
@@ -234,7 +235,7 @@ static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
     cJSON_Delete(first.tree);
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer other = deploy_with("{\"id\":\"github:6\",\"name\":\"intruder\"}", NULL);
-    CHECK(expect_refusal(other, "github:5", "names the recorded id"));
+    CHECK(expect_cache_refusal_refused(other, "github:5", "names the recorded id"));
     CHECK(text_at(other.tree, "fix") != NULL && strstr(text_at(other.tree, "fix"), "github:6") != NULL);
     expect_nothing_written_beside_the_bundle(before, "nothing changed");
     free(before);
@@ -250,13 +251,13 @@ static void treats_code_with_no_readable_identity_as_another_plugin(void) {
     write_in_scratch("plugins/greeter.js", "export default 'someone else';");
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(expect_refusal(answer, "greeter", "orphan code"));
+    CHECK(expect_cache_refusal_refused(answer, "greeter", "orphan code"));
     expect_nothing_written_beside_the_bundle(before, "orphan untouched");
     free(before);
     cJSON_Delete(answer.tree);
     write_in_scratch("plugins/greeter_identity.json", "not json");
     answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_FAILURE);
+    CHECK(answer.status == SPISOR_REFUSED);
     cJSON_Delete(answer.tree);
 }
 
@@ -285,7 +286,7 @@ static void refuses_an_entry_that_is_empty_or_not_text(void) {
         write_bundle(manifest, NULL, NULL);
         char *before = tree_snapshot(scratch, NULL);
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-        CHECK(expect_refusal(answer, "entry", entries[index]));
+        CHECK(expect_cache_refusal_refused(answer, "entry", entries[index]));
         expect_nothing_written_beside_the_bundle(before, entries[index]);
         free(before);
         cJSON_Delete(answer.tree);
@@ -304,8 +305,8 @@ static void refuses_a_plugin_directory_that_is_the_bundle_or_inside_it(void) {
         cJSON_AddStringToObject(argument, "directory", bundle);
         cJSON_AddStringToObject(argument, "pluginDir", plugins);
         cJSON_AddItemToObject(argument, "identity", parsed(IDENTITY_ARGUMENT));
-        catalog_answer answer = call_catalog(runtime_cache_deploy, argument);
-        CHECK(expect_refusal(answer, "pluginDir", directories[index]));
+        catalog_answer answer = cache_call(CACHE_DEPLOY, argument);
+        CHECK(expect_cache_refusal_refused(answer, "pluginDir", directories[index]));
         expect_nothing_written_beside_the_bundle(before, directories[index]);
         free(plugins);
         free(bundle);
@@ -328,7 +329,7 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
     cJSON_Delete(moved.tree);
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer stale = deploy_with("{\"id\":\"github:7\",\"name\":\"other\"}", "github:5");
-    CHECK(expect_refusal(stale, "github:6", "the recorded id is no longer github:5"));
+    CHECK(expect_cache_refusal_refused(stale, "github:6", "the recorded id is no longer github:5"));
     expect_nothing_written_beside_the_bundle(before, "stale replaces");
     free(before);
     cJSON_Delete(stale.tree);
@@ -343,7 +344,7 @@ int main(void) {
     refuses_a_missing_import_name_and_writes_nothing();
     refuses_an_entry_that_leaves_the_bundle_or_is_named_like_an_identity_file();
     a_bundle_file_named_like_an_identity_file_is_never_copied();
-    refuses_an_identity_id_outside_the_grammar_and_writes_nothing();
+    refuses_an_identity_id_outside_the_grammar_as_malformed_and_writes_nothing();
     writes_the_module_marker_beside_the_plugins();
     refuses_to_replace_another_plugin_and_changes_nothing();
     treats_code_with_no_readable_identity_as_another_plugin();

@@ -472,7 +472,7 @@ static const char *install_and_deploy(const install_request *request, const cJSO
                                                                        runtime_platform_key(), refusal);
     const char *directory = text_of(installed, "directory");
     cJSON *deployed = directory == NULL ? NULL
-                                        : runtime_call_or_refuse(runtime_cache_deploy,
+                                        : runtime_call_operation(runtime_cache_deploy_operation,
                                                                  deploy_argument(directory, request->plugin_directory, request->id,
                                                                                  text_of(repository, "name"),
                                                                                  request->replaces),

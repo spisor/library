@@ -10,6 +10,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "install_settings.h"
+#include "json_service.h"
 
 static int is_located(const host_context *context, const char *id, const char *version) {
     cJSON *argument = cJSON_CreateObject();
@@ -20,7 +21,7 @@ static int is_located(const host_context *context, const char *id, const char *v
         return 0;
     }
     cJSON *refusal = NULL;
-    cJSON *answer = host_call(runtime_cache_locate, argument, &refusal);
+    cJSON *answer = runtime_call_operation(runtime_cache_locate_operation, argument, &refusal);
     int located = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer, "located")) > 0;
     cJSON_Delete(answer);
     cJSON_Delete(refusal);

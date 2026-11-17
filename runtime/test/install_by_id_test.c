@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "cache_call.h"
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"
@@ -221,7 +222,7 @@ static void an_id_key_lands_in_its_folder_on_windows_paths(void) {
     cJSON_AddStringToObject(argument, "id", "github:5/kernel");
     cJSON_AddItemToObject(argument, "item", item);
     cJSON_AddStringToObject(argument, "version", "1.0.0");
-    catalog_answer answer = call_catalog(runtime_cache_install, argument);
+    catalog_answer answer = cache_call(CACHE_INSTALL, argument);
     CHECK(succeeded(answer, "call 3"));
     const char *directory = text_at(answer.tree, "directory");
     CHECK(directory != NULL && strncmp(directory, cache, strlen(cache)) == 0);

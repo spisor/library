@@ -11,6 +11,7 @@
 #include "check.h"
 #include "cJSON.h"
 #include "json_allocation.h"
+#include "runtime/cache.h"
 #include "runtime/changes.h"
 #include "runtime/commands.h"
 #include "runtime/config.h"
@@ -51,6 +52,7 @@ static void take_every_definition(void) {
         runtime_commands_definition_of();
         runtime_lists_definition_of();
         runtime_marketplace_definition_of();
+        runtime_cache_definition_of();
     }
 }
 
