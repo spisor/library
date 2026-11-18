@@ -6,19 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "boot.h"
 #include "spisor/allocation.h"
-#include "cache.h"
 #include "places.h"
 #include "catalog_time.h"
 #include "file_times.h"
 #include "host_definition.h"
-#include "hosts.h"
-#include "install_ecosystem.h"
-#include "json_service.h"
-#include "registry.h"
 #include "spisor/json_write.h"
-#include "updates.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -132,48 +125,42 @@ static void close_host(c_host *host) {
     cJSON_Delete(host->environment);
 }
 
-static cJSON *places_call(const c_host *host) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *places = cJSON_AddObjectToObject(call, "places");
-    cJSON_AddStringToObject(places, "portable", host->places.portable);
-    cJSON_AddStringToObject(places, "state", host->state);
-    cJSON_AddStringToObject(places, "cache", host->cache);
-    return call;
+static cJSON *refusal_of(const char *message, const char *fix) {
+    cJSON *refusal = cJSON_CreateObject();
+    cJSON_AddStringToObject(refusal, "message", message);
+    cJSON_AddStringToObject(refusal, "fix", fix);
+    return refusal;
 }
 
-static cJSON *cache_call(const c_host *host) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON_AddStringToObject(call, "cache", host->cache);
-    return call;
-}
-
-static cJSON *ecosystem_call(const c_host *host, const char *catalog, char **plugins, int plugin_count) {
-    cJSON *call = places_call(host);
+static cJSON *ecosystem_sources(const char *catalog) {
+    cJSON *sources = cJSON_CreateArray();
     cJSON *source = cJSON_CreateObject();
     cJSON_AddStringToObject(source, "kind", "local");
     cJSON_AddStringToObject(source, "path", catalog);
-    cJSON_AddItemToArray(cJSON_AddArrayToObject(call, "sources"), source);
-    cJSON_AddItemToObject(call, "environment", cJSON_Duplicate(host->environment, 1));
-    cJSON_AddObjectToObject(call, "choices");
-    cJSON *requested = cJSON_AddArrayToObject(call, "requested");
-    for (int index = 0; index < plugin_count; index++) {
-        cJSON_AddItemToArray(requested, cJSON_CreateString(plugins[index]));
-    }
-    return call;
+    cJSON_AddItemToArray(sources, source);
+    return sources;
 }
 
 static int install(const c_host *host, const char *catalog, char **plugins, int plugin_count) {
+    cJSON *sources = ecosystem_sources(catalog);
+    cJSON *choices = cJSON_CreateObject();
+    cJSON *requested = cJSON_CreateArray();
+    for (int index = 0; index < plugin_count; index++) {
+        cJSON_AddItemToArray(requested, cJSON_CreateString(plugins[index]));
+    }
+    host_ecosystem_call call = {host->places.portable, host->state, host->cache, host->environment, sources, choices,
+                                requested};
     cJSON *refusal = NULL;
-    cJSON *report = runtime_call_operation(runtime_install_ecosystem_operation,
-                                           ecosystem_call(host, catalog, plugins, plugin_count), &refusal);
+    cJSON *report = host_install_ecosystem(&call, &refusal);
+    cJSON_Delete(requested);
+    cJSON_Delete(choices);
+    cJSON_Delete(sources);
     if (report == NULL) {
         return refuse(refusal);
     }
     print_json(report);
     cJSON_Delete(report);
-    cJSON *placed = runtime_call_operation(runtime_boot_place_operation, cache_call(host), &refusal);
-    cJSON_Delete(placed);
-    return placed == NULL ? refuse(refusal) : 0;
+    return host_place_boot(host->cache, &refusal) ? 0 : refuse(refusal);
 }
 
 static int status(const c_host *host) {
@@ -190,7 +177,7 @@ static int status(const c_host *host) {
     cJSON_AddItemToObject(listed, "damaged", damaged);
     print_json(listed);
     const cJSON *first = cJSON_GetArrayItem(damaged, 0);
-    int code = first == NULL ? 0 : refuse(runtime_refusal(text_of(first, "detail"), text_of(first, "fix")));
+    int code = first == NULL ? 0 : refuse(refusal_of(text_of(first, "detail"), text_of(first, "fix")));
     cJSON_Delete(listed);
     return code;
 }
@@ -206,7 +193,7 @@ static int update(const c_host *host) {
     print_json(summary);
     int refused = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(summary, "refused")) > 0;
     cJSON_Delete(summary);
-    return refused ? refuse(runtime_refusal("not everything could be updated", "see refused above")) : 0;
+    return refused ? refuse(refusal_of("not everything could be updated", "see refused above")) : 0;
 }
 
 static int remove_host(const c_host *host, const char *id) {

@@ -1,5 +1,7 @@
 #include "host_definition.h"
 
+#include <string.h>
+
 #include "allocation.h"
 #include "json_value.h"
 
@@ -437,4 +439,278 @@ cJSON *host_variables_json(const runtime_variable *variables, size_t count) {
         }
     }
     return json;
+}
+
+static const char *const APPLICATION_STATES[] = {NULL, "installed", "detected", "missing", "skipped", "failed",
+                                                 "unavailable"};
+static const char *const JAVASCRIPT_SOURCES[] = {NULL, "path", "acquired"};
+
+static cJSON *unavailable_json(const runtime_install_unavailable *rows, size_t count, const char *id_name) {
+    cJSON *json = cJSON_CreateArray();
+    int complete = json != NULL;
+    for (size_t index = 0; complete && index < count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        complete = row != NULL && add_text(row, id_name, rows[index].id) &&
+                   add_text(row, "message", rows[index].detail) && add_text(row, "fix", rows[index].fix);
+        if (!complete) {
+            cJSON_Delete(row);
+            row = NULL;
+        }
+        complete = add_to_array(json, row);
+    }
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static cJSON *item_versions_json(const runtime_item_version *versions, size_t count) {
+    cJSON *json = cJSON_CreateArray();
+    int complete = json != NULL;
+    for (size_t index = 0; complete && index < count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        complete = row != NULL && add_text(row, "id", versions[index].id) &&
+                   add_text(row, "version", versions[index].version);
+        if (!complete) {
+            cJSON_Delete(row);
+            row = NULL;
+        }
+        complete = add_to_array(json, row);
+    }
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static int add_origin(cJSON *row, const runtime_install_origin *origin) {
+    const runtime_install_package *package = &origin->package;
+    if (package->method == NULL && package->name == NULL && package->options == NULL && origin->version == NULL) {
+        return 1;
+    }
+    cJSON *json = cJSON_AddObjectToObject(row, "origin");
+    return json != NULL && add_text(json, "method", package->method) && add_text(json, "package", package->name) &&
+           add_value(json, "options", package->options) && add_text(json, "version", origin->version);
+}
+
+static cJSON *application_row_json(const runtime_install_application *application) {
+    cJSON *json = cJSON_CreateObject();
+    int complete = json != NULL && add_text(json, "id", application->id) &&
+                   add_text(json, "state", named(APPLICATION_STATES, 7, application->state)) &&
+                   add_text(json, "installedThrough", application->installed_through) &&
+                   add_origin(json, &application->origin) &&
+                   (application->offered_count == 0 ||
+                    add_owned(json, "offered", texts_json(application->offered, application->offered_count))) &&
+                   add_text(json, "flag", application->flag) &&
+                   (application->unavailable_count == 0 ||
+                    add_owned(json, "unavailable",
+                              unavailable_json(application->unavailable, application->unavailable_count, "method")));
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static cJSON *refused_commands_json(const runtime_install_refused_command *refused, size_t count) {
+    cJSON *json = cJSON_CreateArray();
+    int complete = json != NULL;
+    for (size_t index = 0; complete && index < count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        complete = row != NULL && add_text(row, "name", refused[index].name) &&
+                   add_text(row, "message", refused[index].detail) && add_text(row, "fix", refused[index].fix);
+        if (!complete) {
+            cJSON_Delete(row);
+            row = NULL;
+        }
+        complete = add_to_array(json, row);
+    }
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static int add_entry(cJSON *row, const runtime_install_loader *loader) {
+    cJSON *entry = cJSON_AddObjectToObject(row, "entry");
+    return entry != NULL && cJSON_AddBoolToObject(entry, "written", loader->entry_written != 0) != NULL &&
+           (!loader->entry_runs_on_javascript_host || cJSON_AddTrueToObject(entry, "runsOnJavascriptHost") != NULL) &&
+           add_text(entry, "message", loader->entry_detail) && add_text(entry, "fix", loader->entry_fix);
+}
+
+static cJSON *loader_row_json(const runtime_install_loader *loader) {
+    cJSON *json = cJSON_CreateObject();
+    int complete = json != NULL && add_text(json, "id", loader->id) &&
+                   add_text(json, "application", loader->application) && add_text(json, "home", loader->home) &&
+                   add_owned(json, "commands", texts_json(loader->commands, loader->command_count)) &&
+                   add_owned(json, "refusedCommands",
+                             refused_commands_json(loader->refused_commands, loader->refused_command_count)) &&
+                   add_entry(json, loader);
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static cJSON *missing_row_json(const runtime_install_missing *missing) {
+    cJSON *json = cJSON_CreateObject();
+    if (json == NULL || !add_text(json, "application", missing->application) ||
+        !add_owned(json, "methods", texts_json(missing->methods, missing->method_count))) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+static cJSON *javascript_json(const runtime_install_javascript *javascript) {
+    cJSON *json = cJSON_CreateObject();
+    if (json == NULL || !add_text(json, "name", javascript->name) || !add_text(json, "version", javascript->version) ||
+        !add_text(json, "executable", javascript->executable) ||
+        cJSON_AddBoolToObject(json, "fetched", javascript->fetched != 0) == NULL ||
+        !add_text(json, "source", named(JAVASCRIPT_SOURCES, 3, javascript->source))) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+/** Adds an array under name, each of `count` rows of `width` bytes written by `row_json`; 0 when memory runs out. */
+static int add_rows(cJSON *object, const char *name, const void *rows, size_t count, size_t width,
+                    cJSON *(*row_json)(const void *row)) {
+    cJSON *array = cJSON_AddArrayToObject(object, name);
+    int complete = array != NULL;
+    for (size_t index = 0; complete && index < count; index++) {
+        complete = add_to_array(array, row_json((const char *)rows + index * width));
+    }
+    return complete;
+}
+
+static cJSON *any_application_row(const void *row) {
+    return application_row_json(row);
+}
+
+static cJSON *any_loader_row(const void *row) {
+    return loader_row_json(row);
+}
+
+static cJSON *any_missing_row(const void *row) {
+    return missing_row_json(row);
+}
+
+static cJSON *ecosystem_json(const runtime_install_ecosystem_answer *report) {
+    cJSON *json = cJSON_CreateObject();
+    int complete =
+        json != NULL && add_owned(json, "installed", item_versions_json(report->installed, report->installed_count)) &&
+        add_owned(json, "cached", texts_json(report->cached, report->cached_count)) &&
+        add_owned(json, "unavailable", unavailable_json(report->unavailable, report->unavailable_count, "id")) &&
+        add_owned(json, "enabled", texts_json(report->enabled, report->enabled_count)) &&
+        add_rows(json, "applications", report->applications, report->application_count,
+                 sizeof *report->applications, any_application_row) &&
+        add_rows(json, "loaders", report->loaders, report->loader_count, sizeof *report->loaders, any_loader_row) &&
+        add_rows(json, "missing", report->missing, report->missing_count, sizeof *report->missing,
+                 any_missing_row) &&
+        (report->javascript == NULL || add_owned(json, "javascript", javascript_json(report->javascript)));
+    if (!complete) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
+}
+
+/** The --catalog sources, {kind: local, path} or {kind: https, url}, as catalog sources; freed, NULL out of memory. */
+static runtime_catalog_source *catalog_sources_of(const cJSON *sources, size_t *count) {
+    size_t capacity = (size_t)cJSON_GetArraySize(sources);
+    runtime_catalog_source *listed = spisor_memory_allocate((capacity == 0 ? 1 : capacity) * sizeof *listed);
+    const cJSON *each = listed == NULL ? NULL : sources;
+    const cJSON *source;
+    *count = 0;
+    cJSON_ArrayForEach(source, each) {
+        const char *kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(source, "kind"));
+        int is_https = kind != NULL && strcmp(kind, "https") == 0;
+        listed[*count].kind = is_https ? RUNTIME_CATALOG_HTTPS : RUNTIME_CATALOG_LOCAL;
+        const cJSON *location = cJSON_GetObjectItemCaseSensitive(source, is_https ? "url" : "path");
+        listed[*count].location = cJSON_GetStringValue(location);
+        (*count)++;
+    }
+    return listed;
+}
+
+static runtime_install_choice *choices_of(const cJSON *choices, size_t *count) {
+    size_t capacity = (size_t)cJSON_GetArraySize(choices);
+    runtime_install_choice *listed = spisor_memory_allocate((capacity == 0 ? 1 : capacity) * sizeof *listed);
+    const cJSON *each = listed == NULL ? NULL : choices;
+    const cJSON *choice;
+    *count = 0;
+    cJSON_ArrayForEach(choice, each) {
+        listed[*count].application = choice->string;
+        listed[*count].method = choice->valuestring;
+        (*count)++;
+    }
+    return listed;
+}
+
+/** The parts of an ecosystem argument the host holds as JSON, borrowed from it; each freed by release_parts. */
+typedef struct ecosystem_parts {
+    runtime_catalog_source *sources;
+    runtime_variable *environment;
+    runtime_install_choice *choices;
+    const char **requested;
+} ecosystem_parts;
+
+static int take_parts(const host_ecosystem_call *call, ecosystem_parts *parts,
+                      runtime_install_ecosystem_argument *argument) {
+    parts->sources = catalog_sources_of(call->sources, &argument->source_count);
+    parts->environment = host_variables_of(call->environment, &argument->environment_count);
+    parts->choices = choices_of(call->choices, &argument->choice_count);
+    parts->requested = host_texts_of(call->requested, &argument->requested_count);
+    argument->sources = parts->sources;
+    argument->environment = parts->environment;
+    argument->choices = parts->choices;
+    argument->requested = parts->requested;
+    return parts->sources != NULL && parts->environment != NULL && parts->choices != NULL && parts->requested != NULL;
+}
+
+static void release_parts(ecosystem_parts *parts) {
+    spisor_memory_release(parts->sources);
+    spisor_memory_release(parts->environment);
+    spisor_memory_release(parts->choices);
+    spisor_memory_release(parts->requested);
+}
+
+cJSON *host_install_ecosystem(const host_ecosystem_call *call, cJSON **refusal) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
+    runtime_install_ecosystem_answer report = SPISOR_INIT(runtime_install_ecosystem_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    ecosystem_parts parts = {NULL, NULL, NULL, NULL};
+    argument.portable = call->portable;
+    argument.state = call->state;
+    argument.cache = call->cache;
+    spisor_status status = take_parts(call, &parts, &argument) ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
+    if (status == SPISOR_OK) {
+        status = install->ecosystem(install->context, &argument, &report, &declined);
+    }
+    cJSON *json = status == SPISOR_OK ? ecosystem_json(&report) : NULL;
+    *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
+    install->release_ecosystem_answer(install->context, &report);
+    install->release_refusal(install->context, &declined);
+    release_parts(&parts);
+    return json;
+}
+
+int host_place_boot(const char *cache_place, cJSON **refusal) {
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_place_argument argument = SPISOR_INIT(runtime_boot_place_argument);
+    runtime_boot_place_answer placed = SPISOR_INIT(runtime_boot_place_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.cache = cache_place;
+    spisor_status status = boot->place(boot->context, &argument, &placed, &declined);
+    *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
+    boot->release_place_answer(boot->context, &placed);
+    boot->release_refusal(boot->context, &declined);
+    return status == SPISOR_OK;
 }

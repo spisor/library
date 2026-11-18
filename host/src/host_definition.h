@@ -2,9 +2,11 @@
 #define HOST_DEFINITION_H
 
 #include "cJSON.h"
+#include "runtime/boot.h"
 #include "runtime/cache.h"
 #include "runtime/environment.h"
 #include "runtime/hosts.h"
+#include "runtime/install.h"
 #include "runtime/registry.h"
 #include "runtime/updates.h"
 #include "spisor/status.h"
@@ -53,5 +55,29 @@ const char **host_texts_of(const cJSON *array, size_t *count);
 
 /** Variables as an object of strings, the first of a name given twice kept; NULL when memory runs out. */
 cJSON *host_variables_json(const runtime_variable *variables, size_t count);
+
+/** What an ecosystem install is asked, the parts the host holds as JSON borrowed from it. */
+typedef struct host_ecosystem_call {
+    const char *portable;
+    const char *state;
+    const char *cache;
+    /** An object of strings. */
+    const cJSON *environment;
+    /** An array of {kind: local, path} or {kind: https, url}. */
+    const cJSON *sources;
+    /** An object of an application id to its method. */
+    const cJSON *choices;
+    /** An array of plugin ids. */
+    const cJSON *requested;
+} host_ecosystem_call;
+
+/**
+ * Installs the ecosystem, as the report {installed, cached, unavailable, enabled, applications, loaders, missing,
+ * javascript?}; NULL with *refusal set.
+ */
+cJSON *host_install_ecosystem(const host_ecosystem_call *call, cJSON **refusal);
+
+/** Puts spisor-boot in the cache place; 1, or 0 with *refusal set. */
+int host_place_boot(const char *cache_place, cJSON **refusal);
 
 #endif
