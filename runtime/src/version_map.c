@@ -48,9 +48,7 @@ static int is_intact(cJSON *check, int *out_of_memory) {
 
 /** The version's folder, or NULL with *out_of_memory set unless the id or version would climb out of it. */
 static char *bundle_directory(const char *cache, const char *id, const char *version, int *out_of_memory) {
-    char *directory = runtime_cache_bundle_directory(cache, id, version);
-    *out_of_memory = directory == NULL && runtime_is_portable_segment(id) && runtime_is_portable_segment(version);
-    return directory;
+    return runtime_cache_bundle_directory(cache, id, version, out_of_memory);
 }
 
 int runtime_bundle_is_sized(const char *cache, const char *id, const char *version, int *out_of_memory) {

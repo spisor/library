@@ -173,12 +173,14 @@ static int digest_is(const cJSON *record, const char *member, const char *bytes,
  * @implNote A registration is JSON, so bytes go in as a string only when they are UTF-8 without a NUL;
  * a replaced value that is not is undone through the drift path, which writes it in the file's style.
  */
-static int is_storable_text(const char *bytes, size_t length) {
+static int is_storable_text(const char *bytes, size_t length, int *out_of_memory) {
+    *out_of_memory = 0;
     if (memchr(bytes, '\0', length) != NULL) {
         return 0;
     }
     size_t decoded_length = 0;
     uint8_t *decoded = spisor_decode_utf8_lossy((const uint8_t *)bytes, length, &decoded_length);
+    *out_of_memory = decoded == NULL;
     int same = decoded != NULL && decoded_length == length && memcmp(decoded, bytes, length) == 0;
     spisor_memory_release(decoded);
     return same;
@@ -187,8 +189,9 @@ static int is_storable_text(const char *bytes, size_t length) {
 static int set_replaced(cJSON *record, const file_bytes *before, const json_edit_splice *splice) {
     const char *replaced = before->bytes + splice->at;
     cJSON_DeleteItemFromObjectCaseSensitive(record, "replaced");
-    if (!is_storable_text(replaced, splice->replaced_length)) {
-        return 1;
+    int out_of_memory;
+    if (!is_storable_text(replaced, splice->replaced_length, &out_of_memory)) {
+        return !out_of_memory;
     }
     char *copy = spisor_memory_allocate(splice->replaced_length + 1);
     if (copy == NULL) {

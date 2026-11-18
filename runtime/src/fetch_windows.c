@@ -46,12 +46,15 @@ typedef struct url_parts {
     int secure;
 } url_parts;
 
-static wchar_t *to_wide(const char *text) {
+/** text as UTF-16, freed; NULL when it is not UTF-8, or with *out_of_memory set to 1 when memory ran out. */
+static wchar_t *to_wide_reporting(const char *text, int *out_of_memory) {
+    *out_of_memory = 0;
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
     if (length <= 0) {
         return NULL;
     }
     wchar_t *wide = spisor_memory_allocate((size_t)length * sizeof(wchar_t));
+    *out_of_memory = wide == NULL;
     if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
         spisor_memory_release(wide);
         return NULL;
@@ -96,8 +99,11 @@ static size_t without_fragment(const wchar_t *path, size_t length) {
     return length;
 }
 
-/** Splits wide_url, which parts then owns. 0 when it is not an https url, or an http one plain http allows. */
-static int split_url(int allow_plain_http, wchar_t *wide_url, url_parts *parts) {
+/**
+ * Splits wide_url, which parts then owns: SPISOR_MALFORMED when it is not an https url, or an http one plain http
+ * allows, SPISOR_OUT_OF_MEMORY when memory runs out.
+ */
+static spisor_status split_url(int allow_plain_http, wchar_t *wide_url, url_parts *parts) {
     memset(parts, 0, sizeof *parts);
     parts->wide_url = wide_url;
     URL_COMPONENTS components;
@@ -107,17 +113,20 @@ static int split_url(int allow_plain_http, wchar_t *wide_url, url_parts *parts) 
     components.dwUrlPathLength = (DWORD)-1;
     components.dwExtraInfoLength = (DWORD)-1;
     if (parts->wide_url == NULL || !WinHttpCrackUrl(parts->wide_url, 0, 0, &components)) {
-        return 0;
+        return SPISOR_MALFORMED;
     }
     int allowed = components.nScheme == INTERNET_SCHEME_HTTPS ||
                   (allow_plain_http && components.nScheme == INTERNET_SCHEME_HTTP);
+    if (!allowed || components.dwHostNameLength == 0) {
+        return SPISOR_MALFORMED;
+    }
     size_t path_length = without_fragment(components.lpszUrlPath,
                                           (size_t)components.dwUrlPathLength + components.dwExtraInfoLength);
     parts->host = copy_wide(components.lpszHostName, components.dwHostNameLength);
     parts->path = path_length == 0 ? copy_wide(L"/", 1) : copy_wide(components.lpszUrlPath, path_length);
     parts->port = components.nPort;
     parts->secure = components.nScheme == INTERNET_SCHEME_HTTPS;
-    return allowed && parts->host != NULL && parts->path != NULL && components.dwHostNameLength > 0;
+    return parts->host != NULL && parts->path != NULL ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
 }
 
 static void close_handles(winhttp_handles *handles) {
@@ -182,7 +191,8 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
     if (authorization != NULL) {
         snprintf(headers + length, size - (size_t)length, "Authorization: %s\r\n", authorization);
     }
-    wchar_t *wide = to_wide(headers);
+    int out_of_memory;
+    wchar_t *wide = to_wide_reporting(headers, &out_of_memory);
     runtime_overwrite(headers, size);
     spisor_memory_release(headers);
     return wide;
@@ -358,10 +368,21 @@ static int is_origin(const origin *known, const url_parts *parts) {
 static void take_hops(const runtime_fetch_request *request, origin *first, runtime_fetch_sink *sink,
                       runtime_fetch_answer *answer) {
     ULONGLONG deadline = GetTickCount64() + request->deadline_milliseconds;
-    wchar_t *current = to_wide(request->url);
+    int out_of_memory;
+    wchar_t *current = to_wide_reporting(request->url, &out_of_memory);
+    if (out_of_memory) {
+        runtime_fetch_out_of_memory(answer);
+        return;
+    }
     for (int hop = 0; hop <= MAXIMUM_REDIRECTS; hop++) {
         url_parts parts;
-        if (!split_url(request->allow_plain_http, current, &parts)) {
+        spisor_status split = split_url(request->allow_plain_http, current, &parts);
+        if (split == SPISOR_OUT_OF_MEMORY) {
+            free_parts(&parts);
+            runtime_fetch_out_of_memory(answer);
+            return;
+        }
+        if (split != SPISOR_OK) {
             free_parts(&parts);
             if (hop == 0) {
                 runtime_fetch_refuse(answer, "name the file by a complete https url", "%s is not a usable https url",

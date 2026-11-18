@@ -66,13 +66,15 @@ int runtime_cache_is_strictly_inside(const char *parent, const char *child) {
     return parent_is_root || is_separator(child[parent_length]);
 }
 
-char *runtime_cache_bundle_directory(const char *cache, const char *id, const char *version) {
+char *runtime_cache_bundle_directory(const char *cache, const char *id, const char *version, int *out_of_memory) {
     const char *segments[2] = {cache, "bundles"};
     char *bundles = runtime_cache_joined(segments, 2);
     int unfit = 0;
     char *folder = bundles == NULL ? NULL : runtime_item_folder(id, &unfit);
     char *versions = folder == NULL ? NULL : runtime_cache_resolve(bundles, (const char *const *)&folder, 1);
     char *directory = versions == NULL ? NULL : runtime_cache_resolve(versions, &version, 1);
+    *out_of_memory = bundles == NULL || (folder == NULL && !unfit) || (folder != NULL && versions == NULL) ||
+                     (versions != NULL && directory == NULL);
     int inside = directory != NULL && id[0] != 0 && version[0] != 0 &&
                  runtime_cache_is_strictly_inside(bundles, versions) &&
                  runtime_cache_is_strictly_inside(versions, directory);

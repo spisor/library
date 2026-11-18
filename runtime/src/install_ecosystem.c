@@ -458,13 +458,17 @@ static int read_argument(const cJSON *argument, ecosystem *install) {
            runtime_is_platform_key(install->run.platform);
 }
 
-/** Whether sources is an array of catalog sources as catalog.sources reads them; 0 with *refusal set otherwise. */
+/**
+ * Whether sources is an array of catalog sources as catalog.sources reads them; 0 with *refusal set otherwise, or
+ * left NULL when memory ran out reading them.
+ */
 static int are_sources(const cJSON *sources, cJSON **refusal) {
     runtime_catalog_location *read = NULL;
     size_t count = 0;
     char *problem = NULL;
-    int usable = cJSON_IsArray(sources) && runtime_catalog_sources_of(sources, &read, &count, &problem);
-    if (!usable) {
+    int is_array = cJSON_IsArray(sources);
+    int usable = is_array && runtime_catalog_sources_of(sources, &read, &count, &problem);
+    if (!usable && (!is_array || problem != NULL)) {
         const char *parts[2] = {"the sources hold an entry that is no catalog source: ",
                                 problem == NULL ? "they are not an array" : problem};
         *refusal = runtime_cache_refusal(parts, 2, ECOSYSTEM_FIX);

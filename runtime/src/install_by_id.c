@@ -128,6 +128,8 @@ static void refuse_fetch(const runtime_fetch_answer *answer, const char *url, cJ
     } else if (answer->outcome == RUNTIME_FETCH_STATUS) {
         refuse(refusal, "check that the repo has a release that publishes " INDEX_ASSET, "%s answered HTTP %ld", url,
                answer->status);
+    } else if (answer->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+        *refusal = NULL;
     } else if (answer->outcome == RUNTIME_FETCH_REFUSED) {
         refuse(refusal, answer->fix, "%s", answer->detail);
     } else if (answer->outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {

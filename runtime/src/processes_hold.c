@@ -79,13 +79,15 @@ static cJSON *start_refusal(char *problem) {
     return refusal;
 }
 
-/** Fills the started host into the answer and the draft, and records it; 0 when the record could not be written. */
-static int record_started(const char *path, runtime_holders_draft *draft, cJSON *answer, double pid,
-                          int outside_job) {
+/** Fills the started host into the answer and the draft, and records it: REFUSED when it could not be written. */
+static spisor_status record_started(const char *path, runtime_holders_draft *draft, cJSON *answer, double pid,
+                                    int outside_job) {
     (void)cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(answer, "pid"), pid);
     (void)cJSON_SetBoolValue(cJSON_GetObjectItemCaseSensitive(answer, "outsideJob"), outside_job);
-    return runtime_print_started_host(draft, pid, floor(runtime_now_milliseconds())) &&
-           runtime_write_holders_draft(path, draft) == SPISOR_OK;
+    if (!runtime_print_started_host(draft, pid, floor(runtime_now_milliseconds()))) {
+        return SPISOR_REFUSED;
+    }
+    return runtime_write_holders_draft(path, draft);
 }
 
 /**
@@ -129,13 +131,14 @@ static cJSON *start_host(const runtime_processes_request *request, const char *p
     read_start(request, &start);
     runtime_detached_host host;
     char *problem = NULL;
+    spisor_status recorded = SPISOR_REFUSED;
     if (!runtime_start_detached(&start, &host, &problem)) {
         *refusal = start_refusal(problem);
         cJSON_Delete(answer);
         answer = NULL;
-    } else if (!record_started(path, &draft, answer, host.pid, host.outside_job)) {
+    } else if ((recorded = record_started(path, &draft, answer, host.pid, host.outside_job)) != SPISOR_OK) {
         runtime_cancel_detached(&host);
-        *refusal = runtime_processes_state_refusal("the holders file", path);
+        *refusal = recorded == SPISOR_OUT_OF_MEMORY ? NULL : runtime_processes_state_refusal("the holders file", path);
         cJSON_Delete(answer);
         answer = NULL;
     } else {

@@ -16,6 +16,8 @@
 #include <wchar.h>
 #include <windows.h>
 
+#include "spisor/status.h"
+
 #ifdef SPISOR_PATH_ENTRY_TEST_HOOKS
 #include "path_entry_windows_hooks.h"
 static const wchar_t *const path_value_name = RUNTIME_PATH_ENTRY_TEST_VALUE;
@@ -102,11 +104,11 @@ static HKEY open_environment(void) {
     return status == ERROR_SUCCESS ? key : NULL;
 }
 
-static int read_absent(path_value *value) {
+static spisor_status read_absent(path_value *value) {
     value->type = REG_EXPAND_SZ;
     value->present = 0;
     value->text = spisor_memory_allocate_zeroed(1, sizeof(wchar_t));
-    return value->text != NULL;
+    return value->text == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
 /**
@@ -116,7 +118,7 @@ static int read_absent(path_value *value) {
  *
  * @implNote The size is asked first and the read retried, since the value can grow between the two calls.
  */
-static int read_path_value(HKEY key, path_value *value) {
+static spisor_status read_path_value(HKEY key, path_value *value) {
     value->text = NULL;
     for (int attempt = 0; attempt < 4; attempt++) {
         DWORD size = 0;
@@ -124,22 +126,25 @@ static int read_path_value(HKEY key, path_value *value) {
         if (status == ERROR_FILE_NOT_FOUND) {
             return read_absent(value);
         }
-        wchar_t *text = status == ERROR_SUCCESS ? spisor_memory_allocate(size + sizeof(wchar_t)) : NULL;
+        if (status != ERROR_SUCCESS) {
+            return SPISOR_REFUSED;
+        }
+        wchar_t *text = spisor_memory_allocate(size + sizeof(wchar_t));
         if (text == NULL) {
-            return 0;
+            return SPISOR_OUT_OF_MEMORY;
         }
         status = RegGetValueW(key, NULL, path_value_name, READABLE_TYPES, &value->type, text, &size);
         if (status == ERROR_SUCCESS) {
             value->text = text;
             value->present = 1;
-            return 1;
+            return SPISOR_OK;
         }
         spisor_memory_release(text);
         if (status != ERROR_MORE_DATA) {
-            return 0;
+            return SPISOR_REFUSED;
         }
     }
-    return 0;
+    return SPISOR_REFUSED;
 }
 
 #ifdef SPISOR_PATH_ENTRY_TEST_HOOKS
@@ -294,15 +299,18 @@ static cJSON *new_record(const cJSON *change, const cJSON *holder, const path_va
     return record;
 }
 
-static int read_environment(HKEY *key, path_value *value) {
+static spisor_status read_environment(HKEY *key, path_value *value) {
     *key = open_environment();
-    if (*key != NULL && read_path_value(*key, value)) {
-        return 1;
-    }
-    if (*key != NULL) {
+    spisor_status read = *key == NULL ? SPISOR_REFUSED : read_path_value(*key, value);
+    if (read != SPISOR_OK && *key != NULL) {
         RegCloseKey(*key);
     }
-    return 0;
+    return read;
+}
+
+static runtime_change_step unread_environment(spisor_status read, runtime_change_note *note, const char *directory) {
+    return read == SPISOR_OUT_OF_MEMORY ? run_out_of_memory(note, directory)
+                                        : fail(note, "the user's Path could not be read as a string value", directory);
 }
 
 static void close_environment(HKEY key, path_value *value) {
@@ -315,8 +323,9 @@ runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON 
     const char *directory = text_of(change, "directory");
     HKEY key;
     path_value value;
-    if (!read_environment(&key, &value)) {
-        return fail(note, "the user's Path could not be read as a string value", directory);
+    spisor_status read = read_environment(&key, &value);
+    if (read != SPISOR_OK) {
+        return unread_environment(read, note, directory);
     }
     int present = holds_directory(&value, directory);
     runtime_change_step step = RUNTIME_CHANGE_DONE;
@@ -345,8 +354,9 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
     const char *directory = text_of(change, "directory");
     HKEY key;
     path_value value;
-    if (!read_environment(&key, &value)) {
-        return fail(note, "the user's Path could not be read as a string value", directory);
+    spisor_status read = read_environment(&key, &value);
+    if (read != SPISOR_OK) {
+        return unread_environment(read, note, directory);
     }
     int done = holds_directory(&value, directory) || append_entry(key, &value, record);
     close_environment(key, &value);
@@ -356,8 +366,9 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
 runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
     HKEY key;
     path_value value;
-    if (!read_environment(&key, &value)) {
-        return RUNTIME_CHANGE_ABSENT;
+    spisor_status read = read_environment(&key, &value);
+    if (read != SPISOR_OK) {
+        return read == SPISOR_OUT_OF_MEMORY ? RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY : RUNTIME_CHANGE_ABSENT;
     }
     int on_disk = holds_directory(&value, text_of(record, "directory"));
     close_environment(key, &value);
@@ -389,7 +400,12 @@ runtime_change_reversal runtime_path_entry_reverse(const cJSON *record, int held
     const char *directory = text_of(record, "directory");
     HKEY key;
     path_value value;
-    if (!read_environment(&key, &value)) {
+    spisor_status read = read_environment(&key, &value);
+    if (read == SPISOR_OUT_OF_MEMORY) {
+        write_note(note, "memory ran out", directory);
+        return RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY;
+    }
+    if (read != SPISOR_OK) {
         write_note(note, "the user's Path could not be read as a string value", directory);
         return RUNTIME_CHANGE_NOT_REVERSED;
     }

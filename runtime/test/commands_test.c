@@ -412,9 +412,10 @@ static void a_program_on_path_is_never_shadowed(void) {
     char search[1400];
     snprintf(search, sizeof search, "\"%s\"", place.programs);
     cJSON_AddStringToObject(environment, "Path", search);
-    CHECK(runtime_commands_held_on_path(environment, place.shims, "cc"));
-    CHECK(runtime_commands_held_on_path(environment, place.shims, "cc.exe"));
-    CHECK(!runtime_commands_held_on_path(environment, place.shims, "ld"));
+    int out_of_memory = 1;
+    CHECK(runtime_commands_held_on_path(environment, place.shims, "cc", &out_of_memory) && !out_of_memory);
+    CHECK(runtime_commands_held_on_path(environment, place.shims, "cc.exe", &out_of_memory) && !out_of_memory);
+    CHECK(!runtime_commands_held_on_path(environment, place.shims, "ld", &out_of_memory) && !out_of_memory);
     cJSON_Delete(environment);
 #endif
     CHECK(reverse_host(&place, "alpha"));

@@ -277,8 +277,10 @@ static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
     return same;
 }
 
-static int remove_destination(const deployment *plan, destination_index index) {
-    return runtime_remove_file_entry(plan->destinations[index]) == RUNTIME_ENTRY_DONE;
+static int remove_destination(deployment *plan, destination_index index) {
+    runtime_entry_outcome removed = runtime_remove_file_entry(plan->destinations[index]);
+    plan->out_of_memory = removed == RUNTIME_ENTRY_OUT_OF_MEMORY;
+    return removed == RUNTIME_ENTRY_DONE;
 }
 
 /** The identity goes first and returns last, so a failure part way leaves a plugin with no identity rather than a wrong one. */

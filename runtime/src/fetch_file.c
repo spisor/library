@@ -97,7 +97,7 @@ static char *local_path_of(const char *url, const char *path, runtime_fetch_answ
     size_t length = strcspn(path, "?#");
     char *decoded = spisor_memory_allocate(length + 1);
     if (decoded == NULL) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read: out of memory", url);
+        runtime_fetch_out_of_memory(answer);
         return NULL;
     }
     decoding result = percent_decode(path, length, decoded);
@@ -154,7 +154,7 @@ static const char *path_after_authority(const char *url, runtime_fetch_answer *a
 static void copy_into_sink(FILE *file, const char *url, runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
     uint8_t *chunk = spisor_memory_allocate(FILE_CHUNK);
     if (chunk == NULL) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read: out of memory", url);
+        runtime_fetch_out_of_memory(answer);
         return;
     }
     size_t read;
@@ -208,9 +208,12 @@ void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_f
     int out_of_memory;
     FILE *file = runtime_open_file(local, RUNTIME_FILE_READ, &out_of_memory);
     spisor_memory_release(local);
+    if (file == NULL && out_of_memory) {
+        runtime_fetch_out_of_memory(answer);
+        return;
+    }
     if (file == NULL) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, out_of_memory ? "%s could not be read: out of memory"
-                                                                       : "%s could not be read", url);
+        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read", url);
         return;
     }
     copy_into_sink(file, url, sink, answer);

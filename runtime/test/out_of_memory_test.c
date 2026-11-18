@@ -969,10 +969,20 @@ static void under_base(char *path, size_t capacity, const char *rest) {
     snprintf(path, capacity, "%s/%s", place.base, rest);
 }
 
+/** @implNote Asked without allocating, so a check a case makes inside its run never meets the failing allocation. */
+static int exists_at(const char *path) {
+#if defined(_WIN32)
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat status;
+    return stat(path, &status) == 0;
+#endif
+}
+
 static int exists_under_base(const char *rest) {
     char path[1400];
     under_base(path, sizeof path, rest);
-    return spisor_probe_file(path) == SPISOR_FILE_PRESENT;
+    return exists_at(path);
 }
 
 static void marked_version(const char *version) {
@@ -1186,8 +1196,21 @@ static spisor_status list_catalog_sources(void) {
     return status;
 }
 
+static char catalog_state_place[1400];
+
+/** The local index, and where its check keeps state, found here so a run's own check never allocates. */
 static void a_local_index(void) {
+    char index[1300];
+    char cache_place[1100];
     write_text(place.base, "index.json", CATALOG_INDEX);
+    under_base(index, sizeof index, "index.json");
+    under_base(cache_place, sizeof cache_place, "cache");
+    char *location = runtime_catalog_resolve_path(index);
+    char *state = location == NULL ? NULL : runtime_catalog_state_path(cache_place, location);
+    CHECK(state != NULL);
+    snprintf(catalog_state_place, sizeof catalog_state_place, "%s", state == NULL ? "" : state);
+    spisor_memory_release(state);
+    spisor_memory_release(location);
 }
 
 static void local_index_source(runtime_catalog_source *source, char *path, size_t capacity) {
@@ -1197,17 +1220,7 @@ static void local_index_source(runtime_catalog_source *source, char *path, size_
 }
 
 static int kept_no_catalog_state(void) {
-    char index[1300];
-    char cache_place[1100];
-    under_base(index, sizeof index, "index.json");
-    under_base(cache_place, sizeof cache_place, "cache");
-    char *location = runtime_catalog_resolve_path(index);
-    char *state = location == NULL ? NULL : runtime_catalog_state_path(cache_place, location);
-    CHECK(state != NULL);
-    int kept_none = state == NULL || spisor_probe_file(state) != SPISOR_FILE_PRESENT;
-    spisor_memory_release(state);
-    spisor_memory_release(location);
-    return kept_none;
+    return !exists_at(catalog_state_place);
 }
 
 static spisor_status check_a_catalog(void) {

@@ -159,7 +159,7 @@ static int add_live_run(cJSON *runs, const char *path, double now) {
             cJSON_Delete(run);
         }
     } else if (added) {
-        runtime_remove_file_entry(path);
+        added = runtime_remove_file_entry(path) != RUNTIME_ENTRY_OUT_OF_MEMORY;
     }
     cJSON_Delete(record);
     return added;

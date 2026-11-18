@@ -81,6 +81,23 @@ static int prepare_windows_start(const runtime_detached_start *start, windows_st
            prepared->attributes != NULL && (start->environment == NULL || prepared->environment != NULL);
 }
 
+static int are_convertible_texts(const cJSON *texts) {
+    const cJSON *text;
+    cJSON_ArrayForEach(text, texts) {
+        if (!cJSON_IsString(text) || !spisor_is_convertible_path(text->valuestring) ||
+            (text->string != NULL && !spisor_is_convertible_path(text->string))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/** Whether every text the start hands Windows is valid UTF-8, read without allocating. */
+static int is_convertible_start(const runtime_detached_start *start) {
+    return spisor_is_convertible_path(start->executable) && spisor_is_convertible_path(start->directory) &&
+           are_convertible_texts(start->arguments) && are_convertible_texts(start->environment);
+}
+
 static int create_process(windows_start *prepared, DWORD flags, PROCESS_INFORMATION *information) {
     STARTUPINFOEXW startup;
     memset(&startup, 0, sizeof startup);
@@ -104,10 +121,15 @@ int runtime_start_detached(const runtime_detached_start *start, runtime_detached
     *problem = NULL;
     memset(host, 0, sizeof *host);
     host->executable = start->executable;
+    if (!is_convertible_start(start)) {
+        *problem = problem_of(start->executable, "its path, arguments or environment are not valid UTF-8 text");
+        return 0;
+    }
     windows_start prepared;
     if (!prepare_windows_start(start, &prepared)) {
+        int unopened = prepared.null == INVALID_HANDLE_VALUE;
         free_windows_start(&prepared);
-        *problem = problem_of(start->executable, "its path, arguments or environment are not valid UTF-8 text");
+        *problem = unopened ? problem_of(start->executable, "the null device could not be opened") : NULL;
         return 0;
     }
     DWORD flags = CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT |

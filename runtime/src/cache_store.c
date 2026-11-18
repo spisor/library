@@ -28,11 +28,15 @@ static file_reference reference_of(const cJSON *reference) {
     return read;
 }
 
-static int holds(const char *destination, const file_reference *reference) {
+/** Whether destination holds the reference's bytes: SPISOR_OK, SPISOR_REFUSED, or SPISOR_OUT_OF_MEMORY asking. */
+static spisor_status holds(const char *destination, const file_reference *reference) {
     char actual[RUNTIME_SHA256_HEX_SIZE];
     uint64_t size = 0;
-    return runtime_sha256_file_sized(destination, actual, &size) == SPISOR_OK && size == reference->size &&
-           strcmp(actual, reference->sha256) == 0;
+    spisor_status hashed = runtime_sha256_file_sized(destination, actual, &size);
+    if (hashed != SPISOR_OK) {
+        return hashed == SPISOR_OUT_OF_MEMORY ? hashed : SPISOR_REFUSED;
+    }
+    return size == reference->size && strcmp(actual, reference->sha256) == 0 ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 /** Fetches the reference into destination, its answer in `answer` and its refusal in `refusal`. */
@@ -76,8 +80,9 @@ static runtime_cache_stored settle(spisor_status status, const runtime_fetch_get
 runtime_cache_stored runtime_cache_store_file(const cJSON *reference, const char *destination, cJSON **refusal) {
     *refusal = NULL;
     file_reference read = reference_of(reference);
-    if (holds(destination, &read)) {
-        return RUNTIME_CACHE_CACHED;
+    spisor_status held = holds(destination, &read);
+    if (held != SPISOR_REFUSED) {
+        return held == SPISOR_OK ? RUNTIME_CACHE_CACHED : RUNTIME_CACHE_OUT_OF_MEMORY;
     }
     const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
     runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);

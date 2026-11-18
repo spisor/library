@@ -149,6 +149,8 @@ static int is_rate_limited(long status) {
 static void fail_status(lookup_failure *failure, const runtime_fetch_answer *answer, const char *url) {
     if (answer->outcome == RUNTIME_FETCH_STATUS) {
         failure->status = answer->status;
+    } else if (answer->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+        failure->refusal = NULL;
     } else if (answer->outcome == RUNTIME_FETCH_REFUSED) {
         refuse(&failure->refusal, answer->fix, "%s", answer->detail);
     } else if (answer->outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
@@ -483,6 +485,8 @@ static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, s
         status = RUNTIME_REPO_FILE_ABSENT;
     } else if (answer.outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
         status = RUNTIME_REPO_FILE_TOO_LARGE;
+    } else if (answer.outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+        status = RUNTIME_REPO_FILE_OUT_OF_MEMORY;
     }
     spisor_memory_release(answer.etag);
     spisor_memory_release(answer.last_modified);

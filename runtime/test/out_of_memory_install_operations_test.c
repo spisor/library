@@ -1083,7 +1083,23 @@ static void prepare_start(void) {
     spisor_memory_release(home);
 }
 
-static spisor_status run_start(void) {
+/**
+ * hosts' start world with a live run of spisor-host 1.0.0 recorded by this process, so a start that is not the session
+ * start reuses that run rather than switching to the scheduled 2.0.0 under it.
+ */
+static void prepare_start_beside_session(void) {
+    char path[1024];
+    char text[512];
+    prepare_start();
+    snprintf(path, sizeof path, "bundles/runs/spisor-host/%d.1-1.json", (int)fixture_process_id());
+    snprintf(text, sizeof text,
+             "{\"pid\":%d,\"aliveAt\":%.0f,\"checkMilliseconds\":600000,\"run\":{\"spisor-host\":\"1.0.0\"}}\n",
+             (int)fixture_process_id(), runtime_now_milliseconds());
+    write_in(base.state, path, text);
+}
+
+/** A start of spisor-host, as its session host when session is nonzero; WRONG_RUN for an OK missing what it owes. */
+static spisor_status start_spisor_host(int session) {
     static const runtime_item_version layer = {"koffi", "2.0.0"};
     static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_hosts_definition *hosts = hosts_service();
@@ -1101,14 +1117,37 @@ static spisor_status run_start(void) {
     argument.layer = &layer;
     argument.libraries = libraries;
     argument.library_count = 1;
-    argument.session = 1;
+    argument.session = session;
     last_status = hosts->start(hosts->context, &argument, &answer, &refusal);
-    if (last_status == SPISOR_OK && (answer.plan == NULL || answer.plan->run_record == NULL || answer.timers == NULL)) {
+    int owed = answer.plan != NULL && answer.plan->run_record != NULL && (!session || answer.timers != NULL);
+    if (last_status == SPISOR_OK && !owed) {
         last_status = WRONG_RUN;
     }
     hosts->release_start_answer(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
+}
+
+static spisor_status run_start(void) {
+    return start_spisor_host(1);
+}
+
+static spisor_status run_start_beside_session(void) {
+    return start_spisor_host(0);
+}
+
+/** Whether a start beside the session that did not answer OK left the session's run record alone and added none. */
+static int kept_the_session_run_unless_applied(void) {
+    runtime_directory_listing listing = {NULL, 0};
+    char *runs = joined(base.state, "bundles/runs/spisor-host");
+    CHECK(runtime_list_directory(runs, &listing) == SPISOR_OK);
+    spisor_memory_release(runs);
+    int kept = last_status == SPISOR_OK || listing.count == 1;
+    runtime_free_directory_listing(&listing);
+    if (!kept) {
+        fprintf(stderr, "hosts' start beside a session: an answer of %d changed the run records\n", (int)last_status);
+    }
+    return kept;
 }
 
 #define LOADER_STANDARD_JSON                                                                                   \
@@ -1369,12 +1408,14 @@ int main(int argc, char **argv) {
         {"loader's check", prepare_loader_check, run_loader_check, NULL},
         {"loader's home", prepare_loader_home, run_loader_home, NULL},
         {"loader's installed", prepare_path_application, run_loader_installed, NULL}};
-    static const operation_case hosts_cases[5] = {
+    static const operation_case hosts_cases[6] = {
         {"hosts' register_host", prepare_register, run_register, NULL},
         {"hosts' list", prepare_list, run_list, NULL},
         {"hosts' remove", prepare_remove, run_remove, kept_the_registration_unless_removed},
         {"hosts' provenance", prepare_provenance, run_provenance, NULL},
-        {"hosts' start", prepare_start, run_start, recorded_no_run_unless_applied}};
+        {"hosts' start", prepare_start, run_start, recorded_no_run_unless_applied},
+        {"hosts' start beside a session", prepare_start_beside_session, run_start_beside_session,
+         kept_the_session_run_unless_applied}};
     static const operation_case hold_start = {"processes' hold starting", prepare_hold_start, run_hold_start,
                                               started_and_recorded_or_nothing};
     const char *only = argc > 1 ? argv[1] : "";
@@ -1441,7 +1482,7 @@ int main(int argc, char **argv) {
         every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
         sticky_failures = 0;
     }
-    for (size_t index = 0; index < 5; index++) {
+    for (size_t index = 0; index < sizeof hosts_cases / sizeof hosts_cases[0]; index++) {
         if (is_selected(only, hosts_cases[index].label)) {
             every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
             sticky_failures = 1;

@@ -578,14 +578,17 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     char *pretty = spisor_json_stringify_pretty(answer);
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    *out_of_memory = folder == NULL || file == NULL || text == NULL;
-    int recorded = !*out_of_memory && spisor_make_directories(folder) == SPISOR_OK &&
-                   spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
+    spisor_status recorded = folder == NULL || file == NULL || text == NULL ? SPISOR_OUT_OF_MEMORY
+                                                                             : spisor_make_directories(folder);
+    if (recorded == SPISOR_OK) {
+        recorded = spisor_replace_file(file, (const uint8_t *)text, strlen(text));
+    }
+    *out_of_memory = recorded == SPISOR_OUT_OF_MEMORY;
     spisor_memory_release(text);
     spisor_memory_release(pretty);
     spisor_memory_release(file);
     spisor_memory_release(folder);
-    return recorded;
+    return recorded == SPISOR_OK;
 }
 
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal) {

@@ -370,8 +370,9 @@ static const char *environment_value(const cJSON *environment, const char *name)
 }
 
 #if defined(_WIN32)
-static int is_file_entry(const char *path) {
-    runtime_entry_kind found = runtime_probe_entry(path);
+static int is_file_entry(const char *path, int *out_of_memory) {
+    runtime_entry_kind found = path == NULL ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : runtime_probe_entry(path);
+    *out_of_memory = found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY;
     return found == RUNTIME_ENTRY_OTHER || found == RUNTIME_ENTRY_UNKNOWN;
 }
 
@@ -388,39 +389,46 @@ static int ends_with_extension(const char *name, const char *extension, size_t e
     return 1;
 }
 
-static int has_extension_file(const char *directory, const char *name, const char *extension, size_t length) {
+static int has_extension_file(const char *directory, const char *name, const char *extension, size_t length,
+                              int *out_of_memory) {
     char file_name[RUNTIME_COMMAND_NAME_SIZE + 64];
+    *out_of_memory = 0;
     if (length == 0 || length > 32) {
         return 0;
     }
     snprintf(file_name, sizeof file_name, "%s%.*s", name, (int)length, extension);
     char *path = joined(directory, file_name);
-    int found = path != NULL && is_file_entry(path);
+    int found = is_file_entry(path, out_of_memory);
     spisor_memory_release(path);
     return found;
 }
 
-static int is_held_in(const char *directory, const char *name, const char *extensions) {
+static int is_held_in(const char *directory, const char *name, const char *extensions, int *out_of_memory) {
     int named_with_extension = 0;
     const char *start = extensions;
+    *out_of_memory = 0;
     while (*start != '\0') {
         const char *end = strchr(start, ';');
         size_t length = end == NULL ? strlen(start) : (size_t)(end - start);
-        if (has_extension_file(directory, name, start, length)) {
-            return 1;
+        if (has_extension_file(directory, name, start, length, out_of_memory) || *out_of_memory) {
+            return !*out_of_memory;
         }
         named_with_extension |= ends_with_extension(name, start, length);
         start = end == NULL ? start + length : end + 1;
     }
-    char *bare = named_with_extension ? joined(directory, name) : NULL;
-    int found = bare != NULL && is_file_entry(bare);
+    if (!named_with_extension) {
+        return 0;
+    }
+    char *bare = joined(directory, name);
+    int found = is_file_entry(bare, out_of_memory);
     spisor_memory_release(bare);
     return found;
 }
 #else
-static int is_held_in(const char *directory, const char *name, const char *extensions) {
+static int is_held_in(const char *directory, const char *name, const char *extensions, int *out_of_memory) {
     (void)extensions;
     char *path = joined(directory, name);
+    *out_of_memory = path == NULL;
     struct stat status;
     int found = path != NULL && stat(path, &status) == 0 && S_ISREG(status.st_mode) &&
                 (status.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
@@ -429,13 +437,17 @@ static int is_held_in(const char *directory, const char *name, const char *exten
 }
 #endif
 
-/** One PATH entry, its surrounding quotes dropped on Windows; NULL when it is empty or not absolute. */
-static char *path_directory(const char *start, size_t length) {
+/**
+ * One PATH entry, its surrounding quotes dropped on Windows; NULL when it is empty or not absolute, or with
+ * *out_of_memory set to 1 when memory ran out.
+ */
+static char *path_directory(const char *start, size_t length, int *out_of_memory) {
     if (RUNTIME_HOST_IS_WINDOWS && length >= 2 && start[0] == '"' && start[length - 1] == '"') {
         start++;
         length -= 2;
     }
     char *directory = spisor_memory_allocate(length + 1);
+    *out_of_memory = directory == NULL;
     if (directory == NULL) {
         return NULL;
     }
@@ -448,18 +460,19 @@ static char *path_directory(const char *start, size_t length) {
     return directory;
 }
 
-int runtime_commands_held_on_path(const cJSON *environment, const char *shims, const char *name) {
+int runtime_commands_held_on_path(const cJSON *environment, const char *shims, const char *name, int *out_of_memory) {
     const char *search = environment_value(environment, "PATH");
     const char *extensions = environment_value(environment, "PATHEXT");
     extensions = extensions == NULL || extensions[0] == '\0' ? DEFAULT_PATH_EXTENSIONS : extensions;
     int held = 0;
+    *out_of_memory = 0;
     const char *start = search == NULL ? "" : search;
-    while (!held && *start != '\0') {
+    while (!held && !*out_of_memory && *start != '\0') {
         const char *end = strchr(start, PATH_LIST_SEPARATOR);
         size_t length = end == NULL ? strlen(start) : (size_t)(end - start);
-        char *directory = path_directory(start, length);
+        char *directory = path_directory(start, length, out_of_memory);
         held = directory != NULL && !runtime_change_paths_equal(directory, shims) &&
-               is_held_in(directory, name, extensions);
+               is_held_in(directory, name, extensions, out_of_memory);
         spisor_memory_release(directory);
         start = end == NULL ? start + length : end + 1;
     }
@@ -583,7 +596,9 @@ static name_hold is_name_held(const command_call *call, const char *name) {
         return hold;
     }
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
-    return runtime_commands_held_on_path(environment, call->shims, name) ? NAME_HELD : NAME_FREE;
+    int out_of_memory;
+    int held = runtime_commands_held_on_path(environment, call->shims, name, &out_of_memory);
+    return out_of_memory ? NAME_HOLD_OUT_OF_MEMORY : held ? NAME_HELD : NAME_FREE;
 }
 
 /** Refuses with fix and reason when name is held; answers 1 when it is free. */
@@ -745,8 +760,10 @@ static int set_or_run_out(command_call *call, cJSON *object, const char *member,
     return set_text(object, member, text) || out_of_memory(call);
 }
 
-static cJSON *shim_record(const command_call *call, const char *name, size_t index) {
+/** The record of one shim file of name, or NULL for none, with *out_of_memory set to 1 when memory ran out. */
+static cJSON *shim_record(const command_call *call, const char *name, size_t index, int *out_of_memory) {
     char *path = shim_file(call->shims, name, index);
+    *out_of_memory = path == NULL;
     cJSON *found = NULL;
     cJSON *entry;
     cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(call->registration, "changes")) {
@@ -781,7 +798,12 @@ static int remove_shim_file(command_call *call, cJSON *record) {
 /** Reverses the recorded shim files of name in the loaded registration; a file with no record is left. */
 static int remove_shim(command_call *call, const char *name) {
     for (size_t index = 0; index < SHIM_FILE_COUNT; index++) {
-        if (!remove_shim_file(call, shim_record(call, name, index))) {
+        int out_of_memory_finding;
+        cJSON *record = shim_record(call, name, index, &out_of_memory_finding);
+        if (out_of_memory_finding) {
+            return out_of_memory(call);
+        }
+        if (!remove_shim_file(call, record)) {
             return 0;
         }
     }
@@ -912,9 +934,17 @@ static int copy_shim_file(command_call *call, const char *from, const char *to, 
  */
 static void remove_old_shim(command_call *call, const char *from) {
     for (size_t index = 0; index < SHIM_FILE_COUNT; index++) {
-        if (!remove_shim_file(call, shim_record(call, from, index)) || !store_registration(call)) {
-            call->failure = SPISOR_OK;
-            call->reason[0] = '\0';
+        int out_of_memory_finding;
+        cJSON *record = shim_record(call, from, index, &out_of_memory_finding);
+        if (out_of_memory_finding) {
+            out_of_memory(call);
+            return;
+        }
+        if (!remove_shim_file(call, record) || !store_registration(call)) {
+            if (call->failure != SPISOR_OUT_OF_MEMORY) {
+                call->failure = SPISOR_OK;
+                call->reason[0] = '\0';
+            }
             return;
         }
     }

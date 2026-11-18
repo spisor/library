@@ -42,21 +42,44 @@ static cJSON *host_request(const removal *request, const char *member) {
     return call;
 }
 
-/** Deletes the host's holders file under its holders lock, so no prune rewrites it as it goes; 1 when none is left. */
-static int remove_holders(const removal *request) {
+static spisor_status removed_entry(runtime_entry_outcome removed) {
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return removed == RUNTIME_ENTRY_DONE ? SPISOR_OK : SPISOR_REFUSED;
+}
+
+static spisor_status removed_under_lock(const char *lock, const char *path) {
+    runtime_holders_guard *guard = NULL;
+    spisor_status removed = runtime_lock_holders(lock, &guard);
+    if (removed == SPISOR_OK) {
+        removed = removed_entry(runtime_remove_file_entry(path));
+    }
+    if (guard != NULL) {
+        runtime_unlock_holders(guard);
+    }
+    return removed;
+}
+
+/**
+ * Deletes the host's holders file under its holders lock, so no prune rewrites it as it goes: SPISOR_OK when none is
+ * left, SPISOR_REFUSED when one is, SPISOR_OUT_OF_MEMORY when memory ran out.
+ */
+static spisor_status remove_holders(const removal *request) {
     char *path_problem = NULL;
     char *lock_problem = NULL;
     char *folder = runtime_processes_folder(request->state);
     char *path = runtime_holders_path(request->state, request->id, RUNTIME_JSON_EXTENSION, &path_problem);
     char *lock = runtime_holders_path(request->state, request->id, ".lock", &lock_problem);
-    int removed = folder != NULL && path != NULL && lock != NULL;
-    if (removed && spisor_probe_file(folder) == SPISOR_FILE_PRESENT) {
-        runtime_holders_guard *guard = NULL;
-        removed = runtime_lock_holders(lock, &guard) == SPISOR_OK &&
-                  runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
-        if (guard != NULL) {
-            runtime_unlock_holders(guard);
-        }
+    int named = folder != NULL && path != NULL && lock != NULL;
+    int unnamed_for_memory = (path == NULL && path_problem == NULL) || (lock == NULL && lock_problem == NULL);
+    spisor_status removed = named ? SPISOR_OK : folder == NULL || unnamed_for_memory ? SPISOR_OUT_OF_MEMORY
+                                                                                   : SPISOR_REFUSED;
+    spisor_file_presence presence = named ? spisor_probe_file(folder) : SPISOR_FILE_MISSING;
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        removed = SPISOR_OUT_OF_MEMORY;
+    } else if (presence == SPISOR_FILE_PRESENT) {
+        removed = removed_under_lock(lock, path);
     }
     spisor_memory_release(lock_problem);
     spisor_memory_release(path_problem);
@@ -66,11 +89,13 @@ static int remove_holders(const removal *request) {
     return removed;
 }
 
-/** Deletes the host's boot hint, so the sweep no longer keeps the libraries it names; 1 when none is left. */
-static int remove_boot_hint(const removal *request) {
+/** Deletes the host's boot hint, so the sweep no longer keeps the libraries it names; OK when none is left. */
+static spisor_status remove_boot_hint(const removal *request) {
     char *problem = NULL;
     char *hint = runtime_boot_hint_path(request->cache, request->id, &problem);
-    int removed = hint != NULL && runtime_remove_file_entry(hint) == RUNTIME_ENTRY_DONE;
+    spisor_status removed = hint != NULL      ? removed_entry(runtime_remove_file_entry(hint))
+                            : problem == NULL ? SPISOR_OUT_OF_MEMORY
+                                              : SPISOR_REFUSED;
     spisor_memory_release(problem);
     spisor_memory_release(hint);
     return removed;
@@ -107,13 +132,14 @@ static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, 
     spisor_status locked = runtime_hosts_lock(request->state, &guard);
     spisor_status references = locked == SPISOR_OK ? runtime_remove_host_references(request->state, request->id)
                                                    : SPISOR_OK;
-    if (locked == SPISOR_OUT_OF_MEMORY || references == SPISOR_OUT_OF_MEMORY) {
+    spisor_status hint = locked == SPISOR_OK && references == SPISOR_OK ? remove_boot_hint(request) : SPISOR_OK;
+    if (locked == SPISOR_OUT_OF_MEMORY || references == SPISOR_OUT_OF_MEMORY || hint == SPISOR_OUT_OF_MEMORY) {
         *refusal = NULL;
     } else if (locked != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file, run records and boot hint");
     } else if (references != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file or a run record");
-    } else if (!remove_boot_hint(request)) {
+    } else if (hint != SPISOR_OK) {
         *refusal = refuse_leftover(request, "boot hint");
     } else if (request->before_forget != NULL && !request->before_forget(answer, request->before_forget_context)) {
         *refusal = NULL;
@@ -132,8 +158,9 @@ static cJSON *remove_host(const removal *request, cJSON **refusal) {
     if (answer == NULL) {
         return NULL;
     }
-    if (!remove_holders(request)) {
-        *refusal = refuse_leftover(request, "holders file");
+    spisor_status holders = remove_holders(request);
+    if (holders != SPISOR_OK) {
+        *refusal = holders == SPISOR_OUT_OF_MEMORY ? NULL : refuse_leftover(request, "holders file");
         cJSON_Delete(answer);
         return NULL;
     }

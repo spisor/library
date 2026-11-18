@@ -321,7 +321,10 @@ static spisor_status move_into_place(fetch_files *files, const char *destination
     if (hashed != SPISOR_OK) {
         return hashed;
     }
-    return strcmp(present, sha256) == 0 ? SPISOR_OK : SPISOR_REFUSED;
+    if (strcmp(present, sha256) != 0) {
+        return SPISOR_REFUSED;
+    }
+    return runtime_remove_file_entry(files->partial) == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
 static spisor_status settle_received(const fetch_order *order, fetch_files *files, runtime_fetch_sink *sink,
@@ -349,7 +352,7 @@ static spisor_status settle_received(const fetch_order *order, fetch_files *file
         release_get_answer_storage(answer);
         return moved == SPISOR_OUT_OF_MEMORY ? moved : refuse_unwritable(order->destination, refusal);
     }
-    discard_partial(files);
+    spisor_memory_release(files->partial);
     answer->outcome = RUNTIME_FETCH_GET_STORED;
     return SPISOR_OK;
 }
@@ -388,6 +391,9 @@ static spisor_status settle(const fetch_order *order, fetch_files *files, runtim
         return settle_received(order, files, sink, received, answer, refusal);
     }
     discard_partial(files);
+    if (received->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     if (received->outcome != RUNTIME_FETCH_NOT_MODIFIED) {
         return refuse_answer(order, received, sink, refusal);
     }

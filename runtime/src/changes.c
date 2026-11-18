@@ -266,15 +266,38 @@ static runtime_changes_answer answer_of_step(runtime_change_step step) {
     return step == RUNTIME_CHANGE_OUT_OF_MEMORY ? RUNTIME_CHANGES_OUT_OF_MEMORY : RUNTIME_CHANGES_FAILED;
 }
 
+/** Concludes with answer, or with OUT_OF_MEMORY when memory ran out storing what came before it. */
+static void conclude_stored(apply_session *session, runtime_registry_answer stored, runtime_changes_answer answer,
+                            const char *reason) {
+    if (stored == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+    } else {
+        conclude(session, answer, reason);
+    }
+}
+
 static void withdraw(apply_session *session, cJSON *entry, runtime_change_step step, const char *reason) {
     cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
-    store(session);
-    conclude(session, answer_of_step(step), reason);
+    conclude_stored(session, store(session), answer_of_step(step), reason);
+}
+
+/**
+ * Undoes a change whose applied record memory ran out storing, so the answer of out of memory changed nothing; a
+ * change that cannot be undone keeps its pending record on the disk, which the next apply or reverse completes.
+ */
+static void undo_unstored(apply_session *session, cJSON *entry) {
+    runtime_change_note ignored = {""};
+    if (runtime_change_reverse(entry, 0, &ignored) == RUNTIME_CHANGE_REVERSED) {
+        cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
+        store(session);
+    }
+    conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
 }
 
 /**
  * @implNote A record marked applied that could not be stored stays pending on the disk, and the next
- * apply or reverse completes it from the disk, so the change is answered RECORDED either way.
+ * apply or reverse completes it from the disk, so the change is answered RECORDED either way, unless
+ * memory ran out storing it.
  */
 static void perform_recorded(apply_session *session, cJSON *entry) {
     runtime_change_note note = {""};
@@ -284,7 +307,10 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
         return;
     }
     mark_applied(entry);
-    store(session);
+    if (store(session) == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        undo_unstored(session, entry);
+        return;
+    }
     conclude(session, RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
 }
@@ -419,7 +445,8 @@ static int add_child_entries(apply_session *session, long parent_sequence, long 
 }
 
 /** Withdraws the family, but keeps, as applied, every child whose undo failed and then its new parent. */
-static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_children *prepared) {
+static runtime_registry_answer withdraw_family(apply_session *session, cJSON *new_parent,
+                                               prepared_children *prepared) {
     cJSON *changes = changes_of(session->registration);
     int kept = 0;
     for (size_t index = 0; index < prepared->count; index++) {
@@ -437,7 +464,7 @@ static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_
     } else if (new_parent != NULL) {
         cJSON_Delete(cJSON_DetachItemViaPointer(changes, new_parent));
     }
-    store(session);
+    return store(session);
 }
 
 /**
@@ -476,13 +503,15 @@ static void perform_family(apply_session *session, cJSON *new_parent, long paren
     }
     if (step != RUNTIME_CHANGE_DONE) {
         undo_performed(prepared, performed);
-        withdraw_family(session, new_parent, prepared);
-        conclude_step(session, step, note.detail);
+        if (withdraw_family(session, new_parent, prepared) == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+            conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+        } else {
+            conclude_step(session, step, note.detail);
+        }
         return;
     }
     mark_family_applied(new_parent, prepared);
-    store(session);
-    conclude(session, RUNTIME_CHANGES_RECORDED, "");
+    conclude_stored(session, store(session), RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = parent_sequence;
 }
 
