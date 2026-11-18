@@ -76,7 +76,7 @@ static spisor_status fill_item(cJSON *row, int keeps_rows, void **storage, runti
 }
 
 static spisor_status fill_list(cJSON *answered, int keeps_rows, runtime_list *answer) {
-    cJSON *rows = cJSON_GetObjectItemCaseSensitive(answered, "items");
+    cJSON *rows = answered;
     runtime_list_item *items;
     cJSON *row;
     size_t index = 0;
@@ -95,11 +95,9 @@ static spisor_status fill_list(cJSON *answered, int keeps_rows, runtime_list *an
     return status;
 }
 
-/** Serves `call`, which it deletes, through a lists operation, filling the answer from what it answered. */
-static spisor_status serve_list(runtime_json_operation operation, cJSON *call, int keeps_rows, runtime_list *answer,
+/** Fills the answer from the rows a lists function answered, which it deletes, or refuses with what it refused. */
+static spisor_status serve_list(cJSON *answered, cJSON *operation_refusal, int keeps_rows, runtime_list *answer,
                                 spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_list(answered, keeps_rows, answer);
     if (answered != NULL && status != SPISOR_OK) {
@@ -111,6 +109,8 @@ static spisor_status serve_list(runtime_json_operation operation, cJSON *call, i
 
 static spisor_status plugins(void *context, const runtime_lists_plugins_argument *argument, runtime_list *answer,
                              spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call;
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
@@ -133,7 +133,11 @@ static spisor_status plugins(void *context, const runtime_lists_plugins_argument
         return status != SPISOR_MALFORMED ? status : runtime_refuse_as(refusal, SPISOR_MALFORMED, UNUSABLE_GROUP,
                                                                        UNUSABLE_GROUP_FIX);
     }
-    return serve_list(runtime_lists_plugins_operation, call, 1, answer, refusal);
+    answered = runtime_lists_plugins(cJSON_GetObjectItemCaseSensitive(call, "installed"),
+                                     cJSON_GetObjectItemCaseSensitive(call, "detected"),
+                                     cJSON_GetObjectItemCaseSensitive(call, "available"), &operation_refusal);
+    cJSON_Delete(call);
+    return serve_list(answered, operation_refusal, 1, answer, refusal);
 }
 
 static spisor_status add_detections(cJSON *call, const runtime_lists_applications_argument *argument) {
@@ -176,19 +180,16 @@ static spisor_status add_catalog(cJSON *call, const spisor_value *items) {
     return status;
 }
 
-/** The argument runtime_lists_applications_operation reads, NULL unless the answer is OK. */
+/** The environment, catalog and detections runtime_lists_applications reads, NULL unless the answer is OK. */
 static spisor_status applications_call(const runtime_lists_applications_argument *argument, cJSON **call,
                                        spisor_refusal *refusal) {
     cJSON *environment = NULL;
-    cJSON *places;
     spisor_status status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_environment(refusal);
     }
     *call = status == SPISOR_OK ? cJSON_CreateObject() : NULL;
-    places = *call == NULL ? NULL : cJSON_AddObjectToObject(*call, "places");
-    if (places == NULL || cJSON_AddStringToObject(places, "state", argument->state) == NULL ||
-        !cJSON_AddItemToObject(*call, "environment", environment)) {
+    if (*call == NULL || !cJSON_AddItemToObject(*call, "environment", environment)) {
         cJSON_Delete(environment);
         cJSON_Delete(*call);
         *call = NULL;
@@ -210,6 +211,8 @@ static spisor_status applications_call(const runtime_lists_applications_argument
 
 static spisor_status applications(void *context, const runtime_lists_applications_argument *argument,
                                   runtime_list *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -228,7 +231,15 @@ static spisor_status applications(void *context, const runtime_lists_application
         return runtime_refuse_place(refusal, "state");
     }
     status = applications_call(argument, &call, refusal);
-    return status == SPISOR_OK ? serve_list(runtime_lists_applications_operation, call, 0, answer, refusal) : status;
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    answered = runtime_lists_applications(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(call, "catalog"), "items"), argument->state,
+        cJSON_GetObjectItemCaseSensitive(call, "environment"), cJSON_GetObjectItemCaseSensitive(call, "detections"),
+        &operation_refusal);
+    cJSON_Delete(call);
+    return serve_list(answered, operation_refusal, 0, answer, refusal);
 }
 
 static void release_list(void *context, runtime_list *answer) {

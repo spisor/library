@@ -98,10 +98,10 @@ static cJSON *planned(const ui_screen *screen, const cJSON *answers) {
     return plan_answer(calls);
 }
 
-cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
+cJSON *runtime_ui_plan(const cJSON *descriptions, const cJSON *entry, const cJSON *answers, cJSON **refusal) {
     ui_screen screen;
-    if (!runtime_ui_open_screen(argument, &screen, refusal)) {
+    *refusal = NULL;
+    if (!runtime_ui_open_screen(descriptions, entry, &screen, refusal)) {
         runtime_ui_close_screen(&screen);
         return NULL;
     }
@@ -301,10 +301,10 @@ static cJSON *rendered_screen(const ui_screen *screen, const cJSON *answers, cJS
     return rendered;
 }
 
-cJSON *runtime_ui_render_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
+cJSON *runtime_ui_render(const cJSON *descriptions, const cJSON *entry, const cJSON *answers, cJSON **refusal) {
     ui_screen screen;
-    if (!runtime_ui_open_screen(argument, &screen, refusal)) {
+    *refusal = NULL;
+    if (!runtime_ui_open_screen(descriptions, entry, &screen, refusal)) {
         runtime_ui_close_screen(&screen);
         return NULL;
     }
