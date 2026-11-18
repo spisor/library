@@ -1,11 +1,7 @@
 #ifndef RUNTIME_LOADER_H
 #define RUNTIME_LOADER_H
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include "cJSON.h"
-#include "export.h"
 
 /**
  * The issues of value as a loader standard, an array of { path, detail, fix } in the order the checks
@@ -28,23 +24,26 @@ cJSON *runtime_loader_standard_issues(const cJSON *value);
 cJSON *runtime_application_home(const cJSON *home, const cJSON *environment, cJSON **refusal);
 
 /**
- * loader.check: { standard } answering { issues }, each { path, detail, fix }; no issue means standard
+ * The loader service's operations over JSON, for runtime's own callers: each answers its result, or NULL with
+ * *refusal set to {message, fix}, or with it NULL when memory runs out.
+ *
+ * loader's check: { standard } answering { issues }, each { path, detail, fix }; no issue means standard
  * is a loader standard, which carries an application, the PATH commands it asks for, the background
  * hosts it keeps running and the plugins it cannot run without.
  */
-RUNTIME_EXPORT int32_t runtime_loader_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_loader_check_operation(const cJSON *argument, cJSON **refusal);
 
-/** loader.home: { home, environment } answering { home, source }, as runtime_application_home finds it. */
-RUNTIME_EXPORT int32_t runtime_loader_home(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+/** loader's home: { home, environment } answering { home, source }, as runtime_application_home finds it. */
+cJSON *runtime_loader_home_operation(const cJSON *argument, cJSON **refusal);
 
 /**
- * loader.installed: { places: { cache }, id, version } answering { standard }, the loader standard the
+ * loader's installed: { places: { cache }, id, version } answering { standard }, the loader standard the
  * installed host bundle carries in <cache>/bundles/<id>/<version>/host.json; refused when that file
  * cannot be read or is no loader standard.
  *
  * @implNote Read from the installed bundle, since the catalog and the registration carry only the
  * application.
  */
-RUNTIME_EXPORT int32_t runtime_loader_installed(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+cJSON *runtime_loader_installed_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

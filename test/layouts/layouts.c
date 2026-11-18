@@ -17,6 +17,7 @@
 #include "runtime/paths.h"
 #include "runtime/places.h"
 #include "runtime/hosts.h"
+#include "runtime/loader.h"
 #include "runtime/processes.h"
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
@@ -1340,6 +1341,53 @@ static void print_boot_layouts(void) {
     SIZE(runtime_boot_definition);
 }
 
+static void print_loader_layouts(void) {
+    FIELD(runtime_loader_check_argument, size);
+    FIELD(runtime_loader_check_argument, standard);
+    SIZE(runtime_loader_check_argument);
+    FIELD(runtime_loader_issue, path);
+    FIELD(runtime_loader_issue, detail);
+    FIELD(runtime_loader_issue, fix);
+    SIZE(runtime_loader_issue);
+    FIELD(runtime_loader_check_answer, size);
+    FIELD(runtime_loader_check_answer, issues);
+    FIELD(runtime_loader_check_answer, issue_count);
+    FIELD(runtime_loader_check_answer, storage);
+    SIZE(runtime_loader_check_answer);
+    FIELD(runtime_loader_home_argument, size);
+    FIELD(runtime_loader_home_argument, env_override);
+    FIELD(runtime_loader_home_argument, native_env);
+    FIELD(runtime_loader_home_argument, xdg_subdir);
+    FIELD(runtime_loader_home_argument, candidates);
+    FIELD(runtime_loader_home_argument, candidate_count);
+    FIELD(runtime_loader_home_argument, environment);
+    FIELD(runtime_loader_home_argument, environment_count);
+    SIZE(runtime_loader_home_argument);
+    FIELD(runtime_loader_home_answer, size);
+    FIELD(runtime_loader_home_answer, home);
+    FIELD(runtime_loader_home_answer, source);
+    FIELD(runtime_loader_home_answer, storage);
+    SIZE(runtime_loader_home_answer);
+    FIELD(runtime_loader_installed_argument, size);
+    FIELD(runtime_loader_installed_argument, cache);
+    FIELD(runtime_loader_installed_argument, loader);
+    SIZE(runtime_loader_installed_argument);
+    FIELD(runtime_loader_installed_answer, size);
+    FIELD(runtime_loader_installed_answer, standard);
+    FIELD(runtime_loader_installed_answer, storage);
+    SIZE(runtime_loader_installed_answer);
+    FIELD(runtime_loader_definition, size);
+    FIELD(runtime_loader_definition, context);
+    FIELD(runtime_loader_definition, check);
+    FIELD(runtime_loader_definition, home);
+    FIELD(runtime_loader_definition, installed);
+    FIELD(runtime_loader_definition, release_check_answer);
+    FIELD(runtime_loader_definition, release_home_answer);
+    FIELD(runtime_loader_definition, release_installed_answer);
+    FIELD(runtime_loader_definition, release_refusal);
+    SIZE(runtime_loader_definition);
+}
+
 static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_command, name);
     FIELD(runtime_hosts_command, target);
@@ -1548,5 +1596,6 @@ int main(void) {
     print_boot_layouts();
     print_processes_layouts();
     print_hosts_layouts();
+    print_loader_layouts();
     return 0;
 }

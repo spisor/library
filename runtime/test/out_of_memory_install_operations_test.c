@@ -19,6 +19,7 @@
 #include "platform_key.h"
 #include "runtime/boot.h"
 #include "runtime/install.h"
+#include "runtime/loader.h"
 #include "runtime/processes.h"
 #include "runtime/updates.h"
 #include "timestamp_text.h"
@@ -1098,6 +1099,83 @@ static spisor_status run_start(void) {
     return last_status;
 }
 
+#define LOADER_STANDARD_JSON                                                                                   \
+    "{\"application\": {\"id\": \"sample\", \"label\": \"Sample\", \"binary\": \"sample\", \"home\": "        \
+    "{\"envOverride\": \"SAMPLE_HOME\", \"candidates\": [\"~/.sample\"]}, \"packages\": {\"npm\": \"sample\"}}, " \
+    "\"pathCommands\": {\"requested\": [\"sample\"], \"minimum\": 0}, \"background\": [\"spisor-host\"], "     \
+    "\"plugins\": [\"proxy\"]}"
+
+static const runtime_loader_definition *loader_service(void) {
+    return runtime_loader_definition_of();
+}
+
+/** A loader standard held as the value tree a check takes. */
+static void prepare_loader_check(void) {
+    start_install_base(&base, "operations", "loader-check");
+    CHECK(value_of_text(LOADER_STANDARD_JSON, &application));
+}
+
+static spisor_status run_loader_check(void) {
+    const runtime_loader_definition *loader = loader_service();
+    runtime_loader_check_argument argument = SPISOR_INIT(runtime_loader_check_argument);
+    runtime_loader_check_answer answer = SPISOR_INIT(runtime_loader_check_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.standard = &application.root;
+    last_status = loader->check(loader->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.issue_count != 0) {
+        last_status = WRONG_RUN;
+    }
+    loader->release_check_answer(loader->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+/** A user home holding the second candidate, so the search passes over the first. */
+static void prepare_loader_home(void) {
+    start_install_base(&base, "operations", "loader-home");
+    char *home = joined(base.user, "homes/sample");
+    CHECK(spisor_make_directories(home) == 1);
+    free(home);
+}
+
+static spisor_status run_loader_home(void) {
+    static const char *const candidates[2] = {"~/homes/absent", "~/homes/sample"};
+    const runtime_loader_definition *loader = loader_service();
+    runtime_loader_home_argument argument = SPISOR_INIT(runtime_loader_home_argument);
+    runtime_loader_home_answer answer = SPISOR_INIT(runtime_loader_home_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_variable environment[2] = {{"HOME", base.user}, {"USERPROFILE", base.user}};
+    argument.env_override = "SAMPLE_HOME";
+    argument.candidates = candidates;
+    argument.candidate_count = 2;
+    argument.environment = environment;
+    argument.environment_count = 2;
+    last_status = loader->home(loader->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.source != RUNTIME_LOADER_HOME_CANDIDATE) {
+        last_status = WRONG_RUN;
+    }
+    loader->release_home_answer(loader->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
+static spisor_status run_loader_installed(void) {
+    static const runtime_item_version installed = {CLAUDE_LOADER, "1.0.0"};
+    const runtime_loader_definition *loader = loader_service();
+    runtime_loader_installed_argument argument = SPISOR_INIT(runtime_loader_installed_argument);
+    runtime_loader_installed_answer answer = SPISOR_INIT(runtime_loader_installed_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.cache = base.cache;
+    argument.loader = &installed;
+    last_status = loader->installed(loader->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && answer.standard == NULL) {
+        last_status = WRONG_RUN;
+    }
+    loader->release_installed_answer(loader->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -1224,6 +1302,10 @@ int main(int argc, char **argv) {
         {"processes' record_run", prepare_record, run_record_run, recorded_no_new_run_unless_ok},
         {"processes' live_runs", prepare_processes, run_live_runs, kept_the_live_record},
         {"processes' remove_runs", prepare_processes, run_remove_runs, removed_nothing_unless_ok}};
+    static const operation_case loader_cases[3] = {
+        {"loader's check", prepare_loader_check, run_loader_check, NULL},
+        {"loader's home", prepare_loader_home, run_loader_home, NULL},
+        {"loader's installed", prepare_path_application, run_loader_installed, NULL}};
     static const operation_case hosts_cases[5] = {
         {"hosts' register_host", prepare_register, run_register, NULL},
         {"hosts' list", prepare_list, run_list, NULL},
@@ -1301,6 +1383,14 @@ int main(int argc, char **argv) {
             every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
             sticky_failures = 1;
             every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 0;
+        }
+    }
+    for (size_t index = 0; index < 3; index++) {
+        if (is_selected(only, loader_cases[index].label)) {
+            every_failure_of(&loader_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
+            sticky_failures = 1;
+            every_failure_of(&loader_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
             sticky_failures = 0;
         }
     }

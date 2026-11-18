@@ -99,9 +99,10 @@ int host_start_loader(const host_context *context, const char *id, loader_start 
     if (start->version != NULL) {
         register_again(context, id, start->version);
     }
-    cJSON *installed = start->version == NULL ? NULL
-                                              : host_call(runtime_loader_installed, loader_call(context, id, start->version, 0),
-                                                          refusal);
+    cJSON *installed = start->version == NULL
+                           ? NULL
+                           : runtime_call_operation(runtime_loader_installed_operation,
+                                                    loader_call(context, id, start->version, 0), refusal);
     start->standard = cJSON_DetachItemFromObjectCaseSensitive(installed, "standard");
     cJSON_Delete(installed);
     return start->standard != NULL;

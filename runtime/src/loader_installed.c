@@ -90,6 +90,6 @@ static cJSON *installed_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_loader_installed(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, installed_for);
+cJSON *runtime_loader_installed_operation(const cJSON *argument, cJSON **refusal) {
+    return installed_for(argument, refusal);
 }

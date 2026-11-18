@@ -314,6 +314,6 @@ static cJSON *check_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_loader_check(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, check_for);
+cJSON *runtime_loader_check_operation(const cJSON *argument, cJSON **refusal) {
+    return check_for(argument, refusal);
 }
