@@ -5,15 +5,17 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "host_definition.h"
 #include "host_output.h"
 #include "host_service.h"
 #include "install_by_id.h"
 #include "install_warning_report.h"
-#include "json_service.h"
 #include "marketplace_copies.h"
 #include "marketplace_lookup.h"
 #include "marketplace_memory.h"
 #include "marketplace_name_lookup.h"
+#include "runtime/install.h"
+#include "runtime/marketplace.h"
 #include "runtime/paths.h"
 
 #define NO_MARKETPLACE_FIX "list marketplaces in the portable settings.json as marketplaces: [{id, url}], or fix the ones refused above"
@@ -33,31 +35,8 @@ static const char *bare_name_of(const char *name) {
     return slash == NULL ? name : slash + 1;
 }
 
-static cJSON *lookup_call(cJSON *copies, const char *name) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument == NULL || !cJSON_AddItemToObject(argument, "copies", copies) ||
-        cJSON_AddStringToObject(argument, "name", name) == NULL) {
-        cJSON_Delete(argument == NULL ? copies : NULL);
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
-}
-
-static cJSON *remember_call(const host_context *context, const found_name *found, const char *marketplace, const char *accepted_id,
-                            int is_recording) {
-    cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "state", context->state) != NULL &&
-                (marketplace == NULL || cJSON_AddStringToObject(argument, "marketplace", marketplace) != NULL) &&
-                cJSON_AddStringToObject(argument, "name", found->bare) != NULL &&
-                cJSON_AddStringToObject(argument, "id", found->id) != NULL &&
-                (accepted_id == NULL || cJSON_AddStringToObject(argument, "accept", accepted_id) != NULL) &&
-                (is_recording || cJSON_AddFalseToObject(argument, "record") != NULL);
-    if (!built) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
+static const char *text_or_empty(const char *text) {
+    return text == NULL ? "" : text;
 }
 
 static int refuse_out_of_memory(void) {
@@ -75,11 +54,11 @@ static int refuse_with_fix_parts(const char *const *parts, size_t count, const c
     return code;
 }
 
-static int refuse_ambiguous(const char *name, const cJSON *forms) {
+static int refuse_ambiguous(const char *name, const char *const *forms, size_t count) {
     char *joined_forms = NULL;
-    const cJSON *form;
-    cJSON_ArrayForEach(form, forms) {
-        const char *parts[3] = {joined_forms == NULL ? "" : joined_forms, joined_forms == NULL ? "" : ", ", form->valuestring};
+    for (size_t index = 0; index < count; index++) {
+        const char *parts[3] = {joined_forms == NULL ? "" : joined_forms, joined_forms == NULL ? "" : ", ",
+                                forms[index]};
         char *longer = runtime_cache_text(parts, 3);
         spisor_memory_release(joined_forms);
         joined_forms = longer;
@@ -102,9 +81,10 @@ static int refuse_changed_name(const char *label, const char *was, const char *n
     return refuse_with_fix_parts(parts, 5, fix_parts, 8);
 }
 
-static int refuse_changed_primary(const char *name, const char *application, const cJSON *answer) {
-    const char *primary = host_text(answer, "primary");
-    const char *parts[5] = {name, " is recorded as installed from ", host_text(answer, "recordedPrimary"),
+static int refuse_changed_primary(const char *name, const char *application,
+                                  const runtime_install_by_id_answer *answer) {
+    const char *primary = answer->primary;
+    const char *parts[5] = {name, " is recorded as installed from ", answer->recorded_primary,
                             ", and its repo's copies now name this as the primary: ", primary};
     const char *fix_parts[8] = {"check that ", primary, " is the plugin you mean, then run spisor-host install --name ", name,
                                 " --application ", application, " --accept-primary ", primary};
@@ -130,7 +110,7 @@ static char *plugin_directory_under(const char *home, cJSON **refusal) {
             strcpy(directory, answer.plugin);
         }
     } else {
-        *refusal = runtime_refusal_of(&refused);
+        *refusal = host_refusal_json(&refused);
     }
     paths->release_answer(paths->context, &answer);
     paths->release_refusal(paths->context, &refused);
@@ -146,28 +126,47 @@ static char *plugin_directory_of(const host_context *context, const char *applic
     return directory;
 }
 
-static cJSON *install_call(const host_context *context, const char *id, const char *plugin_directory, const char *accepted_primary) {
-    cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", id) != NULL &&
-                cJSON_AddStringToObject(argument, "cache", context->cache) != NULL &&
-                cJSON_AddStringToObject(argument, "pluginDir", plugin_directory) != NULL &&
-                (accepted_primary == NULL || cJSON_AddStringToObject(argument, "acceptPrimary", accepted_primary) != NULL) &&
-                (host_marketplace_lookup_api_base() == NULL ||
-                 cJSON_AddStringToObject(argument, "apiBase", host_marketplace_lookup_api_base()) != NULL);
+/** What install.byId answered, as it is printed: unset texts as empty ones. NULL when memory runs out. */
+static cJSON *installed_json(const runtime_install_by_id_answer *installed) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *ids = json == NULL ? NULL : cJSON_CreateArray();
+    int built = ids != NULL;
+    for (size_t index = 0; built && index < installed->id_count; index++) {
+        cJSON *id = cJSON_CreateString(installed->ids[index]);
+        built = id != NULL && cJSON_AddItemToArray(ids, id);
+        if (!built) {
+            cJSON_Delete(id);
+        }
+    }
+    built = built && cJSON_AddStringToObject(json, "id", text_or_empty(installed->id)) != NULL &&
+            cJSON_AddStringToObject(json, "name", text_or_empty(installed->name)) != NULL &&
+            cJSON_AddStringToObject(json, "fullName", text_or_empty(installed->full_name)) != NULL &&
+            cJSON_AddItemToObject(json, "ids", ids);
     if (!built) {
-        cJSON_Delete(argument);
+        cJSON_Delete(ids);
+        cJSON_Delete(json);
         return NULL;
     }
-    return argument;
+    built = cJSON_AddStringToObject(json, "primary", text_or_empty(installed->primary)) != NULL &&
+            cJSON_AddBoolToObject(json, "primaryConfirmed", installed->primary_confirmed != 0) != NULL &&
+            cJSON_AddStringToObject(json, "version", text_or_empty(installed->version)) != NULL &&
+            cJSON_AddStringToObject(json, "commit", text_or_empty(installed->commit)) != NULL &&
+            cJSON_AddStringToObject(json, "sha256", text_or_empty(installed->sha256)) != NULL;
+    if (!built) {
+        cJSON_Delete(json);
+        return NULL;
+    }
+    return json;
 }
 
 /** A report in the shape host_print_install_warnings reads, holding the one plugin install.byId installed. */
-static cJSON *report_of(const cJSON *installed) {
+static cJSON *report_of(const runtime_install_by_id_answer *installed) {
     cJSON *report = cJSON_CreateObject();
     cJSON *rows = report == NULL ? NULL : cJSON_AddArrayToObject(report, "installed");
     cJSON *row = rows == NULL ? NULL : cJSON_CreateObject();
-    if (row == NULL || cJSON_AddStringToObject(row, "id", host_text(installed, "id")) == NULL ||
-        cJSON_AddStringToObject(row, "version", host_text(installed, "version")) == NULL || !cJSON_AddItemToArray(rows, row)) {
+    if (row == NULL || cJSON_AddStringToObject(row, "id", text_or_empty(installed->id)) == NULL ||
+        cJSON_AddStringToObject(row, "version", text_or_empty(installed->version)) == NULL ||
+        !cJSON_AddItemToArray(rows, row)) {
         cJSON_Delete(row);
         cJSON_Delete(report);
         return NULL;
@@ -175,8 +174,13 @@ static cJSON *report_of(const cJSON *installed) {
     return report;
 }
 
-static int print_installed(const host_context *context, const cJSON *installed) {
-    host_print_json(installed);
+static int print_installed(const host_context *context, const runtime_install_by_id_answer *installed) {
+    cJSON *printed = installed_json(installed);
+    if (printed == NULL) {
+        return refuse_out_of_memory();
+    }
+    host_print_json(printed);
+    cJSON_Delete(printed);
     cJSON *report = report_of(installed);
     host_print_install_warnings(context, report);
     cJSON_Delete(report);
@@ -189,22 +193,29 @@ static int print_installed(const host_context *context, const cJSON *installed) 
  */
 static int settles_name(const host_context *context, const host_name_request *request, const found_name *found,
                         const char *marketplace, int is_recording, int *code) {
-    cJSON *refusal = NULL;
-    cJSON *call = remember_call(context, found, marketplace, request->accepted_name_id, is_recording);
-    cJSON *answer = runtime_call_operation(runtime_marketplace_remember_operation, call, &refusal);
-    if (answer == NULL) {
-        *code = refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
-        return 0;
-    }
-    int is_settled = !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "needsUserAcceptance"));
-    if (!is_settled) {
+    const runtime_marketplace_definition *names = runtime_marketplace_definition_of();
+    runtime_marketplace_remember_argument argument = SPISOR_INIT(runtime_marketplace_remember_argument);
+    runtime_marketplace_remember_answer answer = SPISOR_INIT(runtime_marketplace_remember_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.state = context->state;
+    argument.marketplace = marketplace;
+    argument.name = found->bare;
+    argument.id = found->id;
+    argument.accept = request->accepted_name_id;
+    argument.check_only = is_recording ? 0 : 1;
+    spisor_status status = names->remember(names->context, &argument, &answer, &declined);
+    int is_settled = status == SPISOR_OK && answer.memory != RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE;
+    if (status != SPISOR_OK) {
+        *code = host_refuse_printably(host_refusal_json(&declined));
+    } else if (!is_settled) {
         const char *label_parts[3] = {marketplace == NULL ? "" : marketplace, "/", found->bare};
         char *label = marketplace == NULL ? NULL : runtime_cache_text(label_parts, 3);
-        *code = refuse_changed_name(marketplace == NULL ? found->bare : (label == NULL ? found->bare : label), host_text(answer, "was"),
-                                    host_text(answer, "now"), request->application);
+        const char *shown = marketplace == NULL || label == NULL ? found->bare : label;
+        *code = refuse_changed_name(shown, answer.was, answer.now, request->application);
         spisor_memory_release(label);
     }
-    cJSON_Delete(answer);
+    names->release_remember_answer(names->context, &answer);
+    names->release_refusal(names->context, &declined);
     return is_settled;
 }
 
@@ -226,47 +237,70 @@ static int install_found(const host_context *context, const host_name_request *r
         spisor_memory_release(plugin_directory);
         return code;
     }
-    cJSON *installed = runtime_call_operation(runtime_install_by_id_operation,
-                                               install_call(context, found->id, plugin_directory, request->accepted_primary), &refusal);
+    const runtime_install_definition *install = runtime_install_definition_of();
+    runtime_install_by_id_argument argument = SPISOR_INIT(runtime_install_by_id_argument);
+    runtime_install_by_id_answer installed = SPISOR_INIT(runtime_install_by_id_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.id = found->id;
+    argument.cache = context->cache;
+    argument.plugin_directory = plugin_directory;
+    argument.accept_primary = request->accepted_primary;
+    argument.api_base = host_marketplace_lookup_api_base();
+    spisor_status status = install->by_id(install->context, &argument, &installed, &declined);
     spisor_memory_release(plugin_directory);
-    if (installed == NULL) {
-        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
-    }
-    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(installed, "needsUserAcceptance"))) {
-        code = refuse_changed_primary(request->name, request->application, installed);
+    if (status != SPISOR_OK) {
+        code = host_refuse_printably(host_refusal_json(&declined));
+    } else if (installed.needs_user_acceptance) {
+        code = refuse_changed_primary(request->name, request->application, &installed);
     } else if (settles_names(context, request, found, 1, &code)) {
-        code = print_installed(context, installed);
+        code = print_installed(context, &installed);
     }
-    cJSON_Delete(installed);
+    install->release_by_id_answer(install->context, &installed);
+    install->release_refusal(install->context, &declined);
     return code;
 }
 
-static int install_looked_up(const host_context *context, const host_name_request *request, const cJSON *answer) {
-    const cJSON *forms = cJSON_GetObjectItemCaseSensitive(answer, "ambiguous");
-    if (cJSON_IsArray(forms)) {
-        return refuse_ambiguous(request->name, forms);
+static int install_looked_up(const host_context *context, const host_name_request *request,
+                             const runtime_marketplace_lookup_answer *answer) {
+    if (answer->match == RUNTIME_MARKETPLACE_AMBIGUOUS) {
+        return refuse_ambiguous(request->name, answer->ambiguous, answer->ambiguous_count);
     }
-    found_name found = {host_text(answer, "marketplace"), host_text(answer, "id"), bare_name_of(request->name),
+    found_name found = {answer->marketplace, answer->id, bare_name_of(request->name),
                         strchr(request->name, '/') == NULL};
-    return found.id == NULL || found.marketplace == NULL ? refuse_not_found(request->name) : install_found(context, request, &found);
+    return found.id == NULL || found.marketplace == NULL ? refuse_not_found(request->name)
+                                                         : install_found(context, request, &found);
+}
+
+/** Looks the name up in the copies and installs what it means. */
+static int look_up_and_install(const host_context *context, const host_name_request *request,
+                               const host_marketplace_copies *copies) {
+    const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
+    runtime_marketplace_lookup_argument argument = SPISOR_INIT(runtime_marketplace_lookup_argument);
+    runtime_marketplace_lookup_answer answer = SPISOR_INIT(runtime_marketplace_lookup_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.copies = copies->copies;
+    argument.copy_count = copies->count;
+    argument.name = request->name;
+    spisor_status status = marketplace->lookup(marketplace->context, &argument, &answer, &declined);
+    int code = status == SPISOR_OK     ? install_looked_up(context, request, &answer)
+               : status == SPISOR_NONE ? refuse_not_found(request->name)
+                                       : host_refuse_printably(host_refusal_json(&declined));
+    marketplace->release_lookup_answer(marketplace->context, &answer);
+    marketplace->release_refusal(marketplace->context, &declined);
+    return code;
 }
 
 int host_install_by_name(const host_context *context, const host_name_request *request) {
     cJSON *refusal = NULL;
-    cJSON *copies = host_read_marketplace_copies(context, &refusal);
-    if (copies == NULL) {
-        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
+    host_marketplace_copies copies;
+    int code;
+    if (!host_read_marketplace_copies(context, &copies, &refusal)) {
+        code = refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
+    } else if (copies.count == 0) {
+        code = refuse_no_marketplace(request->name);
+    } else {
+        code = look_up_and_install(context, request, &copies);
     }
-    if (cJSON_GetArraySize(copies) == 0) {
-        cJSON_Delete(copies);
-        return refuse_no_marketplace(request->name);
-    }
-    cJSON *answer =
-        runtime_call_operation(runtime_marketplace_lookup_operation, lookup_call(copies, request->name), &refusal);
-    if (answer == NULL) {
-        return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
-    }
-    int code = install_looked_up(context, request, answer);
-    cJSON_Delete(answer);
+    host_release_marketplace_copies(&copies);
     return code;
 }
