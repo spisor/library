@@ -133,10 +133,12 @@ static void search_other_registrations(const char *state, const char *host, cons
                                        runtime_changes_holders *holders) {
     const char *segments[2] = {state, "hosts"};
     char *directory = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    runtime_directory_listing listing;
-    if (directory == NULL || !runtime_list_directory(directory, &listing)) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status listed = directory == NULL ? SPISOR_OUT_OF_MEMORY : runtime_list_directory(directory, &listing);
+    if (listed != SPISOR_OK) {
         spisor_memory_release(directory);
-        holders->unreadable = 1;
+        holders->failed = listed == SPISOR_OUT_OF_MEMORY;
+        holders->unreadable = !holders->failed;
         return;
     }
     spisor_memory_release(directory);
@@ -655,10 +657,13 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
-    spisor_lock *guard = runtime_hosts_lock(state);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(state, &guard);
     runtime_changes_outcome outcome =
-        guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
-                      : runtime_changes_apply_held(state, host, change);
+        locked == SPISOR_OUT_OF_MEMORY ? outcome_of(RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out")
+        : locked != SPISOR_OK
+            ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
+            : runtime_changes_apply_held(state, host, change);
     spisor_unlock(guard);
     return outcome;
 }

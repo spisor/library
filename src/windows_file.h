@@ -13,7 +13,7 @@
  * MoveFileExW that replaces it fail, so one host replacing a hint, a marker or a cached file failed
  * whenever another happened to be reading it.
  */
-FILE *spisor_windows_open(const char *path, int writing);
+FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory);
 
 /**
  * Renames from over to, replacing it, as one step. 1 on success.

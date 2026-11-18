@@ -26,33 +26,46 @@ struct spisor_lock {
 #endif
 };
 
-#if defined(_WIN32)
-
-static HANDLE open_lock_file(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    HANDLE handle = INVALID_HANDLE_VALUE;
-    if (wide != NULL) {
-        handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                             NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    }
-    spisor_memory_release(wide);
-    return handle;
+static spisor_status taken_or_refused(int locked) {
+    return locked ? SPISOR_OK : SPISOR_REFUSED;
 }
 
-spisor_lock *spisor_lock_file(const char *path) {
-    HANDLE handle = path == NULL ? INVALID_HANDLE_VALUE : open_lock_file(path);
-    if (handle == INVALID_HANDLE_VALUE) {
-        return NULL;
+#if defined(_WIN32)
+
+static spisor_status open_lock_file(const char *path, HANDLE *handle) {
+    *handle = INVALID_HANDLE_VALUE;
+    if (path == NULL || !spisor_is_convertible_path(path)) {
+        return SPISOR_REFUSED;
+    }
+    wchar_t *wide = spisor_wide_path(path);
+    if (wide == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    *handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    spisor_memory_release(wide);
+    return *handle == INVALID_HANDLE_VALUE ? SPISOR_REFUSED : SPISOR_OK;
+}
+
+spisor_status spisor_lock_file(const char *path, spisor_lock **lock) {
+    HANDLE handle;
+    *lock = NULL;
+    spisor_status status = open_lock_file(path, &handle);
+    if (status != SPISOR_OK) {
+        return status;
     }
     OVERLAPPED whole = {0};
-    spisor_lock *lock = spisor_memory_allocate(sizeof *lock);
-    if (lock == NULL || !LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &whole)) {
-        spisor_memory_release(lock);
+    spisor_lock *taken = spisor_memory_allocate(sizeof *taken);
+    status = taken == NULL ? SPISOR_OUT_OF_MEMORY
+                           : taken_or_refused(LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &whole));
+    if (status != SPISOR_OK) {
+        spisor_memory_release(taken);
         CloseHandle(handle);
-        return NULL;
+        return status;
     }
-    lock->handle = handle;
-    return lock;
+    taken->handle = handle;
+    *lock = taken;
+    return SPISOR_OK;
 }
 
 void spisor_unlock(spisor_lock *lock) {
@@ -75,19 +88,22 @@ static int lock_exclusively(int descriptor) {
     return locked;
 }
 
-spisor_lock *spisor_lock_file(const char *path) {
+spisor_status spisor_lock_file(const char *path, spisor_lock **lock) {
+    *lock = NULL;
     int descriptor = path == NULL ? -1 : open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
     if (descriptor < 0) {
-        return NULL;
+        return SPISOR_REFUSED;
     }
-    spisor_lock *lock = spisor_memory_allocate(sizeof *lock);
-    if (lock == NULL || !lock_exclusively(descriptor)) {
-        spisor_memory_release(lock);
+    spisor_lock *taken = spisor_memory_allocate(sizeof *taken);
+    spisor_status status = taken == NULL ? SPISOR_OUT_OF_MEMORY : taken_or_refused(lock_exclusively(descriptor));
+    if (status != SPISOR_OK) {
+        spisor_memory_release(taken);
         close(descriptor);
-        return NULL;
+        return status;
     }
-    lock->descriptor = descriptor;
-    return lock;
+    taken->descriptor = descriptor;
+    *lock = taken;
+    return SPISOR_OK;
 }
 
 void spisor_unlock(spisor_lock *lock) {

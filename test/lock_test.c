@@ -44,8 +44,8 @@ static void write_counter(long value) {
 
 static int run_worker(void) {
     for (int step = 0; step < INCREMENTS; step++) {
-        spisor_lock *lock = spisor_lock_file(LOCK_PATH);
-        if (lock == NULL) {
+        spisor_lock *lock;
+        if (spisor_lock_file(LOCK_PATH, &lock) != SPISOR_OK) {
             return 1;
         }
         write_counter(read_counter() + 1);
@@ -97,17 +97,18 @@ static void processes_exclude_each_other(const char *self) {
 }
 
 static void a_lock_can_be_taken_again_once_released(void) {
-    spisor_lock *first = spisor_lock_file(LOCK_PATH);
-    CHECK(first != NULL);
+    spisor_lock *first;
+    CHECK(spisor_lock_file(LOCK_PATH, &first) == SPISOR_OK && first != NULL);
     spisor_unlock(first);
-    spisor_lock *second = spisor_lock_file(LOCK_PATH);
-    CHECK(second != NULL);
+    spisor_lock *second;
+    CHECK(spisor_lock_file(LOCK_PATH, &second) == SPISOR_OK && second != NULL);
     spisor_unlock(second);
 }
 
 static void a_lock_in_a_missing_folder_is_refused(void) {
-    CHECK(spisor_lock_file(SPISOR_SCRATCH_PATH "/no-such-folder/x.lock") == NULL);
-    CHECK(spisor_lock_file(NULL) == NULL);
+    spisor_lock *lock;
+    CHECK(spisor_lock_file(SPISOR_SCRATCH_PATH "/no-such-folder/x.lock", &lock) == SPISOR_REFUSED && lock == NULL);
+    CHECK(spisor_lock_file(NULL, &lock) == SPISOR_REFUSED && lock == NULL);
     spisor_unlock(NULL);
 }
 

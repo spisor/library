@@ -39,7 +39,7 @@ static char *carried_stub(const char *cache, int *out_of_memory) {
     *out_of_memory = (resolved == NULL && refusal == NULL) || (segments[0] != NULL && carried == NULL);
     cJSON_Delete(refusal);
     cJSON_Delete(resolved);
-    if (carried != NULL && !spisor_file_exists(carried)) {
+    if (carried != NULL && spisor_probe_file(carried) != SPISOR_FILE_PRESENT) {
         spisor_memory_release(carried);
         carried = NULL;
     }
@@ -79,7 +79,9 @@ cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal) {
     }
     int out_of_memory = 0;
     char *stub = runtime_boot_stub_path(cache);
-    char *carried = stub == NULL || spisor_file_exists(stub) ? NULL : carried_stub(cache, &out_of_memory);
+    char *carried = stub == NULL || spisor_probe_file(stub) == SPISOR_FILE_PRESENT
+                        ? NULL
+                        : carried_stub(cache, &out_of_memory);
     cJSON *answer = stub == NULL || out_of_memory ? NULL : placement(stub, carried != NULL);
     if (answer != NULL && carried != NULL && !copy_runnable(carried, stub)) {
         const char *parts[2] = {"spisor-boot could not be put at ", stub};

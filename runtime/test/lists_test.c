@@ -294,7 +294,7 @@ static void detects_a_binary_on_path_without_launching_anything(void) {
     spisor_memory_release(touch_file(place.bin, "claude" PROGRAM_EXTENSION, program, 0755));
     cJSON *rows = application_rows(&place, path_environment(place.bin), "[]");
     check_text(state_of(rows, "claude"), "detected", "claude on PATH");
-    CHECK(!spisor_file_exists(marker));
+    CHECK(spisor_probe_file(marker) != SPISOR_FILE_PRESENT);
     cJSON_Delete(rows);
     spisor_memory_release(marker);
     discard(&place);

@@ -8,13 +8,22 @@
 #include "segment.h"
 #include "spisor/path.h"
 
-static char *declared_segment(const cJSON *names, const char *kind) {
+/** The declared name for kind when it is a portable segment, else NULL; SPISOR_OUT_OF_MEMORY only out of memory. */
+static spisor_status declared_segment(const cJSON *names, const char *kind, char **segment) {
     const cJSON *declared = cJSON_GetObjectItemCaseSensitive(names, kind);
-    return cJSON_IsString(declared) ? runtime_portable_segment(declared->valuestring) : NULL;
+    *segment = NULL;
+    if (!cJSON_IsString(declared)) {
+        return SPISOR_OK;
+    }
+    return runtime_portable_segment(declared->valuestring, segment) == SPISOR_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                                                                                           : SPISOR_OK;
 }
 
 static char *join_kind(const char *home, const cJSON *names, const char *kind) {
-    char *declared = declared_segment(names, kind);
+    char *declared;
+    if (declared_segment(names, kind, &declared) != SPISOR_OK) {
+        return NULL;
+    }
     const char *segments[2] = {home, declared != NULL ? declared : kind};
     char *joined = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     spisor_memory_release(declared);

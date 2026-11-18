@@ -26,7 +26,7 @@ static catalog_answer apply_plain(const char *host, const char *settings_json) {
 
 static void remove_run_record(catalog_answer started) {
     const char *record = text_at(started.tree, "runRecord");
-    CHECK(record != NULL && spisor_file_exists(record));
+    CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
     if (record != NULL) {
         CHECK(runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE);
     }
@@ -93,7 +93,7 @@ static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_refere
     record_references(TEST_HOST, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{}}");
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
     char *record = runtime_record_run(state, TEST_HOST, run, 5000, &record_out_of_memory);
-    CHECK(record != NULL && spisor_file_exists(record));
+    CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
     CHECK(runtime_remove_host_references(state, TEST_HOST) == 1);
     CHECK(!exists_in(state, "bundles/" TEST_HOST ".json"));
     CHECK(!exists_in(state, "bundles/runs/" TEST_HOST));

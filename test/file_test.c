@@ -9,7 +9,6 @@
 #include "check.h"
 #include "spisor/allocation.h"
 #include "spisor/file.h"
-#include "../src/file_presence.h"
 #include "../src/file_replacement.h"
 #include "links.h"
 #include "temporary_entries.h"
@@ -42,13 +41,13 @@ static int write_fixture(const char *utf8_path, const char *content) {
 }
 
 static void a_directory_exists(void) {
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH) != 0);
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/") != 0);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH) == SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/") == SPISOR_FILE_PRESENT);
 }
 
 static void a_missing_file_does_not(void) {
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/missing.json") == 0);
-    CHECK(spisor_file_exists("") == 0);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/missing.json") != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file("") != SPISOR_FILE_PRESENT);
     size_t length = 7;
     CHECK(spisor_read_file(SPISOR_SCRATCH_PATH "/missing.json", &length) == NULL);
 }
@@ -62,7 +61,7 @@ static void a_directory_is_not_readable(void) {
 
 static void a_non_ascii_name_round_trips(void) {
     CHECK(write_fixture(NON_ASCII_NAME, CONTENT));
-    CHECK(spisor_file_exists(NON_ASCII_NAME) != 0);
+    CHECK(spisor_probe_file(NON_ASCII_NAME) == SPISOR_FILE_PRESENT);
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(NON_ASCII_NAME, &length);
     CHECK(bytes != NULL);
@@ -97,7 +96,7 @@ static void read_back_equals(const char *path, const char *expected) {
 static void make_directories_creates_nested(void) {
     const char *nested = SPISOR_SCRATCH_PATH "/a/b/c\xc3\xa9";
     CHECK(spisor_make_directories(nested) == 1);
-    CHECK(spisor_file_exists(nested) != 0);
+    CHECK(spisor_probe_file(nested) == SPISOR_FILE_PRESENT);
     CHECK(spisor_make_directories(nested) == 1);
 }
 
@@ -122,7 +121,7 @@ static void replace_overwrites_existing(void) {
 static void replace_into_missing_directory_fails(void) {
     const char *path = SPISOR_SCRATCH_PATH "/no-such-directory/settings.json";
     CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == 0);
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/no-such-directory") == 0);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/no-such-directory") != SPISOR_FILE_PRESENT);
 }
 
 static void replace_through_a_link_changes_the_target_and_keeps_the_link(void) {
@@ -154,7 +153,7 @@ static void replace_through_a_dangling_link_is_refused(void) {
     }
     CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == 0);
     CHECK(is_link(link));
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/dangling-home/no-such-target.json") == 0);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/dangling-home/no-such-target.json") != SPISOR_FILE_PRESENT);
     CHECK(count_temporary_entries(home_directory) == 0);
 }
 
@@ -289,7 +288,7 @@ static void replace_sets_a_running_image_aside_and_takes_its_place(void) {
     CHECK(run_image_at(path, &information));
     CHECK(spisor_replace_file(path, (const uint8_t *)"new shim", 8) == 1);
     read_back_equals(path, "new shim");
-    CHECK(spisor_file_exists(aside));
+    CHECK(spisor_probe_file(aside) == SPISOR_FILE_PRESENT);
     CHECK(WaitForSingleObject(information.hProcess, 0) == WAIT_TIMEOUT);
     TerminateProcess(information.hProcess, 0);
     WaitForSingleObject(information.hProcess, 10000);
@@ -334,14 +333,14 @@ static void sets_two_running_images_aside_in_turn_and_removes_both_once_they_exi
     CHECK(CreateProcessW(wide, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &startup, &second) != 0);
     CHECK(spisor_replace_file(path, (const uint8_t *)"third shim", 10) == 1);
     read_back_equals(path, "third shim");
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old"));
-    CHECK(spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1"));
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old") == SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1") == SPISOR_FILE_PRESENT);
     CHECK(spisor_remove_set_aside(path) == 2);
     stop_image(&second);
     stop_image(&first);
     CHECK(spisor_remove_set_aside(path) == 0);
-    CHECK(!spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old"));
-    CHECK(!spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1"));
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old") != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1") != SPISOR_FILE_PRESENT);
     spisor_memory_release(ping);
 }
 
@@ -365,7 +364,7 @@ static void replaces_a_fresh_executable_held_for_a_moment_after_retrying(void) {
     WaitForSingleObject(thread, 5000);
     CloseHandle(thread);
     read_back_equals(path, "replaced");
-    CHECK(!spisor_file_exists(SPISOR_SCRATCH_PATH "/held-executable/fresh.exe.old"));
+    CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/held-executable/fresh.exe.old") != SPISOR_FILE_PRESENT);
 }
 #endif
 

@@ -284,7 +284,10 @@ typedef struct recorded_sequences {
  */
 static int reverse_recorded(const entry_loader *loader, const recorded_sequences *recorded) {
     int out_of_memory = 0;
-    spisor_lock *guard = recorded->count == 0 ? NULL : runtime_hosts_lock(loader->state);
+    spisor_lock *guard = NULL;
+    if (recorded->count != 0 && runtime_hosts_lock(loader->state, &guard) == SPISOR_OUT_OF_MEMORY) {
+        return 0;
+    }
     if (guard != NULL) {
         runtime_changes_reverse_listed_held(loader->state, loader->id, recorded->values, recorded->count,
                                             &out_of_memory);

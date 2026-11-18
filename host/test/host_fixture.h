@@ -618,7 +618,7 @@ static inline cJSON *references_of(const host_world *world, const char *id) {
 
 static inline void copy_tree(const char *source, const char *destination) {
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(source, &listing) == 1);
+    CHECK(runtime_list_directory(source, &listing) == SPISOR_OK);
     CHECK(spisor_make_directories(destination) == 1);
     for (size_t index = 0; index < listing.count; index++) {
         char *from = joined(source, listing.entries[index].name);

@@ -433,7 +433,7 @@ static void a_destination_that_exists_is_refused_and_left_alone(void) {
     catalog_answer answer = marketplace_call(MARKETPLACE_READ, argument);
     expect_refusal(answer, "already exists", "existing destination");
     cJSON_Delete(answer.tree);
-    CHECK(spisor_file_exists(path));
+    CHECK(spisor_probe_file(path) == SPISOR_FILE_PRESENT);
 }
 
 static void a_url_that_is_not_file_or_https_is_refused_by_read(void) {

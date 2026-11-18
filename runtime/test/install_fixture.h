@@ -71,7 +71,7 @@ static inline void write_in(const char *base, const char *rest, const char *cont
 
 static inline int exists_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
-    int exists = spisor_file_exists(path);
+    int exists = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return exists;
 }

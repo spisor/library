@@ -4,9 +4,12 @@
 #if defined(_WIN32)
 #include <wchar.h>
 
+/** Whether path is valid UTF-8, all spisor_wide_path needs of it, read without allocating. */
+int spisor_is_convertible_path(const char *path);
 /**
  * The UTF-8 path as UTF-16 for the wide Windows APIs, freed; NULL when it is not valid UTF-8
- * or memory runs out. A path whose full form reaches MAX_PATH comes back full, with the \\?\ prefix
+ * or memory runs out, so NULL for a path spisor_is_convertible_path accepts is out of memory alone.
+ * A path whose full form reaches MAX_PATH comes back full, with the \\?\ prefix
  * (\\?\UNC\ for a share), so a deep cache is stored and swept like any other.
  *
  * @implNote The prefix turns off the Win32 path parsing, so the path is made full first by

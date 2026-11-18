@@ -12,11 +12,22 @@ char *runtime_cache_joined(const char *const *segments, size_t count) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
 }
 
+/** The names, unless the folder could not be listed for want of memory, which drops them. */
+static cJSON *listed_or_dropped(cJSON *names, spisor_status listed) {
+    if (listed == SPISOR_OUT_OF_MEMORY) {
+        cJSON_Delete(names);
+        return NULL;
+    }
+    return names;
+}
+
 cJSON *runtime_cache_folder_names(const char *const *segments, size_t count) {
     char *path = runtime_cache_joined(segments, count);
     cJSON *names = path == NULL ? NULL : cJSON_CreateArray();
-    runtime_directory_listing listing;
-    if (names != NULL && runtime_list_directory(path, &listing)) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status listed = names == NULL ? SPISOR_OUT_OF_MEMORY : runtime_list_directory(path, &listing);
+    names = listed_or_dropped(names, listed);
+    if (listed == SPISOR_OK) {
         for (size_t index = 0; names != NULL && index < listing.count; index++) {
             cJSON *name = listing.entries[index].is_directory ? cJSON_CreateString(listing.entries[index].name) : NULL;
             if (listing.entries[index].is_directory && (name == NULL || !cJSON_AddItemToArray(names, name))) {
@@ -40,8 +51,10 @@ static int is_json_name(const char *name) {
 cJSON *runtime_cache_json_names(const char *const *segments, size_t count) {
     char *folder = runtime_cache_joined(segments, count);
     cJSON *names = folder == NULL ? NULL : cJSON_CreateArray();
-    runtime_directory_listing listing;
-    if (names != NULL && runtime_list_directory(folder, &listing)) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status listed = names == NULL ? SPISOR_OUT_OF_MEMORY : runtime_list_directory(folder, &listing);
+    names = listed_or_dropped(names, listed);
+    if (listed == SPISOR_OK) {
         for (size_t index = 0; names != NULL && index < listing.count; index++) {
             const char *name = listing.entries[index].name;
             cJSON *entry = is_json_name(name) ? cJSON_CreateString(name) : NULL;

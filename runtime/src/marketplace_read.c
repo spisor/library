@@ -89,7 +89,7 @@ static int has_way_to_read(const cJSON *argument, reading *order, cJSON **refusa
                "the argument carries neither text nor a usable destination for %s", order->source_id);
         return 0;
     }
-    if (order->text == NULL && spisor_file_exists(order->destination)) {
+    if (order->text == NULL && spisor_probe_file(order->destination) == SPISOR_FILE_PRESENT) {
         refuse(refusal, "send a destination that does not exist; it is deleted once read, so only a file this call wrote",
                "the destination for %s already exists", order->source_id);
         return 0;

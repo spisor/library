@@ -68,7 +68,7 @@ static void it_answers_the_entry_plugin_json_names_inside_the_version(void) {
     catalog_answer answer = located("{\"a\":\"1.0.0\"}");
     const cJSON *found = only(answer.tree, "located", "entry");
     const char *entry = text_at(found, "entry");
-    CHECK(entry != NULL && spisor_file_exists(entry) && strstr(entry, "index.js") != NULL);
+    CHECK(entry != NULL && spisor_probe_file(entry) == SPISOR_FILE_PRESENT && strstr(entry, "index.js") != NULL);
     CHECK(text_at(found, "directory") != NULL && strstr(entry, text_at(found, "directory")) == entry);
     expect_member_json(answer.tree, "problems", "[]", "no problems");
     cJSON_Delete(answer.tree);

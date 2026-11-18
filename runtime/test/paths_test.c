@@ -35,13 +35,16 @@ static void expect_joined(const char *actual, const char *name, const char *labe
 }
 
 static void expect_segment(const char *name, const char *expected) {
-    char *segment = runtime_portable_segment(name);
+    char *segment;
+    spisor_status status = runtime_portable_segment(name, &segment);
+    CHECK(runtime_trims_to_portable_segment(name) == (expected != NULL));
     if (expected == NULL) {
-        if (segment != NULL) {
-            fprintf(stderr, "segment \"%s\": expected NULL, got \"%s\"\n", name, segment);
+        if (status != SPISOR_MALFORMED || segment != NULL) {
+            fprintf(stderr, "segment \"%s\": expected MALFORMED, got %d\n", name, (int)status);
             check_failures++;
         }
     } else {
+        CHECK(status == SPISOR_OK);
         check_text(segment, expected, name);
     }
     spisor_memory_release(segment);

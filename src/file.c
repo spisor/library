@@ -6,7 +6,6 @@
 #include "spisor/file.h"
 
 #include "allocation.h"
-#include "file_presence.h"
 #include "file_reading.h"
 #include "file_replacement.h"
 
@@ -39,20 +38,13 @@ static char *duplicate_text(const char *text) {
 
 #if defined(_WIN32)
 /** GetFileAttributesW rather than _wstat, because _wstat refuses a directory named with a trailing separator. */
-int spisor_file_exists(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    if (wide == NULL) {
-        return 0;
-    }
-    DWORD attributes = GetFileAttributesW(wide);
-    spisor_memory_release(wide);
-    return attributes != INVALID_FILE_ATTRIBUTES;
-}
-
 spisor_file_presence spisor_probe_file(const char *path) {
+    if (!spisor_is_convertible_path(path)) {
+        return SPISOR_FILE_UNKNOWN;
+    }
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
-        return SPISOR_FILE_UNKNOWN;
+        return SPISOR_FILE_OUT_OF_MEMORY;
     }
     DWORD attributes = GetFileAttributesW(wide);
     DWORD error = GetLastError();
@@ -63,13 +55,18 @@ spisor_file_presence spisor_probe_file(const char *path) {
     return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? SPISOR_FILE_MISSING : SPISOR_FILE_UNKNOWN;
 }
 
-static FILE *open_for_reading(const char *path) {
-    return spisor_windows_open(path, 0);
+static FILE *open_for_reading(const char *path, int *out_of_memory) {
+    return spisor_windows_open(path, 0, out_of_memory);
 }
 
-static int is_directory(const char *path) {
+static int is_directory(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return 0;
+    }
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
+        *out_of_memory = 1;
         return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
@@ -93,7 +90,8 @@ static FILE *open_for_appending(const char *path) {
 static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
     (void)target;
     (void)owner_only;
-    return spisor_windows_open(temporary, 1);
+    int out_of_memory;
+    return spisor_windows_open(temporary, 1, &out_of_memory);
 }
 
 static int create_directory(const char *path) {
@@ -174,11 +172,6 @@ static char *write_target_of(const char *path) {
     return target;
 }
 #else
-int spisor_file_exists(const char *path) {
-    struct stat status;
-    return path[0] != '\0' && stat(path, &status) == 0;
-}
-
 spisor_file_presence spisor_probe_file(const char *path) {
     struct stat status;
     if (stat(path, &status) == 0) {
@@ -187,12 +180,14 @@ spisor_file_presence spisor_probe_file(const char *path) {
     return errno == ENOENT || errno == ENOTDIR ? SPISOR_FILE_MISSING : SPISOR_FILE_UNKNOWN;
 }
 
-static FILE *open_for_reading(const char *path) {
+static FILE *open_for_reading(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
     return fopen(path, "rb");
 }
 
-static int is_directory(const char *path) {
+static int is_directory(const char *path, int *out_of_memory) {
     struct stat status;
+    *out_of_memory = 0;
     return stat(path, &status) == 0 && S_ISDIR(status.st_mode);
 }
 
@@ -298,12 +293,15 @@ static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *out
 }
 
 uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
+    int out_of_memory;
     *outcome = SPISOR_READ_FAILED;
-    if (path[0] == '\0' || is_directory(path)) {
+    if (path[0] == '\0') {
         return NULL;
     }
-    FILE *file = open_for_reading(path);
+    int directory = is_directory(path, &out_of_memory);
+    FILE *file = out_of_memory || directory ? NULL : open_for_reading(path, &out_of_memory);
     if (file == NULL) {
+        *outcome = out_of_memory ? SPISOR_READ_OUT_OF_MEMORY : SPISOR_READ_FAILED;
         return NULL;
     }
     uint8_t *bytes = read_stream(file, length, outcome);
@@ -326,7 +324,8 @@ static int is_separator(char character) {
 }
 
 int spisor_make_directories(const char *path) {
-    if (is_directory(path)) {
+    int out_of_memory;
+    if (is_directory(path, &out_of_memory)) {
         return 1;
     }
     size_t path_length = strlen(path);
@@ -345,7 +344,7 @@ int spisor_make_directories(const char *path) {
     }
     spisor_memory_release(prefix);
     create_directory(path);
-    return is_directory(path);
+    return is_directory(path, &out_of_memory);
 }
 
 int spisor_append_file(const char *path, const uint8_t *bytes, size_t length) {
@@ -373,7 +372,7 @@ static char *temporary_path_for(const char *path) {
         snprintf(temporary, path_length + 1 + 16 + 4 + 1, "%s.%04x%04x%04x%04x.tmp", path,
                  (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu,
                  (unsigned)rand() & 0xffffu);
-    } while (spisor_file_exists(temporary));
+    } while (spisor_probe_file(temporary) == SPISOR_FILE_PRESENT);
     return temporary;
 }
 

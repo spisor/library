@@ -143,7 +143,7 @@ static void it_refuses_an_unusable_json_environment_writing_nothing(void) {
     expect_json_environment_refused("a name given twice", named_twice);
     char record[1200];
     snprintf(record, sizeof record, "%s/processes/" HOST ".ready.json", state);
-    CHECK(!spisor_file_exists(record));
+    CHECK(spisor_probe_file(record) != SPISOR_FILE_PRESENT);
     runtime_remove_tree(state);
 }
 

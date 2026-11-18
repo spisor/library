@@ -7,22 +7,30 @@
 #include "spisor/file.h"
 #include "spisor/path.h"
 
-static char *lock_path(const char *state) {
+static spisor_status lock_path(const char *state, char **path) {
     const char *directory_segments[2] = {state, "hosts"};
     char *directory = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, directory_segments, 2);
-    if (directory == NULL || !spisor_make_directories(directory)) {
+    *path = NULL;
+    if (directory == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (!spisor_make_directories(directory)) {
         spisor_memory_release(directory);
-        return NULL;
+        return SPISOR_REFUSED;
     }
     const char *segments[2] = {directory, ".lock"};
-    char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     spisor_memory_release(directory);
-    return path;
+    return *path == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-spisor_lock *runtime_hosts_lock(const char *state) {
-    char *path = lock_path(state);
-    spisor_lock *guard = path == NULL ? NULL : spisor_lock_file(path);
+spisor_status runtime_hosts_lock(const char *state, spisor_lock **guard) {
+    char *path;
+    spisor_status status = lock_path(state, &path);
+    *guard = NULL;
+    if (status == SPISOR_OK) {
+        status = spisor_lock_file(path, guard);
+    }
     spisor_memory_release(path);
-    return guard;
+    return status;
 }

@@ -214,7 +214,7 @@ static void it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder(vo
     snprintf(expected_name, sizeof expected_name, "catalog%c%s.json", RUNTIME_SEPARATOR, hex);
     size_t length = strlen(path);
     CHECK(length > strlen(expected_name) && strcmp(path + length - strlen(expected_name), expected_name) == 0);
-    CHECK(spisor_file_exists(path));
+    CHECK(spisor_probe_file(path) == SPISOR_FILE_PRESENT);
     spisor_memory_release(path);
     cJSON *state = state_of(URL);
     char *body = index_text("1.0.0");

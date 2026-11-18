@@ -545,9 +545,10 @@ static name_hold is_held_by_a_command(const char *state, const char *name) {
     if (directory == NULL) {
         return NAME_HOLD_OUT_OF_MEMORY;
     }
-    if (!runtime_list_directory(directory, &listing)) {
+    spisor_status listed = runtime_list_directory(directory, &listing);
+    if (listed != SPISOR_OK) {
         spisor_memory_release(directory);
-        return NAME_FREE;
+        return listed == SPISOR_OUT_OF_MEMORY ? NAME_HOLD_OUT_OF_MEMORY : NAME_FREE;
     }
     spisor_memory_release(directory);
     name_hold hold = NAME_FREE;
@@ -988,8 +989,12 @@ static void reverse_own_changes(const command_call *call) {
 }
 
 static spisor_status run_locked(command_call *call, command_step step, spisor_refusal *refusal) {
-    spisor_lock *guard = runtime_hosts_lock(call->state);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(call->state, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (locked != SPISOR_OK) {
         return runtime_refuse_as(refusal, SPISOR_REFUSED, "the registry lock could not be taken; nothing was changed",
                                  "check that the hosts directory under the state place can be written");
     }

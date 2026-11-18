@@ -86,6 +86,13 @@ runtime_cache_presence runtime_cache_has_marker(const char *directory) {
     return presence;
 }
 
+static runtime_cache_presence cache_presence_of(spisor_file_presence presence) {
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        return RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY;
+    }
+    return presence == SPISOR_FILE_PRESENT ? RUNTIME_CACHE_PRESENT : RUNTIME_CACHE_NOT_PRESENT;
+}
+
 static runtime_cache_presence names_present_files(const char *directory, const cJSON *hashes) {
     const char *none = NULL;
     char *resolved_directory = runtime_cache_resolve(directory, &none, 0);
@@ -97,8 +104,10 @@ static runtime_cache_presence names_present_files(const char *directory, const c
         char *path = runtime_cache_resolve(resolved_directory, &key, 1);
         if (path == NULL) {
             presence = RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY;
-        } else if (!runtime_cache_is_strictly_inside(resolved_directory, path) || !spisor_file_exists(path)) {
+        } else if (!runtime_cache_is_strictly_inside(resolved_directory, path)) {
             presence = RUNTIME_CACHE_NOT_PRESENT;
+        } else {
+            presence = cache_presence_of(spisor_probe_file(path));
         }
         spisor_memory_release(path);
     }
@@ -249,12 +258,10 @@ static cJSON *check_recorded(const char *directory, const cJSON *hashes) {
 
 cJSON *runtime_cache_check_version(const char *directory) {
     char *path = marker_path(directory);
-    if (path == NULL) {
-        return NULL;
-    }
-    if (!spisor_file_exists(path)) {
+    spisor_file_presence presence = path == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(path);
+    if (presence != SPISOR_FILE_PRESENT) {
         spisor_memory_release(path);
-        return kind_only("absent");
+        return presence == SPISOR_FILE_OUT_OF_MEMORY ? NULL : kind_only("absent");
     }
     int out_of_memory = 0;
     cJSON *hashes = recorded_hashes(path, &out_of_memory);
@@ -339,12 +346,10 @@ static cJSON *check_sizes(const char *directory, const cJSON *hashes, const cJSO
 
 cJSON *runtime_cache_check_version_sizes(const char *directory) {
     char *path = marker_path(directory);
-    if (path == NULL) {
-        return NULL;
-    }
-    if (!spisor_file_exists(path)) {
+    spisor_file_presence presence = path == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(path);
+    if (presence != SPISOR_FILE_PRESENT) {
         spisor_memory_release(path);
-        return kind_only("absent");
+        return presence == SPISOR_FILE_OUT_OF_MEMORY ? NULL : kind_only("absent");
     }
     int out_of_memory;
     cJSON *marker = runtime_read_node_json(path, &out_of_memory);

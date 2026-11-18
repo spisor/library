@@ -364,7 +364,7 @@ static spisor_status run_apply(void) {
 static int recorded_no_run_unless_applied(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/spisor-host");
-    CHECK(runtime_list_directory(runs, &listing) == 1);
+    CHECK(runtime_list_directory(runs, &listing) == SPISOR_OK);
     spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 0;
     runtime_free_directory_listing(&listing);
@@ -614,7 +614,7 @@ static int placed_nothing_unless_placed(void) {
     if (last_status != SPISOR_OK && exists_in(base.cache, "boot")) {
         runtime_directory_listing listing = {NULL, 0};
         char *folder = joined(base.cache, "boot");
-        CHECK(runtime_list_directory(folder, &listing) == 1);
+        CHECK(runtime_list_directory(folder, &listing) == SPISOR_OK);
         spisor_memory_release(folder);
         int empty = listing.count == 0;
         runtime_free_directory_listing(&listing);
@@ -798,7 +798,7 @@ static spisor_status run_record_run(void) {
 static int recorded_no_new_run_unless_ok(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/" BACKGROUND_HOST);
-    CHECK(runtime_list_directory(runs, &listing) == 1);
+    CHECK(runtime_list_directory(runs, &listing) == SPISOR_OK);
     spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 2;
     runtime_free_directory_listing(&listing);
@@ -866,10 +866,10 @@ static void prepare_hold_start(void) {
 }
 
 static int marker_written(void) {
-    for (int waited = 0; waited < 10000 && !spisor_file_exists(start_marker); waited += 50) {
+    for (int waited = 0; waited < 10000 && spisor_probe_file(start_marker) != SPISOR_FILE_PRESENT; waited += 50) {
         pause_milliseconds(50);
     }
-    return spisor_file_exists(start_marker);
+    return spisor_probe_file(start_marker) == SPISOR_FILE_PRESENT;
 }
 
 static spisor_status run_hold_start(void) {
@@ -913,7 +913,8 @@ static int started_and_recorded_or_nothing(void) {
         kept = holders_name_started_host() && started_host_ran;
     } else {
         pause_milliseconds(UNSTARTED_WAIT_MILLISECONDS);
-        kept = !spisor_file_exists(start_marker) && !exists_in(base.state, "processes/" STARTED_HOST ".json");
+        kept = spisor_probe_file(start_marker) != SPISOR_FILE_PRESENT &&
+            !exists_in(base.state, "processes/" STARTED_HOST ".json");
     }
     if (!kept) {
         fprintf(stderr, "processes' hold: an answer of %d %s\n", (int)last_status,

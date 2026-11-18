@@ -86,7 +86,9 @@ static char *matching_file(int windows, const char *directory, const runtime_dir
 
 static char *found_in(int windows, const char *directory, const accepted_names *accepted, int *out_of_memory) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(directory, &listing)) {
+    spisor_status listed = runtime_list_directory(directory, &listing);
+    if (listed != SPISOR_OK) {
+        *out_of_memory = listed == SPISOR_OUT_OF_MEMORY;
         return NULL;
     }
     char *found = NULL;

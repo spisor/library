@@ -95,7 +95,7 @@ static int accepts_version(const cJSON *manifest, const char *path, cJSON **refu
 static cJSON *identified_manifest(const char *directory, const char *file_name, const char *identity_member,
                                   int (*is_acceptable)(const char *), char **path, cJSON **refusal) {
     *path = joined(directory, file_name);
-    if (*path != NULL && !spisor_file_exists(*path)) {
+    if (*path != NULL && spisor_probe_file(*path) != SPISOR_FILE_PRESENT) {
         const char *parts[3] = {directory, " has no ", file_name};
         const char *fix_parts[3] = {"give the directory the ", file_name, " that names its id and version"};
         char *fix = runtime_cache_text(fix_parts, 3);
@@ -211,7 +211,7 @@ static int compare_names(const void *left, const void *right) {
 /** Adds every file under directory as {key: path}, the key relative with / separators. */
 static int add_every_file(cJSON *keys, const char *directory, const char *prefix) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(directory, &listing)) {
+    if (runtime_list_directory(directory, &listing) != SPISOR_OK) {
         return 0;
     }
     int complete = 1;
@@ -309,7 +309,7 @@ static char *absolute(const char *directory) {
 
 static int add_bundled_file(cJSON *files, const char *root, const char *key, cJSON **refusal) {
     char *path = joined(root, key);
-    int exists = path != NULL && spisor_file_exists(path);
+    int exists = path != NULL && spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     if (path != NULL && !exists) {
         const char *parts[4] = {root, " has no ", key, ", which its " PLUGIN_MANIFEST "'s entry calls for"};
         *refusal = refused(parts, 4, "bundle the plugin into this directory first");
@@ -415,8 +415,8 @@ int host_read_library_directory(catalog_inputs *inputs, const char *id, const ch
     char *root = absolute(directory);
     char *library = root == NULL ? NULL : joined(root, "library.json");
     char *package = root == NULL ? NULL : joined(root, "package.json");
-    const char *path = library != NULL && spisor_file_exists(library) ? library
-                       : package != NULL && spisor_file_exists(package) ? package
+    const char *path = library != NULL && spisor_probe_file(library) == SPISOR_FILE_PRESENT ? library
+                       : package != NULL && spisor_probe_file(package) == SPISOR_FILE_PRESENT ? package
                                                                         : NULL;
     if (root != NULL && path == NULL) {
         const char *parts[2] = {root, " has neither library.json nor package.json"};

@@ -136,13 +136,13 @@ static void make_host_file(const scratch *place, const char *id, const char *rel
 static int host_file_exists(const scratch *place, const char *id) {
     char path[1400];
     snprintf(path, sizeof path, "%s/hosts/%s.json", place->state, id);
-    return spisor_file_exists(path);
+    return spisor_probe_file(path) == SPISOR_FILE_PRESENT;
 }
 
 static int host_directory_exists(const char *place, const char *id) {
     char path[1400];
     snprintf(path, sizeof path, "%s/hosts/%s", place, id);
-    return spisor_file_exists(path);
+    return spisor_probe_file(path) == SPISOR_FILE_PRESENT;
 }
 
 static void store_directly(const scratch *place, cJSON *registration) {
@@ -399,7 +399,7 @@ static void a_bad_id_is_refused_everywhere(void) {
         CHECK(malformed(REGISTRY_GET, id_request(&place, id), "host id"));
         CHECK(malformed(REGISTRY_FORGET, id_request(&place, id), "host id"));
     }
-    CHECK(spisor_file_exists(sentinel));
+    CHECK(spisor_probe_file(sentinel) == SPISOR_FILE_PRESENT);
     CHECK(list_count(&place) == 0);
 }
 

@@ -95,7 +95,7 @@ static void hands_a_batch_shim_each_argument_byte_identical_and_runs_nothing_an_
     cJSON *started = application_start(&world, "vectors");
     cJSON *expected = strings_of(given);
     CHECK(started != NULL && cJSON_Compare(cJSON_GetObjectItemCaseSensitive(started, "argv"), expected, 1));
-    CHECK(!spisor_file_exists(marker));
+    CHECK(spisor_probe_file(marker) != SPISOR_FILE_PRESENT);
     cJSON_Delete(expected);
     cJSON_Delete(started);
     spisor_memory_release(marker);

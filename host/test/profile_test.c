@@ -38,7 +38,7 @@ static char *shim_of(const host_world *world) {
 
 static void launch_through_the_command(host_world *world) {
     char *shim = shim_of(world);
-    CHECK(spisor_file_exists(shim));
+    CHECK(spisor_probe_file(shim) == SPISOR_FILE_PRESENT);
     program launcher;
     const char *arguments[] = {"joerg", "4", NULL};
     world_start(world, &launcher, shim, arguments, NULL, 0);

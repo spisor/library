@@ -239,7 +239,7 @@ static void the_service_finds_the_binary_and_launches_nothing(void) {
     on_path_call call = on_path(place.first);
     CHECK(call.status == SPISOR_OK);
     check_text(call.answer.path, binary, "the found path");
-    CHECK(!spisor_file_exists(marker));
+    CHECK(spisor_probe_file(marker) != SPISOR_FILE_PRESENT);
     release_call(&call);
     CHECK(call.answer.path == NULL && call.answer.storage == NULL);
     call = on_path(place.second);

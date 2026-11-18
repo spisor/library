@@ -19,8 +19,8 @@
 #define UNREADABLE_REGISTRATION_FIX "install the host again so its registration is rewritten"
 
 spisor_lock *runtime_updates_lock(const runtime_updates_request *request, cJSON **refusal) {
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    if (runtime_hosts_lock(request->state, &guard) == SPISOR_REFUSED) {
         const char *parts[1] = {"the registry lock under the state folder could not be taken"};
         *refusal = runtime_cache_refusal(parts, 1, WRITABLE_STATE_FIX);
     }

@@ -39,7 +39,7 @@ static inline int holds_file(const char *directory, const char *name, const char
     char file[128];
     snprintf(file, sizeof file, "%s%.*s", name, (int)extension_length, extension);
     char *path = joined(directory, file);
-    int held = spisor_file_exists(path);
+    int held = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return held;
 }

@@ -129,13 +129,6 @@ static char *folder_name(const char *id) {
     return folder;
 }
 
-static int is_portable_folder(const char *folder) {
-    char *portable = runtime_portable_segment(folder);
-    int unchanged = portable != NULL && strcmp(portable, folder) == 0;
-    spisor_memory_release(portable);
-    return unchanged;
-}
-
 /** Whether a local id's name holds a character the folder mapping or a case-insensitive file system would make ambiguous. */
 static int is_ambiguous_local_name(const runtime_identity *parsed) {
     if (parsed->number.start != NULL) {
@@ -169,7 +162,7 @@ runtime_identity_folder_status runtime_identity_folder_name(const char *id, char
     if (name == NULL) {
         return RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY;
     }
-    if (!is_portable_folder(name)) {
+    if (!runtime_is_portable_segment(name)) {
         spisor_memory_release(name);
         return RUNTIME_IDENTITY_FOLDER_NOT_PORTABLE;
     }

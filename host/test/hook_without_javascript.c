@@ -202,7 +202,7 @@ static void a_session_start_starts_no_node_or_bun_even_when_one_is_on_path(void)
     sprintf(path, "%s" PATH_SEPARATOR "%s", trap, stripped);
     char *started = joined(world.base.root, "javascript-started.txt");
     run_with_trap(&world, &hook, path, started);
-    if (spisor_file_exists(started)) {
+    if (spisor_probe_file(started) == SPISOR_FILE_PRESENT) {
         char *what = read_text_file(started);
         fprintf(stderr, "the hook started a JavaScript runtime: %s\n", what);
         spisor_memory_release(what);

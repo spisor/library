@@ -91,7 +91,11 @@ static int is_store(const cJSON *store) {
 
 /** The store at path, empty when there is no file; NULL with *refusal set for one that cannot be read or is no store. */
 static cJSON *loaded_store(const char *path, cJSON **refusal) {
-    if (!spisor_file_exists(path)) {
+    spisor_file_presence presence = spisor_probe_file(path);
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        return NULL;
+    }
+    if (presence != SPISOR_FILE_PRESENT) {
         return empty_store();
     }
     size_t length = 0;

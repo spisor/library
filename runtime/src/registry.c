@@ -7,7 +7,6 @@
 
 #include "directory_tree.h"
 #include "hosts_lock.h"
-#include "file_presence.h"
 #include "json_service.h"
 #include "paths.h"
 #include "segment.h"
@@ -62,10 +61,7 @@ static char *copy_text(const char *text) {
 }
 
 static int is_host_id(const char *id) {
-    char *segment = runtime_portable_segment(id);
-    int portable = segment != NULL && strcmp(segment, id) == 0;
-    spisor_memory_release(segment);
-    return portable;
+    return runtime_is_portable_segment(id);
 }
 
 static char *registration_path(const char *state, const char *id) {
@@ -481,9 +477,10 @@ static cJSON *register_with(const registry_request *request, int keep_stored_pro
     if (defect != NULL) {
         return refuse_registration(defect, refusal);
     }
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
-        return refuse_unlocked(request->state, refusal);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked != SPISOR_OK) {
+        return locked == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlocked(request->state, refusal);
     }
     cJSON *answer = register_locked(request, given, keep_stored_provenance, refusal);
     spisor_unlock(guard);
@@ -519,11 +516,16 @@ static cJSON *get_host(const registry_request *request, cJSON **refusal) {
     return answer_with(result, refusal);
 }
 
-static int is_orphan(const cJSON *registration) {
+static int is_orphan(const cJSON *registration, int *out_of_memory) {
     const cJSON *provenance = cJSON_GetObjectItemCaseSensitive(registration, "provenance");
     const char *location = string_member(provenance, "location");
-    return location == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, location) ||
-           spisor_probe_file(location) == SPISOR_FILE_MISSING;
+    *out_of_memory = 0;
+    if (location == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, location)) {
+        return 1;
+    }
+    spisor_file_presence presence = spisor_probe_file(location);
+    *out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
+    return presence == SPISOR_FILE_MISSING;
 }
 
 static cJSON *listed_host(cJSON *registration) {
@@ -533,7 +535,9 @@ static cJSON *listed_host(cJSON *registration) {
         cJSON_Delete(registration);
         return NULL;
     }
-    if (cJSON_AddBoolToObject(entry, "orphan", is_orphan(registration)) == NULL) {
+    int out_of_memory;
+    int orphan = is_orphan(registration, &out_of_memory);
+    if (out_of_memory || cJSON_AddBoolToObject(entry, "orphan", orphan) == NULL) {
         cJSON_Delete(entry);
         return NULL;
     }
@@ -609,10 +613,10 @@ static cJSON *list_hosts(const registry_request *request, cJSON **refusal) {
     if (directory == NULL) {
         return out_of_memory(refusal);
     }
-    int listed = runtime_list_directory(directory, &listing);
+    spisor_status listed = runtime_list_directory(directory, &listing);
     spisor_memory_release(directory);
-    if (!listed) {
-        return refuse_unlistable(request->state, refusal);
+    if (listed != SPISOR_OK) {
+        return listed == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlistable(request->state, refusal);
     }
     cJSON *result = cJSON_CreateObject();
     cJSON *hosts = result == NULL ? NULL : cJSON_AddArrayToObject(result, "hosts");
@@ -705,9 +709,10 @@ static cJSON *forget_host(const registry_request *request, cJSON **refusal) {
     if (id == NULL) {
         return refuse_id(refusal);
     }
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
-        return refuse_unlocked(request->state, refusal);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked != SPISOR_OK) {
+        return locked == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlocked(request->state, refusal);
     }
     cJSON *answer = forget_locked(request, id, refusal);
     spisor_unlock(guard);

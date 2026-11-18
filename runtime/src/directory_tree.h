@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "spisor/status.h"
+
 typedef struct runtime_directory_entry {
     char *name;
     int is_directory;
@@ -16,10 +18,10 @@ typedef struct runtime_directory_listing {
 
 /**
  * Fills listing with the entries directly inside path, sorted by name, "." and ".." left out. A
- * path that does not exist lists as empty. Answers 1 on success and 0 when the directory exists but
- * cannot be read or memory runs out, leaving listing empty.
+ * path that does not exist lists as empty. SPISOR_REFUSED when the directory exists but cannot be
+ * read and SPISOR_OUT_OF_MEMORY when memory runs out, both leaving listing empty.
  */
-int runtime_list_directory(const char *path, runtime_directory_listing *listing);
+spisor_status runtime_list_directory(const char *path, runtime_directory_listing *listing);
 
 void runtime_free_directory_listing(runtime_directory_listing *listing);
 

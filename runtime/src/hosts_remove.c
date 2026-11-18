@@ -50,7 +50,7 @@ static int remove_holders(const removal *request) {
     char *path = runtime_holders_path(request->state, request->id, RUNTIME_JSON_EXTENSION, &path_problem);
     char *lock = runtime_holders_path(request->state, request->id, ".lock", &lock_problem);
     int removed = folder != NULL && path != NULL && lock != NULL;
-    if (removed && spisor_file_exists(folder)) {
+    if (removed && spisor_probe_file(folder) == SPISOR_FILE_PRESENT) {
         runtime_holders_guard *guard = runtime_lock_holders(lock);
         removed = guard != NULL && runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
         if (guard != NULL) {
@@ -102,8 +102,11 @@ static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal
  * host still running cannot record anything again between these deletions and the forget.
  */
 static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, cJSON **refusal) {
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        *refusal = NULL;
+    } else if (locked != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file, run records and boot hint");
     } else if (!runtime_remove_host_references(request->state, request->id)) {
         *refusal = refuse_leftover(request, "references file or a run record");

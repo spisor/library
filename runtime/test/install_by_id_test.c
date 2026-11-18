@@ -155,7 +155,7 @@ static int succeeded(const catalog_answer answer, const char *label) {
 
 static int exists_in_scratch(const char *relative) {
     char *path = in_scratch(relative);
-    int exists = spisor_file_exists(path);
+    int exists = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return exists;
 }

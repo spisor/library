@@ -8,7 +8,6 @@
 #include "spisor/json_kind.h"
 
 #include "allocation.h"
-#include "file_presence.h"
 #include "file_reading.h"
 #include "json_parse.h"
 
@@ -98,7 +97,9 @@ static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_fi
 cJSON *spisor_read_json_file(const char *path, spisor_json_file_state *state) {
     spisor_file_presence presence = spisor_probe_file(path);
     if (presence != SPISOR_FILE_PRESENT) {
-        *state = presence == SPISOR_FILE_MISSING ? SPISOR_JSON_FILE_ABSENT : SPISOR_JSON_FILE_UNREADABLE;
+        *state = presence == SPISOR_FILE_MISSING         ? SPISOR_JSON_FILE_ABSENT
+                 : presence == SPISOR_FILE_OUT_OF_MEMORY ? SPISOR_JSON_FILE_OUT_OF_MEMORY
+                                                         : SPISOR_JSON_FILE_UNREADABLE;
         return NULL;
     }
     size_t length = 0;

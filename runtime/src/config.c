@@ -65,10 +65,14 @@ static char *copy_text(const char *text) {
     return copy;
 }
 
-char *runtime_config_name(const char *plugin, const cJSON *config) {
+static const char *declared_or_plugin_name(const char *plugin, const cJSON *config) {
     const cJSON *declared = cJSON_GetObjectItemCaseSensitive(config, "name");
     int declared_usable = cJSON_IsString(declared) && declared->valuestring[0] != '\0';
-    return runtime_portable_segment(declared_usable ? declared->valuestring : plugin);
+    return declared_usable ? declared->valuestring : plugin;
+}
+
+spisor_status runtime_config_name(const char *plugin, const cJSON *config, char **name) {
+    return runtime_portable_segment(declared_or_plugin_name(plugin, config), name);
 }
 
 static void free_target(config_target *target) {
@@ -121,9 +125,9 @@ static locate_status locate_in_config_directory(const runtime_config_request *re
 }
 
 static locate_status locate_application(const runtime_config_request *request, config_target *target) {
-    char *name = runtime_config_name(request->plugin, request->config);
-    if (name == NULL) {
-        return UNUSABLE_NAME;
+    char *name;
+    if (runtime_config_name(request->plugin, request->config, &name) != SPISOR_OK) {
+        return LOCATE_OUT_OF_MEMORY;
     }
     locate_status status = locate_in_config_directory(request, name, target);
     spisor_memory_release(name);
@@ -135,9 +139,9 @@ static locate_status locate_portable(const runtime_config_request *request, conf
     if (request->portable == NULL) {
         return LOCATED;
     }
-    char *folder_name = runtime_portable_segment(request->plugin);
-    if (folder_name == NULL) {
-        return UNUSABLE_ID;
+    char *folder_name;
+    if (runtime_portable_segment(request->plugin, &folder_name) != SPISOR_OK) {
+        return LOCATE_OUT_OF_MEMORY;
     }
     char *folder = runtime_plugin_folder(request->portable, folder_name);
     locate_status status = folder != NULL ? join_target(folder, PORTABLE_CONFIG_FILE, target) : LOCATE_OUT_OF_MEMORY;
@@ -146,8 +150,19 @@ static locate_status locate_portable(const runtime_config_request *request, conf
     return status;
 }
 
+static locate_status unusable_name_or_id(const runtime_config_request *request) {
+    if (!runtime_trims_to_portable_segment(declared_or_plugin_name(request->plugin, request->config))) {
+        return UNUSABLE_NAME;
+    }
+    return request->portable != NULL && !runtime_trims_to_portable_segment(request->plugin) ? UNUSABLE_ID : LOCATED;
+}
+
 static locate_status locate_plugin_targets(const runtime_config_request *request, config_targets *targets) {
-    locate_status status = locate_application(request, &targets->application);
+    locate_status status = unusable_name_or_id(request);
+    if (status != LOCATED) {
+        return status;
+    }
+    status = locate_application(request, &targets->application);
     if (status == LOCATED) {
         status = locate_portable(request, &targets->portable);
     }
@@ -741,7 +756,7 @@ static void pause_after_read(void) {
     char *paused = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, paused_segments, 2);
     char *release = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, release_segments, 2);
     spisor_replace_file(paused, (const uint8_t *)"", 0);
-    for (int waited = 0; waited < 500 && !spisor_file_exists(release); waited++) {
+    for (int waited = 0; waited < 500 && spisor_probe_file(release) != SPISOR_FILE_PRESENT; waited++) {
         pause_briefly();
     }
     spisor_memory_release(release);
@@ -800,23 +815,31 @@ static spisor_status store_locked(const runtime_config_request *request, const c
 
 /**
  * Locks the settings file of the layer written, in its own folder, so two writers of different keys never
- * lose one update; NULL when the lock cannot be taken.
+ * lose one update, in *guard: SPISOR_REFUSED when the lock cannot be taken, SPISOR_OUT_OF_MEMORY when memory runs out.
  *
  * @implNote Its own lock file, never the registry lock, so a caller holding that may still write settings;
  * only the read and the write of one file happen under it.
  */
-static spisor_lock *lock_layer(const config_target *target) {
+static spisor_status lock_layer(const config_target *target, spisor_lock **guard) {
     const char *segments[2] = {target->directory, ".settings.lock"};
-    char *path = spisor_make_directories(target->directory) ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
-    spisor_lock *guard = path == NULL ? NULL : spisor_lock_file(path);
+    *guard = NULL;
+    if (!spisor_make_directories(target->directory)) {
+        return SPISOR_REFUSED;
+    }
+    char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    spisor_status status = path == NULL ? SPISOR_OUT_OF_MEMORY : spisor_lock_file(path, guard);
     spisor_memory_release(path);
-    return guard;
+    return status;
 }
 
 static spisor_status store_after_previous(const runtime_config_request *request, const config_targets *targets,
                                           settings_layer layer, cJSON **previous, spisor_refusal *refusal) {
-    spisor_lock *guard = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (locked != SPISOR_OK) {
         return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings folder could not be locked for writing",
                                  "check that the settings folder is writable, then try again");
     }

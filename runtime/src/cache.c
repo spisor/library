@@ -135,8 +135,12 @@ cJSON *runtime_cache_sweep_operation(const cJSON *argument, cJSON **refusal) {
     if (state == NULL) {
         return runtime_catalog_refuse_member("state", "the state folder's path", refusal);
     }
-    spisor_lock *guard = runtime_hosts_lock(state);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(state, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        return NULL;
+    }
+    if (locked != SPISOR_OK) {
         *refusal = runtime_refusal("the registry lock under the state folder could not be taken",
                                    "check that SPISOR_STATE names a writable folder, then try again");
         return NULL;

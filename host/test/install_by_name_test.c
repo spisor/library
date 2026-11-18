@@ -181,7 +181,7 @@ static void expect_nothing_installed(const char *folder) {
 static int count_fetch_folders(void) {
     runtime_directory_listing listing;
     int count = 0;
-    if (runtime_list_directory(world.base.cache, &listing)) {
+    if (runtime_list_directory(world.base.cache, &listing) == SPISOR_OK) {
         for (size_t index = 0; index < listing.count; index++) {
             count += strncmp(listing.entries[index].name, "marketplace-fetch-", 18) == 0;
         }

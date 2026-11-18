@@ -388,8 +388,8 @@ static void refuses_unusable_home(void) {
             finish(&result);
         }
     }
-    CHECK(spisor_file_exists("log-test-relative-home") == 0);
-    CHECK(spisor_file_exists("logs") == 0);
+    CHECK(spisor_probe_file("log-test-relative-home") != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file("logs") != SPISOR_FILE_PRESENT);
 }
 
 static cJSON *with_portable(cJSON *request, const scratch_home *home) {
@@ -457,7 +457,7 @@ static void absent_portable_folder_changes_no_log(void) {
     answer result = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
     expect_console(&result, "\x1b[33m[p]\x1b[0m m", "absent portable folder");
     finish(&result);
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void refuses_unusable_portable(void) {

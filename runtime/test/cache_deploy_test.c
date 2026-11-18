@@ -103,10 +103,10 @@ static void writes_no_entry_file_for_a_plugin_without_an_entry(void) {
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     char *entry = in_scratch("plugins/quiet.js");
-    CHECK(!spisor_file_exists(entry));
+    CHECK(spisor_probe_file(entry) != SPISOR_FILE_PRESENT);
     spisor_memory_release(entry);
     char *manifest = in_scratch("plugins/quiet.json");
-    CHECK(spisor_file_exists(manifest));
+    CHECK(spisor_probe_file(manifest) == SPISOR_FILE_PRESENT);
     spisor_memory_release(manifest);
     cJSON_Delete(answer.tree);
 }
@@ -192,10 +192,10 @@ static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     char *copied = in_scratch("plugins/other_identity.json");
-    CHECK(!spisor_file_exists(copied));
+    CHECK(spisor_probe_file(copied) != SPISOR_FILE_PRESENT);
     spisor_memory_release(copied);
     copied = in_scratch("plugins/third_identity.json");
-    CHECK(!spisor_file_exists(copied));
+    CHECK(spisor_probe_file(copied) != SPISOR_FILE_PRESENT);
     spisor_memory_release(copied);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     CHECK(identity_text != NULL && strstr(identity_text, "github:7") == NULL);
@@ -269,11 +269,11 @@ static void a_new_version_with_no_entry_removes_the_old_entry_file(void) {
     CHECK(first.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(first.tree);
     char *entry = in_scratch("plugins/greeter.js");
-    CHECK(spisor_file_exists(entry));
+    CHECK(spisor_probe_file(entry) == SPISOR_FILE_PRESENT);
     write_bundle("{\"importName\":\"greeter\",\"api\":1}", NULL, NULL);
     catalog_answer second = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(second.status == SPISOR_STATUS_SUCCESS);
-    CHECK(!spisor_file_exists(entry));
+    CHECK(spisor_probe_file(entry) != SPISOR_FILE_PRESENT);
     spisor_memory_release(entry);
     cJSON_Delete(second.tree);
 }

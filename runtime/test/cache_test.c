@@ -59,7 +59,7 @@ static char *in_cache(const char *rest) {
 
 static int exists_in_cache(const char *rest) {
     char *path = in_cache(rest);
-    int exists = spisor_file_exists(path);
+    int exists = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return exists;
 }
@@ -240,7 +240,7 @@ static char *listing_of(const char *rest) {
     char *path = in_cache(rest);
     runtime_directory_listing listing;
     cJSON *names = cJSON_CreateArray();
-    if (runtime_list_directory(path, &listing)) {
+    if (runtime_list_directory(path, &listing) == SPISOR_OK) {
         for (size_t index = 0; index < listing.count; index++) {
             cJSON_AddItemToArray(names, cJSON_CreateString(listing.entries[index].name));
         }
@@ -943,7 +943,7 @@ static double now_milliseconds(void) {
 /** Dates path and everything under it hours into the past. */
 static void age_tree(const char *path, double milliseconds) {
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(path, &listing) == 1);
+    CHECK(runtime_list_directory(path, &listing) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         char *child = joined(path, listing.entries[index].name);
         if (listing.entries[index].is_directory) {
@@ -1041,7 +1041,7 @@ static void it_does_not_follow_a_reference_file_s_names_out_of_the_bundles_folde
     CHECK(spisor_make_directories(outside) == 1);
     record_references("claude-code", "{\"run\":{\"..\":\"..\",\"a\":\"../../../outside\"},\"next\":{\"a\":\"../..\"}}");
     expect_removed("[\"a@1.0.0\"]", "escape");
-    CHECK(spisor_file_exists(outside));
+    CHECK(spisor_probe_file(outside) == SPISOR_FILE_PRESENT);
     spisor_memory_release(outside);
     finish_cache();
 }
@@ -1187,7 +1187,7 @@ static int run_record_present(const char *host, const char *name) {
     char rest[512];
     snprintf(rest, sizeof rest, "bundles/runs/%s/%s", host, name);
     char *path = joined(state, rest);
-    int present = spisor_file_exists(path);
+    int present = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return present;
 }
@@ -1310,8 +1310,8 @@ static void it_sweeps_only_while_it_holds_the_registry_lock(void) {
     start_cache("sweep-lock");
     installed_bundle("a", "1.0.0", 1);
     installed_bundle("a", "2.0.0", 1);
-    spisor_lock *guard = runtime_hosts_lock(state);
-    CHECK(guard != NULL);
+    spisor_lock *guard;
+    CHECK(runtime_hosts_lock(state, &guard) == SPISOR_OK);
     sweeping job;
     memset(&job, 0, sizeof job);
 #if defined(_WIN32)
@@ -1361,7 +1361,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     expect_answer(check_directory(directory), "{\"kind\":\"intact\"}", "deep check");
     expect_answer(installed("linux-x64"), "{\"bundles\":{\"a\":[\"1.0.0\",\"2.0.0\"]},\"libraries\":{}}", "deep installed");
     expect_removed("[\"a@1.0.0\"]", "deep sweep");
-    CHECK(!spisor_file_exists(directory));
+    CHECK(spisor_probe_file(directory) != SPISOR_FILE_PRESENT);
     CHECK(bundle_present("a", "2.0.0"));
     spisor_memory_release(directory);
     CHECK(runtime_remove_tree(deep) == 1);

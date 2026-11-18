@@ -8,13 +8,24 @@
 extern "C" {
 #endif
 
+typedef enum spisor_file_presence {
+    SPISOR_FILE_PRESENT,
+    SPISOR_FILE_MISSING,
+    SPISOR_FILE_UNKNOWN,
+    SPISOR_FILE_OUT_OF_MEMORY
+} spisor_file_presence;
+
 /**
- * Node's existsSync: true for a file or a directory.
+ * Whether something, a file or a directory, exists at path, telling a path that genuinely does not exist
+ * (MISSING) apart from one the OS would not answer for (UNKNOWN), such as a parent without search
+ * permission, and both from a question memory ran out for (OUT_OF_MEMORY). Node's existsSync is PRESENT.
  *
- * @implNote Paths are UTF-8 everywhere; on Windows they are converted to UTF-16 for the wide
- * APIs, so a non-ASCII name resolves whatever the process code page is.
+ * @implNote MISSING is only POSIX ENOENT or ENOTDIR, or Windows ERROR_FILE_NOT_FOUND or
+ * ERROR_PATH_NOT_FOUND. A caller about to replace a file must treat UNKNOWN as present, so it never
+ * replaces a file it failed to see. Paths are UTF-8 everywhere; on Windows they are converted to UTF-16
+ * for the wide APIs, so a non-ASCII name resolves whatever the process code page is.
  */
-int spisor_file_exists(const char *path);
+spisor_file_presence spisor_probe_file(const char *path);
 
 /**
  * The whole file, freed, or NULL when it cannot be read. The buffer carries one NUL
@@ -39,7 +50,7 @@ int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
  * A path that is a symlink is resolved to its final target first, and the temporary file is
  * created beside that target, so the link survives and the target changes. This keeps a home
  * directory managed by stow or chezmoi intact. A dangling link is refused (returns 0). Reads and
- * spisor_file_exists already follow links.
+ * spisor_probe_file already follow links.
  */
 int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length);
 
