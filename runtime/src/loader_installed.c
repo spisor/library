@@ -27,22 +27,12 @@ static cJSON *refusal_naming(const char *file, const char *what, const char *iss
     return refusal;
 }
 
-static cJSON *standard_answer(cJSON *standard) {
-    cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || !cJSON_AddItemToObject(answer, "standard", standard)) {
-        cJSON_Delete(answer);
-        cJSON_Delete(standard);
-        return NULL;
-    }
-    return answer;
-}
-
 static cJSON *checked_standard(const char *file, cJSON *manifest, cJSON **refusal) {
     cJSON *issues = runtime_loader_standard_issues(manifest);
     const cJSON *first = cJSON_GetArrayItem(issues, 0);
     if (issues != NULL && first == NULL) {
         cJSON_Delete(issues);
-        return standard_answer(manifest);
+        return manifest;
     }
     if (first != NULL) {
         *refusal = refusal_naming(file, "is not a loader standard: ",
@@ -74,24 +64,18 @@ static int is_plain(const char *text) {
     return text != NULL && runtime_is_plain_host_id(text);
 }
 
-static cJSON *installed_for(const cJSON *argument, cJSON **refusal) {
-    const cJSON *cache = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "places"), "cache");
-    const char *id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "id"));
-    const char *version = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "version"));
-    if (!cJSON_IsString(cache) || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache->valuestring) ||
-        !is_plain(id) || !is_plain(version)) {
-        *refusal = runtime_refusal("the argument carries no usable places.cache, id or version",
-                                   "send {\"places\": {\"cache\": \"<absolute directory>\"}, \"id\": \"<host id>\", "
-                                   "\"version\": \"<version>\"}, the id and version plain file names");
+cJSON *runtime_loader_installed(const char *cache, const char *id, const char *version, cJSON **refusal) {
+    *refusal = NULL;
+    if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache) || !is_plain(id) ||
+        !is_plain(version)) {
+        *refusal = runtime_refusal("the call carries no usable cache place, id or version",
+                                   "pass the cache place as an absolute directory, and the id and version as plain "
+                                   "file names");
         return NULL;
     }
-    const char *segments[5] = {cache->valuestring, "bundles", id, version, "host.json"};
+    const char *segments[5] = {cache, "bundles", id, version, "host.json"};
     char *file = runtime_cache_joined(segments, 5);
-    cJSON *answer = file == NULL ? NULL : read_standard(file, refusal);
+    cJSON *standard = file == NULL ? NULL : read_standard(file, refusal);
     spisor_memory_release(file);
-    return answer;
-}
-
-cJSON *runtime_loader_installed_operation(const cJSON *argument, cJSON **refusal) {
-    return installed_for(argument, refusal);
+    return standard;
 }

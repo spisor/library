@@ -36,25 +36,9 @@ static cJSON *built_call(cJSON *call, int built) {
     return call;
 }
 
-/** {standard}, `*call` NULL unless the answer is OK; MALFORMED for a value that is not well-formed. */
-static spisor_status check_call(const runtime_loader_check_argument *argument, cJSON **call) {
-    cJSON *standard = NULL;
-    spisor_status status = spisor_json_of_value(argument->standard, &standard);
-    *call = status == SPISOR_OK ? cJSON_CreateObject() : NULL;
-    if (status == SPISOR_OK && (*call == NULL || !cJSON_AddItemToObject(*call, "standard", standard))) {
-        cJSON_Delete(*call);
-        *call = NULL;
-        status = SPISOR_OUT_OF_MEMORY;
-    }
-    if (*call == NULL) {
-        cJSON_Delete(standard);
-    }
-    return status;
-}
 
-static spisor_status fill_check(const cJSON *answered, void *filled) {
+static spisor_status fill_check(const cJSON *issues, void *filled) {
     runtime_loader_check_answer *answer = filled;
-    const cJSON *issues = cJSON_GetObjectItemCaseSensitive(answered, "issues");
     const cJSON *entry;
     runtime_loader_issue *copies;
     spisor_status status = runtime_start_storage(&answer->storage);
@@ -76,7 +60,8 @@ static spisor_status fill_check(const cJSON *answered, void *filled) {
 
 static spisor_status check(void *context, const runtime_loader_check_argument *argument,
                            runtime_loader_check_answer *answer, spisor_refusal *refusal) {
-    cJSON *call = NULL;
+    cJSON *standard = NULL;
+    cJSON *issues;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
@@ -86,13 +71,16 @@ static spisor_status check(void *context, const runtime_loader_check_argument *a
     if (argument->standard == NULL) {
         return runtime_refuse_member(refusal, "standard", HEADER);
     }
-    status = check_call(argument, &call);
+    status = spisor_json_of_value(argument->standard, &standard);
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_member(refusal, "standard", HEADER);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_loader_check_operation, call, fill_check, answer,
-                                                         CHECK_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    issues = runtime_loader_standard_issues(standard);
+    cJSON_Delete(standard);
+    return runtime_serve_answered(issues, NULL, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
 }
 
 static int is_optional_text(const char *text) {
@@ -167,6 +155,9 @@ static spisor_status fill_home(const cJSON *answered, void *filled) {
 
 static spisor_status home(void *context, const runtime_loader_home_argument *argument,
                           runtime_loader_home_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
+    cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOME_SHAPE) ||
@@ -174,9 +165,16 @@ static spisor_status home(void *context, const runtime_loader_home_argument *arg
         return runtime_refuse_shape(refusal, "loader's home");
     }
     status = check_home(argument, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_loader_home_operation, home_call(argument), fill_home,
-                                                         answer, HOME_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = home_call(argument);
+    answered = call == NULL ? NULL
+                            : runtime_application_home(cJSON_GetObjectItemCaseSensitive(call, "home"),
+                                                       cJSON_GetObjectItemCaseSensitive(call, "environment"),
+                                                       &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_home, answer, HOME_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status check_installed(const runtime_loader_installed_argument *argument, spisor_refusal *refusal) {
@@ -191,25 +189,16 @@ static spisor_status check_installed(const runtime_loader_installed_argument *ar
     return SPISOR_OK;
 }
 
-static cJSON *installed_call(const runtime_loader_installed_argument *argument) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *places = call == NULL ? NULL : cJSON_AddObjectToObject(call, "places");
-    return built_call(call, places != NULL && add_text(places, "cache", argument->cache) &&
-                                add_text(call, "id", argument->loader->id) &&
-                                add_text(call, "version", argument->loader->version));
-}
-
 static spisor_status fill_installed(const cJSON *answered, void *filled) {
     runtime_loader_installed_answer *answer = filled;
     spisor_status status = runtime_start_storage(&answer->storage);
-    return status == SPISOR_OK ? runtime_storage_value(&answer->storage,
-                                                       cJSON_GetObjectItemCaseSensitive(answered, "standard"),
-                                                       &answer->standard)
-                               : status;
+    return status == SPISOR_OK ? runtime_storage_value(&answer->storage, answered, &answer->standard) : status;
 }
 
 static spisor_status installed(void *context, const runtime_loader_installed_argument *argument,
                                runtime_loader_installed_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, INSTALLED_SHAPE) ||
@@ -217,9 +206,13 @@ static spisor_status installed(void *context, const runtime_loader_installed_arg
         return runtime_refuse_shape(refusal, "loader's installed");
     }
     status = check_installed(argument, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_loader_installed_operation, installed_call(argument),
-                                                         fill_installed, answer, INSTALLED_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    answered = runtime_loader_installed(argument->cache, argument->loader->id, argument->loader->version,
+                                        &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_installed, answer, INSTALLED_ANSWER_SHAPE,
+                                  refusal);
 }
 
 static void release_check_answer(void *context, runtime_loader_check_answer *answer) {
