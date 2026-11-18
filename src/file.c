@@ -73,34 +73,79 @@ static int is_directory(const char *path, int *out_of_memory) {
     spisor_memory_release(wide);
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
-static FILE *open_for_writing(const char *path, const wchar_t *mode) {
-    wchar_t *wide = spisor_wide_path(path);
-    if (wide == NULL) {
-        return NULL;
-    }
-    FILE *file = _wfopen(wide, mode);
-    spisor_memory_release(wide);
-    return file;
-}
-
-static FILE *open_for_appending(const char *path) {
-    return open_for_writing(path, L"ab");
-}
-
 static FILE *create_temporary(const char *temporary, const char *target, int owner_only, int *out_of_memory) {
     (void)target;
     (void)owner_only;
     return spisor_windows_open(temporary, 1, out_of_memory);
 }
 
-static int create_directory(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    if (wide == NULL) {
-        return 0;
+static int is_wide_directory(const wchar_t *wide) {
+    DWORD attributes = GetFileAttributesW(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static int is_wide_separator(wchar_t character) {
+    return character == L'\\' || character == L'/';
+}
+
+/** Makes the folder wide names and every missing parent; whether a folder stands there afterwards. */
+static int make_wide_directories(wchar_t *wide) {
+    if (is_wide_directory(wide)) {
+        return 1;
     }
-    int created = CreateDirectoryW(wide, NULL) != 0;
+    for (size_t index = 1; wide[index] != L'\0'; index++) {
+        if (is_wide_separator(wide[index])) {
+            wchar_t separator = wide[index];
+            wide[index] = L'\0';
+            CreateDirectoryW(wide, NULL);
+            wide[index] = separator;
+        }
+    }
+    CreateDirectoryW(wide, NULL);
+    return is_wide_directory(wide);
+}
+
+static wchar_t *wide_of(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return NULL;
+    }
+    wchar_t *wide = spisor_wide_path(path);
+    *out_of_memory = wide == NULL;
+    return wide;
+}
+
+/** @implNote Every folder is made from the one wide path, so memory running out leaves no folder made. */
+spisor_status spisor_make_directories(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    }
+    int made = make_wide_directories(wide);
     spisor_memory_release(wide);
-    return created;
+    return made ? SPISOR_OK : SPISOR_REFUSED;
+}
+
+/** @implNote The parent folders are made from the wide path the file opens by, so running out makes none. */
+static FILE *open_for_appending(const char *path, int *out_of_memory) {
+    wchar_t *wide = wide_of(path, out_of_memory);
+    if (wide == NULL) {
+        return NULL;
+    }
+    size_t last = 0;
+    for (size_t index = 1; wide[index] != L'\0'; index++) {
+        last = is_wide_separator(wide[index]) ? index : last;
+    }
+    if (last > 0) {
+        wchar_t separator = wide[last];
+        wide[last] = L'\0';
+        make_wide_directories(wide);
+        wide[last] = separator;
+    }
+    FILE *file = _wfopen(wide, L"ab");
+    spisor_memory_release(wide);
+    return file;
 }
 
 static void remove_file(const char *path) {
@@ -153,9 +198,14 @@ static char *final_path_of_link(const wchar_t *wide, int *out_of_memory) {
     return resolved;
 }
 
-int spisor_is_link(const char *path) {
+int spisor_is_link(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return 0;
+    }
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
+        *out_of_memory = 1;
         return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
@@ -201,10 +251,6 @@ static int is_directory(const char *path, int *out_of_memory) {
     return stat(path, &status) == 0 && S_ISDIR(status.st_mode);
 }
 
-static FILE *open_for_appending(const char *path) {
-    return fopen(path, "ab");
-}
-
 static mode_t replacement_mode(const char *target, int owner_only, int *exact) {
     struct stat status;
     if (owner_only) {
@@ -231,8 +277,54 @@ static FILE *create_temporary(const char *temporary, const char *target, int own
     return file;
 }
 
-static int create_directory(const char *path) {
-    return mkdir(path, 0777) == 0;
+static int is_separator(char character) {
+    return character == '/' || character == '\\';
+}
+
+/** Makes the folder copy names and every missing parent, copy changed only while it does. */
+static void make_directories_of(char *copy) {
+    size_t length = strlen(copy);
+    for (size_t index = 1; index < length; index++) {
+        if (is_separator(copy[index])) {
+            char separator = copy[index];
+            copy[index] = '\0';
+            mkdir(copy, 0777);
+            copy[index] = separator;
+        }
+    }
+    mkdir(copy, 0777);
+}
+
+spisor_status spisor_make_directories(const char *path) {
+    int out_of_memory;
+    if (is_directory(path, &out_of_memory)) {
+        return SPISOR_OK;
+    }
+    char *copy = duplicate_text(path);
+    if (copy == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    make_directories_of(copy);
+    spisor_memory_release(copy);
+    return is_directory(path, &out_of_memory) ? SPISOR_OK : SPISOR_REFUSED;
+}
+
+static FILE *open_for_appending(const char *path, int *out_of_memory) {
+    char *parent = duplicate_text(path);
+    *out_of_memory = parent == NULL;
+    if (parent == NULL) {
+        return NULL;
+    }
+    size_t last = 0;
+    for (size_t index = 1; parent[index] != '\0'; index++) {
+        last = is_separator(parent[index]) ? index : last;
+    }
+    if (last > 0) {
+        parent[last] = '\0';
+        make_directories_of(parent);
+    }
+    spisor_memory_release(parent);
+    return fopen(path, "ab");
 }
 
 static void remove_file(const char *path) {
@@ -244,8 +336,9 @@ static int move_over(const char *from, const char *to, int *out_of_memory) {
     return rename(from, to) == 0;
 }
 
-int spisor_is_link(const char *path) {
+int spisor_is_link(const char *path, int *out_of_memory) {
     struct stat status;
+    *out_of_memory = 0;
     return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
 }
 
@@ -266,8 +359,7 @@ static char *resolved_link(const char *path, int *out_of_memory) {
 
 /** The file a write to path lands in, freed: path itself, or the final target of a link; NULL when none. */
 static char *write_target_of(const char *path, int *out_of_memory) {
-    *out_of_memory = 0;
-    if (spisor_is_link(path)) {
+    if (spisor_is_link(path, out_of_memory)) {
         return resolved_link(path, out_of_memory);
     }
     char *copy = duplicate_text(path);
@@ -343,39 +435,6 @@ static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {
     return fclose(file) == 0 && written;
 }
 
-static int is_separator(char character) {
-    return character == '/' || character == '\\';
-}
-
-int spisor_make_directories(const char *path) {
-    int out_of_memory;
-    if (is_directory(path, &out_of_memory)) {
-        return 1;
-    }
-    size_t path_length = strlen(path);
-    char *prefix = spisor_memory_allocate(path_length + 1);
-    if (prefix == NULL) {
-        return 0;
-    }
-    memcpy(prefix, path, path_length + 1);
-    for (size_t index = 1; index < path_length; index++) {
-        if (is_separator(prefix[index])) {
-            char separator = prefix[index];
-            prefix[index] = '\0';
-            create_directory(prefix);
-            prefix[index] = separator;
-        }
-    }
-    spisor_memory_release(prefix);
-    create_directory(path);
-    return is_directory(path, &out_of_memory);
-}
-
-int spisor_append_file(const char *path, const uint8_t *bytes, size_t length) {
-    FILE *file = open_for_appending(path);
-    return file != NULL && write_and_close(file, bytes, length);
-}
-
 static void seed_once(void) {
     static int seeded = 0;
     if (!seeded) {
@@ -385,18 +444,22 @@ static void seed_once(void) {
     }
 }
 
+/** A free temporary name beside path, freed; NULL when memory ran out for it. */
 static char *temporary_path_for(const char *path) {
     seed_once();
     size_t path_length = strlen(path);
     char *temporary = spisor_memory_allocate(path_length + 1 + 16 + 4 + 1);
-    if (temporary == NULL) {
-        return NULL;
-    }
-    do {
+    spisor_file_presence presence = SPISOR_FILE_PRESENT;
+    while (temporary != NULL && presence == SPISOR_FILE_PRESENT) {
         snprintf(temporary, path_length + 1 + 16 + 4 + 1, "%s.%04x%04x%04x%04x.tmp", path,
                  (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu,
                  (unsigned)rand() & 0xffffu);
-    } while (spisor_probe_file(temporary) == SPISOR_FILE_PRESENT);
+        presence = spisor_probe_file(temporary);
+    }
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        spisor_memory_release(temporary);
+        return NULL;
+    }
     return temporary;
 }
 
@@ -414,6 +477,15 @@ FILE *spisor_open_replacement(const char *target, int owner_only, char **tempora
 
 static spisor_status refused_unless_out_of_memory(int out_of_memory) {
     return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+}
+
+spisor_status spisor_append_file(const char *path, const uint8_t *bytes, size_t length) {
+    int out_of_memory;
+    FILE *file = open_for_appending(path, &out_of_memory);
+    if (file == NULL) {
+        return refused_unless_out_of_memory(out_of_memory);
+    }
+    return write_and_close(file, bytes, length) ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 static spisor_status replace_resolved_file(const char *target, const uint8_t *bytes, size_t length, int owner_only) {
@@ -444,7 +516,12 @@ spisor_status spisor_replace_file(const char *path, const uint8_t *bytes, size_t
 }
 
 spisor_status spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
-    return spisor_is_link(path) ? SPISOR_REFUSED : replace_resolved_file(path, bytes, length, 1);
+    int out_of_memory;
+    int linked = spisor_is_link(path, &out_of_memory);
+    if (out_of_memory) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return linked ? SPISOR_REFUSED : replace_resolved_file(path, bytes, length, 1);
 }
 
 int spisor_remove_set_aside(const char *path) {

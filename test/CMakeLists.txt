@@ -15,13 +15,14 @@ endforeach()
 add_test(NAME public_headers_are_ascii
     COMMAND ${CMAKE_COMMAND} -DDIRECTORY=${PROJECT_SOURCE_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/ascii_check.cmake)
 
-foreach(name status_test value_test json_value_test)
+foreach(name status_test value_test json_value_test file_memory_test)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE spisor_library spisor_allocator_counting spisor_vector_reader)
     spisor_strict_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 120)
 endforeach()
+target_compile_definitions(file_memory_test PRIVATE SPISOR_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(vector_reader_test vector_reader_test.c)
 target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting)

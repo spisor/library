@@ -26,24 +26,27 @@ spisor_status runtime_list_directory(const char *path, runtime_directory_listing
 void runtime_free_directory_listing(runtime_directory_listing *listing);
 
 /**
- * Deletes path and everything under it. A path that does not exist counts as removed. Answers 1
- * when nothing is left at path afterwards.
+ * Deletes path and everything under it. A path that does not exist counts as removed. SPISOR_OK when
+ * nothing is left at path afterwards, SPISOR_REFUSED when something is, SPISOR_OUT_OF_MEMORY when memory
+ * runs out, which may leave the tree partly removed.
  *
  * @implNote A symbolic link, or on Windows any reparse point, is removed itself and never followed,
  * so a link inside a host's own folder cannot lead the deletion out of it.
  */
-int runtime_remove_tree(const char *path);
+spisor_status runtime_remove_tree(const char *path);
 
 typedef enum runtime_entry_kind {
     RUNTIME_ENTRY_MISSING,
     RUNTIME_ENTRY_DIRECTORY,
     RUNTIME_ENTRY_OTHER,
-    RUNTIME_ENTRY_UNKNOWN
+    RUNTIME_ENTRY_UNKNOWN,
+    RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY
 } runtime_entry_kind;
 
 /**
  * What stands at path itself, never following a link: a symbolic link, or on Windows any reparse
- * point, is OTHER whatever it points at. UNKNOWN when the OS would not say.
+ * point, is OTHER whatever it points at. UNKNOWN when the OS would not say, PROBE_OUT_OF_MEMORY when
+ * memory ran out asking.
  */
 runtime_entry_kind runtime_probe_entry(const char *path);
 
@@ -51,8 +54,11 @@ typedef enum runtime_entry_outcome {
     RUNTIME_ENTRY_DONE,
     RUNTIME_ENTRY_EXISTS,
     RUNTIME_ENTRY_KEPT,
-    RUNTIME_ENTRY_FAILED
+    RUNTIME_ENTRY_FAILED,
+    RUNTIME_ENTRY_OUT_OF_MEMORY
 } runtime_entry_outcome;
+
+/** Every outcome below answers OUT_OF_MEMORY, having changed nothing, when memory runs out. */
 
 /**
  * Creates path as a new file holding length bytes, executable by its owner on POSIX when asked.

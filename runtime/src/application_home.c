@@ -111,10 +111,12 @@ static cJSON *candidate_home(const cJSON *candidates, const char *user_home) {
     cJSON_ArrayForEach(candidate, candidates) {
         char *expanded = complete && answer == NULL ? expanded_candidate(candidate->valuestring, user_home) : NULL;
         complete = complete && (answer != NULL || expanded != NULL);
-        if (expanded != NULL && runtime_is_followed_directory(expanded)) {
+        int out_of_memory = 0;
+        if (expanded != NULL && runtime_is_followed_directory(expanded, &out_of_memory)) {
             answer = answer_of(expanded, "candidate");
             complete = answer != NULL;
         }
+        complete = complete && !out_of_memory;
         if (first == NULL) {
             first = expanded;
         } else {

@@ -490,6 +490,10 @@ spisor_status runtime_catalog_check_schema(const cJSON *document, runtime_catalo
     check.status = SPISOR_OK;
     int valid = check_object(&check, document) && has_required(&check, document, REQUIRED_ROOT) &&
                 check_properties(&check, document, ROOT_PROPERTIES);
+    int pointed = !check.pointer.failed;
     runtime_catalog_text_discard(&check.pointer);
+    if (valid && !pointed) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     return valid ? SPISOR_OK : check.status;
 }

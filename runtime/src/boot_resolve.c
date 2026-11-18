@@ -100,10 +100,12 @@ static char *executable_in(const char *directory, const char *host_id, const cha
     char *executable = key == NULL ? NULL : runtime_cache_resolve(directory, (const char *const *)&key, 1);
     int out_of_memory = 0;
     int listed = executable != NULL && marker_lists(directory, key, &out_of_memory);
+    spisor_file_presence presence = listed && !out_of_memory ? spisor_probe_file(executable) : SPISOR_FILE_MISSING;
+    out_of_memory = out_of_memory || presence == SPISOR_FILE_OUT_OF_MEMORY;
     if (out_of_memory) {
         spisor_memory_release(executable);
         executable = NULL;
-    } else if (executable != NULL && (!listed || spisor_probe_file(executable) != SPISOR_FILE_PRESENT)) {
+    } else if (executable != NULL && (!listed || presence != SPISOR_FILE_PRESENT)) {
         const char *message[6] = {host_id, " in ", directory, " carries no executable for ", platform,
                                   ", so it cannot be started"};
         *refusal = refused(message, 6);

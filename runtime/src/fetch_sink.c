@@ -60,3 +60,9 @@ void runtime_fetch_refuse(runtime_fetch_answer *answer, const char *fix, const c
     answer->outcome = RUNTIME_FETCH_REFUSED;
     answer->fix = fix;
 }
+
+void runtime_fetch_out_of_memory(runtime_fetch_answer *answer) {
+    answer->detail[0] = '\0';
+    answer->outcome = RUNTIME_FETCH_OUT_OF_MEMORY;
+    answer->fix = NULL;
+}

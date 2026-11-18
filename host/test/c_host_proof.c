@@ -96,8 +96,9 @@ static char *world_tree(const host_world *world, size_t *length) {
 
 /** Empties every place and the user's home and writes the first catalog again, so both hosts start alike. */
 static void reset_world(host_world *world) {
-    CHECK(runtime_remove_tree(world->base.portable) == 1 && runtime_remove_tree(world->base.state) == 1 &&
-          runtime_remove_tree(world->base.cache) == 1 && runtime_remove_tree(world->base.user) == 1);
+    CHECK(runtime_remove_tree(world->base.portable) == SPISOR_OK);
+    CHECK(runtime_remove_tree(world->base.state) == SPISOR_OK);
+    CHECK(runtime_remove_tree(world->base.cache) == SPISOR_OK && runtime_remove_tree(world->base.user) == SPISOR_OK);
 #if defined(_WIN32)
     delete_test_path_value();
 #endif

@@ -3,6 +3,8 @@
 
 #include "cJSON.h"
 
+#include "spisor/status.h"
+
 #define RUNTIME_PLAIN_HOST_ID_FIX "give the host an id that is a plain file name"
 
 /**
@@ -81,8 +83,11 @@ int runtime_write_references_draft(const runtime_references_draft *draft);
 
 void runtime_free_references_draft(runtime_references_draft *draft);
 
-/** Deletes host_id's file and every run record of its starts; a host that recorded none counts as removed. */
-int runtime_remove_host_references(const char *state, const char *host_id);
+/**
+ * Deletes host_id's file and every run record of its starts; a host that recorded none counts as removed.
+ * SPISOR_REFUSED when something is left, SPISOR_OUT_OF_MEMORY when memory runs out.
+ */
+spisor_status runtime_remove_host_references(const char *state, const char *host_id);
 
 void runtime_free_host_references(runtime_host_references *references);
 

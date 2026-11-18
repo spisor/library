@@ -17,7 +17,10 @@ char *runtime_cache_resolve(const char *base, const char *const *segments, size_
  */
 int runtime_cache_is_strictly_inside(const char *parent, const char *child);
 
-/** cache/bundles/<id>/<version>, freed; NULL when id or version would climb out of its folder, or memory runs out. */
-char *runtime_cache_bundle_directory(const char *cache, const char *id, const char *version);
+/**
+ * cache/bundles/<id>/<version>, freed; NULL when id or version would climb out of its folder, or with
+ * *out_of_memory set to 1 when memory runs out.
+ */
+char *runtime_cache_bundle_directory(const char *cache, const char *id, const char *version, int *out_of_memory);
 
 #endif

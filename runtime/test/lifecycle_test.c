@@ -81,11 +81,11 @@ static void fresh_scratch(scratch *place) {
     start_empty_directory(place->directory);
     char application[1200];
     snprintf(application, sizeof application, "%s/.application", place->home);
-    CHECK(spisor_make_directories(application) == 1);
-    CHECK(spisor_make_directories(place->state) == 1);
-    CHECK(spisor_make_directories(place->cache) == 1);
-    CHECK(spisor_make_directories(place->programs) == 1);
-    CHECK(spisor_make_directories(place->portable) == 1);
+    CHECK(spisor_make_directories(application) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->state) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->cache) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->programs) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->portable) == SPISOR_OK);
 }
 
 static void seed_scratch(const scratch *place) {

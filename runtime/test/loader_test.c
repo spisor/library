@@ -217,7 +217,7 @@ typedef struct home_scratch {
 static void fresh_home(home_scratch *place, const char *label) {
     scratch_in(place->base, sizeof place->base, "loader", label);
     place->user = joined_path(place->base, "user");
-    CHECK(spisor_make_directories(place->user) == 1);
+    CHECK(spisor_make_directories(place->user) == SPISOR_OK);
 }
 
 static cJSON *user_environment(const home_scratch *place) {
@@ -304,7 +304,7 @@ static void takes_the_first_candidate_that_exists_with_the_user_home_expanded(vo
     home_scratch place;
     fresh_home(&place, "candidate");
     char *config = joined_path(place.user, ".config/claude");
-    CHECK(spisor_make_directories(config) == 1);
+    CHECK(spisor_make_directories(config) == SPISOR_OK);
     check_home(CLAUDE_HOME, user_environment(&place), config, "candidate");
     spisor_memory_release(config);
     spisor_memory_release(place.user);
@@ -324,7 +324,7 @@ static void does_not_take_a_candidate_that_is_a_file(void) {
     fresh_home(&place, "file");
     spisor_memory_release(touch_file(place.user, ".claude", "", 0644));
     char *config = joined_path(place.user, ".config/claude");
-    CHECK(spisor_make_directories(config) == 1);
+    CHECK(spisor_make_directories(config) == SPISOR_OK);
     check_home(CLAUDE_HOME, user_environment(&place), config, "candidate");
     spisor_memory_release(config);
     spisor_memory_release(place.user);
@@ -345,7 +345,7 @@ static void takes_the_xdg_subdirectory_after_the_native_variable_and_before_the_
     fresh_home(&place, "xdg");
     char *xdg = joined_path(place.base, "xdg");
     char *opencode = joined_path(place.user, ".opencode");
-    CHECK(spisor_make_directories(opencode) == 1);
+    CHECK(spisor_make_directories(opencode) == SPISOR_OK);
     char *expected = joined_path(xdg, "opencode");
     check_home(OPENCODE_HOME, with_variable(user_environment(&place), "XDG_CONFIG_HOME", xdg), expected, "xdg");
     spisor_memory_release(expected);
@@ -417,7 +417,7 @@ static catalog_answer installed_answer(const char *cache, const char *id, const 
 
 static void write_manifest(const char *cache, const char *text) {
     char *bundle = joined_path(cache, "bundles/claude-loader/1.0.0");
-    CHECK(spisor_make_directories(bundle) == 1);
+    CHECK(spisor_make_directories(bundle) == SPISOR_OK);
     spisor_memory_release(touch_file(bundle, "host.json", text, 0644));
     spisor_memory_release(bundle);
 }

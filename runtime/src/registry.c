@@ -136,9 +136,9 @@ static uint8_t *registration_bytes(const cJSON *registration, size_t *length) {
     return (uint8_t *)terminated;
 }
 
-static int make_hosts_directory(const char *state) {
+static spisor_status make_hosts_directory(const char *state) {
     char *hosts = join_two(state, "hosts");
-    int made = hosts != NULL && spisor_make_directories(hosts);
+    spisor_status made = hosts == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(hosts);
     spisor_memory_release(hosts);
     return made;
 }
@@ -155,7 +155,10 @@ runtime_registry_answer runtime_registry_store(const char *state, const cJSON *r
         spisor_memory_release(path);
         return RUNTIME_REGISTRY_OUT_OF_MEMORY;
     }
-    spisor_status written = make_hosts_directory(state) ? spisor_replace_file(path, bytes, length) : SPISOR_REFUSED;
+    spisor_status written = make_hosts_directory(state);
+    if (written == SPISOR_OK) {
+        written = spisor_replace_file(path, bytes, length);
+    }
     spisor_memory_release(path);
     spisor_memory_release(bytes);
     return written == SPISOR_OK              ? RUNTIME_REGISTRY_OK
@@ -651,18 +654,24 @@ static cJSON *refuse_unreversed(const char *id, int count, cJSON **refusal) {
     return fail(message, "reverse the host's recorded changes first; its registration was left in place", refusal);
 }
 
-static int remove_host_directory(const char *place, const char *id) {
+static spisor_status remove_host_directory(const char *place, const char *id) {
     char *directory = join_three(place, "hosts", id);
-    int removed = directory != NULL && runtime_remove_tree(directory);
+    spisor_status removed = directory == NULL ? SPISOR_OUT_OF_MEMORY : runtime_remove_tree(directory);
     spisor_memory_release(directory);
     return removed;
 }
 
-static int remove_registration_file(const char *state, const char *id) {
+static spisor_status remove_registration_file(const char *state, const char *id) {
     char *path = registration_path(state, id);
-    int removed = path != NULL && runtime_remove_tree(path);
+    spisor_status removed = path == NULL ? SPISOR_OUT_OF_MEMORY : runtime_remove_tree(path);
     spisor_memory_release(path);
     return removed;
+}
+
+static spisor_status remove_host_files(const registry_request *request, const char *id) {
+    spisor_status removed = remove_host_directory(request->state, id);
+    removed = removed == SPISOR_OK ? remove_host_directory(request->cache, id) : removed;
+    return removed == SPISOR_OK ? remove_registration_file(request->state, id) : removed;
 }
 
 static cJSON *refuse_incomplete_removal(const char *id, cJSON **refusal) {
@@ -697,11 +706,10 @@ static cJSON *forget_locked(const registry_request *request, const char *id, cJS
     if (result == NULL) {
         return out_of_memory(refusal);
     }
-    int removed = remove_host_directory(request->state, id) && remove_host_directory(request->cache, id) &&
-                  remove_registration_file(request->state, id);
-    if (!removed) {
+    spisor_status removed = remove_host_files(request, id);
+    if (removed != SPISOR_OK) {
         cJSON_Delete(result);
-        return refuse_incomplete_removal(id, refusal);
+        return removed == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_incomplete_removal(id, refusal);
     }
     return answer_with(result, refusal);
 }

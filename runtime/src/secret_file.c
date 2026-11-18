@@ -46,9 +46,11 @@ static char *directory_of(const char *path) {
     return directory;
 }
 
-static int make_parent_directory(const char *path) {
+static spisor_status make_parent_directory(const char *path) {
     char *directory = directory_of(path);
-    int made = directory != NULL && (directory[0] == '\0' || spisor_make_directories(directory));
+    spisor_status made = directory == NULL      ? SPISOR_OUT_OF_MEMORY
+                         : directory[0] == '\0' ? SPISOR_OK
+                                                : spisor_make_directories(directory);
     spisor_memory_release(directory);
     return made;
 }
@@ -75,13 +77,19 @@ runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJS
     if (text == NULL) {
         return RUNTIME_SECRET_FILE_OUT_OF_MEMORY;
     }
-    int written = make_parent_directory(path) &&
-        spisor_replace_private_file(path, (const uint8_t *)text, length) == SPISOR_OK;
-    spisor_memory_release(text);
-    if (written) {
-        return RUNTIME_SECRET_FILE_DONE;
+    spisor_status written = make_parent_directory(path);
+    if (written == SPISOR_OK) {
+        written = spisor_replace_private_file(path, (const uint8_t *)text, length);
     }
-    return spisor_is_link(path) ? RUNTIME_SECRET_FILE_LINKED : RUNTIME_SECRET_FILE_UNWRITABLE;
+    spisor_memory_release(text);
+    if (written != SPISOR_REFUSED) {
+        return written == SPISOR_OK ? RUNTIME_SECRET_FILE_DONE : RUNTIME_SECRET_FILE_OUT_OF_MEMORY;
+    }
+    int out_of_memory;
+    int linked = spisor_is_link(path, &out_of_memory);
+    return out_of_memory ? RUNTIME_SECRET_FILE_OUT_OF_MEMORY
+           : linked      ? RUNTIME_SECRET_FILE_LINKED
+                         : RUNTIME_SECRET_FILE_UNWRITABLE;
 }
 
 static char *copy_text(const char *text) {

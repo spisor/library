@@ -102,10 +102,15 @@ cJSON *runtime_processes_remove_runs_for(const runtime_processes_request *reques
         return NULL;
     }
     cJSON *answer = cJSON_CreateObject();
-    int removed = answer != NULL &&
-                  (record == NULL ? runtime_remove_run_records(request->state, request->host_id)
-                                  : runtime_remove_run_record(request->state, request->host_id, record->valuestring));
-    if (answer != NULL && !removed) {
+    spisor_status removed = answer == NULL       ? SPISOR_OUT_OF_MEMORY
+                            : record == NULL     ? runtime_remove_run_records(request->state, request->host_id)
+                                                 : runtime_remove_run_record(request->state, request->host_id,
+                                                                             record->valuestring);
+    if (removed == SPISOR_OUT_OF_MEMORY) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    if (removed != SPISOR_OK) {
         const char *parts[3] = {"the run records of ", request->host_id, " could not be removed"};
         *refusal = runtime_cache_refusal(parts, 3, WRITABLE_STATE_FIX);
         cJSON_Delete(answer);

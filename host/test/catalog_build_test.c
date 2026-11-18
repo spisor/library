@@ -16,7 +16,7 @@ static void start_case(const char *label) {
 }
 
 static void finish_case(void) {
-    CHECK(runtime_remove_tree(base_folder) == 1);
+    CHECK(runtime_remove_tree(base_folder) == SPISOR_OK);
 }
 
 /** A directory spisor-host bundle would write for plugin id at version, with extra manifest members. */
@@ -42,7 +42,8 @@ static char *library_directory(void) {
 /** The catalog at path as catalog.read reads it, origin its file url. */
 static cJSON *read_back(const char *path) {
     char *text = text_in(path, "");
-    char *origin = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+    char *origin = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &origin);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "text", text == NULL ? "" : text);
     cJSON_AddStringToObject(argument, "origin", origin);
@@ -175,7 +176,7 @@ static void lists_every_copied_file_with_its_real_hash_and_size(void) {
         char *copied = in_base(rest);
         char hash[RUNTIME_SHA256_HEX_SIZE];
         uint64_t size = 0;
-        CHECK(runtime_sha256_file_sized(copied, hash, &size));
+        CHECK(runtime_sha256_file_sized(copied, hash, &size) == SPISOR_OK);
         check_text(text_at(file, "sha256"), hash, "hash");
         CHECK((double)size == cJSON_GetObjectItemCaseSensitive(file, "size")->valuedouble);
         spisor_memory_release(copied);
@@ -200,7 +201,8 @@ static void places_a_per_platform_item_under_its_platform(void) {
     const cJSON *platforms = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item, "versions"), "2.16.3"), "platforms");
     const cJSON *reference = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(platforms, "linux-x64"), "files"), "lib/native.node");
     char *placed = in_base("catalog/files/koffi/2.16.3/linux-x64/lib/native.node");
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, placed);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, placed, &url);
     check_text(text_at(reference, "url"), url, "resolved under its platform");
     spisor_memory_release(url);
     spisor_memory_release(placed);
@@ -675,7 +677,7 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
     expect_contains(library.err, "<id>=<directory>@<platform>", "library shape");
     program refused;
     char *empty = in_base("empty");
-    CHECK(spisor_make_directories(empty) == 1);
+    CHECK(spisor_make_directories(empty) == SPISOR_OK);
     const char *nothing[] = {"catalog", "build", "--plugin", empty, "--out", "x", NULL};
     CHECK(run_build(nothing, &refused) == 1);
     expect_contains(refused.err, "has no plugin.json", "a refusal");

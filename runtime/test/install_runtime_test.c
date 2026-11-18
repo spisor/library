@@ -55,7 +55,7 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
     write_in(stem, "lib/node_modules/npm/package.json", "{}");
     fixture->archive = joined(fixture->base.root, "served/" ARCHIVE_NAME);
     char *served = joined(fixture->base.root, "served");
-    CHECK(spisor_make_directories(served) == 1);
+    CHECK(spisor_make_directories(served) == SPISOR_OK);
     cJSON *arguments = cJSON_CreateArray();
 #if defined(_WIN32)
     cJSON_AddItemToArray(arguments, cJSON_CreateString("-a"));
@@ -71,7 +71,7 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
     int exit_code = -1;
     char *problem = NULL;
     CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
-    CHECK(spisor_sha256_file(fixture->archive, fixture->archive_sha256));
+    CHECK(spisor_sha256_file(fixture->archive, fixture->archive_sha256) == SPISOR_OK);
     spisor_memory_release(problem);
     spisor_memory_release(tar);
     cJSON_Delete(arguments);
@@ -83,7 +83,8 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
 static void start_runtime(runtime_fixture *fixture, const char *label, const char *sha256_override) {
     start_install_base(&fixture->base, "runtime", label);
     pack_archive(fixture, "the node executable");
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture->archive);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture->archive, &url);
     runtime_install_use_runtime_build(TEST_VERSION, url, sha256_override == NULL ? fixture->archive_sha256 : sha256_override);
     spisor_memory_release(url);
 }
@@ -165,7 +166,7 @@ static void keeps_only_the_executable_and_the_archive_s_hash_in_place_of_the_arc
     CHECK(!exists_in(directory, ARCHIVE_NAME));
     CHECK(!exists_in(directory, STEM "/README.md") && !exists_in(directory, STEM "/lib"));
     char executable_sha256[RUNTIME_SHA256_HEX_SIZE];
-    CHECK(spisor_sha256_file(executable, executable_sha256));
+    CHECK(spisor_sha256_file(executable, executable_sha256) == SPISOR_OK);
     char expected[200];
     snprintf(expected, sizeof expected, "%s\n%s\n", fixture.archive_sha256, executable_sha256);
     char *marker = text_in(directory, ".unpacked");

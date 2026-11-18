@@ -147,7 +147,7 @@ static char *tool_on_path(const char *tool) {
 /** A folder of links to the tools install.sh calls, curl among them only when with_curl is set. */
 static char *script_path_variable(const host_world *world, int with_curl) {
     char *folder = joined(world->base.root, with_curl ? "tools" : "tools-without-curl");
-    CHECK(spisor_make_directories(folder) == 1);
+    CHECK(spisor_make_directories(folder) == SPISOR_OK);
     for (size_t index = 0; index < sizeof POSIX_TOOLS / sizeof POSIX_TOOLS[0]; index++) {
         char *found = strcmp(POSIX_TOOLS[index], "curl") == 0 && !with_curl ? NULL : tool_on_path(POSIX_TOOLS[index]);
         char *link = joined(folder, POSIX_TOOLS[index]);
@@ -223,7 +223,8 @@ static int install(host_world *world, program *run, const char *const *extra) {
 static int has_same_bytes(const char *path, const char *source) {
     char left[RUNTIME_SHA256_HEX_SIZE];
     char right[RUNTIME_SHA256_HEX_SIZE];
-    return spisor_sha256_file(path, left) && spisor_sha256_file(source, right) && strcmp(left, right) == 0;
+    return spisor_sha256_file(path, left) == SPISOR_OK && spisor_sha256_file(source, right) == SPISOR_OK &&
+           strcmp(left, right) == 0;
 }
 
 static int fetched_any(const program *run) {
@@ -455,7 +456,8 @@ static void with_a_url_outside_the_catalog_directory(host_world *world, cJSON *f
 
 /** url, a relative url of the catalog, as an absolute file url under folder; freed. */
 static char *file_url_under(const char *folder, const char *url) {
-    char *base = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, folder);
+    char *base = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, folder, &base);
     char absolute[4096];
     snprintf(absolute, sizeof absolute, "%s/%s", base, url);
     spisor_memory_release(base);
@@ -489,7 +491,7 @@ static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     uint8_t *bytes = spisor_read_file(SPISOR_HOST_PATH, &length);
     char *path = joined(world->base.catalog, "cut-short/" HOST_EXECUTABLE);
     char *parent = joined(path, "..");
-    CHECK(bytes != NULL && spisor_make_directories(parent) == 1 &&
+    CHECK(bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
         spisor_replace_file(path, bytes, length / 2) == SPISOR_OK);
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("cut-short/" HOST_EXECUTABLE));
     spisor_memory_release(parent);
@@ -642,7 +644,7 @@ static void refuses_each_hostile_catalog_and_runs_nothing(void) {
     start_script_world(&world, "hostile");
     for (size_t number = 0; number < sizeof HOSTILE_CATALOGS / sizeof HOSTILE_CATALOGS[0]; number++) {
         const hostile_catalog *hostile = &HOSTILE_CATALOGS[number];
-        CHECK(runtime_remove_tree(world.base.cache) == 1);
+        CHECK(runtime_remove_tree(world.base.cache) == SPISOR_OK);
         plant_stale_host(&world);
         char *index = hostile_index(&world, hostile, number);
         program run;
@@ -817,7 +819,7 @@ static void a_script_cut_short_at_any_line_fetches_and_runs_nothing(void) {
         if (spisor_probe_file(world.base.cache) == SPISOR_FILE_PRESENT || fetched_any(&run)) {
             fprintf(stderr, "install.sh cut after line %zu fetched or ran something:\n%s\n%s\n", kept, run.out, run.err);
             check_failures++;
-            CHECK(runtime_remove_tree(world.base.cache) == 1);
+            CHECK(runtime_remove_tree(world.base.cache) == SPISOR_OK);
         }
         program_free(&run);
     }

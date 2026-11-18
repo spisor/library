@@ -85,7 +85,8 @@ static cJSON *fetched_copy(const host_context *context, const cJSON *source, int
     const char *segments[2] = {folder, COPY_FILE};
     char *destination = folder == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     cJSON *copy = NULL;
-    if (destination != NULL && runtime_remove_tree(folder) == 1 && spisor_make_directories(folder) == 1) {
+    if (destination != NULL && runtime_remove_tree(folder) == SPISOR_OK &&
+        spisor_make_directories(folder) == SPISOR_OK) {
         cJSON *answer =
             runtime_call_operation(runtime_marketplace_read_operation, read_call(source, destination), refusal);
         copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");

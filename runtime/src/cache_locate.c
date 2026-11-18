@@ -102,8 +102,9 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
     if (manifest_path == NULL) {
         return 0;
     }
-    int added = 1;
-    if (spisor_probe_file(manifest_path) == SPISOR_FILE_PRESENT) {
+    spisor_file_presence presence = spisor_probe_file(manifest_path);
+    int added = presence != SPISOR_FILE_OUT_OF_MEMORY;
+    if (presence == SPISOR_FILE_PRESENT) {
         int out_of_memory = 0;
         cJSON *manifest = runtime_read_node_json(manifest_path, &out_of_memory);
         const char *named = cJSON_IsObject(manifest) ? text_of(manifest, "version") : NULL;
@@ -124,9 +125,10 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
 }
 
 static int locate_one(const char *cache, const char *id, const char *version, cJSON *located, cJSON *problems) {
-    location place = {id, version, runtime_cache_bundle_directory(cache, id, version)};
+    int out_of_memory;
+    location place = {id, version, runtime_cache_bundle_directory(cache, id, version, &out_of_memory)};
     if (place.directory == NULL) {
-        return add_outside(problems, &place);
+        return !out_of_memory && add_outside(problems, &place);
     }
     cJSON *check = runtime_cache_check_version_sizes(place.directory);
     const char *kind = text_of(check, "kind");

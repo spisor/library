@@ -20,8 +20,11 @@ char *runtime_catalog_state_path(const char *cache, const char *location);
 /** The source's path resolved, or its url; freed, NULL when memory runs out. */
 char *runtime_catalog_location_of(const runtime_catalog_location *source);
 
-/** The url the source's file urls resolve against; freed, NULL when it has none. */
-char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location);
+/**
+ * The url the source's file urls resolve against, in *origin, freed: SPISOR_MALFORMED when it has none,
+ * SPISOR_OUT_OF_MEMORY when memory runs out, *origin NULL for both.
+ */
+spisor_status runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location, char **origin);
 
 /**
  * The state kept at path; a missing or unreadable file, or one that is not an object, keeps nothing. 0 with state

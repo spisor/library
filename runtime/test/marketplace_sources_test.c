@@ -520,6 +520,6 @@ int main(void) {
     runtime_fetch_allow_plain_http(1);
     run_without_a_server();
     run_against_the_server();
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
     return check_summary("marketplace_sources_test");
 }

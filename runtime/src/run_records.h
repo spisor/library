@@ -3,6 +3,8 @@
 
 #include "cJSON.h"
 
+#include "spisor/status.h"
+
 /** How often a start stamps its run record alive unless told otherwise, as a background host's holders are. */
 #define RUNTIME_DEFAULT_CHECK_MILLISECONDS 5000.0
 
@@ -50,10 +52,13 @@ runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, cons
  */
 cJSON *runtime_live_runs(const char *state, double now);
 
-/** Deletes every run record of host_id; a host with none counts as removed. */
-int runtime_remove_run_records(const char *state, const char *host_id);
+/** Deletes every run record of host_id; a host with none counts as removed. REFUSED, or OUT_OF_MEMORY. */
+spisor_status runtime_remove_run_records(const char *state, const char *host_id);
 
-/** Deletes the run record at record; 0 when it is no run record of host_id or could not be deleted. */
-int runtime_remove_run_record(const char *state, const char *host_id, const char *record);
+/**
+ * Deletes the run record at record: SPISOR_REFUSED when it is no run record of host_id or could not be deleted,
+ * SPISOR_OUT_OF_MEMORY when memory runs out.
+ */
+spisor_status runtime_remove_run_record(const char *state, const char *host_id, const char *record);
 
 #endif

@@ -195,8 +195,16 @@ static char *destination(deployment *plan, const char *suffix) {
     return path;
 }
 
-static int write_destination(const deployment *plan, destination_index index, const uint8_t *bytes, size_t length) {
-    return spisor_replace_file(plan->destinations[index], bytes, length) == SPISOR_OK;
+static int write_destination(deployment *plan, destination_index index, const uint8_t *bytes, size_t length) {
+    spisor_status status = spisor_replace_file(plan->destinations[index], bytes, length);
+    plan->out_of_memory = status == SPISOR_OUT_OF_MEMORY;
+    return status == SPISOR_OK;
+}
+
+static int make_plugin_directory(deployment *plan) {
+    spisor_status status = spisor_make_directories(plan->plugin_directory);
+    plan->out_of_memory = status == SPISOR_OUT_OF_MEMORY;
+    return status == SPISOR_OK;
 }
 
 /** Resolves every destination, 0 when one lies outside pluginDir or memory runs out. */
@@ -269,14 +277,16 @@ static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
     return same;
 }
 
-static int remove_destination(const deployment *plan, destination_index index) {
-    return runtime_remove_file_entry(plan->destinations[index]) == RUNTIME_ENTRY_DONE;
+static int remove_destination(deployment *plan, destination_index index) {
+    runtime_entry_outcome removed = runtime_remove_file_entry(plan->destinations[index]);
+    plan->out_of_memory = removed == RUNTIME_ENTRY_OUT_OF_MEMORY;
+    return removed == RUNTIME_ENTRY_DONE;
 }
 
 /** The identity goes first and returns last, so a failure part way leaves a plugin with no identity rather than a wrong one. */
 static int write_files(deployment *plan, cJSON **refusal) {
     int written =
-        spisor_make_directories(plan->plugin_directory) && remove_destination(plan, IDENTITY_DESTINATION) &&
+        make_plugin_directory(plan) && remove_destination(plan, IDENTITY_DESTINATION) &&
         (plan->has_entry || remove_destination(plan, ENTRY_DESTINATION)) &&
         (!plan->has_entry || write_destination(plan, ENTRY_DESTINATION, plan->entry_bytes, plan->entry_length)) &&
         write_destination(plan, MANIFEST_DESTINATION, plan->manifest_bytes, plan->manifest_length) &&

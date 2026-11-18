@@ -53,7 +53,7 @@ static void refuses_a_swept_version_with_the_reinstall_fix(void) {
     host_world world;
     install_boot_world(&world, "swept");
     char *version = joined(world.base.cache, "bundles/spisor-host/1.0.0");
-    CHECK(runtime_remove_tree(version) == 1);
+    CHECK(runtime_remove_tree(version) == SPISOR_OK);
     program run;
     const char *arguments[] = {"spisor-host", "status", NULL};
     CHECK(run_boot(&world, &run, arguments) == 1);

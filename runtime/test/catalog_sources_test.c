@@ -79,7 +79,7 @@ static void it_reads_the_sources_a_real_settings_round_trip_stores(void) {
     catalog_answer answer = catalog_service_call(CATALOG_SOURCES, argument);
     expect_json(value_at(answer.tree, "sources"), sources, "round trip");
     cJSON_Delete(answer.tree);
-    CHECK(runtime_remove_tree(base) == 1);
+    CHECK(runtime_remove_tree(base) == SPISOR_OK);
 }
 
 static void it_is_empty_without_the_setting(void) {

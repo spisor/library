@@ -53,7 +53,7 @@ static void write_text(const char *path, const char *text) {
 
 static void write_settings_file(const scratch_home *home, const char *name, const char *text) {
     char path[1200];
-    CHECK(spisor_make_directories(home->config_directory) == 1);
+    CHECK(spisor_make_directories(home->config_directory) == SPISOR_OK);
     snprintf(path, sizeof path, "%s/%s.json", home->config_directory, name);
     write_text(path, text);
 }
@@ -485,7 +485,7 @@ static void write_portable_file(const scratch_home *home, const char *plugin, co
     char directory[1300];
     char path[1400];
     snprintf(directory, sizeof directory, "%s/plugins/%s", home->portable, plugin);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     portable_file_path(home, plugin, path, sizeof path);
     write_text(path, text);
 }
@@ -672,7 +672,7 @@ static void portable_set_through_a_dotfiles_link(void) {
     fresh_home(&home, "portable-link");
     snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", home.path);
     snprintf(target, sizeof target, "%s/config.json", dotfiles);
-    CHECK(spisor_make_directories(dotfiles) == 1);
+    CHECK(spisor_make_directories(dotfiles) == SPISOR_OK);
     write_text(target, "{\"kept\":true}");
     write_portable_file(&home, "p", "{}");
     portable_file_path(&home, "p", link, sizeof link);
@@ -698,7 +698,7 @@ static void portable_set_through_a_link_to_a_malformed_file_is_refused(void) {
     fresh_home(&home, "portable-link-malformed");
     snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", home.path);
     snprintf(target, sizeof target, "%s/config.json", dotfiles);
-    CHECK(spisor_make_directories(dotfiles) == 1);
+    CHECK(spisor_make_directories(dotfiles) == SPISOR_OK);
     write_text(target, "{\"a\":");
     write_portable_file(&home, "p", "{}");
     portable_file_path(&home, "p", link, sizeof link);

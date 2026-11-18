@@ -10,8 +10,9 @@
  * it is absent), or <directory>/<name> when name already ends in one; on POSIX when <directory>/<name>
  * is an executable file. Variable names are matched ignoring case on Windows, as the OS does.
  * Entries that are empty or not absolute are skipped, so nothing depends on the current directory.
+ * 0 with *out_of_memory set to 1 when memory ran out looking.
  */
-int runtime_commands_held_on_path(const cJSON *environment, const char *shims, const char *name);
+int runtime_commands_held_on_path(const cJSON *environment, const char *shims, const char *name, int *out_of_memory);
 
 /** Which of the commands service's operations runtime_commands_serve serves. */
 typedef enum runtime_command_operation {

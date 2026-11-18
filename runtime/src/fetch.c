@@ -208,27 +208,31 @@ static char *parent_of(const char *path) {
     return parent;
 }
 
-static int make_parent(const char *destination) {
+static spisor_status make_parent(const char *destination) {
     char *parent = parent_of(destination);
-    int made = parent != NULL && (parent[0] == 0 || spisor_make_directories(parent));
+    spisor_status made = parent == NULL      ? SPISOR_OUT_OF_MEMORY
+                         : parent[0] == 0 ? SPISOR_OK
+                                          : spisor_make_directories(parent);
     spisor_memory_release(parent);
     return made;
 }
 
-static int open_partial(const char *destination, fetch_files *files) {
+static spisor_status open_partial(const char *destination, fetch_files *files) {
     size_t size = strlen(destination) + 48;
     files->partial = spisor_memory_allocate(size);
     files->file = NULL;
     if (files->partial == NULL) {
-        return 0;
+        return SPISOR_OUT_OF_MEMORY;
     }
     snprintf(files->partial, size, "%s.partial-%d-%lu", destination, (int)current_process_id(),
              next_partial_number());
-    if (!make_parent(destination)) {
-        return 0;
+    spisor_status made = make_parent(destination);
+    if (made != SPISOR_OK) {
+        return made;
     }
-    files->file = runtime_open_file(files->partial, RUNTIME_FILE_WRITE);
-    return files->file != NULL;
+    int out_of_memory;
+    files->file = runtime_open_file(files->partial, RUNTIME_FILE_WRITE, &out_of_memory);
+    return files->file != NULL ? SPISOR_OK : out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
 }
 
 static void discard_partial(fetch_files *files) {
@@ -307,12 +311,20 @@ static spisor_status refuse_hash(const fetch_order *order, const char *actual, s
  * @implNote On Windows a rename onto a file another process has open fails, and when two hosts share one cache that file is the very one being stored, so a
  * destination already holding these bytes is accepted.
  */
-static int move_into_place(fetch_files *files, const char *destination, const char *sha256) {
-    if (runtime_move_file_over(files->partial, destination)) {
-        return 1;
+static spisor_status move_into_place(fetch_files *files, const char *destination, const char *sha256) {
+    spisor_status moved = runtime_move_file_over(files->partial, destination);
+    if (moved != SPISOR_REFUSED) {
+        return moved;
     }
     char present[RUNTIME_SHA256_HEX_SIZE];
-    return spisor_sha256_file(destination, present) && strcmp(present, sha256) == 0;
+    spisor_status hashed = spisor_sha256_file(destination, present);
+    if (hashed != SPISOR_OK) {
+        return hashed;
+    }
+    if (strcmp(present, sha256) != 0) {
+        return SPISOR_REFUSED;
+    }
+    return runtime_remove_file_entry(files->partial) == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
 static spisor_status settle_received(const fetch_order *order, fetch_files *files, runtime_fetch_sink *sink,
@@ -334,12 +346,13 @@ static spisor_status settle_received(const fetch_order *order, fetch_files *file
         discard_partial(files);
         return SPISOR_OUT_OF_MEMORY;
     }
-    if (!move_into_place(files, order->destination, actual)) {
+    spisor_status moved = move_into_place(files, order->destination, actual);
+    if (moved != SPISOR_OK) {
         discard_partial(files);
         release_get_answer_storage(answer);
-        return refuse_unwritable(order->destination, refusal);
+        return moved == SPISOR_OUT_OF_MEMORY ? moved : refuse_unwritable(order->destination, refusal);
     }
-    discard_partial(files);
+    spisor_memory_release(files->partial);
     answer->outcome = RUNTIME_FETCH_GET_STORED;
     return SPISOR_OK;
 }
@@ -378,6 +391,9 @@ static spisor_status settle(const fetch_order *order, fetch_files *files, runtim
         return settle_received(order, files, sink, received, answer, refusal);
     }
     discard_partial(files);
+    if (received->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     if (received->outcome != RUNTIME_FETCH_NOT_MODIFIED) {
         return refuse_answer(order, received, sink, refusal);
     }
@@ -394,9 +410,10 @@ static spisor_status fetch(const fetch_order *order, runtime_fetch_get_answer *a
         return refuse_scheme(order->url, refusal);
     }
     fetch_files files;
-    if (!open_partial(order->destination, &files)) {
+    spisor_status opened = open_partial(order->destination, &files);
+    if (opened != SPISOR_OK) {
         discard_partial(&files);
-        return refuse_unwritable(order->destination, refusal);
+        return opened == SPISOR_OUT_OF_MEMORY ? opened : refuse_unwritable(order->destination, refusal);
     }
     runtime_fetch_sink sink;
     runtime_fetch_sink_start(&sink, files.file, order->limited, order->max_bytes);

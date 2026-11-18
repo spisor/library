@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "cache_folders.h"
+#include "file_reading.h"
 #include "host_references.h"
 #include "json_parse.h"
 #include "json_service.h"
@@ -56,9 +57,10 @@ static cJSON *checked_standard(const char *file, cJSON *manifest, cJSON **refusa
 
 static cJSON *read_standard(const char *file, cJSON **refusal) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(file, &length);
+    spisor_read_outcome outcome;
+    uint8_t *bytes = spisor_read_file_reporting(file, &length, &outcome);
     int readable = bytes != NULL;
-    int out_of_memory = 0;
+    int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
     cJSON *manifest = readable ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
     spisor_memory_release(bytes);
     if (manifest == NULL && !out_of_memory) {

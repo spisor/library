@@ -33,9 +33,12 @@ char *runtime_catalog_location_of(const runtime_catalog_location *source) {
     return source->local ? runtime_catalog_resolve_path(source->location) : runtime_catalog_copy(source->location);
 }
 
-char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location) {
-    return source->local ? runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, location)
-                         : runtime_catalog_copy(source->location);
+spisor_status runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location, char **origin) {
+    if (source->local) {
+        return runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, location, origin);
+    }
+    *origin = runtime_catalog_copy(source->location);
+    return *origin == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
 static char *copied_member(const cJSON *object, const char *name) {
@@ -83,8 +86,8 @@ static spisor_status replace_with_text(const char *path, const char *text) {
     char *parent = parent_of(path);
     size_t length = strlen(text);
     char *bytes = parent == NULL ? NULL : spisor_memory_allocate(length + 2);
-    spisor_status status = bytes == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
-    if (bytes != NULL && spisor_make_directories(parent)) {
+    spisor_status status = bytes == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(parent);
+    if (status == SPISOR_OK) {
         memcpy(bytes, text, length);
         bytes[length] = '\n';
         status = spisor_replace_file(path, (const uint8_t *)bytes, length + 1);

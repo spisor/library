@@ -142,7 +142,7 @@ static void unreadable_file_that_is_a_directory_is_refused(void) {
     fresh_portable("directory");
     char path[1200];
     snprintf(path, sizeof path, "%s/packages.json", portable);
-    CHECK(spisor_make_directories(path) == 1);
+    CHECK(spisor_make_directories(path) == SPISOR_OK);
     answer result = packages("{\"item\":\"tool\"}");
     expect_refused(&result, "packages.json", "a directory in place of the file");
     finish(&result);

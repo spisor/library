@@ -84,9 +84,10 @@ static int write_record(const char *path, const cJSON *run, double check_millise
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
                          int *out_of_memory) {
     char *folder = runs_folder(state, host_id);
-    int made = folder != NULL && spisor_make_directories(folder);
-    char *path = made ? record_path(folder) : NULL;
-    *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || (made && path == NULL);
+    spisor_status made = folder == NULL ? SPISOR_REFUSED : spisor_make_directories(folder);
+    char *path = made == SPISOR_OK ? record_path(folder) : NULL;
+    *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || made == SPISOR_OUT_OF_MEMORY ||
+                     (made == SPISOR_OK && path == NULL);
     int written = path != NULL && write_record(path, run, check_milliseconds, out_of_memory);
     spisor_memory_release(folder);
     if (!written) {
@@ -123,8 +124,9 @@ runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, cons
         return out_of_memory ? RUNTIME_RUN_OUT_OF_MEMORY : RUNTIME_RUN_NOT_A_RECORD;
     }
     char *folder = runs_folder(state, host_id);
-    int stamped = folder != NULL && spisor_make_directories(folder) &&
-                  write_record(record, run, check_milliseconds, &out_of_memory);
+    spisor_status made = folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
+    out_of_memory = made == SPISOR_OUT_OF_MEMORY;
+    int stamped = made == SPISOR_OK && write_record(record, run, check_milliseconds, &out_of_memory);
     spisor_memory_release(folder);
     if (folder == NULL || out_of_memory) {
         return RUNTIME_RUN_OUT_OF_MEMORY;
@@ -157,7 +159,7 @@ static int add_live_run(cJSON *runs, const char *path, double now) {
             cJSON_Delete(run);
         }
     } else if (added) {
-        runtime_remove_file_entry(path);
+        added = runtime_remove_file_entry(path) != RUNTIME_ENTRY_OUT_OF_MEMORY;
     }
     cJSON_Delete(record);
     return added;
@@ -193,15 +195,20 @@ cJSON *runtime_live_runs(const char *state, double now) {
     return runs;
 }
 
-int runtime_remove_run_records(const char *state, const char *host_id) {
+spisor_status runtime_remove_run_records(const char *state, const char *host_id) {
     char *folder = runs_folder(state, host_id);
-    int removed = folder != NULL && runtime_remove_tree(folder);
+    spisor_status removed = folder == NULL ? SPISOR_OUT_OF_MEMORY : runtime_remove_tree(folder);
     spisor_memory_release(folder);
     return removed;
 }
 
-int runtime_remove_run_record(const char *state, const char *host_id, const char *record) {
+spisor_status runtime_remove_run_record(const char *state, const char *host_id, const char *record) {
     int out_of_memory = 0;
-    return runtime_is_run_record_of(state, host_id, record, &out_of_memory) &&
-           runtime_remove_file_entry(record) == RUNTIME_ENTRY_DONE;
+    if (!runtime_is_run_record_of(state, host_id, record, &out_of_memory)) {
+        return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    }
+    runtime_entry_outcome removed = runtime_remove_file_entry(record);
+    return removed == RUNTIME_ENTRY_DONE          ? SPISOR_OK
+           : removed == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                                                    : SPISOR_REFUSED;
 }

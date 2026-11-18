@@ -76,10 +76,13 @@ static char *matching_file(int windows, const char *directory, const runtime_dir
             *out_of_memory = 1;
             return NULL;
         }
-        if (runtime_is_followed_file(path, !windows)) {
+        if (runtime_is_followed_file(path, !windows, out_of_memory)) {
             return path;
         }
         spisor_memory_release(path);
+        if (*out_of_memory) {
+            return NULL;
+        }
     }
     return NULL;
 }

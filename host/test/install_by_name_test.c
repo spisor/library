@@ -85,7 +85,8 @@ static void list_marketplaces(const char *const *ids, const char *const *copies,
         snprintf(file, sizeof file, "marketplaces/%s.json", ids[index]);
         write_in(world.base.root, file, copies[index]);
         char *path = joined(world.base.root, file);
-        char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+        char *url = NULL;
+        runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
         cJSON *entry = cJSON_CreateObject();
         cJSON_AddStringToObject(entry, "id", ids[index]);
         cJSON_AddStringToObject(entry, "url", url);
@@ -410,7 +411,8 @@ static void write_release(void) {
              manifest_digest, (int)strlen(MANIFEST), entry_digest, (int)strlen(ENTRY));
     write_in(fixture_root, "release/weivel-index.json", index);
     char *index_path = joined(fixture_root, "release/weivel-index.json");
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_path);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_path, &url);
     snprintf(release_json, sizeof release_json, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
     spisor_memory_release(url);
     spisor_memory_release(index_path);

@@ -130,17 +130,16 @@ static char *log_line(const runtime_log_request *entry) {
     return line;
 }
 
-static int append_line(const runtime_log_request *entry, const char *name) {
+static spisor_status append_line(const runtime_log_request *entry, const char *name) {
     char *directory = log_directory(entry->home, entry->time);
     char *file_name = log_file_name(name, entry->start);
     char *line = log_line(entry);
     char *path = NULL;
-    int appended = 0;
+    spisor_status appended = SPISOR_OUT_OF_MEMORY;
     if (directory != NULL && file_name != NULL && line != NULL) {
         const char *segments[] = {directory, file_name};
         path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-        appended = path != NULL && spisor_make_directories(directory) &&
-                   spisor_append_file(path, (const uint8_t *)line, strlen(line));
+        appended = path == NULL ? SPISOR_OUT_OF_MEMORY : spisor_append_file(path, (const uint8_t *)line, strlen(line));
     }
     spisor_memory_release(directory);
     spisor_memory_release(file_name);
@@ -246,7 +245,14 @@ static spisor_status write_entry(const runtime_log_request *entry, const char *n
     if (!read_console_style(entry, &style) || !pack_console(entry, name, &style, console)) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    if (!skip_file && !append_line(entry, name) && console->line == NULL) {
+    spisor_status appended = skip_file ? SPISOR_OK : append_line(entry, name);
+    if (appended == SPISOR_OUT_OF_MEMORY) {
+        runtime_release_storage(console->storage);
+        console->line = NULL;
+        console->storage = NULL;
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (appended != SPISOR_OK && console->line == NULL) {
         runtime_release_storage(console->storage);
         console->storage = NULL;
         return refuse_append(refusal);

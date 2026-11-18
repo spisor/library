@@ -132,8 +132,9 @@ static int reverse_one(reversal_session *session, cJSON *entry, cJSON **refusal)
     if (reversal == RUNTIME_CHANGE_DRIFTED && !add_drift(session->drifted, entry, note.detail)) {
         return out_of_memory(refusal);
     }
-    if (runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
-        return refuse_unwritable(session, refusal);
+    runtime_registry_answer stored = runtime_registry_store(session->state, session->registration);
+    if (stored != RUNTIME_REGISTRY_OK) {
+        return stored == RUNTIME_REGISTRY_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unwritable(session, refusal);
     }
     session->reversed++;
     return 1;
@@ -157,8 +158,10 @@ static int refuse_load(runtime_registry_answer loaded, const char *host, cJSON *
 
 static int finish(reversal_session *session, int settled, cJSON **refusal) {
     session->finished = 1;
-    if (settled && runtime_registry_store(session->state, session->registration) != RUNTIME_REGISTRY_OK) {
-        return refuse_unwritable(session, refusal);
+    runtime_registry_answer stored =
+        settled ? runtime_registry_store(session->state, session->registration) : RUNTIME_REGISTRY_OK;
+    if (stored != RUNTIME_REGISTRY_OK) {
+        return stored == RUNTIME_REGISTRY_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unwritable(session, refusal);
     }
     return 1;
 }

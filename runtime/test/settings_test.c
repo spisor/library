@@ -51,12 +51,12 @@ static void write_text(const char *path, const char *text) {
 static void write_application_file(const scratch_home *home, const char *text) {
     char directory[1200];
     snprintf(directory, sizeof directory, "%s/config", home->path);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     write_text(home->application_file, text);
 }
 
 static void write_portable_file(const scratch_home *home, const char *text) {
-    CHECK(spisor_make_directories(home->portable) == 1);
+    CHECK(spisor_make_directories(home->portable) == SPISOR_OK);
     write_text(home->portable_file, text);
 }
 
@@ -227,7 +227,7 @@ static void set_writes_through_a_symlinked_settings_file(void) {
     fresh_home(&home, "link");
     snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", home.path);
     snprintf(target, sizeof target, "%s/settings.json", dotfiles);
-    CHECK(spisor_make_directories(dotfiles) == 1);
+    CHECK(spisor_make_directories(dotfiles) == SPISOR_OK);
     write_text(target, "{\"kept\":true}");
     write_portable_file(&home, "{}");
     if (!create_link_or_skip(home.portable_file, target)) {

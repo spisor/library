@@ -276,7 +276,7 @@ static int store_holds(const char *entry, const char *value) {
 static void write_raw_file(const scratch *place, const char *content) {
     char directory[1100];
     snprintf(directory, sizeof directory, "%s/state", place->directory);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     CHECK(spisor_replace_file(place->file, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
 
@@ -723,8 +723,8 @@ static void a_linked_secrets_file_is_never_written_through(void) {
     snprintf(dotfiles, sizeof dotfiles, "%s/dotfiles", place.directory);
     snprintf(target, sizeof target, "%s/secrets.json", dotfiles);
     snprintf(state, sizeof state, "%s/state", place.directory);
-    CHECK(spisor_make_directories(dotfiles) == 1);
-    CHECK(spisor_make_directories(state) == 1);
+    CHECK(spisor_make_directories(dotfiles) == SPISOR_OK);
+    CHECK(spisor_make_directories(state) == SPISOR_OK);
     CHECK(spisor_replace_file(target, (const uint8_t *)"{}", 2) == SPISOR_OK);
     if (!create_link_or_skip(place.file, target)) {
         return;

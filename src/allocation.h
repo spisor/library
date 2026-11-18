@@ -11,6 +11,8 @@ void spisor_memory_fail_at(uint64_t attempt);
 /** As spisor_memory_fail_at, and every allocation after that one fails too. */
 void spisor_memory_fail_from(uint64_t attempt);
 int spisor_memory_failed(void);
+/** While suspend is nonzero no allocation counts or fails, so a test's own checks inside a failing run cannot fail. */
+void spisor_memory_suspend_failures(int suspend);
 uint64_t spisor_memory_attempts(void);
 int64_t spisor_memory_live_blocks(void);
 #endif

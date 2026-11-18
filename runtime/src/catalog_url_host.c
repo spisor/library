@@ -125,17 +125,18 @@ static int ends_in_a_number(const char *host, size_t length) {
     return digits || ipv4_number(host + last_start, last_end - last_start) >= 0;
 }
 
-static char *ipv4_host(const char *host, size_t length) {
+static spisor_status ipv4_host(const char *host, size_t length, char **serialized) {
     host_parts parts;
+    *serialized = NULL;
     split_on_dots(host, length, &parts);
     if (parts.overflowed || parts.count > IPV4_PARTS) {
-        return NULL;
+        return SPISOR_MALFORMED;
     }
     long long numbers[IPV4_PARTS];
     for (size_t index = 0; index < parts.count; index++) {
         numbers[index] = ipv4_number(parts.starts[index], parts.lengths[index]);
         if (numbers[index] < 0 || (index + 1 < parts.count && numbers[index] > 255)) {
-            return NULL;
+            return SPISOR_MALFORMED;
         }
     }
     unsigned long long limit = 1;
@@ -143,18 +144,19 @@ static char *ipv4_host(const char *host, size_t length) {
         limit *= 256;
     }
     if ((unsigned long long)numbers[parts.count - 1] >= limit) {
-        return NULL;
+        return SPISOR_MALFORMED;
     }
     unsigned long long address = (unsigned long long)numbers[parts.count - 1];
     for (size_t index = 0; index + 1 < parts.count; index++) {
         address += (unsigned long long)numbers[index] << (8 * (3 - index));
     }
-    char *serialized = spisor_memory_allocate(16);
-    if (serialized != NULL) {
-        snprintf(serialized, 16, "%u.%u.%u.%u", (unsigned)(address >> 24) & 255, (unsigned)(address >> 16) & 255,
-                 (unsigned)(address >> 8) & 255, (unsigned)address & 255);
+    *serialized = spisor_memory_allocate(16);
+    if (*serialized == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
     }
-    return serialized;
+    snprintf(*serialized, 16, "%u.%u.%u.%u", (unsigned)(address >> 24) & 255, (unsigned)(address >> 16) & 255,
+             (unsigned)(address >> 8) & 255, (unsigned)address & 255);
+    return SPISOR_OK;
 }
 
 static int ipv6_embedded_ipv4(const char *input, size_t length, size_t *pointer, uint16_t *address,
@@ -275,10 +277,11 @@ static int longest_zero_run(const uint16_t *address) {
     return best;
 }
 
-static char *ipv6_host(const char *input, size_t length) {
+static spisor_status ipv6_host(const char *input, size_t length, char **host) {
     uint16_t address[IPV6_PIECES];
+    *host = NULL;
     if (!parse_ipv6(input, length, address)) {
-        return NULL;
+        return SPISOR_MALFORMED;
     }
     int compress = longest_zero_run(address);
     runtime_catalog_text text;
@@ -303,14 +306,16 @@ static char *ipv6_host(const char *input, size_t length) {
         }
     }
     runtime_catalog_text_add_character(&text, ']');
-    return runtime_catalog_text_finish(&text);
+    *host = runtime_catalog_text_finish(&text);
+    return *host == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-static char *domain_host(const char *bytes, size_t length) {
+static spisor_status domain_host(const char *bytes, size_t length, char **host) {
     size_t decoded_length;
     char *domain = percent_decoded(bytes, length, &decoded_length);
+    *host = NULL;
     if (domain == NULL) {
-        return NULL;
+        return SPISOR_OUT_OF_MEMORY;
     }
     int usable = decoded_length > 0;
     for (size_t index = 0; usable && index < decoded_length; index++) {
@@ -323,22 +328,24 @@ static char *domain_host(const char *bytes, size_t length) {
     }
     if (!usable) {
         spisor_memory_release(domain);
-        return NULL;
+        return SPISOR_MALFORMED;
     }
     if (!ends_in_a_number(domain, decoded_length)) {
-        return domain;
+        *host = domain;
+        return SPISOR_OK;
     }
-    char *address = ipv4_host(domain, decoded_length);
+    spisor_status status = ipv4_host(domain, decoded_length, host);
     spisor_memory_release(domain);
-    return address;
+    return status;
 }
 
-char *runtime_catalog_parse_host(const char *bytes, size_t length) {
+spisor_status runtime_catalog_parse_host(const char *bytes, size_t length, char **host) {
+    *host = NULL;
     if (length > 0 && bytes[0] == '[') {
         if (length < 2 || bytes[length - 1] != ']') {
-            return NULL;
+            return SPISOR_MALFORMED;
         }
-        return ipv6_host(bytes + 1, length - 2);
+        return ipv6_host(bytes + 1, length - 2, host);
     }
-    return domain_host(bytes, length);
+    return domain_host(bytes, length, host);
 }

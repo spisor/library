@@ -232,7 +232,7 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
         char reason[64];
         snprintf(reason, sizeof reason, "Windows error %lu", (unsigned long)error);
         *problem = problem_of(executable, reason);
-    } else if (!exited) {
+    } else if (started && !exited) {
         *problem = problem_of(executable, "it did not exit in time and was stopped");
     }
     return exited && answer_output(&collected, output);

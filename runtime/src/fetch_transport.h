@@ -49,7 +49,8 @@ typedef enum runtime_fetch_outcome {
     RUNTIME_FETCH_STATUS,
     RUNTIME_FETCH_CUT_OFF,
     RUNTIME_FETCH_STOPPED_BY_SINK,
-    RUNTIME_FETCH_REFUSED
+    RUNTIME_FETCH_REFUSED,
+    RUNTIME_FETCH_OUT_OF_MEMORY
 } runtime_fetch_outcome;
 
 /**
@@ -67,6 +68,9 @@ typedef struct runtime_fetch_answer {
 } runtime_fetch_answer;
 
 void runtime_fetch_refuse(runtime_fetch_answer *answer, const char *fix, const char *format, ...);
+
+/** Answers that memory ran out before the transport could answer. */
+void runtime_fetch_out_of_memory(runtime_fetch_answer *answer);
 
 /**
  * Fetches url into a memory sink under the same scheme rules and deadline override as fetch.get, so a

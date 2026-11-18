@@ -30,7 +30,7 @@ static void start_case(const char *label) {
 }
 
 static void finish_case(void) {
-    CHECK(runtime_remove_tree(base_folder) == 1);
+    CHECK(runtime_remove_tree(base_folder) == SPISOR_OK);
 }
 
 static int run_command(const char *list_path, const char *out_path) {

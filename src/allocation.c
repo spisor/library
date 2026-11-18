@@ -12,7 +12,12 @@ static int failed;
 static int sticky;
 static int64_t live_blocks;
 
+static int suspended;
+
 static int fails_now(void) {
+    if (suspended) {
+        return 0;
+    }
     attempts++;
     if (failed && sticky) {
         return 1;
@@ -73,6 +78,10 @@ void spisor_memory_fail_from(uint64_t attempt) {
 
 int spisor_memory_failed(void) {
     return failed;
+}
+
+void spisor_memory_suspend_failures(int suspend) {
+    suspended = suspend;
 }
 
 uint64_t spisor_memory_attempts(void) {

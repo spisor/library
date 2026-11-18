@@ -12,8 +12,8 @@
  * run inherits the registrations and files an earlier run left under the same name.
  */
 static inline void start_empty_directory(const char *path) {
-    CHECK(runtime_remove_tree(path) == 1);
-    CHECK(spisor_make_directories(path) == 1);
+    CHECK(runtime_remove_tree(path) == SPISOR_OK);
+    CHECK(spisor_make_directories(path) == SPISOR_OK);
 }
 
 #endif

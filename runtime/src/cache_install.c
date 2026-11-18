@@ -60,9 +60,10 @@ static int store_one(const runtime_cache_placement *placement, const char *id, c
  */
 static int mark_complete(const runtime_cache_plan *plan, const char *id, const char *version,
                          const install_record *record, cJSON **refusal) {
-    int has_directory = plan->count > 0 || spisor_make_directories(plan->directory);
-    spisor_status status =
-        has_directory ? runtime_cache_write_marker(plan->directory, record->hashes, record->sizes) : SPISOR_REFUSED;
+    spisor_status status = plan->count > 0 ? SPISOR_OK : spisor_make_directories(plan->directory);
+    if (status == SPISOR_OK) {
+        status = runtime_cache_write_marker(plan->directory, record->hashes, record->sizes);
+    }
     if (status != SPISOR_REFUSED) {
         return status == SPISOR_OK;
     }

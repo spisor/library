@@ -38,7 +38,7 @@ static int write_installed(const cJSON *places, const cJSON *installed) {
     char *folder = record_path(places, 1);
     char *path = record_path(places, 0);
     char *text = cJSON_PrintUnformatted(installed);
-    int written = folder != NULL && path != NULL && text != NULL && spisor_make_directories(folder) == 1 &&
+    int written = folder != NULL && path != NULL && text != NULL && spisor_make_directories(folder) == SPISOR_OK &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     cJSON_free(text);
     spisor_memory_release(path);

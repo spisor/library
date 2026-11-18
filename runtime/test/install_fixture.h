@@ -58,7 +58,7 @@ static inline char *joined(const char *base, const char *rest) {
 
 static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
@@ -117,14 +117,14 @@ static inline void start_install_base(install_base *base, const char *suite, con
     base->user = joined(base->root, "user");
     base->path = joined(base->root, "path");
     base->catalog = joined(base->root, "catalog");
-    CHECK(spisor_make_directories(base->user) == 1 && spisor_make_directories(base->path) == 1);
+    CHECK(spisor_make_directories(base->user) == SPISOR_OK && spisor_make_directories(base->path) == SPISOR_OK);
     write_in(base->user, ".profile", "# profile\n");
     base->items = cJSON_CreateObject();
 }
 
 static inline void finish_install_base(install_base *base) {
     cJSON_Delete(base->items);
-    CHECK(runtime_remove_tree(base->root) == 1);
+    CHECK(runtime_remove_tree(base->root) == SPISOR_OK);
     spisor_memory_release(base->portable);
     spisor_memory_release(base->state);
     spisor_memory_release(base->cache);
@@ -168,7 +168,8 @@ static inline cJSON *served_reference(install_base *base, const char *id, const 
     snprintf(rest, sizeof rest, "files/%s/%s/%s", id, version, name);
     char *path = joined(base->catalog, rest);
     write_file(path, content);
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
     spisor_memory_release(path);
     char sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);

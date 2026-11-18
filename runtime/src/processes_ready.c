@@ -106,10 +106,9 @@ static cJSON *record_of(const cJSON *argument) {
 static spisor_status write_record(const runtime_processes_request *request, const char *path, const cJSON *record) {
     char *text = cJSON_PrintUnformatted(record);
     char *folder = text == NULL ? NULL : runtime_processes_folder(request->state);
-    spisor_status status = folder == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    spisor_status status = folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
     if (status == SPISOR_OK) {
-        status = spisor_make_directories(folder) ? spisor_replace_file(path, (const uint8_t *)text, strlen(text))
-                                                 : SPISOR_REFUSED;
+        status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     }
     spisor_memory_release(folder);
     cJSON_free(text);

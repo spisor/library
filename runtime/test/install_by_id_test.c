@@ -41,7 +41,7 @@ static char *in_scratch(const char *relative) {
 static void write_in_scratch(const char *relative, const char *text) {
     char *path = in_scratch(relative);
     char *parent = joined_path(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(parent);
     spisor_memory_release(path);
@@ -96,7 +96,8 @@ static void write_release(const char *directory, const char *entry_digest_text) 
 static void write_release_json(char *json, size_t size, const char *directory) {
     char *index_path = in_scratch(directory);
     char *index_file = joined_path(index_path, "weivel-index.json");
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_file);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_file, &url);
     CHECK(url != NULL);
     snprintf(json, size, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}",
              url == NULL ? "" : url);
@@ -191,7 +192,7 @@ static void installs_from_the_release_index_and_checks_digests(void) {
     check_text(text_at(answer.tree, "commit"), "abc123", "commit");
     char *index_path = in_scratch("release/weivel-index.json");
     char index_digest[RUNTIME_SHA256_HEX_SIZE];
-    CHECK(spisor_sha256_file(index_path, index_digest) == 1);
+    CHECK(spisor_sha256_file(index_path, index_digest) == SPISOR_OK);
     check_text(text_at(answer.tree, "sha256"), index_digest, "digest of the index");
     spisor_memory_release(index_path);
     CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/plugin.json"));
@@ -214,7 +215,8 @@ static void install_by_id_records_the_set_and_the_primary(void) {
 
 static void an_id_key_lands_in_its_folder_on_windows_paths(void) {
     char *cache = cache_directory();
-    char *directory_url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, scratch);
+    char *directory_url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, scratch, &directory_url);
     char url_prefix[1600];
     snprintf(url_prefix, sizeof url_prefix, "%s/release", directory_url);
     cJSON *item = release_item(url_prefix, PLUGIN_ENTRY);

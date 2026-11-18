@@ -106,7 +106,7 @@ static void read_where_the_os_will_not_answer(void) {
 static void read_where_the_os_will_not_answer(void) {
     const char *sealed = SPISOR_SCRATCH_PATH "/sealed";
     const char *inside = SPISOR_SCRATCH_PATH "/sealed/settings.json";
-    CHECK(spisor_make_directories(sealed) == 1);
+    CHECK(spisor_make_directories(sealed) == SPISOR_OK);
     CHECK(spisor_replace_file(inside, (const uint8_t *)"{}", 2) == SPISOR_OK);
     CHECK(chmod(sealed, 0600) == 0);
     spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
