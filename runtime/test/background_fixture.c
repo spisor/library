@@ -9,8 +9,8 @@
 #include "cJSON.h"
 #include "file_times.h"
 #include "processes.h"
+#include "runtime/processes.h"
 #include "spisor/file.h"
-#include "json_service.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -34,17 +34,22 @@ static void pause_milliseconds(long milliseconds) {
 #endif
 }
 
+static const runtime_processes_definition *processes(void) {
+    return runtime_processes_definition_of();
+}
+
 static int prune_says_exit(const char *state, const char *host_id, double interval) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "state", state);
-    cJSON_AddStringToObject(argument, "hostId", host_id);
-    cJSON_AddNumberToObject(argument, "self", (double)current_process_id());
-    cJSON_AddNumberToObject(argument, "checkMilliseconds", interval);
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_prune_operation, argument, &refusal);
-    cJSON_Delete(refusal);
-    int exit_now = answer == NULL || !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer, "exit"));
-    cJSON_Delete(answer);
+    runtime_processes_prune_argument argument = SPISOR_INIT(runtime_processes_prune_argument);
+    runtime_processes_prune_answer answer = SPISOR_INIT(runtime_processes_prune_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = state;
+    argument.host_id = host_id;
+    argument.self = (int64_t)current_process_id();
+    argument.check_milliseconds = interval;
+    spisor_status status = processes()->prune(NULL, &argument, &answer, &refusal);
+    int exit_now = status != SPISOR_OK || answer.exit;
+    processes()->release_prune_answer(NULL, &answer);
+    processes()->release_refusal(NULL, &refusal);
     return exit_now;
 }
 
@@ -64,14 +69,13 @@ static int run_background(int count, char **values) {
     return 3;
 }
 
-static cJSON *start_of(int count, char **values) {
-    cJSON *start = cJSON_CreateObject();
-    cJSON_AddStringToObject(start, "executable", values[5]);
-    cJSON *arguments = cJSON_AddArrayToObject(start, "arguments");
-    for (int index = 6; index < count; index++) {
-        cJSON_AddItemToArray(arguments, cJSON_CreateString(values[index]));
-    }
-    return start;
+static int write_held(const char *path, const runtime_processes_hold_answer *answer) {
+    char text[128];
+    int length = snprintf(text, sizeof text, "{\"pid\":%lld,\"started\":%s,\"outsideJob\":%s}",
+                          (long long)answer->pid, answer->started ? "true" : "false",
+                          answer->outside_job ? "true" : "false");
+    return length > 0 && (size_t)length < sizeof text &&
+           spisor_replace_file(path, (const uint8_t *)text, (size_t)length) == SPISOR_OK;
 }
 
 /** hold <state> <host-id> <answer-file> <executable> [arguments...]: a launcher that holds and never releases. */
@@ -79,18 +83,19 @@ static int run_hold(int count, char **values) {
     if (count < 6) {
         return 2;
     }
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "state", values[2]);
-    cJSON_AddStringToObject(argument, "hostId", values[3]);
-    cJSON_AddNumberToObject(argument, "holder", (double)current_process_id());
-    cJSON_AddItemToObject(argument, "start", start_of(count, values));
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_hold_operation, argument, &refusal);
-    cJSON_Delete(refusal);
-    char *text = answer == NULL ? NULL : cJSON_PrintUnformatted(answer);
-    cJSON_Delete(answer);
-    int written = text != NULL && spisor_replace_file(values[4], (const uint8_t *)text, strlen(text)) == SPISOR_OK;
-    cJSON_free(text);
+    runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
+    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    argument.state = values[2];
+    argument.host_id = values[3];
+    argument.holder = (int64_t)current_process_id();
+    argument.executable = values[5];
+    argument.arguments = (const char *const *)values + 6;
+    argument.argument_count = (size_t)(count - 6);
+    spisor_status status = processes()->hold(NULL, &argument, &answer, &refusal);
+    int written = status == SPISOR_OK && write_held(values[4], &answer);
+    processes()->release_hold_answer(NULL, &answer);
+    processes()->release_refusal(NULL, &refusal);
     if (!written) {
         return 4;
     }

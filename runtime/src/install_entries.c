@@ -242,16 +242,6 @@ static int add_declared_changes(const entry_loader *loader, cJSON *changes) {
     return built;
 }
 
-static cJSON *apply_call(const entry_loader *loader, const cJSON *change) {
-    cJSON *call = runtime_install_places_call(loader->places);
-    if (call == NULL || cJSON_AddStringToObject(call, "host", loader->id) == NULL ||
-        !runtime_install_copy_into(call, "change", change)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 #ifdef SPISOR_INSTALL_TEST_HOOKS
 #include "install_hooks.h"
 
@@ -299,15 +289,14 @@ static int reverse_recorded(const entry_loader *loader, const recorded_sequences
 /** Applies one change, keeping its sequence when it was recorded; 0 with *refusal set, or NULL for memory. */
 static int apply_one(const entry_loader *loader, const cJSON *change, recorded_sequences *recorded, cJSON *sequences,
                      cJSON **refusal) {
-    cJSON *answer = runtime_call_operation(runtime_changes_apply_request, apply_call(loader, change), refusal);
-    const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(answer, "sequence");
-    int is_new = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "recorded")) && cJSON_IsNumber(sequence);
+    runtime_changes_outcome outcome = runtime_changes_apply(loader->state, loader->id, change);
+    int applied = outcome.answer == RUNTIME_CHANGES_RECORDED || outcome.answer == RUNTIME_CHANGES_UNNEEDED;
+    int is_new = outcome.answer == RUNTIME_CHANGES_RECORDED && outcome.sequence > 0;
+    *refusal = applied ? NULL : runtime_changes_refusal(&outcome);
     if (is_new) {
-        recorded->values[recorded->count++] = sequence->valuedouble;
+        recorded->values[recorded->count++] = (double)outcome.sequence;
     }
-    int kept = answer != NULL &&
-               (!is_new || cJSON_AddItemToArray(sequences, cJSON_CreateNumber(sequence->valuedouble)));
-    cJSON_Delete(answer);
+    int kept = applied && (!is_new || cJSON_AddItemToArray(sequences, cJSON_CreateNumber((double)outcome.sequence)));
     if (kept && is_new) {
         run_after_recorded();
     }

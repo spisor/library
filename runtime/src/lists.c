@@ -122,14 +122,8 @@ cJSON *runtime_lists_plugins_operation(const cJSON *argument, cJSON **refusal) {
 
 /** The registered hosts' application ids, as an array of rows { id }; NULL with *refusal when the registry is unreadable. */
 static cJSON *registered_rows(const cJSON *places, cJSON **refusal) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON *copy = request == NULL ? NULL : cJSON_Duplicate(places, 1);
-    if (copy == NULL || !cJSON_AddItemToObject(request, "places", copy)) {
-        cJSON_Delete(copy);
-        cJSON_Delete(request);
-        request = NULL;
-    }
-    cJSON *listed = runtime_call_operation(runtime_registry_list_hosts, request, refusal);
+    cJSON *listed = runtime_registry_list(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(places, "state")),
+                                          refusal);
     cJSON *rows = listed == NULL ? NULL : cJSON_CreateArray();
     const cJSON *hosts = rows == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(listed, "hosts");
     const cJSON *entry;

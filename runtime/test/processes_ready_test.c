@@ -119,7 +119,7 @@ static void expect_json_environment_refused(const char *label, cJSON *environmen
     cJSON *argument = call_with("\"pid\":7");
     cJSON_AddItemToObject(argument, "environment", environment);
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_ready_operation, argument, &refusal);
+    cJSON *answer = runtime_processes_ready_operation(argument, &refusal);
     const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message"));
     if (answer != NULL || message == NULL || strstr(message, "environment") == NULL) {
         fprintf(stderr, "ready with %s did not refuse its environment\n", label);
@@ -127,6 +127,7 @@ static void expect_json_environment_refused(const char *label, cJSON *environmen
     }
     cJSON_Delete(answer);
     cJSON_Delete(refusal);
+    cJSON_Delete(argument);
 }
 
 static void it_refuses_an_unusable_json_environment_writing_nothing(void) {

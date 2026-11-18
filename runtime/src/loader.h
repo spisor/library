@@ -24,26 +24,13 @@ cJSON *runtime_loader_standard_issues(const cJSON *value);
 cJSON *runtime_application_home(const cJSON *home, const cJSON *environment, cJSON **refusal);
 
 /**
- * The loader service's operations over JSON, for runtime's own callers: each answers its result, or NULL with
- * *refusal set to {message, fix}, or with it NULL when memory runs out.
- *
- * loader's check: { standard } answering { issues }, each { path, detail, fix }; no issue means standard
- * is a loader standard, which carries an application, the PATH commands it asks for, the background
- * hosts it keeps running and the plugins it cannot run without.
- */
-cJSON *runtime_loader_check_operation(const cJSON *argument, cJSON **refusal);
-
-/** loader's home: { home, environment } answering { home, source }, as runtime_application_home finds it. */
-cJSON *runtime_loader_home_operation(const cJSON *argument, cJSON **refusal);
-
-/**
- * loader's installed: { places: { cache }, id, version } answering { standard }, the loader standard the
- * installed host bundle carries in <cache>/bundles/<id>/<version>/host.json; refused when that file
- * cannot be read or is no loader standard.
+ * loader's installed: the loader standard the installed host bundle `id` at `version` carries in
+ * <cache>/bundles/<id>/<version>/host.json, freed with cJSON_Delete; NULL with *refusal set when that file cannot be
+ * read or is no loader standard, or with it NULL when memory runs out.
  *
  * @implNote Read from the installed bundle, since the catalog and the registration carry only the
  * application.
  */
-cJSON *runtime_loader_installed_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_loader_installed(const char *cache, const char *id, const char *version, cJSON **refusal);
 
 #endif

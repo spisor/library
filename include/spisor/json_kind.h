@@ -15,18 +15,6 @@ extern "C" {
 #define SPISOR_STATUS_OUT_OF_MEMORY 2
 
 /**
- * One call of a json kind function, split from its input.
- *
- * @implNote For a contextual call both trees are detached from the envelope, so each is a
- * standalone tree; for a plain call the whole input is the argument and context is NULL.
- * Release both with spisor_discard_call.
- */
-typedef struct spisor_call {
-    cJSON *argument;
-    cJSON *context;
-} spisor_call;
-
-/**
  * Reads one whole JSON document exactly as JSON.parse would, or answers NULL. Refuses invalid
  * UTF-8, anything after the value, and a string (key or value, at any depth) holding a NUL.
  *
@@ -43,36 +31,8 @@ typedef struct spisor_call {
  */
 cJSON *spisor_parse_json(const uint8_t *bytes, size_t length);
 
-/**
- * Parses a json kind input with spisor_parse_json. A contextual call must be the envelope
- * {"argument": A, "context": {...}} whose context carries only facts this library knows:
- * environment, home and arguments. Which of them the function declared is the host's
- * business and is not checked here. On any refusal the failure object is written to out.
- */
-int32_t spisor_parse_call(const uint8_t *in, size_t in_len, int contextual, spisor_call *call,
-                          uint8_t **out, size_t *out_len);
-
-void spisor_discard_call(spisor_call *call);
-
-int32_t spisor_succeed(const cJSON *result, uint8_t **out, size_t *out_len);
-
-int32_t spisor_fail(const char *message, const char *fix, uint8_t **out, size_t *out_len);
-
 /** Frees a buffer this library wrote to out; a library's own release function calls it. */
 void spisor_release(uint8_t *buffer);
-
-/** The string fact named, such as "home", or NULL when the context does not carry it. */
-const char *spisor_context_string(const spisor_call *call, const char *fact);
-
-/**
- * The environment entry named, or NULL when absent.
- *
- * @implNote Matched as the host's process.env matches it, since that is what a JavaScript caller
- * reads: case-sensitively, except on Windows, where names are matched ignoring ASCII case. Of two
- * names differing only in case, which Windows itself cannot hold, the later entry answers, as the
- * later of two duplicated keys does in JSON.parse.
- */
-const char *spisor_environment(const spisor_call *call, const char *name);
 
 #ifdef __cplusplus
 }

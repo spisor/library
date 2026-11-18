@@ -18,7 +18,7 @@ cJSON *runtime_ui_settings_view_operation(const cJSON *argument, cJSON **refusal
 /**
  * ui's plan: { descriptions, screen, answers? }, where screen is the navigation entry to open, answering
  * { calls: [{ plugin, binding: { service, method }, arguments, checks: [{ against, members? }] }] } for every
- * binding the screen still needs answered, or { done: true } once answers holds them all.
+ * binding the screen still needs answered, none once answers holds them all.
  */
 cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal);
 

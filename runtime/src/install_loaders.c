@@ -80,43 +80,19 @@ static const char *install_host(runtime_install_run *run, const char *id, int *o
     return installed;
 }
 
-static cJSON *standard_call(const runtime_install_run *run, const char *id, const char *version) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call == NULL || cJSON_AddStringToObject(call, "id", id) == NULL ||
-        cJSON_AddStringToObject(call, "version", version) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
-static cJSON *home_call(const runtime_install_run *run, const cJSON *application) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || !runtime_install_copy_into(call, "home", cJSON_GetObjectItemCaseSensitive(application, "home")) ||
-        !runtime_install_copy_into(call, "environment", run->environment)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 /**
  * The provenance already recorded for the application, so a later install never rewrites how it was first found;
  * NULL for none, or with *out_of_memory set when memory ran out reading it.
  */
 static cJSON *stored_provenance(const runtime_install_run *run, const char *id, int *out_of_memory) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", id) == NULL) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, &refusal);
-    *out_of_memory = answer == NULL && refusal == NULL;
+    cJSON *registration = NULL;
+    int read = runtime_registry_get(runtime_install_text(run->places, "state"), id, &registration, &refusal);
+    *out_of_memory = !read && refusal == NULL;
     cJSON_Delete(refusal);
-    cJSON *application = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(answer, "registration"), "application");
+    cJSON *application = cJSON_GetObjectItemCaseSensitive(registration, "application");
     cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(application, "provenance");
-    cJSON_Delete(answer);
+    cJSON_Delete(registration);
     return provenance;
 }
 
@@ -279,17 +255,16 @@ static cJSON *loader_row(const runtime_install_run *run, const catalog_loader *l
 
 /** Reads the loader's standard and its home; 0 with *refusal set when either cannot be read. */
 static int learn(const runtime_install_run *run, catalog_loader *loader, cJSON **refusal) {
-    cJSON *answer = runtime_call_operation(runtime_loader_installed_operation,
-                                           standard_call(run, loader->id, loader->version), refusal);
-    loader->standard = cJSON_DetachItemFromObjectCaseSensitive(answer, "standard");
-    cJSON_Delete(answer);
+    loader->standard = runtime_loader_installed(runtime_install_text(run->places, "cache"), loader->id,
+                                                loader->version, refusal);
     if (loader->standard == NULL) {
         return 0;
     }
     if (loader->application == NULL) {
         loader->application = cJSON_GetObjectItemCaseSensitive(loader->standard, "application");
     }
-    cJSON *home = runtime_call_operation(runtime_loader_home_operation, home_call(run, loader->application), refusal);
+    cJSON *home = runtime_application_home(cJSON_GetObjectItemCaseSensitive(loader->application, "home"),
+                                           run->environment, refusal);
     const char *path = runtime_install_text(home, "home");
     loader->home = path == NULL ? NULL : runtime_catalog_copy(path);
     cJSON_Delete(home);

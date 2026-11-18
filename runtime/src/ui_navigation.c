@@ -209,14 +209,9 @@ static cJSON *preferences_of(const cJSON *ui) {
 }
 
 cJSON *runtime_ui_navigation_operation(const cJSON *argument, cJSON **refusal) {
+    (void)refusal;
     const cJSON *descriptions = cJSON_GetObjectItemCaseSensitive(argument, "descriptions");
     const cJSON *ui = cJSON_GetObjectItemCaseSensitive(argument, "ui");
-    if (!runtime_ui_is_description_list(descriptions) || !cJSON_IsObject(ui)) {
-        *refusal = runtime_refusal("the argument carries no usable descriptions or ui",
-                                   "send {\"descriptions\": [<plugin manifest>, ...], \"ui\": {...}}, every manifest with "
-                                   "its id and ui the user's ui settings");
-        return NULL;
-    }
     cJSON *navigation = cJSON_CreateObject();
     if (navigation == NULL || !runtime_add_owned(navigation, "entries", entries_of(descriptions, ui)) ||
         !runtime_add_owned(navigation, "preferences", preferences_of(ui))) {

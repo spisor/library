@@ -9,6 +9,7 @@
 #include "json_service.h"
 #include "plugin_choices.h"
 #include "run_records.h"
+#include "catalog.h"
 #include "updates_catalog.h"
 #include "updates_request.h"
 #include "version_map.h"
@@ -33,13 +34,13 @@ typedef struct start_record {
 static int plan_start(const runtime_updates_request *request, start_plan *plan, cJSON **refusal) {
     const cJSON *settings = cJSON_GetObjectItemCaseSensitive(request->argument, "settings");
     cJSON *sources = runtime_updates_sources(settings, refusal);
-    plan->catalog = sources == NULL ? NULL : runtime_updates_current_catalog(sources, request->cache, refusal);
+    plan->catalog = sources == NULL ? NULL : runtime_catalog_current(sources, request->cache, refusal);
     cJSON *candidates =
         runtime_plugin_candidates(settings, cJSON_GetObjectItemCaseSensitive(request->argument, "defaults"));
     cJSON *installed = runtime_cache_installed_bundles(request->cache);
     plan->plugins = plan->catalog == NULL || candidates == NULL || installed == NULL
                         ? NULL
-                        : runtime_updates_resolve(plan->catalog, candidates, installed, "plugin", refusal);
+                        : runtime_catalog_resolve(plan->catalog, candidates, installed, "plugin", refusal);
     cJSON_Delete(installed);
     cJSON_Delete(candidates);
     cJSON_Delete(sources);
@@ -211,7 +212,7 @@ static int hint_libraries(const runtime_updates_request *request, const start_pl
     cJSON *installed = runtime_cache_installed_libraries(request->cache, request->platform);
     cJSON *resolution = candidates == NULL || installed == NULL
                             ? NULL
-                            : runtime_updates_resolve(plan->catalog, candidates, installed, "library", refusal);
+                            : runtime_catalog_resolve(plan->catalog, candidates, installed, "library", refusal);
     const cJSON *resolved = cJSON_GetObjectItemCaseSensitive(resolution, "run");
     int out_of_memory = 0;
     cJSON *versions = resolved == NULL ? NULL : booted_libraries(ids, resolved, &out_of_memory);

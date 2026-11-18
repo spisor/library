@@ -7,7 +7,7 @@
  * @file
  * The hosts service's operations over JSON, for runtime's own callers: each answers its result, or NULL with
  * *refusal set to {message, fix}, or with it NULL when memory runs out. hosts' list is registry's,
- * runtime_registry_list_hosts.
+ * runtime_registry_list.
  */
 
 /**

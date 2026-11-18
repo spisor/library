@@ -178,12 +178,3 @@ cJSON *runtime_application_home(const cJSON *home, const cJSON *environment, cJS
     }
     return decided ? answer : fallback_home(home, environment, refusal);
 }
-
-static cJSON *home_for(const cJSON *argument, cJSON **refusal) {
-    return runtime_application_home(cJSON_GetObjectItemCaseSensitive(argument, "home"),
-                                    cJSON_GetObjectItemCaseSensitive(argument, "environment"), refusal);
-}
-
-cJSON *runtime_loader_home_operation(const cJSON *argument, cJSON **refusal) {
-    return home_for(argument, refusal);
-}

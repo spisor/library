@@ -83,21 +83,11 @@ static int is_choice_map(const cJSON *value) {
     return 1;
 }
 
-static cJSON *check_call(const ecosystem *install, const cJSON *source, const char *now) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || !runtime_install_copy_into(call, "source", source) ||
-        cJSON_AddStringToObject(call, "cache", install->run.cache) == NULL || cJSON_AddStringToObject(call, "now", now) == NULL ||
-        cJSON_AddNumberToObject(call, "intervalHours", 0) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 /** @implNote An install is asked for, so it checks every source now rather than waiting out the update interval. */
 static int check_source(ecosystem *install, const cJSON *source, const char *now) {
     cJSON *refusal = NULL;
-    cJSON *checked = runtime_call_operation(runtime_catalog_check_operation, check_call(install, source, now), &refusal);
+    runtime_catalog_check_request request = {source, install->run.cache, now, 0};
+    cJSON *checked = runtime_catalog_check(&request, &refusal);
     const char *kind = runtime_install_text(checked, "kind");
     int recorded = checked == NULL ? runtime_install_report_refusal(install->run.report, "catalog", refusal)
                    : kind != NULL && strcmp(kind, "failed") == 0
@@ -109,16 +99,7 @@ static int check_source(ecosystem *install, const cJSON *source, const char *now
 }
 
 static cJSON *current_catalog(const ecosystem *install, const cJSON *sources, cJSON **refusal) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || !runtime_install_copy_into(call, "sources", sources) ||
-        cJSON_AddStringToObject(call, "cache", install->run.cache) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    cJSON *answer = runtime_call_operation(runtime_catalog_current_operation, call, refusal);
-    cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(answer, "catalog");
-    cJSON_Delete(answer);
-    return catalog;
+    return runtime_catalog_current(sources, install->run.cache, refusal);
 }
 
 static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusal) {

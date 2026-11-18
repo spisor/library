@@ -795,45 +795,12 @@ runtime_change_reversal runtime_changes_reverse_entry(const char *state, const c
     return reversal;
 }
 
-cJSON *runtime_changes_serve_request(const cJSON *argument, runtime_changes_request_handler handler, cJSON **refusal) {
-    const char *state = text_of(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
-    const char *host = text_of(argument, "host");
-    *refusal = NULL;
-    if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || host == NULL) {
-        *refusal = runtime_refusal("the argument carries no usable places or host",
-                                   "send {\"places\": {\"state\": \"<absolute directory>\"}, \"host\": \"<host id>\"}");
-        return NULL;
+cJSON *runtime_changes_refusal(const runtime_changes_outcome *outcome) {
+    if (outcome->answer == RUNTIME_CHANGES_REFUSED) {
+        return runtime_refusal(outcome->reason, "nothing was changed or recorded");
     }
-    return handler(state, host, argument, refusal);
-}
-
-static cJSON *answer_recorded(const runtime_changes_outcome *outcome) {
-    cJSON *result = cJSON_CreateObject();
-    int complete = result != NULL &&
-                   cJSON_AddBoolToObject(result, "recorded", outcome->answer == RUNTIME_CHANGES_RECORDED) != NULL &&
-                   (outcome->sequence <= 0 ||
-                    cJSON_AddNumberToObject(result, "sequence", (double)outcome->sequence) != NULL);
-    if (!complete) {
-        cJSON_Delete(result);
-        return NULL;
+    if (outcome->answer == RUNTIME_CHANGES_FAILED) {
+        return runtime_refusal(outcome->reason, "nothing was recorded; fix the cause and apply the change again");
     }
-    return result;
-}
-
-static cJSON *apply_handler(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
-    runtime_changes_outcome outcome =
-        runtime_changes_apply(state, host, cJSON_GetObjectItemCaseSensitive(argument, "change"));
-    if (outcome.answer == RUNTIME_CHANGES_REFUSED) {
-        *refusal = runtime_refusal(outcome.reason, "nothing was changed or recorded");
-        return NULL;
-    }
-    if (outcome.answer == RUNTIME_CHANGES_FAILED) {
-        *refusal = runtime_refusal(outcome.reason, "nothing was recorded; fix the cause and apply the change again");
-        return NULL;
-    }
-    return outcome.answer == RUNTIME_CHANGES_OUT_OF_MEMORY ? NULL : answer_recorded(&outcome);
-}
-
-cJSON *runtime_changes_apply_request(const cJSON *argument, cJSON **refusal) {
-    return runtime_changes_serve_request(argument, apply_handler, refusal);
+    return NULL;
 }

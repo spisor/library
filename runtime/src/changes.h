@@ -95,26 +95,16 @@ typedef struct runtime_changes_holders {
 runtime_changes_holders runtime_changes_find_holder(const char *state, const char *host, const cJSON *registration,
                                                     const cJSON *record);
 
-/** A JSON operation's handler for one host's request, after runtime_changes_serve_request read its place and host. */
-typedef cJSON *(*runtime_changes_request_handler)(const char *state, const char *host, const cJSON *argument,
-                                                  cJSON **refusal);
+/**
+ * The {message, fix} refusal a REFUSED or FAILED outcome of runtime_changes_apply answers; NULL for any other outcome,
+ * or when memory runs out.
+ */
+cJSON *runtime_changes_refusal(const runtime_changes_outcome *outcome);
 
 /**
- * Refuses a request without an absolute places.state or a host, and hands the rest to handler: its answer, or NULL
- * with *refusal set, or with it NULL when memory ran out.
+ * Reverses, newest first, every unreversed change `host` recorded in `state`: { reversed, drifted }, or NULL with
+ * *refusal set, or with it NULL when memory ran out. Defined in change_reversal.c.
  */
-cJSON *runtime_changes_serve_request(const cJSON *argument, runtime_changes_request_handler handler, cJSON **refusal);
-
-/**
- * changes' apply over a JSON argument { places: { state }, host, change }: { recorded, sequence? }, or NULL with
- * *refusal set, or with it NULL when memory ran out.
- */
-cJSON *runtime_changes_apply_request(const cJSON *argument, cJSON **refusal);
-
-/**
- * changes' reverse over a JSON argument { places: { state }, host }: { reversed, drifted }, as
- * runtime_changes_apply_request answers. Defined in change_reversal.c.
- */
-cJSON *runtime_changes_reverse_request(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_changes_reverse(const char *state, const char *host, cJSON **refusal);
 
 #endif

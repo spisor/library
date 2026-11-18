@@ -202,16 +202,6 @@ static spisor_status fill_reversed(const cJSON *reversed, runtime_changes_revers
     return SPISOR_OK;
 }
 
-static cJSON *reverse_call(const runtime_changes_reverse_argument *argument) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *places = call == NULL ? NULL : cJSON_AddObjectToObject(call, "places");
-    if (places == NULL || !add_text(places, "state", argument->state) || !add_text(call, "host", argument->host)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 static spisor_status reverse(void *context, const runtime_changes_reverse_argument *argument,
                              runtime_changes_reverse_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
@@ -228,7 +218,7 @@ static spisor_status reverse(void *context, const runtime_changes_reverse_argume
     if (argument->host == NULL) {
         return refuse_host(refusal);
     }
-    reversed = runtime_call_operation(runtime_changes_reverse_request, reverse_call(argument), &operation_refusal);
+    reversed = runtime_changes_reverse(argument->state, argument->host, &operation_refusal);
     status = reversed == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill_reversed(reversed, answer);
     cJSON_Delete(reversed);
     return status;

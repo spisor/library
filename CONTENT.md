@@ -3,10 +3,8 @@
 The C conventions every spisor and forebay library shares, as one static CMake target,
 `spisor_library`. A library written in C links it and gets, without writing any of it again:
 
-- **The `json` kind** (`spisor/json_kind.h`): parsing a call's input, including the
-  `{"argument": A, "context": {...}}` envelope a function that declares context receives; writing a
-  result; writing the `{"message", "fix"}` failure object with its non-zero status; and the release
-  function a library's own `<library>_release` calls.
+- **JSON reading** (`spisor/json_kind.h`): reading one whole JSON document exactly as `JSON.parse`
+  reads it, and the release function a library's own `<library>_release` calls.
 - **Paths** (`spisor/path.h`): Node's `path.join` and `path.isAbsolute` for both platform rules,
   chosen by an argument rather than by the OS the code runs on, and basekit's `expandHome`.
 - **JavaScript semantics** (`spisor/javascript.h`): Node's lossy UTF-8 decoding, as

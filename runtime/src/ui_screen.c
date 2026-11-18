@@ -10,19 +10,6 @@ int runtime_ui_is_description(const cJSON *description) {
     return cJSON_IsObject(description) && cJSON_IsString(cJSON_GetObjectItemCaseSensitive(description, "id"));
 }
 
-int runtime_ui_is_description_list(const cJSON *descriptions) {
-    if (!cJSON_IsArray(descriptions)) {
-        return 0;
-    }
-    const cJSON *description;
-    cJSON_ArrayForEach(description, descriptions) {
-        if (!runtime_ui_is_description(description)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static const cJSON *description_of(const cJSON *descriptions, const char *plugin) {
     const cJSON *description;
     cJSON_ArrayForEach(description, descriptions) {
@@ -96,22 +83,12 @@ static int open_entry(const cJSON *description, const cJSON *entry, ui_screen *s
                                               screen->kind, " is none of view or settings", NULL));
 }
 
-static int refuse_argument(cJSON **refusal) {
-    return refuse(refusal, runtime_refusal("the argument carries no usable descriptions or screen",
-                                           "send {\"descriptions\": [<plugin manifest>, ...], \"screen\": {\"plugin\": "
-                                           "\"<plugin id>\", \"kind\": \"view\" or \"settings\", \"id\": \"<view id>\"}}, the "
-                                           "screen being the navigation entry ui.navigation answered"));
-}
-
 int runtime_ui_open_screen(const cJSON *argument, ui_screen *screen, cJSON **refusal) {
     memset(screen, 0, sizeof *screen);
     const cJSON *descriptions = cJSON_GetObjectItemCaseSensitive(argument, "descriptions");
     const cJSON *entry = cJSON_GetObjectItemCaseSensitive(argument, "screen");
     screen->plugin = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "plugin"));
     screen->kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind"));
-    if (!runtime_ui_is_description_list(descriptions) || screen->plugin == NULL || screen->kind == NULL) {
-        return refuse_argument(refusal);
-    }
     const cJSON *description = description_of(descriptions, screen->plugin);
     if (description == NULL) {
         return refuse(refusal, runtime_ui_refusal("pass the plugin's manifest among descriptions, or open a screen of a plugin they describe",

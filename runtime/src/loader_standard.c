@@ -302,19 +302,3 @@ cJSON *runtime_loader_standard_issues(const cJSON *value) {
     }
     return list.issues;
 }
-
-static cJSON *check_for(const cJSON *argument, cJSON **refusal) {
-    (void)refusal;
-    cJSON *answer = cJSON_CreateObject();
-    cJSON *issues = runtime_loader_standard_issues(cJSON_GetObjectItemCaseSensitive(argument, "standard"));
-    if (answer == NULL || issues == NULL || !cJSON_AddItemToObject(answer, "issues", issues)) {
-        cJSON_Delete(answer);
-        cJSON_Delete(issues);
-        return NULL;
-    }
-    return answer;
-}
-
-cJSON *runtime_loader_check_operation(const cJSON *argument, cJSON **refusal) {
-    return check_for(argument, refusal);
-}
