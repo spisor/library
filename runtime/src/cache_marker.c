@@ -154,12 +154,17 @@ static char *marker_text(const cJSON *hashes, const cJSON *sizes) {
     return runtime_catalog_text_finish(&text);
 }
 
-static int holds_text(const char *path, const char *text) {
+/** Whether the file at path holds text: SPISOR_OK when it does, SPISOR_REFUSED when not, or SPISOR_OUT_OF_MEMORY. */
+static spisor_status holds_text(const char *path, const char *text) {
     size_t length = 0;
-    uint8_t *present = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *present = spisor_read_file_reporting(path, &length, &outcome);
     int same = present != NULL && length == strlen(text) && memcmp(present, text, length) == 0;
     spisor_memory_release(present);
-    return same;
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return same ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 spisor_status runtime_cache_write_marker(const char *directory, const cJSON *hashes, const cJSON *sizes) {
@@ -168,7 +173,7 @@ spisor_status runtime_cache_write_marker(const char *directory, const cJSON *has
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     if (text != NULL) {
         status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-        status = status == SPISOR_REFUSED && holds_text(path, text) ? SPISOR_OK : status;
+        status = status == SPISOR_REFUSED ? holds_text(path, text) : status;
     }
     spisor_memory_release(text);
     spisor_memory_release(path);

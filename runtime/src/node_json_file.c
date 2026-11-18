@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "allocation.h"
-#include "file_reading.h"
+#include "spisor/file.h"
 #include "json_parse.h"
 #include "spisor/javascript.h"
 #include "spisor/json_kind.h"

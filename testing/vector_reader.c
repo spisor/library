@@ -29,7 +29,7 @@ static int unread(const char *key, const char *why) {
 
 cJSON *spisor_vector_read(const char *path) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     cJSON *vector;
     if (bytes == NULL) {
         fprintf(stderr, "vector %s cannot be read\n", path);

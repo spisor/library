@@ -62,7 +62,7 @@ static void write_portable_file(const scratch_home *home, const char *text) {
 
 static void expect_content(const char *path, const char *expected, const char *label) {
     size_t length = 0;
-    char *actual = (char *)spisor_read_file(path, &length);
+    char *actual = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(actual, expected, label);
     spisor_memory_release(actual);
 }

@@ -99,9 +99,13 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
         return empty_store();
     }
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     cJSON *store = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
     spisor_memory_release(bytes);
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        return NULL;
+    }
     if (!is_store(store)) {
         cJSON_Delete(store);
         return refuse(refusal, "repair the file or move it away, then run the command again; it is left as it was",

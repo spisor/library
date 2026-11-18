@@ -279,17 +279,17 @@ cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON *
     spisor_lock *guard = record.unrecorded == NULL ? NULL : runtime_updates_lock_registered(request, refusal);
     int recorded = guard != NULL && record_start(request, &plan, &record, refusal);
     int out_of_memory = 0;
-    spisor_prepared_removal removal;
+    spisor_prepared_path removal;
     char *run_record = recorded ? runtime_record_run(request->state, request->host_id, record.references.run,
                                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS, &removal, &out_of_memory)
                                 : NULL;
     spisor_unlock(guard);
     cJSON *answer = run_record == NULL ? NULL : started(&record, run_record);
     if (run_record != NULL && answer == NULL) {
-        spisor_remove_prepared(&removal);
+        spisor_remove_prepared_file(&removal);
     }
     if (run_record != NULL) {
-        spisor_release_prepared_removal(&removal);
+        spisor_release_prepared_path(&removal);
     }
     if (recorded && run_record == NULL && !out_of_memory) {
         *refusal = runtime_updates_unrecorded(unrecorded_run(request));

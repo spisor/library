@@ -197,7 +197,7 @@ static void acquires_the_runtime_again_when_its_executable_s_bytes_changed(void)
     catalog_answer answer = acquire(&fixture);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(executable, &length);
+    uint8_t *bytes = spisor_read_file_reporting(executable, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL && length == strlen("the node executable") && memcmp(bytes, "the node executable", length) == 0);
     spisor_memory_release(bytes);
     cJSON_Delete(answer.tree);
@@ -255,7 +255,8 @@ static char *path_node(const install_base *base, const char *version) {
     char *folder = joined(base->root, "path-node");
     write_in(folder, "version.txt", version);
     size_t length = 0;
-    uint8_t *probe = spisor_read_file(RUNTIME_NODE_PROBE_PATH, &length);
+    uint8_t *probe = spisor_read_file_reporting(RUNTIME_NODE_PROBE_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
 #if defined(_WIN32)
     char *node = joined(folder, "node.exe");
 #else

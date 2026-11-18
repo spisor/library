@@ -222,7 +222,7 @@ static int has_shim(const scratch *place, const char *name) {
 
 static int file_is(const char *path, const char *expected) {
     size_t length = 0;
-    char *bytes = (char *)spisor_read_file(path, &length);
+    char *bytes = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int same = check_text(bytes, expected, path);
     spisor_memory_release(bytes);
     return same;
@@ -273,7 +273,7 @@ static int shims_on_path(const scratch *place) {
     snprintf(profile, sizeof profile, "%s/.profile", place->home);
     snprintf(line, sizeof line, "export PATH=\"%s:$PATH\"", place->shims);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(profile, &length);
+    char *text = (char *)spisor_read_file_reporting(profile, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int found = text != NULL && strstr(text, line) != NULL;
     spisor_memory_release(text);
     return found;

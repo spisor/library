@@ -166,7 +166,7 @@ static char *renumbered(char *text) {
 
 static void add_file(cJSON *snapshot, const char *path, const char *relative) {
     size_t length = 0;
-    uint8_t *content = spisor_read_file(path, &length);
+    uint8_t *content = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     size_t normalized_length = 0;
     char *normalized = content == NULL ? NULL : without_timestamps(content, length, &normalized_length);
     if (normalized != NULL && is_registration(relative)) {

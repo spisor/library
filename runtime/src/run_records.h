@@ -23,7 +23,7 @@
  * it when the start stops.
  */
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
-                         spisor_prepared_removal *removal, int *out_of_memory);
+                         spisor_prepared_path *removal, int *out_of_memory);
 
 /**
  * Whether record is the path of one run record of host_id, a .json file named directly inside its

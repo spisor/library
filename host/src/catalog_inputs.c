@@ -43,9 +43,13 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix) {
 
 static cJSON *read_manifest(const char *path, cJSON **refusal) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
     spisor_memory_release(bytes);
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        return NULL;
+    }
     if (manifest == NULL) {
         const char *parts[2] = {path, " could not be read as JSON"};
         *refusal = refused(parts, 2, "write the manifest as a JSON object");

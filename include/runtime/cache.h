@@ -272,7 +272,10 @@ typedef struct runtime_cache_definition {
                            runtime_cache_sweep_answer *answer, spisor_refusal *refusal);
     /**
      * Writes the plugin's plugin.json, its entry when it names one, and its identity into the plugin folder, under the
-     * import name its own plugin.json gives, everything checked before the first file is written.
+     * import name its own plugin.json gives, everything checked before the first file is written. The files are
+     * written into a staging folder inside the plugin folder first and moved into place only once all of them are,
+     * by moves that allocate nothing: memory running out before the moves leaves the staging folder removed and the
+     * plugin folder as it was, and after them the deploy is done.
      *
      * @return OK; MALFORMED, also for an id that is not an identity id; REFUSED when the folder holds no installed
      * plugin, its import name is not one the schema accepts, another plugin is deployed under that name, or a file

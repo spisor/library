@@ -102,7 +102,7 @@ static void starts_a_same_size_corruption_which_status_then_refuses(void) {
     snprintf(rest, sizeof rest, "bundles/spisor-host/1.0.0/%s/spisor-boot" EXECUTABLE_ENDING, runtime_platform_key());
     char *carried = joined(world.base.cache, rest);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(carried, &length);
+    uint8_t *bytes = spisor_read_file_reporting(carried, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL && length > 0);
     if (bytes != NULL && length > 0) {
         bytes[length - 1] ^= 0xff;

@@ -29,11 +29,13 @@ typedef enum spisor_file_presence {
  */
 spisor_file_presence spisor_probe_file(const char *path);
 
+typedef enum spisor_read_outcome { SPISOR_READ_DONE, SPISOR_READ_FAILED, SPISOR_READ_OUT_OF_MEMORY } spisor_read_outcome;
+
 /**
- * The whole file, freed, or NULL when it cannot be read. The buffer carries one NUL
- * past length so a text file can be handed to a string parser directly.
+ * The whole file, freed, or NULL when it cannot be read, with *outcome telling memory running out apart from every
+ * other failure. The buffer carries one NUL past length so a text file can be handed to a string parser directly.
  */
-uint8_t *spisor_read_file(const char *path, size_t *length);
+uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome);
 
 /**
  * Creates path and every missing parent: SPISOR_OK, including when path already exists, SPISOR_REFUSED when it cannot

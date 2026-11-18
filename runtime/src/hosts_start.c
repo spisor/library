@@ -208,7 +208,7 @@ static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
 
 static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON **refusal) {
     int out_of_memory = 0;
-    spisor_prepared_removal removal;
+    spisor_prepared_path removal;
     char *record = runtime_record_run(context->state, context->argument.host_id, run,
                                       RUNTIME_DEFAULT_CHECK_MILLISECONDS, &removal, &out_of_memory);
     if (record == NULL) {
@@ -221,11 +221,11 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
                 runtime_catalog_attach(plan, "unrecorded", cJSON_CreateArray()) &&
                 cJSON_AddStringToObject(plan, "runRecord", record) != NULL;
     if (!built) {
-        spisor_remove_prepared(&removal);
+        spisor_remove_prepared_file(&removal);
         cJSON_Delete(plan);
         plan = NULL;
     }
-    spisor_release_prepared_removal(&removal);
+    spisor_release_prepared_path(&removal);
     spisor_memory_release(record);
     return plan;
 }
