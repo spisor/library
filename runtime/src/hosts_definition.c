@@ -231,7 +231,6 @@ static spisor_status check_remove(const runtime_registry_forget_argument *argume
 static spisor_status remove_host(void *context, const runtime_registry_forget_argument *argument,
                                  runtime_hosts_remove_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *call;
     cJSON *removed;
     spisor_status status;
     (void)context;
@@ -243,11 +242,8 @@ static spisor_status remove_host(void *context, const runtime_registry_forget_ar
     if (status != SPISOR_OK) {
         return status;
     }
-    call = places_call(argument->state, argument->cache);
-    call = built_call(call, call != NULL && add_text(call, "id", argument->id));
-    removed = call == NULL ? NULL
-                           : runtime_hosts_remove_preparing(call, fill_before_forget, answer, &operation_refusal);
-    cJSON_Delete(call);
+    removed = runtime_hosts_remove(argument->state, argument->cache, argument->id, fill_before_forget, answer,
+                                   &operation_refusal);
     if (removed == NULL) {
         runtime_release_stored_answer(answer, REMOVE_ANSWER_SHAPE);
         return runtime_refuse_json(refusal, operation_refusal);
@@ -368,14 +364,11 @@ static spisor_status check_start(const runtime_hosts_start_argument *argument, s
     return status;
 }
 
+/** {environment, libraries}, the two objects hosts.start reads; NULL when memory runs out. */
 static cJSON *start_call(const runtime_hosts_start_argument *argument) {
     cJSON *call = cJSON_CreateObject();
-    cJSON *layer = call == NULL ? NULL : cJSON_AddObjectToObject(call, "layer");
-    cJSON *libraries = layer == NULL ? NULL : cJSON_AddObjectToObject(call, "libraries");
-    int built = libraries != NULL && add_environment(call, argument->environment, argument->environment_count) &&
-                add_text(call, "hostId", argument->host_id) && add_text(layer, "id", argument->layer->id) &&
-                add_text(layer, "version", argument->layer->version) &&
-                cJSON_AddBoolToObject(call, "session", argument->session != 0) != NULL;
+    cJSON *libraries = call == NULL ? NULL : cJSON_AddObjectToObject(call, "libraries");
+    int built = libraries != NULL && add_environment(call, argument->environment, argument->environment_count);
     for (size_t index = 0; built && index < argument->library_count; index++) {
         built = add_text(libraries, argument->libraries[index].id, argument->libraries[index].version);
     }
@@ -461,10 +454,19 @@ static spisor_status fill_start(const cJSON *answered, runtime_hosts_start_answe
 }
 
 /** Starts the host, and when the answer cannot be filled removes the run record the start wrote. */
-static spisor_status serve_start(cJSON *call, runtime_hosts_start_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_start(const runtime_hosts_start_argument *argument, runtime_hosts_start_answer *answer,
+                                 spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(runtime_hosts_start_operation, call, &operation_refusal);
+    cJSON *call = start_call(argument);
+    runtime_hosts_start_request request = {cJSON_GetObjectItemCaseSensitive(call, "environment"),
+                                           argument->host_id,
+                                           argument->layer->id,
+                                           argument->layer->version,
+                                           cJSON_GetObjectItemCaseSensitive(call, "libraries"),
+                                           argument->session != 0};
+    cJSON *answered = call == NULL ? NULL : runtime_hosts_start(&request, &operation_refusal);
     spisor_status status;
+    cJSON_Delete(call);
     if (answered == NULL) {
         return runtime_refuse_json(refusal, operation_refusal);
     }
@@ -487,7 +489,7 @@ static spisor_status start(void *context, const runtime_hosts_start_argument *ar
         return runtime_refuse_shape(refusal, "hosts' start");
     }
     status = check_start(argument, refusal);
-    return status != SPISOR_OK ? status : serve_start(start_call(argument), answer, refusal);
+    return status != SPISOR_OK ? status : serve_start(argument, answer, refusal);
 }
 
 static void release_register_answer(void *context, runtime_install_register_loader_answer *answer) {

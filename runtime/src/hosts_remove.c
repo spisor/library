@@ -24,7 +24,6 @@
     "then remove it again"
 
 typedef struct removal {
-    const cJSON *argument;
     const char *state;
     const char *cache;
     const char *id;
@@ -164,18 +163,13 @@ static cJSON *remove_host(const removal *request, cJSON **refusal) {
     return remove_recorded_and_forget(request, answer, refusal);
 }
 
-static cJSON *remove_for(const cJSON *argument, runtime_hosts_before_forget before_forget, void *context,
-                         cJSON **refusal) {
-    const char *state = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state"));
-    const char *cache = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "places"), "cache"));
-    const char *id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "id"));
+cJSON *runtime_hosts_remove(const char *state, const char *cache, const char *id,
+                            runtime_hosts_before_forget before_forget, void *context, cJSON **refusal) {
+    *refusal = NULL;
     if (state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) || cache == NULL ||
         !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache) || id == NULL) {
-        *refusal = runtime_refusal("the argument carries no usable places or id",
-                                   "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute "
-                                   "directory>\"}, \"id\": \"<host id>\"}");
+        *refusal = runtime_refusal("the call carries no usable state place, cache place or id",
+                                   "pass the state and cache places as absolute directories and the host's id");
         return NULL;
     }
     if (!runtime_is_plain_host_id(id)) {
@@ -183,15 +177,6 @@ static cJSON *remove_for(const cJSON *argument, runtime_hosts_before_forget befo
                                    RUNTIME_PLAIN_HOST_ID_FIX);
         return NULL;
     }
-    removal request = {argument, state, cache, id, before_forget, context};
+    removal request = {state, cache, id, before_forget, context};
     return remove_host(&request, refusal);
-}
-
-cJSON *runtime_hosts_remove_operation(const cJSON *argument, cJSON **refusal) {
-    return remove_for(argument, NULL, NULL, refusal);
-}
-
-cJSON *runtime_hosts_remove_preparing(const cJSON *argument, runtime_hosts_before_forget before_forget, void *context,
-                                      cJSON **refusal) {
-    return remove_for(argument, before_forget, context, refusal);
 }

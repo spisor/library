@@ -24,18 +24,9 @@
 
 #define WRITABLE_STATE_FIX "check that SPISOR_STATE names a writable folder, then try again"
 
-typedef struct start_argument {
-    const cJSON *environment;
-    const char *host_id;
-    const char *layer_id;
-    const char *layer_version;
-    const cJSON *libraries;
-    int session;
-} start_argument;
-
 /** What a start resolved before it plans: its places, its identity, its settings and what it runs beside its plugins. */
 typedef struct start_context {
-    start_argument argument;
+    runtime_hosts_start_request argument;
     cJSON *places;
     const char *state;
     const char *cache;
@@ -45,12 +36,16 @@ typedef struct start_context {
     cJSON *running;
 } start_context;
 
-static cJSON *argument_refusal(const char *member, const char *shape) {
+static cJSON *request_refusal(const char *member, const char *shape) {
     char message[256];
     char fix[512];
-    snprintf(message, sizeof message, "the argument carries no usable %s", member);
-    snprintf(fix, sizeof fix, "send %s as %s", member, shape);
+    snprintf(message, sizeof message, "the call carries no usable %s", member);
+    snprintf(fix, sizeof fix, "pass %s as %s", member, shape);
     return runtime_refusal(message, fix);
+}
+
+static int is_nonempty(const char *text) {
+    return text != NULL && text[0] != '\0';
 }
 
 static const char *text_of(const cJSON *object, const char *member) {
@@ -62,25 +57,15 @@ static const char *string_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
 }
 
-static int read_argument(const cJSON *argument, start_argument *start, cJSON **refusal) {
-    const cJSON *layer = cJSON_GetObjectItemCaseSensitive(argument, "layer");
-    const cJSON *session = cJSON_GetObjectItemCaseSensitive(argument, "session");
-    start->environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    start->host_id = text_of(argument, "hostId");
-    start->layer_id = text_of(layer, "id");
-    start->layer_version = text_of(layer, "version");
-    start->libraries = cJSON_GetObjectItemCaseSensitive(argument, "libraries");
-    start->session = cJSON_IsTrue(session);
+static int is_usable_request(const runtime_hosts_start_request *start, cJSON **refusal) {
     if (!runtime_is_version_map(start->environment)) {
-        *refusal = argument_refusal("environment", "an object of variable names to string values");
-    } else if (start->host_id == NULL || !runtime_is_plain_host_id(start->host_id)) {
-        *refusal = argument_refusal("hostId", "the id of the host to start, a plain file name");
-    } else if (start->layer_id == NULL || start->layer_version == NULL) {
-        *refusal = argument_refusal("layer", "{\"id\": \"<layer bundle id>\", \"version\": \"<its version>\"}");
+        *refusal = request_refusal("environment", "an object of variable names to string values");
+    } else if (!is_nonempty(start->host_id) || !runtime_is_plain_host_id(start->host_id)) {
+        *refusal = request_refusal("hostId", "the id of the host to start, a plain file name");
+    } else if (!is_nonempty(start->layer_id) || !is_nonempty(start->layer_version)) {
+        *refusal = request_refusal("layer", "the layer bundle's id and its version");
     } else if (!runtime_is_version_map(start->libraries)) {
-        *refusal = argument_refusal("libraries", "an object of the loaded library ids to their versions");
-    } else if (!cJSON_IsBool(session)) {
-        *refusal = argument_refusal("session", "true for the application's session host, else false");
+        *refusal = request_refusal("libraries", "an object of the loaded library ids to their versions");
     }
     return *refusal == NULL;
 }
@@ -112,7 +97,7 @@ static cJSON *settings_of(const char *home, const char *portable, cJSON **refusa
 }
 
 /** The host at the version it is registered at, the layer and every library: what the start runs beside its plugins. */
-static cJSON *running_of(const start_argument *start, const char *host_version) {
+static cJSON *running_of(const runtime_hosts_start_request *start, const char *host_version) {
     cJSON *running = cJSON_CreateObject();
     int built = running != NULL && runtime_map_set(running, start->host_id, host_version) &&
                 runtime_map_set(running, start->layer_id, start->layer_version) &&
@@ -340,11 +325,13 @@ static void publish_refusal(const start_context *context, const cJSON *refusal) 
     }
 }
 
-static cJSON *start_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_hosts_start(const runtime_hosts_start_request *request, cJSON **refusal) {
     start_context context;
     memset(&context, 0, sizeof context);
     cJSON *answer = NULL;
-    if (read_argument(argument, &context.argument, refusal) && prepare(&context, refusal)) {
+    *refusal = NULL;
+    context.argument = *request;
+    if (is_usable_request(request, refusal) && prepare(&context, refusal)) {
         int reused = 0;
         cJSON *plan = planned(&context, &reused, refusal);
         answer = plan == NULL ? NULL : answer_of(&context, plan, reused);
@@ -356,9 +343,6 @@ static cJSON *start_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-cJSON *runtime_hosts_start_operation(const cJSON *argument, cJSON **refusal) {
-    return start_for(argument, refusal);
-}
 
 void runtime_hosts_start_undo(const cJSON *plan) {
     spisor_remove_file_in_place(string_of(plan, "runRecord"));

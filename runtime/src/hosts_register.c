@@ -9,10 +9,10 @@
 #include "spisor/json_kind.h"
 #include "user_home.h"
 
-#define IDENTITY_FIX                                                                                                 \
-    "pass the identity {\"id\", \"version\", \"home\": <absolute path>, \"application\"?, \"requiresCommand\", "     \
-    "\"commands\": [{\"name\", \"target\", \"arguments\"}], \"start\"?: {\"runtime\", \"entry\"}} and the environment " \
-    "{<name>: <value>}"
+#define IDENTITY_FIX                                                                       \
+    "pass the identity {\"id\", \"version\", \"home\": <absolute path>, \"application\"?, " \
+    "\"requiresCommand\", \"commands\": [{\"name\", \"target\", \"arguments\"}], "          \
+    "\"start\"?: {\"runtime\", \"entry\"}} and the environment {<name>: <value>}"
 
 static int is_command(const cJSON *command) {
     const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(command, "arguments");
@@ -139,8 +139,9 @@ static int request_command(const runtime_hosts_registration_request *registratio
     spisor_refusal refused_by = SPISOR_INIT(spisor_refusal);
     char name[RUNTIME_COMMAND_NAME_SIZE];
     cJSON *request = command_request(registration, identity, command, home);
-    spisor_status status = request == NULL ? SPISOR_OUT_OF_MEMORY
-                                           : runtime_commands_serve(RUNTIME_COMMAND_REQUEST, request, name, &refused_by);
+    spisor_status status =
+        request == NULL ? SPISOR_OUT_OF_MEMORY
+                        : runtime_commands_serve(RUNTIME_COMMAND_REQUEST, request, name, &refused_by);
     cJSON *refused = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused_by);
     spisor_refusal_release(&refused_by);
     cJSON_Delete(request);
