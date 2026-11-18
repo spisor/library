@@ -84,7 +84,7 @@ static spisor_status add_start(cJSON *registration, const runtime_registry_start
     return SPISOR_OK;
 }
 
-/** The registration as the record runtime_registry_register_host takes, NULL unless the answer is OK. */
+/** The registration as the record runtime_registry_register takes, NULL unless the answer is OK. */
 static spisor_status registration_json(const runtime_registration *registration, cJSON **json) {
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     *json = cJSON_CreateObject();
@@ -169,41 +169,6 @@ static spisor_status refuse_unfilled(spisor_status status, spisor_refusal *refus
                              "repair the host's record under the state place's hosts folder, or register it again");
 }
 
-static cJSON *places_argument(const char *state, const char *cache) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON *places = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "places");
-    if (places == NULL || !add_text(places, "state", state) || !add_text(places, "cache", cache)) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
-}
-
-static spisor_status answer_registration(const cJSON *answered, runtime_registry_registration_answer *answer,
-                                         spisor_refusal *refusal) {
-    const cJSON *registration = cJSON_GetObjectItemCaseSensitive(answered, "registration");
-    spisor_status status;
-    if (registration == NULL) {
-        return SPISOR_NONE;
-    }
-    status = fill_registration(&answer->storage, registration, &answer->registration);
-    if (status != SPISOR_OK) {
-        runtime_release_stored_answer(answer, ANSWER_SHAPE);
-    }
-    return refuse_unfilled(status, refusal);
-}
-
-/** Serves `call`, which it deletes, answering a registration answer. */
-static spisor_status serve_registration(runtime_json_operation operation, cJSON *call,
-                                        runtime_registry_registration_answer *answer, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
-    spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
-                                            : answer_registration(answered, answer, refusal);
-    cJSON_Delete(answered);
-    return status;
-}
-
 spisor_status runtime_registration_record_json(const runtime_registration *registration, cJSON **json,
                                                spisor_refusal *refusal) {
     const char *defect;
@@ -223,40 +188,20 @@ spisor_status runtime_registration_record_json(const runtime_registration *regis
     return status;
 }
 
-static spisor_status register_json(const runtime_registry_register_argument *argument, cJSON **call,
-                                   spisor_refusal *refusal) {
-    cJSON *registration = NULL;
-    spisor_status status = runtime_registration_record_json(argument->registration, &registration, refusal);
-    *call = NULL;
-    if (status == SPISOR_MALFORMED) {
-        return status;
-    }
-    *call = status == SPISOR_OK ? places_argument(argument->state, NULL) : NULL;
-    if (*call == NULL || !cJSON_AddItemToObject(*call, "registration", registration)) {
-        cJSON_Delete(registration);
-        cJSON_Delete(*call);
-        *call = NULL;
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    return SPISOR_OK;
-}
-
 /**
- * Fills the answer from the registration in `call`, which it deletes, and only then records it, so memory running out
- * writes nothing. The record keeps exactly the registration's own fields, so the answer is what it stores.
+ * Fills the answer from `record` and only then records it, so memory running out writes nothing. The record keeps
+ * exactly the registration's own fields, so the answer is what it stores.
  */
-static spisor_status register_answered_first(cJSON *call, runtime_registry_registration_answer *answer,
-                                             spisor_refusal *refusal) {
+static spisor_status register_answered_first(const char *state, const cJSON *record,
+                                             runtime_registry_registration_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *registered;
-    spisor_status status = fill_registration(&answer->storage, cJSON_GetObjectItemCaseSensitive(call, "registration"),
-                                             &answer->registration);
+    spisor_status status = fill_registration(&answer->storage, record, &answer->registration);
     if (status != SPISOR_OK) {
-        cJSON_Delete(call);
         runtime_release_stored_answer(answer, ANSWER_SHAPE);
         return status;
     }
-    registered = runtime_call_operation(runtime_registry_register_host, call, &operation_refusal);
+    registered = runtime_registry_register(state, record, &operation_refusal);
     if (registered == NULL) {
         runtime_release_stored_answer(answer, ANSWER_SHAPE);
         return runtime_refuse_json(refusal, operation_refusal);
@@ -267,7 +212,7 @@ static spisor_status register_answered_first(cJSON *call, runtime_registry_regis
 
 static spisor_status register_host(void *context, const runtime_registry_register_argument *argument,
                                    runtime_registry_registration_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    cJSON *record = NULL;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_SHAPE) ||
@@ -277,13 +222,19 @@ static spisor_status register_host(void *context, const runtime_registry_registe
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
     }
-    status = register_json(argument, &call, refusal);
-    return status == SPISOR_OK ? register_answered_first(call, answer, refusal) : status;
+    status = runtime_registration_record_json(argument->registration, &record, refusal);
+    if (status == SPISOR_OK) {
+        status = register_answered_first(argument->state, record, answer, refusal);
+    }
+    cJSON_Delete(record);
+    return status;
 }
 
 static spisor_status get(void *context, const runtime_registry_host_argument *argument,
                          runtime_registry_registration_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *registration = NULL;
+    spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOST_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
@@ -295,12 +246,18 @@ static spisor_status get(void *context, const runtime_registry_host_argument *ar
     if (!runtime_registry_is_host_id(argument->id)) {
         return refuse_id(refusal);
     }
-    call = places_argument(argument->state, NULL);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", argument->id) == NULL) {
-        cJSON_Delete(call);
-        call = NULL;
+    if (!runtime_registry_get(argument->state, argument->id, &registration, &operation_refusal)) {
+        return runtime_refuse_json(refusal, operation_refusal);
     }
-    return serve_registration(runtime_registry_get_host, call, answer, refusal);
+    if (registration == NULL) {
+        return SPISOR_NONE;
+    }
+    status = fill_registration(&answer->storage, registration, &answer->registration);
+    cJSON_Delete(registration);
+    if (status != SPISOR_OK) {
+        runtime_release_stored_answer(answer, ANSWER_SHAPE);
+    }
+    return refuse_unfilled(status, refusal);
 }
 
 static spisor_status fill_hosts(const cJSON *hosts, runtime_registry_listing *answer) {
@@ -351,8 +308,7 @@ static spisor_status list(void *context, const runtime_registry_list_argument *a
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
     }
-    listed = runtime_call_operation(runtime_registry_list_hosts, places_argument(argument->state, NULL),
-                                    &operation_refusal);
+    listed = runtime_registry_list(argument->state, &operation_refusal);
     status = listed == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill_listing(listed, answer, refusal);
     cJSON_Delete(listed);
     return status;
@@ -361,8 +317,7 @@ static spisor_status list(void *context, const runtime_registry_list_argument *a
 static spisor_status forget(void *context, const runtime_registry_forget_argument *argument,
                             runtime_registry_forget_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *call;
-    cJSON *forgotten;
+    int forgotten;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, FORGET_SHAPE) || answer == NULL ||
         !runtime_has_shape(answer->size, FORGET_ANSWER_SHAPE)) {
@@ -374,17 +329,11 @@ static spisor_status forget(void *context, const runtime_registry_forget_argumen
     if (!runtime_registry_is_host_id(argument->id)) {
         return refuse_id(refusal);
     }
-    call = places_argument(argument->state, argument->cache);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", argument->id) == NULL) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    forgotten = runtime_call_operation(runtime_registry_forget_host, call, &operation_refusal);
-    if (forgotten == NULL) {
+    forgotten = runtime_registry_forget(argument->state, argument->cache, argument->id, &operation_refusal);
+    if (forgotten < 0) {
         return runtime_refuse_json(refusal, operation_refusal);
     }
-    answer->forgotten = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(forgotten, "forgotten")) ? 1 : 0;
-    cJSON_Delete(forgotten);
+    answer->forgotten = (uint32_t)forgotten;
     return SPISOR_OK;
 }
 

@@ -50,19 +50,37 @@ static int copy_member(cJSON *target, const cJSON *source, const char *name) {
 }
 
 /** The registry.register argument for the host identity names, with the given provenance. */
-static cJSON *registration_request(const cJSON *argument, const cJSON *identity) {
-    cJSON *request = runtime_hosts_places_request(argument);
-    cJSON *registration = request == NULL ? NULL : cJSON_AddObjectToObject(request, "registration");
+static cJSON *registration_of(const cJSON *argument, const cJSON *identity) {
+    cJSON *registration = cJSON_CreateObject();
     int complete = registration != NULL && copy_member(registration, identity, "id") &&
                    cJSON_AddStringToObject(registration, "kind", "host") != NULL &&
                    copy_member(registration, identity, "version") && copy_member(registration, identity, "home") &&
-                   copy_member(registration, identity, "application") && copy_member(registration, argument, "provenance") &&
+                   copy_member(registration, identity, "application") &&
+                   copy_member(registration, argument, "provenance") &&
                    copy_member(registration, identity, "requiresCommand") && copy_member(registration, identity, "start");
     if (!complete) {
-        cJSON_Delete(request);
+        cJSON_Delete(registration);
         return NULL;
     }
-    return request;
+    return registration;
+}
+
+static const char *state_of(const cJSON *argument) {
+    return cJSON_GetStringValue(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state"));
+}
+
+/** Registers the host, keeping the provenance of its first start: the record as stored, as the registry answers it. */
+static cJSON *register_first(const cJSON *argument, const cJSON *identity, cJSON **refusal) {
+    cJSON *registration = registration_of(argument, identity);
+    cJSON *registered = registration == NULL
+                            ? NULL
+                            : runtime_registry_register_first_provenance(state_of(argument), registration, refusal);
+    if (registration == NULL) {
+        *refusal = NULL;
+    }
+    cJSON_Delete(registration);
+    return registered;
 }
 
 static cJSON *command_request(const cJSON *argument, const cJSON *identity, const cJSON *command, const char *home) {
@@ -131,8 +149,7 @@ static int request_command(const cJSON *argument, const cJSON *identity, const c
 }
 
 static cJSON *registered_answer(cJSON *registered) {
-    cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(registered, "registration"), "provenance");
+    cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(registered, "provenance");
     cJSON_Delete(registered);
     cJSON *answer = provenance == NULL ? NULL : cJSON_CreateObject();
     if (answer == NULL || !cJSON_AddItemToObject(answer, "provenance", provenance)) {
@@ -171,8 +188,7 @@ static cJSON *register_for(const cJSON *argument, cJSON **refusal) {
         *refusal = runtime_refusal(RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
         return NULL;
     }
-    cJSON *registered = runtime_call_operation(runtime_registry_register_first_provenance,
-                                               registration_request(argument, identity), refusal);
+    cJSON *registered = register_first(argument, identity, refusal);
     cJSON *answer = registered == NULL ? NULL : registered_answer(registered);
     return answer == NULL ? NULL : request_commands(argument, identity, home, answer, refusal);
 }

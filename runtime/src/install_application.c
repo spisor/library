@@ -24,15 +24,10 @@ typedef enum version_record { VERSION_RECORDED, VERSION_UNRECORDED, VERSION_OUT_
 
 /** The loader's registration, or NULL: *absent set when none is registered, else *refusal set, or NULL for memory. */
 static cJSON *registration_of(const application_operation *request, int *absent, cJSON **refusal) {
-    cJSON *call = runtime_install_places_call(request->places);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", request->loader) == NULL) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, refusal);
-    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
-    *absent = answer != NULL && registration == NULL;
-    cJSON_Delete(answer);
+    cJSON *registration = NULL;
+    int read = runtime_registry_get(runtime_install_text(request->places, "state"), request->loader, &registration,
+                                    refusal);
+    *absent = read && registration == NULL;
     return registration;
 }
 
@@ -143,15 +138,13 @@ static version_record record_version(const application_operation *request, const
         return memory_ran_out ? VERSION_OUT_OF_MEMORY : VERSION_UNRECORDED;
     }
     cJSON_DeleteItemFromObjectCaseSensitive(provenance, "version");
-    cJSON *call = cJSON_AddStringToObject(provenance, "version", version) == NULL
-                      ? NULL
-                      : runtime_install_places_call(request->places);
-    if (call == NULL || !cJSON_AddItemToObject(call, "registration", registration)) {
+    if (cJSON_AddStringToObject(provenance, "version", version) == NULL) {
         cJSON_Delete(registration);
-        cJSON_Delete(call);
         return VERSION_OUT_OF_MEMORY;
     }
-    cJSON *registered = runtime_call_operation(runtime_registry_register_host, call, &refusal);
+    cJSON *registered = runtime_registry_register(runtime_install_text(request->places, "state"), registration,
+                                                  &refusal);
+    cJSON_Delete(registration);
     int memory_ran_out = registered == NULL && refusal == NULL;
     cJSON_Delete(refusal);
     cJSON_Delete(registered);

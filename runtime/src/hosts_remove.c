@@ -33,15 +33,6 @@ typedef struct removal {
     void *before_forget_context;
 } removal;
 
-static cJSON *host_request(const removal *request, const char *member) {
-    cJSON *call = runtime_hosts_places_request(request->argument);
-    if (call != NULL && cJSON_AddStringToObject(call, member, request->id) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 static spisor_status removed_entry(runtime_entry_outcome removed) {
     if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
         return SPISOR_OUT_OF_MEMORY;
@@ -107,16 +98,23 @@ static cJSON *refuse_leftover(const removal *request, const char *what) {
     return runtime_cache_refusal(parts, 5, STATE_FIX);
 }
 
-/** Adds the forget's flag under a constant key, which allocates nothing, so nothing can fail once forgotten. */
+/**
+ * Adds the forget's flag, taken before the forget, under a constant key, which allocates nothing, so nothing can fail
+ * once forgotten.
+ */
 static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal) {
-    cJSON *forgotten = runtime_call_operation(runtime_registry_forget_locked, host_request(request, "id"), refusal);
-    cJSON *flag = cJSON_DetachItemFromObjectCaseSensitive(forgotten, "forgotten");
-    cJSON_Delete(forgotten);
-    if (flag == NULL || !cJSON_AddItemToObjectCS(answer, "forgotten", flag)) {
+    cJSON *flag = cJSON_CreateFalse();
+    int forgotten = flag == NULL ? -1 : runtime_registry_forget_locked(request->state, request->cache, request->id,
+                                                                       refusal);
+    if (flag == NULL) {
+        *refusal = NULL;
+    }
+    if (forgotten < 0 || !cJSON_AddItemToObjectCS(answer, "forgotten", flag)) {
         cJSON_Delete(flag);
         cJSON_Delete(answer);
         return NULL;
     }
+    cJSON_SetBoolValue(flag, forgotten);
     return answer;
 }
 
@@ -154,7 +152,7 @@ static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, 
 }
 
 static cJSON *remove_host(const removal *request, cJSON **refusal) {
-    cJSON *answer = runtime_call_operation(runtime_changes_reverse_request, host_request(request, "host"), refusal);
+    cJSON *answer = runtime_changes_reverse(request->state, request->id, refusal);
     if (answer == NULL) {
         return NULL;
     }

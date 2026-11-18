@@ -105,18 +105,14 @@ static cJSON *home_call(const runtime_install_run *run, const cJSON *application
  * NULL for none, or with *out_of_memory set when memory ran out reading it.
  */
 static cJSON *stored_provenance(const runtime_install_run *run, const char *id, int *out_of_memory) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", id) == NULL) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_registry_get_host, call, &refusal);
-    *out_of_memory = answer == NULL && refusal == NULL;
+    cJSON *registration = NULL;
+    int read = runtime_registry_get(runtime_install_text(run->places, "state"), id, &registration, &refusal);
+    *out_of_memory = !read && refusal == NULL;
     cJSON_Delete(refusal);
-    cJSON *application = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(answer, "registration"), "application");
+    cJSON *application = cJSON_GetObjectItemCaseSensitive(registration, "application");
     cJSON *provenance = cJSON_DetachItemFromObjectCaseSensitive(application, "provenance");
-    cJSON_Delete(answer);
+    cJSON_Delete(registration);
     return provenance;
 }
 

@@ -248,18 +248,14 @@ int runtime_changes_reverse_listed_held(const char *state, const char *host, con
     return reverse_held(&session, out_of_memory);
 }
 
-static cJSON *reverse_host(const char *state, const char *host, const cJSON *argument, cJSON **refusal) {
-    (void)argument;
+cJSON *runtime_changes_reverse(const char *state, const char *host, cJSON **refusal) {
     reversal_session session = {state, host, NULL, NULL, -1, NULL, 0, 0, 0, 0};
     cJSON *result = cJSON_CreateObject();
+    *refusal = NULL;
     session.drifted = result == NULL ? NULL : cJSON_AddArrayToObject(result, "drifted");
     if (session.drifted == NULL || !reverse_all(&session, result, refusal)) {
         cJSON_Delete(result);
         return NULL;
     }
     return result;
-}
-
-cJSON *runtime_changes_reverse_request(const cJSON *argument, cJSON **refusal) {
-    return runtime_changes_serve_request(argument, reverse_host, refusal);
 }

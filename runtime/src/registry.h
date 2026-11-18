@@ -46,31 +46,39 @@ int runtime_registration_usable(const cJSON *registration, const char *id, const
 cJSON *runtime_usable_registration(const char *state, const char *id, cJSON **refusal);
 
 /**
- * registry's register over a JSON argument {places: {state}, registration}: {registration}, the record as stored, or
- * NULL with *refusal set to {message, fix}, or with it NULL when memory runs out. The record keeps the given
- * registration's own fields and carries over the commands, changes and nextSequence the stored one holds, since those
- * belong to the services that record them.
+ * Registers `registration` in `state`: the record as stored, freed with cJSON_Delete, or NULL with *refusal set to
+ * {message, fix}, or with it NULL when memory runs out. The record keeps the given registration's own fields and
+ * carries over the commands, changes and nextSequence the stored one holds, since those belong to the services that
+ * record them.
  */
-cJSON *runtime_registry_register_host(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_registry_register(const char *state, const cJSON *registration, cJSON **refusal);
 
 /**
- * As runtime_registry_register_host, except that a provenance the host's stored registration already carries is kept
- * in place of the given one, decided under the registry lock, so two first starts of one host cannot both record
- * theirs.
+ * As runtime_registry_register, except that a provenance the host's stored registration already carries is kept in
+ * place of the given one, decided under the registry lock, so two first starts of one host cannot both record theirs.
  */
-cJSON *runtime_registry_register_first_provenance(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_registry_register_first_provenance(const char *state, const cJSON *registration, cJSON **refusal);
 
-/** registry's get over {places: {state}, id}: {registration?}, as runtime_registry_register_host answers. */
-cJSON *runtime_registry_get_host(const cJSON *argument, cJSON **refusal);
+/**
+ * Host `id`'s registration in `state`: 1 with *registration the record, freed with cJSON_Delete, or NULL when the
+ * host has none; 0 with *refusal set, or with it NULL when memory runs out.
+ */
+int runtime_registry_get(const char *state, const char *id, cJSON **registration, cJSON **refusal);
 
-/** registry's list over {places: {state}}: {hosts: [{registration, orphan}], unreadable: [id]}. */
-cJSON *runtime_registry_list_hosts(const cJSON *argument, cJSON **refusal);
+/**
+ * Every registration in `state`: {hosts: [{registration, orphan}], unreadable: [id]}, or NULL with *refusal set, or
+ * with it NULL when memory runs out.
+ */
+cJSON *runtime_registry_list(const char *state, cJSON **refusal);
 
-/** registry's forget over {places: {state, cache}, id}: {forgotten}. */
-cJSON *runtime_registry_forget_host(const cJSON *argument, cJSON **refusal);
+/**
+ * Forgets host `id`, removing its folders under `state` and `cache` and then its registration: 1 when it was
+ * registered, 0 when it was not, -1 with *refusal set, or with it NULL when memory runs out.
+ */
+int runtime_registry_forget(const char *state, const char *cache, const char *id, cJSON **refusal);
 
-/** runtime_registry_forget_host for a caller that already holds runtime_hosts_lock, which is not taken again. */
-cJSON *runtime_registry_forget_locked(const cJSON *argument, cJSON **refusal);
+/** runtime_registry_forget for a caller that already holds runtime_hosts_lock, which is not taken again. */
+int runtime_registry_forget_locked(const char *state, const char *cache, const char *id, cJSON **refusal);
 
 /** Why a registration cannot be registered, or NULL when it can. */
 const char *runtime_registration_defect(const cJSON *registration);
