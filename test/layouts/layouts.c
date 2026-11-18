@@ -24,7 +24,6 @@
 #include "runtime/settings.h"
 #include "runtime/ui.h"
 #include "runtime/updates.h"
-#include "spisor/json_kind.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -85,12 +84,6 @@ static void print_value_layouts(void) {
     FIELD(spisor_value_tree, root);
     FIELD(spisor_value_tree, storage);
     SIZE(spisor_value_tree);
-}
-
-static void print_json_kind_layouts(void) {
-    FIELD(spisor_call, argument);
-    FIELD(spisor_call, context);
-    SIZE(spisor_call);
 }
 
 static void print_paths_layouts(void) {
@@ -1688,7 +1681,6 @@ static void print_ui_layouts(void) {
 int main(void) {
     print_status_layouts();
     print_value_layouts();
-    print_json_kind_layouts();
     print_paths_layouts();
     print_places_layouts();
     print_secrets_layouts();
