@@ -199,8 +199,12 @@ static int refuse_unlocked(const char *state, cJSON **refusal) {
 static int reverse_steps(reversal_session *session, cJSON **refusal) {
     int going_on = 1;
     while (going_on && !session->finished) {
-        spisor_lock *guard = session->lock_held ? NULL : runtime_hosts_lock(session->state);
-        if (!session->lock_held && guard == NULL) {
+        spisor_lock *guard = NULL;
+        spisor_status locked = session->lock_held ? SPISOR_OK : runtime_hosts_lock(session->state, &guard);
+        if (locked == SPISOR_OUT_OF_MEMORY) {
+            return out_of_memory(refusal);
+        }
+        if (locked != SPISOR_OK) {
             return refuse_unlocked(session->state, refusal);
         }
         going_on = reverse_step(session, refusal);

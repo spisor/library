@@ -21,9 +21,15 @@ static wchar_t *utf16_of(const char *text) {
     return wide;
 }
 
-static wchar_t *full_path_of(const wchar_t *wide) {
+int spisor_is_convertible_path(const char *path) {
+    return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0) > 0;
+}
+
+/** The full form of wide, freed, or NULL when the OS gives none; *out_of_memory set when memory ran out. */
+static wchar_t *full_path_of(const wchar_t *wide, int *out_of_memory) {
     DWORD needed = GetFullPathNameW(wide, 0, NULL, NULL);
     wchar_t *full = needed == 0 ? NULL : spisor_memory_allocate((size_t)needed * sizeof(wchar_t));
+    *out_of_memory = needed != 0 && full == NULL;
     if (full != NULL && GetFullPathNameW(wide, needed, full, NULL) >= needed) {
         spisor_memory_release(full);
         return NULL;
@@ -53,7 +59,12 @@ wchar_t *spisor_wide_path(const char *path) {
     if (wide == NULL || has_device_prefix(wide)) {
         return wide;
     }
-    wchar_t *full = full_path_of(wide);
+    int out_of_memory;
+    wchar_t *full = full_path_of(wide, &out_of_memory);
+    if (out_of_memory) {
+        spisor_memory_release(wide);
+        return NULL;
+    }
     if (full == NULL || wcslen(full) < SHORT_PATH_LIMIT) {
         spisor_memory_release(full);
         return wide;

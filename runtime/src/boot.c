@@ -145,8 +145,12 @@ void runtime_boot_free_write(runtime_boot_hint_write *write) {
 static runtime_boot_hint_write *held_write(const cJSON *argument, runtime_boot_hint_write *write, cJSON **refusal) {
     const char *state = nonempty_text(argument, "state");
     int out_of_memory = 0;
-    write->guard = state == NULL ? NULL : runtime_hosts_lock(state);
-    if (state != NULL && write->guard == NULL) {
+    spisor_status locked = state == NULL ? SPISOR_OK : runtime_hosts_lock(state, &write->guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        runtime_boot_free_write(write);
+        return NULL;
+    }
+    if (locked != SPISOR_OK) {
         *refusal = runtime_refusal("the registry lock under the state folder could not be taken",
                                    "check that SPISOR_STATE names a writable folder, then try again");
         runtime_boot_free_write(write);

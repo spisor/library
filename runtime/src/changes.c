@@ -655,10 +655,13 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
     if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
-    spisor_lock *guard = runtime_hosts_lock(state);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(state, &guard);
     runtime_changes_outcome outcome =
-        guard == NULL ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
-                      : runtime_changes_apply_held(state, host, change);
+        locked == SPISOR_OUT_OF_MEMORY ? outcome_of(RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out")
+        : locked != SPISOR_OK
+            ? outcome_of(RUNTIME_CHANGES_FAILED, "the registry lock under the state place could not be taken")
+            : runtime_changes_apply_held(state, host, change);
     spisor_unlock(guard);
     return outcome;
 }

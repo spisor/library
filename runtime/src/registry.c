@@ -478,9 +478,10 @@ static cJSON *register_with(const registry_request *request, int keep_stored_pro
     if (defect != NULL) {
         return refuse_registration(defect, refusal);
     }
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
-        return refuse_unlocked(request->state, refusal);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked != SPISOR_OK) {
+        return locked == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlocked(request->state, refusal);
     }
     cJSON *answer = register_locked(request, given, keep_stored_provenance, refusal);
     spisor_unlock(guard);
@@ -702,9 +703,10 @@ static cJSON *forget_host(const registry_request *request, cJSON **refusal) {
     if (id == NULL) {
         return refuse_id(refusal);
     }
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
-        return refuse_unlocked(request->state, refusal);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked != SPISOR_OK) {
+        return locked == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlocked(request->state, refusal);
     }
     cJSON *answer = forget_locked(request, id, refusal);
     spisor_unlock(guard);

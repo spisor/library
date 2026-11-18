@@ -54,14 +54,17 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "on_path.c found_in: directory_tree.c runtime_list_directory reads a failed child path as an unreadable "
      "directory, answering NONE"},
     {OUT_OF_MEMORY_SUITE, "registry's register_host", 0, MEASURED_ON_WINDOWS,
-     "registry.c register_with: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
+     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "changes' apply", 0, MEASURED_ON_WINDOWS,
-     "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "changes.c runtime_changes_apply: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
+     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "changes' apply after settling", 0, MEASURED_ON_WINDOWS,
-     "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "changes.c runtime_changes_apply: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
+     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "changes' reverse", 0, MEASURED_ON_WINDOWS,
-     "change_reversal.c reverse_steps: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being "
-     "held"},
+     "change_reversal.c reverse_steps: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
+     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "lists' applications", 0, MEASURED_ON_WINDOWS,
      "registry.c list_hosts: directory_tree.c runtime_list_directory reads a failed child path as an unreadable "
      "directory"},
@@ -74,7 +77,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "install's packages", 0, MEASURED_ON_WINDOWS,
      "install.c merge_user_file: file.c spisor_probe_file reads a failed wide path as an absent file"},
     {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, MEASURED_ON_WINDOWS,
-     "cache.c sweep: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "cache.c runtime_cache_sweep_operation: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
+     "failed allocation as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "cache's check", 0, MEASURED_ON_WINDOWS,
      "cache_marker.c runtime_cache_check_version: file.c spisor_file_exists reads a failed wide path as an absent "
      "file"},
@@ -101,25 +105,28 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "install's ecosystem", 0, MEASURED_ON_WINDOWS,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OUT_OF_MEMORY_SUITE, "commands' remove", 0, MEASURED_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
+     "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' request", 0, MEASURED_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
-    {OUT_OF_MEMORY_SUITE, "commands' request, memory staying out", 1, MEASURED_ON_WINDOWS,
-     "registry.c runtime_registry_store: file.c move_over reads a failed wide path as a failed move after the "
-     "write"},
+     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
+     "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' add", 0, MEASURED_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
+     "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' rename", 0, MEASURED_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "commands.c load_registration: registry.c runtime_registry_load through file.c spisor_probe_file reads a "
+     "failed wide path as an absent file"},
     {OUT_OF_MEMORY_SUITE, "commands' rename onto a held name", 0, MEASURED_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held, "
-     "answering OK"},
+     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
+     "wide path as an uncreatable folder, so the lock is refused, answering OK"},
     {ECOSYSTEM_SUITE, "install's ecosystem", 0, MEASURED_ON_WINDOWS,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OPERATIONS_SUITE, "entry", 0, MEASURED_ON_WINDOWS,
-     "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
+     "wide path as an absent file"},
     {OPERATIONS_SUITE, "entry refused", 0, MEASURED_ON_WINDOWS,
-     "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
+     "wide path as an absent file"},
     {OPERATIONS_SUITE, "application", 0, MEASURED_ON_WINDOWS,
      "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
      "a failed wide path as an absent file"},
@@ -132,7 +139,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "register_loader", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "updates' apply", 0, MEASURED_ON_WINDOWS,
-     "hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "updates.c runtime_updates_lock_registered: registry.c runtime_registry_load through file.c "
+     "spisor_probe_file reads a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "updates' rollback", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting reads a failed is_directory as a failed read, answering OK"},
     {OPERATIONS_SUITE, "updates' rollback", 1, MEASURED_ON_WINDOWS,
@@ -149,7 +157,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "boot's read", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "boot's write", 0, MEASURED_ON_WINDOWS,
-     "hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "boot.c held_write: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation as an "
+     "uncreatable folder, so the lock is refused"},
     {OPERATIONS_SUITE, "boot's resolve", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory, read as no "
      "recorded version"},
@@ -173,11 +182,13 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "processes' hold starting", 0, MEASURED_ON_WINDOWS,
      "processes.c runtime_processes_with_holders reads a failed spisor_make_directories as an unwritable folder"},
     {OPERATIONS_SUITE, "hosts' register_host", 0, MEASURED_ON_WINDOWS,
-     "registry.c register_with: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation "
+     "as an uncreatable folder, so the lock is refused"},
     {OPERATIONS_SUITE, "hosts' list", 0, MEASURED_ON_WINDOWS,
      "directory_tree.c runtime_list_directory reads a failed child path as an unreadable directory"},
     {OPERATIONS_SUITE, "hosts' remove", 0, MEASURED_ON_WINDOWS,
-     "hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "change_reversal.c reverse_step: registry.c runtime_registry_load through file.c spisor_probe_file reads a "
+     "failed wide path as an absent file"},
     {OPERATIONS_SUITE, "hosts' start", 0, MEASURED_ON_WINDOWS,
      "registry.c runtime_usable_registration: json_file.c spisor_read_json_file through file.c spisor_probe_file "
      "reads a failed wide path as an absent file"},
@@ -186,7 +197,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "loader's installed", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "changes' json-key create", 0, MEASURED_ON_WINDOWS,
-     "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
+     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
+     "wide path as an absent file"},
     {OPERATIONS_SUITE, "processes' hold starting", 1, MEASURED_ON_WINDOWS,
      "holders.c runtime_write_holders_draft: file.c move_over reads a failed wide path as a failed move, "
      "answering OK without recording the started host"},

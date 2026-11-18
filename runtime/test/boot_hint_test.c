@@ -496,8 +496,8 @@ static void wait_a_moment(void) {
 static void it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free(void) {
     start_base("hint-locked");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    spisor_lock *guard = runtime_hosts_lock(state);
-    CHECK(guard != NULL);
+    spisor_lock *guard;
+    CHECK(runtime_hosts_lock(state, &guard) == SPISOR_OK);
     locked_write job = {{0, NULL}};
 #if defined(_WIN32)
     HANDLE thread = CreateThread(NULL, 0, writing_entry, &job, 0, NULL);

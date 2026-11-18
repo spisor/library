@@ -1310,8 +1310,8 @@ static void it_sweeps_only_while_it_holds_the_registry_lock(void) {
     start_cache("sweep-lock");
     installed_bundle("a", "1.0.0", 1);
     installed_bundle("a", "2.0.0", 1);
-    spisor_lock *guard = runtime_hosts_lock(state);
-    CHECK(guard != NULL);
+    spisor_lock *guard;
+    CHECK(runtime_hosts_lock(state, &guard) == SPISOR_OK);
     sweeping job;
     memset(&job, 0, sizeof job);
 #if defined(_WIN32)

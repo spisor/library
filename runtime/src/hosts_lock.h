@@ -6,8 +6,9 @@
 /**
  * Takes the one lock every read-modify-write of a registration under state/hosts, of a host's
  * references under state/bundles, and the cache sweep hold, waiting until no other thread or process
- * holds it, and creates state/hosts/.lock when it is missing. NULL when the lock file cannot be opened
- * or locked. Release with spisor_unlock. Hold it around one check-act-store step, never around
+ * holds it, and creates state/hosts/.lock when it is missing, in *guard: SPISOR_REFUSED when the lock
+ * file cannot be made, opened or locked, SPISOR_OUT_OF_MEMORY when memory runs out, *guard NULL for both.
+ * Release with spisor_unlock. Hold it around one check-act-store step, never around
  * an unbounded operation: no install or download is ever done while it is held. An install records the
  * version it is about to store as a reference first, under the lock, so a sweep keeps that version while
  * its files arrive unlocked; installing never makes a start or a registration wait.
@@ -20,6 +21,6 @@
  * @implNote The lock itself is spisor_lock_file; this only names the file, and registry.list ignores it
  * because it does not end in .json.
  */
-spisor_lock *runtime_hosts_lock(const char *state);
+spisor_status runtime_hosts_lock(const char *state, spisor_lock **guard);
 
 #endif

@@ -815,23 +815,31 @@ static spisor_status store_locked(const runtime_config_request *request, const c
 
 /**
  * Locks the settings file of the layer written, in its own folder, so two writers of different keys never
- * lose one update; NULL when the lock cannot be taken.
+ * lose one update, in *guard: SPISOR_REFUSED when the lock cannot be taken, SPISOR_OUT_OF_MEMORY when memory runs out.
  *
  * @implNote Its own lock file, never the registry lock, so a caller holding that may still write settings;
  * only the read and the write of one file happen under it.
  */
-static spisor_lock *lock_layer(const config_target *target) {
+static spisor_status lock_layer(const config_target *target, spisor_lock **guard) {
     const char *segments[2] = {target->directory, ".settings.lock"};
-    char *path = spisor_make_directories(target->directory) ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
-    spisor_lock *guard = path == NULL ? NULL : spisor_lock_file(path);
+    *guard = NULL;
+    if (!spisor_make_directories(target->directory)) {
+        return SPISOR_REFUSED;
+    }
+    char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    spisor_status status = path == NULL ? SPISOR_OUT_OF_MEMORY : spisor_lock_file(path, guard);
     spisor_memory_release(path);
-    return guard;
+    return status;
 }
 
 static spisor_status store_after_previous(const runtime_config_request *request, const config_targets *targets,
                                           settings_layer layer, cJSON **previous, spisor_refusal *refusal) {
-    spisor_lock *guard = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = lock_layer(layer == PORTABLE_LAYER ? &targets->portable : &targets->application, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (locked != SPISOR_OK) {
         return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings folder could not be locked for writing",
                                  "check that the settings folder is writable, then try again");
     }

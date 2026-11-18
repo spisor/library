@@ -35,9 +35,12 @@ static int replace_run(runtime_host_references *references, const cJSON *run) {
 
 static int change_under_lock(const char *state, const char *host_id, const cJSON *versions, run_change change,
                              cJSON **refusal) {
-    spisor_lock *guard = runtime_hosts_lock(state);
-    if (guard == NULL) {
-        *refusal = runtime_refusal("the registry lock under the state folder could not be taken", STATE_FIX);
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(state, &guard);
+    if (locked != SPISOR_OK) {
+        *refusal = locked == SPISOR_OUT_OF_MEMORY
+                       ? NULL
+                       : runtime_refusal("the registry lock under the state folder could not be taken", STATE_FIX);
         return 0;
     }
     runtime_host_references references = runtime_read_host_references(state, host_id);

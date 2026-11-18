@@ -102,8 +102,11 @@ static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal
  * host still running cannot record anything again between these deletions and the forget.
  */
 static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, cJSON **refusal) {
-    spisor_lock *guard = runtime_hosts_lock(request->state);
-    if (guard == NULL) {
+    spisor_lock *guard;
+    spisor_status locked = runtime_hosts_lock(request->state, &guard);
+    if (locked == SPISOR_OUT_OF_MEMORY) {
+        *refusal = NULL;
+    } else if (locked != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file, run records and boot hint");
     } else if (!runtime_remove_host_references(request->state, request->id)) {
         *refusal = refuse_leftover(request, "references file or a run record");
