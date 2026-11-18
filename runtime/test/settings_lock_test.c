@@ -130,7 +130,7 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     CHECK(wait_for(paused));
     writer_thread second_thread = start_writer(&second);
     pause_milliseconds(500);
-    CHECK(spisor_replace_file(release, (const uint8_t *)"", 0) == 1);
+    CHECK(spisor_replace_file(release, (const uint8_t *)"", 0) == SPISOR_OK);
     join_writer(first_thread);
     join_writer(second_thread);
     CHECK(first.status == SPISOR_OK && second.status == SPISOR_OK);

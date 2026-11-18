@@ -114,7 +114,7 @@ static void accept_records_the_new_id(void) {
 
 static void write_store(const char *text) {
     char *path = joined_path(scratch, "marketplace-names.json");
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(path);
 }
 

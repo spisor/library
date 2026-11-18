@@ -118,7 +118,8 @@ static int writes_store(const cJSON *store, const char *state, const char *path)
     if (text != NULL) {
         text[length] = '\n';
         text[length + 1] = '\0';
-        written = spisor_make_directories(state) == 1 && spisor_replace_file(path, (const uint8_t *)text, length + 1) == 1;
+        written = spisor_make_directories(state) == 1 &&
+            spisor_replace_file(path, (const uint8_t *)text, length + 1) == SPISOR_OK;
     }
     spisor_memory_release(text == NULL ? pretty : text);
     return written;

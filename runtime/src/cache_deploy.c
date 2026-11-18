@@ -196,7 +196,7 @@ static char *destination(deployment *plan, const char *suffix) {
 }
 
 static int write_destination(const deployment *plan, destination_index index, const uint8_t *bytes, size_t length) {
-    return spisor_replace_file(plan->destinations[index], bytes, length);
+    return spisor_replace_file(plan->destinations[index], bytes, length) == SPISOR_OK;
 }
 
 /** Resolves every destination, 0 when one lies outside pluginDir or memory runs out. */

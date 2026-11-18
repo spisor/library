@@ -61,7 +61,7 @@ static void write_text(const char *rest, const char *text) {
     *slash = 0;
     CHECK(spisor_make_directories(path) == 1);
     *slash = '/';
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(path);
 }
 
@@ -300,7 +300,8 @@ static runtime_holders_guard *take_lock(void) {
     CHECK(spisor_make_directories(folder) == 1);
     spisor_memory_release(folder);
     char *path = lock_path();
-    runtime_holders_guard *guard = runtime_lock_holders(path);
+    runtime_holders_guard *guard = NULL;
+    CHECK(runtime_lock_holders(path, &guard) == SPISOR_OK);
     spisor_memory_release(path);
     return guard;
 }
@@ -539,7 +540,8 @@ static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void)
     char *path = lock_path();
     CHECK(spisor_make_directories(path) == 1);
     double started = runtime_now_milliseconds();
-    CHECK(runtime_lock_holders(path) == NULL);
+    runtime_holders_guard *guard = NULL;
+    CHECK(runtime_lock_holders(path, &guard) == SPISOR_REFUSED && guard == NULL);
     catalog_answer answer = hold(self_pid(), sleep_start());
     CHECK(runtime_now_milliseconds() - started < 2000);
     CHECK(answer.status != 0);

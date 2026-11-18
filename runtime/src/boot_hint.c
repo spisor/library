@@ -288,7 +288,7 @@ static int write_text(const char *cache, const char *path, const char *text, int
     char *folder = hosts_folder(cache);
     *out_of_memory = folder == NULL;
     int written = folder != NULL && spisor_make_directories(folder) &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+                  spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(folder);
     return written;
 }

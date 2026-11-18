@@ -641,7 +641,7 @@ static int write_settings(const config_target *target, const cJSON *root) {
     }
     bytes[length] = '\n';
     int written = spisor_make_directories(target->directory) &&
-                  spisor_replace_file(target->file, (const uint8_t *)bytes, length + 1);
+                  spisor_replace_file(target->file, (const uint8_t *)bytes, length + 1) == SPISOR_OK;
     spisor_memory_release(bytes);
     return written;
 }
@@ -755,7 +755,7 @@ static void pause_after_read(void) {
     const char *release_segments[2] = {signals, "release"};
     char *paused = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, paused_segments, 2);
     char *release = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, release_segments, 2);
-    spisor_replace_file(paused, (const uint8_t *)"", 0);
+    (void)spisor_replace_file(paused, (const uint8_t *)"", 0);
     for (int waited = 0; waited < 500 && spisor_probe_file(release) != SPISOR_FILE_PRESENT; waited++) {
         pause_briefly();
     }

@@ -275,7 +275,7 @@ static inline void copy_file(const char *source, const char *path) {
     CHECK(bytes != NULL);
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    CHECK(spisor_replace_file(path, bytes, length) == 1);
+    CHECK(spisor_replace_file(path, bytes, length) == SPISOR_OK);
 #if !defined(_WIN32)
     CHECK(chmod(path, 0755) == 0);
 #endif

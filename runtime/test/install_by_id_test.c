@@ -42,7 +42,7 @@ static void write_in_scratch(const char *relative, const char *text) {
     char *path = in_scratch(relative);
     char *parent = joined_path(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(parent);
     spisor_memory_release(path);
 }

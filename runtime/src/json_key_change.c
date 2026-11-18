@@ -356,7 +356,8 @@ static runtime_change_step perform_edit(const cJSON *change, cJSON *record, cons
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
     runtime_change_step step = describe_edit(change, root, current, record, &edited, note);
     cJSON_Delete(root);
-    if (step == RUNTIME_CHANGE_DONE && !spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length)) {
+    if (step == RUNTIME_CHANGE_DONE &&
+        spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length) != SPISOR_OK) {
         step = fail(note, "the key could not be written", path);
     }
     spisor_memory_release(edited.bytes);
@@ -424,7 +425,7 @@ static runtime_change_reversal remove_created_file(const cJSON *record, runtime_
 
 static runtime_change_reversal write_back(const cJSON *record, const json_edit_text *restored,
                                           runtime_change_note *note) {
-    return spisor_replace_file(text_of(record, "file"), (const uint8_t *)restored->bytes, restored->length)
+    return spisor_replace_file(text_of(record, "file"), (const uint8_t *)restored->bytes, restored->length) == SPISOR_OK
                ? RUNTIME_CHANGE_REVERSED
                : not_reversed(record, note);
 }

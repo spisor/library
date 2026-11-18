@@ -393,7 +393,7 @@ static void in_home(const scratch *place, const char *relative, char *path, size
 static void write_home_file(const scratch *place, const char *relative, const char *text) {
     char path[1400];
     in_home(place, relative, path, sizeof path);
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static int home_file_is(const scratch *place, const char *relative, const char *expected) {

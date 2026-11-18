@@ -56,7 +56,7 @@ static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
     spisor_memory_release(parent);
-    CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
 
 static inline void write_in(const char *base, const char *rest, const char *content) {

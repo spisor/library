@@ -75,7 +75,8 @@ runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJS
     if (text == NULL) {
         return RUNTIME_SECRET_FILE_OUT_OF_MEMORY;
     }
-    int written = make_parent_directory(path) && spisor_replace_private_file(path, (const uint8_t *)text, length);
+    int written = make_parent_directory(path) &&
+        spisor_replace_private_file(path, (const uint8_t *)text, length) == SPISOR_OK;
     spisor_memory_release(text);
     if (written) {
         return RUNTIME_SECRET_FILE_DONE;
