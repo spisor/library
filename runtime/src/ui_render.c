@@ -277,14 +277,18 @@ static cJSON *props_of(const cJSON *node) {
     return props;
 }
 
+/** Adds a copy of node's own member under the same name; 0 when memory runs out. */
+static int add_copy(cJSON *rendered, const cJSON *node, const char *member) {
+    return runtime_add_owned(rendered, member, cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, member), 1));
+}
+
 static cJSON *rendered_node(const char *plugin, const cJSON *node, const cJSON *answers, cJSON **refusal) {
     const char *parent = text_of(node, "parent");
     cJSON *rendered = cJSON_CreateObject();
-    int complete = rendered != NULL &&
-                   runtime_add_owned(rendered, "id", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "id"), 1)) &&
-                   runtime_add_owned(rendered, "component", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "component"), 1)) &&
+    int complete = rendered != NULL && add_copy(rendered, node, "id") && add_copy(rendered, node, "component") &&
                    (parent == NULL || cJSON_AddStringToObject(rendered, "parent", parent) != NULL) &&
-                   add_outcome(rendered, plugin, node, answers, refusal) && runtime_add_owned(rendered, "props", props_of(node));
+                   add_outcome(rendered, plugin, node, answers, refusal) &&
+                   runtime_add_owned(rendered, "props", props_of(node));
     if (!complete) {
         cJSON_Delete(rendered);
         return NULL;
