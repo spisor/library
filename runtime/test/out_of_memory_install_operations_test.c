@@ -15,7 +15,6 @@
 #include "hosts_call.h"
 #include "install_hooks.h"
 #include "json_allocation.h"
-#include "known_out_of_memory_breaks.h"
 #include "file_times.h"
 #include "platform_key.h"
 #include "runtime/boot.h"
@@ -1298,6 +1297,8 @@ static void run_clean(const operation_case *each, clean_run *clean) {
     finish();
 }
 
+void spisor_print_failure_frames(void);
+
 /** Whether an answer other than OUT_OF_MEMORY is the clean run's, its refusal and every byte it left alike. */
 static int matches_clean(const clean_run *clean, spisor_status status, const char *label, uint64_t attempt) {
     size_t length = 0;
@@ -1310,7 +1311,6 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
         return 1;
     }
     {
-        extern void spisor_print_failure_frames(void);
         printf("MEASURE %s attempt %llu\n", label, (unsigned long long)attempt);
         spisor_print_failure_frames();
         size_t at = 0;
@@ -1372,7 +1372,7 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
 }
 
 /** Fails the operation's allocations one at a time, between first and last when given, until it runs whole. */
-static void every_failure_of_case(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
     int failures_before = check_failures;
     clean_run clean;
     run_clean(each, &clean);
@@ -1390,13 +1390,6 @@ static void every_failure_of_case(const operation_case *each, spisor_status expe
     printf("%s: %llu allocations, failures %llu to %llu checked\n", each->label,
            (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
     spisor_memory_release(clean.snapshot);
-}
-
-static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
-    int before = check_failures;
-    every_failure_of_case(each, expected, first, last);
-    check_failures = before + settled_out_of_memory_failures("out_of_memory_install_operations_test", each->label,
-                                                             sticky_failures, check_failures - before);
 }
 
 static int is_selected(const char *only, const char *label) {
