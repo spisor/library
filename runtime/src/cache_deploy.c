@@ -81,6 +81,10 @@ static const char *text_member(const cJSON *object, const char *member) {
     return cJSON_IsString(item) && item->valuestring[0] != '\0' ? item->valuestring : NULL;
 }
 
+static const char *nonempty(const char *text) {
+    return text != NULL && text[0] != '\0' ? text : NULL;
+}
+
 static cJSON *refuse(cJSON **refusal, const char *message, const char *fix) {
     *refusal = runtime_refusal(message, fix);
     return NULL;
@@ -122,18 +126,17 @@ static int resolve_directories(deployment *plan, cJSON **refusal) {
     return 1;
 }
 
-static int read_arguments(const cJSON *argument, deployment *plan, cJSON **refusal) {
-    const cJSON *identity = cJSON_GetObjectItemCaseSensitive(argument, "identity");
-    plan->directory = text_member(argument, "directory");
-    plan->plugin_directory = text_member(argument, "pluginDir");
-    plan->identity_id = text_member(identity, "id");
-    plan->identity_name = text_member(identity, "name");
-    plan->replaces = text_member(argument, "replaces");
+static int read_request(const runtime_cache_deploy_request *request, deployment *plan, cJSON **refusal) {
+    plan->directory = nonempty(request->directory);
+    plan->plugin_directory = nonempty(request->plugin_directory);
+    plan->identity_id = nonempty(request->identity_id);
+    plan->identity_name = nonempty(request->identity_name);
+    plan->replaces = nonempty(request->replaces);
     runtime_identity parsed;
     if (plan->directory == NULL || plan->plugin_directory == NULL || plan->identity_id == NULL ||
         plan->identity_name == NULL) {
-        refuse(refusal, "the argument needs directory, pluginDir and identity with an id and a name",
-               "send {\"directory\": \"<installed bundle>\", \"pluginDir\": \"<plugins>\", \"identity\": {\"id\": \"<id>\", \"name\": \"<owner/name>\"}}");
+        refuse(refusal, "the call needs a directory, a pluginDir and an identity with an id and a name",
+               "pass the installed bundle's directory, the plugins directory, and the identity's id and owner/name");
         return 0;
     }
     if (!runtime_identity_parse_id(plan->identity_id, &parsed)) {
@@ -392,8 +395,8 @@ static int write_files(deployment *plan, cJSON **refusal) {
     return written;
 }
 
-static int is_deployable(deployment *plan, const cJSON *argument, cJSON **refusal) {
-    if (!read_arguments(argument, plan, refusal) || !read_manifest(plan, refusal) || !read_entry(plan, refusal)) {
+static int is_deployable(deployment *plan, const runtime_cache_deploy_request *request, cJSON **refusal) {
+    if (!read_request(request, plan, refusal) || !read_manifest(plan, refusal) || !read_entry(plan, refusal)) {
         return 0;
     }
     if (!resolve_destinations(plan)) {
@@ -420,10 +423,11 @@ void runtime_cache_free_deployment(runtime_cache_deployment *plan) {
     spisor_memory_release(plan);
 }
 
-runtime_cache_deployment *runtime_cache_plan_deployment(const cJSON *argument, cJSON **refusal) {
+runtime_cache_deployment *runtime_cache_plan_deployment(const runtime_cache_deploy_request *request,
+                                                        cJSON **refusal) {
     deployment *plan = spisor_memory_allocate_zeroed(1, sizeof *plan);
     *refusal = NULL;
-    if (plan != NULL && !is_deployable(plan, argument, refusal)) {
+    if (plan != NULL && !is_deployable(plan, request, refusal)) {
         runtime_cache_free_deployment(plan);
         plan = NULL;
     }
@@ -439,22 +443,9 @@ int runtime_cache_carry_out_deployment(runtime_cache_deployment *plan, cJSON **r
     return write_files(plan, refusal);
 }
 
-static cJSON *import_name_answer(const char *import_name) {
-    cJSON *answer = cJSON_CreateObject();
-    if (answer != NULL && cJSON_AddStringToObject(answer, "importName", import_name) == NULL) {
-        cJSON_Delete(answer);
-        answer = NULL;
-    }
-    return answer;
-}
-
-cJSON *runtime_cache_deploy_operation(const cJSON *argument, cJSON **refusal) {
-    runtime_cache_deployment *plan = runtime_cache_plan_deployment(argument, refusal);
-    cJSON *answer = plan == NULL ? NULL : import_name_answer(plan->import_name);
-    if (answer != NULL && !runtime_cache_carry_out_deployment(plan, refusal)) {
-        cJSON_Delete(answer);
-        answer = NULL;
-    }
+int runtime_cache_deploy(const runtime_cache_deploy_request *request, cJSON **refusal) {
+    runtime_cache_deployment *plan = runtime_cache_plan_deployment(request, refusal);
+    int deployed = plan != NULL && runtime_cache_carry_out_deployment(plan, refusal);
     runtime_cache_free_deployment(plan);
-    return answer;
+    return deployed;
 }
