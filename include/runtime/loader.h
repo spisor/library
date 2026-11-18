@@ -81,7 +81,10 @@ typedef struct runtime_loader_home_answer {
     void *storage;
 } runtime_loader_home_answer;
 
-/** The `loader` installed at its version in the `cache` place, both plain file names. First shape ends at `loader`. */
+/**
+ * The `loader` installed at its version in the `cache` place, an absolute path; the loader's id and version are each a
+ * plain file name. First shape ends at `loader`.
+ */
 typedef struct runtime_loader_installed_argument {
     uint32_t size;
     const char *cache;

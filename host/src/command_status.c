@@ -1,29 +1,11 @@
-#include "cache.h"
 #include "host_commands.h"
 #include "host_context.h"
+#include "host_definition.h"
 #include "host_output.h"
-#include "json_service.h"
-#include "registry.h"
 
-static cJSON *cache_call(const host_context *context) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && cJSON_AddStringToObject(argument, "cache", context->cache) == NULL) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    return argument;
-}
-
-/** Adds member of what operation answers for the cache to status; 0 with *refusal set when it refused. */
-static int add_cache_answer(cJSON *status, const host_context *context, runtime_json_operation operation, const char *member,
-                            cJSON **refusal) {
-    cJSON *answer = runtime_call_operation(operation, cache_call(context), refusal);
-    cJSON *value = member == NULL ? answer : cJSON_DetachItemFromObjectCaseSensitive(answer, member);
-    if (member != NULL) {
+static int add_answer(cJSON *status, const char *member, cJSON *answer) {
+    if (answer == NULL || !cJSON_AddItemToObject(status, member, answer)) {
         cJSON_Delete(answer);
-    }
-    if (value == NULL || !cJSON_AddItemToObject(status, member == NULL ? "installed" : member, value)) {
-        cJSON_Delete(value);
         return 0;
     }
     return 1;
@@ -43,9 +25,9 @@ static int refuse_damaged(const cJSON *damaged) {
  */
 static int print_status(const host_context *context) {
     cJSON *refusal = NULL;
-    cJSON *status = runtime_call_operation(runtime_registry_list_hosts, host_places_argument(context), &refusal);
-    if (status == NULL || !add_cache_answer(status, context, runtime_cache_installed_operation, NULL, &refusal) ||
-        !add_cache_answer(status, context, runtime_cache_damaged_operation, "damaged", &refusal)) {
+    cJSON *status = host_listing_of(context->state, &refusal);
+    if (status == NULL || !add_answer(status, "installed", host_installed_of(context->cache, &refusal)) ||
+        !add_answer(status, "damaged", host_damaged_of(context->cache, &refusal))) {
         cJSON_Delete(status);
         return host_refuse(refusal);
     }

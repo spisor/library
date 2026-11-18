@@ -3,26 +3,6 @@
 #include <stdio.h>
 
 #include "json_service.h"
-#include "spisor/json_kind.h"
-
-int32_t runtime_catalog_answer(cJSON *result, uint8_t **out, size_t *out_len) {
-    if (result == NULL) {
-        *out = NULL;
-        *out_len = 0;
-        return SPISOR_STATUS_OUT_OF_MEMORY;
-    }
-    int32_t status = spisor_succeed(result, out, out_len);
-    cJSON_Delete(result);
-    return status;
-}
-
-int32_t runtime_catalog_refuse_argument(const char *member, const char *shape, uint8_t **out, size_t *out_len) {
-    char message[256];
-    char fix[512];
-    snprintf(message, sizeof message, "the argument carries no usable %s", member);
-    snprintf(fix, sizeof fix, "send %s as %s", member, shape);
-    return spisor_fail(message, fix, out, out_len);
-}
 
 cJSON *runtime_catalog_refuse_member(const char *member, const char *shape, cJSON **refusal) {
     char message[256];

@@ -12,6 +12,7 @@
 #include "places.h"
 #include "catalog_time.h"
 #include "file_times.h"
+#include "host_definition.h"
 #include "hosts.h"
 #include "install_ecosystem.h"
 #include "json_service.h"
@@ -177,17 +178,15 @@ static int install(const c_host *host, const char *catalog, char **plugins, int 
 
 static int status(const c_host *host) {
     cJSON *refusal = NULL;
-    cJSON *listed = runtime_call_operation(runtime_registry_list_hosts, places_call(host), &refusal);
-    cJSON *installed = listed == NULL ? NULL : runtime_call_operation(runtime_cache_installed_operation, cache_call(host), &refusal);
-    cJSON *found = installed == NULL ? NULL : runtime_call_operation(runtime_cache_damaged_operation, cache_call(host), &refusal);
-    if (found == NULL) {
+    cJSON *listed = host_listing_of(host->state, &refusal);
+    cJSON *installed = listed == NULL ? NULL : host_installed_of(host->cache, &refusal);
+    cJSON *damaged = installed == NULL ? NULL : host_damaged_of(host->cache, &refusal);
+    if (damaged == NULL) {
         cJSON_Delete(installed);
         cJSON_Delete(listed);
         return refuse(refusal);
     }
     cJSON_AddItemToObject(listed, "installed", installed);
-    cJSON *damaged = cJSON_DetachItemFromObjectCaseSensitive(found, "damaged");
-    cJSON_Delete(found);
     cJSON_AddItemToObject(listed, "damaged", damaged);
     print_json(listed);
     const cJSON *first = cJSON_GetArrayItem(damaged, 0);
@@ -213,16 +212,12 @@ static int update(const c_host *host) {
 }
 
 static int remove_host(const c_host *host, const char *id) {
-    cJSON *call = places_call(host);
-    cJSON_AddStringToObject(call, "id", id);
     cJSON *refusal = NULL;
-    cJSON *removed = runtime_call_operation(runtime_hosts_remove_operation, call, &refusal);
+    cJSON *removed = host_removal_of(host->state, host->cache, id, &refusal);
     if (removed == NULL) {
         return refuse(refusal);
     }
-    cJSON *sweep = cache_call(host);
-    cJSON_AddStringToObject(sweep, "state", host->state);
-    cJSON *swept = runtime_call_operation(runtime_cache_sweep_operation, sweep, &refusal);
+    cJSON *swept = host_sweep_of(host->cache, host->state, &refusal);
     if (swept == NULL) {
         cJSON_Delete(removed);
         return refuse(refusal);

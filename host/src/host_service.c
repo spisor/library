@@ -5,16 +5,10 @@
 #include "host_service.h"
 
 #include "cache_refusal.h"
-#include "json_service.h"
 
 #if !defined(_WIN32)
 #include <sys/stat.h>
 #endif
-
-cJSON *host_call(runtime_json_function function, cJSON *argument, cJSON **refusal) {
-    *refusal = NULL;
-    return runtime_call_or_refuse(function, argument, refusal);
-}
 
 const char *host_text(const cJSON *object, const char *name) {
     const cJSON *member = cJSON_GetObjectItemCaseSensitive(object, name);

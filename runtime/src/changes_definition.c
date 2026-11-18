@@ -4,6 +4,7 @@
 #include "change_kinds.h"
 #include "changes.h"
 #include "definition_support.h"
+#include "changes_definition.h"
 #include "json_service.h"
 #include "json_value.h"
 #include "paths.h"

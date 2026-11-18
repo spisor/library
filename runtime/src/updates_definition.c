@@ -5,6 +5,7 @@
 
 #include "answer_storage.h"
 #include "definition_support.h"
+#include "updates_definition.h"
 #include "host_references.h"
 #include "json_service.h"
 #include "paths.h"
