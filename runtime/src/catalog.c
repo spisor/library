@@ -16,9 +16,8 @@ static cJSON *refuse_index(const runtime_catalog_refusal *refusal) {
     return refused;
 }
 
-cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal) {
-    const char *text = runtime_catalog_text_member(argument, "text");
-    const char *origin = runtime_catalog_text_member(argument, "origin");
+cJSON *runtime_catalog_read(const char *text, const char *origin, cJSON **refusal) {
+    *refusal = NULL;
     if (text == NULL) {
         return runtime_catalog_refuse_member("text", "the catalog index's text", refusal);
     }

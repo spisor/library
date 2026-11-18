@@ -103,7 +103,8 @@ static spisor_status fill_answer(const cJSON *answered, void *filled) {
 
 static spisor_status read_catalog(void *context, const runtime_catalog_read_argument *argument,
                                   runtime_catalog_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, READ_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
@@ -112,13 +113,8 @@ static spisor_status read_catalog(void *context, const runtime_catalog_read_argu
     if (argument->text == NULL || !runtime_is_text(argument->origin)) {
         return runtime_refuse_member(refusal, argument->text == NULL ? "text" : "origin", HEADER);
     }
-    call = cJSON_CreateObject();
-    if (call != NULL && (cJSON_AddStringToObject(call, "text", argument->text) == NULL ||
-                         cJSON_AddStringToObject(call, "origin", argument->origin) == NULL)) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    return runtime_serve_operation(runtime_catalog_read_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
+    answered = runtime_catalog_read(argument->text, argument->origin, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_answer, answer, ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_sources(const cJSON *answered, void *filled) {
@@ -225,6 +221,8 @@ static spisor_status fill_merge(const cJSON *answered, void *filled) {
 
 static spisor_status merge(void *context, const runtime_catalog_merge_argument *argument,
                            runtime_catalog_merge_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call;
     spisor_status status;
     (void)context;
@@ -244,7 +242,9 @@ static spisor_status merge(void *context, const runtime_catalog_merge_argument *
         cJSON_Delete(call);
         return status;
     }
-    return runtime_serve_operation(runtime_catalog_merge_operation, call, fill_merge, answer, MERGE_ANSWER_SHAPE, refusal);
+    answered = runtime_catalog_merge(cJSON_GetObjectItemCaseSensitive(call, "catalogs"), &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_merge, answer, MERGE_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_check(const cJSON *answered, void *filled) {
