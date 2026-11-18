@@ -27,7 +27,8 @@ function(spisor_refuse_plain_allocation)
         string(APPEND found "${in_directory}")
     endforeach()
     if(NOT found STREQUAL "")
-        message(FATAL_ERROR "allocate through spisor_memory_allocate and release through spisor_memory_release:${found}")
+        message(FATAL_ERROR
+            "allocate through spisor_memory_allocate and release through spisor_memory_release:${found}")
     endif()
 endfunction()
 

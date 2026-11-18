@@ -79,7 +79,8 @@ spisor_strict_warnings(runtime_secret_store)
 
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_library(runtime_secret_store_test_hooks OBJECT ${runtime_secret_store_source})
-    target_include_directories(runtime_secret_store_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include)
+    target_include_directories(runtime_secret_store_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/include)
     target_include_directories(runtime_secret_store_test_hooks PUBLIC src)
     target_compile_definitions(runtime_secret_store_test_hooks PRIVATE SPISOR_SECRET_TEST_HOOKS)
     spisor_strict_warnings(runtime_secret_store_test_hooks)
