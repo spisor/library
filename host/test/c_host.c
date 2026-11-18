@@ -198,10 +198,8 @@ static int status(const c_host *host) {
 static int update(const c_host *host) {
     char now[RUNTIME_CATALOG_TIME_SIZE];
     runtime_catalog_format_time(runtime_now_milliseconds(), now);
-    cJSON *call = places_call(host);
-    cJSON_AddStringToObject(call, "now", now);
     cJSON *refusal = NULL;
-    cJSON *summary = runtime_call_operation(runtime_updates_run_operation, call, &refusal);
+    cJSON *summary = host_update_run(host->places.portable, host->state, host->cache, now, &refusal);
     if (summary == NULL) {
         return refuse(refusal);
     }

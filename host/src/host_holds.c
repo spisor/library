@@ -1,26 +1,20 @@
 #include "host_holds.h"
 
+#include "allocation.h"
+#include "host_definition.h"
 #include "host_output.h"
 #include "host_service.h"
-#include "processes.h"
-#include "json_service.h"
-
-static cJSON *holder_call(const host_context *context, const char *host_id, double holder) {
-    cJSON *call = cJSON_CreateObject();
-    if (call != NULL && (cJSON_AddStringToObject(call, "state", context->state) == NULL ||
-                         cJSON_AddStringToObject(call, "hostId", host_id) == NULL ||
-                         cJSON_AddNumberToObject(call, "holder", holder) == NULL)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
+#include "runtime/processes.h"
 
 static void release_one(const host_context *context, const char *host_id, double holder) {
-    cJSON *refusal = NULL;
-    cJSON_Delete(runtime_call_operation(runtime_processes_release_operation, holder_call(context, host_id, holder),
-                                        &refusal));
-    cJSON_Delete(refusal);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_holder_argument argument = SPISOR_INIT(runtime_processes_holder_argument);
+    runtime_processes_release_answer answer = SPISOR_INIT(runtime_processes_release_answer);
+    argument.state = context->state;
+    argument.host_id = host_id;
+    argument.holder = (int64_t)holder;
+    processes->release(processes->context, &argument, &answer, NULL);
+    processes->release_release_answer(processes->context, &answer);
 }
 
 static void release_before(const host_context *context, const cJSON *starts, const cJSON *last, double holder) {
@@ -29,45 +23,47 @@ static void release_before(const host_context *context, const cJSON *starts, con
     }
 }
 
-static const cJSON *pid_of(const cJSON *held) {
-    const cJSON *pid = cJSON_GetObjectItemCaseSensitive(held, "pid");
-    return cJSON_IsNumber(pid) ? pid : NULL;
-}
-
-static cJSON *unusable_pid_refusal(const char *host_id, const cJSON *held) {
-    char *answer = cJSON_PrintUnformatted(held);
-    const char *parts[4] = {"the hold of ", host_id, " answered no usable pid: ", answer == NULL ? "" : answer};
-    cJSON *refusal = host_refusal_of(parts, 4, HOST_REINSTALL_FIX);
-    cJSON_free(answer);
-    return refusal;
-}
-
-/** Notes the pid held answers for host_id in pids (when given); 0 with *refusal set for an answer without one, or none when memory ran out. */
-static int record_pid(cJSON *pids, const char *host_id, const cJSON *held, cJSON **refusal) {
-    const cJSON *pid = pid_of(held);
-    if (pid == NULL) {
-        *refusal = unusable_pid_refusal(host_id, held);
-        return 0;
+/** Holds host_id, started as `start` says when nothing runs for it; 0 with *refusal set, NULL out of memory. */
+static int hold_one(const host_context *context, const cJSON *start, double holder, int64_t *pid, cJSON **refusal) {
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
+    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(start, "environment");
+    const cJSON *listed = cJSON_GetObjectItemCaseSensitive(start, "arguments");
+    const char **arguments = host_texts_of(listed, &argument.argument_count);
+    runtime_variable *variables =
+        environment == NULL ? NULL : host_variables_of(environment, &argument.environment_count);
+    int complete = arguments != NULL && (environment == NULL || variables != NULL);
+    spisor_status status = complete ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
+    argument.state = context->state;
+    argument.host_id = start->string;
+    argument.holder = (int64_t)holder;
+    argument.executable = host_text(start, "executable");
+    argument.arguments = arguments;
+    argument.environment = variables;
+    argument.directory = host_text(start, "directory");
+    if (status == SPISOR_OK) {
+        status = processes->hold(processes->context, &argument, &answer, &declined);
+        *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
     }
-    return pids == NULL || cJSON_AddNumberToObject(pids, host_id, pid->valuedouble) != NULL;
+    *pid = answer.pid;
+    processes->release_hold_answer(processes->context, &answer);
+    processes->release_refusal(processes->context, &declined);
+    spisor_memory_release(variables);
+    spisor_memory_release(arguments);
+    return status == SPISOR_OK;
 }
 
 int host_hold_all(const host_context *context, const cJSON *starts, double holder, cJSON *pids, cJSON **refusal) {
     *refusal = NULL;
     for (const cJSON *start = starts->child; start != NULL; start = start->next) {
-        cJSON *call = holder_call(context, start->string, holder);
-        if (call != NULL && !cJSON_AddItemToObject(call, "start", cJSON_Duplicate(start, 1))) {
-            cJSON_Delete(call);
-            call = NULL;
-        }
-        cJSON *held = runtime_call_operation(runtime_processes_hold_operation, call, refusal);
-        if (held == NULL) {
+        int64_t pid = 0;
+        if (!hold_one(context, start, holder, &pid, refusal)) {
             release_before(context, starts, start, holder);
             return 0;
         }
-        int recorded = record_pid(pids, start->string, held, refusal);
-        cJSON_Delete(held);
-        if (!recorded) {
+        if (pids != NULL && cJSON_AddNumberToObject(pids, start->string, (double)pid) == NULL) {
             release_before(context, starts, start->next, holder);
             return 0;
         }

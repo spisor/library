@@ -2,29 +2,28 @@
 
 #include <string.h>
 
+#include "host_definition.h"
 #include "host_service.h"
 #include "paths.h"
 #include "processes_ready.h"
 #include "ready_timeout.h"
-#include "json_service.h"
-
-static cJSON *await_argument(const host_context *context, const char *host_id, double pid) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && (cJSON_AddStringToObject(argument, "state", context->state) == NULL ||
-                             cJSON_AddStringToObject(argument, "hostId", host_id) == NULL ||
-                             cJSON_AddNumberToObject(argument, "pid", pid) == NULL ||
-                             cJSON_AddNumberToObject(argument, "timeoutMilliseconds", host_ready_timeout_milliseconds()) == NULL)) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
-}
+#include "runtime/processes.h"
 
 cJSON *host_await_session_environment(const host_context *context, const char *host_id, double pid, cJSON **refusal) {
-    cJSON *argument = await_argument(context, host_id, pid);
-    cJSON *answer = runtime_call_operation(runtime_processes_await_ready_operation, argument, refusal);
-    cJSON *environment = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "environment");
-    cJSON_Delete(answer);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_await_argument argument = SPISOR_INIT(runtime_processes_await_argument);
+    runtime_processes_await_answer answer = SPISOR_INIT(runtime_processes_await_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.state = context->state;
+    argument.host_id = host_id;
+    argument.pid = (int64_t)pid;
+    argument.timeout_milliseconds = (int64_t)host_ready_timeout_milliseconds();
+    spisor_status status = processes->await_ready(processes->context, &argument, &answer, &declined);
+    cJSON *environment =
+        status == SPISOR_OK ? host_variables_json(answer.environment, answer.environment_count) : NULL;
+    *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
+    processes->release_await_answer(processes->context, &answer);
+    processes->release_refusal(processes->context, &declined);
     return environment;
 }
 
