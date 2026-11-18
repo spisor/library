@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "allocation.h"
 
 #include <stdint.h>
@@ -5,6 +6,46 @@
 #include <string.h>
 
 #ifdef SPISOR_TESTING
+
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <stdio.h>
+static void *failure_frames[40];
+static int failure_frame_count;
+static void capture_failure(void) {
+    failure_frame_count = backtrace(failure_frames, 40);
+}
+void spisor_print_failure_frames(void) {
+    for (int index = 0; index < failure_frame_count; index++) {
+        Dl_info info;
+        if (dladdr(failure_frames[index], &info) == 0 || info.dli_fname == NULL) {
+            printf("FRAME %d ?\n", index);
+            continue;
+        }
+        char command[2048];
+        snprintf(command, sizeof command, "addr2line -f -C -e '%s' %p", info.dli_fname,
+                 (void *)((char *)failure_frames[index] - (char *)info.dli_fbase - 1));
+        FILE *pipe = popen(command, "r");
+        char line[512];
+        printf("FRAME %d %s:", index, info.dli_sname == NULL ? "?" : info.dli_sname);
+        while (pipe != NULL && fgets(line, sizeof line, pipe) != NULL) {
+            line[strcspn(line, "\n")] = ' ';
+            printf(" %s", line);
+        }
+        printf("\n");
+        if (pipe != NULL) {
+            pclose(pipe);
+        }
+    }
+    fflush(stdout);
+}
+#else
+static void capture_failure(void) {
+}
+void spisor_print_failure_frames(void) {
+}
+#endif
 
 static uint64_t countdown;
 static uint64_t attempts;
@@ -30,6 +71,7 @@ static int fails_now(void) {
         return 0;
     }
     failed = 1;
+    capture_failure();
     return 1;
 }
 

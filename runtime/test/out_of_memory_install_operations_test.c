@@ -1304,10 +1304,28 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     char *snapshot = base_snapshot(&length);
     int same_tree = snapshot != NULL && length == clean->snapshot_length &&
                     memcmp(snapshot, clean->snapshot, length) == 0;
-    spisor_memory_release(snapshot);
+    char *snapshot_copy = snapshot;
     if (status == clean->status && strcmp(refusal_detail, clean->refusal) == 0 && same_tree) {
+        spisor_memory_release(snapshot);
         return 1;
     }
+    {
+        extern void spisor_print_failure_frames(void);
+        printf("MEASURE %s attempt %llu\n", label, (unsigned long long)attempt);
+        spisor_print_failure_frames();
+        size_t at = 0;
+        while (snapshot_copy != NULL && at < length && at < clean->snapshot_length && snapshot_copy[at] == clean->snapshot[at]) {
+            at++;
+        }
+        size_t from = at > 200 ? at - 200 : 0;
+        printf("MEASURE differs at %zu of %zu and %zu\nMEASURE failing: %.*s\nMEASURE clean: %.*s\n", at, length,
+               clean->snapshot_length, (int)(length > from ? (length - from < 1200 ? length - from : 1200) : 0),
+               snapshot_copy == NULL ? "" : snapshot_copy + from,
+               (int)(clean->snapshot_length > from ? (clean->snapshot_length - from < 1200 ? clean->snapshot_length - from : 1200) : 0),
+               clean->snapshot + from);
+        fflush(stdout);
+    }
+    spisor_memory_release(snapshot);
     fprintf(stderr, "%s: failing allocation %llu answered %d \"%s\"%s; a clean run answers %d \"%s\"\n", label,
             (unsigned long long)attempt, (int)status, refusal_detail, same_tree ? "" : " leaving another tree",
             (int)clean->status, clean->refusal);
