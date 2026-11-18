@@ -41,6 +41,13 @@ cJSON *runtime_call_or_refuse(int32_t (*function)(const uint8_t *, size_t, uint8
                               cJSON **refusal);
 
 /**
+ * Adds item to object under name, and deletes item when it cannot; 0 when item is NULL or memory runs out.
+ *
+ * @implNote cJSON_AddItemToObject copies the key and, when that copy fails, leaves the item with its caller.
+ */
+int runtime_add_owned(cJSON *object, const char *name, cJSON *item);
+
+/**
  * Adds to object under name a reference to item, an object or an array, which object never frees; 0 when item is
  * NULL or memory runs out.
  *

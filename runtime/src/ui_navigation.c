@@ -217,8 +217,8 @@ cJSON *runtime_ui_navigation_operation(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     cJSON *navigation = cJSON_CreateObject();
-    if (navigation == NULL || !cJSON_AddItemToObject(navigation, "entries", entries_of(descriptions, ui)) ||
-        !cJSON_AddItemToObject(navigation, "preferences", preferences_of(ui))) {
+    if (navigation == NULL || !runtime_add_owned(navigation, "entries", entries_of(descriptions, ui)) ||
+        !runtime_add_owned(navigation, "preferences", preferences_of(ui))) {
         cJSON_Delete(navigation);
         return NULL;
     }

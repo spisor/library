@@ -301,6 +301,10 @@ if(WIN32)
     add_dependencies(out_of_memory_install_operations_test runtime_launcher)
 endif()
 
+runtime_test_with_allocator(out_of_memory_ui_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_ui>
+    ${runtime_hosts_test_objects})
+target_link_libraries(out_of_memory_ui_test PRIVATE ${runtime_fetch_libraries})
+
 runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_link_libraries(json_hooks_race_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(json_hooks_race_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

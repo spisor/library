@@ -144,7 +144,7 @@ static cJSON *picked(const cJSON *object, const char *const *names, size_t count
     cJSON *copy = cJSON_CreateObject();
     for (size_t index = 0; copy != NULL && index < count; index++) {
         const cJSON *member = cJSON_GetObjectItemCaseSensitive(object, names[index]);
-        if (member != NULL && !cJSON_AddItemToObject(copy, names[index], cJSON_Duplicate(member, 1))) {
+        if (member != NULL && !runtime_add_owned(copy, names[index], cJSON_Duplicate(member, 1))) {
             cJSON_Delete(copy);
             copy = NULL;
         }
@@ -234,7 +234,7 @@ static int add_checked_answer(cJSON *rendered, const cJSON *node, const cJSON *c
         return is_issue(issue) && add_error(rendered, issue, "message");
     }
     return cJSON_AddStringToObject(rendered, "state", "ready") != NULL &&
-           cJSON_AddItemToObject(rendered, "data", data_of(node, cJSON_GetObjectItemCaseSensitive(answer, "answer")));
+           runtime_add_owned(rendered, "data", data_of(node, cJSON_GetObjectItemCaseSensitive(answer, "answer")));
 }
 
 static cJSON *unanswered(const cJSON *node, const cJSON *call) {
@@ -269,7 +269,7 @@ static cJSON *props_of(const cJSON *node) {
     cJSON *props = cJSON_CreateObject();
     for (size_t index = 0; props != NULL && index < COUNT_OF(PROP_MEMBERS); index++) {
         const cJSON *member = cJSON_GetObjectItemCaseSensitive(node, PROP_MEMBERS[index]);
-        if (member != NULL && !cJSON_AddItemToObject(props, PROP_MEMBERS[index], cJSON_Duplicate(member, 1))) {
+        if (member != NULL && !runtime_add_owned(props, PROP_MEMBERS[index], cJSON_Duplicate(member, 1))) {
             cJSON_Delete(props);
             props = NULL;
         }
@@ -281,10 +281,10 @@ static cJSON *rendered_node(const char *plugin, const cJSON *node, const cJSON *
     const char *parent = text_of(node, "parent");
     cJSON *rendered = cJSON_CreateObject();
     int complete = rendered != NULL &&
-                   cJSON_AddItemToObject(rendered, "id", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "id"), 1)) &&
-                   cJSON_AddItemToObject(rendered, "component", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "component"), 1)) &&
+                   runtime_add_owned(rendered, "id", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "id"), 1)) &&
+                   runtime_add_owned(rendered, "component", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "component"), 1)) &&
                    (parent == NULL || cJSON_AddStringToObject(rendered, "parent", parent) != NULL) &&
-                   add_outcome(rendered, plugin, node, answers, refusal) && cJSON_AddItemToObject(rendered, "props", props_of(node));
+                   add_outcome(rendered, plugin, node, answers, refusal) && runtime_add_owned(rendered, "props", props_of(node));
     if (!complete) {
         cJSON_Delete(rendered);
         return NULL;
