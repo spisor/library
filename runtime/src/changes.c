@@ -252,28 +252,7 @@ static runtime_changes_answer answer_of_step(runtime_change_step step) {
     return step == RUNTIME_CHANGE_OUT_OF_MEMORY ? RUNTIME_CHANGES_OUT_OF_MEMORY : RUNTIME_CHANGES_FAILED;
 }
 
-static int set_counter(cJSON *registration, long next) {
-    cJSON *counter = cJSON_GetObjectItemCaseSensitive(registration, "nextSequence");
-    if (counter != NULL) {
-        cJSON_SetNumberValue(counter, (double)next);
-        return 1;
-    }
-    return cJSON_AddNumberToObject(registration, "nextSequence", (double)next) != NULL;
-}
-
-/**
- * Hands back the numbers from `first` on that a change memory stopped had taken, under the lock that took them, so
- * out of memory leaves the counter as it found it; a change refused keeps its numbers spent.
- */
-static void return_numbers(apply_session *session, runtime_change_step step, long first) {
-    if (step == RUNTIME_CHANGE_OUT_OF_MEMORY) {
-        set_counter(session->registration, first);
-    }
-}
-
 static void withdraw(apply_session *session, cJSON *entry, runtime_change_step step, const char *reason) {
-    const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
-    return_numbers(session, step, (long)cJSON_GetNumberValue(sequence));
     cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
     store(session);
     conclude(session, answer_of_step(step), reason);
@@ -294,6 +273,15 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
     store(session);
     conclude(session, RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
+}
+
+static int set_counter(cJSON *registration, long next) {
+    cJSON *counter = cJSON_GetObjectItemCaseSensitive(registration, "nextSequence");
+    if (counter != NULL) {
+        cJSON_SetNumberValue(counter, (double)next);
+        return 1;
+    }
+    return cJSON_AddNumberToObject(registration, "nextSequence", (double)next) != NULL;
 }
 
 static void record_and_perform(apply_session *session, cJSON *record) {
@@ -418,8 +406,7 @@ static int add_child_entries(apply_session *session, long parent_sequence, long 
 }
 
 /** Withdraws the family, but keeps, as applied, every child whose undo failed and then its new parent. */
-static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_children *prepared,
-                            runtime_change_step step, long first) {
+static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_children *prepared) {
     cJSON *changes = changes_of(session->registration);
     int kept = 0;
     for (size_t index = 0; index < prepared->count; index++) {
@@ -436,9 +423,6 @@ static void withdraw_family(apply_session *session, cJSON *new_parent, prepared_
         mark_applied(new_parent);
     } else if (new_parent != NULL) {
         cJSON_Delete(cJSON_DetachItemViaPointer(changes, new_parent));
-    }
-    if (!kept) {
-        return_numbers(session, step, first);
     }
     store(session);
 }
@@ -465,7 +449,7 @@ static void mark_family_applied(cJSON *new_parent, prepared_children *prepared) 
     }
 }
 
-static void perform_family(apply_session *session, cJSON *new_parent, long parent_sequence, long first_child,
+static void perform_family(apply_session *session, cJSON *new_parent, long parent_sequence,
                            prepared_children *prepared) {
     runtime_change_note note = {""};
     runtime_change_step step = RUNTIME_CHANGE_DONE;
@@ -479,7 +463,7 @@ static void perform_family(apply_session *session, cJSON *new_parent, long paren
     }
     if (step != RUNTIME_CHANGE_DONE) {
         undo_performed(prepared, performed);
-        withdraw_family(session, new_parent, prepared, step, new_parent != NULL ? parent_sequence : first_child);
+        withdraw_family(session, new_parent, prepared);
         conclude_step(session, step, note.detail);
         return;
     }
@@ -513,7 +497,7 @@ static void record_family(apply_session *session, cJSON *parent_record, long exi
         conclude_unwritable(session);
         return;
     }
-    perform_family(session, new_parent, parent_sequence, first_child, prepared);
+    perform_family(session, new_parent, parent_sequence, prepared);
 }
 
 static void record_new_family(apply_session *session, prepared_children *prepared) {
