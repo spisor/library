@@ -144,11 +144,14 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
      "for a failed open and out of memory"},
     {OPERATIONS_SUITE, "processes' hold", 0, MEASURED_ON_WINDOWS,
-     "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
+     "holders_lock.c runtime_lock_holders: directory_tree.c runtime_create_new_file reads a failed wide path as "
+     "an uncreatable lock, so the lock is refused"},
     {OPERATIONS_SUITE, "processes' release", 0, MEASURED_ON_WINDOWS,
-     "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
+     "holders_lock.c runtime_lock_holders: directory_tree.c runtime_create_new_file reads a failed wide path as "
+     "an uncreatable lock, so the lock is refused"},
     {OPERATIONS_SUITE, "processes' prune", 0, MEASURED_ON_WINDOWS,
-     "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
+     "holders_lock.c runtime_lock_holders: directory_tree.c runtime_create_new_file reads a failed wide path as "
+     "an uncreatable lock, so the lock is refused"},
     {OPERATIONS_SUITE, "processes' live_runs", 0, MEASURED_ON_WINDOWS,
      "run_records.c add_live_run: directory_tree.c runtime_remove_file_entry reads a failed wide path as a failed "
      "removal, answering OK"},

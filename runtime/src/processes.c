@@ -100,9 +100,10 @@ static cJSON *locked_step(const runtime_processes_request *request, const char *
                           cJSON **refusal) {
     char *problem = NULL;
     char *lock = runtime_holders_path(request->state, request->host_id, ".lock", &problem);
-    runtime_holders_guard *guard = lock == NULL ? NULL : runtime_lock_holders(lock);
-    if (guard == NULL) {
-        *refusal = lock == NULL ? NULL : lock_refusal(lock);
+    runtime_holders_guard *guard = NULL;
+    spisor_status locked = lock == NULL ? SPISOR_OUT_OF_MEMORY : runtime_lock_holders(lock, &guard);
+    if (locked != SPISOR_OK) {
+        *refusal = locked == SPISOR_OUT_OF_MEMORY ? NULL : lock_refusal(lock);
         spisor_memory_release(lock);
         spisor_memory_release(problem);
         return NULL;
