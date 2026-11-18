@@ -315,15 +315,21 @@ runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record
     return step;
 }
 
+/** Records the created file's digest before it creates the file, so memory running out never leaves it created. */
 static runtime_change_step perform_created(const cJSON *change, cJSON *record, runtime_change_note *note) {
     const char *path = text_of(change, "file");
     json_edit_text created = {NULL, 0, {0, 0, 0}};
     if (!json_edit_new_document(key_of(change), value_of(change), &created)) {
         return out_of_memory(note);
     }
-    runtime_entry_outcome made = runtime_create_new_file(path, (const uint8_t *)created.bytes, created.length, 0);
-    int recorded = made == RUNTIME_ENTRY_DONE && set_digest(record, "after", created.bytes, created.length);
+    int recorded = set_digest(record, "after", created.bytes, created.length);
+    runtime_entry_outcome made = recorded
+                                     ? runtime_create_new_file(path, (const uint8_t *)created.bytes, created.length, 0)
+                                     : RUNTIME_ENTRY_FAILED;
     free(created.bytes);
+    if (!recorded) {
+        return out_of_memory(note);
+    }
     if (made == RUNTIME_ENTRY_EXISTS) {
         return refuse(note, "something already exists where the JSON file would be created; it was left unchanged",
                       path);
@@ -331,7 +337,7 @@ static runtime_change_step perform_created(const cJSON *change, cJSON *record, r
     if (made != RUNTIME_ENTRY_DONE) {
         return fail(note, "the JSON file could not be created (does its directory exist?)", path);
     }
-    return recorded ? RUNTIME_CHANGE_DONE : out_of_memory(note);
+    return RUNTIME_CHANGE_DONE;
 }
 
 /** Validates, edits and writes the one buffer read, and records the edit made to it. */
