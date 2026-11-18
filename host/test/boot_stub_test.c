@@ -3,7 +3,7 @@
 
 #include "holders.h"
 #include "processes.h"
-#include "processes_request.h"
+#include "processes_holders.h"
 #include "runtime/processes.h"
 
 static char *stub_of(const host_world *world) {
@@ -215,9 +215,8 @@ static void hold_for_this_test(const host_world *world) {
     write_in(world->base.state, "processes/" BACKGROUND_ID ".json", text);
 }
 
-static cJSON *drop_this_test(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
-                             cJSON **refusal) {
-    (void)request;
+static cJSON *drop_this_test(const void *context, const char *path, runtime_holders_record *record, cJSON **refusal) {
+    (void)context;
     (void)refusal;
     runtime_keep_live_holders(record, (double)fixture_process_id());
     return runtime_write_holders(path, record) == SPISOR_OK ? cJSON_CreateObject() : NULL;
@@ -225,9 +224,8 @@ static cJSON *drop_this_test(const runtime_processes_request *request, const cha
 
 /** Releases this test's hold as a launcher does: under the holders lock, keeping what the host recorded. */
 static void release_this_test(const host_world *world) {
-    runtime_processes_request request = {NULL, world->base.state, BACKGROUND_ID};
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_processes_with_holders(&request, drop_this_test, &refusal);
+    cJSON *answer = runtime_processes_with_holders(world->base.state, BACKGROUND_ID, drop_this_test, NULL, &refusal);
     CHECK(answer != NULL && refusal == NULL);
     cJSON_Delete(answer);
     cJSON_Delete(refusal);

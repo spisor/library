@@ -6,7 +6,8 @@
 #include "catalog_answer.h"
 #include "file_times.h"
 #include "node_json_file.h"
-#include "processes_request.h"
+#include "processes.h"
+#include "processes_holders.h"
 #include "run_records.h"
 
 #define RECORD_FIX "send record as a path processes.recordRun answered for this host, or leave it out"
@@ -31,41 +32,28 @@ static cJSON *unwritable(const char *host_id) {
     return runtime_cache_refusal(parts, 3, WRITABLE_STATE_FIX);
 }
 
-static cJSON *stamp_again(const runtime_processes_request *request, const char *record, const cJSON *run,
-                          double check, cJSON **refusal) {
-    runtime_run_stamp stamped = runtime_stamp_run(request->state, request->host_id, record, run, check);
+static cJSON *stamp_again(const runtime_processes_record_request *request, double check, cJSON **refusal) {
+    runtime_run_stamp stamped =
+        runtime_stamp_run(request->state, request->host_id, request->record, request->run, check);
     if (stamped != RUNTIME_RUN_STAMPED) {
-        *refusal = stamped == RUNTIME_RUN_NOT_A_RECORD ? not_a_record(record)
+        *refusal = stamped == RUNTIME_RUN_NOT_A_RECORD ? not_a_record(request->record)
                    : stamped == RUNTIME_RUN_UNWRITABLE ? unwritable(request->host_id)
                                                        : NULL;
         return NULL;
     }
-    return record_answer(record);
+    return record_answer(request->record);
 }
 
-cJSON *runtime_processes_record_run_for(const runtime_processes_request *request, cJSON **refusal) {
-    const cJSON *run = cJSON_GetObjectItemCaseSensitive(request->argument, "run");
-    const cJSON *record = cJSON_GetObjectItemCaseSensitive(request->argument, "record");
-    double check = runtime_processes_positive_member(request->argument, "checkMilliseconds",
-                                                     RUNTIME_DEFAULT_CHECK_MILLISECONDS);
-    if (!cJSON_IsObject(run) || !runtime_is_version_map(run)) {
-        *refusal = runtime_processes_argument_refusal("run", "an object of item ids to the versions this start runs");
-        return NULL;
-    }
-    if (isnan(check)) {
-        *refusal = runtime_processes_argument_refusal("checkMilliseconds", "milliseconds above zero, or leave it out");
-        return NULL;
-    }
-    if (record != NULL && !cJSON_IsString(record)) {
-        *refusal = runtime_processes_argument_refusal("record", "the path processes.recordRun answered, or leave it out");
-        return NULL;
-    }
-    if (record != NULL) {
-        return stamp_again(request, record->valuestring, run, check, refusal);
+cJSON *runtime_processes_record_run(const runtime_processes_record_request *request, cJSON **refusal) {
+    double check =
+        request->check_milliseconds == 0 ? RUNTIME_DEFAULT_CHECK_MILLISECONDS : request->check_milliseconds;
+    *refusal = NULL;
+    if (request->record != NULL) {
+        return stamp_again(request, check, refusal);
     }
     int out_of_memory = 0;
     spisor_prepared_path removal;
-    char *path = runtime_record_run(request->state, request->host_id, run, check, &removal, &out_of_memory);
+    char *path = runtime_record_run(request->state, request->host_id, request->run, check, &removal, &out_of_memory);
     if (path == NULL) {
         *refusal = out_of_memory ? NULL : unwritable(request->host_id);
         return NULL;
@@ -79,44 +67,29 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
     return answer;
 }
 
-cJSON *runtime_processes_live_runs_for(const runtime_processes_request *request, cJSON **refusal) {
-    double now = runtime_processes_positive_member(request->argument, "now", runtime_now_milliseconds());
-    if (isnan(now)) {
-        *refusal = runtime_processes_argument_refusal("now", "milliseconds since the epoch, or leave it out");
-        return NULL;
-    }
+cJSON *runtime_processes_live_runs(const char *state, double now, cJSON **refusal) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || !runtime_catalog_attach(answer, "runs", runtime_live_runs(request->state, now))) {
+    double at = now == 0 ? runtime_now_milliseconds() : now;
+    *refusal = NULL;
+    if (answer == NULL || !runtime_catalog_attach(answer, "runs", runtime_live_runs(state, at))) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-cJSON *runtime_processes_remove_runs_for(const runtime_processes_request *request, cJSON **refusal) {
-    const cJSON *record = cJSON_GetObjectItemCaseSensitive(request->argument, "record");
+int runtime_processes_remove_runs(const char *state, const char *host_id, const char *record, cJSON **refusal) {
     int out_of_memory = 0;
-    if (record != NULL &&
-        (!cJSON_IsString(record) ||
-         !runtime_is_run_record_of(request->state, request->host_id, record->valuestring, &out_of_memory))) {
-        const char *given = cJSON_IsString(record) ? record->valuestring : "a value that is no path";
-        *refusal = out_of_memory ? NULL : not_a_record(given);
-        return NULL;
+    *refusal = NULL;
+    if (record != NULL && !runtime_is_run_record_of(state, host_id, record, &out_of_memory)) {
+        *refusal = out_of_memory ? NULL : not_a_record(record);
+        return 0;
     }
-    cJSON *answer = cJSON_CreateObject();
-    spisor_status removed = answer == NULL       ? SPISOR_OUT_OF_MEMORY
-                            : record == NULL     ? runtime_remove_run_records(request->state, request->host_id)
-                                                 : runtime_remove_run_record(request->state, request->host_id,
-                                                                             record->valuestring);
-    if (removed == SPISOR_OUT_OF_MEMORY) {
-        cJSON_Delete(answer);
-        return NULL;
-    }
-    if (removed != SPISOR_OK) {
-        const char *parts[3] = {"the run records of ", request->host_id, " could not be removed"};
+    spisor_status removed = record == NULL ? runtime_remove_run_records(state, host_id)
+                                           : runtime_remove_run_record(state, host_id, record);
+    if (removed != SPISOR_OK && removed != SPISOR_OUT_OF_MEMORY) {
+        const char *parts[3] = {"the run records of ", host_id, " could not be removed"};
         *refusal = runtime_cache_refusal(parts, 3, WRITABLE_STATE_FIX);
-        cJSON_Delete(answer);
-        return NULL;
     }
-    return answer;
+    return removed == SPISOR_OK;
 }
