@@ -912,7 +912,13 @@ static void every_failure_of_case(const failure_case *each) {
     check_failures++;
 }
 
+/** A label the commands, cache and catalog cases are narrowed to, from the second argument; empty runs them all. */
+static const char *only_label = "";
+
 static void every_failure_of(const failure_case *each) {
+    if (strstr(each->label, only_label) == NULL) {
+        return;
+    }
     int before = check_failures;
     every_failure_of_case(each);
     check_failures = before + settled_out_of_memory_failures("out_of_memory_test", each->label, each->sticky,
@@ -1292,13 +1298,7 @@ static spisor_status resolve_versions(void) {
     return status;
 }
 
-/** A label the cache and catalog cases are narrowed to, from the second argument; empty runs them all. */
-static const char *only_label = "";
-
 static void every_checked_failure(const char *label, operation run, void (*prepare)(void), untouched left_alone) {
-    if (strstr(label, only_label) == NULL) {
-        return;
-    }
     failure_case each = {label, run, prepare, left_alone, NULL, 0, 1};
     every_failure_of(&each);
 }
@@ -1525,7 +1525,8 @@ static void every_command(void) {
 
 /**
  * With the argument `commands` runs only the commands service, with `cache` only the cache and catalog services, and
- * with `install` only install's by_id and ecosystem, whose cases take most of the time, each as a test of its own.
+ * with `install` only install's by_id and ecosystem, whose cases take most of the time, each as a test of its own. Any
+ * other first argument runs the remaining services; a second narrows the commands or other cases to labels holding it.
  */
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
@@ -1553,6 +1554,7 @@ int main(int argc, char **argv) {
     CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
     build_cache_and_catalog_values();
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
+        only_label = argc > 2 ? argv[2] : "";
         every_command();
     } else if (argc > 1 && strcmp(argv[1], "install") == 0) {
         every_install_operation();
@@ -1560,6 +1562,7 @@ int main(int argc, char **argv) {
         only_label = argc > 2 ? argv[2] : "";
         every_cache_and_catalog_operation();
     } else {
+        only_label = argc > 2 ? argv[2] : "";
         every_service_but_commands();
     }
     spisor_value_release(&names);

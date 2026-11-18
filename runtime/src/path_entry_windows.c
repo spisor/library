@@ -41,7 +41,7 @@ typedef struct entry_span {
     int found;
 } entry_span;
 
-typedef int (*entry_matcher)(const wchar_t *entry, size_t length, const void *wanted);
+typedef int (*entry_matcher)(const wchar_t *entry, size_t length, void *wanted);
 
 static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
@@ -177,19 +177,29 @@ static int delete_path_value(HKEY key) {
     return status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND;
 }
 
-static int is_same_directory(const wchar_t *entry, size_t length, const void *wanted) {
+typedef struct directory_match {
+    const char *directory;
+    int out_of_memory;
+} directory_match;
+
+static int is_same_directory(const wchar_t *entry, size_t length, void *wanted) {
+    directory_match *match = wanted;
     char *narrow = to_narrow(entry, length);
-    int same = narrow != NULL && runtime_change_paths_equal(narrow, (const char *)wanted);
+    if (narrow == NULL) {
+        match->out_of_memory = 1;
+        return 0;
+    }
+    int same = runtime_change_paths_equal(narrow, match->directory);
     spisor_memory_release(narrow);
     return same;
 }
 
-static int is_exact_entry(const wchar_t *entry, size_t length, const void *wanted) {
+static int is_exact_entry(const wchar_t *entry, size_t length, void *wanted) {
     const wchar_t *exact = wanted;
     return wcslen(exact) == length && wmemcmp(entry, exact, length) == 0;
 }
 
-static entry_span last_entry(const wchar_t *text, entry_matcher matches, const void *wanted) {
+static entry_span last_entry(const wchar_t *text, entry_matcher matches, void *wanted) {
     entry_span span = {0, 0, 0};
     size_t length = wcslen(text);
     size_t start = 0;
@@ -206,8 +216,13 @@ static entry_span last_entry(const wchar_t *text, entry_matcher matches, const v
     return span;
 }
 
-static int holds_directory(const path_value *value, const char *directory) {
-    return last_entry(value->text, is_same_directory, directory).found;
+static runtime_change_presence holds_directory(const path_value *value, const char *directory) {
+    directory_match match = {directory, 0};
+    int found = last_entry(value->text, is_same_directory, &match).found;
+    if (match.out_of_memory) {
+        return RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY;
+    }
+    return found ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
 }
 
 static int needs_separator(const wchar_t *text) {
@@ -328,9 +343,12 @@ runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON 
     if (read != SPISOR_OK) {
         return unread_environment(read, note, directory);
     }
-    int present = holds_directory(&value, directory);
+    runtime_change_presence presence = holds_directory(&value, directory);
+    int present = presence == RUNTIME_CHANGE_PRESENT;
     runtime_change_step step = RUNTIME_CHANGE_DONE;
-    if (present && holder == NULL) {
+    if (presence == RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY) {
+        step = run_out_of_memory(note, directory);
+    } else if (present && holder == NULL) {
         step = RUNTIME_CHANGE_UNNEEDED;
     } else {
         *record = new_record(change, holder, &value, present);
@@ -366,7 +384,11 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
     if (read != SPISOR_OK) {
         return unread_environment(read, note, directory);
     }
-    spisor_status done = holds_directory(&value, directory) ? SPISOR_OK : append_entry(key, &value, record);
+    runtime_change_presence presence = holds_directory(&value, directory);
+    spisor_status done = SPISOR_OUT_OF_MEMORY;
+    if (presence != RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY) {
+        done = presence == RUNTIME_CHANGE_PRESENT ? SPISOR_OK : append_entry(key, &value, record);
+    }
     close_environment(key, &value);
     if (done == SPISOR_OUT_OF_MEMORY) {
         return run_out_of_memory(note, directory);
@@ -382,9 +404,9 @@ runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
     if (read != SPISOR_OK) {
         return read == SPISOR_OUT_OF_MEMORY ? RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY : RUNTIME_CHANGE_ABSENT;
     }
-    int on_disk = holds_directory(&value, text_of(record, "directory"));
+    runtime_change_presence on_disk = holds_directory(&value, text_of(record, "directory"));
     close_environment(key, &value);
-    return on_disk ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
+    return on_disk;
 }
 
 static int remove_entry(HKEY key, const path_value *value, const cJSON *record) {
