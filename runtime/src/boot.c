@@ -38,25 +38,37 @@ static cJSON *refuse_problem(char *problem, const char *fix, cJSON **refusal) {
     return NULL;
 }
 
+/** Whether cache and host_id are usable, *refusal set as every boot operation refuses them when they are not. */
+static int is_checked_host(const char *cache, const char *host_id, cJSON **refusal) {
+    if (cache == NULL || cache[0] == 0) {
+        runtime_catalog_refuse_member("cache", "the cache folder's path", refusal);
+        return 0;
+    }
+    if (host_id == NULL || host_id[0] == 0) {
+        *refusal = runtime_refusal("no host id was given", HOST_ID_FIRST_FIX);
+        return 0;
+    }
+    if (!runtime_is_plain_host_id(host_id)) {
+        char *problem = NULL;
+        spisor_memory_release(runtime_boot_hint_path(cache, host_id, &problem));
+        refuse_problem(problem, RUNTIME_PLAIN_HOST_ID_FIX, refusal);
+        return 0;
+    }
+    return 1;
+}
+
 /** The argument's cache and host id, or NULL with *refusal set as every boot operation refuses them. */
 static const char *checked_host(const cJSON *argument, const char **cache, cJSON **refusal) {
     const char *host_id = nonempty_text(argument, "hostId");
     *cache = nonempty_text(argument, "cache");
-    if (*cache == NULL) {
-        runtime_catalog_refuse_member("cache", "the cache folder's path", refusal);
-        return NULL;
-    }
-    if (host_id == NULL) {
-        *refusal = runtime_refusal("no host id was given", HOST_ID_FIRST_FIX);
-        return NULL;
-    }
-    if (!runtime_is_plain_host_id(host_id)) {
-        char *problem = NULL;
-        spisor_memory_release(runtime_boot_hint_path(*cache, host_id, &problem));
-        refuse_problem(problem, RUNTIME_PLAIN_HOST_ID_FIX, refusal);
-        return NULL;
-    }
-    return host_id;
+    return is_checked_host(*cache, host_id, refusal) ? host_id : NULL;
+}
+
+cJSON *runtime_boot_resolve_host(const char *cache, const char *host_id, cJSON **refusal) {
+    *refusal = NULL;
+    return is_checked_host(cache, host_id, refusal)
+               ? runtime_resolve_booted_host(cache, host_id, runtime_platform_key(), refusal)
+               : NULL;
 }
 
 static cJSON *hint_answer(cJSON *hint) {
