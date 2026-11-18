@@ -37,27 +37,24 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OUT_OF_MEMORY_SUITE, "paths' resolve", 0, MEASURED_ON_WINDOWS,
-     "paths.c declared_segment: segment.c runtime_portable_segment answers NULL out of memory, read as a bad "
-     "segment, answering OK"},
     {OUT_OF_MEMORY_SUITE, "secrets' set", 0, MEASURED_ON_WINDOWS,
      "secret_file.c: file.c spisor_probe_file reads a failed wide path as an absent file"},
     {OUT_OF_MEMORY_SUITE, "config's set", 0, MEASURED_ON_WINDOWS,
-     "config.c runtime_config_name: segment.c runtime_portable_segment answers NULL out of memory, read as a bad "
-     "segment"},
+     "config.c lock_layer: file.c spisor_make_directories reads a failed is_directory wide path as no directory, "
+     "answering OK"},
     {OUT_OF_MEMORY_SUITE, "settings' all", 0, MEASURED_ON_WINDOWS,
      "config.c read_settings_file: file.c spisor_probe_file reads a failed wide path as an absent file, answering "
      "OK"},
     {OUT_OF_MEMORY_SUITE, "log's write", 0, MEASURED_ON_WINDOWS,
-     "log.c is_portable_id_usable: segment.c runtime_portable_segment answers NULL out of memory, read as a bad "
-     "segment"},
+     "config.c read_settings_file: file.c spisor_probe_file reads a failed wide path as an absent file, so the "
+     "line is appended before OUT_OF_MEMORY"},
     {OUT_OF_MEMORY_SUITE, "fetch's get", 0, MEASURED_ON_WINDOWS,
      "fetch.c open_partial reads a failed allocation as an unwritable destination"},
     {OUT_OF_MEMORY_SUITE, "detect's on_path", 0, MEASURED_ON_WINDOWS,
      "on_path.c found_in: directory_tree.c runtime_list_directory reads a failed child path as an unreadable "
      "directory, answering NONE"},
     {OUT_OF_MEMORY_SUITE, "registry's register_host", 0, MEASURED_ON_WINDOWS,
-     "registry.c is_host_id allocates through runtime_portable_segment and reads NULL as no host id"},
+     "registry.c register_with: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
     {OUT_OF_MEMORY_SUITE, "changes' apply", 0, MEASURED_ON_WINDOWS,
      "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
     {OUT_OF_MEMORY_SUITE, "changes' apply after settling", 0, MEASURED_ON_WINDOWS,
@@ -124,11 +121,11 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "entry refused", 0, MEASURED_ON_WINDOWS,
      "changes.c: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
     {OPERATIONS_SUITE, "application", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_registry_load: registry.c is_host_id allocates through runtime_portable_segment and "
-     "reads NULL as no host id"},
+     "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
+     "a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "application on path", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_registry_load: registry.c is_host_id allocates through runtime_portable_segment and "
-     "reads NULL as no host id"},
+     "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
+     "a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "runtime", 0, MEASURED_ON_WINDOWS,
      "install_runtime.c runtime_on_path: directory_tree.c runtime_list_directory reads a failed child path as an "
      "unreadable directory, so a node on the PATH is acquired again"},
@@ -141,9 +138,6 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "updates' rollback", 1, MEASURED_ON_WINDOWS,
      "host_references.c write_text: file.c move_over reads a failed wide path as a failed move, so the hint is "
      "rolled back and the references are not"},
-    {OPERATIONS_SUITE, "hosts' list", 1, MEASURED_ON_WINDOWS,
-     "registry.c list_each: registry.c is_host_id allocates through runtime_portable_segment and reads NULL as no "
-     "host id, leaving the host out of an OK list"},
     {OPERATIONS_SUITE, "updates' recorded", 0, MEASURED_ON_WINDOWS,
      "updates_recorded.c runtime_updates_recorded_for: file.c spisor_file_exists reads a failed wide path as an "
      "absent file"},
@@ -179,14 +173,14 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "processes' hold starting", 0, MEASURED_ON_WINDOWS,
      "processes.c runtime_processes_with_holders reads a failed spisor_make_directories as an unwritable folder"},
     {OPERATIONS_SUITE, "hosts' register_host", 0, MEASURED_ON_WINDOWS,
-     "registry.c is_host_id allocates through runtime_portable_segment and reads NULL as no host id"},
+     "registry.c register_with: hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
     {OPERATIONS_SUITE, "hosts' list", 0, MEASURED_ON_WINDOWS,
      "directory_tree.c runtime_list_directory reads a failed child path as an unreadable directory"},
     {OPERATIONS_SUITE, "hosts' remove", 0, MEASURED_ON_WINDOWS,
      "hosts_lock.c runtime_hosts_lock reads a failed lock path as the lock being held"},
     {OPERATIONS_SUITE, "hosts' start", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_usable_registration: registry.c is_host_id allocates through runtime_portable_segment "
-     "and reads NULL as no host id"},
+     "registry.c runtime_usable_registration: json_file.c spisor_read_json_file through file.c spisor_probe_file "
+     "reads a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "loader's home", 0, MEASURED_ON_WINDOWS,
      "application_home.c candidate_home reads a failed runtime_is_followed_directory as no directory"},
     {OPERATIONS_SUITE, "loader's installed", 0, MEASURED_ON_WINDOWS,

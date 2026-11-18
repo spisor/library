@@ -58,10 +58,13 @@ static int read_plugin_folders(const runtime_paths_resolve_argument *argument, p
     if (!runtime_has_shape(places->size, RUNTIME_SHAPE_THROUGH(runtime_plugin_places, cache))) {
         return 0;
     }
-    folder_name = argument->plugin == NULL ? NULL : runtime_portable_segment(argument->plugin);
-    if (folder_name == NULL || !runtime_is_usable_home(places->portable) || !runtime_is_usable_home(places->cache)) {
-        spisor_memory_release(folder_name);
+    if (argument->plugin == NULL || !runtime_trims_to_portable_segment(argument->plugin) ||
+        !runtime_is_usable_home(places->portable) || !runtime_is_usable_home(places->cache)) {
         return 0;
+    }
+    if (runtime_portable_segment(argument->plugin, &folder_name) != SPISOR_OK) {
+        *out_of_memory = 1;
+        return 1;
     }
     folders->portable = runtime_plugin_folder(places->portable, folder_name);
     folders->cache = runtime_plugin_folder(places->cache, folder_name);

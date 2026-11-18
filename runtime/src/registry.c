@@ -62,10 +62,7 @@ static char *copy_text(const char *text) {
 }
 
 static int is_host_id(const char *id) {
-    char *segment = runtime_portable_segment(id);
-    int portable = segment != NULL && strcmp(segment, id) == 0;
-    spisor_memory_release(segment);
-    return portable;
+    return runtime_is_portable_segment(id);
 }
 
 static char *registration_path(const char *state, const char *id) {

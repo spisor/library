@@ -206,10 +206,7 @@ static int is_portable_id_usable(const runtime_log_request *entry) {
     if (entry->portable == NULL) {
         return 1;
     }
-    char *folder_name = runtime_portable_segment(entry->plugin);
-    int usable = folder_name != NULL;
-    spisor_memory_release(folder_name);
-    return usable;
+    return runtime_trims_to_portable_segment(entry->plugin);
 }
 
 static spisor_status refuse_append(spisor_refusal *refusal) {
@@ -278,11 +275,12 @@ spisor_status runtime_write_log(const runtime_log_request *entry, runtime_log_co
     if (!is_portable_id_usable(entry)) {
         return refuse_id(refusal);
     }
-    char *name = runtime_config_name(entry->plugin, entry->config);
-    if (name == NULL) {
-        return refuse_name(refusal);
+    char *name;
+    spisor_status status = runtime_config_name(entry->plugin, entry->config, &name);
+    if (status != SPISOR_OK) {
+        return status == SPISOR_MALFORMED ? refuse_name(refusal) : status;
     }
-    spisor_status status = write_entry(entry, name, console, refusal);
+    status = write_entry(entry, name, console, refusal);
     spisor_memory_release(name);
     return status;
 }

@@ -65,10 +65,14 @@ static char *copy_text(const char *text) {
     return copy;
 }
 
-char *runtime_config_name(const char *plugin, const cJSON *config) {
+static const char *declared_or_plugin_name(const char *plugin, const cJSON *config) {
     const cJSON *declared = cJSON_GetObjectItemCaseSensitive(config, "name");
     int declared_usable = cJSON_IsString(declared) && declared->valuestring[0] != '\0';
-    return runtime_portable_segment(declared_usable ? declared->valuestring : plugin);
+    return declared_usable ? declared->valuestring : plugin;
+}
+
+spisor_status runtime_config_name(const char *plugin, const cJSON *config, char **name) {
+    return runtime_portable_segment(declared_or_plugin_name(plugin, config), name);
 }
 
 static void free_target(config_target *target) {
@@ -121,9 +125,9 @@ static locate_status locate_in_config_directory(const runtime_config_request *re
 }
 
 static locate_status locate_application(const runtime_config_request *request, config_target *target) {
-    char *name = runtime_config_name(request->plugin, request->config);
-    if (name == NULL) {
-        return UNUSABLE_NAME;
+    char *name;
+    if (runtime_config_name(request->plugin, request->config, &name) != SPISOR_OK) {
+        return LOCATE_OUT_OF_MEMORY;
     }
     locate_status status = locate_in_config_directory(request, name, target);
     spisor_memory_release(name);
@@ -135,9 +139,9 @@ static locate_status locate_portable(const runtime_config_request *request, conf
     if (request->portable == NULL) {
         return LOCATED;
     }
-    char *folder_name = runtime_portable_segment(request->plugin);
-    if (folder_name == NULL) {
-        return UNUSABLE_ID;
+    char *folder_name;
+    if (runtime_portable_segment(request->plugin, &folder_name) != SPISOR_OK) {
+        return LOCATE_OUT_OF_MEMORY;
     }
     char *folder = runtime_plugin_folder(request->portable, folder_name);
     locate_status status = folder != NULL ? join_target(folder, PORTABLE_CONFIG_FILE, target) : LOCATE_OUT_OF_MEMORY;
@@ -146,8 +150,19 @@ static locate_status locate_portable(const runtime_config_request *request, conf
     return status;
 }
 
+static locate_status unusable_name_or_id(const runtime_config_request *request) {
+    if (!runtime_trims_to_portable_segment(declared_or_plugin_name(request->plugin, request->config))) {
+        return UNUSABLE_NAME;
+    }
+    return request->portable != NULL && !runtime_trims_to_portable_segment(request->plugin) ? UNUSABLE_ID : LOCATED;
+}
+
 static locate_status locate_plugin_targets(const runtime_config_request *request, config_targets *targets) {
-    locate_status status = locate_application(request, &targets->application);
+    locate_status status = unusable_name_or_id(request);
+    if (status != LOCATED) {
+        return status;
+    }
+    status = locate_application(request, &targets->application);
     if (status == LOCATED) {
         status = locate_portable(request, &targets->portable);
     }

@@ -11,13 +11,13 @@
 
 /**
  * The name a plugin's config file and log carry: config.name when it is a non-empty string, else the
- * plugin id, then trimmed and checked as a portable path segment. Freed; NULL when the
- * result is not a usable segment or memory runs out. config may be NULL.
+ * plugin id, then trimmed and checked as a portable path segment, in *name and freed: SPISOR_MALFORMED when the
+ * result is not a usable segment, SPISOR_OUT_OF_MEMORY when memory runs out. config may be NULL.
  *
  * @implNote The emptiness test is before trimming, as the TypeScript || it replaced is, so a name of spaces is
  * refused rather than falling back to the id.
  */
-char *runtime_config_name(const char *plugin, const cJSON *config);
+spisor_status runtime_config_name(const char *plugin, const cJSON *config, char **name);
 
 /**
  * The merged settings tree of one plugin, as a new tree freed with cJSON_Delete: config.defaults, then
