@@ -1,4 +1,5 @@
 #include "cache_plan.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -68,7 +69,7 @@ static int platform_files(const cJSON *entry, const char *version, const char *p
         const char *fix_parts[3] = {"use a platform the item lists, or ask its publisher for a ", platform, " build"};
         char *fix = runtime_cache_text(fix_parts, 3);
         int answer = fix == NULL ? 0 : refuse(refusal, parts, 2, fix);
-        free(fix);
+        spisor_memory_release(fix);
         return answer;
     }
     files->own = cJSON_IsObject(built) ? cJSON_GetObjectItemCaseSensitive(built, "files") : NULL;
@@ -124,11 +125,11 @@ static char *version_directory(const char *cache, const char *id, const cJSON *i
     if (directory != NULL && !runtime_cache_is_strictly_inside(root, directory)) {
         const char *parts[5] = {id, "@", version, " would be installed outside ", root};
         refuse(refusal, parts, 5, "use an item id and version the catalog schema accepts");
-        free(directory);
+        spisor_memory_release(directory);
         directory = NULL;
     }
-    free(folder);
-    free(root);
+    spisor_memory_release(folder);
+    spisor_memory_release(root);
     return directory;
 }
 
@@ -212,7 +213,7 @@ static int place_files(runtime_cache_plan *plan, const version_files *files, cJS
     cJSON *merged = NULL;
     size_t count = 0;
     const cJSON **keys = marker == NULL ? NULL : merged_keys(files, &merged, &count);
-    plan->placements = count == 0 ? NULL : calloc(count, sizeof *plan->placements);
+    plan->placements = count == 0 ? NULL : spisor_memory_allocate_zeroed(count, sizeof *plan->placements);
     int placed = marker != NULL && merged != NULL && (count == 0 || (keys != NULL && plan->placements != NULL));
     for (size_t index = 0; placed && index < count; index++) {
         runtime_cache_placement *placement = &plan->placements[plan->count++];
@@ -221,9 +222,9 @@ static int place_files(runtime_cache_plan *plan, const version_files *files, cJS
         placement->destination = runtime_cache_resolve(plan->directory, &placement->key, 1);
         placed = placement->destination != NULL && check_destination(plan->directory, marker, placement, refusal);
     }
-    free((void *)keys);
+    spisor_memory_release((void *)keys);
     cJSON_Delete(merged);
-    free(marker);
+    spisor_memory_release(marker);
     return placed;
 }
 
@@ -245,9 +246,9 @@ int runtime_cache_plan_install(const char *cache, const char *id, const cJSON *i
 
 void runtime_cache_free_plan(runtime_cache_plan *plan) {
     for (size_t index = 0; index < plan->count; index++) {
-        free(plan->placements[index].destination);
+        spisor_memory_release(plan->placements[index].destination);
     }
-    free(plan->placements);
-    free(plan->directory);
+    spisor_memory_release(plan->placements);
+    spisor_memory_release(plan->directory);
     memset(plan, 0, sizeof *plan);
 }

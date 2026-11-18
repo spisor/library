@@ -11,6 +11,7 @@
 #endif
 
 #include "change_kinds.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
@@ -38,7 +39,7 @@ static void file_is(const two_step *step, const char *expected, const char *labe
     size_t length = 0;
     char *actual = (char *)spisor_read_file(step->file, &length);
     check_text(actual, expected, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void prepare(two_step *step, const char *key_json, const char *value_json) {
@@ -98,7 +99,7 @@ static void the_record_holds_none_of_the_users_bytes(void) {
     perform(&step);
     char *record = cJSON_PrintUnformatted(step.record);
     CHECK(record != NULL && strstr(record, "SECRET-TOKEN") == NULL && strstr(record, "oauthAccount") == NULL);
-    free(record);
+    spisor_memory_release(record);
     reverse(&step, RUNTIME_CHANGE_REVERSED);
     file_is(&step, secret_file, "exact reverse from the inverse splice");
 }

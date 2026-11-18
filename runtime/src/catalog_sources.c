@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "catalog.h"
+#include "allocation.h"
 #include "catalog_answer.h"
 #include "catalog_merge.h"
 #include "spisor/json_write.h"
@@ -14,7 +15,7 @@ static int add_skipped(cJSON *skipped, int index, char *problem) {
     if (!added) {
         cJSON_Delete(entry);
     }
-    free(problem);
+    spisor_memory_release(problem);
     return added;
 }
 
@@ -94,7 +95,7 @@ static int merge_reading(cJSON *items, const runtime_catalog_reading *reading, c
             cJSON_Delete(copy);
         }
     }
-    free(members);
+    spisor_memory_release(members);
     return merged;
 }
 
@@ -129,7 +130,7 @@ static int read_readings(const cJSON *catalogs, runtime_catalog_reading *reading
         if (!runtime_catalog_source_of(cJSON_GetObjectItemCaseSensitive(entry, "source"), &readings[*count].source,
                                        &problem)) {
             int out_of_memory = problem == NULL;
-            free(problem);
+            spisor_memory_release(problem);
             return out_of_memory ? -1 : 0;
         }
         readings[(*count)++].catalog = catalog;
@@ -138,21 +139,22 @@ static int read_readings(const cJSON *catalogs, runtime_catalog_reading *reading
 }
 
 static cJSON *merge(const cJSON *catalogs, cJSON **refusal) {
-    runtime_catalog_reading *readings = malloc(((size_t)cJSON_GetArraySize(catalogs) + 1) * sizeof *readings);
+    size_t reading_count = (size_t)cJSON_GetArraySize(catalogs) + 1;
+    runtime_catalog_reading *readings = spisor_memory_allocate(reading_count * sizeof *readings);
     if (readings == NULL) {
         return NULL;
     }
     size_t count;
     int usable = read_readings(catalogs, readings, &count);
     if (usable != 1) {
-        free(readings);
+        spisor_memory_release(readings);
         return usable < 0 ? NULL : runtime_catalog_refuse_member("catalogs", "an array of {source, catalog}, each catalog with items",
                                              refusal);
     }
     cJSON *result = cJSON_CreateObject();
     cJSON *shadowed = cJSON_CreateArray();
     cJSON *catalog = shadowed == NULL ? NULL : runtime_catalog_merge_readings(readings, count, shadowed);
-    free(readings);
+    spisor_memory_release(readings);
     int built = runtime_catalog_attach(result, "catalog", catalog);
     if (!(built && runtime_catalog_attach(result, "shadowed", shadowed))) {
         if (!built) {

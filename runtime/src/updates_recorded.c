@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "catalog_answer.h"
 #include "host_references.h"
 #include "node_json_file.h"
@@ -15,8 +16,8 @@ static cJSON *unreadable(const runtime_updates_request *request, const char *pat
     const char *fix_whole[2] = {fix_start, " records it again"};
     char *fix = fix_start == NULL ? NULL : runtime_cache_text(fix_whole, 2);
     cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 5, fix);
-    free(fix);
-    free(fix_start);
+    spisor_memory_release(fix);
+    spisor_memory_release(fix_start);
     return refusal;
 }
 
@@ -37,7 +38,7 @@ static cJSON *run_answer(const cJSON *run) {
 cJSON *runtime_updates_recorded_for(const runtime_updates_request *request, cJSON **refusal) {
     char *problem = NULL;
     char *path = runtime_host_references_path(request->state, request->host_id, &problem);
-    free(problem);
+    spisor_memory_release(problem);
     if (path == NULL) {
         return NULL;
     }
@@ -59,6 +60,6 @@ cJSON *runtime_updates_recorded_for(const runtime_updates_request *request, cJSO
         }
         cJSON_Delete(recorded);
     }
-    free(path);
+    spisor_memory_release(path);
     return answer;
 }

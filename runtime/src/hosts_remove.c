@@ -1,4 +1,5 @@
 #include "hosts.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -56,11 +57,11 @@ static int remove_holders(const removal *request) {
             runtime_unlock_holders(guard);
         }
     }
-    free(lock_problem);
-    free(path_problem);
-    free(lock);
-    free(path);
-    free(folder);
+    spisor_memory_release(lock_problem);
+    spisor_memory_release(path_problem);
+    spisor_memory_release(lock);
+    spisor_memory_release(path);
+    spisor_memory_release(folder);
     return removed;
 }
 
@@ -69,8 +70,8 @@ static int remove_boot_hint(const removal *request) {
     char *problem = NULL;
     char *hint = runtime_boot_hint_path(request->cache, request->id, &problem);
     int removed = hint != NULL && runtime_remove_file_entry(hint) == RUNTIME_ENTRY_DONE;
-    free(problem);
-    free(hint);
+    spisor_memory_release(problem);
+    spisor_memory_release(hint);
     return removed;
 }
 

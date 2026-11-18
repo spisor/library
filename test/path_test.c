@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -23,7 +24,7 @@ static cJSON *load_vectors(void) {
         return NULL;
     }
     cJSON *vectors = cJSON_ParseWithLength((const char *)bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     return vectors;
 }
 
@@ -49,9 +50,9 @@ static void check_join_vector(const cJSON *vector, const platform_rule *rule) {
     if (!check_text(actual, expected, rule->name)) {
         char *printed = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(vector, "segments"));
         fprintf(stderr, "  for segments %s\n", printed);
-        free(printed);
+        spisor_memory_release(printed);
     }
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void check_absolute_vector(const cJSON *vector, const platform_rule *rule) {
@@ -89,7 +90,7 @@ static int matches_every_vector(void) {
 static void expands(int windows, const char *path, const char *home, const char *expected) {
     char *actual = spisor_expand_home(windows, path, home);
     check_text(actual, expected, path);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void expands_home(void) {

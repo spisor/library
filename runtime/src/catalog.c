@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 static cJSON *refuse_index(const runtime_catalog_refusal *refusal) {
     char *message = runtime_catalog_refusal_message(refusal);
     cJSON *refused = message == NULL ? NULL : runtime_refusal(message, refusal->fix);
-    free(message);
+    spisor_memory_release(message);
     return refused;
 }
 

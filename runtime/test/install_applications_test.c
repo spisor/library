@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "spisor/allocation.h"
 #include "install_call.h"
 
 #if !defined(_WIN32)
@@ -38,7 +39,7 @@ static char *install_binary(const install_base *base, const char *binary) {
     char *path = joined(directory, name);
     write_file(path, "#!/bin/sh\n");
     CHECK(chmod(path, 0755) == 0);
-    free(path);
+    spisor_memory_release(path);
 #endif
     return directory;
 }
@@ -46,7 +47,7 @@ static char *install_binary(const install_base *base, const char *binary) {
 static void make_directory_in_user(const install_base *base, const char *name) {
     char *directory = joined(base->user, name);
     CHECK(spisor_make_directories(directory) == 1);
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 static cJSON *install_choosing(const install_base *base, const char *choices_json, const char *path) {
@@ -87,7 +88,7 @@ static cJSON *recorded_provenance(const install_base *base) {
 static char *stored_version(const install_base *base) {
     cJSON *store = json_in(base->cache, "methods/fake/installed.json");
     const char *version = text_at(store, "claude-pkg");
-    char *copy = version == NULL ? NULL : malloc(strlen(version) + 1);
+    char *copy = version == NULL ? NULL : spisor_memory_allocate(strlen(version) + 1);
     if (copy != NULL) {
         strcpy(copy, version);
     }
@@ -141,7 +142,7 @@ static void installs_through_the_method_a_choice_names(void) {
     expect_json(cJSON_GetObjectItemCaseSensitive(report, "missing"), "[]", "nothing missing");
     char *version = stored_version(&base);
     check_text(version, "1.0.0", "fake store");
-    free(version);
+    spisor_memory_release(version);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -215,11 +216,11 @@ static void registers_one_loader_per_installed_or_detected_application_with_its_
         char *home = joined(base.user, home_rest);
         check_text(text_at(registration, "home"), home, "loader home");
         check_text(text_at(cJSON_GetObjectItemCaseSensitive(registration, "provenance"), "method"), "catalog", "catalog provenance");
-        free(home);
+        spisor_memory_release(home);
         cJSON_Delete(registration);
     }
-    free(opencode);
-    free(bin);
+    spisor_memory_release(opencode);
+    spisor_memory_release(bin);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -234,7 +235,7 @@ static void records_the_registered_version_of_each_loader_keeping_what_it_schedu
     cJSON *references = json_in(base.state, "bundles/" LOADER_ID ".json");
     expect_json(references, "{\"run\":{\"" LOADER_ID "\":\"1.0.0\"},\"next\":{\"" LOADER_ID "\":\"2.0.0\"}}", "loader references");
     cJSON_Delete(references);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -245,7 +246,7 @@ static cJSON *loader_settings(const install_base *base) {
     cJSON *values = runtime_ecosystem_settings_values(home, base->portable, &refusal);
     CHECK(values != NULL && refusal == NULL);
     cJSON_Delete(refusal);
-    free(home);
+    spisor_memory_release(home);
     return values;
 }
 
@@ -279,14 +280,14 @@ static void installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_h
     cJSON_Delete(registration);
     cJSON_Delete(settings);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
 static void set_loader_setting(const install_base *base, const char *content) {
     char *home = joined(base->user, "homes/claude");
     write_in(home, "config/settings.json", content);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(void) {
@@ -309,7 +310,7 @@ static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(v
     CHECK(strstr(text_at(row, "fix"), "settings.json") != NULL);
     cJSON_Delete(settings);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -330,9 +331,9 @@ static void names_the_portable_settings_file_when_the_portable_layer_disables_a_
     char fix[2048];
     snprintf(fix, sizeof fix, "set plugins.plugin-stub.enabled to true in %s", file);
     check_text(text_at(row, "fix"), fix, "the fix names the portable settings file that holds the false");
-    free(file);
+    spisor_memory_release(file);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -351,7 +352,7 @@ static void reports_a_required_plugin_this_machine_cannot_install_naming_it(void
           !cJSON_HasObjectItem(cJSON_GetObjectItemCaseSensitive(settings, "plugins"), "plugin-stub"));
     cJSON_Delete(settings);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -372,7 +373,7 @@ static void refuses_a_loader_whose_required_plugin_no_catalog_lists_without_a_ro
     cJSON *registration = registration_of(&base, LOADER_ID);
     CHECK(registration == NULL);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -404,9 +405,9 @@ static void installs_and_registers_each_background_host_in_a_home_of_its_own(voi
     cJSON *references = json_in(base.state, "bundles/keeper.json");
     expect_json(cJSON_GetObjectItemCaseSensitive(references, "run"), "{\"keeper\":\"1.0.0\"}", "background reference");
     cJSON_Delete(references);
-    free(home);
+    spisor_memory_release(home);
     cJSON_Delete(registration);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -421,7 +422,7 @@ static void reports_a_background_host_the_catalog_does_not_list_and_still_regist
     cJSON *registration = registration_of(&base, LOADER_ID);
     CHECK(registration != NULL);
     cJSON_Delete(registration);
-    free(bin);
+    spisor_memory_release(bin);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -445,7 +446,7 @@ static void brings_the_javascript_host_for_an_entry_declaring_it_runs_there_what
     CHECK(exists_in(base.cache, "bundles/javascript-host"));
     CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
     cJSON_Delete(report);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -473,8 +474,8 @@ static void writes_each_entry_reports_one_without_and_removing_the_loader_takes_
     CHECK(exists_in(base.user, "homes/claude/settings.json") && exists_in(base.state, "entries/claude-loader"));
     remove_host_id(&base, "claude-loader");
     CHECK(!exists_in(base.user, "homes/claude") && !exists_in(base.state, "entries"));
-    free(before);
-    free(bin);
+    spisor_memory_release(before);
+    spisor_memory_release(bin);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -489,7 +490,7 @@ static void keeps_the_first_install_s_provenance_on_a_second_install(void) {
     cJSON_Delete(install_choosing(&base, "{}", bin));
     cJSON *second = recorded_provenance(&base);
     CHECK(first != NULL && second != NULL && cJSON_Compare(first, second, 1));
-    free(bin);
+    spisor_memory_release(bin);
     cJSON_Delete(second);
     cJSON_Delete(first);
     finish_install_base(&base);
@@ -519,11 +520,11 @@ static void requests_each_command_running_spisor_boot_with_launch(void) {
     char *boot = runtime_boot_stub_path(base.cache);
     CHECK(shim != NULL && strstr(shim, boot) != NULL && strstr(shim, "spisor-host") != NULL &&
           strstr(shim, "launch") != NULL && strstr(shim, LOADER_ID) != NULL);
-    free(boot);
-    free(shim);
+    spisor_memory_release(boot);
+    spisor_memory_release(shim);
     cJSON_Delete(registration);
     remove_host_id(&base, LOADER_ID);
-    free(bin);
+    spisor_memory_release(bin);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -564,7 +565,7 @@ static void records_method_path_and_the_binary_s_path_for_an_application_found_o
     const char *location = text_at(recorded, "location");
     CHECK(location != NULL && strncmp(location, bin, strlen(bin)) == 0);
     cJSON_Delete(recorded);
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -578,7 +579,7 @@ static void updates_through_the_recorded_method_and_refreshes_the_recorded_versi
     cJSON_Delete(answer.tree);
     char *version = stored_version(&base);
     check_text(version, "2.0.0", "updated store");
-    free(version);
+    spisor_memory_release(version);
     cJSON *provenance = recorded_provenance(&base);
     check_text(text_at(provenance, "version"), "2.0.0", "recorded version");
     cJSON_Delete(provenance);
@@ -613,7 +614,7 @@ static void refuses_an_update_and_a_remove_of_a_path_application_naming_where_it
         CHECK(text_at(answer.tree, "fix") != NULL && strstr(text_at(answer.tree, "fix"), "whatever installed it") != NULL);
         cJSON_Delete(answer.tree);
     }
-    free(bin);
+    spisor_memory_release(bin);
     finish_install_base(&base);
 }
 
@@ -626,7 +627,7 @@ static void make_registration_unrewritable(const install_base *base) {
     write_file(path, text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void reports_an_update_done_noting_a_version_that_could_not_be_recorded(void) {
@@ -643,7 +644,7 @@ static void reports_an_update_done_noting_a_version_that_could_not_be_recorded(v
     CHECK(text_at(unrecorded, "message") != NULL && text_at(unrecorded, "fix") != NULL);
     char *version = stored_version(&base);
     check_text(version, "2.0.0", "the application was updated");
-    free(version);
+    spisor_memory_release(version);
     cJSON_Delete(answer.tree);
     finish_install_base(&base);
 }
@@ -656,7 +657,7 @@ static void never_removes_the_application_when_its_loader_is_removed(void) {
     remove_host_id(&base, LOADER_ID);
     char *version = stored_version(&base);
     check_text(version, "1.0.0", "application kept");
-    free(version);
+    spisor_memory_release(version);
     finish_install_base(&base);
 }
 

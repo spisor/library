@@ -1,4 +1,5 @@
 #include "cache_place.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -12,7 +13,7 @@
 
 static char *copy_of(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -21,12 +22,12 @@ static char *copy_of(const char *text) {
 
 static char *followed_by(char *path, const char *segment) {
     if (spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, segment)) {
-        free(path);
+        spisor_memory_release(path);
         return copy_of(segment);
     }
     const char *parts[2] = {path, segment};
     char *joined = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parts, 2);
-    free(path);
+    spisor_memory_release(path);
     return joined;
 }
 
@@ -36,7 +37,7 @@ char *runtime_cache_resolve(const char *base, const char *const *segments, size_
         path = followed_by(path, segments[index]);
     }
     char *resolved = path == NULL ? NULL : runtime_catalog_resolve_path(path);
-    free(path);
+    spisor_memory_release(path);
     return resolved;
 }
 
@@ -76,11 +77,11 @@ char *runtime_cache_bundle_directory(const char *cache, const char *id, const ch
                  runtime_cache_is_strictly_inside(bundles, versions) &&
                  runtime_cache_is_strictly_inside(versions, directory);
     if (!inside) {
-        free(directory);
+        spisor_memory_release(directory);
         directory = NULL;
     }
-    free(versions);
-    free(folder);
-    free(bundles);
+    spisor_memory_release(versions);
+    spisor_memory_release(folder);
+    spisor_memory_release(bundles);
     return directory;
 }

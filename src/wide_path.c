@@ -1,4 +1,5 @@
 #include "wide_path.h"
+#include "allocation.h"
 
 #if defined(_WIN32)
 #include <stdlib.h>
@@ -12,9 +13,9 @@ static wchar_t *utf16_of(const char *text) {
     if (length <= 0) {
         return NULL;
     }
-    wchar_t *wide = malloc((size_t)length * sizeof(wchar_t));
+    wchar_t *wide = spisor_memory_allocate((size_t)length * sizeof(wchar_t));
     if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
-        free(wide);
+        spisor_memory_release(wide);
         return NULL;
     }
     return wide;
@@ -22,9 +23,9 @@ static wchar_t *utf16_of(const char *text) {
 
 static wchar_t *full_path_of(const wchar_t *wide) {
     DWORD needed = GetFullPathNameW(wide, 0, NULL, NULL);
-    wchar_t *full = needed == 0 ? NULL : malloc((size_t)needed * sizeof(wchar_t));
+    wchar_t *full = needed == 0 ? NULL : spisor_memory_allocate((size_t)needed * sizeof(wchar_t));
     if (full != NULL && GetFullPathNameW(wide, needed, full, NULL) >= needed) {
-        free(full);
+        spisor_memory_release(full);
         return NULL;
     }
     return full;
@@ -39,7 +40,7 @@ static wchar_t *prefixed(const wchar_t *full) {
     const wchar_t *prefix = is_share ? L"\\\\?\\UNC\\" : L"\\\\?\\";
     const wchar_t *rest = is_share ? full + 2 : full;
     size_t length = wcslen(prefix) + wcslen(rest) + 1;
-    wchar_t *path = malloc(length * sizeof(wchar_t));
+    wchar_t *path = spisor_memory_allocate(length * sizeof(wchar_t));
     if (path != NULL) {
         wcscpy(path, prefix);
         wcscat(path, rest);
@@ -54,12 +55,12 @@ wchar_t *spisor_wide_path(const char *path) {
     }
     wchar_t *full = full_path_of(wide);
     if (full == NULL || wcslen(full) < SHORT_PATH_LIMIT) {
-        free(full);
+        spisor_memory_release(full);
         return wide;
     }
-    free(wide);
+    spisor_memory_release(wide);
     wchar_t *extended = prefixed(full);
-    free(full);
+    spisor_memory_release(full);
     return extended;
 }
 #else

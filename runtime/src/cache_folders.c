@@ -1,4 +1,5 @@
 #include "cache_folders.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +27,7 @@ cJSON *runtime_cache_folder_names(const char *const *segments, size_t count) {
         }
         runtime_free_directory_listing(&listing);
     }
-    free(path);
+    spisor_memory_release(path);
     return names;
 }
 
@@ -52,6 +53,6 @@ cJSON *runtime_cache_json_names(const char *const *segments, size_t count) {
         }
         runtime_free_directory_listing(&listing);
     }
-    free(folder);
+    spisor_memory_release(folder);
     return names;
 }

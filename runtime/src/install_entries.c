@@ -49,11 +49,11 @@ static char *joined(const char *const *segments, size_t count) {
 }
 
 static void finish_context(entry_context *context) {
-    free(context->entries);
-    free(context->entry_root);
-    free(context->boot);
-    free(context->hint);
-    free(context->bundles);
+    spisor_memory_release(context->entries);
+    spisor_memory_release(context->entry_root);
+    spisor_memory_release(context->boot);
+    spisor_memory_release(context->hint);
+    spisor_memory_release(context->bundles);
 }
 
 static int start_context(entry_context *context, const entry_loader *loader) {
@@ -85,7 +85,7 @@ static int add_directory(cJSON *changes, char *path) {
     cJSON *change = path == NULL ? NULL : cJSON_CreateObject();
     int built = change != NULL && cJSON_AddStringToObject(change, "kind", "directory") != NULL &&
                 cJSON_AddStringToObject(change, "path", path) != NULL;
-    free(path);
+    spisor_memory_release(path);
     if (!built) {
         cJSON_Delete(change);
         return 0;
@@ -98,8 +98,8 @@ static int add_file(cJSON *changes, char *path, char *content) {
     int built = change != NULL && cJSON_AddStringToObject(change, "kind", "file") != NULL &&
                 cJSON_AddStringToObject(change, "path", path) != NULL &&
                 cJSON_AddStringToObject(change, "content", content) != NULL;
-    free(path);
-    free(content);
+    spisor_memory_release(path);
+    spisor_memory_release(content);
     if (!built) {
         cJSON_Delete(change);
         return 0;
@@ -113,7 +113,7 @@ static char *json_content(cJSON *value) {
     cJSON_Delete(value);
     const char *parts[2] = {pretty, "\n"};
     char *content = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    free(pretty);
+    spisor_memory_release(pretty);
     return content;
 }
 
@@ -122,7 +122,7 @@ static char *expanded_path(const char *template_text, const runtime_entry_values
     char *expanded = runtime_entry_expand(template_text, values);
     const char *segments[1] = {expanded};
     char *path = expanded == NULL ? NULL : joined(segments, 1);
-    free(expanded);
+    spisor_memory_release(expanded);
     return path;
 }
 
@@ -130,7 +130,7 @@ static int expand_strings_in(cJSON *value, const runtime_entry_values *values) {
     if (cJSON_IsString(value)) {
         char *expanded = runtime_entry_expand(value->valuestring, values);
         char *set = expanded == NULL ? NULL : cJSON_SetValuestring(value, expanded);
-        free(expanded);
+        spisor_memory_release(expanded);
         return set != NULL;
     }
     cJSON *child;
@@ -200,7 +200,7 @@ static cJSON *setting_change(const entry_context *context, const cJSON *setting)
     cJSON *change = file == NULL || key == NULL || value == NULL ? NULL : cJSON_CreateObject();
     int built = change != NULL && cJSON_AddStringToObject(change, "kind", "json-key") != NULL &&
                 cJSON_AddStringToObject(change, "file", file) != NULL;
-    free(file);
+    spisor_memory_release(file);
     if (!built) {
         cJSON_Delete(key);
         cJSON_Delete(value);
@@ -356,8 +356,8 @@ static cJSON *not_written(const entry_loader *loader) {
         cJSON_Delete(answer);
         answer = NULL;
     }
-    free(fix);
-    free(message);
+    spisor_memory_release(fix);
+    spisor_memory_release(message);
     return answer;
 }
 
@@ -384,7 +384,7 @@ static char *with_issue(char *message, const cJSON *issue) {
     const char *parts[6] = {message, " (", runtime_install_text(issue, "path"), ": ",
                             runtime_install_text(issue, "detail"), ")"};
     char *extended = runtime_cache_text(parts, 6);
-    free(message);
+    spisor_memory_release(message);
     return extended;
 }
 
@@ -400,7 +400,7 @@ static char *issues_message(const cJSON *issues) {
 static cJSON *application_facts_refusal(const cJSON *issues) {
     char *message = issues_message(issues);
     cJSON *refusal = message == NULL ? NULL : runtime_refusal(message, runtime_install_text(issues->child, "fix"));
-    free(message);
+    spisor_memory_release(message);
     return refusal;
 }
 

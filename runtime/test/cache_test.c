@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "spisor/allocation.h"
 #include "cache_damaged.h"
 #include "cache_call.h"
 #include "catalog_call.h"
@@ -59,21 +60,21 @@ static char *in_cache(const char *rest) {
 static int exists_in_cache(const char *rest) {
     char *path = in_cache(rest);
     int exists = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return exists;
 }
 
 static void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    free(parent);
+    spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
 }
 
 static void write_in(const char *base, const char *rest, const char *content) {
     char *path = joined(base, rest);
     write_file(path, content);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static char *read_text(const char *path) {
@@ -85,8 +86,8 @@ static void expect_file_text(const char *base, const char *rest, const char *exp
     char *path = joined(base, rest);
     char *text = read_text(path);
     check_text(text, expected, label);
-    free(text);
-    free(path);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
 }
 
 static void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
@@ -103,7 +104,7 @@ static char *source_url(const char *name, const char *content) {
     char *path = joined(scratch, rest);
     write_file(path, content);
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
-    free(path);
+    spisor_memory_release(path);
     return url;
 }
 
@@ -112,7 +113,7 @@ static void remove_source(const char *name) {
     snprintf(rest, sizeof rest, "sources/%s", name);
     char *path = joined(scratch, rest);
     CHECK(runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE);
-    free(path);
+    spisor_memory_release(path);
 }
 
 /** A FileRef naming content, served from a source file called name holding served. */
@@ -124,7 +125,7 @@ static cJSON *reference_serving(const char *name, const char *content, const cha
     cJSON_AddStringToObject(reference, "url", url);
     cJSON_AddStringToObject(reference, "sha256", sha256);
     cJSON_AddNumberToObject(reference, "size", (double)size);
-    free(url);
+    spisor_memory_release(url);
     return reference;
 }
 
@@ -245,7 +246,7 @@ static char *listing_of(const char *rest) {
         }
         runtime_free_directory_listing(&listing);
     }
-    free(path);
+    spisor_memory_release(path);
     char *text = cJSON_PrintUnformatted(names);
     cJSON_Delete(names);
     return text;
@@ -260,7 +261,7 @@ static void expect_listing(const char *rest, const char *expected_json, const ch
 static char *resolved_in_cache(const char *rest) {
     char *path = in_cache(rest);
     char *resolved = runtime_catalog_resolve_path(path);
-    free(path);
+    spisor_memory_release(path);
     return resolved;
 }
 
@@ -415,7 +416,7 @@ static void it_refuses_when_its_rename_fails_and_the_destination_holds_other_byt
     expect_refused(install("a", single_file_item(reference_to("p.js", INDEX_JS)), "1.0.0", "linux-x64"),
                    "could not be written", "held with other bytes");
     CloseHandle(held);
-    free(destination);
+    spisor_memory_release(destination);
     expect_listing("bundles/a/1.0.0", "[\"p.js\"]", "held with other bytes leaves nothing else");
     finish_cache();
 }
@@ -425,7 +426,7 @@ static void it_leaves_no_temporary_file_behind_even_when_the_rename_into_place_f
     start_cache("occupied");
     char *occupied = in_cache("bundles/a/1.0.0/p.js/occupied");
     CHECK(spisor_make_directories(occupied) == 1);
-    free(occupied);
+    spisor_memory_release(occupied);
     expect_refused(install("a", single_file_item(reference_to("p.js", INDEX_JS)), "1.0.0", "linux-x64"),
                    "could not be written", "occupied");
     expect_listing("bundles/a/1.0.0", "[\"p.js\"]", "occupied leaves no temporary file");
@@ -445,7 +446,7 @@ static void it_installs_a_plugin_s_files_into_its_bundle_version_directory(void)
     cJSON_Delete(expected);
     expect_answer(install("a", plugin_item(), "1.0.0", "linux-x64"), expected_json, "plugin installed");
     cJSON_free(expected_json);
-    free(directory);
+    spisor_memory_release(directory);
     expect_file_text(cache, "bundles/a/1.0.0/dist/index.js", INDEX_JS, "plugin content");
     finish_cache();
 }
@@ -476,7 +477,7 @@ static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_
 static char *read_text_in(const char *rest) {
     char *path = in_cache(rest);
     char *text = read_text(path);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
@@ -490,7 +491,7 @@ static void it_reports_nothing_for_a_version_whose_marker_is_gone(void) {
     CHECK(damage == NULL);
     CHECK(out_of_memory == 0);
     cJSON_Delete(damage);
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -529,7 +530,7 @@ static void it_reports_each_installed_version_a_start_would_refuse_or_whose_hash
     CHECK(cJSON_IsArray(none) && cJSON_GetArraySize(none) == 0);
     cJSON_Delete(none);
     char *original = read_text_in("bundles/a/1.0.0/dist/index.js");
-    char *changed = malloc(strlen(original) + 1);
+    char *changed = spisor_memory_allocate(strlen(original) + 1);
     strcpy(changed, original);
     changed[0] = changed[0] == 'x' ? 'y' : 'x';
     write_in(cache, "bundles/a/1.0.0/dist/index.js", changed);
@@ -543,9 +544,9 @@ static void it_reports_each_installed_version_a_start_would_refuse_or_whose_hash
     expect_one_damaged("records no size for", "no sizes");
     cJSON_free(stripped);
     cJSON_Delete(parsed_marker);
-    free(marker);
-    free(changed);
-    free(original);
+    spisor_memory_release(marker);
+    spisor_memory_release(changed);
+    spisor_memory_release(original);
     finish_cache();
 }
 
@@ -580,7 +581,7 @@ static void it_leaves_no_runnable_version_when_the_second_of_two_files_is_refuse
     char *directory = in_cache("bundles/a/1.0.0");
     catalog_answer check = check_directory(directory);
     expect_answer(check, "{\"kind\":\"absent\"}", "second leaves the version absent");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -707,7 +708,7 @@ static void it_completes_an_interrupted_install_on_the_next_install(void) {
     start_cache("interrupted");
     char *plugin_destination = in_cache("bundles/a/1.0.0/plugin.json");
     write_file(plugin_destination, PLUGIN_JSON);
-    free(plugin_destination);
+    spisor_memory_release(plugin_destination);
     char *directory = in_cache("bundles/a/1.0.0");
     expect_answer(check_directory(directory), "{\"kind\":\"absent\"}", "interrupted before");
     catalog_answer answer = install("a", plugin_item(), "1.0.0", "linux-x64");
@@ -716,7 +717,7 @@ static void it_completes_an_interrupted_install_on_the_next_install(void) {
     expect_member(answer.tree, "fetched", "[\"dist/index.js\"]", "interrupted fetched");
     cJSON_Delete(answer.tree);
     expect_answer(check_directory(directory), "{\"kind\":\"intact\"}", "interrupted after");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -763,7 +764,7 @@ static void it_answers_intact_for_a_version_whose_files_carry_their_recorded_has
     start_cache("intact");
     char *directory = marked_bundle("a", "2.0.0", 1);
     expect_answer(check_directory(directory), "{\"kind\":\"intact\"}", "intact");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -771,7 +772,7 @@ static void it_answers_absent_for_a_version_that_is_not_installed(void) {
     start_cache("absent");
     char *directory = in_cache("bundles/a/2.0.0");
     expect_answer(check_directory(directory), "{\"kind\":\"absent\"}", "not installed");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -779,7 +780,7 @@ static void it_answers_absent_for_a_version_with_no_completion_marker(void) {
     start_cache("unmarked");
     char *directory = marked_bundle("a", "1.0.0", 0);
     expect_answer(check_directory(directory), "{\"kind\":\"absent\"}", "unmarked");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -788,7 +789,7 @@ static void it_answers_damaged_for_a_corrupted_file_naming_it(void) {
     char *directory = marked_bundle("a", "1.0.0", 1);
     write_in(directory, "index.js", "export default {}!");
     expect_damaged(check_directory(directory), "index.js", "file index.js of", "corrupted");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -797,9 +798,9 @@ static void it_answers_damaged_for_a_missing_file(void) {
     char *directory = marked_bundle("a", "1.0.0", 1);
     char *file = joined(directory, "index.js");
     CHECK(runtime_remove_file_entry(file) == RUNTIME_ENTRY_DONE);
-    free(file);
+    spisor_memory_release(file);
     expect_damaged(check_directory(directory), "index.js", "is missing", "missing");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -810,7 +811,7 @@ static void it_answers_damaged_for_a_completion_marker_that_is_not_readable(void
     expect_damaged(check_directory(directory), NULL, "is not readable", "unreadable marker");
     write_in(directory, ".installed.json", "{\"files\":{\"index.js\":\"ABC\"}}");
     expect_damaged(check_directory(directory), NULL, "is not readable", "marker with a bad hash");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -820,7 +821,7 @@ static void it_answers_damaged_for_a_marker_that_names_a_file_outside_its_versio
     write_in(directory, ".installed.json",
              "{\"files\":{\"../../outside.js\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
     expect_damaged(check_directory(directory), "../../outside.js", "which is not a file of", "outside");
-    free(directory);
+    spisor_memory_release(directory);
     finish_cache();
 }
 
@@ -830,7 +831,7 @@ static void make_version(const char *rest, const char *marker) {
     if (marker != NULL) {
         write_in(directory, ".installed.json", marker);
     }
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 static void it_answers_each_id_s_versions_that_carry_a_readable_completion_marker(void) {
@@ -841,7 +842,7 @@ static void it_answers_each_id_s_versions_that_carry_a_readable_completion_marke
     make_version("bundles/b/1.0.0", "{\"files\":{\"plugin.json\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}");
     char *present = in_cache("bundles/b/1.0.0");
     write_in(present, "plugin.json", "{}");
-    free(present);
+    spisor_memory_release(present);
     make_version("libraries/runtime/0.1.0/linux-x64", "{\"files\":{}}");
     make_version("libraries/runtime/0.2.0/win32-x64", "{\"files\":{}}");
     make_version("libraries/runtime/0.3.0/linux-x64", NULL);
@@ -874,7 +875,7 @@ static void installed_bundle(const char *id, const char *version, int marked) {
     if (marked) {
         write_in(directory, ".installed.json", "{\"files\":{}}");
     }
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 static void installed_library(const char *id, const char *version, const char *platform, int marked) {
@@ -885,7 +886,7 @@ static void installed_library(const char *id, const char *version, const char *p
     if (marked) {
         write_in(directory, ".installed.json", "{\"files\":{}}");
     }
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 static int bundle_present(const char *id, const char *version) {
@@ -950,7 +951,7 @@ static void age_tree(const char *path, double milliseconds) {
         } else {
             set_modified(child, milliseconds);
         }
-        free(child);
+        spisor_memory_release(child);
     }
     runtime_free_directory_listing(&listing);
     set_modified(path, milliseconds);
@@ -959,15 +960,15 @@ static void age_tree(const char *path, double milliseconds) {
 static void age_in_cache(const char *rest, double hours) {
     char *path = in_cache(rest);
     age_tree(path, now_milliseconds() - hours * HOUR_MILLISECONDS);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void expect_removed(const char *expected_json, const char *label) {
     catalog_answer answer = sweep();
-    char *wrapped = malloc(strlen(expected_json) + 16);
+    char *wrapped = spisor_memory_allocate(strlen(expected_json) + 16);
     sprintf(wrapped, "{\"removed\":%s}", expected_json);
     expect_answer(answer, wrapped, label);
-    free(wrapped);
+    spisor_memory_release(wrapped);
 }
 
 static void it_keeps_every_version_a_reference_file_names_and_the_newest_installed(void) {
@@ -1041,7 +1042,7 @@ static void it_does_not_follow_a_reference_file_s_names_out_of_the_bundles_folde
     record_references("claude-code", "{\"run\":{\"..\":\"..\",\"a\":\"../../../outside\"},\"next\":{\"a\":\"../..\"}}");
     expect_removed("[\"a@1.0.0\"]", "escape");
     CHECK(spisor_file_exists(outside));
-    free(outside);
+    spisor_memory_release(outside);
     finish_cache();
 }
 
@@ -1092,7 +1093,7 @@ static void it_keeps_an_unmarked_bundle_version_while_any_one_of_its_files_is_re
     char *directory = in_cache("bundles/a/2.0.0");
     write_in(directory, "index.js", "still arriving");
     set_modified(directory, now_milliseconds() - 25 * HOUR_MILLISECONDS);
-    free(directory);
+    spisor_memory_release(directory);
     expect_removed("[]", "arriving");
     finish_cache();
 }
@@ -1141,7 +1142,7 @@ static void it_skips_a_reference_file_that_is_not_two_maps_of_versions(void) {
     record_references("wrong", "{\"run\":{\"a\":1,\"b\":\"3.0.0\"},\"next\":{\"a\":\"4.0.0\"}}");
     char *folder = joined(state, "bundles/folder.json");
     CHECK(spisor_make_directories(folder) == 1);
-    free(folder);
+    spisor_memory_release(folder);
     expect_removed("[\"a@3.0.0\",\"a@4.0.0\"]", "broken references");
     finish_cache();
 }
@@ -1187,7 +1188,7 @@ static int run_record_present(const char *host, const char *name) {
     snprintf(rest, sizeof rest, "bundles/runs/%s/%s", host, name);
     char *path = joined(state, rest);
     int present = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return present;
 }
 
@@ -1362,7 +1363,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     expect_removed("[\"a@1.0.0\"]", "deep sweep");
     CHECK(!spisor_file_exists(directory));
     CHECK(bundle_present("a", "2.0.0"));
-    free(directory);
+    spisor_memory_release(directory);
     CHECK(runtime_remove_tree(deep) == 1);
     finish_cache();
 }

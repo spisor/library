@@ -1,4 +1,5 @@
 #include "catalog_source.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,7 @@ static char *kind_problem(const cJSON *kind) {
     runtime_catalog_text_add(&text, "unknown or incomplete catalog source kind ");
     runtime_catalog_text_add(&text, written);
     if (kind == NULL) {
-        free(written);
+        spisor_memory_release(written);
     } else {
         cJSON_free(written);
     }
@@ -66,13 +67,13 @@ cJSON *runtime_catalog_source_json(const runtime_catalog_location *source) {
 int runtime_catalog_sources_of(const cJSON *array, runtime_catalog_location **sources, size_t *count, char **problem) {
     *problem = NULL;
     *count = 0;
-    *sources = malloc(((size_t)cJSON_GetArraySize(array) + 1) * sizeof **sources);
+    *sources = spisor_memory_allocate(((size_t)cJSON_GetArraySize(array) + 1) * sizeof **sources);
     if (*sources == NULL) {
         return 0;
     }
     for (const cJSON *entry = array->child; entry != NULL; entry = entry->next) {
         if (!runtime_catalog_source_of(entry, &(*sources)[*count], problem)) {
-            free(*sources);
+            spisor_memory_release(*sources);
             *sources = NULL;
             return 0;
         }

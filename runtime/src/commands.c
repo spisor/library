@@ -3,6 +3,7 @@
 #endif
 
 #include "commands.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -181,9 +182,9 @@ static char *shim_file(const char *shims, const char *name, size_t index) {
 #if defined(_WIN32)
 static char *utf8_of(const wchar_t *wide) {
     int size = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
-    char *text = size > 0 ? malloc((size_t)size) : NULL;
+    char *text = size > 0 ? spisor_memory_allocate((size_t)size) : NULL;
     if (text != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, text, size, NULL, NULL) != size) {
-        free(text);
+        spisor_memory_release(text);
         text = NULL;
     }
     return text;
@@ -200,12 +201,12 @@ static char *utf8_of(const wchar_t *wide) {
  */
 static wchar_t *module_path(HMODULE module, size_t *capacity) {
     for (*capacity = MAX_PATH; *capacity <= 32768; *capacity *= 2) {
-        wchar_t *path = malloc(*capacity * sizeof(wchar_t));
+        wchar_t *path = spisor_memory_allocate(*capacity * sizeof(wchar_t));
         DWORD length = path == NULL ? 0 : GetModuleFileNameW(module, path, (DWORD)*capacity);
         if (length > 0 && length < *capacity) {
             return path;
         }
-        free(path);
+        spisor_memory_release(path);
         if (length == 0) {
             return NULL;
         }
@@ -224,20 +225,21 @@ static char *launcher_path(void) {
     wchar_t *slash = path == NULL ? NULL : wcsrchr(path, L'\\');
     size_t name_offset = slash == NULL ? 0 : (size_t)(slash + 1 - path);
     size_t needed = name_offset + wcslen(LAUNCHER_FILE_NAME) + 1;
-    wchar_t *launcher = slash == NULL ? NULL : realloc(path, (needed > capacity ? needed : capacity) * sizeof(wchar_t));
+    size_t launcher_capacity = needed > capacity ? needed : capacity;
+    wchar_t *launcher = slash == NULL ? NULL : spisor_memory_reallocate(path, launcher_capacity * sizeof(wchar_t));
     if (launcher == NULL) {
-        free(path);
+        spisor_memory_release(path);
         return NULL;
     }
     wcscpy_s(launcher + name_offset, needed - name_offset, LAUNCHER_FILE_NAME);
     char *text = utf8_of(launcher);
-    free(launcher);
+    spisor_memory_release(launcher);
     return text;
 }
 
 static char *backslashed(const char *path) {
     size_t length = strlen(path);
-    char *copy = malloc(length + 1);
+    char *copy = spisor_memory_allocate(length + 1);
     if (copy != NULL) {
         for (size_t index = 0; index <= length; index++) {
             copy[index] = path[index] == '/' ? '\\' : path[index];
@@ -260,11 +262,11 @@ static char *shim_text(const char *target, const cJSON *arguments) {
     cJSON_ArrayForEach(argument, arguments) {
         size += strlen(argument->valuestring) + 1;
     }
-    char *content = malloc(size);
+    char *content = spisor_memory_allocate(size);
     char *windows_target = backslashed(target);
     if (content == NULL || windows_target == NULL) {
-        free(content);
-        free(windows_target);
+        spisor_memory_release(content);
+        spisor_memory_release(windows_target);
         return NULL;
     }
     size_t used = append_line(content, 0, RUNTIME_SHIM_FORMAT);
@@ -273,7 +275,7 @@ static char *shim_text(const char *target, const cJSON *arguments) {
         used = append_line(content, used, argument->valuestring);
     }
     content[used] = '\0';
-    free(windows_target);
+    spisor_memory_release(windows_target);
     return content;
 }
 
@@ -285,8 +287,8 @@ static cJSON *shim_change(const char *path, size_t index, const char *target, co
                    (index == 0 ? launcher != NULL && cJSON_AddStringToObject(change, "source", launcher) != NULL
                                : content != NULL && cJSON_AddStringToObject(change, "content", content) != NULL) &&
                    cJSON_AddTrueToObject(change, "executable") != NULL;
-    free(launcher);
-    free(content);
+    spisor_memory_release(launcher);
+    spisor_memory_release(content);
     if (!complete) {
         cJSON_Delete(change);
         return NULL;
@@ -327,7 +329,7 @@ static char *shim_content(const char *target, const cJSON *arguments) {
     cJSON_ArrayForEach(argument, arguments) {
         size += quoted_size(argument->valuestring);
     }
-    char *content = malloc(size);
+    char *content = spisor_memory_allocate(size);
     if (content == NULL) {
         return NULL;
     }
@@ -347,7 +349,7 @@ static cJSON *shim_change(const char *path, size_t index, const char *target, co
     int complete = change != NULL && content != NULL &&
                    cJSON_AddStringToObject(change, "content", content) != NULL &&
                    cJSON_AddTrueToObject(change, "executable") != NULL;
-    free(content);
+    spisor_memory_release(content);
     if (!complete) {
         cJSON_Delete(change);
         return NULL;
@@ -394,7 +396,7 @@ static int has_extension_file(const char *directory, const char *name, const cha
     snprintf(file_name, sizeof file_name, "%s%.*s", name, (int)length, extension);
     char *path = joined(directory, file_name);
     int found = path != NULL && is_file_entry(path);
-    free(path);
+    spisor_memory_release(path);
     return found;
 }
 
@@ -412,7 +414,7 @@ static int is_held_in(const char *directory, const char *name, const char *exten
     }
     char *bare = named_with_extension ? joined(directory, name) : NULL;
     int found = bare != NULL && is_file_entry(bare);
-    free(bare);
+    spisor_memory_release(bare);
     return found;
 }
 #else
@@ -422,7 +424,7 @@ static int is_held_in(const char *directory, const char *name, const char *exten
     struct stat status;
     int found = path != NULL && stat(path, &status) == 0 && S_ISREG(status.st_mode) &&
                 (status.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
-    free(path);
+    spisor_memory_release(path);
     return found;
 }
 #endif
@@ -433,14 +435,14 @@ static char *path_directory(const char *start, size_t length) {
         start++;
         length -= 2;
     }
-    char *directory = malloc(length + 1);
+    char *directory = spisor_memory_allocate(length + 1);
     if (directory == NULL) {
         return NULL;
     }
     memcpy(directory, start, length);
     directory[length] = '\0';
     if (length == 0 || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, directory)) {
-        free(directory);
+        spisor_memory_release(directory);
         return NULL;
     }
     return directory;
@@ -458,7 +460,7 @@ int runtime_commands_held_on_path(const cJSON *environment, const char *shims, c
         char *directory = path_directory(start, length);
         held = directory != NULL && !runtime_change_paths_equal(directory, shims) &&
                is_held_in(directory, name, extensions);
-        free(directory);
+        spisor_memory_release(directory);
         start = end == NULL ? start + length : end + 1;
     }
     return held;
@@ -544,10 +546,10 @@ static name_hold is_held_by_a_command(const char *state, const char *name) {
         return NAME_HOLD_OUT_OF_MEMORY;
     }
     if (!runtime_list_directory(directory, &listing)) {
-        free(directory);
+        spisor_memory_release(directory);
         return NAME_FREE;
     }
-    free(directory);
+    spisor_memory_release(directory);
     name_hold hold = NAME_FREE;
     for (size_t index = 0; index < listing.count && hold == NAME_FREE; index++) {
         if (is_registration_file(&listing.entries[index])) {
@@ -563,7 +565,7 @@ static int is_shim_taken(const command_call *call, const char *name) {
     for (size_t index = 0; index < SHIM_FILE_COUNT && !taken; index++) {
         char *path = shim_file(call->shims, name, index);
         taken = path == NULL || runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
-        free(path);
+        spisor_memory_release(path);
     }
     return taken;
 }
@@ -643,7 +645,7 @@ static int write_shim(command_call *call, const char *name) {
     for (size_t index = 0; index < SHIM_FILE_COUNT && written; index++) {
         char *path = shim_file(call->shims, name, index);
         written = apply_change(call, shim_change(path, index, target, arguments));
-        free(path);
+        spisor_memory_release(path);
     }
     return written;
 }
@@ -747,7 +749,7 @@ static cJSON *shim_record(const command_call *call, const char *name, size_t ind
             found = entry;
         }
     }
-    free(path);
+    spisor_memory_release(path);
     return found;
 }
 
@@ -887,8 +889,8 @@ static int copy_shim_file(command_call *call, const char *from, const char *to, 
     } else {
         copied = apply_change(call, copy_change(path, source));
     }
-    free(source);
-    free(path);
+    spisor_memory_release(source);
+    spisor_memory_release(path);
     return copied;
 }
 
@@ -1023,7 +1025,7 @@ spisor_status runtime_commands_serve(runtime_command_operation operation, const 
         snprintf(name, RUNTIME_COMMAND_NAME_SIZE, "%s", call.name);
     }
     cJSON_Delete(call.registration);
-    free(call.shims);
+    spisor_memory_release(call.shims);
     return status;
 }
 

@@ -55,7 +55,7 @@ static char *record_text(const cJSON *run, double check_milliseconds) {
                 runtime_add_reference(record, "run", run);
     char *compact = built ? cJSON_PrintUnformatted(record) : NULL;
     cJSON_Delete(record);
-    char *text = compact == NULL ? NULL : malloc(strlen(compact) + 2);
+    char *text = compact == NULL ? NULL : spisor_memory_allocate(strlen(compact) + 2);
     if (text != NULL) {
         snprintf(text, strlen(compact) + 2, "%s\n", compact);
     }
@@ -76,7 +76,7 @@ static int write_record(const char *path, const cJSON *run, double check_millise
     char *text = record_text(run, check_milliseconds);
     *out_of_memory = text == NULL;
     int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-    free(text);
+    spisor_memory_release(text);
     return written;
 }
 
@@ -87,9 +87,9 @@ char *runtime_record_run(const char *state, const char *host_id, const cJSON *ru
     char *path = made ? record_path(folder) : NULL;
     *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || (made && path == NULL);
     int written = path != NULL && write_record(path, run, check_milliseconds, out_of_memory);
-    free(folder);
+    spisor_memory_release(folder);
     if (!written) {
-        free(path);
+        spisor_memory_release(path);
         return NULL;
     }
     return path;
@@ -110,8 +110,8 @@ int runtime_is_run_record_of(const char *state, const char *host_id, const char 
     int inside = folder != NULL && normal != NULL && strncmp(normal, folder, length) == 0 &&
                  (normal[length] == '/' || normal[length] == '\\') && is_record_name(normal + length + 1);
     *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || (absolute && normal == NULL);
-    free(normal);
-    free(folder);
+    spisor_memory_release(normal);
+    spisor_memory_release(folder);
     return inside;
 }
 
@@ -124,7 +124,7 @@ runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, cons
     char *folder = runs_folder(state, host_id);
     int stamped = folder != NULL && spisor_make_directories(folder) &&
                   write_record(record, run, check_milliseconds, &out_of_memory);
-    free(folder);
+    spisor_memory_release(folder);
     if (folder == NULL || out_of_memory) {
         return RUNTIME_RUN_OUT_OF_MEMORY;
     }
@@ -170,7 +170,7 @@ static int add_host_runs(cJSON *runs, const char *state, const char *host, doubl
         const char *file_segments[5] = {state, "bundles", "runs", host, name->valuestring};
         char *path = runtime_cache_joined(file_segments, 5);
         added = path != NULL && add_live_run(runs, path, now);
-        free(path);
+        spisor_memory_release(path);
     }
     cJSON_Delete(names);
     return added;
@@ -195,7 +195,7 @@ cJSON *runtime_live_runs(const char *state, double now) {
 int runtime_remove_run_records(const char *state, const char *host_id) {
     char *folder = runs_folder(state, host_id);
     int removed = folder != NULL && runtime_remove_tree(folder);
-    free(folder);
+    spisor_memory_release(folder);
     return removed;
 }
 

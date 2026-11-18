@@ -1,4 +1,5 @@
 #include "install_ecosystem.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +40,7 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix_ve
     const char *fix_parts[3] = {fix_verb, application, " with whatever installed it"};
     char *fix = runtime_cache_text(fix_parts, 3);
     cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, count, fix);
-    free(fix);
+    spisor_memory_release(fix);
     return refusal;
 }
 
@@ -115,7 +116,7 @@ static char *reported_version(const application_operation *request, const cJSON 
     const char *version = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "installed"))
                               ? runtime_install_text(answer, "version")
                               : NULL;
-    char *copy = version == NULL ? NULL : malloc(strlen(version) + 1);
+    char *copy = version == NULL ? NULL : spisor_memory_allocate(strlen(version) + 1);
     if (copy != NULL) {
         strcpy(copy, version);
     }
@@ -197,7 +198,7 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
     cJSON *answer = done && !failed && record != VERSION_OUT_OF_MEMORY
                         ? answer_of(request->operation, version, record == VERSION_RECORDED)
                         : NULL;
-    free(version);
+    spisor_memory_release(version);
     cJSON_Delete(mapped);
     cJSON_Delete(registration);
     return answer;

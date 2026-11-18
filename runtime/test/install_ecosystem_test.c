@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "spisor/allocation.h"
 
 #if !defined(_WIN32)
 #include <sys/stat.h>
@@ -75,7 +76,7 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     cJSON_Delete(references);
     cJSON_free(source_json);
     cJSON_Delete(source);
-    free(index);
+    spisor_memory_release(index);
     cJSON_Delete(settings);
     cJSON_Delete(report);
     finish_install_base(&base);
@@ -238,11 +239,11 @@ static void appends_a_source_not_yet_listed_and_never_replaces_the_ones_that_are
     CHECK(cJSON_GetArraySize(sources) == 2);
     check_text(text_at(cJSON_GetArrayItem(sources, 0), "path"), first, "first kept first");
     check_text(text_at(cJSON_GetArrayItem(sources, 1), "path"), second, "second appended");
-    free(first);
+    spisor_memory_release(first);
     cJSON_Delete(settings);
     cJSON_free(second_json);
     cJSON_Delete(quoted);
-    free(second);
+    spisor_memory_release(second);
     finish_install_base(&base);
 }
 
@@ -267,7 +268,7 @@ static void registers_the_host_at_install_keeping_its_provenance_on_a_later_inst
     expect_json(cJSON_GetObjectItemCaseSensitive(again, "provenance"), first, "provenance kept");
     cJSON_free(first);
     cJSON_Delete(again);
-    free(location);
+    spisor_memory_release(location);
     cJSON_Delete(registration);
     finish_install_base(&base);
 }
@@ -317,10 +318,10 @@ static void installs_beside_a_cache_laid_out_under_the_old_names(void) {
     char *old_stub = text_in(base.cache, OLD_STUB_FILE);
     check_text(old_host, OLD_FILE_CONTENT, "old host bundle untouched");
     check_text(old_stub, OLD_FILE_CONTENT, "old boot stub untouched");
-    free(old_stub);
-    free(old_host);
+    spisor_memory_release(old_stub);
+    spisor_memory_release(old_host);
     cJSON_Delete(registration);
-    free(stub);
+    spisor_memory_release(stub);
     cJSON_Delete(placed.tree);
     finish_install_base(&base);
 }
@@ -399,7 +400,7 @@ typedef struct served_build {
 
 /** Bytes that do not compress, so an archive of them takes long enough to fetch and unpack that two installs overlap. */
 static void write_incompressible(const char *path, size_t size) {
-    char *bytes = malloc(size);
+    char *bytes = spisor_memory_allocate(size);
     unsigned long state = 2463534242UL;
     for (size_t index = 0; index < size; index++) {
         state ^= state << 13;
@@ -410,8 +411,8 @@ static void write_incompressible(const char *path, size_t size) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
     CHECK(spisor_replace_file(path, (const uint8_t *)bytes, size) == 1);
-    free(parent);
-    free(bytes);
+    spisor_memory_release(parent);
+    spisor_memory_release(bytes);
 }
 
 /** Packs a one-file runtime archive of size bytes with the OS's tar and makes install.runtime acquire it. */
@@ -452,13 +453,13 @@ static void serve_runtime_build(install_base *base, size_t size, served_build *s
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive);
     snprintf(served->url, sizeof served->url, "%s", url);
     runtime_install_use_runtime_build("1.2.3", served->url, served->sha256);
-    free(url);
-    free(problem);
-    free(tar);
+    spisor_memory_release(url);
+    spisor_memory_release(problem);
+    spisor_memory_release(tar);
     cJSON_Delete(arguments);
-    free(archive);
-    free(executable);
-    free(packing);
+    spisor_memory_release(archive);
+    spisor_memory_release(executable);
+    spisor_memory_release(packing);
 }
 
 static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin(void) {
@@ -506,12 +507,12 @@ static void enter_install_base(install_base *base, const char *root) {
 
 /** Frees what enter_install_base made, leaving the folders to the process that created them. */
 static void leave_install_base(install_base *base) {
-    free(base->portable);
-    free(base->state);
-    free(base->cache);
-    free(base->user);
-    free(base->path);
-    free(base->catalog);
+    spisor_memory_release(base->portable);
+    spisor_memory_release(base->state);
+    spisor_memory_release(base->cache);
+    spisor_memory_release(base->user);
+    spisor_memory_release(base->path);
+    spisor_memory_release(base->catalog);
 }
 
 /** The child half of the concurrent test: one install requesting the comma-separated plugins, from the served build. */
@@ -560,7 +561,7 @@ static void expect_intact(const install_base *base, const char *rest) {
     cJSON *argument = cJSON_CreateObject();
     char *directory = joined(base->cache, rest);
     cJSON_AddStringToObject(argument, "directory", directory);
-    free(directory);
+    spisor_memory_release(directory);
     catalog_answer answer = cache_call(CACHE_CHECK, argument);
     check_text(text_at(answer.tree, "kind"), "intact", rest);
     cJSON_Delete(answer.tree);
@@ -592,9 +593,9 @@ static int runtime_is_intact(const install_base *base) {
     char hash[RUNTIME_SHA256_HEX_SIZE];
     int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) &&
                  strncmp(marker + 65, hash, 64) == 0;
-    free(marker);
-    free(executable);
-    free(directory);
+    spisor_memory_release(marker);
+    spisor_memory_release(executable);
+    spisor_memory_release(directory);
     return intact;
 }
 
@@ -612,7 +613,7 @@ static void expect_no_staging_left(const install_base *base) {
         }
     }
     runtime_free_directory_listing(&listing);
-    free(versions);
+    spisor_memory_release(versions);
 }
 
 /** What runtimes/javascript.json records: the acquired pin at its final executable. */
@@ -630,7 +631,7 @@ static void expect_recorded_runtime(const install_base *base) {
     check_text(text_at(record, "source"), "acquired", "recorded source");
     check_text(text_at(record, "executable"), executable, "recorded executable");
     CHECK(cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(record, "fetched")));
-    free(executable);
+    spisor_memory_release(executable);
     cJSON_Delete(record);
 }
 
@@ -659,7 +660,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     char *binary = joined(base.path, "claude");
     write_file(binary, "#!/bin/sh\n");
     CHECK(chmod(binary, 0755) == 0);
-    free(binary);
+    spisor_memory_release(binary);
 #endif
     const char *first_arguments[5] = {"--child", base.root, "announcer,first-1,first-2,first-3,first-4,first-5,scripted", served.url, served.sha256};
     const char *second_arguments[5] = {"--child", base.root, "viewer,second-1,second-2,second-3,second-4,second-5,scripted", served.url, served.sha256};

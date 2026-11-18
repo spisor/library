@@ -17,7 +17,7 @@ extern "C" {
 int spisor_file_exists(const char *path);
 
 /**
- * The whole file, freed with free, or NULL when it cannot be read. The buffer carries one NUL
+ * The whole file, freed, or NULL when it cannot be read. The buffer carries one NUL
  * past length so a text file can be handed to a string parser directly.
  */
 uint8_t *spisor_read_file(const char *path, size_t *length);

@@ -1,4 +1,5 @@
 #include "log.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,7 +100,7 @@ static spisor_status refuse_entry(spisor_refusal *refusal) {
 
 static char *log_file_name(const char *name, const char *start) {
     size_t size = strlen(name) + ISO_LENGTH + sizeof("-.log");
-    char *file_name = malloc(size);
+    char *file_name = spisor_memory_allocate(size);
     if (file_name == NULL) {
         return NULL;
     }
@@ -122,7 +123,7 @@ static char *log_directory(const char *home, const char *time) {
 
 static char *log_line(const runtime_log_request *entry) {
     size_t size = strlen(entry->message) + ISO_LENGTH + 16;
-    char *line = malloc(size);
+    char *line = spisor_memory_allocate(size);
     if (line != NULL) {
         snprintf(line, size, "[%s] [%s] %s\n", entry->time, LEVEL_TAGS[entry->level], entry->message);
     }
@@ -141,10 +142,10 @@ static int append_line(const runtime_log_request *entry, const char *name) {
         appended = path != NULL && spisor_make_directories(directory) &&
                    spisor_append_file(path, (const uint8_t *)line, strlen(line));
     }
-    free(directory);
-    free(file_name);
-    free(line);
-    free(path);
+    spisor_memory_release(directory);
+    spisor_memory_release(file_name);
+    spisor_memory_release(line);
+    spisor_memory_release(path);
     return appended;
 }
 
@@ -172,7 +173,7 @@ static const char *level_prefix(uint32_t level) {
 static char *console_line(const runtime_log_request *entry, const char *name, int colored) {
     const char *prefix = level_prefix(entry->level);
     size_t size = strlen(name) + strlen(prefix) + strlen(entry->message) + 64;
-    char *line = malloc(size);
+    char *line = spisor_memory_allocate(size);
     if (line == NULL) {
         return NULL;
     }
@@ -207,7 +208,7 @@ static int is_portable_id_usable(const runtime_log_request *entry) {
     }
     char *folder_name = runtime_portable_segment(entry->plugin);
     int usable = folder_name != NULL;
-    free(folder_name);
+    spisor_memory_release(folder_name);
     return usable;
 }
 
@@ -226,7 +227,7 @@ static int pack_console(const runtime_log_request *entry, const char *name, cons
     char *line = should_print(entry, style) ? console_line(entry, name, style->colored && !entry->no_color) : NULL;
     int packed = (line != NULL || !should_print(entry, style)) &&
                  runtime_pack_texts((const char *const *)&line, &console->line, 1, &console->storage);
-    free(line);
+    spisor_memory_release(line);
     return packed;
 }
 
@@ -282,6 +283,6 @@ spisor_status runtime_write_log(const runtime_log_request *entry, runtime_log_co
         return refuse_name(refusal);
     }
     spisor_status status = write_entry(entry, name, console, refusal);
-    free(name);
+    spisor_memory_release(name);
     return status;
 }

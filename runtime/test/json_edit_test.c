@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "json_edit.h"
 #include "spisor/json_kind.h"
 
@@ -26,7 +27,7 @@ static void expect_set(const char *text, const char *key_json, const char *value
     } else {
         check_text("(refused)", expected, label);
     }
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     cJSON_Delete(key);
     cJSON_Delete(value);
 }
@@ -37,7 +38,7 @@ static void expect_remove(const char *text, const char *key_json, int created_fr
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
     int done = json_edit_remove(text, strlen(text), key, created_from, &edited) == JSON_EDIT_DONE;
     check_text(done ? edited.bytes : "(refused)", expected, label);
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     cJSON_Delete(key);
 }
 
@@ -51,8 +52,8 @@ static void expect_round_trip(const char *text, const char *key_json, const char
     CHECK(json_edit_set(text, strlen(text), key, value, &set) == JSON_EDIT_DONE);
     CHECK(set.bytes != NULL && json_edit_remove(set.bytes, set.length, key, created_from, &removed) == JSON_EDIT_DONE);
     check_text(removed.bytes, text, label);
-    free(set.bytes);
-    free(removed.bytes);
+    spisor_memory_release(set.bytes);
+    spisor_memory_release(removed.bytes);
     cJSON_Delete(key);
     cJSON_Delete(value);
 }
@@ -173,7 +174,7 @@ static void a_value_is_found_and_replaced_by_its_bytes(void) {
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_replace_value(text, strlen(text), key, "\"x\"", 3, &edited) == JSON_EDIT_DONE);
     check_text(edited.bytes, "{\"a\": {\"b\": \"x\"}}", "replace by bytes");
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     cJSON_Delete(key);
     CHECK(json_edit_is_empty_object(" { }\n", 5) && !json_edit_is_empty_object("{\"a\":1}", 7));
 }
@@ -184,7 +185,7 @@ static void a_new_document_is_stringify_form(void) {
     json_edit_text created = {NULL, 0, {0, 0, 0}};
     CHECK(json_edit_new_document(key, value, &created));
     check_text(created.bytes, "{\n  \"a\": {\n    \"b\": true\n  }\n}\n", "new document");
-    free(created.bytes);
+    spisor_memory_release(created.bytes);
     cJSON_Delete(key);
     cJSON_Delete(value);
 }

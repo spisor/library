@@ -10,7 +10,7 @@ typedef enum runtime_on_path_status {
 } runtime_on_path_status;
 
 /**
- * Finds the executable the bare command name binary resolves to on the PATH of environment, `*found` freed with free
+ * Finds the executable the bare command name binary resolves to on the PATH of environment, `*found` freed
  * and NULL unless FOUND. A directory that cannot be listed holds nothing. windows chooses the rules, so both run on
  * any OS: on Windows PATH and PATHEXT are found ignoring the case of their names, binary is tried with each PATHEXT
  * extension in its order (.COM;.EXE;.BAT;.CMD when PATHEXT is unset or empty) and then bare, every name matched

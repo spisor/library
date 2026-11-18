@@ -9,7 +9,7 @@ extern "C" {
 
 /**
  * Node's path.win32.join when windows is non-zero, path.posix.join otherwise. The result is
- * freed with free, and is NULL only when memory runs out.
+ * freed, and is NULL only when memory runs out.
  *
  * @implNote Ported from Node 26, including its handling of reserved device names such as CON,
  * which makes join("CONx") answer ".\\CONx" on Windows. Pinned by test/vectors/path-join.json.

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "allocation.h"
 #include "cache_install.h"
 #include "cache_folders.h"
 #include "cache_installed.h"
@@ -148,7 +149,7 @@ static disk_state damage_on_disk(const char *cache, const char *id, const char *
     if (state == DISK_SOUND) {
         state = disk_state_of(runtime_cache_check_version(directory));
     }
-    free(directory);
+    spisor_memory_release(directory);
     return state;
 }
 
@@ -328,7 +329,7 @@ static int report_unwritten_hint(check_progress *progress, const char *name, con
                             ", so every command still boots the version before it"};
     char *message = runtime_cache_text(parts, 6);
     int reported = message != NULL && add_refused(progress->refused, name, message, HINT_FIX);
-    free(message);
+    spisor_memory_release(message);
     return reported;
 }
 
@@ -373,11 +374,11 @@ static int install_one(const runtime_updates_request *request, const check_plan 
         char *message = runtime_cache_text(message_parts, 2);
         done = message != NULL &&
                add_refused(progress->refused, name, message, "add a catalog source that lists it, or disable it");
-        free(message);
+        spisor_memory_release(message);
     } else if (done) {
         done = install_target(request, plan, id, version, name, progress);
     }
-    free(name);
+    spisor_memory_release(name);
     return done;
 }
 

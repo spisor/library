@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/json_kind.h"
 
 typedef struct parsed_failure {
@@ -228,7 +229,7 @@ static char *printed_argument(const char *text) {
 static void check_printed(const char *text, const char *expected) {
     char *printed = printed_argument(text);
     check_text(printed, expected, text);
-    free(printed);
+    spisor_memory_release(printed);
 }
 
 static void refuses_a_nul_in_any_string(void) {

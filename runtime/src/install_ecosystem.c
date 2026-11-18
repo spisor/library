@@ -1,4 +1,5 @@
 #include "install_ecosystem.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -468,8 +469,8 @@ static int are_sources(const cJSON *sources, cJSON **refusal) {
                                 problem == NULL ? "they are not an array" : problem};
         *refusal = runtime_cache_refusal(parts, 2, ECOSYSTEM_FIX);
     }
-    free(problem);
-    free(read);
+    spisor_memory_release(problem);
+    spisor_memory_release(read);
     return usable;
 }
 
@@ -503,7 +504,7 @@ static cJSON *ecosystem_for(const cJSON *argument, runtime_install_ecosystem_tak
     cJSON_Delete(install.run.required_plugins);
     cJSON_Delete(install.values);
     cJSON_Delete(install.run.catalog);
-    free(install.home);
+    spisor_memory_release(install.home);
     return report;
 }
 

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "boot_stub.h"
+#include "allocation.h"
 #include "cache_refusal.h"
 #include "config.h"
 #include "catalog_text.h"
@@ -164,7 +165,7 @@ static cJSON *command_of(const runtime_install_run *run, const char *loader_id, 
                 cJSON_AddStringToObject(command, "target", boot) != NULL &&
                 runtime_install_add_text(arguments, RUNTIME_ECOSYSTEM_HOST_ID) && runtime_install_add_text(arguments, "launch") &&
                 runtime_install_add_text(arguments, loader_id);
-    free(boot);
+    spisor_memory_release(boot);
     if (!built) {
         cJSON_Delete(command);
         return NULL;
@@ -320,7 +321,7 @@ static cJSON *unlisted_plugin_refusal(const catalog_loader *loader, const char *
     cJSON *refusal = message == NULL ? NULL
                                      : runtime_refusal(message, "add a catalog that lists the plugin with spisor-host install "
                                                                 "--catalog <path or url>, then install again");
-    free(message);
+    spisor_memory_release(message);
     return refusal;
 }
 
@@ -333,15 +334,15 @@ static int is_mentioned_enabled(const cJSON *values, const char *id) {
 static int report_disabled_plugin(runtime_install_run *run, const catalog_loader *loader, const char *id) {
     char *key = runtime_install_enabled_key(id);
     char *file = key == NULL ? NULL : runtime_ecosystem_settings_file_holding(loader->home, run->portable, key);
-    free(key);
+    spisor_memory_release(key);
     const char *message_parts[5] = {"the plugin ", id, " that ", loader->id, " requires is disabled"};
     const char *fix_parts[4] = {"set plugins.", id, ".enabled to true in ", file};
     char *message = file == NULL ? NULL : runtime_cache_text(message_parts, 5);
     char *fix = message == NULL ? NULL : runtime_cache_text(fix_parts, 4);
     int reported = fix != NULL && runtime_install_report_unavailable(run->report, id, message, fix);
-    free(fix);
-    free(message);
-    free(file);
+    spisor_memory_release(fix);
+    spisor_memory_release(message);
+    spisor_memory_release(file);
     return reported;
 }
 
@@ -452,7 +453,7 @@ static cJSON *loader_background(runtime_install_run *run, const char *id, const 
     catalog_loader loader = {id, application, install_host(run, id, &out_of_memory), NULL, NULL};
     cJSON *background = loader.version == NULL ? (out_of_memory ? NULL : cJSON_CreateArray()) : register_loader(run, &loader);
     cJSON_Delete(loader.standard);
-    free(loader.home);
+    spisor_memory_release(loader.home);
     return background;
 }
 
@@ -465,7 +466,7 @@ static cJSON *start_of(const runtime_install_run *run, const char *id, const cha
     char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 5);
     *out_of_memory = path == NULL;
     cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
-    free(path);
+    spisor_memory_release(path);
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(run->catalog, "items"), id);
     const char *entry = runtime_install_text(standard, "entry");
     const char *runtime = runtime_install_text(item, "runtime");
@@ -541,6 +542,6 @@ cJSON *runtime_install_register_installed_loader(const runtime_install_run *run,
     cJSON *call = learn(run, &loader, refusal) ? register_call(run, &loader, refusal) : NULL;
     cJSON *registered = call == NULL ? NULL : runtime_call_operation(runtime_hosts_register_operation, call, refusal);
     cJSON_Delete(loader.standard);
-    free(loader.home);
+    spisor_memory_release(loader.home);
     return registered;
 }

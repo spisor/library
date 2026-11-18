@@ -1,6 +1,7 @@
 #ifndef RUNTIME_TEST_UI_CALL_H
 #define RUNTIME_TEST_UI_CALL_H
 
+#include "spisor/allocation.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -59,7 +60,7 @@ static inline const spisor_value *ui_request_value(ui_request *held, const cJSON
 }
 
 static inline void *ui_request_block(ui_request *held, size_t count, size_t width) {
-    void *block = calloc(count + 1, width);
+    void *block = spisor_memory_allocate_zeroed(count + 1, width);
     CHECK(block != NULL && held->block_count < UI_REQUEST_CAPACITY);
     held->blocks[held->block_count++] = block;
     return block;
@@ -70,7 +71,7 @@ static inline void ui_request_release(ui_request *held) {
         spisor_value_release(&held->trees[index]);
     }
     for (size_t index = 0; index < held->block_count; index++) {
-        free(held->blocks[index]);
+        spisor_memory_release(held->blocks[index]);
     }
 }
 
@@ -363,7 +364,7 @@ static inline catalog_answer ui_call(ui_operation operation, cJSON *request) {
                                         ui_plugin_list_call};
     const runtime_ui_definition *ui = runtime_ui_definition_of();
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    ui_request *held = calloc(1, sizeof *held);
+    ui_request *held = spisor_memory_allocate_zeroed(1, sizeof *held);
     catalog_answer result = {0, NULL};
     spisor_status status;
     CHECK(held != NULL);
@@ -375,7 +376,7 @@ static inline catalog_answer ui_call(ui_operation operation, cJSON *request) {
     }
     ui->release_refusal(ui->context, &refusal);
     ui_request_release(held);
-    free(held);
+    spisor_memory_release(held);
     cJSON_Delete(request);
     result.status = (int32_t)status;
     return result;

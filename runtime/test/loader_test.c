@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "loader.h"
 #include "loader_call.h"
@@ -274,9 +275,9 @@ static void takes_the_override_variable_first(void) {
     cJSON *environment = with_variable(with_variable(user_environment(&place), "HUB_CLAUDE_DIR", override),
                                        "CLAUDE_CONFIG_DIR", native);
     check_home(CLAUDE_HOME, environment, override, "override");
-    free(override);
-    free(native);
-    free(place.user);
+    spisor_memory_release(override);
+    spisor_memory_release(native);
+    spisor_memory_release(place.user);
 }
 
 static void takes_the_native_variable_when_there_is_no_override(void) {
@@ -284,8 +285,8 @@ static void takes_the_native_variable_when_there_is_no_override(void) {
     fresh_home(&place, "native");
     char *native = joined_path(place.base, "native");
     check_home(CLAUDE_HOME, with_variable(user_environment(&place), "CLAUDE_CONFIG_DIR", native), native, "native");
-    free(native);
-    free(place.user);
+    spisor_memory_release(native);
+    spisor_memory_release(place.user);
 }
 
 static void treats_an_empty_variable_as_unset(void) {
@@ -295,8 +296,8 @@ static void treats_an_empty_variable_as_unset(void) {
     cJSON *environment =
         with_variable(with_variable(user_environment(&place), "HUB_CLAUDE_DIR", ""), "CLAUDE_CONFIG_DIR", native);
     check_home(CLAUDE_HOME, environment, native, "native");
-    free(native);
-    free(place.user);
+    spisor_memory_release(native);
+    spisor_memory_release(place.user);
 }
 
 static void takes_the_first_candidate_that_exists_with_the_user_home_expanded(void) {
@@ -305,8 +306,8 @@ static void takes_the_first_candidate_that_exists_with_the_user_home_expanded(vo
     char *config = joined_path(place.user, ".config/claude");
     CHECK(spisor_make_directories(config) == 1);
     check_home(CLAUDE_HOME, user_environment(&place), config, "candidate");
-    free(config);
-    free(place.user);
+    spisor_memory_release(config);
+    spisor_memory_release(place.user);
 }
 
 static void falls_back_to_the_first_candidate_when_none_exists_yet(void) {
@@ -314,19 +315,19 @@ static void falls_back_to_the_first_candidate_when_none_exists_yet(void) {
     fresh_home(&place, "default");
     char *claude = joined_path(place.user, ".claude");
     check_home(CLAUDE_HOME, user_environment(&place), claude, "default");
-    free(claude);
-    free(place.user);
+    spisor_memory_release(claude);
+    spisor_memory_release(place.user);
 }
 
 static void does_not_take_a_candidate_that_is_a_file(void) {
     home_scratch place;
     fresh_home(&place, "file");
-    free(touch_file(place.user, ".claude", "", 0644));
+    spisor_memory_release(touch_file(place.user, ".claude", "", 0644));
     char *config = joined_path(place.user, ".config/claude");
     CHECK(spisor_make_directories(config) == 1);
     check_home(CLAUDE_HOME, user_environment(&place), config, "candidate");
-    free(config);
-    free(place.user);
+    spisor_memory_release(config);
+    spisor_memory_release(place.user);
 }
 
 static void refuses_a_relative_override_naming_the_variable_and_its_value(void) {
@@ -336,7 +337,7 @@ static void refuses_a_relative_override_naming_the_variable_and_its_value(void) 
                        "HUB_CLAUDE_DIR", "the variable");
     check_home_refused(CLAUDE_HOME, with_variable(user_environment(&place), "HUB_CLAUDE_DIR", "relative/dir"),
                        "relative/dir", "its value");
-    free(place.user);
+    spisor_memory_release(place.user);
 }
 
 static void takes_the_xdg_subdirectory_after_the_native_variable_and_before_the_candidates(void) {
@@ -347,10 +348,10 @@ static void takes_the_xdg_subdirectory_after_the_native_variable_and_before_the_
     CHECK(spisor_make_directories(opencode) == 1);
     char *expected = joined_path(xdg, "opencode");
     check_home(OPENCODE_HOME, with_variable(user_environment(&place), "XDG_CONFIG_HOME", xdg), expected, "xdg");
-    free(expected);
-    free(opencode);
-    free(xdg);
-    free(place.user);
+    spisor_memory_release(expected);
+    spisor_memory_release(opencode);
+    spisor_memory_release(xdg);
+    spisor_memory_release(place.user);
 }
 
 static void lets_the_native_variable_win_over_xdg_config_home(void) {
@@ -361,9 +362,9 @@ static void lets_the_native_variable_win_over_xdg_config_home(void) {
     cJSON *environment =
         with_variable(with_variable(user_environment(&place), "XDG_CONFIG_HOME", xdg), "OPENCODE_CONFIG_DIR", native);
     check_home(OPENCODE_HOME, environment, native, "native");
-    free(xdg);
-    free(native);
-    free(place.user);
+    spisor_memory_release(xdg);
+    spisor_memory_release(native);
+    spisor_memory_release(place.user);
 }
 
 static void ignores_a_relative_or_empty_xdg_config_home(void) {
@@ -373,8 +374,8 @@ static void ignores_a_relative_or_empty_xdg_config_home(void) {
     check_home(OPENCODE_HOME, with_variable(user_environment(&place), "XDG_CONFIG_HOME", "relative"), expected,
                "default");
     check_home(OPENCODE_HOME, with_variable(user_environment(&place), "XDG_CONFIG_HOME", ""), expected, "default");
-    free(expected);
-    free(place.user);
+    spisor_memory_release(expected);
+    spisor_memory_release(place.user);
 }
 
 static void ignores_xdg_config_home_for_a_home_with_no_xdg_subdir(void) {
@@ -383,9 +384,9 @@ static void ignores_xdg_config_home_for_a_home_with_no_xdg_subdir(void) {
     char *xdg = joined_path(place.base, "xdg");
     char *expected = joined_path(place.user, ".claude");
     check_home(CLAUDE_HOME, with_variable(user_environment(&place), "XDG_CONFIG_HOME", xdg), expected, "default");
-    free(expected);
-    free(xdg);
-    free(place.user);
+    spisor_memory_release(expected);
+    spisor_memory_release(xdg);
+    spisor_memory_release(place.user);
 }
 
 static void refuses_a_relative_native_variable(void) {
@@ -393,7 +394,7 @@ static void refuses_a_relative_native_variable(void) {
     fresh_home(&place, "relativenative");
     check_home_refused(CLAUDE_HOME, with_variable(user_environment(&place), "CLAUDE_CONFIG_DIR", "x"),
                        "CLAUDE_CONFIG_DIR", "a relative native variable");
-    free(place.user);
+    spisor_memory_release(place.user);
 }
 
 static void refuses_a_home_candidate_with_no_user_home_to_expand_against(void) {
@@ -417,8 +418,8 @@ static catalog_answer installed_answer(const char *cache, const char *id, const 
 static void write_manifest(const char *cache, const char *text) {
     char *bundle = joined_path(cache, "bundles/claude-loader/1.0.0");
     CHECK(spisor_make_directories(bundle) == 1);
-    free(touch_file(bundle, "host.json", text, 0644));
-    free(bundle);
+    spisor_memory_release(touch_file(bundle, "host.json", text, 0644));
+    spisor_memory_release(bundle);
 }
 
 static void reads_the_standard_an_installed_bundle_carries(void) {

@@ -1,4 +1,5 @@
 #include "install_hosts.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -33,7 +34,7 @@ cJSON *runtime_install_catalog_provenance(const char *cache, const char *id, con
     cJSON *provenance = location == NULL ? NULL
                                          : runtime_call_operation(runtime_hosts_provenance_operation,
                                                                   provenance_call(location, version), refusal);
-    free(location);
+    spisor_memory_release(location);
     return provenance;
 }
 
@@ -47,7 +48,7 @@ static cJSON *own_identity(const char *state, const char *id, const char *versio
         cJSON_Delete(identity);
         identity = NULL;
     }
-    free(home);
+    spisor_memory_release(home);
     return identity;
 }
 

@@ -5,7 +5,7 @@
 #include <wchar.h>
 
 /**
- * The UTF-8 path as UTF-16 for the wide Windows APIs, freed with free; NULL when it is not valid UTF-8
+ * The UTF-8 path as UTF-16 for the wide Windows APIs, freed; NULL when it is not valid UTF-8
  * or memory runs out. A path whose full form reaches MAX_PATH comes back full, with the \\?\ prefix
  * (\\?\UNC\ for a share), so a deep cache is stored and swept like any other.
  *

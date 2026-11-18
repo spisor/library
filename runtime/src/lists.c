@@ -1,4 +1,5 @@
 #include "lists.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +45,7 @@ static int by_id(const void *left, const void *right) {
 /** The rows of group no earlier group listed, first occurrences only, as borrowed pointers. */
 static const cJSON **fresh_rows(const cJSON *group, const cJSON *list, size_t *count) {
     int size = cJSON_GetArraySize(group);
-    const cJSON **rows = malloc((size_t)(size > 0 ? size : 1) * sizeof *rows);
+    const cJSON **rows = spisor_memory_allocate((size_t)(size > 0 ? size : 1) * sizeof *rows);
     *count = 0;
     const cJSON *source = rows == NULL ? NULL : group;
     const cJSON *row;
@@ -80,7 +81,7 @@ static int add_group(cJSON *list, const cJSON *group, const char *state) {
     for (size_t index = 0; complete && index < count; index++) {
         complete = add_with_state(list, rows[index], state);
     }
-    free(rows);
+    spisor_memory_release(rows);
     return complete;
 }
 
@@ -171,7 +172,7 @@ static int find_detected(const cJSON *application, const cJSON *environment, con
         searched = runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, binary, environment, &found);
     }
     *detected = found != NULL || reports_package_installed(detections, id_of(application));
-    free(found);
+    spisor_memory_release(found);
     return searched != RUNTIME_ON_PATH_OUT_OF_MEMORY;
 }
 

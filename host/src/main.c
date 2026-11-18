@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "host_commands.h"
+#include "allocation.h"
 #include "host_output.h"
 #include "json_allocation.h"
 
@@ -28,7 +29,7 @@ static int unknown_command(int count, char **arguments) {
     for (int index = 0; index < count; index++) {
         length += strlen(arguments[index]) + 1;
     }
-    char *message = malloc(length);
+    char *message = spisor_memory_allocate(length);
     if (message == NULL) {
         return host_misuse("unknown command");
     }
@@ -41,7 +42,7 @@ static int unknown_command(int count, char **arguments) {
         strcat(message, "(none)");
     }
     int code = host_misuse(message);
-    free(message);
+    spisor_memory_release(message);
     return code;
 }
 

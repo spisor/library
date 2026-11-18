@@ -1,4 +1,5 @@
 #include "windows_command.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -81,8 +82,8 @@ static int add_argument(runtime_catalog_text *text, const char *value) {
         runtime_catalog_text_discard(&escaped);
     }
     built = escaped_once != NULL && runtime_catalog_text_add_character(text, ' ') && add_shell_escaped(text, escaped_once);
-    free(escaped_once);
-    free(once);
+    spisor_memory_release(escaped_once);
+    spisor_memory_release(once);
     return built;
 }
 

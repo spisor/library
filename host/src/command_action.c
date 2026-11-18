@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "host_child.h"
 #include "host_commands.h"
 #include "host_context.h"
@@ -16,14 +17,14 @@ static char *problem_of(const char *first, const char *second) {
     return runtime_cache_text(parts, 2);
 }
 
-/** Adds one --input value, name=value, to input as a string; 1, or 0 with *problem set to text for the caller to free (NULL when memory ran out). */
+/** Adds one --input value, name=value, to input as a string; 1, or 0 with *problem set to text for the caller to release (NULL when memory ran out). */
 static int add_input(cJSON *input, const char *pair, char **problem) {
     const char *equals = strchr(pair, '=');
     if (equals == NULL || equals == pair) {
         *problem = problem_of("--input takes name=value, not ", pair);
         return 0;
     }
-    char *name = malloc((size_t)(equals - pair) + 1);
+    char *name = spisor_memory_allocate((size_t)(equals - pair) + 1);
     if (name == NULL) {
         return 0;
     }
@@ -35,7 +36,7 @@ static int add_input(cJSON *input, const char *pair, char **problem) {
     } else {
         added = cJSON_AddStringToObject(input, name, equals + 1) != NULL;
     }
-    free(name);
+    spisor_memory_release(name);
     return added;
 }
 
@@ -93,7 +94,7 @@ static int run_in_context(const char *host_id, const char *const *action_argumen
 
 static int misuse_and_free(char *problem) {
     int code = host_misuse(problem == NULL ? "out of memory" : problem);
-    free(problem);
+    spisor_memory_release(problem);
     return code;
 }
 

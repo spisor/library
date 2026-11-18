@@ -3,6 +3,7 @@
 #endif
 
 #include "terminal_question.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +23,7 @@ static terminal_file open_terminal_file(const char *path, int for_writing) {
     terminal_file file = wide == NULL ? NO_TERMINAL_FILE
                                       : CreateFileW(wide, for_writing ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ,
                                                     FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     return file;
 }
 
@@ -89,7 +90,7 @@ static char *trimmed(const char *line, size_t length) {
     while (length > start && is_space(line[length - 1])) {
         length--;
     }
-    char *answer = malloc(length - start + 1);
+    char *answer = spisor_memory_allocate(length - start + 1);
     if (answer != NULL) {
         memcpy(answer, line + start, length - start);
         answer[length - start] = 0;

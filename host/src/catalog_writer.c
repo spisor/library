@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "cache_marker.h"
+#include "allocation.h"
 #include "cache_refusal.h"
 #include "catalog_build.h"
 #include "catalog_fold.h"
@@ -30,7 +31,7 @@ static char *label_of(const catalog_input *input) {
     }
     const char *platform_parts[3] = {base, " for ", input->platform};
     char *label = runtime_cache_text(platform_parts, 3);
-    free(base);
+    spisor_memory_release(base);
     return label;
 }
 
@@ -54,7 +55,7 @@ static int check_files(const catalog_input *input, const char *label, cJSON **re
             char *key = shown(file->string);
             const char *parts[4] = {label, " lists the file ", key, ", which a catalog refuses"};
             refuse(refusal, parts, 4, "give every file a relative path with / separators and no . or .. segment");
-            free(key);
+            spisor_memory_release(key);
             return 0;
         }
         if (host_equals_ignoring_case(file->string, RUNTIME_INSTALL_MARKER)) {
@@ -79,7 +80,7 @@ static char *folder_of(const catalog_input *input) {
 
 static int names_a_folder(const catalog_input *input) {
     char *folder = folder_of(input);
-    free(folder);
+    spisor_memory_release(folder);
     return folder != NULL;
 }
 
@@ -93,7 +94,7 @@ static int check_input(const catalog_input *input, cJSON **refusal) {
         char *id = shown(input->id);
         const char *parts[2] = {id, " is not an id a catalog accepts"};
         checked = refuse(refusal, parts, 2, "use lowercase letters and digits joined by single hyphens");
-        free(id);
+        spisor_memory_release(id);
     } else if (checked && !names_a_folder(input)) {
         const char *parts[2] = {input->id, " is an id that cannot name a folder"};
         checked = refuse(refusal, parts, 2, "use an id whose folder is portable: a local name in lowercase, without +, = or :");
@@ -101,14 +102,14 @@ static int check_input(const catalog_input *input, cJSON **refusal) {
         char *version = shown(input->version);
         const char *parts[4] = {input->id, " has the version ", version, ", which a catalog refuses"};
         checked = refuse(refusal, parts, 4, "use a semver version such as 1.0.0, with no trailing dot");
-        free(version);
+        spisor_memory_release(version);
     } else if (checked && input->platform != NULL && !runtime_is_platform_key(input->platform)) {
         const char *parts[2] = {label, " names a platform that is not an <os>-<arch> key"};
         checked = refuse(refusal, parts, 2, "name the platform as Node spells it, for example linux-x64");
     } else if (checked) {
         checked = check_files(input, label, refusal);
     }
-    free(label);
+    spisor_memory_release(label);
     return checked;
 }
 
@@ -132,7 +133,7 @@ static int check_consistent(const catalog_inputs *inputs, cJSON **refusal) {
                 char *label = label_of(input);
                 const char *parts[2] = {label == NULL ? input->id : label, " is given twice"};
                 refuse(refusal, parts, 2, "give each version of an item, per platform, once");
-                free(label);
+                spisor_memory_release(label);
                 return 0;
             }
         }
@@ -150,7 +151,7 @@ static const char **keys_of(const catalog_inputs *inputs, const catalog_input *i
         }
     }
     size_t total = (size_t)cJSON_GetArraySize(input->files) + (shared == NULL ? 0 : (size_t)cJSON_GetArraySize(shared->files));
-    const char **keys = calloc(total + 1, sizeof *keys);
+    const char **keys = spisor_memory_allocate_zeroed(total + 1, sizeof *keys);
     *count = 0;
     for (const cJSON *file = keys == NULL || shared == NULL ? NULL : shared->files->child; file != NULL; file = file->next) {
         keys[(*count)++] = file->string;
@@ -174,9 +175,9 @@ static int check_folded_keys(const catalog_inputs *inputs, cJSON **refusal) {
             const char *parts[6] = {label == NULL ? input->id : label, " lists the files ", keys[first], " and ", keys[second],
                                     ", which differ only by case and would install into one file on Windows and macOS"};
             refuse(refusal, parts, 6, "rename one of the files");
-            free(label);
+            spisor_memory_release(label);
         }
-        free(keys);
+        spisor_memory_release(keys);
         if (duplicate != 0) {
             return 0;
         }
@@ -230,7 +231,7 @@ static uint8_t *bytes_of(const cJSON *file, size_t *length) {
         return spisor_read_file(file->valuestring, length);
     }
     *length = text == NULL ? 0 : strlen(text);
-    uint8_t *bytes = text == NULL ? NULL : malloc(*length + 1);
+    uint8_t *bytes = text == NULL ? NULL : spisor_memory_allocate(*length + 1);
     if (bytes != NULL) {
         memcpy(bytes, text, *length + 1);
     }
@@ -266,10 +267,10 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
         const char *parts[4] = {source, " could not be copied to ", destination == NULL ? out : destination, ""};
         *refusal = runtime_cache_refusal(parts, 4, "check that the file is readable and --out names a writable folder");
     }
-    free(url);
-    free(bytes);
-    free(parent);
-    free(destination);
+    spisor_memory_release(url);
+    spisor_memory_release(bytes);
+    spisor_memory_release(parent);
+    spisor_memory_release(destination);
     return reference;
 }
 
@@ -289,7 +290,7 @@ static cJSON *placed_files(const char *out, const catalog_input *input, cJSON **
         cJSON_Delete(files);
         files = NULL;
     }
-    free(folder);
+    spisor_memory_release(folder);
     return files;
 }
 
@@ -373,8 +374,8 @@ static int write_catalog(const cJSON *catalog, const char *path) {
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
     int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
-    free(text);
-    free(pretty);
+    spisor_memory_release(text);
+    spisor_memory_release(pretty);
     return written;
 }
 
@@ -398,10 +399,10 @@ char *host_build_local_catalog(const catalog_inputs *inputs, const char *out, cJ
             cJSON_Delete(*refusal);
             *refusal = runtime_cache_refusal(parts, 2, "check that --out names a writable folder");
         }
-        free(path);
+        spisor_memory_release(path);
         path = NULL;
     }
     cJSON_Delete(catalog);
-    free(absolute);
+    spisor_memory_release(absolute);
     return path;
 }

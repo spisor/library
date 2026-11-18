@@ -11,7 +11,7 @@
 
 /**
  * The name a plugin's config file and log carry: config.name when it is a non-empty string, else the
- * plugin id, then trimmed and checked as a portable path segment. Freed with free; NULL when the
+ * plugin id, then trimmed and checked as a portable path segment. Freed; NULL when the
  * result is not a usable segment or memory runs out. config may be NULL.
  *
  * @implNote The emptiness test is before trimming, as the TypeScript || it replaced is, so a name of spaces is
@@ -39,7 +39,7 @@ cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, con
 /**
  * The settings file of the layer that answers key in the merged ecosystem settings of home: the portable
  * place's settings.json when only that layer holds key, else settings.json under the home's config
- * directory, the layer a user's choice is written to. portable may be NULL. Freed with free; NULL when
+ * directory, the layer a user's choice is written to. portable may be NULL. Freed; NULL when
  * memory runs out. The file need not exist.
  */
 char *runtime_ecosystem_settings_file_holding(const char *home, const char *portable, const char *key);

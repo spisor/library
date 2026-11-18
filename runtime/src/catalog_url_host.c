@@ -1,4 +1,5 @@
 #include "catalog_url_host.h"
+#include "allocation.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -29,7 +30,7 @@ static int is_digit(char character) {
 }
 
 static char *percent_decoded(const char *bytes, size_t length, size_t *decoded_length) {
-    char *decoded = malloc(length + 1);
+    char *decoded = spisor_memory_allocate(length + 1);
     if (decoded == NULL) {
         return NULL;
     }
@@ -148,7 +149,7 @@ static char *ipv4_host(const char *host, size_t length) {
     for (size_t index = 0; index + 1 < parts.count; index++) {
         address += (unsigned long long)numbers[index] << (8 * (3 - index));
     }
-    char *serialized = malloc(16);
+    char *serialized = spisor_memory_allocate(16);
     if (serialized != NULL) {
         snprintf(serialized, 16, "%u.%u.%u.%u", (unsigned)(address >> 24) & 255, (unsigned)(address >> 16) & 255,
                  (unsigned)(address >> 8) & 255, (unsigned)address & 255);
@@ -321,14 +322,14 @@ static char *domain_host(const char *bytes, size_t length) {
         }
     }
     if (!usable) {
-        free(domain);
+        spisor_memory_release(domain);
         return NULL;
     }
     if (!ends_in_a_number(domain, decoded_length)) {
         return domain;
     }
     char *address = ipv4_host(domain, decoded_length);
-    free(domain);
+    spisor_memory_release(domain);
     return address;
 }
 

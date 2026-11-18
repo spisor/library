@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "host_child.h"
+#include "allocation.h"
 #include "host_service.h"
 #include "host_output.h"
 
@@ -58,7 +59,7 @@ static void restore_stop_signals(const struct sigaction previous[3]) {
 }
 
 static char **argument_list(const char *executable, const cJSON *arguments) {
-    char **list = calloc((size_t)cJSON_GetArraySize(arguments) + 2, sizeof *list);
+    char **list = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(arguments) + 2, sizeof *list);
     size_t index = 0;
     if (list != NULL) {
         list[index++] = (char *)executable;
@@ -72,19 +73,19 @@ static char **argument_list(const char *executable, const cJSON *arguments) {
 
 static void free_environment_list(char **list) {
     for (char **entry = list; entry != NULL && *entry != NULL; entry++) {
-        free(*entry);
+        spisor_memory_release(*entry);
     }
-    free(list);
+    spisor_memory_release(list);
 }
 
 static char **environment_list(const cJSON *environment) {
-    char **list = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *list);
+    char **list = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(environment) + 1, sizeof *list);
     size_t index = 0;
     for (const cJSON *entry = list == NULL ? NULL : environment->child; entry != NULL; entry = entry->next) {
         if (!cJSON_IsString(entry)) {
             continue;
         }
-        char *line = malloc(strlen(entry->string) + strlen(entry->valuestring) + 2);
+        char *line = spisor_memory_allocate(strlen(entry->string) + strlen(entry->valuestring) + 2);
         if (line == NULL) {
             free_environment_list(list);
             return NULL;
@@ -146,7 +147,7 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     char **list = argument_list(executable, arguments);
     char **variables = environment == NULL ? NULL : environment_list(environment);
     if (list == NULL || (environment != NULL && variables == NULL)) {
-        free(list);
+        spisor_memory_release(list);
         free_environment_list(variables);
         return 0;
     }
@@ -155,7 +156,7 @@ int host_run_child(const char *executable, const cJSON *arguments, const cJSON *
     take_stop_signals(previous);
     pid_t child = 0;
     int error = posix_spawn(&child, executable, NULL, NULL, list, variables == NULL ? environ : variables);
-    free(list);
+    spisor_memory_release(list);
     free_environment_list(variables);
     int ran = error == 0;
     if (error != 0) {
@@ -183,6 +184,6 @@ cJSON *host_replace_process(const char *executable, const cJSON *arguments, cons
     }
     execv(executable, list);
     int error = errno;
-    free(list);
+    spisor_memory_release(list);
     return start_refusal(executable, error);
 }

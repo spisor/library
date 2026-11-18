@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 static int run_install(host_world *world, program *run, const char *const *extra) {
     char *index = index_path_of(&world->base);
@@ -9,7 +10,7 @@ static int run_install(host_world *world, program *run, const char *const *extra
     }
     arguments[count] = NULL;
     int code = world_run(world, run, arguments, NULL);
-    free(index);
+    spisor_memory_release(index);
     return code;
 }
 
@@ -138,7 +139,7 @@ static void puts_spisor_boot_into_the_cache_from_the_spisor_host_build_it_instal
     char built_hash[RUNTIME_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(stub, stub_hash) && spisor_sha256_file(SPISOR_BOOT_PATH, built_hash) &&
           strcmp(stub_hash, built_hash) == 0);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&run);
     finish_world(&world);
 }
@@ -147,7 +148,7 @@ static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_an
     host_world world;
     start_world_at(&world, "install-command", "relative");
     char *folder = joined(world.base.root, "\xce\xa9\xce\xbc\xce\xad\xce\xb3\xce\xb1");
-    free(world.base.catalog);
+    spisor_memory_release(world.base.catalog);
     world.base.catalog = joined(folder, "catalog");
     list_launch_catalog(&world, "[]", 0);
     program run;
@@ -159,7 +160,7 @@ static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_an
     CHECK(registration != NULL);
     cJSON_Delete(registration);
     program_free(&run);
-    free(folder);
+    spisor_memory_release(folder);
     finish_world(&world);
 }
 

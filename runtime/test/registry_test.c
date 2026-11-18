@@ -18,6 +18,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "host_provenance.h"
 #include "scratch_directory.h"
 #include "directory_tree.h"
@@ -510,7 +511,7 @@ static void expect_file_bytes(const char *path, const char *expected, const char
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
     check_text((const char *)bytes, expected, label);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void an_unreadable_registration_is_reported_and_never_overwritten(void) {

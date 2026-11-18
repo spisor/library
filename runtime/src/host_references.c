@@ -1,4 +1,5 @@
 #include "host_references.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -48,7 +49,7 @@ char *runtime_host_file_path(const char *folder, const char *host_id, const char
     char *name = runtime_cache_text(name_parts, 2);
     const char *segments[2] = {folder, name};
     char *path = name == NULL ? NULL : runtime_cache_joined(segments, 2);
-    free(name);
+    spisor_memory_release(name);
     return path;
 }
 
@@ -61,7 +62,7 @@ char *runtime_host_references_path(const char *state, const char *host_id, char 
     *problem = NULL;
     char *folder = bundles_folder(state);
     char *path = folder == NULL ? NULL : runtime_host_file_path(folder, host_id, "bundles", problem);
-    free(folder);
+    spisor_memory_release(folder);
     return path;
 }
 
@@ -95,13 +96,13 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
     runtime_host_references none = {NULL, NULL, NULL, NULL};
     char *problem = NULL;
     char *path = runtime_host_references_path(state, host_id, &problem);
-    free(problem);
+    spisor_memory_release(problem);
     if (path == NULL) {
         return none;
     }
     int out_of_memory;
     cJSON *recorded = runtime_read_node_json(path, &out_of_memory);
-    free(path);
+    spisor_memory_release(path);
     if (out_of_memory) {
         return none;
     }
@@ -131,7 +132,7 @@ static char *references_text(const runtime_host_references *references) {
     cJSON_Delete(recorded);
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    free(pretty);
+    spisor_memory_release(pretty);
     return text;
 }
 
@@ -141,7 +142,7 @@ static int write_text(const char *state, const char *path, const char *text, int
     *out_of_memory = folder == NULL;
     int written = folder != NULL && spisor_make_directories(folder) &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-    free(folder);
+    spisor_memory_release(folder);
     return written;
 }
 
@@ -155,8 +156,8 @@ int runtime_record_host_references(const char *state, const char *host_id, const
         const char *parts[3] = {"the references file ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }
-    free(text);
-    free(path);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
     return written;
 }
 
@@ -176,8 +177,8 @@ int runtime_write_references_draft(const runtime_references_draft *draft) {
 }
 
 void runtime_free_references_draft(runtime_references_draft *draft) {
-    free(draft->path);
-    free(draft->text);
+    spisor_memory_release(draft->path);
+    spisor_memory_release(draft->text);
     draft->path = NULL;
     draft->text = NULL;
 }
@@ -185,9 +186,9 @@ void runtime_free_references_draft(runtime_references_draft *draft) {
 int runtime_remove_host_references(const char *state, const char *host_id) {
     char *problem = NULL;
     char *path = runtime_host_references_path(state, host_id, &problem);
-    free(problem);
+    spisor_memory_release(problem);
     runtime_entry_outcome removed = path == NULL ? RUNTIME_ENTRY_FAILED : runtime_remove_file_entry(path);
-    free(path);
+    spisor_memory_release(path);
     return removed == RUNTIME_ENTRY_DONE && runtime_remove_run_records(state, host_id);
 }
 

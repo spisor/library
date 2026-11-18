@@ -1,4 +1,5 @@
 #include "marketplace_sources.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,11 +142,11 @@ static cJSON *answer_of(const cJSON *configured, cJSON **refusal) {
     cJSON *result = cJSON_CreateObject();
     cJSON *sources = result == NULL ? NULL : cJSON_AddArrayToObject(result, "sources");
     cJSON *skipped = result == NULL ? NULL : cJSON_AddArrayToObject(result, "skipped");
-    accepted_source *accepted = malloc(((size_t)cJSON_GetArraySize(configured) + 1) * sizeof *accepted);
+    accepted_source *accepted = spisor_memory_allocate(((size_t)cJSON_GetArraySize(configured) + 1) * sizeof *accepted);
     size_t count = 0;
     int built = sources != NULL && skipped != NULL && accepted != NULL && sorts_entries(configured, accepted, &count, skipped) &&
                 adds_sources(sources, accepted, count, refusal);
-    free(accepted);
+    spisor_memory_release(accepted);
     if (!built) {
         cJSON_Delete(result);
         return NULL;

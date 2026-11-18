@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "spisor/allocation.h"
 #include "install_call.h"
 
 #include "boot_stub.h"
@@ -61,7 +62,7 @@ static void add_names(cJSON *names, const char *directory, const char *relative)
         if (listing.entries[index].is_directory) {
             char *child = joined(directory, listing.entries[index].name);
             add_names(names, child, name);
-            free(child);
+            spisor_memory_release(child);
         }
     }
     runtime_free_directory_listing(&listing);
@@ -146,7 +147,7 @@ static char *marketplace_member(const char *root) {
     cJSON *path = cJSON_CreateString(root);
     char *quoted = cJSON_PrintUnformatted(path);
     cJSON_Delete(path);
-    char *member = malloc(strlen(quoted) + 256);
+    char *member = spisor_memory_allocate(strlen(quoted) + 256);
     sprintf(member,
             "        \"spisor\": {\n"
             "            \"source\": {\n"
@@ -187,16 +188,16 @@ static void adds_only_its_two_members_to_a_hand_written_settings_json_and_gives_
              member);
     char *written = text_in(home, "settings.json");
     check_text(written, expected, "settings with the entry");
-    free(written);
+    spisor_memory_release(written);
     expect_clean_remove(&base, "hand-written remove");
     char *after = tree_snapshot(base.user, NULL);
     check_text(after, before, "the user's home byte-identical after remove");
     CHECK(!exists_in(base.state, "entries"));
-    free(after);
-    free(before);
-    free(member);
-    free(root);
-    free(home);
+    spisor_memory_release(after);
+    spisor_memory_release(before);
+    spisor_memory_release(member);
+    spisor_memory_release(root);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -235,13 +236,13 @@ static void writes_the_declared_files_with_every_placeholder_filled(void) {
     char *hooks_text = text_in(root, "hooks/hooks.json");
     CHECK(hooks_text != NULL && strncmp(hooks_text, "{\n  \"hooks\": {\n", 15) == 0 &&
           hooks_text[strlen(hooks_text) - 1] == '\n');
-    free(hooks_text);
+    spisor_memory_release(hooks_text);
     cJSON_Delete(hooks);
     cJSON_free(boot_json);
     cJSON_Delete(quoted);
-    free(boot);
-    free(root);
-    free(home);
+    spisor_memory_release(boot);
+    spisor_memory_release(root);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -269,8 +270,8 @@ static void creates_a_settings_json_that_does_not_exist_and_deletes_it_again(voi
     CHECK(spisor_file_exists(home));
     cJSON_free(root_json);
     cJSON_Delete(quoted);
-    free(root);
-    free(home);
+    spisor_memory_release(root);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -286,8 +287,8 @@ static void creates_an_application_home_that_does_not_exist_and_removes_it_again
     CHECK(exists_in(home, "settings.json"));
     expect_clean_remove(&base, "home remove");
     CHECK(!spisor_file_exists(home));
-    free(homes);
-    free(home);
+    spisor_memory_release(homes);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -307,8 +308,8 @@ static void records_nothing_more_when_written_twice_and_still_gives_the_file_bac
     cJSON_Delete(removed(&base));
     char *text = text_in(home, "settings.json");
     check_text(text, HAND_WRITTEN_SETTINGS, "file back after two writes");
-    free(text);
-    free(home);
+    spisor_memory_release(text);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -335,9 +336,9 @@ static void writes_one_declared_text_file_gone_with_the_directory_it_created(voi
     expect_tree(home, "[\"sample.json\"]", "inprocess after remove");
     cJSON_free(hint_json);
     cJSON_Delete(quoted);
-    free(hint);
-    free(source);
-    free(home);
+    spisor_memory_release(hint);
+    spisor_memory_release(source);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -351,7 +352,7 @@ static void keeps_a_plugin_directory_the_user_already_had(void) {
     cJSON_Delete(answer.tree);
     cJSON_Delete(removed(&base));
     expect_tree(home, "[\"plugins\",\"plugins/mine.js\"]", "user's plugin kept");
-    free(home);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -369,7 +370,7 @@ static void answers_not_written_for_an_application_declaring_no_entry(void) {
     cJSON *remove_answer = removed(&base);
     CHECK(cJSON_GetObjectItemCaseSensitive(remove_answer, "reversed")->valuedouble == 0);
     cJSON_Delete(remove_answer);
-    free(home);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -394,7 +395,7 @@ static void refuses_an_entry_whose_application_facts_were_never_checked(void) {
     CHECK(text_at(answer.tree, "message") != NULL && strstr(text_at(answer.tree, "message"), "/application/proxy/placeholder") != NULL);
     cJSON_Delete(answer.tree);
     CHECK(!spisor_file_exists(home));
-    free(home);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -412,8 +413,8 @@ static void takes_back_what_it_wrote_when_a_later_change_is_refused(void) {
     CHECK(answer.status == SPISOR_REFUSED);
     cJSON_Delete(answer.tree);
     expect_tree(root, "[\"hooks\",\"hooks/hooks.json\"]", "only what was there before");
-    free(root);
-    free(home);
+    spisor_memory_release(root);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 
@@ -452,10 +453,10 @@ static void keeps_a_change_another_call_recorded_when_a_later_change_is_refused(
     cJSON_Delete(answer.tree);
     CHECK(foreign_directory != NULL && spisor_file_exists(foreign_directory));
     expect_tree(root, "[\"hooks\",\"hooks/hooks.json\"]", "only what was there before");
-    free(foreign_directory);
+    spisor_memory_release(foreign_directory);
     foreign_directory = NULL;
-    free(root);
-    free(home);
+    spisor_memory_release(root);
+    spisor_memory_release(home);
     finish_install_base(&base);
 }
 

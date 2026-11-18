@@ -15,6 +15,7 @@
 #include "hosts_call.h"
 #include "install_hooks.h"
 #include "json_allocation.h"
+#include "known_out_of_memory_breaks.h"
 #include "file_times.h"
 #include "platform_key.h"
 #include "runtime/boot.h"
@@ -71,7 +72,7 @@ static void finish(void) {
     spisor_value_release(&application);
     spisor_value_release(&updates_settings);
     snapshot_left_out = NULL;
-    free(path_directory);
+    spisor_memory_release(path_directory);
     path_directory = NULL;
     runtime_install_use_runtime_build(NULL, NULL, NULL);
     finish_install_base(&base);
@@ -84,7 +85,7 @@ static char *place_binary(const char *directory) {
     char *path = joined(directory, BINARY);
     write_file(path, "#!/bin/sh\n");
     CHECK(chmod(path, 0755) == 0);
-    free(path);
+    spisor_memory_release(path);
 #endif
     return runtime_catalog_copy(directory);
 }
@@ -122,7 +123,7 @@ static void register_entry_loader(void) {
     catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static void declare_hook_entry(void) {
@@ -133,12 +134,22 @@ static void declare_hook_entry(void) {
     cJSON_Delete(declared);
 }
 
+static char run_path[1200];
+
+/** Joins the path a run passes before any allocation is failed, since the run itself must allocate only in the call. */
+static void keep_run_path(const char *directory, const char *rest) {
+    char *path = joined(directory, rest);
+    snprintf(run_path, sizeof run_path, "%s", path);
+    spisor_memory_release(path);
+}
+
 /** A registered loader whose application declares the hook entry, a settings member among its changes. */
 static void prepare_entry(void) {
     start_install_base(&base, "operations", "entry");
+    keep_run_path(base.user, "homes/sample");
     char *homes = joined(base.user, "homes");
     CHECK(spisor_make_directories(homes) == 1);
-    free(homes);
+    spisor_memory_release(homes);
     register_entry_loader();
     declare_hook_entry();
 }
@@ -146,6 +157,7 @@ static void prepare_entry(void) {
 /** As prepare_entry with the home's parent missing, so the disk refuses the home after the entry recorded changes. */
 static void prepare_refused_entry(void) {
     start_install_base(&base, "operations", "entry-refused");
+    keep_run_path(base.user, "homes/sample");
     register_entry_loader();
     declare_hook_entry();
 }
@@ -154,16 +166,14 @@ static spisor_status run_entry(void) {
     runtime_install_entry_argument argument = SPISOR_INIT(runtime_install_entry_argument);
     runtime_install_entry_answer answer = SPISOR_INIT(runtime_install_entry_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    char *home = joined(base.user, "homes/sample");
     argument.state = base.state;
     argument.cache = base.cache;
     argument.loader = ENTRY_LOADER;
-    argument.home = home;
+    argument.home = run_path;
     argument.application = &application.root;
     spisor_status status = install->entry(install->context, &argument, &answer, &refusal);
     install->release_entry_answer(install->context, &answer);
     keep_refusal(&refusal);
-    free(home);
     return status;
 }
 
@@ -174,7 +184,7 @@ static void install_claude(const char *packages_json, const char *choices_json) 
     write_catalog(&base);
     char *homes = joined(base.user, "homes/claude");
     CHECK(spisor_make_directories(homes) == 1);
-    free(homes);
+    spisor_memory_release(homes);
     char extra[256];
     snprintf(extra, sizeof extra, "{\"choices\": %s}", choices_json);
     cJSON_Delete(expect_report(install_with(&base, extra, environment_with_path(&base, path_directory)), "install"));
@@ -184,7 +194,7 @@ static void prepare_path_application(void) {
     start_install_base(&base, "operations", "path-application");
     char *directory = joined(base.root, "bin");
     path_directory = place_binary(directory);
-    free(directory);
+    spisor_memory_release(directory);
     install_claude("{}", "{}");
 }
 
@@ -254,13 +264,13 @@ static void prepare_runtime(void) {
 #if !defined(_WIN32)
     CHECK(chmod(node, 0755) == 0);
 #endif
-    free(node);
-    free(probe);
+    spisor_memory_release(node);
+    spisor_memory_release(probe);
     char *missing = joined(base.root, "unreachable/node.zip");
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, missing);
     runtime_install_use_runtime_build(UNREACHABLE_VERSION, url, UNREACHABLE_SHA256);
-    free(url);
-    free(missing);
+    spisor_memory_release(url);
+    spisor_memory_release(missing);
 }
 
 static spisor_status run_runtime(void) {
@@ -355,7 +365,7 @@ static int recorded_no_run_unless_applied(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/spisor-host");
     CHECK(runtime_list_directory(runs, &listing) == 1);
-    free(runs);
+    spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 0;
     runtime_free_directory_listing(&listing);
     if (!kept) {
@@ -416,7 +426,7 @@ static const char *version_in(const char *place, const char *rest, const char *o
     const char *found = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(map, inner == NULL ? outer : inner));
     snprintf(version, sizeof version, "%s", found == NULL ? "" : found);
     cJSON_Delete(tree);
-    free(text);
+    spisor_memory_release(text);
     return version;
 }
 
@@ -456,7 +466,7 @@ static void prepare_run(void) {
     write_in(base.state, "hosts/spisor-host.json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_run(void) {
@@ -605,7 +615,7 @@ static int placed_nothing_unless_placed(void) {
         runtime_directory_listing listing = {NULL, 0};
         char *folder = joined(base.cache, "boot");
         CHECK(runtime_list_directory(folder, &listing) == 1);
-        free(folder);
+        spisor_memory_release(folder);
         int empty = listing.count == 0;
         runtime_free_directory_listing(&listing);
         if (!empty) {
@@ -627,6 +637,7 @@ static double live_stamp;
 /** The holders file of BACKGROUND_HOST naming this process as the host and as a holder, and one holder long gone. */
 static void prepare_processes(void) {
     start_install_base(&base, "operations", "processes");
+    keep_run_path(base.state, "bundles/runs/" BACKGROUND_HOST "/gone.json");
     live_stamp = runtime_now_milliseconds();
     snprintf(prepared_holders, sizeof prepared_holders,
              "{\"pid\":%d,\"aliveAt\":%.0f,\"checkMilliseconds\":600000,\"holders\":[%d,%.0f]}\n",
@@ -658,7 +669,7 @@ static void prepare_record(void) {
 static int holders_unchanged_unless_ok(void) {
     char *text = text_in(base.state, "processes/" BACKGROUND_HOST ".json");
     int kept = last_status == SPISOR_OK || (text != NULL && strcmp(text, prepared_holders) == 0);
-    free(text);
+    spisor_memory_release(text);
     if (!kept) {
         fprintf(stderr, "processes: an answer of %d changed the holders file\n", (int)last_status);
     }
@@ -788,7 +799,7 @@ static int recorded_no_new_run_unless_ok(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/" BACKGROUND_HOST);
     CHECK(runtime_list_directory(runs, &listing) == 1);
-    free(runs);
+    spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 2;
     runtime_free_directory_listing(&listing);
     if (!kept) {
@@ -817,12 +828,10 @@ static spisor_status run_remove_runs(void) {
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_remove_argument argument = SPISOR_INIT(runtime_processes_remove_argument);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    char *gone = joined(base.state, "bundles/runs/" BACKGROUND_HOST "/gone.json");
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
-    argument.record = gone;
+    argument.record = run_path;
     last_status = processes->remove_runs(processes->context, &argument, &refusal);
-    free(gone);
     keep_refusal(&refusal);
     return last_status;
 }
@@ -893,7 +902,7 @@ static int holders_name_started_host(void) {
     char host[64];
     snprintf(host, sizeof host, "\"pid\":%lld,", (long long)started_pid);
     int named = text != NULL && strstr(text, host) != NULL;
-    free(text);
+    spisor_memory_release(text);
     return named;
 }
 
@@ -1069,7 +1078,7 @@ static void prepare_start(void) {
     write_in(base.state, "hosts/spisor-host.json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_start(void) {
@@ -1136,7 +1145,7 @@ static void prepare_loader_home(void) {
     start_install_base(&base, "operations", "loader-home");
     char *home = joined(base.user, "homes/sample");
     CHECK(spisor_make_directories(home) == 1);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_loader_home(void) {
@@ -1180,6 +1189,7 @@ static spisor_status run_loader_installed(void) {
 /** The entry loader registered and its value tree true, for a json-key change that creates its file. */
 static void prepare_created_key(void) {
     start_install_base(&base, "operations", "created-key");
+    keep_run_path(base.user, "created.json");
     register_entry_loader();
     CHECK(value_of_text("true", &application));
 }
@@ -1191,9 +1201,8 @@ static spisor_status run_created_key(void) {
     runtime_changes_apply_argument argument = SPISOR_INIT(runtime_changes_apply_argument);
     runtime_changes_apply_answer answer = SPISOR_INIT(runtime_changes_apply_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    char *file = joined(base.user, "created.json");
     change.kind = RUNTIME_CHANGE_KIND_JSON_KEY;
-    change.file = file;
+    change.file = run_path;
     change.key = key;
     change.key_count = 2;
     change.value = &application.root;
@@ -1206,7 +1215,6 @@ static spisor_status run_created_key(void) {
         last_status = WRONG_RUN;
     }
     keep_refusal(&refusal);
-    free(file);
     return last_status;
 }
 
@@ -1219,12 +1227,12 @@ static int created_no_file_unless_ok(void) {
     return kept;
 }
 
-/** Everything under the base, its timestamps replaced; freed with free. */
+/** Everything under the base, its timestamps replaced; freed. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
     char *raw = tree_snapshot_sized(base.root, snapshot_left_out, &raw_length);
     char *normalized = without_timestamps((const uint8_t *)raw, raw_length, length);
-    free(raw);
+    spisor_memory_release(raw);
     return normalized;
 }
 
@@ -1244,7 +1252,7 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     char *snapshot = base_snapshot(&length);
     int same_tree = snapshot != NULL && length == clean->snapshot_length &&
                     memcmp(snapshot, clean->snapshot, length) == 0;
-    free(snapshot);
+    spisor_memory_release(snapshot);
     if (status == clean->status && strcmp(refusal_detail, clean->refusal) == 0 && same_tree) {
         return 1;
     }
@@ -1294,7 +1302,8 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
 }
 
 /** Fails the operation's allocations one at a time, between first and last when given, until it runs whole. */
-static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+static void every_failure_of_case(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+    int failures_before = check_failures;
     clean_run clean;
     run_clean(each, &clean);
     if (clean.status != expected) {
@@ -1303,14 +1312,21 @@ static void every_failure_of(const operation_case *each, spisor_status expected,
     }
     uint64_t attempt = first;
     int ran_whole = 0;
-    for (; check_failures == 0 && !ran_whole && (last == 0 || attempt <= last); attempt++) {
+    for (; check_failures == failures_before && !ran_whole && (last == 0 || attempt <= last); attempt++) {
         if (!fail_once(each, &clean, attempt, &ran_whole)) {
             check_failures++;
         }
     }
     printf("%s: %llu allocations, failures %llu to %llu checked\n", each->label,
            (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
-    free(clean.snapshot);
+    spisor_memory_release(clean.snapshot);
+}
+
+static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+    int before = check_failures;
+    every_failure_of_case(each, expected, first, last);
+    check_failures = before + settled_out_of_memory_failures("out_of_memory_install_operations_test", each->label,
+                                                             sticky_failures, check_failures - before);
 }
 
 static int is_selected(const char *only, const char *label) {

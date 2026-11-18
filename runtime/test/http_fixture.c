@@ -4,6 +4,7 @@
 #endif
 
 #include "http_fixture.h"
+#include "spisor/allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -268,7 +269,7 @@ static http_fixture *start(const http_route *routes, size_t count, int is_proxy)
 #else
     signal(SIGPIPE, SIG_IGN);
 #endif
-    http_fixture *fixture = calloc(1, sizeof *fixture);
+    http_fixture *fixture = spisor_memory_allocate_zeroed(1, sizeof *fixture);
     if (fixture == NULL) {
         return NULL;
     }
@@ -276,7 +277,7 @@ static http_fixture *start(const http_route *routes, size_t count, int is_proxy)
     fixture->route_count = count;
     fixture->is_proxy = is_proxy;
     if (!open_listener(fixture)) {
-        free(fixture);
+        spisor_memory_release(fixture);
         return NULL;
     }
 #if defined(_WIN32)
@@ -287,7 +288,7 @@ static http_fixture *start(const http_route *routes, size_t count, int is_proxy)
 #endif
     if (!started) {
         close_socket(fixture->listener);
-        free(fixture);
+        spisor_memory_release(fixture);
         return NULL;
     }
     return fixture;
@@ -328,11 +329,11 @@ char *http_fixture_stop(http_fixture *fixture) {
     pthread_join(fixture->thread, NULL);
 #endif
     close_socket(fixture->listener);
-    char *log = malloc(fixture->log_length + 1);
+    char *log = spisor_memory_allocate(fixture->log_length + 1);
     if (log != NULL) {
         memcpy(log, fixture->log, fixture->log_length + 1);
     }
-    free(fixture);
+    spisor_memory_release(fixture);
 #if defined(_WIN32)
     WSACleanup();
 #endif

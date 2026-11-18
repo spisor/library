@@ -1,4 +1,5 @@
 #include "catalog_read.h"
+#include "allocation.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -31,9 +32,9 @@ spisor_status runtime_catalog_refuse(runtime_catalog_refusal *refusal, char *det
 }
 
 void runtime_catalog_free_refusal(runtime_catalog_refusal *refusal) {
-    free(refusal->detail);
-    free(refusal->fix);
-    free(refusal->path);
+    spisor_memory_release(refusal->detail);
+    spisor_memory_release(refusal->fix);
+    spisor_memory_release(refusal->path);
     memset(refusal, 0, sizeof *refusal);
 }
 
@@ -83,7 +84,7 @@ static spisor_status check_latest(const cJSON *items, runtime_catalog_refusal *r
             status = runtime_catalog_refuse(refusal, joined(detail), LATEST_FIX, joined(path));
         }
     }
-    free(ordered);
+    spisor_memory_release(ordered);
     return status;
 }
 
@@ -98,16 +99,16 @@ static int add_keys(key_set *set, const cJSON *files) {
     if (members == NULL && count > 0) {
         return 0;
     }
-    const char **grown = realloc(set->keys, (set->count + count + 1) * sizeof *grown);
+    const char **grown = spisor_memory_reallocate(set->keys, (set->count + count + 1) * sizeof *grown);
     if (grown == NULL) {
-        free(members);
+        spisor_memory_release(members);
         return 0;
     }
     set->keys = grown;
     for (size_t index = 0; index < count; index++) {
         set->keys[set->count++] = members[index]->string;
     }
-    free(members);
+    spisor_memory_release(members);
     return 1;
 }
 
@@ -147,9 +148,9 @@ static spisor_status check_version_collisions(const char *id, const cJSON *versi
             status = collides < 0 ? SPISOR_OUT_OF_MEMORY
                                   : refuse_collision(id, version->string, &set, first, second, refusal);
         }
-        free(set.keys);
+        spisor_memory_release(set.keys);
     }
-    free(platforms);
+    spisor_memory_release(platforms);
     return status;
 }
 
@@ -174,9 +175,9 @@ static spisor_status each_version(cJSON *items, const char *origin, version_rule
         for (size_t index = 0; status == SPISOR_OK && index < version_count; index++) {
             status = rule(ordered_items[item_index]->string, (cJSON *)versions[index], origin, refusal);
         }
-        free(versions);
+        spisor_memory_release(versions);
     }
-    free(ordered_items);
+    spisor_memory_release(ordered_items);
     return status;
 }
 
@@ -211,10 +212,10 @@ static spisor_status resolve_files(const char *id, const cJSON *version, cJSON *
                 cJSON_Delete(replacement);
                 status = SPISOR_OUT_OF_MEMORY;
             }
-            free(resolved);
+            spisor_memory_release(resolved);
         }
     }
-    free(references);
+    spisor_memory_release(references);
     return status;
 }
 
@@ -233,7 +234,7 @@ static spisor_status urls_rule(const char *id, cJSON *version, const char *origi
         status = resolve_files(id, version, cJSON_GetObjectItemCaseSensitive(platforms[index], "files"), origin,
                                refusal);
     }
-    free(platforms);
+    spisor_memory_release(platforms);
     return status;
 }
 

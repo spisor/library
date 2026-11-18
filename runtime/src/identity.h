@@ -38,16 +38,16 @@ typedef enum runtime_identity_folder_status {
     RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY
 } runtime_identity_folder_status;
 
-/** The folder name of id as identity.folder answers it, freed with free; NULL unless NAMED, which is the only status with a folder. */
+/** The folder name of id as identity.folder answers it, freed; NULL unless NAMED, which is the only status with a folder. */
 runtime_identity_folder_status runtime_identity_folder_name(const char *id, char **folder);
 
 /**
- * The folder an item key lives in under the cache, freed with free: the key itself for a name, the id's folder for an
+ * The folder an item key lives in under the cache, freed: the key itself for a name, the id's folder for an
  * id. NULL with *unfit set when the key is an id that cannot name a folder, NULL with it clear when memory runs out.
  */
 char *runtime_item_folder(const char *key, int *unfit);
 
-/** The key a folder made by runtime_item_folder stands for, freed with free; NULL when memory runs out. */
+/** The key a folder made by runtime_item_folder stands for, freed; NULL when memory runs out. */
 char *runtime_item_key_of_folder(const char *folder);
 
 #endif

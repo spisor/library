@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "check.h"
 #include "json_value.h"
@@ -146,8 +147,8 @@ static inline cJSON *marketplace_read_tree(const cJSON *argument, spisor_refusal
 static inline cJSON *marketplace_lookup_tree(const cJSON *argument, spisor_refusal *refusal) {
     const cJSON *copies = cJSON_GetObjectItemCaseSensitive(argument, "copies");
     size_t count = (size_t)cJSON_GetArraySize(copies);
-    runtime_marketplace_copy *pairs = calloc(count + 1, sizeof *pairs);
-    spisor_value_tree *trees = calloc(count + 1, sizeof *trees);
+    runtime_marketplace_copy *pairs = spisor_memory_allocate_zeroed(count + 1, sizeof *pairs);
+    spisor_value_tree *trees = spisor_memory_allocate_zeroed(count + 1, sizeof *trees);
     runtime_marketplace_lookup_argument call = SPISOR_INIT(runtime_marketplace_lookup_argument);
     runtime_marketplace_lookup_answer answer = SPISOR_INIT(runtime_marketplace_lookup_answer);
     const cJSON *pair;
@@ -180,8 +181,8 @@ static inline cJSON *marketplace_lookup_tree(const cJSON *argument, spisor_refus
     for (size_t index = 0; index < count; index++) {
         spisor_value_release(&trees[index]);
     }
-    free(trees);
-    free(pairs);
+    spisor_memory_release(trees);
+    spisor_memory_release(pairs);
     return tree;
 }
 

@@ -1,4 +1,5 @@
 #include "identity.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -121,7 +122,7 @@ int runtime_identity_parse_id(const char *id, runtime_identity *parsed) {
 
 static char *folder_name(const char *id) {
     size_t length = strlen(id);
-    char *folder = malloc(length + 1);
+    char *folder = spisor_memory_allocate(length + 1);
     for (size_t index = 0; folder != NULL && index <= length; index++) {
         folder[index] = id[index] == ':' ? '+' : id[index] == '/' ? '=' : id[index];
     }
@@ -131,7 +132,7 @@ static char *folder_name(const char *id) {
 static int is_portable_folder(const char *folder) {
     char *portable = runtime_portable_segment(folder);
     int unchanged = portable != NULL && strcmp(portable, folder) == 0;
-    free(portable);
+    spisor_memory_release(portable);
     return unchanged;
 }
 
@@ -169,7 +170,7 @@ runtime_identity_folder_status runtime_identity_folder_name(const char *id, char
         return RUNTIME_IDENTITY_FOLDER_OUT_OF_MEMORY;
     }
     if (!is_portable_folder(name)) {
-        free(name);
+        spisor_memory_release(name);
         return RUNTIME_IDENTITY_FOLDER_NOT_PORTABLE;
     }
     *folder = name;
@@ -178,7 +179,7 @@ runtime_identity_folder_status runtime_identity_folder_name(const char *id, char
 
 
 static char *copy_text(const char *text) {
-    char *copy = malloc(strlen(text) + 1);
+    char *copy = spisor_memory_allocate(strlen(text) + 1);
     if (copy != NULL) {
         strcpy(copy, text);
     }
@@ -207,7 +208,7 @@ char *runtime_item_key_of_folder(const char *folder) {
     int is_id = key != NULL && runtime_identity_parse_id(key, &parsed) &&
                 runtime_identity_folder_name(key, &round_trip) == RUNTIME_IDENTITY_FOLDER_NAMED &&
                 strcmp(round_trip, folder) == 0;
-    free(round_trip);
+    spisor_memory_release(round_trip);
     if (key != NULL && !is_id) {
         strcpy(key, folder);
     }

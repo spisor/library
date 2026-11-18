@@ -5,7 +5,7 @@
 
 /**
  * Creates the temporary sibling a replacement of target is written into, open for binary writing,
- * and hands its path back in *temporary_path (freed with free). NULL when it cannot be created.
+ * and hands its path back in *temporary_path (freed). NULL when it cannot be created.
  *
  * @implNote On POSIX the file is created exclusively and given its final mode before this returns,
  * before any byte reaches it: 0600 when owner_only, else target's own mode when target exists, else

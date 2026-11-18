@@ -6,7 +6,7 @@
 
 #include "cJSON.h"
 
-/** text, UTF-8, as UTF-16, freed with free; NULL when it is not valid UTF-8 or memory runs out. */
+/** text, UTF-8, as UTF-16, freed; NULL when it is not valid UTF-8 or memory runs out. */
 wchar_t *runtime_windows_text(const char *text);
 
 /** "executable" and each of arguments, an array of strings or NULL, quoted as CommandLineToArgvW reads them back. */

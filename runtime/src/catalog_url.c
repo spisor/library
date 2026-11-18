@@ -1,4 +1,5 @@
 #include "catalog_url.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -121,9 +122,9 @@ static int push_segment(url_path *path, char *segment) {
     }
     if (path->count == path->capacity) {
         size_t capacity = path->capacity == 0 ? 8 : path->capacity * 2;
-        char **grown = realloc(path->segments, capacity * sizeof *grown);
+        char **grown = spisor_memory_reallocate(path->segments, capacity * sizeof *grown);
         if (grown == NULL) {
-            free(segment);
+            spisor_memory_release(segment);
             return 0;
         }
         path->segments = grown;
@@ -135,19 +136,19 @@ static int push_segment(url_path *path, char *segment) {
 
 static void clear_path(url_path *path) {
     for (size_t index = 0; index < path->count; index++) {
-        free(path->segments[index]);
+        spisor_memory_release(path->segments[index]);
     }
     path->count = 0;
 }
 
 static void free_url(parsed_url *url) {
     clear_path(&url->path);
-    free(url->path.segments);
-    free(url->userinfo);
-    free(url->host);
-    free(url->port);
-    free(url->query);
-    free(url->fragment);
+    spisor_memory_release(url->path.segments);
+    spisor_memory_release(url->userinfo);
+    spisor_memory_release(url->host);
+    spisor_memory_release(url->port);
+    spisor_memory_release(url->query);
+    spisor_memory_release(url->fragment);
     memset(url, 0, sizeof *url);
 }
 
@@ -178,14 +179,14 @@ static void shorten_path(parsed_url *url) {
         return;
     }
     if (path->count > 0) {
-        free(path->segments[--path->count]);
+        spisor_memory_release(path->segments[--path->count]);
     }
 }
 
 static int parse_query_and_fragment(parsed_url *url, const char *at) {
     if (*at == '?') {
         const char *end = at + 1 + strcspn(at + 1, "#");
-        free(url->query);
+        spisor_memory_release(url->query);
         url->query = encoded(at + 1, (size_t)(end - at - 1), in_query_set);
         if (url->query == NULL) {
             return 0;
@@ -208,7 +209,7 @@ static int add_segment(parsed_url *url, char *segment, int ended_by_slash) {
         shorten_path(url);
     }
     if (dots != 0) {
-        free(segment);
+        spisor_memory_release(segment);
         return ended_by_slash || push_segment(&url->path, runtime_catalog_copy(""));
     }
     if (url->scheme == SCHEME_FILE && url->path.count == 0 && is_windows_drive(segment, strlen(segment))) {
@@ -252,8 +253,8 @@ static char *userinfo_of(const char *start, const char *end) {
             runtime_catalog_text_add(&text, password);
         }
     }
-    free(user);
-    free(password);
+    spisor_memory_release(user);
+    spisor_memory_release(password);
     return runtime_catalog_text_finish(&text);
 }
 
@@ -291,7 +292,7 @@ static int parse_port(parsed_url *url, const char *start, const char *end) {
         digits[length++] = (char)('0' + value % 10);
         value /= 10;
     } while (value > 0);
-    url->port = malloc(length + 1);
+    url->port = spisor_memory_allocate(length + 1);
     if (url->port == NULL) {
         return 0;
     }
@@ -317,7 +318,7 @@ static int parse_authority(parsed_url *url, const char *at) {
             return 0;
         }
         if (url->userinfo[0] == 0) {
-            free(url->userinfo);
+            spisor_memory_release(url->userinfo);
             url->userinfo = NULL;
         }
     }
@@ -351,7 +352,7 @@ static int parse_https_relative(parsed_url *url, const char *at, const parsed_ur
     if (*at == 0 || *at == '?' || *at == '#') {
         return parse_query_and_fragment(url, at);
     }
-    free(url->query);
+    spisor_memory_release(url->query);
     url->query = NULL;
     shorten_path(url);
     return parse_path(url, at);
@@ -372,7 +373,7 @@ static int parse_file_host(parsed_url *url, const char *at) {
     if (strcmp(host, "localhost") == 0) {
         host[0] = 0;
     }
-    free(url->host);
+    spisor_memory_release(url->host);
     url->host = host;
     return parse_path_start(url, end);
 }
@@ -382,7 +383,7 @@ static int parse_file_slash(parsed_url *url, const char *at, const parsed_url *b
         return parse_file_host(url, at + 1);
     }
     if (base != NULL) {
-        free(url->host);
+        spisor_memory_release(url->host);
         url->host = runtime_catalog_copy(base->host);
         if (url->host == NULL) {
             return 0;
@@ -397,7 +398,7 @@ static int parse_file_slash(parsed_url *url, const char *at, const parsed_url *b
 }
 
 static int parse_file_relative(parsed_url *url, const char *at, const parsed_url *base) {
-    free(url->host);
+    spisor_memory_release(url->host);
     url->host = runtime_catalog_copy(base->host);
     url->query = copy_or_null(base->query);
     if (url->host == NULL || !copy_path(&url->path, &base->path) || (base->query != NULL && url->query == NULL)) {
@@ -406,7 +407,7 @@ static int parse_file_relative(parsed_url *url, const char *at, const parsed_url
     if (*at == 0 || *at == '?' || *at == '#') {
         return parse_query_and_fragment(url, at);
     }
-    free(url->query);
+    spisor_memory_release(url->query);
     url->query = NULL;
     if (starts_with_windows_drive(at)) {
         clear_path(&url->path);
@@ -437,7 +438,7 @@ static char *cleaned_input(const char *input) {
     while (end > start && (unsigned char)end[-1] <= 0x20) {
         end--;
     }
-    char *cleaned = malloc((size_t)(end - start) + 1);
+    char *cleaned = spisor_memory_allocate((size_t)(end - start) + 1);
     if (cleaned == NULL) {
         return NULL;
     }
@@ -516,7 +517,7 @@ static int parse_url(const char *input, const parsed_url *base, parsed_url *url)
     } else {
         parsed = parse_with_scheme(url, scheme, rest, base);
     }
-    free(cleaned);
+    spisor_memory_release(cleaned);
     if (!parsed) {
         free_url(url);
     }
@@ -575,8 +576,8 @@ static int is_inside_index_directory(const parsed_url *resolved, const parsed_ur
         size_t directory_length = (size_t)(last_slash - index_path) + 1;
         inside = strncmp(resolved_path, index_path, directory_length) == 0;
     }
-    free(resolved_path);
-    free(index_path);
+    spisor_memory_release(resolved_path);
+    spisor_memory_release(index_path);
     return inside;
 }
 
@@ -642,6 +643,6 @@ char *runtime_catalog_file_url_of_path(int windows, const char *path) {
         href = href_of(&url);
         free_url(&url);
     }
-    free(written);
+    spisor_memory_release(written);
     return href;
 }

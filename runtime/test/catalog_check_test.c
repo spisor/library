@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "catalog.h"
+#include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "catalog_service_call.h"
 #include "catalog_hooks.h"
@@ -48,7 +49,7 @@ static char base[1024];
 static char cache[1100];
 
 static char *index_text(const char *latest) {
-    char *text = malloc(512);
+    char *text = spisor_memory_allocate(512);
     snprintf(text, 512,
              "{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\",\"latest\":\"%s\",\"versions\":{\"%s\":{\"files\":{"
              "\"plugin.json\":{\"url\":\"a/%s/plugin.json\",\"sha256\":\"" ZEROES "\",\"size\":1}}}}}}}",
@@ -74,7 +75,7 @@ typedef struct served {
 
 /** Serves body at /index.json, carrying etag when it is not NULL, and sends https://catalog.test there. */
 static void serve(served *server, int status, const char *body, const char *etag) {
-    server->body = body == NULL ? NULL : malloc(strlen(body) + 1);
+    server->body = body == NULL ? NULL : spisor_memory_allocate(strlen(body) + 1);
     if (body != NULL) {
         strcpy(server->body, body);
     }
@@ -99,11 +100,11 @@ static size_t count_of(const char *text, const char *fragment) {
 static size_t stop(served *server, char **heads) {
     char *seen = http_fixture_stop(server->fixture);
     size_t requests = count_of(seen, "GET ");
-    free(server->body);
+    spisor_memory_release(server->body);
     if (heads != NULL) {
         *heads = seen;
     } else {
-        free(seen);
+        spisor_memory_release(seen);
     }
     runtime_catalog_redirect_requests(NULL, NULL);
     return requests;
@@ -114,7 +115,7 @@ static void serve_nothing(void) {
     static char target[64];
     http_fixture *fixture = http_fixture_start(NULL, 0);
     snprintf(target, sizeof target, "http://127.0.0.1:%u", (unsigned)http_fixture_port(fixture));
-    free(http_fixture_stop(fixture));
+    spisor_memory_release(http_fixture_stop(fixture));
     runtime_catalog_redirect_requests("https://catalog.test", target);
 }
 
@@ -153,7 +154,7 @@ static char *state_file(const char *location) {
 static cJSON *state_of(const char *location) {
     char *path = state_file(location);
     cJSON *state = read_json_file(path);
-    free(path);
+    spisor_memory_release(path);
     return state;
 }
 
@@ -186,7 +187,7 @@ static void check_once(int status, const char *latest, const char *etag, const c
     serve(&server, status, body, etag);
     expect_kind(check_source("https", URL, now), expected_kind, now);
     stop(&server, NULL);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static void it_makes_one_request_for_two_checks_inside_the_interval(void) {
@@ -197,7 +198,7 @@ static void it_makes_one_request_for_two_checks_inside_the_interval(void) {
     expect_kind(check_source("https", URL, START), "changed", "first check");
     expect_kind(check_source("https", URL, LATER_23), "skipped", "inside the interval");
     CHECK(stop(&server, NULL) == 1);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static void it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder(void) {
@@ -214,7 +215,7 @@ static void it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder(vo
     size_t length = strlen(path);
     CHECK(length > strlen(expected_name) && strcmp(path + length - strlen(expected_name), expected_name) == 0);
     CHECK(spisor_file_exists(path));
-    free(path);
+    spisor_memory_release(path);
     cJSON *state = state_of(URL);
     char *body = index_text("1.0.0");
     char expected[1024];
@@ -230,19 +231,19 @@ static void it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder(vo
     cJSON_Delete(catalog);
     cJSON_Delete(wanted);
     cJSON_Delete(state);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static int sent_etag(const char *heads, const char *etag) {
     char wanted[128];
     snprintf(wanted, sizeof wanted, "if-none-match: %s", etag);
     size_t length = strlen(heads);
-    char *lowered = malloc(length + 1);
+    char *lowered = spisor_memory_allocate(length + 1);
     for (size_t index = 0; index <= length; index++) {
         lowered[index] = (char)tolower((unsigned char)heads[index]);
     }
     int found = strstr(lowered, wanted) != NULL;
-    free(lowered);
+    spisor_memory_release(lowered);
     return found;
 }
 
@@ -256,8 +257,8 @@ static void it_asks_again_once_the_interval_has_passed_sending_the_etag(void) {
     char *heads;
     CHECK(stop(&server, &heads) == 1);
     CHECK(sent_etag(heads, ETAG));
-    free(heads);
-    free(body);
+    spisor_memory_release(heads);
+    spisor_memory_release(body);
     cJSON *state = state_of(URL);
     check_text(text_at(state, "checkedAt"), LATER_25, "checkedAt moved");
     cJSON_Delete(state);
@@ -274,7 +275,7 @@ static void it_answers_a_newer_index_as_changed_and_keeps_it(void) {
     check_text(text_at(value_at(answer.tree, "catalog/items/a"), "latest"), "2.0.0", "newer latest");
     cJSON_Delete(answer.tree);
     stop(&server, NULL);
-    free(body);
+    spisor_memory_release(body);
     expect_current_latest("2.0.0", "kept newer");
 }
 
@@ -299,7 +300,7 @@ static void it_leaves_checked_at_alone_when_a_check_fails(void) {
     serve(&retry, 200, body, ETAG);
     expect_kind(check_source("https", URL, LATER_26), "unchanged", "retry");
     CHECK(stop(&retry, NULL) == 1);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static void it_retries_on_the_next_check_after_a_first_check_that_failed(void) {
@@ -312,7 +313,7 @@ static void it_retries_on_the_next_check_after_a_first_check_that_failed(void) {
     serve(&retry, 200, body, NULL);
     expect_kind(check_source("https", URL, LATER_1), "changed", "retried");
     CHECK(stop(&retry, NULL) == 1);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static void it_answers_an_index_the_reader_refuses_as_failed_and_keeps_the_previous_one(void) {
@@ -345,13 +346,13 @@ static void it_refuses_a_source_whose_url_is_not_https_without_asking(void) {
     runtime_catalog_redirect_requests("http://catalog.test", "http://127.0.0.1:1");
     expect_kind(check_source("https", "http://catalog.test/index.json", START), "failed", "plain http");
     CHECK(stop(&server, NULL) == 0);
-    free(body);
+    spisor_memory_release(body);
 }
 
 static void it_keeps_an_https_index_without_its_byte_order_mark(void) {
     start_scratch("byte-order-mark");
     char *index = index_text("1.0.0");
-    char *body = malloc(strlen(index) + 4);
+    char *body = spisor_memory_allocate(strlen(index) + 4);
     snprintf(body, strlen(index) + 4, "\xEF\xBB\xBF%s", index);
     served server;
     serve(&server, 200, body, NULL);
@@ -360,19 +361,19 @@ static void it_keeps_an_https_index_without_its_byte_order_mark(void) {
     cJSON *state = state_of(URL);
     check_text(text_at(state, "index"), index, "kept without the mark");
     cJSON_Delete(state);
-    free(body);
-    free(index);
+    spisor_memory_release(body);
+    spisor_memory_release(index);
 }
 
 static char *write_local(const char *name, const char *latest) {
     char directory[1200];
     snprintf(directory, sizeof directory, "%s/local", base);
     CHECK(spisor_make_directories(directory));
-    char *path = malloc(1300);
+    char *path = spisor_memory_allocate(1300);
     snprintf(path, 1300, "%s/%s", directory, name);
     char *text = index_text(latest);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)));
-    free(text);
+    spisor_memory_release(text);
     return path;
 }
 
@@ -382,13 +383,13 @@ static void it_reads_a_local_index_from_disk_every_time(void) {
     serve_nothing();
     expect_kind(check_source("local", path, START), "changed", "local first");
     expect_kind(check_source("local", path, LATER_1), "unchanged", "local again");
-    free(write_local("catalog.json", "2.0.0"));
+    spisor_memory_release(write_local("catalog.json", "2.0.0"));
     catalog_answer changed = check_source("local", path, LATER_2);
     check_text(kind_of(changed), "changed", "local changed");
     check_text(text_at(value_at(changed.tree, "catalog/items/a"), "latest"), "2.0.0", "local latest");
     cJSON_Delete(changed.tree);
     runtime_catalog_redirect_requests(NULL, NULL);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void it_answers_the_local_index_as_current_before_any_check(void) {
@@ -399,7 +400,7 @@ static void it_answers_the_local_index_as_current_before_any_check(void) {
     cJSON *catalog = current_of(sources);
     check_text(text_at(value_at(catalog, "items/a"), "latest"), "1.0.0", "local current");
     cJSON_Delete(catalog);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void it_answers_a_missing_local_index_as_failed(void) {
@@ -420,8 +421,8 @@ static void it_merges_every_readable_source_the_earlier_winning(void) {
     cJSON *catalog = current_of(sources);
     check_text(text_at(value_at(catalog, "items/a"), "latest"), "1.0.0", "earlier wins");
     cJSON_Delete(catalog);
-    free(first);
-    free(second);
+    spisor_memory_release(first);
+    spisor_memory_release(second);
 }
 
 static void it_answers_an_empty_catalog_when_no_source_can_be_read(void) {

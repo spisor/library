@@ -68,23 +68,19 @@ static char *strip_into(const char *text, size_t length, size_t *stripped_length
 }
 
 char *spisor_strip_comment_lines(const char *text, size_t length, size_t *stripped_length) {
-    return strip_into(text, length, stripped_length, malloc(length + 1));
-}
-
-char *spisor_strip_comment_lines_reading(const char *text, size_t length, size_t *stripped_length) {
     return strip_into(text, length, stripped_length, spisor_memory_allocate(length + 1));
 }
 
 static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_file_state *state) {
     size_t decoded_length = 0;
-    uint8_t *decoded = spisor_decode_utf8_lossy_reading(bytes, length, &decoded_length);
+    uint8_t *decoded = spisor_decode_utf8_lossy(bytes, length, &decoded_length);
     int out_of_memory = 0;
     *state = SPISOR_JSON_FILE_OUT_OF_MEMORY;
     if (decoded == NULL) {
         return NULL;
     }
     size_t text_length = 0;
-    char *text = spisor_strip_comment_lines_reading((const char *)decoded, decoded_length, &text_length);
+    char *text = spisor_strip_comment_lines((const char *)decoded, decoded_length, &text_length);
     spisor_memory_release(decoded);
     if (text == NULL) {
         return NULL;

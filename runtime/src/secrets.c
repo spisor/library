@@ -1,4 +1,5 @@
 #include "secrets.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,9 +18,9 @@ typedef struct move_result {
 
 void runtime_free_secret_names(runtime_secret_names *names) {
     for (size_t index = 0; names->names != NULL && index < names->count; index++) {
-        free(names->names[index]);
+        spisor_memory_release(names->names[index]);
     }
-    free(names->names);
+    spisor_memory_release(names->names);
     names->names = NULL;
     names->count = 0;
 }
@@ -60,7 +61,7 @@ static int is_usable_plugin(const char *plugin) {
 
 static char *entry_name(const char *plugin, const char *name) {
     size_t size = sizeof("spisor//") + strlen(plugin) + strlen(name);
-    char *entry = malloc(size);
+    char *entry = spisor_memory_allocate(size);
     if (entry != NULL) {
         snprintf(entry, size, "spisor/%s/%s", plugin, name);
     }
@@ -77,7 +78,7 @@ static spisor_status refuse_name(spisor_refusal *refusal) {
                              "send name as the secret's name, a non-empty string");
 }
 
-/** The entry plugin and name name, freed with free; NULL with *status set to the refusal or OUT_OF_MEMORY. */
+/** The entry plugin and name name, freed; NULL with *status set to the refusal or OUT_OF_MEMORY. */
 static char *checked_entry(const char *plugin, const char *name, spisor_status *status, spisor_refusal *refusal) {
     char *entry;
     if (!is_usable_plugin(plugin)) {
@@ -141,7 +142,7 @@ static spisor_status get_from_store(const runtime_secret_places *place, const ch
         *value = stored;
         return SPISOR_OK;
     }
-    free(stored);
+    spisor_memory_release(stored);
     if (file != RUNTIME_SECRET_FILE_DONE) {
         return refuse_file(place->secrets_file, file, refusal);
     }
@@ -292,7 +293,7 @@ spisor_status runtime_get_secret(const runtime_secret_places *place, const char 
         return status;
     }
     status = get_entry(place, entry, value, refusal);
-    free(entry);
+    spisor_memory_release(entry);
     return status;
 }
 
@@ -309,7 +310,7 @@ spisor_status runtime_set_secret(const runtime_secret_places *place, const char 
     } else {
         status = is_over_cap(value) ? refuse_over_cap(refusal) : store_or_file(place, entry, value, location, refusal);
     }
-    free(entry);
+    spisor_memory_release(entry);
     return status;
 }
 
@@ -321,7 +322,7 @@ spisor_status runtime_delete_secret(const runtime_secret_places *place, const ch
         return status;
     }
     status = delete_entry(place, entry, refusal);
-    free(entry);
+    spisor_memory_release(entry);
     return status;
 }
 
@@ -336,7 +337,7 @@ spisor_status runtime_clear_secrets(const runtime_secret_places *place, const ch
         return SPISOR_OUT_OF_MEMORY;
     }
     status = clear_under(place, prefix, refusal);
-    free(prefix);
+    spisor_memory_release(prefix);
     return status;
 }
 

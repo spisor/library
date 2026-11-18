@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "allocation.h"
 #include "directory_tree.h"
 #include "paths.h"
 #include "platform_key.h"
@@ -49,8 +50,8 @@ static int copy_into(const char *source, const char *directory, const char *name
     if (!copied) {
         fprintf(stderr, "stage-bundle: %s could not be copied to %s\n", source, destination == NULL ? name : destination);
     }
-    free(bytes);
-    free(destination);
+    spisor_memory_release(bytes);
+    spisor_memory_release(destination);
     return copied;
 }
 
@@ -74,8 +75,8 @@ static int write_host_manifest(const char *directory, const char *version) {
     char *text = spisor_json_stringify_pretty(manifest);
     char *path = joined(directory, "host.json");
     int written = text != NULL && path != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
-    free(path);
-    free(text);
+    spisor_memory_release(path);
+    spisor_memory_release(text);
     cJSON_Delete(manifest);
     return written;
 }
@@ -93,7 +94,7 @@ static int stage_host(int count, char **arguments) {
                  copy_into(arguments[4], platform, "spisor-host" EXECUTABLE_ENDING) &&
                  copy_into(arguments[5], platform, "spisor-boot" EXECUTABLE_ENDING) &&
                  (count == 6 || copy_into(arguments[6], platform, "runtime-launcher.exe"));
-    free(platform);
+    spisor_memory_release(platform);
     return staged ? 0 : 1;
 }
 

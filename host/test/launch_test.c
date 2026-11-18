@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 static void runs_the_application_with_its_arguments_answers_its_exit_code_and_the_background_host_stops(void) {
     host_world world;
@@ -113,7 +114,7 @@ static void refuses_an_application_that_is_not_on_the_path_leaving_nothing_held(
     expect_contains(launcher.err, "fix: ", "with a fix");
     CHECK(!exists_in(world.base.state, "processes/" BACKGROUND_ID ".json"));
     program_free(&launcher);
-    free(empty);
+    spisor_memory_release(empty);
     finish_world(&world);
 }
 
@@ -196,7 +197,7 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(session);
     stop_if_alive(background);
-    free(starts);
+    spisor_memory_release(starts);
     cJSON_Delete(started);
     program_free(&launcher);
     finish_world(&world);
@@ -222,7 +223,7 @@ static void make_shim_unrewritable(const host_world *world) {
     write_file(path, text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void runs_the_application_when_the_loader_cannot_be_registered_again_saying_why(void) {
@@ -282,11 +283,11 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
     stop_if_alive(session);
     stop_if_alive(background);
     cJSON_Delete(record);
-    free(starts);
+    spisor_memory_release(starts);
     cJSON_Delete(started);
-    free(moved);
-    free(again);
-    free(recorded);
+    spisor_memory_release(moved);
+    spisor_memory_release(again);
+    spisor_memory_release(recorded);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -310,9 +311,9 @@ static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(voi
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(session);
     stop_if_alive(background);
-    free(starts);
+    spisor_memory_release(starts);
     cJSON_Delete(started);
-    free(script);
+    spisor_memory_release(script);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -322,7 +323,7 @@ static void block_runtime_acquisition(const host_world *world) {
     char *folder = joined(world->base.cache, "runtimes/node");
     CHECK(runtime_remove_tree(folder) == 1);
     write_file(folder, "no runtime may be unpacked here");
-    free(folder);
+    spisor_memory_release(folder);
 }
 
 static void runs_the_application_without_its_session_host_when_no_javascript_runtime_can_be_found(void) {
@@ -346,8 +347,8 @@ static void runs_the_application_without_its_session_host_when_no_javascript_run
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(node);
-    free(record);
+    spisor_memory_release(node);
+    spisor_memory_release(record);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -356,7 +357,7 @@ static void write_loader_setting(const host_world *world, const char *content) {
     cJSON *registration = registration_in(world, LOADER_ID);
     char *file = joined(text_at(registration, "home"), "config/settings.json");
     write_file(file, content);
-    free(file);
+    spisor_memory_release(file);
     cJSON_Delete(registration);
 }
 
@@ -393,7 +394,7 @@ static void starts_the_session_host_for_the_plugins_the_loader_requires(void) {
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(session);
     stop_if_alive(background);
-    free(starts);
+    spisor_memory_release(starts);
     cJSON_Delete(started);
     program_free(&launcher);
     finish_world(&world);
@@ -404,14 +405,14 @@ static void refuses_a_launch_naming_the_required_plugin_that_is_not_installed(vo
     install_launch_world_requiring_session_plugin(&world, "launch", "required-missing");
     char *folder = joined(world.base.cache, "bundles/" SESSION_PLUGIN);
     CHECK(runtime_remove_tree(folder) == 1);
-    free(folder);
+    spisor_memory_release(folder);
     expect_refused_launch(&world, "missing", SESSION_PLUGIN, "run spisor-host install --catalog <path or url> again");
     char *node = joined(world.base.root, "node-bin");
     char path[4096];
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world.bin, node);
     CHECK(world_install(&world, NULL, path) == 0);
     CHECK(exists_in(world.base.cache, "bundles/" SESSION_PLUGIN));
-    free(node);
+    spisor_memory_release(node);
     finish_world(&world);
 }
 
@@ -424,7 +425,7 @@ static void refuses_a_launch_naming_the_setting_of_a_required_plugin_that_is_dis
     char fix[2048];
     snprintf(fix, sizeof fix, "set plugins." SESSION_PLUGIN ".enabled to true in %s", file);
     expect_refused_launch(&world, "disabled", SESSION_PLUGIN, fix);
-    free(file);
+    spisor_memory_release(file);
     cJSON_Delete(registration);
     finish_world(&world);
 }
@@ -438,7 +439,7 @@ static void refuses_a_launch_naming_the_portable_settings_file_when_the_portable
     char fix[2048];
     snprintf(fix, sizeof fix, "set plugins." SESSION_PLUGIN ".enabled to true in %s", file);
     expect_refused_launch(&world, "disabled-portable", SESSION_PLUGIN, fix);
-    free(file);
+    spisor_memory_release(file);
     finish_world(&world);
 }
 
@@ -451,8 +452,8 @@ static void refuses_a_launch_when_the_session_host_of_a_loader_with_required_plu
     CHECK(runtime_remove_file_entry(node) == RUNTIME_ENTRY_DONE);
     block_runtime_acquisition(&world);
     expect_refused_launch(&world, "blocked", "could not start the session host of " LOADER_ID, "fix: ");
-    free(node);
-    free(record);
+    spisor_memory_release(node);
+    spisor_memory_release(record);
     finish_world(&world);
 }
 

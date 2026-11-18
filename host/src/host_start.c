@@ -1,4 +1,5 @@
 #include "host_start.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -43,7 +44,7 @@ static char *installed_version(const host_context *context, const char *id, cons
         *refusal = refused(id, " is not installed intact in ", directory);
     }
     if (!intact) {
-        free(directory);
+        spisor_memory_release(directory);
         directory = NULL;
     }
     cJSON_Delete(check);
@@ -54,7 +55,7 @@ static char *installed_version(const host_context *context, const char *id, cons
 static char *entry_inside(const char *directory, const char *id, const char *entry, cJSON **refusal) {
     char *path = entry == NULL ? NULL : runtime_cache_resolve(directory, &entry, 1);
     if (path != NULL && !runtime_cache_is_strictly_inside(directory, path)) {
-        free(path);
+        spisor_memory_release(path);
         path = NULL;
     }
     if (path == NULL) {
@@ -95,8 +96,8 @@ static cJSON *layer_start(const host_context *context, const char *runtime, cons
     } else if (path != NULL && !javascript) {
         *refusal = refused("the start recorded for ", id, " names a runtime this host cannot start");
     }
-    free(executable);
-    free(path);
+    spisor_memory_release(executable);
+    spisor_memory_release(path);
     return start;
 }
 
@@ -110,7 +111,7 @@ cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusa
     cJSON *start = directory == NULL ? NULL
                                      : layer_start(context, host_text(recorded, "runtime"), directory,
                                                    host_text(recorded, "entry"), id, refusal);
-    free(directory);
+    spisor_memory_release(directory);
     cJSON_Delete(registration);
     return start;
 }
@@ -136,7 +137,7 @@ static char *hinted_version(const host_context *context, const char *id) {
     cJSON *read = runtime_call_operation(runtime_boot_read_operation, argument, &refusal);
     cJSON_Delete(refusal);
     const char *host = host_text(cJSON_GetObjectItemCaseSensitive(read, "hint"), "host");
-    char *version = host == NULL ? NULL : malloc(strlen(host) + 1);
+    char *version = host == NULL ? NULL : spisor_memory_allocate(strlen(host) + 1);
     if (version != NULL) {
         strcpy(version, host);
     }
@@ -151,13 +152,13 @@ static char *entry_of_bundle(const char *directory, int *out_of_memory) {
     *out_of_memory = path == NULL;
     cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     const char *entry = host_text(standard, "entry");
-    char *copy = entry == NULL ? NULL : malloc(strlen(entry) + 1);
+    char *copy = entry == NULL ? NULL : spisor_memory_allocate(strlen(entry) + 1);
     *out_of_memory = *out_of_memory || (entry != NULL && copy == NULL);
     if (copy != NULL) {
         strcpy(copy, entry);
     }
     cJSON_Delete(standard);
-    free(path);
+    spisor_memory_release(path);
     return copy;
 }
 
@@ -174,8 +175,8 @@ cJSON *host_session_start_of(const host_context *context, const char *loader_id,
     cJSON *start = directory == NULL || out_of_memory
                        ? NULL
                        : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, loader_id, refusal);
-    free(entry);
-    free(directory);
-    free(version);
+    spisor_memory_release(entry);
+    spisor_memory_release(directory);
+    spisor_memory_release(version);
     return start;
 }

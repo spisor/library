@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "check.h"
 #include "runtime/changes.h"
@@ -55,7 +56,7 @@ static inline changes_result changes_apply_call(const char *state, const char *h
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_value_tree value = SPISOR_INIT(spisor_value_tree);
     const cJSON *key = cJSON_GetObjectItemCaseSensitive(json, "key");
-    const char **segments = calloc((size_t)cJSON_GetArraySize(key) + 1, sizeof *segments);
+    const char **segments = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(key) + 1, sizeof *segments);
     changes_result result;
     memset(&result, 0, sizeof result);
     change.kind = changes_kind_of(changes_member_text(json, "kind"));
@@ -91,7 +92,7 @@ static inline changes_result changes_apply_call(const char *state, const char *h
     changes_keep_refusal(&result, &refusal);
     changes->release_refusal(changes->context, &refusal);
     spisor_value_release(&value);
-    free(segments);
+    spisor_memory_release(segments);
     cJSON_Delete(json);
     return result;
 }

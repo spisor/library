@@ -1,4 +1,5 @@
 #include "updates.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -58,7 +59,7 @@ spisor_lock *runtime_updates_lock_registered(const runtime_updates_request *requ
 cJSON *runtime_updates_unrecorded(char *problem) {
     const char *parts[1] = {problem};
     cJSON *refusal = problem == NULL ? NULL : runtime_cache_refusal(parts, 1, WRITABLE_STATE_FIX);
-    free(problem);
+    spisor_memory_release(problem);
     return refusal;
 }
 
@@ -77,9 +78,9 @@ static const char *platform_member(const cJSON *argument) {
 
 static cJSON *refuse_host_id(const char *state, const char *host_id, cJSON **refusal) {
     char *problem = NULL;
-    free(runtime_host_references_path(state, host_id, &problem));
+    spisor_memory_release(runtime_host_references_path(state, host_id, &problem));
     *refusal = problem == NULL ? NULL : runtime_refusal(problem, RUNTIME_PLAIN_HOST_ID_FIX);
-    free(problem);
+    spisor_memory_release(problem);
     return NULL;
 }
 

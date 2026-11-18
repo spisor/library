@@ -1,4 +1,5 @@
 #include "loader_start.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +92,7 @@ int host_start_loader(const host_context *context, const char *id, loader_start 
     cJSON *applied = start->registration == NULL ? NULL : apply(context, id, start, refusal);
     start->plugins = cJSON_DetachItemFromObjectCaseSensitive(applied, "plugins");
     const char *version = host_text(cJSON_GetObjectItemCaseSensitive(applied, "run"), id);
-    start->version = version == NULL ? NULL : malloc(strlen(version) + 1);
+    start->version = version == NULL ? NULL : spisor_memory_allocate(strlen(version) + 1);
     if (start->version != NULL) {
         strcpy(start->version, version);
     }
@@ -109,7 +110,7 @@ int host_start_loader(const host_context *context, const char *id, loader_start 
 }
 
 void host_finish_loader(loader_start *start) {
-    free(start->version);
+    spisor_memory_release(start->version);
     cJSON_Delete(start->standard);
     cJSON_Delete(start->plugins);
     cJSON_Delete(start->registration);

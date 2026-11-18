@@ -1,4 +1,5 @@
 #include "marketplace_memory.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -96,7 +97,7 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
     cJSON *store = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     if (!is_store(store)) {
         cJSON_Delete(store);
         return refuse(refusal, "repair the file or move it away, then run the command again; it is left as it was",
@@ -108,28 +109,28 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
 static int writes_store(const cJSON *store, const char *state, const char *path) {
     char *pretty = spisor_json_stringify_pretty(store);
     size_t length = pretty == NULL ? 0 : strlen(pretty);
-    char *text = pretty == NULL ? NULL : realloc(pretty, length + 2);
+    char *text = pretty == NULL ? NULL : spisor_memory_reallocate(pretty, length + 2);
     int written = 0;
     if (text != NULL) {
         text[length] = '\n';
         text[length + 1] = '\0';
         written = spisor_make_directories(state) == 1 && spisor_replace_file(path, (const uint8_t *)text, length + 1) == 1;
     }
-    free(text == NULL ? pretty : text);
+    spisor_memory_release(text == NULL ? pretty : text);
     return written;
 }
 
 static char *qualified_name(const remembered_name *request) {
     if (request->marketplace == NULL) {
         size_t bare_length = strlen(request->name) + 1;
-        char *bare = malloc(bare_length);
+        char *bare = spisor_memory_allocate(bare_length);
         if (bare != NULL) {
             memcpy(bare, request->name, bare_length);
         }
         return bare;
     }
     size_t length = strlen(request->marketplace) + strlen(request->name) + 2;
-    char *key = malloc(length);
+    char *key = spisor_memory_allocate(length);
     if (key != NULL) {
         snprintf(key, length, "%s/%s", request->marketplace, request->name);
     }
@@ -206,7 +207,7 @@ cJSON *runtime_marketplace_remember_operation(const cJSON *argument, cJSON **ref
     cJSON *store = path == NULL || key == NULL ? NULL : loaded_store(path, refusal);
     cJSON *answer = store == NULL ? NULL : settled_answer(store, &request, key, path, refusal);
     cJSON_Delete(store);
-    free(key);
-    free(path);
+    spisor_memory_release(key);
+    spisor_memory_release(path);
     return answer;
 }

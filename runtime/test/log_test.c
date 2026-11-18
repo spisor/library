@@ -12,6 +12,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "scratch_directory.h"
 #include "log.h"
 #include "runtime/log.h"
@@ -187,7 +188,7 @@ static void writes_tagged_line(void) {
     finish(&result);
     char *content = read_log(&home);
     check_text(content, "[" TIME "] [WARN] m\n", "tagged line");
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void appends_each_level_tag(void) {
@@ -202,7 +203,7 @@ static void appends_each_level_tag(void) {
     check_text(content,
                "[" TIME "] [DEBUG] m\n[" TIME "] [INFO] m\n[" TIME "] [WARN] m\n[" TIME "] [ERROR] m\n",
                "four tags");
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void logging_false_from_manifest_default(void) {
@@ -217,7 +218,7 @@ static void logging_false_from_manifest_default(void) {
     finish(&error);
     char *content = read_log(&home);
     CHECK(content == NULL);
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void console_off_by_default(void) {
@@ -259,7 +260,7 @@ static void settings_follow_renamed_directory(void) {
     finish(&default_directory);
     char *content = read_log(&home);
     CHECK(content != NULL);
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void no_colour(void) {
@@ -343,7 +344,7 @@ static void refuses_malformed_arguments(void) {
     finish(&no_message);
     char *content = read_log(&home);
     CHECK(content == NULL);
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void block_logs_directory(const scratch_home *home) {
@@ -440,13 +441,13 @@ static void logging_gate_from_portable_plugin_file(void) {
     finish(&gated);
     char *content = read_log(&home);
     CHECK(content == NULL);
-    free(content);
+    spisor_memory_release(content);
     write_settings_file(&home, "p", "{\"logging\":true}");
     answer reopened = write_log(with_portable(request_for(&home, "info", NULL, NULL, 0), &home));
     finish(&reopened);
     content = read_log(&home);
     check_text(content, "[" TIME "] [INFO] m\n", "the application file reopens the log");
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void absent_portable_folder_changes_no_log(void) {
@@ -474,7 +475,7 @@ static void refuses_unusable_portable(void) {
     finish(&bad_id);
     char *content = read_log(&home);
     CHECK(content == NULL);
-    free(content);
+    spisor_memory_release(content);
 }
 
 static void the_definition_is_one_static_struct(void) {
@@ -515,7 +516,7 @@ static void refuses_an_entry_or_answer_short_of_its_shape_and_names_that_are_no_
     cJSON_Delete(listed);
     char *content = read_log(&home);
     CHECK(content == NULL);
-    free(content);
+    spisor_memory_release(content);
 }
 
 int main(void) {

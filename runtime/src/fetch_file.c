@@ -3,6 +3,7 @@
 #endif
 
 #include "fetch_transport.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -94,14 +95,14 @@ static int make_local(char *decoded) {
  */
 static char *local_path_of(const char *url, const char *path, runtime_fetch_answer *answer) {
     size_t length = strcspn(path, "?#");
-    char *decoded = malloc(length + 1);
+    char *decoded = spisor_memory_allocate(length + 1);
     if (decoded == NULL) {
         runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read: out of memory", url);
         return NULL;
     }
     decoding result = percent_decode(path, length, decoded);
     if (result != DECODED) {
-        free(decoded);
+        spisor_memory_release(decoded);
         if (result == ENCODED_SEPARATOR) {
             runtime_fetch_refuse(answer, "name the file by a file url whose path separators are plain slashes",
                                  "%s carries an encoded path separator, which could name a different path", url);
@@ -111,7 +112,7 @@ static char *local_path_of(const char *url, const char *path, runtime_fetch_answ
         return NULL;
     }
     if (!make_local(decoded)) {
-        free(decoded);
+        spisor_memory_release(decoded);
         runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s names no absolute path on this system", url);
         return NULL;
     }
@@ -151,7 +152,7 @@ static const char *path_after_authority(const char *url, runtime_fetch_answer *a
 }
 
 static void copy_into_sink(FILE *file, const char *url, runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
-    uint8_t *chunk = malloc(FILE_CHUNK);
+    uint8_t *chunk = spisor_memory_allocate(FILE_CHUNK);
     if (chunk == NULL) {
         runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read: out of memory", url);
         return;
@@ -161,7 +162,7 @@ static void copy_into_sink(FILE *file, const char *url, runtime_fetch_sink *sink
     while (taken && (read = fread(chunk, 1, FILE_CHUNK, file)) > 0) {
         taken = runtime_fetch_sink_take(sink, chunk, read);
     }
-    free(chunk);
+    spisor_memory_release(chunk);
     if (!taken) {
         answer->outcome = RUNTIME_FETCH_STOPPED_BY_SINK;
     } else if (ferror(file)) {
@@ -205,7 +206,7 @@ void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_f
     }
     stall_if_asked(url);
     FILE *file = runtime_open_file(local, RUNTIME_FILE_READ);
-    free(local);
+    spisor_memory_release(local);
     if (file == NULL) {
         runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read", url);
         return;

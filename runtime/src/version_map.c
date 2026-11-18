@@ -1,4 +1,5 @@
 #include "version_map.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -55,7 +56,7 @@ static char *bundle_directory(const char *cache, const char *id, const char *ver
 int runtime_bundle_is_sized(const char *cache, const char *id, const char *version, int *out_of_memory) {
     char *directory = bundle_directory(cache, id, version, out_of_memory);
     int sized = directory != NULL && is_intact(runtime_cache_check_version_sizes(directory), out_of_memory);
-    free(directory);
+    spisor_memory_release(directory);
     return sized;
 }
 
@@ -63,6 +64,6 @@ int runtime_bundle_is_intact(const char *cache, const char *id, const char *vers
     char *directory = bundle_directory(cache, id, version, out_of_memory);
     int intact = directory != NULL && is_intact(runtime_cache_check_version_sizes(directory), out_of_memory) &&
                  is_intact(runtime_cache_check_version(directory), out_of_memory);
-    free(directory);
+    spisor_memory_release(directory);
     return intact;
 }

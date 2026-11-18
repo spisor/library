@@ -22,6 +22,7 @@
 #endif
 
 #include "changes.h"
+#include "spisor/allocation.h"
 #include "changes_call.h"
 #include "check.h"
 #include "commands_call.h"
@@ -223,7 +224,7 @@ static int file_is(const char *path, const char *expected) {
     size_t length = 0;
     char *bytes = (char *)spisor_read_file(path, &length);
     int same = check_text(bytes, expected, path);
-    free(bytes);
+    spisor_memory_release(bytes);
     return same;
 }
 
@@ -274,7 +275,7 @@ static int shims_on_path(const scratch *place) {
     size_t length = 0;
     char *text = (char *)spisor_read_file(profile, &length);
     int found = text != NULL && strstr(text, line) != NULL;
-    free(text);
+    spisor_memory_release(text);
     return found;
 }
 #endif
@@ -343,8 +344,8 @@ static void two_hosts_installed_and_removed_leave_the_tree_as_it_was(void) {
     CHECK(file_is(portable, portable_bytes));
     CHECK(file_is(place.secrets, secrets_bytes));
     CHECK(file_is(place.config, application_config));
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 int main(void) {

@@ -1,4 +1,5 @@
 #include "runtime/places.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +104,6 @@ int runtime_resolve_places_answer(const cJSON *environment, runtime_places_answe
     }
     *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
     runtime_release_refusal(NULL, &refused);
-    free(variables);
+    spisor_memory_release(variables);
     return status == SPISOR_OK;
 }

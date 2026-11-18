@@ -1,4 +1,5 @@
 #include "cache_install.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -105,7 +106,7 @@ void runtime_cache_free_installation(runtime_cache_installation *installation) {
     cJSON_Delete(installation->record.hashes);
     cJSON_Delete(installation->record.sizes);
     cJSON_Delete(installation->answer);
-    free(installation);
+    spisor_memory_release(installation);
 }
 
 static int store_planned(runtime_cache_installation *installation, cJSON **refusal) {
@@ -123,14 +124,14 @@ static int store_planned(runtime_cache_installation *installation, cJSON **refus
 
 runtime_cache_installation *runtime_cache_store_version(const char *cache, const char *id, const cJSON *item,
                                                         const char *version, const char *platform, cJSON **refusal) {
-    runtime_cache_installation *installation = calloc(1, sizeof *installation);
+    runtime_cache_installation *installation = spisor_memory_allocate_zeroed(1, sizeof *installation);
     if (installation == NULL) {
         return NULL;
     }
     installation->id = id;
     installation->version = version;
     if (!runtime_cache_plan_install(cache, id, item, version, platform, &installation->plan, refusal)) {
-        free(installation);
+        spisor_memory_release(installation);
         return NULL;
     }
     if (!store_planned(installation, refusal)) {

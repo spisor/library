@@ -1,4 +1,5 @@
 #include "ui_refusal.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -26,7 +27,7 @@ cJSON *runtime_ui_refusal(const char *fix, ...) {
     va_start(parts, fix);
     size_t length = joined_length(parts);
     va_end(parts);
-    char *message = malloc(length + 1);
+    char *message = spisor_memory_allocate(length + 1);
     if (message == NULL) {
         return NULL;
     }
@@ -34,6 +35,6 @@ cJSON *runtime_ui_refusal(const char *fix, ...) {
     join(message, parts);
     va_end(parts);
     cJSON *refusal = runtime_refusal(message, fix);
-    free(message);
+    spisor_memory_release(message);
     return refusal;
 }

@@ -1,4 +1,5 @@
 #include "plugin_choices.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,7 +15,7 @@ static const cJSON **choices_of(const cJSON *settings, size_t *count) {
     for (const cJSON *choice = cJSON_IsObject(plugins) ? plugins->child : NULL; choice != NULL; choice = choice->next) {
         *count += cJSON_IsObject(choice);
     }
-    const cJSON **choices = *count == 0 ? NULL : malloc(*count * sizeof *choices);
+    const cJSON **choices = *count == 0 ? NULL : spisor_memory_allocate(*count * sizeof *choices);
     size_t index = 0;
     for (const cJSON *choice = choices == NULL ? NULL : plugins->child; choice != NULL; choice = choice->next) {
         if (cJSON_IsObject(choice)) {
@@ -63,7 +64,7 @@ static int add_enabled(cJSON *candidates, const cJSON *settings) {
             added = add_candidate(candidates, choices[index]->string, settings);
         }
     }
-    free(choices);
+    spisor_memory_release(choices);
     return added;
 }
 
@@ -91,7 +92,7 @@ static int add_defaults(cJSON *candidates, const cJSON *settings, const cJSON *d
     for (const cJSON *id = ids == NULL ? NULL : ids->child; id != NULL; id = id->next) {
         count++;
     }
-    const cJSON **sorted = count == 0 ? NULL : malloc(count * sizeof *sorted);
+    const cJSON **sorted = count == 0 ? NULL : spisor_memory_allocate(count * sizeof *sorted);
     size_t index = 0;
     for (const cJSON *id = sorted == NULL ? NULL : ids->child; id != NULL; id = id->next) {
         sorted[index++] = id;
@@ -106,7 +107,7 @@ static int add_defaults(cJSON *candidates, const cJSON *settings, const cJSON *d
             added = add_candidate(candidates, id, settings);
         }
     }
-    free(sorted);
+    spisor_memory_release(sorted);
     cJSON_Delete(ids);
     return added;
 }

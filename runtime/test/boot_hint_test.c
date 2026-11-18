@@ -1,4 +1,5 @@
 #include "updates_fixture.h"
+#include "spisor/allocation.h"
 
 #include "cache_place.h"
 #include "hosts_lock.h"
@@ -50,7 +51,7 @@ static void place_library(const char *id, const char *version, const char *platf
     for (size_t index = 0; index < count; index++) {
         write_in(folder, files[index], files[index]);
     }
-    free(folder);
+    spisor_memory_release(folder);
 }
 
 /** The entry a hint records for id at version on platform: its folder, and binary_name inside it unless NULL. */
@@ -63,9 +64,9 @@ static cJSON *hinted_entry(const char *id, const char *version, const char *plat
         const char *segments[2] = {folder, binary_name};
         char *binary = runtime_cache_resolve(cache, segments, 2);
         cJSON_AddStringToObject(entry, "binary", binary);
-        free(binary);
+        spisor_memory_release(binary);
     }
-    free(folder);
+    spisor_memory_release(folder);
     return entry;
 }
 
@@ -106,14 +107,14 @@ static void it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back(voi
     char *expected = undeclared_hint(LIBRARIES, "1.0.0");
     cJSON *expected_tree = parsed(expected);
     char *pretty = spisor_json_stringify_pretty(expected_tree);
-    char *text = malloc(strlen(pretty) + 2);
+    char *text = spisor_memory_allocate(strlen(pretty) + 2);
     snprintf(text, strlen(pretty) + 2, "%s\n", pretty);
     expect_text_in(cache, "hosts/spisor-host.json", text, "round trip text");
     catalog_answer read = read_hint(HOST);
     expect_member_json(read.tree, "hint", expected, "round trip read");
     cJSON_Delete(read.tree);
-    free(text);
-    free(pretty);
+    spisor_memory_release(text);
+    spisor_memory_release(pretty);
     cJSON_Delete(expected_tree);
     cJSON_free(expected);
     finish_base();
@@ -175,7 +176,7 @@ static void expect_refused_folder(const char *const *files, size_t count, const 
     expect_fix(written, REINSTALL_FIX, label);
     CHECK(!exists_in(cache, "hosts/spisor-host.json"));
     cJSON_Delete(written.tree);
-    free(folder);
+    spisor_memory_release(folder);
 }
 
 static void it_refuses_a_library_folder_with_no_binary(void) {
@@ -398,7 +399,7 @@ static void it_refuses_a_host_bundle_whose_marker_records_no_sizes(void) {
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
     char *recorded = text_in(cache, "bundles/spisor-host/1.0.0/.installed.json");
     cJSON *marker = recorded == NULL ? NULL : spisor_parse_json((const uint8_t *)recorded, strlen(recorded));
-    free(recorded);
+    spisor_memory_release(recorded);
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");
     char *text = cJSON_PrintUnformatted(marker);

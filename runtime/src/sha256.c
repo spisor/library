@@ -1,4 +1,5 @@
 #include "sha256.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,12 +115,12 @@ void runtime_sha256_finish_hex(runtime_sha256 *hash, char out_hex[RUNTIME_SHA256
 
 int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size) {
     FILE *file = runtime_open_file(path, RUNTIME_FILE_READ);
-    uint8_t *chunk = malloc(FILE_CHUNK);
+    uint8_t *chunk = spisor_memory_allocate(FILE_CHUNK);
     if (file == NULL || chunk == NULL) {
         if (file != NULL) {
             fclose(file);
         }
-        free(chunk);
+        spisor_memory_release(chunk);
         return 0;
     }
     runtime_sha256 hash;
@@ -132,7 +133,7 @@ int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_
     }
     int complete = !ferror(file);
     fclose(file);
-    free(chunk);
+    spisor_memory_release(chunk);
     if (complete) {
         runtime_sha256_finish_hex(&hash, out_hex);
         *size = total;

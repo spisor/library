@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
@@ -264,7 +265,7 @@ static void run_against_the_server(void) {
     names_the_missing_resolver_for_an_unknown_scheme();
     an_invalid_id_is_malformed();
     resolves_local_without_the_network();
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 #define TOKEN "tok-1234567890abcdef"
@@ -298,7 +299,7 @@ static void sends_the_token_only_when_given_and_never_to_another_host(void) {
     http_fixture *named = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
     CHECK(named != NULL);
     if (named == NULL) {
-        free(http_fixture_stop(other));
+        spisor_memory_release(http_fixture_stop(other));
         return;
     }
     unsigned short port = http_fixture_port(named);
@@ -315,8 +316,8 @@ static void sends_the_token_only_when_given_and_never_to_another_host(void) {
     CHECK(count_of(named_requests, "uthorization") == 3);
     CHECK(strstr(other_requests, "GET /repositories/101") != NULL);
     CHECK(strstr(other_requests, "uthorization") == NULL);
-    free(named_requests);
-    free(other_requests);
+    spisor_memory_release(named_requests);
+    spisor_memory_release(other_requests);
 }
 
 static void refuses_a_token_that_is_not_one_line_without_repeating_it(void) {

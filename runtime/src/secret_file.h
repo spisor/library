@@ -29,7 +29,7 @@ cJSON *runtime_read_secret_file(const char *path, runtime_secret_file_answer *an
  */
 runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJSON *entries);
 
-/** The value the file holds for entry, freed with free; NULL with DONE when it holds none. */
+/** The value the file holds for entry, freed; NULL with DONE when it holds none. */
 char *runtime_get_file_secret(const char *path, const char *entry, runtime_secret_file_answer *answer);
 
 runtime_secret_file_answer runtime_put_file_secret(const char *path, const char *entry, const char *value);

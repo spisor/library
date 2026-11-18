@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "spisor/allocation.h"
 #include "cache_call.h"
 #include "catalog_call.h"
 #include "catalog_url.h"
@@ -42,8 +43,8 @@ static void write_in_scratch(const char *relative, const char *text) {
     char *parent = joined_path(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
-    free(parent);
-    free(path);
+    spisor_memory_release(parent);
+    spisor_memory_release(path);
 }
 
 static void sha256_of(const char *text, char hex[RUNTIME_SHA256_HEX_SIZE]) {
@@ -99,9 +100,9 @@ static void write_release_json(char *json, size_t size, const char *directory) {
     CHECK(url != NULL);
     snprintf(json, size, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}",
              url == NULL ? "" : url);
-    free(url);
-    free(index_file);
-    free(index_path);
+    spisor_memory_release(url);
+    spisor_memory_release(index_file);
+    spisor_memory_release(index_path);
 }
 
 static void prepare_releases(void) {
@@ -136,8 +137,8 @@ static catalog_answer install_with(const char *id, const char *extra_json) {
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "pluginDir", plugins);
     cJSON_AddStringToObject(argument, "apiBase", api_base);
-    free(plugins);
-    free(cache);
+    spisor_memory_release(plugins);
+    spisor_memory_release(cache);
     return install_call(INSTALL_BY_ID, argument);
 }
 
@@ -155,7 +156,7 @@ static int succeeded(const catalog_answer answer, const char *label) {
 static int exists_in_scratch(const char *relative) {
     char *path = in_scratch(relative);
     int exists = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return exists;
 }
 
@@ -192,7 +193,7 @@ static void installs_from_the_release_index_and_checks_digests(void) {
     char index_digest[RUNTIME_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(index_path, index_digest) == 1);
     check_text(text_at(answer.tree, "sha256"), index_digest, "digest of the index");
-    free(index_path);
+    spisor_memory_release(index_path);
     CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/plugin.json"));
     CHECK(exists_in_scratch("cache/bundles/github+5/1.0.0/dist/index.js"));
     CHECK(exists_in_scratch("plugins-github-5/greeter.json"));
@@ -229,8 +230,8 @@ static void an_id_key_lands_in_its_folder_on_windows_paths(void) {
     CHECK(directory != NULL && strchr(directory + strlen(cache), ':') == NULL);
     CHECK(directory != NULL && strstr(directory, "github+5=kernel") != NULL);
     cJSON_Delete(answer.tree);
-    free(directory_url);
-    free(cache);
+    spisor_memory_release(directory_url);
+    spisor_memory_release(cache);
 }
 
 static void a_tampered_file_is_refused_and_nothing_is_deployed(void) {
@@ -268,7 +269,7 @@ static char *read_scratch(const char *relative) {
     char *path = in_scratch(relative);
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
@@ -291,7 +292,7 @@ static void the_first_install_records_the_set_and_the_primary(void) {
     check_text(text_at(recorded, "primary"), "github:11", "recorded primary");
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(recorded, "ids")) == 1);
     cJSON_Delete(recorded);
-    free(record);
+    spisor_memory_release(record);
     cJSON_Delete(answer.tree);
 }
 
@@ -331,7 +332,7 @@ static void a_changed_primary_is_refused_until_the_user_accepts_it(void) {
     CHECK(exists_in_scratch("cache/bundles/github+12/1.0.0/plugin.json"));
     char *record = read_scratch("cache/identities/github+12.json");
     CHECK(record != NULL && strstr(record, "\"github:12\"") != NULL && strstr(record, "github:5") == NULL);
-    free(record);
+    spisor_memory_release(record);
     cJSON_Delete(accepted.tree);
 }
 
@@ -345,7 +346,7 @@ static void a_mirror_installs_from_the_primary_and_deploys_its_name(void) {
     CHECK(!exists_in_scratch("cache/bundles/github+6"));
     char *identity = read_scratch("plugins-github-6/greeter_identity.json");
     CHECK(identity != NULL && strstr(identity, "github:5") != NULL && strstr(identity, "greeter") != NULL);
-    free(identity);
+    spisor_memory_release(identity);
     cJSON_Delete(answer.tree);
 }
 
@@ -366,10 +367,10 @@ static void a_folder_id_installs_from_its_primary_at_the_same_folder(void) {
     CHECK(!exists_in_scratch("cache/bundles/github+6=kernel"));
     char *identity = read_scratch("plugins-github-6-kernel/greeter_identity.json");
     CHECK(identity != NULL && strstr(identity, "github:5/kernel") != NULL);
-    free(identity);
+    spisor_memory_release(identity);
     char *record = read_scratch("cache/identities/github+6.json");
     CHECK(record_primary_is(record, "github:5"));
-    free(record);
+    spisor_memory_release(record);
     cJSON_Delete(answer.tree);
 }
 
@@ -398,23 +399,23 @@ static void an_accepted_change_of_primary_replaces_the_deployed_plugin(void) {
     cJSON_Delete(first.tree);
     char *deployed = read_scratch("plugins-github-20/greeter_identity.json");
     CHECK(deployed != NULL && strstr(deployed, "github:20") != NULL);
-    free(deployed);
+    spisor_memory_release(deployed);
     catalog_answer refused = install_with("github:20", NULL);
     CHECK(succeeded(refused, "after the move, unaccepted"));
     CHECK(flag_is(refused, "needsUserAcceptance", 1));
     cJSON_Delete(refused.tree);
     deployed = read_scratch("plugins-github-20/greeter_identity.json");
     CHECK(deployed != NULL && strstr(deployed, "github:20") != NULL && strstr(deployed, "github:21") == NULL);
-    free(deployed);
+    spisor_memory_release(deployed);
     catalog_answer accepted = install_with("github:20", "{\"acceptPrimary\":\"github:21\"}");
     CHECK(succeeded(accepted, "after the move, accepted"));
     check_text(text_at(accepted.tree, "id"), "github:21", "now installed from the new primary");
     deployed = read_scratch("plugins-github-20/greeter_identity.json");
     CHECK(deployed != NULL && strstr(deployed, "github:21") != NULL && strstr(deployed, "twentyone") != NULL);
-    free(deployed);
+    spisor_memory_release(deployed);
     char *record = read_scratch("cache/identities/github+20.json");
     CHECK(record_primary_is(record, "github:21"));
-    free(record);
+    spisor_memory_release(record);
     cJSON_Delete(accepted.tree);
     catalog_answer again = install_with("github:20", NULL);
     CHECK(succeeded(again, "retry after acceptance"));
@@ -530,7 +531,7 @@ static void run_against_the_server(void) {
     an_accepted_change_of_primary_replaces_the_deployed_plugin();
     a_release_without_an_index_is_refused_naming_it();
     refuses_a_local_id_and_a_missing_argument();
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 #if !defined(_WIN32)

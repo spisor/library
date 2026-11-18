@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 static int run_action(host_world *world, program *run, const char *const *arguments) {
     const char *command[16] = {"action"};
@@ -22,7 +23,7 @@ static void runs_the_recorded_start_with_the_action_arguments_and_the_input_obje
     expect_contains(run.out, "{\"name\":\"value\",\"count\":\"2\"}", "input object");
     char *starts = await_starts_holding(&world, "action");
     expect_contains(starts, BACKGROUND_ID " action " SESSION_PLUGIN " render", "the recorded start ran with the arguments");
-    free(starts);
+    spisor_memory_release(starts);
     program_free(&run);
     finish_world(&world);
 }
@@ -86,7 +87,7 @@ static void runs_the_session_host_of_a_loader_that_records_no_start(void) {
     CHECK(run_action(&world, &run, arguments) == 0);
     char *starts = await_starts_holding(&world, "action");
     expect_contains(starts, "host.js " LOADER_ID " action " SESSION_PLUGIN " render", "the session host ran the action");
-    free(starts);
+    spisor_memory_release(starts);
     program_free(&run);
     finish_world(&world);
 }

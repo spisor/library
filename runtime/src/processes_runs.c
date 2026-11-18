@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "catalog_answer.h"
 #include "file_times.h"
 #include "node_json_file.h"
@@ -72,7 +73,7 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
     if (answer == NULL) {
         runtime_remove_run_record(request->state, request->host_id, path);
     }
-    free(path);
+    spisor_memory_release(path);
     return answer;
 }
 

@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "fetch_hooks.h"
 #include "host_commands.h"
@@ -63,10 +64,10 @@ static void writes_the_copy_atomically_and_exits_0(void) {
     CHECK(count_files_in(published) == 1);
     CHECK(run_command(list, out) == 0);
     CHECK(count_files_in(published) == 1);
-    free(published);
+    spisor_memory_release(published);
     cJSON_Delete(copy);
-    free(out);
-    free(list);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -79,8 +80,8 @@ static void a_skipped_entry_is_reported_and_the_copy_still_written(void) {
     cJSON *copy = json_in(base_folder, "copy.json");
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(copy, "entries")) == 1);
     cJSON_Delete(copy);
-    free(out);
-    free(list);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -99,11 +100,11 @@ static void a_refusal_exits_non_zero_and_writes_nothing(void) {
         CHECK(run_command(list, kept) == 1);
         char *content = text_in(base_folder, "kept/copy.json");
         check_text(content, KEPT_COPY, "an existing copy is left alone");
-        free(content);
-        free(fresh);
-        free(list);
+        spisor_memory_release(content);
+        spisor_memory_release(fresh);
+        spisor_memory_release(list);
     }
-    free(kept);
+    spisor_memory_release(kept);
     finish_case();
 }
 
@@ -119,7 +120,7 @@ static void answers_2_when_the_list_or_the_out_is_missing(void) {
 static void prints_a_name_with_its_control_characters_escaped(void) {
     char *escaped = host_printable("a\x1b[2Jb\x7f" "c\xc2\x9b" "d");
     check_text(escaped, "a\\x1b[2Jb\\x7f" "c\\u009bd", "escaped text");
-    free(escaped);
+    spisor_memory_release(escaped);
 }
 
 static int run_binary(const char *list_path, program *run) {
@@ -146,7 +147,7 @@ static void the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal(void) {
     CHECK(strchr(run.err, '\x1b') == NULL);
     CHECK(!exists_in(base_folder, "unused"));
     program_free(&run);
-    free(list);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -189,9 +190,9 @@ static void an_unresolvable_entry_is_carried_over_or_skipped_and_the_copy_still_
     cJSON *skipped = json_in(base_folder, "fresh/copy.json");
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(skipped, "entries")) == 1);
     cJSON_Delete(skipped);
-    free(fresh);
-    free(carried);
-    free(list);
+    spisor_memory_release(fresh);
+    spisor_memory_release(carried);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -207,10 +208,10 @@ static void a_copy_at_out_that_is_not_a_copy_is_refused_and_left_alone(void) {
         CHECK(run_command(list, out) == 1);
         char *content = text_in(base_folder, outs[index]);
         CHECK(strcmp(content, index == 0 ? "{\"format\":1}" : "not json") == 0);
-        free(content);
-        free(out);
+        spisor_memory_release(content);
+        spisor_memory_release(out);
     }
-    free(list);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -225,9 +226,9 @@ static void out_that_is_the_list_is_refused_and_the_list_left_alone(void) {
     CHECK(run_command(list, spelled_differently) == 1);
     char *content = text_in(base_folder, "marketplace.json");
     CHECK(strcmp(content, text) == 0);
-    free(content);
-    free(spelled_differently);
-    free(list);
+    spisor_memory_release(content);
+    spisor_memory_release(spelled_differently);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -241,9 +242,9 @@ static void the_token_in_the_named_variable_reaches_each_lookup_and_is_written_n
     set_token_variable(NULL);
     char *content = text_in(base_folder, "copy.json");
     CHECK(strstr(content, TOKEN) == NULL && strstr(content, "uthorization") == NULL);
-    free(content);
-    free(out);
-    free(list);
+    spisor_memory_release(content);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -255,8 +256,8 @@ static void a_variable_that_is_not_set_is_refused_and_writes_nothing(void) {
     set_token_variable(NULL);
     CHECK(run_command_with_token(list, out) == 1);
     CHECK(!exists_in(base_folder, "fresh"));
-    free(out);
-    free(list);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -269,8 +270,8 @@ static void a_token_without_its_host_is_refused_and_writes_nothing(void) {
     CHECK(run_command_with_token_and_no_host(list, out) == 2);
     set_token_variable(NULL);
     CHECK(!exists_in(base_folder, "fresh"));
-    free(out);
-    free(list);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -283,8 +284,8 @@ static void an_unusable_token_is_refused_and_writes_nothing(void) {
     CHECK(run_command_with_token(list, out) == 1);
     set_token_variable(NULL);
     CHECK(!exists_in(base_folder, "fresh"));
-    free(out);
-    free(list);
+    spisor_memory_release(out);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -299,11 +300,11 @@ static void a_build_where_every_lookup_is_refused_authorization_writes_nothing(v
     CHECK(run_command(list, fresh) == 1);
     char *content = text_in(base_folder, "carried/copy.json");
     CHECK(strcmp(content, KEPT_COPY) == 0);
-    free(content);
+    spisor_memory_release(content);
     CHECK(!exists_in(base_folder, "fresh"));
-    free(fresh);
-    free(carried);
-    free(list);
+    spisor_memory_release(fresh);
+    spisor_memory_release(carried);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -330,7 +331,7 @@ static void the_binary_never_prints_the_token(void) {
     expect_contains(run.err, "local:a is a local id", "the refusal");
     CHECK(strstr(run.err, TOKEN) == NULL && strstr(run.out, TOKEN) == NULL);
     program_free(&run);
-    free(list);
+    spisor_memory_release(list);
     finish_case();
 }
 
@@ -378,7 +379,7 @@ static void run_against_the_server(void) {
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 2);
     CHECK(requests != NULL && count_of(requests, "uthorization") == 2);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 #if !defined(_WIN32)

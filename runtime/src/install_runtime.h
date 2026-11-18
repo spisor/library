@@ -11,7 +11,7 @@
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal);
 
 /**
- * The executable of the JavaScript runtime <cache>/runtimes/javascript.json records, freed with free. When
+ * The executable of the JavaScript runtime <cache>/runtimes/javascript.json records, freed. When
  * no record names one that is still a file, as after the PATH's node was upgraded or removed, the runtime
  * is acquired again as install's runtime acquires it, on environment's PATH for this machine, and recorded.
  * NULL with *refusal set when none can be found or acquired, and NULL alone when memory ran out.

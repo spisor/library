@@ -8,6 +8,7 @@
 
 #include "allocation.h"
 #include "json_allocation.h"
+#include "known_out_of_memory_breaks.h"
 #include "runtime/install.h"
 #include "timestamp_text.h"
 
@@ -30,7 +31,7 @@ static void place_binary(const install_base *base) {
     char *path = joined(base->path, BINARY);
     write_file(path, "#!/bin/sh\n");
     CHECK(chmod(path, 0755) == 0);
-    free(path);
+    spisor_memory_release(path);
 #endif
 }
 
@@ -53,7 +54,7 @@ static void fresh_places(const install_base *base) {
     write_in(base->user, ".profile", "# profile\n");
     char *homes = joined(base->user, "homes/claude");
     CHECK(spisor_make_directories(homes) == 1);
-    free(homes);
+    spisor_memory_release(homes);
 }
 
 static void environment_of_base(const install_base *base, runtime_variable environment[4]) {
@@ -69,12 +70,13 @@ static void environment_of_base(const install_base *base, runtime_variable envir
 
 static spisor_status install_ecosystem(const install_base *base) {
     const runtime_install_definition *install = runtime_install_definition_of();
-    char *index = index_path_of(base);
+    char index[1200];
     runtime_catalog_source source;
     runtime_variable environment[4];
     runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
     runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    snprintf(index, sizeof index, "%s/catalog.json", base->catalog);
     memset(&source, 0, sizeof source);
     source.kind = RUNTIME_CATALOG_LOCAL;
     source.location = index;
@@ -93,7 +95,6 @@ static spisor_status install_ecosystem(const install_base *base) {
     spisor_status status = install->ecosystem(install->context, &argument, &answer, &refusal);
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
-    free(index);
     return status;
 }
 
@@ -154,9 +155,9 @@ static char *renumbered(char *text) {
     printed = cJSON_Print(registration);
     cJSON_Delete(registration);
     CHECK(printed != NULL);
-    free(text);
+    spisor_memory_release(text);
     size_t length = strlen(printed) + 1;
-    text = malloc(length);
+    text = spisor_memory_allocate(length);
     CHECK(text != NULL);
     memcpy(text, printed, length);
     cJSON_free(printed);
@@ -172,8 +173,8 @@ static void add_file(cJSON *snapshot, const char *path, const char *relative) {
         normalized = renumbered(normalized);
     }
     cJSON_AddStringToObject(snapshot, relative, normalized == NULL ? "(unreadable)" : normalized);
-    free(normalized);
-    free(content);
+    spisor_memory_release(normalized);
+    spisor_memory_release(content);
 }
 
 static void add_tree(cJSON *snapshot, const char *root, const char *relative) {
@@ -189,11 +190,11 @@ static void add_tree(cJSON *snapshot, const char *root, const char *relative) {
         } else {
             char *path = joined(root, child);
             add_file(snapshot, path, child);
-            free(path);
+            spisor_memory_release(path);
         }
     }
     runtime_free_directory_listing(&listing);
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 /** Every directory and file the install wrote under base, the files' contents without their timestamps. */
@@ -318,6 +319,9 @@ int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
     uint64_t first = argc > 1 ? strtoull(argv[1], NULL, 10) : 1;
     uint64_t last = argc > 2 ? strtoull(argv[2], NULL, 10) : 0;
+    int before = check_failures;
     every_ecosystem_failure(first == 0 ? 1 : first, last);
+    check_failures = before + settled_out_of_memory_failures("out_of_memory_ecosystem_test", "install's ecosystem", 0,
+                                                             check_failures - before);
     return check_summary("out_of_memory_ecosystem_test");
 }

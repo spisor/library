@@ -1,4 +1,5 @@
 #include "runtime/paths.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -39,8 +40,8 @@ static spisor_status names_json(const spisor_value *names, cJSON **json, spisor_
 }
 
 static void free_plugin_folders(plugin_folders *folders) {
-    free(folders->portable);
-    free(folders->cache);
+    spisor_memory_release(folders->portable);
+    spisor_memory_release(folders->cache);
     folders->portable = NULL;
     folders->cache = NULL;
 }
@@ -59,12 +60,12 @@ static int read_plugin_folders(const runtime_paths_resolve_argument *argument, p
     }
     folder_name = argument->plugin == NULL ? NULL : runtime_portable_segment(argument->plugin);
     if (folder_name == NULL || !runtime_is_usable_home(places->portable) || !runtime_is_usable_home(places->cache)) {
-        free(folder_name);
+        spisor_memory_release(folder_name);
         return 0;
     }
     folders->portable = runtime_plugin_folder(places->portable, folder_name);
     folders->cache = runtime_plugin_folder(places->cache, folder_name);
-    free(folder_name);
+    spisor_memory_release(folder_name);
     *out_of_memory = folders->portable == NULL || folders->cache == NULL;
     return 1;
 }

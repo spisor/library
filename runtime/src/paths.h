@@ -56,7 +56,7 @@ spisor_status runtime_refuse_home(spisor_refusal *refusal);
 /** The MALFORMED refusal every service answers for a portable place runtime_is_usable_home refuses. */
 spisor_status runtime_refuse_portable(spisor_refusal *refusal);
 
-/** A plugin's own folder in a place, place/plugins/folder_name, freed with free; NULL when memory runs out. */
+/** A plugin's own folder in a place, place/plugins/folder_name, freed; NULL when memory runs out. */
 char *runtime_plugin_folder(const char *place, const char *folder_name);
 
 #endif

@@ -1,4 +1,5 @@
 #include "boot_resolve.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,7 @@ static cJSON *refused(const char *const *parts, size_t count) {
 }
 
 /**
- * The version the hint names, a copy freed with free; NULL with *refusal set when there is none, and with *refusal
+ * The version the hint names, a copy freed; NULL with *refusal set when there is none, and with *refusal
  * NULL when memory runs out.
  */
 static char *hinted_version(const char *cache, const char *host_id, cJSON **refusal) {
@@ -43,7 +44,7 @@ static char *version_directory(const char *cache, const char *host_id, const cha
     char *folder = runtime_item_folder(host_id, &unfit);
     const char *versions_segments[3] = {cache, "bundles", folder};
     char *versions = folder == NULL ? NULL : runtime_cache_joined(versions_segments, 3);
-    free(folder);
+    spisor_memory_release(folder);
     char *directory = versions == NULL ? NULL : runtime_cache_resolve(versions, &version, 1);
     if (directory != NULL && (version[0] == 0 || !runtime_cache_is_strictly_inside(versions, directory))) {
         cJSON *name = cJSON_CreateString(version);
@@ -53,10 +54,10 @@ static char *version_directory(const char *cache, const char *host_id, const cha
                                   " is not a version"};
         *refusal = refused(message, 5);
         cJSON_free(quoted);
-        free(directory);
+        spisor_memory_release(directory);
         directory = NULL;
     }
-    free(versions);
+    spisor_memory_release(versions);
     return directory;
 }
 
@@ -90,7 +91,7 @@ static int marker_lists(const char *directory, const char *key, int *out_of_memo
     cJSON *marker = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
     int listed = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(marker, "files"), key) != NULL;
     cJSON_Delete(marker);
-    free(path);
+    spisor_memory_release(path);
     return listed;
 }
 
@@ -100,16 +101,16 @@ static char *executable_in(const char *directory, const char *host_id, const cha
     int out_of_memory = 0;
     int listed = executable != NULL && marker_lists(directory, key, &out_of_memory);
     if (out_of_memory) {
-        free(executable);
+        spisor_memory_release(executable);
         executable = NULL;
     } else if (executable != NULL && (!listed || !spisor_file_exists(executable))) {
         const char *message[6] = {host_id, " in ", directory, " carries no executable for ", platform,
                                   ", so it cannot be started"};
         *refusal = refused(message, 6);
-        free(executable);
+        spisor_memory_release(executable);
         executable = NULL;
     }
-    free(key);
+    spisor_memory_release(key);
     return executable;
 }
 
@@ -133,8 +134,8 @@ cJSON *runtime_resolve_booted_host(const char *cache, const char *host_id, const
                            ? executable_in(directory, host_id, platform, refusal)
                            : NULL;
     cJSON *answer = executable == NULL ? NULL : resolution(executable, version, directory);
-    free(executable);
-    free(directory);
-    free(version);
+    spisor_memory_release(executable);
+    spisor_memory_release(directory);
+    spisor_memory_release(version);
     return answer;
 }

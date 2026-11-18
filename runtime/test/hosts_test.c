@@ -14,6 +14,7 @@
 #endif
 
 #include "boot_hint.h"
+#include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "catalog_time.h"
 #include "changes.h"
@@ -57,7 +58,7 @@ static void fresh(hosts_scratch *place, const char *label) {
     place->path = joined_path(place->base, "path");
     CHECK(spisor_make_directories(place->state) == 1 && spisor_make_directories(place->cache) == 1);
     CHECK(spisor_make_directories(place->user) == 1 && spisor_make_directories(place->path) == 1);
-    free(touch_file(place->user, ".profile", "# profile\n", 0644));
+    spisor_memory_release(touch_file(place->user, ".profile", "# profile\n", 0644));
 }
 
 static cJSON *environment_of(const hosts_scratch *place) {
@@ -104,7 +105,7 @@ static void add_command(const hosts_scratch *place, cJSON *identity, const char 
     cJSON_AddStringToObject(command, "target", target);
     cJSON_AddArrayToObject(command, "arguments");
     cJSON_AddItemToArray(cJSON_GetObjectItemCaseSensitive(identity, "commands"), command);
-    free(target);
+    spisor_memory_release(target);
 }
 
 static catalog_answer register_with(const hosts_scratch *place, cJSON *identity, cJSON *provenance,
@@ -127,7 +128,7 @@ static void register_existing(const hosts_scratch *place, const char *id, const 
 static void register_present(const hosts_scratch *place, const char *id) {
     char *location = touch_file(place->base, "install.txt", "x", 0644);
     register_existing(place, id, location);
-    free(location);
+    spisor_memory_release(location);
 }
 
 static cJSON *stored_registration(const hosts_scratch *place, const char *id) {
@@ -144,10 +145,10 @@ static void reverse_host(const hosts_scratch *place, const char *id) {
 
 static void discard(hosts_scratch *place) {
     reverse_host(place, HOST_ID);
-    free(place->state);
-    free(place->cache);
-    free(place->user);
-    free(place->path);
+    spisor_memory_release(place->state);
+    spisor_memory_release(place->cache);
+    spisor_memory_release(place->user);
+    spisor_memory_release(place->path);
 }
 
 static void check_same(const cJSON *actual, const cJSON *expected, const char *label) {
@@ -178,7 +179,7 @@ static void refuses_an_environment_with_no_user_home_before_registering_anything
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration == NULL);
     cJSON_Delete(registration);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -196,7 +197,7 @@ static void refuses_an_identity_with_no_home_before_registering_anything(void) {
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration == NULL);
     cJSON_Delete(registration);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -213,7 +214,7 @@ static void records_the_provenance_of_the_first_start(void) {
     cJSON_Delete(registration);
     cJSON_Delete(answer.tree);
     cJSON_Delete(first);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -233,7 +234,7 @@ static void keeps_the_first_provenance_when_a_later_start_gives_a_later_installe
     cJSON_Delete(registration);
     cJSON_Delete(answer.tree);
     cJSON_Delete(first);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -256,7 +257,7 @@ static void answers_the_same_command_name_on_a_second_start_and_requests_nothing
     cJSON_Delete(registration);
     cJSON_Delete(first.tree);
     cJSON_Delete(second.tree);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -277,7 +278,7 @@ static void records_how_a_launcher_starts_the_host(void) {
     check_same(cJSON_GetObjectItemCaseSensitive(registration, "start"), expected, "the recorded start");
     cJSON_Delete(expected);
     cJSON_Delete(registration);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -301,7 +302,7 @@ static void refuses_a_start_with_an_unknown_runtime_or_an_entry_outside_the_bund
         cJSON *registration = stored_registration(&place, HOST_ID);
         CHECK(registration == NULL);
         cJSON_Delete(registration);
-        free(location);
+        spisor_memory_release(location);
         discard(&place);
     }
 }
@@ -325,7 +326,7 @@ static void reports_a_refused_command_for_a_host_that_can_run_without_one(void) 
     cJSON *registration = stored_registration(&place, HOST_ID);
     CHECK(registration != NULL);
     cJSON_Delete(registration);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -342,7 +343,7 @@ static void refuses_a_host_that_requires_the_command_it_was_refused(void) {
     CHECK(answer.status == SPISOR_REFUSED &&
           cJSON_IsString(cJSON_GetObjectItemCaseSensitive(answer.tree, "message")));
     cJSON_Delete(answer.tree);
-    free(location);
+    spisor_memory_release(location);
     discard(&place);
 }
 
@@ -398,7 +399,7 @@ static void removes_a_host_by_reversing_its_changes_and_then_forgetting_it(void)
     cJSON_Delete(answer.tree);
     CHECK(!spisor_file_exists(changed));
     CHECK(lists_only(&place, NULL));
-    free(changed);
+    spisor_memory_release(changed);
     discard(&place);
 }
 
@@ -430,13 +431,13 @@ static void leaves_the_registration_and_its_references_in_place_when_the_reverse
     CHECK(lists_only(&place, HOST_ID));
     char *recorded = runtime_host_references_path(place.state, HOST_ID, &problem);
     CHECK(recorded != NULL && spisor_file_exists(recorded));
-    free(recorded);
+    spisor_memory_release(recorded);
     cJSON *registration = stored_registration(&place, HOST_ID);
     cJSON *first = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(registration, "changes"), 0);
     cJSON_ReplaceItemInObject(first, "kind", cJSON_CreateString("file"));
     CHECK(runtime_registry_store(place.state, registration) == RUNTIME_REGISTRY_OK);
     cJSON_Delete(registration);
-    free(changed);
+    spisor_memory_release(changed);
     discard(&place);
 }
 
@@ -459,7 +460,7 @@ static void answers_as_orphans_the_hosts_whose_install_location_is_gone(void) {
     }
     CHECK(orphans == 1);
     cJSON_Delete(hosts);
-    free(missing);
+    spisor_memory_release(missing);
     discard(&place);
 }
 
@@ -507,7 +508,7 @@ static void adds_renames_and_deletes_a_command(void) {
     }
     check_text(state, "deleted", "the deleted command's state");
     cJSON_Delete(registration);
-    free(target);
+    spisor_memory_release(target);
     discard(&place);
 }
 
@@ -515,7 +516,7 @@ static void record_references(const hosts_scratch *place, const char *id) {
     runtime_host_references references = {parsed("{\"a\": \"1.0.0\"}"), parsed("{}"), NULL, NULL};
     char *problem = NULL;
     CHECK(runtime_record_host_references(place->state, id, &references, &problem));
-    free(problem);
+    spisor_memory_release(problem);
     runtime_free_host_references(&references);
 }
 
@@ -523,8 +524,8 @@ static int references_recorded(const hosts_scratch *place, const char *id) {
     char *problem = NULL;
     char *path = runtime_host_references_path(place->state, id, &problem);
     int recorded = path != NULL && spisor_file_exists(path);
-    free(path);
-    free(problem);
+    spisor_memory_release(path);
+    spisor_memory_release(problem);
     return recorded;
 }
 
@@ -561,8 +562,8 @@ static void deletes_every_run_record_of_the_host_with_its_references(void) {
     cJSON_Delete(runs);
     char *folder = joined_path(place.state, "bundles/runs/" HOST_ID);
     CHECK(!spisor_file_exists(folder));
-    free(folder);
-    free(record);
+    spisor_memory_release(folder);
+    spisor_memory_release(record);
     cJSON_Delete(run);
     discard(&place);
 }
@@ -587,10 +588,10 @@ static void deletes_the_holders_file_of_the_host(void) {
     CHECK(spisor_file_exists(other));
     char *lock = runtime_holders_path(place.state, HOST_ID, ".lock", &problem);
     CHECK(lock != NULL && !spisor_file_exists(lock));
-    free(lock);
-    free(folder);
-    free(other);
-    free(holders);
+    spisor_memory_release(lock);
+    spisor_memory_release(folder);
+    spisor_memory_release(other);
+    spisor_memory_release(holders);
     discard(&place);
 }
 
@@ -612,9 +613,9 @@ static void deletes_the_boot_hint_of_the_host_and_leaves_another_hosts(void) {
     cJSON_Delete(answer.tree);
     CHECK(!spisor_file_exists(hint));
     CHECK(spisor_file_exists(other));
-    free(problem);
-    free(other);
-    free(hint);
+    spisor_memory_release(problem);
+    spisor_memory_release(other);
+    spisor_memory_release(hint);
     discard(&place);
 }
 
@@ -674,7 +675,7 @@ static void locates_an_application_at_its_binary_on_path(void) {
                "2026-01-01T00:00:00.123Z", "installedAt");
     check_platform(answer.tree);
     cJSON_Delete(answer.tree);
-    free(binary);
+    spisor_memory_release(binary);
     discard(&place);
 }
 

@@ -1,4 +1,5 @@
 #include "loader.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,11 +26,11 @@ void runtime_loader_add_issue(issue_list *list, const char *path, const char *de
     }
 }
 
-/** What JSON.stringify writes for value, undefined for none, freed with free; NULL when memory runs out. */
+/** What JSON.stringify writes for value, undefined for none, freed; NULL when memory runs out. */
 static char *written(const cJSON *value) {
     char *text = value == NULL ? NULL : cJSON_PrintUnformatted(value);
     if (value == NULL) {
-        text = malloc(sizeof "undefined");
+        text = spisor_memory_allocate(sizeof "undefined");
         if (text != NULL) {
             memcpy(text, "undefined", sizeof "undefined");
         }
@@ -42,14 +43,14 @@ static void add_issue_naming(issue_list *list, const char *path, const char *bef
                              const char *after, const char *fix) {
     char *text = list->complete ? written(value) : NULL;
     size_t size = text == NULL ? 0 : strlen(before) + strlen(text) + strlen(after) + 1;
-    char *detail = size == 0 ? NULL : malloc(size);
+    char *detail = size == 0 ? NULL : spisor_memory_allocate(size);
     if (detail == NULL) {
         list->complete = 0;
     } else {
         snprintf(detail, size, "%s%s%s", before, text, after);
         runtime_loader_add_issue(list, path, detail, fix);
     }
-    free(detail);
+    spisor_memory_release(detail);
     cJSON_free(text);
 }
 
@@ -176,8 +177,8 @@ static int is_package_mapping(const cJSON *value) {
 static void check_package(issue_list *list, const cJSON *mapping) {
     const char *method = mapping->string;
     size_t size = strlen(method) + 64;
-    char *path = malloc(size);
-    char *detail = malloc(strlen(method) + 128);
+    char *path = spisor_memory_allocate(size);
+    char *detail = spisor_memory_allocate(strlen(method) + 128);
     if (path == NULL || detail == NULL) {
         list->complete = 0;
     } else {
@@ -196,8 +197,8 @@ static void check_package(issue_list *list, const cJSON *mapping) {
             runtime_loader_add_issue(list, path, detail, "write the package as \"name\" or {\"name\": \"name\", \"options\": {}}");
         }
     }
-    free(path);
-    free(detail);
+    spisor_memory_release(path);
+    spisor_memory_release(detail);
 }
 
 static void check_packages(issue_list *list, const cJSON *packages) {

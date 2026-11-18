@@ -11,7 +11,7 @@ typedef struct host_terminal {
 host_terminal host_controlling_terminal(void);
 
 /**
- * Asks question on terminal and answers the first line typed, trimmed, freed with free; NULL when there is
+ * Asks question on terminal and answers the first line typed, trimmed, freed; NULL when there is
  * no terminal to open or it ends before a line.
  *
  * @implNote Never reads standard input: under curl | sh that is the script itself. Each call opens and

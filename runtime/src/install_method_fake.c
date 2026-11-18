@@ -1,4 +1,5 @@
 #include "install_hooks.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +23,7 @@ static cJSON *read_installed(const cJSON *places) {
     char *path = record_path(places, 0);
     int out_of_memory = path == NULL;
     cJSON *installed = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
-    free(path);
+    spisor_memory_release(path);
     if (out_of_memory) {
         return NULL;
     }
@@ -40,8 +41,8 @@ static int write_installed(const cJSON *places, const cJSON *installed) {
     int written = folder != NULL && path != NULL && text != NULL && spisor_make_directories(folder) == 1 &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
     cJSON_free(text);
-    free(path);
-    free(folder);
+    spisor_memory_release(path);
+    spisor_memory_release(folder);
     return written;
 }
 
@@ -73,7 +74,7 @@ static int change(cJSON *installed, const char *operation, const char *package, 
         const char *fix_parts[3] = {"install ", package, " first"};
         char *fix = runtime_cache_text(fix_parts, 3);
         *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 2, fix);
-        free(fix);
+        spisor_memory_release(fix);
         return 0;
     }
     cJSON_DeleteItemFromObjectCaseSensitive(installed, package);

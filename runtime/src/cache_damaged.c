@@ -1,4 +1,5 @@
 #include "cache_damaged.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -63,8 +64,8 @@ static int add_damaged_under(cJSON *damaged, const char *cache, const char *root
             const char *segments[5] = {cache, root, folder, version->valuestring, platform};
             char *directory = folder == NULL ? NULL : runtime_cache_joined(segments, platform == NULL ? 4 : 5);
             int added = add_verdict(damaged, versions->string, version->valuestring, directory);
-            free(directory);
-            free(folder);
+            spisor_memory_release(directory);
+            spisor_memory_release(folder);
             if (!added) {
                 return 0;
             }

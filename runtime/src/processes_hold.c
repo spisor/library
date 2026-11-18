@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "alive_stamp.h"
+#include "allocation.h"
 #include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "file_times.h"
@@ -74,7 +75,7 @@ static cJSON *held_answer(double pid, int started, int outside_job) {
 static cJSON *start_refusal(char *problem) {
     const char *parts[1] = {problem};
     cJSON *refusal = problem == NULL ? NULL : runtime_cache_refusal(parts, 1, START_FIX);
-    free(problem);
+    spisor_memory_release(problem);
     return refusal;
 }
 

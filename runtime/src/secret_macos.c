@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "secret_backend.h"
+#include "allocation.h"
 
 #define SERVICE_NAME "spisor"
 
@@ -85,9 +86,9 @@ static runtime_secret_answer update_item(CFDictionaryRef query, CFDataRef data) 
 
 static char *copy_utf8(CFStringRef text) {
     CFIndex size = CFStringGetMaximumSizeForEncoding(CFStringGetLength(text), kCFStringEncodingUTF8) + 1;
-    char *copy = malloc((size_t)size);
+    char *copy = spisor_memory_allocate((size_t)size);
     if (copy != NULL && !CFStringGetCString(text, copy, size, kCFStringEncodingUTF8)) {
-        free(copy);
+        spisor_memory_release(copy);
         copy = NULL;
     }
     return copy;
@@ -95,7 +96,7 @@ static char *copy_utf8(CFStringRef text) {
 
 static char *copy_data_as_text(CFDataRef data) {
     CFIndex length = CFDataGetLength(data);
-    char *text = malloc((size_t)length + 1);
+    char *text = spisor_memory_allocate((size_t)length + 1);
     if (text != NULL) {
         memcpy(text, CFDataGetBytePtr(data), (size_t)length);
         text[length] = '\0';
@@ -105,7 +106,7 @@ static char *copy_data_as_text(CFDataRef data) {
 
 static runtime_secret_answer collect_accounts(CFArrayRef items, const char *prefix, runtime_secret_names *names) {
     CFIndex count = CFArrayGetCount(items);
-    names->names = calloc(count > 0 ? (size_t)count : 1, sizeof(char *));
+    names->names = spisor_memory_allocate_zeroed(count > 0 ? (size_t)count : 1, sizeof(char *));
     if (names->names == NULL) {
         return RUNTIME_SECRET_FAILED;
     }
@@ -120,7 +121,7 @@ static runtime_secret_answer collect_accounts(CFArrayRef items, const char *pref
         if (name != NULL && strncmp(name, prefix, strlen(prefix)) == 0) {
             names->names[names->count++] = name;
         } else {
-            free(name);
+            spisor_memory_release(name);
         }
     }
     return RUNTIME_SECRET_DONE;

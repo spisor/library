@@ -1,4 +1,5 @@
 #include "identity_resolve.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -64,7 +65,7 @@ static int is_text(const char *text, runtime_identity_part part) {
 }
 
 static char *copy_part(runtime_identity_part part) {
-    char *text = malloc(part.length + 1);
+    char *text = spisor_memory_allocate(part.length + 1);
     if (text != NULL) {
         memcpy(text, part.start, part.length);
         text[part.length] = '\0';
@@ -95,7 +96,7 @@ static cJSON *repository_answer(const char *name, const char *full_name, const c
 static cJSON *resolve_local(const runtime_identity *parsed) {
     char *name = copy_part(parsed->path);
     cJSON *answer = name == NULL ? NULL : repository_answer(name, name, NULL);
-    free(name);
+    spisor_memory_release(name);
     return answer;
 }
 
@@ -177,7 +178,7 @@ static cJSON *lookup(const char *url, const char *token, lookup_failure *failure
     if (token != NULL) {
         snprintf(authorization, sizeof authorization, "token %s", token);
     }
-    uint8_t *body = malloc(BODY_CAPACITY);
+    uint8_t *body = spisor_memory_allocate(BODY_CAPACITY);
     if (body == NULL) {
         runtime_overwrite(authorization, sizeof authorization);
         return NULL;
@@ -194,9 +195,9 @@ static cJSON *lookup(const char *url, const char *token, lookup_failure *failure
     } else {
         fail_status(failure, &answer, url);
     }
-    free(answer.etag);
-    free(answer.last_modified);
-    free(body);
+    spisor_memory_release(answer.etag);
+    spisor_memory_release(answer.last_modified);
+    spisor_memory_release(body);
     return repository;
 }
 
@@ -415,7 +416,7 @@ static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parse
     cJSON *answer = asked == NULL ? NULL
                                   : resolve_by_number(root, asked, last_known == NULL ? NULL : last_known->valuestring,
                                                     token == NULL ? NULL : token->valuestring, refusal);
-    free(asked);
+    spisor_memory_release(asked);
     return answer;
 }
 
@@ -466,7 +467,7 @@ static int file_url(const resolver *kind, const runtime_identity *parsed, const 
 }
 
 static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, size_t *length) {
-    uint8_t *body = malloc(BODY_CAPACITY);
+    uint8_t *body = spisor_memory_allocate(BODY_CAPACITY);
     if (body == NULL) {
         return RUNTIME_REPO_FILE_OUT_OF_MEMORY;
     }
@@ -483,13 +484,13 @@ static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, s
     } else if (answer.outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
         status = RUNTIME_REPO_FILE_TOO_LARGE;
     }
-    free(answer.etag);
-    free(answer.last_modified);
+    spisor_memory_release(answer.etag);
+    spisor_memory_release(answer.last_modified);
     if (status == RUNTIME_REPO_FILE_READ) {
         *content = body;
         *length = (size_t)sink.bytes;
     } else {
-        free(body);
+        spisor_memory_release(body);
     }
     return status;
 }
@@ -545,7 +546,7 @@ runtime_repo_file_status runtime_identity_read_file(const char *id, const char *
     }
     runtime_repo_file_status status = read_from_repository(id, api_base, repository, path, content, length);
     if (status == RUNTIME_REPO_FILE_READ && !still_names_the_same_repository(id, api_base, repository)) {
-        free(*content);
+        spisor_memory_release(*content);
         *content = NULL;
         status = RUNTIME_REPO_FILE_UNAVAILABLE;
     }

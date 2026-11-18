@@ -1,4 +1,5 @@
 #include "cache_refusal.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -21,6 +22,6 @@ cJSON *runtime_cache_refusal(const char *const *parts, size_t count, const char 
         cJSON_Delete(refusal);
         refusal = NULL;
     }
-    free(message);
+    spisor_memory_release(message);
     return refusal;
 }

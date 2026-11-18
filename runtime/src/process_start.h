@@ -28,7 +28,7 @@ typedef struct runtime_detached_host {
 /**
  * Starts the process detached, so it outlives the caller with no terminal of its own and its standard streams on
  * the null device, held before its program runs until runtime_release_detached or runtime_cancel_detached, one of
- * which the caller always calls. 1 with *host filled; 0 with *problem set (freed with free) when it could not start,
+ * which the caller always calls. 1 with *host filled; 0 with *problem set (freed) when it could not start,
  * and NULL when memory ran out. arguments is an array of strings or NULL; environment, an object of strings, replaces
  * the caller's when not NULL.
  *

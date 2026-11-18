@@ -43,7 +43,7 @@ void runtime_free_secret_names(runtime_secret_names *names);
  */
 int runtime_secret_store_available(void);
 
-/** On DONE, *value holds a copy freed with free; otherwise *value is NULL. */
+/** On DONE, *value holds a copy freed; otherwise *value is NULL. */
 runtime_secret_answer runtime_secret_store_get(const char *entry, char **value);
 
 /**

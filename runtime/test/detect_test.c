@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "on_path.h"
 #include "runtime/detect.h"
@@ -26,8 +27,8 @@ static void fresh(path_scratch *place, const char *label) {
 }
 
 static void discard(path_scratch *place) {
-    free(place->first);
-    free(place->second);
+    spisor_memory_release(place->first);
+    spisor_memory_release(place->second);
 }
 
 static cJSON *environment_of(const char *path_name, const char *search, const char *extensions) {
@@ -41,7 +42,7 @@ static cJSON *environment_of(const char *path_name, const char *search, const ch
 
 static char *search_of(const path_scratch *place, char separator) {
     size_t size = strlen(place->first) + strlen(place->second) + 2;
-    char *search = malloc(size);
+    char *search = spisor_memory_allocate(size);
     snprintf(search, size, "%s%c%s", place->first, separator, place->second);
     return search;
 }
@@ -58,7 +59,7 @@ static char *found(int windows, const char *binary, cJSON *environment) {
 
 static void check_found(char *answer, const char *expected, const char *label) {
     check_text(answer, expected, label);
-    free(answer);
+    spisor_memory_release(answer);
 }
 
 static void check_none(char *answer, const char *label) {
@@ -66,7 +67,7 @@ static void check_none(char *answer, const char *label) {
         fprintf(stderr, "%s: expected nothing, got %s\n", label, answer);
         check_failures++;
     }
-    free(answer);
+    spisor_memory_release(answer);
 }
 
 #if !defined(_WIN32)
@@ -76,30 +77,30 @@ static void posix_finds_an_executable_file(void) {
     char *binary = touch_file(place.second, "claude", "", 0755);
     char *search = search_of(&place, ':');
     check_found(found(0, "claude", environment_of("PATH", search, NULL)), binary, "an executable file");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
 static void posix_skips_a_same_named_file_without_an_execute_bit(void) {
     path_scratch place;
     fresh(&place, "skips");
-    free(touch_file(place.first, "claude", "", 0644));
+    spisor_memory_release(touch_file(place.first, "claude", "", 0644));
     char *executable = touch_file(place.second, "claude", "", 0755);
     char *search = search_of(&place, ':');
     check_found(found(0, "claude", environment_of("PATH", search, NULL)), executable, "the executable one");
-    free(search);
-    free(executable);
+    spisor_memory_release(search);
+    spisor_memory_release(executable);
     discard(&place);
 }
 
 static void posix_answers_nothing_when_only_a_non_executable_file_matches(void) {
     path_scratch place;
     fresh(&place, "plain");
-    free(touch_file(place.first, "claude", "", 0644));
+    spisor_memory_release(touch_file(place.first, "claude", "", 0644));
     char *search = search_of(&place, ':');
     check_none(found(0, "claude", environment_of("PATH", search, NULL)), "a non-executable file");
-    free(search);
+    spisor_memory_release(search);
     discard(&place);
 }
 #endif
@@ -110,7 +111,7 @@ static void posix_does_not_treat_a_directory_as_an_executable(void) {
     make_directory_in(place.first, "claude");
     char *search = search_of(&place, ':');
     check_none(found(0, "claude", environment_of("PATH", search, NULL)), "a directory");
-    free(search);
+    spisor_memory_release(search);
     discard(&place);
 }
 
@@ -119,7 +120,7 @@ static void posix_ignores_a_path_entry_that_does_not_exist(void) {
     fresh(&place, "missing");
     char *missing = joined_path(place.base, "missing");
     check_none(found(0, "claude", environment_of("PATH", missing, NULL)), "a missing entry");
-    free(missing);
+    spisor_memory_release(missing);
     discard(&place);
 }
 
@@ -129,8 +130,8 @@ static void windows_finds_claude_cmd_through_pathext(void) {
     char *binary = touch_file(place.first, "claude.cmd", "", 0644);
     char *search = search_of(&place, ';');
     check_found(found(1, "claude", environment_of("Path", search, ".EXE;.CMD")), binary, "claude.cmd");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
@@ -140,8 +141,8 @@ static void windows_matches_the_name_and_the_extension_ignoring_case(void) {
     char *binary = touch_file(place.first, "CLAUDE.Exe", "", 0644);
     char *search = search_of(&place, ';');
     check_found(found(1, "claude", environment_of("PATH", search, ".exe")), binary, "CLAUDE.Exe");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
@@ -151,31 +152,31 @@ static void windows_defaults_pathext_when_it_is_unset(void) {
     char *binary = touch_file(place.second, "claude.bat", "", 0644);
     char *search = search_of(&place, ';');
     check_found(found(1, "claude", environment_of("PATH", search, NULL)), binary, "claude.bat");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
 static void windows_does_not_take_an_extension_pathext_does_not_list(void) {
     path_scratch place;
     fresh(&place, "unlisted");
-    free(touch_file(place.first, "claude.ps1", "", 0644));
+    spisor_memory_release(touch_file(place.first, "claude.ps1", "", 0644));
     char *search = search_of(&place, ';');
     check_none(found(1, "claude", environment_of("PATH", search, ".EXE;.CMD")), "claude.ps1");
-    free(search);
+    spisor_memory_release(search);
     discard(&place);
 }
 
 static void windows_prefers_a_pathext_match_over_the_bare_name_in_pathext_order(void) {
     path_scratch place;
     fresh(&place, "order");
-    free(touch_file(place.first, "claude", "", 0644));
-    free(touch_file(place.first, "claude.exe", "", 0644));
+    spisor_memory_release(touch_file(place.first, "claude", "", 0644));
+    spisor_memory_release(touch_file(place.first, "claude.exe", "", 0644));
     char *binary = touch_file(place.first, "claude.cmd", "", 0644);
     char *search = search_of(&place, ';');
     check_found(found(1, "claude", environment_of("PATH", search, ".CMD;.EXE")), binary, "PATHEXT order");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
@@ -185,8 +186,8 @@ static void windows_takes_the_bare_name_too(void) {
     char *binary = touch_file(place.first, "claude", "", 0644);
     char *search = search_of(&place, ';');
     check_found(found(1, "claude", environment_of("PATH", search, NULL)), binary, "the bare name");
-    free(search);
-    free(binary);
+    spisor_memory_release(search);
+    spisor_memory_release(binary);
     discard(&place);
 }
 
@@ -244,8 +245,8 @@ static void the_service_finds_the_binary_and_launches_nothing(void) {
     call = on_path(place.second);
     CHECK(call.status == SPISOR_NONE && call.answer.path == NULL && call.answer.storage == NULL);
     release_call(&call);
-    free(binary);
-    free(marker);
+    spisor_memory_release(binary);
+    spisor_memory_release(marker);
     discard(&place);
 }
 

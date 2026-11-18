@@ -19,7 +19,7 @@ typedef enum spisor_json_file_state {
 
 /**
  * Removes every line that holds only whitespace and a // comment (the TypeScript read-json regex, with
- * the multiline flag) from well-formed UTF-8, freed with free; NULL only when memory runs out.
+ * the multiline flag) from well-formed UTF-8, freed; NULL only when memory runs out.
  * The result is NUL terminated one past stripped_length.
  *
  * @implNote The regex's \s spans line feeds and a BOM, so a match starting on an earlier blank

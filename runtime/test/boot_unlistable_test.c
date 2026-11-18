@@ -1,4 +1,5 @@
 #include "updates_fixture.h"
+#include "spisor/allocation.h"
 
 #include "cache_place.h"
 
@@ -52,7 +53,7 @@ static void a_boot_write_refuses_a_library_folder_it_cannot_list(void) {
     CHECK(!exists_in(cache, "hosts/" HOST ".json"));
     make_listable(folder);
     cJSON_Delete(written.tree);
-    free(folder);
+    spisor_memory_release(folder);
     finish_base();
 }
 
@@ -69,7 +70,7 @@ static void an_apply_reports_a_library_folder_it_cannot_list_as_unrecorded(void)
     expect_could_not_list(text_at(unrecorded, "message"), folder, "apply unrecorded");
     make_listable(folder);
     cJSON_Delete(started.tree);
-    free(folder);
+    spisor_memory_release(folder);
     finish_base();
 }
 #endif

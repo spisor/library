@@ -1,4 +1,5 @@
 #include "updates_fixture.h"
+#include "spisor/allocation.h"
 
 #include "fetch_hooks.h"
 #include "file_times.h"
@@ -42,7 +43,7 @@ static void it_writes_what_a_host_runs_and_what_it_scheduled_for_its_next_start_
     runtime_host_references references = {run, next, NULL, NULL};
     char *problem = NULL;
     CHECK(runtime_record_host_references(state, "claude-code", &references, &problem) == 1);
-    free(problem);
+    spisor_memory_release(problem);
     expect_text_in(state, "bundles/claude-code.json",
                    "{\n  \"run\": {\n    \"a\": \"1.0.0\"\n  },\n  \"next\": {\n    \"a\": \"2.0.0\"\n  }\n}\n", "own file");
     cJSON_Delete(run);
@@ -59,7 +60,7 @@ static void it_replaces_what_the_same_host_recorded_before(void) {
     runtime_host_references references = {run, next, rollback, NULL};
     char *problem = NULL;
     CHECK(runtime_record_host_references(state, "claude-code", &references, &problem) == 1);
-    free(problem);
+    spisor_memory_release(problem);
     expect_references("claude-code", "{\"run\":{\"a\":\"2.0.0\"},\"next\":{}}", "replaced, an empty rollback left out");
     runtime_host_references read = runtime_read_host_references(state, "claude-code");
     expect_json(read.run, "{\"a\":\"2.0.0\"}", "read back run");
@@ -77,11 +78,11 @@ static void it_refuses_a_host_id_that_would_write_outside_the_bundles_folder(voi
     char *problem = NULL;
     CHECK(runtime_record_host_references(state, "../escape", &references, &problem) == 0);
     CHECK(problem != NULL && strstr(problem, "outside") != NULL);
-    free(problem);
+    spisor_memory_release(problem);
     problem = NULL;
     CHECK(runtime_record_host_references(state, "", &references, &problem) == 0);
     CHECK(problem != NULL && strstr(problem, "outside") != NULL);
-    free(problem);
+    spisor_memory_release(problem);
     CHECK(!exists_in(state, "escape.json"));
     cJSON_Delete(empty);
     finish_base();
@@ -97,7 +98,7 @@ static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_refere
     CHECK(!exists_in(state, "bundles/" TEST_HOST ".json"));
     CHECK(!exists_in(state, "bundles/runs/" TEST_HOST));
     CHECK(runtime_remove_host_references(state, "never-recorded") == 1);
-    free(record);
+    spisor_memory_release(record);
     cJSON_Delete(run);
     finish_base();
 }
@@ -446,7 +447,7 @@ static void strip_marker_sizes(const char *rest) {
     write_in(cache, rest, stripped);
     cJSON_free(stripped);
     cJSON_Delete(marker);
-    free(text);
+    spisor_memory_release(text);
 }
 
 /** A running version a start would refuse, here a marker recording no sizes, is installed again by the next check. */
@@ -462,7 +463,7 @@ static void it_reinstalls_a_version_whose_marker_records_no_sizes(void) {
     cJSON *marker = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_Delete(marker);
-    free(text);
+    spisor_memory_release(text);
     finish_base();
 }
 
@@ -748,7 +749,7 @@ static void damage_keeping_sizes(const char *id, const char *version, const char
         text[0] = text[0] == 'x' ? 'y' : 'x';
         write_in(cache, rest, text);
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 static void it_starts_a_scheduled_version_on_its_sizes_without_hashing_it(void) {
@@ -802,7 +803,7 @@ static int references_name(const char *host, const char *fragment) {
     snprintf(rest, sizeof rest, "bundles/%s.json", host);
     char *text = text_in(state, rest);
     int named = text != NULL && strstr(text, fragment) != NULL;
-    free(text);
+    spisor_memory_release(text);
     return named;
 }
 
@@ -921,7 +922,7 @@ static void it_reports_a_hint_it_could_not_write_and_still_starts(void) {
     write_catalog();
     char *blocker = joined(cache, "hosts/" SPISOR_HOST ".json");
     CHECK(spisor_make_directories(blocker) == 1);
-    free(blocker);
+    spisor_memory_release(blocker);
     double started_at = runtime_now_milliseconds();
     catalog_answer started = apply_booted();
     double took = runtime_now_milliseconds() - started_at;

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/javascript.h"
 
 static void check_decoded(const char *bytes, const char *expected, const char *label) {
@@ -9,7 +10,7 @@ static void check_decoded(const char *bytes, const char *expected, const char *l
     uint8_t *decoded = spisor_decode_utf8_lossy((const uint8_t *)bytes, strlen(bytes), &length);
     CHECK(decoded != NULL && length == strlen(expected));
     check_text((const char *)decoded, expected, label);
-    free(decoded);
+    spisor_memory_release(decoded);
 }
 
 #define FFFD "\xEF\xBF\xBD"
@@ -31,7 +32,7 @@ static void decodes_a_nul_and_stops_only_at_the_length(void) {
     size_t length = 0;
     uint8_t *decoded = spisor_decode_utf8_lossy(bytes, sizeof(bytes), &length);
     CHECK(decoded != NULL && length == 5 && decoded[0] == 'a' && decoded[1] == 0 && memcmp(decoded + 2, FFFD, 3) == 0);
-    free(decoded);
+    spisor_memory_release(decoded);
 }
 
 static void walks_code_points(void) {
@@ -58,7 +59,7 @@ static void knows_javascript_whitespace(void) {
 static void check_trimmed(const char *text, const char *expected) {
     char *trimmed = spisor_javascript_trim(text);
     check_text(trimmed, expected, text);
-    free(trimmed);
+    spisor_memory_release(trimmed);
 }
 
 static void trims_as_string_prototype_trim_does(void) {
@@ -74,7 +75,7 @@ static void check_string(const char *json, const char *expected) {
     cJSON *value = cJSON_Parse(json);
     char *string = spisor_javascript_string(value);
     check_text(string, expected, json);
-    free(string);
+    spisor_memory_release(string);
     cJSON_Delete(value);
 }
 

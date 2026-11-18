@@ -3,6 +3,7 @@
 #endif
 
 #include "install_runtime.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,9 +105,9 @@ static char *test_sha256 = NULL;
 static runtime_build test_build = {NULL, NULL, NULL};
 
 void runtime_install_use_runtime_build(const char *version, const char *url, const char *sha256) {
-    free(test_version);
-    free(test_url);
-    free(test_sha256);
+    spisor_memory_release(test_version);
+    spisor_memory_release(test_url);
+    spisor_memory_release(test_sha256);
     test_version = url == NULL ? NULL : runtime_catalog_copy(version);
     test_url = url == NULL ? NULL : runtime_catalog_copy(url);
     test_sha256 = url == NULL ? NULL : runtime_catalog_copy(sha256);
@@ -168,16 +169,16 @@ static cJSON *refused(const char *message, const char *subject, const char *fix)
 }
 
 static void discard_layout(runtime_layout *layout) {
-    free(layout->directory);
-    free(layout->archive);
-    free(layout->marker);
-    free(layout->executable);
+    spisor_memory_release(layout->directory);
+    spisor_memory_release(layout->archive);
+    spisor_memory_release(layout->marker);
+    spisor_memory_release(layout->executable);
 }
 
 static void discard(acquisition *runtime) {
-    free(runtime->versions);
-    free(runtime->stem);
-    free(runtime->member);
+    spisor_memory_release(runtime->versions);
+    spisor_memory_release(runtime->stem);
+    spisor_memory_release(runtime->member);
     discard_layout(&runtime->final);
     discard_layout(&runtime->staged);
 }
@@ -244,7 +245,7 @@ static int is_unpacked(const acquisition *runtime, const runtime_layout *layout)
                    recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' && spisor_sha256_file(layout->executable, actual) &&
                    strncmp(recorded + RUNTIME_SHA256_HEX_SIZE, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
     }
-    free(bytes);
+    spisor_memory_release(bytes);
     return unpacked;
 }
 
@@ -285,7 +286,7 @@ static char *system_tar(void) {
     char *tar = runtime_catalog_copy(spisor_file_exists("/usr/bin/tar") ? "/usr/bin/tar" : "/bin/tar");
 #endif
     if (tar != NULL && !spisor_file_exists(tar)) {
-        free(tar);
+        spisor_memory_release(tar);
         return NULL;
     }
     return tar;
@@ -315,7 +316,7 @@ static int make_executable_folder(const acquisition *runtime) {
     const char *segments[2] = {runtime->staged.executable, ".."};
     char *folder = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     int made = folder != NULL && spisor_make_directories(folder) == 1;
-    free(folder);
+    spisor_memory_release(folder);
     return made;
 }
 
@@ -338,7 +339,7 @@ static cJSON *unpack(const acquisition *runtime) {
               runtime_run_between_files(tar, arguments, TAR_MILLISECONDS, runtime->staged.archive,
                                         runtime->staged.executable, &exit_code, &problem);
     cJSON_Delete(arguments);
-    free(tar);
+    spisor_memory_release(tar);
     cJSON *refusal = NULL;
     if (!ran) {
         refusal = runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked" : problem, AGAIN_FIX);
@@ -347,7 +348,7 @@ static cJSON *unpack(const acquisition *runtime) {
     } else if (!mark_runnable(runtime->staged.executable)) {
         refusal = refused("the runtime could not be made runnable: ", runtime->staged.executable, CACHE_FIX);
     }
-    free(problem);
+    spisor_memory_release(problem);
     return refusal;
 }
 
@@ -359,7 +360,7 @@ static int write_marker(const acquisition *runtime) {
     const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
     char *text = runtime_cache_text(parts, 4);
     int written = text != NULL && spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text)) == 1;
-    free(text);
+    spisor_memory_release(text);
     return written;
 }
 
@@ -421,7 +422,7 @@ static void sweep_stale_staging(const acquisition *runtime, const char *platform
     snprintf(prefix, sizeof prefix, ".%s-staging-", platform);
     runtime_directory_listing listing;
     if (version_folder == NULL || !runtime_list_directory(version_folder, &listing)) {
-        free(version_folder);
+        spisor_memory_release(version_folder);
         return;
     }
     double now = runtime_now_milliseconds();
@@ -433,10 +434,10 @@ static void sweep_stale_staging(const acquisition *runtime, const char *platform
         if (path != NULL && runtime_newest_change(path, &newest) && now - newest > STALE_STAGING_MILLISECONDS) {
             runtime_remove_tree(path);
         }
-        free(path);
+        spisor_memory_release(path);
     }
     runtime_free_directory_listing(&listing);
-    free(version_folder);
+    spisor_memory_release(version_folder);
 }
 
 /** @implNote A version still running holds its files, so one that cannot be removed waits for the next acquisition. */
@@ -451,7 +452,7 @@ static void remove_other_versions(const acquisition *runtime) {
         if (path != NULL) {
             runtime_remove_tree(path);
         }
-        free(path);
+        spisor_memory_release(path);
     }
     runtime_free_directory_listing(&listing);
 }
@@ -533,8 +534,8 @@ static char *reported_version(const char *executable, int *out_of_memory) {
     int ran = built && runtime_run_to_exit(executable, arguments, VERSION_MILLISECONDS, &exit_code, &output, &problem);
     char *version = ran && exit_code == 0 ? trimmed(output) : NULL;
     *out_of_memory = !built || (!ran && problem == NULL) || (ran && exit_code == 0 && version == NULL);
-    free(problem);
-    free(output);
+    spisor_memory_release(problem);
+    spisor_memory_release(output);
     cJSON_Delete(arguments);
     return version;
 }
@@ -556,8 +557,8 @@ static cJSON *runtime_on_path(const cJSON *environment, int *out_of_memory) {
     int compatible = version != NULL && major_of(version) >= COMPATIBLE_MAJOR;
     cJSON *answer = compatible ? answer_of(version, executable, 0, "path") : NULL;
     *out_of_memory = *out_of_memory || (compatible && answer == NULL);
-    free(version);
-    free(executable);
+    spisor_memory_release(version);
+    spisor_memory_release(executable);
     return answer;
 }
 
@@ -576,10 +577,10 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     *out_of_memory = folder == NULL || file == NULL || text == NULL;
     int recorded = !*out_of_memory && spisor_make_directories(folder) == 1 &&
                    spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == 1;
-    free(text);
-    free(pretty);
-    free(file);
-    free(folder);
+    spisor_memory_release(text);
+    spisor_memory_release(pretty);
+    spisor_memory_release(file);
+    spisor_memory_release(folder);
     return recorded;
 }
 
@@ -613,7 +614,7 @@ static char *recorded_executable(const char *cache, int *out_of_memory) {
     char *copy = followed ? runtime_catalog_copy(executable) : NULL;
     *out_of_memory = *out_of_memory || (followed && copy == NULL);
     cJSON_Delete(recorded);
-    free(record);
+    spisor_memory_release(record);
     return copy;
 }
 

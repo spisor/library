@@ -18,6 +18,7 @@
 #endif
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "config_fixture.h"
 #include "config.h"
@@ -142,11 +143,11 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     CHECK(cJSON_IsTrue(value_at(plugins, "second/enabled")));
     cJSON_Delete(answer.tree);
     runtime_config_pause_after_read(NULL);
-    free(release);
-    free(paused);
-    free(signals);
-    free(portable);
-    free(home);
+    spisor_memory_release(release);
+    spisor_memory_release(paused);
+    spisor_memory_release(signals);
+    spisor_memory_release(portable);
+    spisor_memory_release(home);
     CHECK(runtime_remove_tree(root) == 1);
 }
 

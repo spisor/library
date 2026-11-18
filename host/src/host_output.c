@@ -1,4 +1,5 @@
 #include "host_output.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,10 +33,10 @@ static int written_to_console(HANDLE stream, const char *text) {
         return 0;
     }
     int units = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
-    wchar_t *wide = units <= 0 ? NULL : malloc((size_t)units * sizeof *wide);
+    wchar_t *wide = units <= 0 ? NULL : spisor_memory_allocate((size_t)units * sizeof *wide);
     int written = wide != NULL && MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, units) == units &&
                   WriteConsoleW(stream, wide, (DWORD)(units - 1), NULL, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     return written;
 }
 
@@ -64,13 +65,13 @@ void host_print_json(const cJSON *value) {
         host_write(0, text);
         host_write(0, "\n");
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 
 char *host_printable(const char *text) {
     size_t length = strlen(text);
-    char *escaped = malloc(length * 6 + 1);
+    char *escaped = spisor_memory_allocate(length * 6 + 1);
     size_t used = 0;
     for (size_t index = 0; escaped != NULL && index < length; index++) {
         unsigned char byte = (unsigned char)text[index];
@@ -108,8 +109,8 @@ void host_print_refusal_printably(const cJSON *refusal) {
     host_write(1, "\nfix: ");
     host_write(1, safe_fix == NULL ? "close other programs, then run the command again" : safe_fix);
     host_write(1, "\n");
-    free(safe_fix);
-    free(safe_message);
+    spisor_memory_release(safe_fix);
+    spisor_memory_release(safe_message);
 }
 
 int host_refuse_printably(cJSON *refusal) {

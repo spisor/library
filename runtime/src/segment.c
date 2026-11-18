@@ -1,4 +1,5 @@
 #include "segment.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdint.h>
@@ -53,7 +54,7 @@ static int is_portable(const char *segment) {
 char *runtime_portable_segment(const char *name) {
     char *trimmed = spisor_javascript_trim(name);
     if (trimmed != NULL && !is_portable(trimmed)) {
-        free(trimmed);
+        spisor_memory_release(trimmed);
         return NULL;
     }
     return trimmed;

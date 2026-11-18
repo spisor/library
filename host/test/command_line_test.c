@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "spisor/allocation.h"
 
 #include "application_choices.h"
 #include "host_options.h"
@@ -23,10 +24,10 @@ static void writes_the_question_to_the_terminal_and_answers_the_first_line_typed
     check_text(answer, "2", "first line");
     char *written = text_in(output, "");
     check_text(written, "Choose: ", "question written");
-    free(written);
-    free(answer);
-    free(output);
-    free(input);
+    spisor_memory_release(written);
+    spisor_memory_release(answer);
+    spisor_memory_release(output);
+    spisor_memory_release(input);
 }
 
 static void answers_none_when_the_terminal_ends_before_a_line_is_typed(void) {
@@ -35,9 +36,9 @@ static void answers_none_when_the_terminal_ends_before_a_line_is_typed(void) {
     host_terminal terminal = {input, output};
     char *answer = host_ask_on_terminal("Choose: ", &terminal);
     CHECK(answer == NULL);
-    free(answer);
-    free(output);
-    free(input);
+    spisor_memory_release(answer);
+    spisor_memory_release(output);
+    spisor_memory_release(input);
 }
 
 static void answers_none_when_there_is_no_terminal_to_open(void) {
@@ -46,8 +47,8 @@ static void answers_none_when_there_is_no_terminal_to_open(void) {
     host_terminal terminal = {input, output};
     char *answer = host_ask_on_terminal("Choose: ", &terminal);
     CHECK(answer == NULL);
-    free(output);
-    free(input);
+    spisor_memory_release(output);
+    spisor_memory_release(input);
 }
 
 static void names_the_controlling_terminal_of_this_operating_system(void) {
@@ -75,7 +76,7 @@ static char *scripted(const char *question, void *context) {
         return NULL;
     }
     script->asked++;
-    char *copy = malloc(strlen(answer) + 1);
+    char *copy = spisor_memory_allocate(strlen(answer) + 1);
     strcpy(copy, answer);
     return copy;
 }
@@ -140,7 +141,7 @@ static void runs_a_batch_file_through_the_command_shell_with_each_argument_escap
     cJSON *arguments = parsed("[\"a b\",\"x&y\"]");
     char *line = host_command_shell_line("C:\\bin\\app.cmd", arguments);
     check_text(line, "\"C:\\bin\\app.cmd ^^^\"a^^^ b^^^\" ^^^\"x^^^&y^^^\"\"", "shell line");
-    free(line);
+    spisor_memory_release(line);
     cJSON_Delete(arguments);
     CHECK(host_needs_command_shell("C:\\bin\\app.cmd") && host_needs_command_shell("C:\\bin\\app.BAT") &&
           host_needs_command_shell("C:\\bin\\app") && !host_needs_command_shell("C:\\bin\\app.EXE") &&
@@ -151,7 +152,7 @@ static void escapes_a_quote_and_a_trailing_backslash_as_cross_spawn_does(void) {
     cJSON *arguments = parsed("[\"say \\\"hi\\\"\",\"back\\\\slash\\\\\"]");
     char *line = host_command_shell_line("app.cmd", arguments);
     check_text(line, "\"app.cmd ^^^\"say^^^ \\^^^\"hi\\^^^\"^^^\" ^^^\"back\\slash\\\\^^^\"\"", "quote and backslash");
-    free(line);
+    spisor_memory_release(line);
     cJSON_Delete(arguments);
 }
 
@@ -162,9 +163,9 @@ static void doubles_a_run_of_backslashes_before_a_quote_and_at_the_end(void) {
     cJSON *quoting = parsed("[\"\\\\\\\\\\\"\"]");
     char *quoting_line = host_command_shell_line("x.cmd", quoting);
     check_text(quoting_line, "\"x.cmd ^^^\"\\\\\\\\\\^^^\"^^^\"\"", "a run before a quote");
-    free(quoting_line);
+    spisor_memory_release(quoting_line);
     cJSON_Delete(quoting);
-    free(ending_line);
+    spisor_memory_release(ending_line);
     cJSON_Delete(ending);
 }
 
@@ -179,17 +180,17 @@ static void reads_options_given_both_ways_and_refuses_an_unknown_one_or_a_missin
     char *unknown[] = {"--catalogue", "x"};
     CHECK(!host_parse_options(2, unknown, options, 2, NULL, &problem));
     check_text(problem, "unknown option --catalogue", "unknown");
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, 2);
     char *missing[] = {"--catalog"};
     CHECK(!host_parse_options(1, missing, options, 2, NULL, &problem));
     check_text(problem, "--catalog needs a value", "missing value");
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, 2);
     char *positional[] = {"stray"};
     CHECK(!host_parse_options(1, positional, options, 2, NULL, &problem));
     check_text(problem, "unexpected argument stray", "positional");
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, 2);
 }
 

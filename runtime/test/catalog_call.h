@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "check.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -44,7 +45,7 @@ static inline cJSON *read_json_file(const char *path) {
     size_t length;
     uint8_t *bytes = spisor_read_file(path, &length);
     cJSON *tree = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     if (tree == NULL) {
         fprintf(stderr, "cannot read %s\n", path);
         exit(2);

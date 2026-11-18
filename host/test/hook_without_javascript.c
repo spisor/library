@@ -1,4 +1,5 @@
 #include "proof_fixture.h"
+#include "spisor/allocation.h"
 
 #include "boot_stub.h"
 
@@ -45,7 +46,7 @@ static void read_session_hook(const host_world *world, session_hook *hook) {
 }
 
 static void free_session_hook(session_hook *hook) {
-    free(hook->command);
+    spisor_memory_release(hook->command);
     cJSON_Delete(hook->written);
 }
 
@@ -60,8 +61,8 @@ static void install_claude_code_loader(host_world *world) {
     program run;
     CHECK(proof_run(world, &run, spisor_host, arguments, world->bin) == 0);
     program_free(&run);
-    free(spisor_host);
-    free(index);
+    spisor_memory_release(spisor_host);
+    spisor_memory_release(index);
 }
 
 /** Takes away what a SessionStart puts back: the run reference it records and the application its registration names. */
@@ -76,7 +77,7 @@ static void forget_what_a_start_records(const host_world *world) {
     write_in(world->base.state, "hosts/" LOADER_ID ".json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(references);
+    spisor_memory_release(references);
 }
 
 static void expect_registered_and_recorded(const host_world *world, const program *run, const char *label) {
@@ -127,7 +128,7 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
     check_text(hook.command, boot, "the hook runs spisor-boot");
     char *machine_path = environment_value("PATH");
     char *path = path_without_javascript(machine_path);
-    free(machine_path);
+    spisor_memory_release(machine_path);
     expect_no_javascript_on(path, "the stripped PATH");
     double runs[TIMED_RUNS];
     for (int index = 0; index < TIMED_RUNS; index++) {
@@ -150,8 +151,8 @@ static void a_session_start_with_no_javascript_on_path_registers_records_and_fin
         fprintf(stderr, "\n");
         check_failures++;
     }
-    free(path);
-    free(boot);
+    spisor_memory_release(path);
+    spisor_memory_release(boot);
     free_session_hook(&hook);
     finish_world(&world);
 }
@@ -164,7 +165,7 @@ static char *javascript_trap_folder(const host_world *world) {
         snprintf(name, sizeof name, "%s" EXECUTABLE_ENDING, JAVASCRIPT_RUNTIMES[index]);
         char *path = joined(folder, name);
         copy_file(JAVASCRIPT_TRAP_PATH, path);
-        free(path);
+        spisor_memory_release(path);
     }
     return folder;
 }
@@ -196,21 +197,21 @@ static void a_session_start_starts_no_node_or_bun_even_when_one_is_on_path(void)
     char *trap = javascript_trap_folder(&world);
     char *machine_path = environment_value("PATH");
     char *stripped = path_without_javascript(machine_path);
-    free(machine_path);
-    char *path = malloc(strlen(trap) + strlen(stripped) + 2);
+    spisor_memory_release(machine_path);
+    char *path = spisor_memory_allocate(strlen(trap) + strlen(stripped) + 2);
     sprintf(path, "%s" PATH_SEPARATOR "%s", trap, stripped);
     char *started = joined(world.base.root, "javascript-started.txt");
     run_with_trap(&world, &hook, path, started);
     if (spisor_file_exists(started)) {
         char *what = read_text_file(started);
         fprintf(stderr, "the hook started a JavaScript runtime: %s\n", what);
-        free(what);
+        spisor_memory_release(what);
         check_failures++;
     }
-    free(started);
-    free(path);
-    free(stripped);
-    free(trap);
+    spisor_memory_release(started);
+    spisor_memory_release(path);
+    spisor_memory_release(stripped);
+    spisor_memory_release(trap);
     free_session_hook(&hook);
     finish_world(&world);
 }
@@ -234,7 +235,7 @@ static void a_shim_of_node_or_bun_counts_as_a_javascript_runtime(void) {
             fprintf(stderr, "%s was not taken for a JavaScript runtime\n", SHIMS[index]);
             check_failures++;
         }
-        free(folder);
+        spisor_memory_release(folder);
     }
     CHECK(!holds_javascript_runtime(world.bin));
     finish_world(&world);

@@ -1,4 +1,5 @@
 #include "loader.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,13 +17,13 @@
 
 static cJSON *refusal_naming(const char *file, const char *what, const char *issue_path, const char *detail) {
     size_t size = strlen(file) + strlen(what) + strlen(issue_path) + strlen(detail) + 4;
-    char *message = malloc(size);
+    char *message = spisor_memory_allocate(size);
     cJSON *refusal = NULL;
     if (message != NULL) {
         snprintf(message, size, "%s %s%s%s%s", file, what, issue_path, issue_path[0] == '\0' ? "" : " ", detail);
         refusal = runtime_refusal(message, INSTALLED_FIX);
     }
-    free(message);
+    spisor_memory_release(message);
     return refusal;
 }
 
@@ -59,7 +60,7 @@ static cJSON *read_standard(const char *file, cJSON **refusal) {
     int readable = bytes != NULL;
     int out_of_memory = 0;
     cJSON *manifest = readable ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
-    free(bytes);
+    spisor_memory_release(bytes);
     if (manifest == NULL && !out_of_memory) {
         *refusal = refusal_naming(file, "could not be read: ", "",
                                   readable ? "it is not JSON" : "the file is missing or unreadable");
@@ -86,7 +87,7 @@ static cJSON *installed_for(const cJSON *argument, cJSON **refusal) {
     const char *segments[5] = {cache->valuestring, "bundles", id, version, "host.json"};
     char *file = runtime_cache_joined(segments, 5);
     cJSON *answer = file == NULL ? NULL : read_standard(file, refusal);
-    free(file);
+    spisor_memory_release(file);
     return answer;
 }
 

@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 static int run_hook(host_world *world, program *run, const char *loader, const char *event) {
     const char *arguments[] = {"hook", loader, event, NULL};
@@ -8,7 +9,7 @@ static int run_hook(host_world *world, program *run, const char *loader, const c
 static int nothing_was_started(const host_world *world) {
     char *starts = text_in(world->starts, "");
     int none = starts == NULL || starts[0] == 0;
-    free(starts);
+    spisor_memory_release(starts);
     return none;
 }
 
@@ -17,7 +18,7 @@ static void registers_the_loader_and_records_its_reference_starting_nothing_and_
     install_launch_world(&world, "hook", "records", 1);
     char *references_file = joined(world.base.state, "bundles/" LOADER_ID ".json");
     CHECK(runtime_remove_file_entry(references_file) == RUNTIME_ENTRY_DONE);
-    free(references_file);
+    spisor_memory_release(references_file);
     program run;
     CHECK(run_hook(&world, &run, LOADER_ID, "session-start") == 0);
     check_text(run.out, "", "nothing on stdout");

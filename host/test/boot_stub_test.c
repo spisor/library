@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "holders.h"
 #include "processes.h"
@@ -12,7 +13,7 @@ static char *stub_of(const host_world *world) {
 static int run_boot(host_world *world, program *run, const char *const *arguments) {
     char *stub = stub_of(world);
     world_start(world, run, stub, arguments, NULL, 1);
-    free(stub);
+    spisor_memory_release(stub);
     return program_finish(run, 60000);
 }
 
@@ -20,7 +21,7 @@ static void install_boot_world(host_world *world, const char *label) {
     install_launch_world(world, "boot-stub", label, 0);
     char *stub = stub_of(world);
     CHECK(spisor_file_exists(stub));
-    free(stub);
+    spisor_memory_release(stub);
 }
 
 static void runs_the_version_the_hint_names_with_its_arguments_passed_through(void) {
@@ -42,7 +43,7 @@ static void runs_the_version_the_hint_names_with_its_arguments_passed_through(vo
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&launcher);
     program_free(&status);
     finish_world(&world);
@@ -59,7 +60,7 @@ static void refuses_a_swept_version_with_the_reinstall_fix(void) {
     expect_contains(run.err, "spisor-host is not installed in", "names what is missing");
     expect_contains(run.err, "fix: run spisor-host install --catalog <path or url> again", "reinstall fix");
     check_text(run.out, "", "ran nothing");
-    free(version);
+    spisor_memory_release(version);
     program_free(&run);
     finish_world(&world);
 }
@@ -114,8 +115,8 @@ static void starts_a_same_size_corruption_which_status_then_refuses(void) {
     expect_contains(run.err, "spisor-boot" EXECUTABLE_ENDING, "names the file");
     expect_contains(run.err, "has SHA-256", "found by its hash");
     expect_contains(run.err, "fix: ", "with a fix");
-    free(bytes);
-    free(carried);
+    spisor_memory_release(bytes);
+    spisor_memory_release(carried);
     program_free(&run);
     finish_world(&world);
 }
@@ -143,11 +144,11 @@ static void update_twice_under_a_running_launch(host_world *world) {
     write_in(world->base.cache, "hosts/spisor-host.json", text);
     char *references = joined(world->base.state, "bundles/spisor-host.json");
     CHECK(runtime_remove_file_entry(references) == RUNTIME_ENTRY_DONE);
-    free(references);
+    spisor_memory_release(references);
     cJSON_free(text);
     cJSON_Delete(hint);
-    free(second);
-    free(first);
+    spisor_memory_release(second);
+    spisor_memory_release(first);
 }
 
 static void keeps_the_spisor_host_version_a_launch_runs_through_a_sweep_until_it_ends(void) {
@@ -170,7 +171,7 @@ static void keeps_the_spisor_host_version_a_launch_runs_through_a_sweep_until_it
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -237,7 +238,7 @@ static void records_the_spisor_host_version_a_background_command_runs_while_its_
     release_this_test(&world);
     CHECK(program_finish(&background, 30000) == 0);
     CHECK(wait_until(records_no_spisor_host, &world, 5000));
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&background);
     finish_world(&world);
 }
@@ -251,7 +252,7 @@ static char *short_name_of(const char *path) {
     if (length == 0 || length >= 1024 || wcscmp(wide, short_wide) == 0) {
         return NULL;
     }
-    char *narrow = malloc(4 * (size_t)length + 1);
+    char *narrow = spisor_memory_allocate(4 * (size_t)length + 1);
     WideCharToMultiByte(CP_UTF8, 0, short_wide, -1, narrow, 4 * (int)length + 1, NULL, NULL);
     return narrow;
 }
@@ -267,7 +268,7 @@ static void identifies_the_running_version_when_the_cache_is_named_by_its_short_
         return;
     }
     char *stub = stub_of(&world);
-    free(world.base.cache);
+    spisor_memory_release(world.base.cache);
     world.base.cache = short_cache;
     program launcher;
     const char *arguments[] = {"spisor-host", "launch", LOADER_ID, "short", "0", NULL};
@@ -280,7 +281,7 @@ static void identifies_the_running_version_when_the_cache_is_named_by_its_short_
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -308,7 +309,7 @@ static void gives_what_it_boots_no_console_window_when_it_has_no_console(void) {
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&launcher);
     finish_world(&world);
 }
@@ -350,7 +351,7 @@ static void shares_a_windowless_console_with_what_it_boots(void) {
     CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
     stop_if_alive(background);
     cJSON_Delete(started);
-    free(stub);
+    spisor_memory_release(stub);
     program_free(&launcher);
     finish_world(&world);
 }

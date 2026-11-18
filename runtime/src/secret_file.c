@@ -1,4 +1,5 @@
 #include "secret_file.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -30,14 +31,14 @@ static int is_separator(char character) {
     return character == '/' || character == '\\';
 }
 
-/** The directory part of path, freed with free; an empty string when path names a file at a root. */
+/** The directory part of path, freed; an empty string when path names a file at a root. */
 static char *directory_of(const char *path) {
     size_t length = strlen(path);
     while (length > 0 && !is_separator(path[length - 1])) {
         length--;
     }
     size_t directory_length = length > 0 ? length - 1 : 0;
-    char *directory = malloc(directory_length + 1);
+    char *directory = spisor_memory_allocate(directory_length + 1);
     if (directory != NULL) {
         memcpy(directory, path, directory_length);
         directory[directory_length] = '\0';
@@ -48,7 +49,7 @@ static char *directory_of(const char *path) {
 static int make_parent_directory(const char *path) {
     char *directory = directory_of(path);
     int made = directory != NULL && (directory[0] == '\0' || spisor_make_directories(directory));
-    free(directory);
+    spisor_memory_release(directory);
     return made;
 }
 
@@ -58,9 +59,9 @@ static char *file_text(const cJSON *entries, size_t *length) {
         return NULL;
     }
     *length = strlen(text);
-    char *terminated = realloc(text, *length + 2);
+    char *terminated = spisor_memory_reallocate(text, *length + 2);
     if (terminated == NULL) {
-        free(text);
+        spisor_memory_release(text);
         return NULL;
     }
     terminated[(*length)++] = '\n';
@@ -75,7 +76,7 @@ runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJS
         return RUNTIME_SECRET_FILE_OUT_OF_MEMORY;
     }
     int written = make_parent_directory(path) && spisor_replace_private_file(path, (const uint8_t *)text, length);
-    free(text);
+    spisor_memory_release(text);
     if (written) {
         return RUNTIME_SECRET_FILE_DONE;
     }
@@ -84,7 +85,7 @@ runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJS
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "catalog_text.h"
 #include "install.h"
 #include "install_methods.h"
@@ -104,7 +105,7 @@ static int add_unavailable_method(cJSON *unavailable, const char *method) {
                 cJSON_AddStringToObject(row, "message", message) != NULL &&
                 cJSON_AddStringToObject(row, "fix", "choose another method, or install it yourself and run install again") != NULL &&
                 cJSON_AddItemToArray(unavailable, row);
-    free(message);
+    spisor_memory_release(message);
     if (!added) {
         cJSON_Delete(row);
     }
@@ -152,7 +153,7 @@ static cJSON *refuse_unknown(const char *id, const cJSON *applications) {
     const char *parts[4] = {"the choices name ", id, ", which the catalog lists no application under; the applications are ",
                             known};
     cJSON *refusal = known == NULL ? NULL : runtime_cache_refusal(parts, 4, "choose one of the catalog's applications");
-    free(known);
+    spisor_memory_release(known);
     cJSON_Delete(ids);
     return refusal;
 }
@@ -185,7 +186,7 @@ static int is_offered_choice(const runtime_install_run *run, const pending_appli
     const char *parts[6] = {"the choice ", id, "=", method, " names a method that is not offered; the offered methods are ",
                             offered};
     *refusal = offered == NULL ? NULL : runtime_cache_refusal(parts, 6, "choose one of the offered methods");
-    free(offered);
+    spisor_memory_release(offered);
     return 0;
 }
 
@@ -352,7 +353,7 @@ static cJSON *missing_row(const runtime_install_run *run, const pending_applicat
         cJSON_Delete(row);
         row = NULL;
     }
-    free(flag);
+    spisor_memory_release(flag);
     return row;
 }
 
@@ -374,14 +375,14 @@ static void discard_pending(pending_application *pending, size_t count) {
         cJSON_Delete(pending[index].offered);
         cJSON_Delete(pending[index].unavailable);
     }
-    free(pending);
+    spisor_memory_release(pending);
 }
 
 /** The offers of every application that is neither installed nor detected, each choice checked against them. */
 static pending_application *pending_of(const runtime_install_run *run, const cJSON *applications, const cJSON *states,
                                        cJSON **refusal) {
     size_t count = (size_t)cJSON_GetArraySize(applications);
-    pending_application *pending = calloc(count + 1, sizeof *pending);
+    pending_application *pending = spisor_memory_allocate_zeroed(count + 1, sizeof *pending);
     size_t index = 0;
     for (const cJSON *application = pending == NULL ? NULL : applications->child; application != NULL;
          application = application->next, index++) {

@@ -1,4 +1,5 @@
 #include "application_choices.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -67,9 +68,9 @@ static const char *ask_for_method(const char *id, const cJSON *methods, host_que
             break;
         }
         chosen = method_of(answer, methods);
-        free(answer);
+        spisor_memory_release(answer);
     }
-    free(question);
+    spisor_memory_release(question);
     return chosen != NULL || !*can_ask ? chosen : SKIP;
 }
 

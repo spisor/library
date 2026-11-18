@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "json_service.h"
+#include "allocation.h"
 #include "ui.h"
 #include "ui_screen.h"
 #include "ui_settings_view.h"
@@ -60,7 +61,7 @@ static int by_order_then_id(const void *left_pointer, const void *right_pointer)
 /** The plugins not hidden, in navigation order; NULL with *count 0 when none, NULL with *count nonzero when memory runs out. */
 static customised_plugin *visible_plugins(const cJSON *descriptions, const cJSON *ui, size_t *count) {
     size_t size = (size_t)cJSON_GetArraySize(descriptions);
-    customised_plugin *plugins = size == 0 ? NULL : malloc(size * sizeof *plugins);
+    customised_plugin *plugins = size == 0 ? NULL : spisor_memory_allocate(size * sizeof *plugins);
     *count = size == 0 || plugins != NULL ? 0 : 1;
     size_t position = 0;
     const cJSON *source = plugins == NULL ? NULL : descriptions;
@@ -86,7 +87,7 @@ static int by_member_name(const void *left, const void *right) {
 /** The member names of object sorted, as borrowed pointers; NULL with *count 0 when it has none. */
 static const char **sorted_names(const cJSON *object, size_t *count, int *complete) {
     *count = cJSON_IsObject(object) ? (size_t)cJSON_GetArraySize(object) : 0;
-    const char **names = *count == 0 ? NULL : malloc(*count * sizeof *names);
+    const char **names = *count == 0 ? NULL : spisor_memory_allocate(*count * sizeof *names);
     *complete = *count == 0 || names != NULL;
     size_t index = 0;
     const cJSON *source = names == NULL ? NULL : object;
@@ -160,7 +161,7 @@ static int add_views(cJSON *entries, const customised_plugin *plugin) {
     for (size_t index = 0; complete && index < count; index++) {
         complete = add_view(entries, plugin, names[index]);
     }
-    free(names);
+    spisor_memory_release(names);
     return complete;
 }
 
@@ -180,7 +181,7 @@ static int add_actions(cJSON *entries, const customised_plugin *plugin) {
     for (size_t index = 0; complete && index < count; index++) {
         complete = add_entry(entries, id_of(plugin->description), "action", names[index], title_of(actions, names[index], "label"), 0);
     }
-    free(names);
+    spisor_memory_release(names);
     return complete;
 }
 
@@ -193,7 +194,7 @@ static cJSON *entries_of(const cJSON *descriptions, const cJSON *ui) {
         complete = add_views(entries, &plugins[index]) && add_settings(entries, &plugins[index]) &&
                    add_actions(entries, &plugins[index]);
     }
-    free(plugins);
+    spisor_memory_release(plugins);
     if (!complete) {
         cJSON_Delete(entries);
         return NULL;

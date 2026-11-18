@@ -1,4 +1,5 @@
 #include "paths.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,13 +17,13 @@ static char *join_kind(const char *home, const cJSON *names, const char *kind) {
     char *declared = declared_segment(names, kind);
     const char *segments[2] = {home, declared != NULL ? declared : kind};
     char *joined = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    free(declared);
+    spisor_memory_release(declared);
     return joined;
 }
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -30,11 +31,11 @@ static char *copy_text(const char *text) {
 }
 
 void runtime_free_paths(runtime_paths *paths) {
-    free(paths->home);
-    free(paths->repos);
-    free(paths->plugin);
-    free(paths->cache);
-    free(paths->config);
+    spisor_memory_release(paths->home);
+    spisor_memory_release(paths->repos);
+    spisor_memory_release(paths->plugin);
+    spisor_memory_release(paths->cache);
+    spisor_memory_release(paths->config);
     memset(paths, 0, sizeof(*paths));
 }
 

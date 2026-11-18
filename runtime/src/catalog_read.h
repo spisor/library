@@ -21,7 +21,7 @@ spisor_status runtime_catalog_refuse(runtime_catalog_refusal *refusal, char *det
 
 void runtime_catalog_free_refusal(runtime_catalog_refusal *refusal);
 
-/** A REFUSED refusal's detail followed by " at " and the path when it names one; freed with free, NULL out of memory. */
+/** A REFUSED refusal's detail followed by " at " and the path when it names one; freed, NULL out of memory. */
 char *runtime_catalog_refusal_message(const runtime_catalog_refusal *refusal);
 
 /**

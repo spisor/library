@@ -3,7 +3,7 @@
 
 /**
  * The name trimmed as String.prototype.trim does, when the result is a portable path segment, else NULL.
- * Freed with free.
+ * Freed.
  *
  * @implNote Portable means usable on every OS the host runs on: not empty, ".", ".." or ending in "."
  * or a space, free of "/", "\", ":", "<", ">", the double quote, "|", "?", "*" and the control

@@ -30,7 +30,7 @@ typedef enum runtime_repo_file_status {
 
 /**
  * Reads the file at path, from the root of the repo id names, at that repo's default branch, anonymously and within the
- * same body limit as a lookup. READ fills *content, freed with free, and *length; ABSENT is the host saying the
+ * same body limit as a lookup. READ fills *content, freed, and *length; ABSENT is the host saying the
  * file is not there; TOO_LARGE is a body above the limit. UNAVAILABLE is anything else, a repo that cannot be
  * resolved included, and then *refusal is set to the resolve refusal when that was the cause. apiBase aims the read as it aims
  * identity.resolve.

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "entry_template.h"
 
@@ -11,7 +12,7 @@ static const runtime_entry_values VALUES = {
 static void expect_expansion(const char *template_text, const char *expected, const char *label) {
     char *expanded = runtime_entry_expand(template_text, &VALUES);
     check_text(expanded, expected, label);
-    free(expanded);
+    spisor_memory_release(expanded);
 }
 
 static void replaces_every_occurrence(void) {
@@ -33,7 +34,7 @@ static void writes_the_json_form_as_a_string_literal(void) {
     quoted.hint = "C:\\cache\\\"hint\".json";
     char *expanded = runtime_entry_expand("const HINT = {{json:hint}};", &quoted);
     check_text(expanded, "const HINT = \"C:\\\\cache\\\\\\\"hint\\\".json\";", "a value needing escapes");
-    free(expanded);
+    spisor_memory_release(expanded);
 }
 
 static void leaves_a_javascript_template_literal_alone(void) {

@@ -292,7 +292,7 @@ static int32_t fail_naming(const char *prefix, const char *name, const char *suf
     size_t prefix_length = strlen(prefix);
     size_t name_length = strlen(name);
     size_t suffix_length = strlen(suffix);
-    char *message = malloc(prefix_length + name_length + suffix_length + 1);
+    char *message = spisor_memory_allocate(prefix_length + name_length + suffix_length + 1);
     if (message == NULL) {
         return out_of_memory(out, out_len);
     }
@@ -300,7 +300,7 @@ static int32_t fail_naming(const char *prefix, const char *name, const char *suf
     memcpy(message + prefix_length, name, name_length);
     memcpy(message + prefix_length + name_length, suffix, suffix_length + 1);
     int32_t status = spisor_fail(message, fix, out, out_len);
-    free(message);
+    spisor_memory_release(message);
     return status;
 }
 

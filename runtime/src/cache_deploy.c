@@ -141,7 +141,7 @@ static int read_manifest(deployment *plan, cJSON **refusal) {
                          ? NULL
                          : spisor_parse_json_reporting(plan->manifest_bytes, plan->manifest_length, &out_of_memory);
     plan->out_of_memory = plan->out_of_memory || out_of_memory;
-    free(path);
+    spisor_memory_release(path);
     if (plan->manifest == NULL || !cJSON_IsObject(plan->manifest)) {
         return refuse_unless_out_of_memory(plan, refusal, "the bundle has no plugin.json that holds a JSON object",
                                            "install the plugin again, or point directory at an installed bundle");
@@ -172,7 +172,7 @@ static int read_entry(deployment *plan, cJSON **refusal) {
     plan->out_of_memory = path == NULL;
     plan->entry_bytes = inside && !identity_like ? read_noting(plan, path, &plan->entry_length) : NULL;
     plan->has_entry = plan->entry_bytes != NULL;
-    free(path);
+    spisor_memory_release(path);
     if (!plan->has_entry) {
         return refuse_unless_out_of_memory(plan, refusal,
                                            "the plugin.json entry is not a file inside the bundle that can be deployed",
@@ -188,10 +188,10 @@ static char *destination(deployment *plan, const char *suffix) {
     char *path = file_name == NULL ? NULL : runtime_cache_resolve(plan->plugin_directory, (const char *const *)&file_name, 1);
     plan->out_of_memory = plan->out_of_memory || path == NULL;
     if (path != NULL && !runtime_cache_is_strictly_inside(plan->plugin_directory, path)) {
-        free(path);
+        spisor_memory_release(path);
         path = NULL;
     }
-    free(file_name);
+    spisor_memory_release(file_name);
     return path;
 }
 
@@ -250,7 +250,7 @@ static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
     }
     char *recorded = recorded_id(plan);
     if (plan->out_of_memory) {
-        free(recorded);
+        spisor_memory_release(recorded);
         return 0;
     }
     int same = recorded != NULL && (strcmp(recorded, plan->identity_id) == 0 ||
@@ -262,10 +262,10 @@ static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
         const char *fix_parts[5] = {"remove the deployed ", plan->import_name, " first if ", plan->identity_id, " is meant to replace it"};
         char *fix = runtime_cache_text(fix_parts, 5);
         *refusal = message == NULL || fix == NULL ? NULL : runtime_refusal(message, fix);
-        free(message);
-        free(fix);
+        spisor_memory_release(message);
+        spisor_memory_release(fix);
     }
-    free(recorded);
+    spisor_memory_release(recorded);
     return same;
 }
 
@@ -306,19 +306,19 @@ void runtime_cache_free_deployment(runtime_cache_deployment *plan) {
         return;
     }
     cJSON_Delete(plan->manifest);
-    free(plan->resolved_directory);
-    free(plan->resolved_plugin_directory);
+    spisor_memory_release(plan->resolved_directory);
+    spisor_memory_release(plan->resolved_plugin_directory);
     spisor_memory_release(plan->manifest_bytes);
     spisor_memory_release(plan->entry_bytes);
     cJSON_free(plan->identity_bytes);
     for (size_t index = 0; index < DESTINATION_COUNT; index++) {
-        free(plan->destinations[index]);
+        spisor_memory_release(plan->destinations[index]);
     }
-    free(plan);
+    spisor_memory_release(plan);
 }
 
 runtime_cache_deployment *runtime_cache_plan_deployment(const cJSON *argument, cJSON **refusal) {
-    deployment *plan = calloc(1, sizeof *plan);
+    deployment *plan = spisor_memory_allocate_zeroed(1, sizeof *plan);
     *refusal = NULL;
     if (plan != NULL && !is_deployable(plan, argument, refusal)) {
         runtime_cache_free_deployment(plan);

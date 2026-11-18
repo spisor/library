@@ -3,6 +3,7 @@
 #endif
 
 #include "followed_entry.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -17,7 +18,7 @@ static DWORD followed_attributes(const char *path) {
     HANDLE handle = wide == NULL ? INVALID_HANDLE_VALUE
                                  : CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     BY_HANDLE_FILE_INFORMATION information;
     DWORD attributes = INVALID_FILE_ATTRIBUTES;
     if (handle != INVALID_HANDLE_VALUE && GetFileInformationByHandle(handle, &information)) {

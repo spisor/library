@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "fetch_hooks.h"
 #include "http_fixture.h"
@@ -38,7 +39,8 @@ static void release_call(agreement_call *call) {
 
 /** The copies a test's files object describes, as a reader would hand them: false a failed read, null no file. */
 static runtime_identity_copy *copies_of(const cJSON *files, spisor_value_tree *trees, size_t *count) {
-    runtime_identity_copy *copies = calloc((size_t)cJSON_GetArraySize(files) + 1, sizeof *copies);
+    runtime_identity_copy *copies = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(files) + 1,
+            sizeof *copies);
     const cJSON *file;
     *count = 0;
     cJSON_ArrayForEach(file, files) {
@@ -59,7 +61,7 @@ static runtime_identity_copy *copies_of(const cJSON *files, spisor_value_tree *t
 static agreement_call agree(const char *id, const char *files_json) {
     cJSON *files = spisor_parse_json((const uint8_t *)files_json, strlen(files_json));
     size_t file_count = (size_t)cJSON_GetArraySize(files);
-    spisor_value_tree *trees = calloc(file_count + 1, sizeof *trees);
+    spisor_value_tree *trees = spisor_memory_allocate_zeroed(file_count + 1, sizeof *trees);
     runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
     agreement_call call = {SPISOR_OK, SPISOR_INIT(runtime_identity_agreement), SPISOR_INIT(spisor_refusal)};
     for (size_t index = 0; index < file_count; index++) {
@@ -72,8 +74,8 @@ static agreement_call agree(const char *id, const char *files_json) {
     for (size_t index = 0; index < file_count; index++) {
         spisor_value_release(&trees[index]);
     }
-    free(trees);
-    free(copies);
+    spisor_memory_release(trees);
+    spisor_memory_release(copies);
     cJSON_Delete(files);
     return call;
 }
@@ -523,7 +525,7 @@ static void run_against_the_server(void) {
     does_not_keep_a_file_when_the_name_changed_hands_during_the_read();
     refuses_when_the_id_itself_cannot_be_resolved();
     reads_a_gitea_copy_from_its_raw_file_route();
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 #if !defined(_WIN32)

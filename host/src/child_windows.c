@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include "host_child.h"
+#include "allocation.h"
 #include "host_service.h"
 #include "host_output.h"
 #include "wide_path.h"
@@ -22,7 +23,7 @@ static wchar_t *command_shell_of(const cJSON *environment) {
         }
     }
     DWORD units = GetEnvironmentVariableW(L"ComSpec", NULL, 0);
-    wchar_t *shell = malloc((units == 0 ? wcslen(DEFAULT_COMMAND_SHELL) + 1 : units) * sizeof *shell);
+    wchar_t *shell = spisor_memory_allocate((units == 0 ? wcslen(DEFAULT_COMMAND_SHELL) + 1 : units) * sizeof *shell);
     if (shell != NULL && (units == 0 || GetEnvironmentVariableW(L"ComSpec", shell, units) != units - 1)) {
         wcscpy(shell, DEFAULT_COMMAND_SHELL);
     }
@@ -35,13 +36,13 @@ static wchar_t *shell_line(const char *batch, const cJSON *arguments, const cJSO
     wchar_t *line = narrow_line == NULL ? NULL : runtime_windows_text(narrow_line);
     wchar_t *shell = line == NULL ? NULL : command_shell_of(environment);
     size_t length = shell == NULL ? 0 : wcslen(shell) + wcslen(line) + 16;
-    wchar_t *full = shell == NULL ? NULL : malloc(length * sizeof *full);
+    wchar_t *full = shell == NULL ? NULL : spisor_memory_allocate(length * sizeof *full);
     if (full != NULL) {
         swprintf(full, length, L"\"%ls\" /d /s /c %ls", shell, line);
     }
-    free(shell);
-    free(line);
-    free(narrow_line);
+    spisor_memory_release(shell);
+    spisor_memory_release(line);
+    spisor_memory_release(narrow_line);
     return full;
 }
 
@@ -134,9 +135,9 @@ static int run_child(const char *executable, const cJSON *arguments, const cJSON
     SetConsoleCtrlHandler(outlive_stop, TRUE);
     int created = prepared && create(application, line, block, extra_flags, &information);
     DWORD error = created ? ERROR_SUCCESS : GetLastError();
-    free(block);
-    free(line);
-    free(application);
+    spisor_memory_release(block);
+    spisor_memory_release(line);
+    spisor_memory_release(application);
     if (created) {
         CloseHandle(information.hThread);
         if (watch != NULL && watch->started != NULL) {

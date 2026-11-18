@@ -1,4 +1,5 @@
 #include "install.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,7 +157,7 @@ static install_status merge_user(cJSON *merged, const char *portable, const char
         return INSTALL_OUT_OF_MEMORY;
     }
     install_status status = merge_user_file(merged, path, item, reason);
-    free(path);
+    spisor_memory_release(path);
     return status;
 }
 

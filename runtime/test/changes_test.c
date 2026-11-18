@@ -19,6 +19,7 @@
 #endif
 
 #include "change_reversal_hooks.h"
+#include "spisor/allocation.h"
 #include "changes.h"
 #include "changes_call.h"
 #include "check.h"
@@ -81,7 +82,7 @@ static void write_home_file(const scratch *place, const char *relative, const ch
     write_text(path, text);
 }
 
-/** The file's bytes as text, freed with free, or NULL when it cannot be read. */
+/** The file's bytes as text, freed, or NULL when it cannot be read. */
 static char *read_text(const char *path) {
     size_t length = 0;
     return (char *)spisor_read_file(path, &length);
@@ -92,7 +93,7 @@ static int home_file_is(const scratch *place, const char *relative, const char *
     in_home(place, relative, path, sizeof path);
     char *actual = read_text(path);
     int same = check_text(actual, expected, relative);
-    free(actual);
+    spisor_memory_release(actual);
     return same;
 }
 
@@ -102,7 +103,7 @@ static int home_entry_exists(const scratch *place, const char *relative) {
     return runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
 }
 
-/** Every name, kind and byte under the scratch home, freed with free. */
+/** Every name, kind and byte under the scratch home, freed. */
 static char *snapshot_of(const scratch *place) {
     return tree_snapshot(place->home, NULL);
 }
@@ -149,7 +150,7 @@ static long applied_sequence(const scratch *place, const char *host, cJSON *chan
     if (recorded < 0) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "apply did not record: status %d %s\n", (int)result.status, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return recorded;
@@ -189,7 +190,7 @@ static cJSON *reverse_host(const scratch *place, const char *host) {
     if (result.status != SPISOR_OK) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "reverse failed: status %d %s\n", (int)result.status, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
         cJSON_Delete(result.tree);
         return NULL;
     }
@@ -354,8 +355,8 @@ static void each_kind_reverses_to_the_bytes_before(void) {
     }
     CHECK(reverse_counts(&place, "alpha", 0, 0));
     CHECK(forgets(&place, "alpha"));
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static const char *const user_edited_claude_json = "{\n"
@@ -437,8 +438,8 @@ static void a_shared_line_and_directory_stay_until_both_hosts_are_reversed(void)
     CHECK(reverse_counts(&place, "beta", 2, 0));
     char *after = snapshot_of(&place);
     check_text(after, before, "home after both hosts reversed");
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static void an_unreadable_json_file_is_refused_and_untouched(void) {
@@ -694,7 +695,7 @@ static int line_occurrences(const scratch *place) {
     for (const char *cursor = text; cursor != NULL && (cursor = strstr(cursor, path_line)) != NULL; cursor++) {
         count++;
     }
-    free(text);
+    spisor_memory_release(text);
     return count;
 }
 
@@ -759,7 +760,7 @@ static int answered_existing(const scratch *place, const char *host, cJSON *chan
     if (!answered) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "expected recorded false with sequence %ld, got %s\n", expected, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return answered;
@@ -787,10 +788,10 @@ static void a_repeated_change_answers_its_record_and_records_nothing(void) {
     CHECK(reverse_counts(&place, "alpha", 4, 0));
     char *after = snapshot_of(&place);
     CHECK(check_text(after, before, "home after one reverse"));
-    free(before);
-    free(applied);
-    free(repeated);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(applied);
+    spisor_memory_release(repeated);
+    spisor_memory_release(after);
 }
 
 static void a_file_asked_for_new_content_is_rewritten_under_its_record(void) {
@@ -816,8 +817,8 @@ static void a_file_asked_for_new_content_is_rewritten_under_its_record(void) {
     CHECK(reverse_counts(&place, "alpha", 1, 0));
     char *after = snapshot_of(&place);
     CHECK(check_text(after, before, "home after reversing the rewritten file"));
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static void the_c_entry_point_records_like_the_json_one(void) {
@@ -856,7 +857,7 @@ static void a_link_left_where_a_file_was_is_removed_never_followed(void) {
     CHECK(!home_entry_exists(&place, "shim"));
     char *kept = read_text(sentinel);
     check_text(kept, "outside the home", "link target");
-    free(kept);
+    spisor_memory_release(kept);
 }
 
 static void an_appended_line_is_crlf_only_when_every_line_of_the_profile_is(void) {
@@ -873,8 +874,8 @@ static void an_appended_line_is_crlf_only_when_every_line_of_the_profile_is(void
     CHECK(reverse_counts(&place, "alpha", 2, 0));
     char *after = snapshot_of(&place);
     check_text(after, before, "home after reversing the lines");
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static cJSON *settings_key_change(const scratch *place, const char *key_json, const char *value_json) {
@@ -921,8 +922,8 @@ static void a_hand_formatted_file_keeps_its_bytes_and_comes_back_exactly(const c
     CHECK(reverse_counts(&place, "alpha", 2, 0));
     char *after = snapshot_of(&place);
     check_text(after, before, label);
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static void hand_formatted_files_come_back_byte_identical(void) {
@@ -1038,8 +1039,8 @@ static void an_absent_file_is_created_only_when_asked_and_removed_on_reverse(voi
                     "{\n  \"enabledPlugins\": {\n    \"spisor@spisor\": true\n  },\n  \"mine\": 1\n}\n");
     CHECK(reverse_counts(&place, "alpha", 1, 0));
     home_file_is(&place, "settings.json", "{\n  \"mine\": 1\n}\n");
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static void a_malformed_settings_file_is_refused_and_untouched(void) {

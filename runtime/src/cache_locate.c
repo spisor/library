@@ -1,4 +1,5 @@
 #include "cache_locate.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +45,7 @@ static int add_outside(cJSON *problems, const location *place) {
     const char *parts[4] = {place->id, "@", place->version, " names no folder inside the cache's bundles"};
     char *detail = runtime_cache_text(parts, 4);
     int added = detail != NULL && add_problem(problems, place, detail, OUTSIDE_FIX, NULL);
-    free(detail);
+    spisor_memory_release(detail);
     return added;
 }
 
@@ -54,7 +55,7 @@ static int add_damaged(cJSON *problems, const location *place, const cJSON *chec
     const char *detail = fallback != NULL ? fallback : text_of(check, "detail");
     const char *fix = text_of(check, "fix") != NULL ? text_of(check, "fix") : REINSTALL_FIX;
     int added = detail != NULL && add_problem(problems, place, detail, fix, text_of(check, "file"));
-    free(fallback);
+    spisor_memory_release(fallback);
     return added;
 }
 
@@ -63,7 +64,7 @@ static int add_other_version(cJSON *problems, const location *place, const char 
                             ", not ", place->version};
     char *detail = runtime_cache_text(parts, 6);
     int added = detail != NULL && add_problem(problems, place, detail, VERSION_FIX, MANIFEST_FILE);
-    free(detail);
+    spisor_memory_release(detail);
     return added;
 }
 
@@ -73,7 +74,7 @@ static char *entry_of(const char *directory, const cJSON *manifest, int *failed)
     char *path = entry == NULL ? NULL : runtime_cache_resolve(directory, &entry, 1);
     *failed = entry != NULL && path == NULL;
     if (path != NULL && (!runtime_cache_is_strictly_inside(directory, path) || !spisor_file_exists(path))) {
-        free(path);
+        spisor_memory_release(path);
         path = NULL;
     }
     return path;
@@ -114,10 +115,10 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
         } else {
             added = !failed && add_located(located, place, manifest_path, entry);
         }
-        free(entry);
+        spisor_memory_release(entry);
         cJSON_Delete(manifest);
     }
-    free(manifest_path);
+    spisor_memory_release(manifest_path);
     return added;
 }
 
@@ -135,7 +136,7 @@ static int locate_one(const char *cache, const char *id, const char *version, cJ
         added = add_intact(located, problems, &place);
     }
     cJSON_Delete(check);
-    free(place.directory);
+    spisor_memory_release(place.directory);
     return added;
 }
 
@@ -143,13 +144,13 @@ static int compare_ids(const void *left, const void *right) {
     return strcmp((*(const cJSON *const *)left)->string, (*(const cJSON *const *)right)->string);
 }
 
-/** The string members of plugins sorted by id, as an array of borrowed pointers freed with free. */
+/** The string members of plugins sorted by id, as an array of borrowed pointers freed. */
 static const cJSON **sorted_members(const cJSON *plugins, size_t *count) {
     *count = 0;
     for (const cJSON *entry = plugins->child; entry != NULL; entry = entry->next) {
         *count += cJSON_IsString(entry) ? 1 : 0;
     }
-    const cJSON **members = malloc((*count == 0 ? 1 : *count) * sizeof *members);
+    const cJSON **members = spisor_memory_allocate((*count == 0 ? 1 : *count) * sizeof *members);
     size_t index = 0;
     for (const cJSON *entry = plugins->child; members != NULL && entry != NULL; entry = entry->next) {
         if (cJSON_IsString(entry)) {
@@ -172,7 +173,7 @@ cJSON *runtime_cache_locate_plugins(const char *cache, const cJSON *plugins) {
     for (size_t index = 0; done && index < count; index++) {
         done = locate_one(cache, members[index]->string, members[index]->valuestring, located, problems);
     }
-    free(members);
+    spisor_memory_release(members);
     if (!done) {
         cJSON_Delete(located);
         cJSON_Delete(problems);

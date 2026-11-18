@@ -102,10 +102,6 @@ static uint8_t *decode_into(const uint8_t *bytes, size_t length, size_t *out_len
 }
 
 uint8_t *spisor_decode_utf8_lossy(const uint8_t *bytes, size_t length, size_t *out_length) {
-    return decode_into(bytes, length, out_length, malloc(length * 3 + 1));
-}
-
-uint8_t *spisor_decode_utf8_lossy_reading(const uint8_t *bytes, size_t length, size_t *out_length) {
     return decode_into(bytes, length, out_length, spisor_memory_allocate(length * 3 + 1));
 }
 
@@ -169,7 +165,7 @@ char *spisor_javascript_trim(const char *text) {
         }
         end = last;
     }
-    char *trimmed = malloc(end - start + 1);
+    char *trimmed = spisor_memory_allocate(end - start + 1);
     if (trimmed != NULL) {
         memcpy(trimmed, text + start, end - start);
         trimmed[end - start] = '\0';
@@ -179,7 +175,7 @@ char *spisor_javascript_trim(const char *text) {
 
 static char *copy_of(const char *text) {
     size_t length = strlen(text);
-    char *copy = malloc(length + 1);
+    char *copy = spisor_memory_allocate(length + 1);
     if (copy != NULL) {
         memcpy(copy, text, length + 1);
     }
@@ -271,15 +267,15 @@ static char *concatenated(char *first, const char *separator, char *second) {
         size_t first_length = strlen(first);
         size_t separator_length = strlen(separator);
         size_t second_length = strlen(second);
-        joined = malloc(first_length + separator_length + second_length + 1);
+        joined = spisor_memory_allocate(first_length + separator_length + second_length + 1);
         if (joined != NULL) {
             memcpy(joined, first, first_length);
             memcpy(joined + first_length, separator, separator_length);
             memcpy(joined + first_length + separator_length, second, second_length + 1);
         }
     }
-    free(first);
-    free(second);
+    spisor_memory_release(first);
+    spisor_memory_release(second);
     return joined;
 }
 

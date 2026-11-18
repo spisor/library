@@ -23,13 +23,14 @@
 #else
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 static char *duplicate_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -44,7 +45,7 @@ int spisor_file_exists(const char *path) {
         return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
-    free(wide);
+    spisor_memory_release(wide);
     return attributes != INVALID_FILE_ATTRIBUTES;
 }
 
@@ -55,7 +56,7 @@ spisor_file_presence spisor_probe_file(const char *path) {
     }
     DWORD attributes = GetFileAttributesW(wide);
     DWORD error = GetLastError();
-    free(wide);
+    spisor_memory_release(wide);
     if (attributes != INVALID_FILE_ATTRIBUTES) {
         return SPISOR_FILE_PRESENT;
     }
@@ -72,7 +73,7 @@ static int is_directory(const char *path) {
         return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
-    free(wide);
+    spisor_memory_release(wide);
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 static FILE *open_for_writing(const char *path, const wchar_t *mode) {
@@ -81,7 +82,7 @@ static FILE *open_for_writing(const char *path, const wchar_t *mode) {
         return NULL;
     }
     FILE *file = _wfopen(wide, mode);
-    free(wide);
+    spisor_memory_release(wide);
     return file;
 }
 
@@ -101,7 +102,7 @@ static int create_directory(const char *path) {
         return 0;
     }
     int created = CreateDirectoryW(wide, NULL) != 0;
-    free(wide);
+    spisor_memory_release(wide);
     return created;
 }
 
@@ -109,7 +110,7 @@ static void remove_file(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     if (wide != NULL) {
         DeleteFileW(wide);
-        free(wide);
+        spisor_memory_release(wide);
     }
 }
 
@@ -122,9 +123,9 @@ static char *to_utf8(const wchar_t *wide) {
     if (length <= 0) {
         return NULL;
     }
-    char *narrow = malloc((size_t)length);
+    char *narrow = spisor_memory_allocate((size_t)length);
     if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, length, NULL, NULL) <= 0) {
-        free(narrow);
+        spisor_memory_release(narrow);
         return NULL;
     }
     return narrow;
@@ -143,12 +144,12 @@ static char *final_path_of_link(const wchar_t *wide) {
         return NULL;
     }
     DWORD needed = GetFinalPathNameByHandleW(handle, NULL, 0, FILE_NAME_NORMALIZED);
-    wchar_t *final_path = needed == 0 ? NULL : malloc((size_t)needed * sizeof(wchar_t));
+    wchar_t *final_path = needed == 0 ? NULL : spisor_memory_allocate((size_t)needed * sizeof(wchar_t));
     char *resolved = NULL;
     if (final_path != NULL && GetFinalPathNameByHandleW(handle, final_path, needed, FILE_NAME_NORMALIZED) < needed) {
         resolved = to_utf8(without_extended_prefix(final_path));
     }
-    free(final_path);
+    spisor_memory_release(final_path);
     CloseHandle(handle);
     return resolved;
 }
@@ -159,7 +160,7 @@ int spisor_is_link(const char *path) {
         return 0;
     }
     DWORD attributes = GetFileAttributesW(wide);
-    free(wide);
+    spisor_memory_release(wide);
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 
@@ -169,7 +170,7 @@ static char *write_target_of(const char *path) {
     }
     wchar_t *wide = spisor_wide_path(path);
     char *target = wide == NULL ? NULL : final_path_of_link(wide);
-    free(wide);
+    spisor_memory_release(wide);
     return target;
 }
 #else
@@ -241,49 +242,42 @@ int spisor_is_link(const char *path) {
     return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
 }
 
+#ifndef PATH_MAX
+#define PATH_MAX 4096 /* POSIX lets limits.h leave it out */
+#endif
+
+/** @implNote realpath into a buffer, since realpath(path, NULL) answers memory the binary's allocator never saw. */
+static char *resolved_link(const char *path) {
+    char resolved[PATH_MAX];
+    return realpath(path, resolved) == NULL ? NULL : duplicate_text(resolved);
+}
+
 static char *write_target_of(const char *path) {
-    return spisor_is_link(path) ? realpath(path, NULL) : duplicate_text(path);
+    return spisor_is_link(path) ? resolved_link(path) : duplicate_text(path);
 }
 #endif
 
-/** Where a read allocates: malloc for spisor_read_file's callers, the binary's allocator for the JSON reader. */
-typedef struct read_memory {
-    void *(*allocate)(size_t bytes);
-    void (*release)(void *block);
-} read_memory;
-
-static void *plain_allocate(size_t bytes) {
-    return malloc(bytes);
-}
-
-static void plain_release(void *block) {
-    free(block);
-}
-
-static const read_memory PLAIN_MEMORY = {plain_allocate, plain_release};
-static const read_memory LIBRARY_MEMORY = {spisor_memory_allocate, spisor_memory_release};
-
-static uint8_t *grown_block(const read_memory *memory, uint8_t *bytes, size_t used, size_t capacity) {
-    uint8_t *grown = memory->allocate(capacity);
+static uint8_t *grown_block(uint8_t *bytes, size_t used, size_t capacity) {
+    uint8_t *grown = spisor_memory_allocate(capacity);
     if (grown != NULL) {
         memcpy(grown, bytes, used);
     }
     return grown;
 }
 
-static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *outcome, const read_memory *memory) {
+static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *outcome) {
     size_t capacity = 4096;
     size_t used = 0;
-    uint8_t *bytes = memory->allocate(capacity);
+    uint8_t *bytes = spisor_memory_allocate(capacity);
     *outcome = bytes == NULL ? SPISOR_READ_OUT_OF_MEMORY : SPISOR_READ_FAILED;
     while (bytes != NULL) {
         if (used + 1 >= capacity) {
-            uint8_t *grown = grown_block(memory, bytes, used, capacity * 2);
+            uint8_t *grown = grown_block(bytes, used, capacity * 2);
             if (grown == NULL) {
                 *outcome = SPISOR_READ_OUT_OF_MEMORY;
                 break;
             }
-            memory->release(bytes);
+            spisor_memory_release(bytes);
             bytes = grown;
             capacity *= 2;
         }
@@ -299,11 +293,11 @@ static uint8_t *read_stream(FILE *file, size_t *length, spisor_read_outcome *out
             return bytes;
         }
     }
-    memory->release(bytes);
+    spisor_memory_release(bytes);
     return NULL;
 }
 
-static uint8_t *read_with(const char *path, size_t *length, spisor_read_outcome *outcome, const read_memory *memory) {
+uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
     *outcome = SPISOR_READ_FAILED;
     if (path[0] == '\0' || is_directory(path)) {
         return NULL;
@@ -312,18 +306,14 @@ static uint8_t *read_with(const char *path, size_t *length, spisor_read_outcome 
     if (file == NULL) {
         return NULL;
     }
-    uint8_t *bytes = read_stream(file, length, outcome, memory);
+    uint8_t *bytes = read_stream(file, length, outcome);
     fclose(file);
     return bytes;
 }
 
-uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_read_outcome *outcome) {
-    return read_with(path, length, outcome, &LIBRARY_MEMORY);
-}
-
 uint8_t *spisor_read_file(const char *path, size_t *length) {
     spisor_read_outcome outcome;
-    return read_with(path, length, &outcome, &PLAIN_MEMORY);
+    return spisor_read_file_reporting(path, length, &outcome);
 }
 
 static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {
@@ -340,7 +330,7 @@ int spisor_make_directories(const char *path) {
         return 1;
     }
     size_t path_length = strlen(path);
-    char *prefix = malloc(path_length + 1);
+    char *prefix = spisor_memory_allocate(path_length + 1);
     if (prefix == NULL) {
         return 0;
     }
@@ -353,7 +343,7 @@ int spisor_make_directories(const char *path) {
             prefix[index] = separator;
         }
     }
-    free(prefix);
+    spisor_memory_release(prefix);
     create_directory(path);
     return is_directory(path);
 }
@@ -375,7 +365,7 @@ static void seed_once(void) {
 static char *temporary_path_for(const char *path) {
     seed_once();
     size_t path_length = strlen(path);
-    char *temporary = malloc(path_length + 1 + 16 + 4 + 1);
+    char *temporary = spisor_memory_allocate(path_length + 1 + 16 + 4 + 1);
     if (temporary == NULL) {
         return NULL;
     }
@@ -391,7 +381,7 @@ FILE *spisor_open_replacement(const char *target, int owner_only, char **tempora
     char *temporary = temporary_path_for(target);
     FILE *file = temporary == NULL ? NULL : create_temporary(temporary, target, owner_only);
     if (file == NULL) {
-        free(temporary);
+        spisor_memory_release(temporary);
         temporary = NULL;
     }
     *temporary_path = temporary;
@@ -408,7 +398,7 @@ static int replace_resolved_file(const char *target, const uint8_t *bytes, size_
     if (!replaced) {
         remove_file(temporary);
     }
-    free(temporary);
+    spisor_memory_release(temporary);
     return replaced;
 }
 
@@ -418,7 +408,7 @@ static int replace_through_links(const char *path, const uint8_t *bytes, size_t 
         return 0;
     }
     int replaced = replace_resolved_file(target, bytes, length, 0);
-    free(target);
+    spisor_memory_release(target);
     return replaced;
 }
 

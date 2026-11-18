@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/json_write.h"
@@ -14,7 +15,7 @@ static cJSON *load_vectors(void) {
         return NULL;
     }
     cJSON *vectors = cJSON_ParseWithLength((const char *)bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     return vectors;
 }
 
@@ -37,7 +38,7 @@ static void check_vector(const cJSON *vector, int index) {
     if (!check_text(actual, expected, label)) {
         fprintf(stderr, "  for input %s\n", input);
     }
-    free(actual);
+    spisor_memory_release(actual);
     cJSON_Delete(parsed);
 }
 
@@ -62,8 +63,8 @@ static void terminal_form_escapes_delete_and_the_c1_controls_only(void) {
     check_text(terminal, "\"a\\u009bb\\u007fc\xc2\xa0" "d\xc3\xa9\"", "terminal form");
     char *file = spisor_json_stringify_pretty(value);
     check_text(file, "\"a\xc2\x9b" "b\x7f" "c\xc2\xa0" "d\xc3\xa9\"", "file form is unchanged");
-    free(file);
-    free(terminal);
+    spisor_memory_release(file);
+    spisor_memory_release(terminal);
     cJSON_Delete(value);
 }
 
