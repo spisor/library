@@ -13,6 +13,7 @@
 #include "json_service.h"
 #include "paths.h"
 #include "platform_key.h"
+#include "file_reading.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
 
@@ -39,22 +40,30 @@ static char *carried_stub(const char *cache, int *out_of_memory) {
     *out_of_memory = (resolved == NULL && refusal == NULL) || (segments[0] != NULL && carried == NULL);
     cJSON_Delete(refusal);
     cJSON_Delete(resolved);
-    if (carried != NULL && spisor_probe_file(carried) != SPISOR_FILE_PRESENT) {
+    spisor_file_presence presence = carried == NULL ? SPISOR_FILE_MISSING : spisor_probe_file(carried);
+    *out_of_memory = *out_of_memory || presence == SPISOR_FILE_OUT_OF_MEMORY;
+    if (carried != NULL && presence != SPISOR_FILE_PRESENT) {
         spisor_memory_release(carried);
         carried = NULL;
     }
     return carried;
 }
 
-static int copy_runnable(const char *source, const char *destination) {
+/** Copies source to destination, runnable: SPISOR_REFUSED when it cannot, SPISOR_OUT_OF_MEMORY when memory ran out. */
+static spisor_status copy_runnable(const char *source, const char *destination) {
     const char *parent_segments[2] = {destination, ".."};
     char *parent = joined(parent_segments, 2);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(source, &length);
-    int copied = parent != NULL && bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
-                 spisor_replace_file(destination, bytes, length) == SPISOR_OK;
+    spisor_read_outcome outcome = SPISOR_READ_OUT_OF_MEMORY;
+    uint8_t *bytes = parent == NULL ? NULL : spisor_read_file_reporting(source, &length, &outcome);
+    spisor_status copied = outcome == SPISOR_READ_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                           : bytes == NULL                     ? SPISOR_REFUSED
+                                                               : spisor_make_directories(parent);
+    if (copied == SPISOR_OK) {
+        copied = spisor_replace_file(destination, bytes, length);
+    }
 #if !defined(_WIN32)
-    copied = copied && chmod(destination, 0755) == 0;
+    copied = copied == SPISOR_OK && chmod(destination, 0755) != 0 ? SPISOR_REFUSED : copied;
 #endif
     spisor_memory_release(bytes);
     spisor_memory_release(parent);
@@ -83,11 +92,12 @@ cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal) {
                         ? NULL
                         : carried_stub(cache, &out_of_memory);
     cJSON *answer = stub == NULL || out_of_memory ? NULL : placement(stub, carried != NULL);
-    if (answer != NULL && carried != NULL && !copy_runnable(carried, stub)) {
+    spisor_status copied = answer != NULL && carried != NULL ? copy_runnable(carried, stub) : SPISOR_OK;
+    if (copied != SPISOR_OK) {
         const char *parts[2] = {"spisor-boot could not be put at ", stub};
         cJSON_Delete(answer);
         answer = NULL;
-        *refusal = runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
+        *refusal = copied == SPISOR_OUT_OF_MEMORY ? NULL : runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
     }
     spisor_memory_release(carried);
     spisor_memory_release(stub);

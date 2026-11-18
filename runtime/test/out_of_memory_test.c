@@ -1406,12 +1406,14 @@ static int is_only_text(const char *const *texts, size_t count, const char *expe
     return count == 1 && strcmp(texts[0], expected) == 0;
 }
 
-/** Whether the run record no longer names the old version, read without the allocator that may be failing. */
+/** Whether the run record no longer names the old version, read with the failing allocations suspended. */
 static int replaced_the_old_run(void) {
     char path[1400];
     size_t length = 0;
     snprintf(path, sizeof path, "%s/bundles/spisor-host.json", place.state);
+    spisor_memory_suspend_failures(1);
     uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_memory_suspend_failures(0);
     int replaced = bytes != NULL && strstr((const char *)bytes, "\"old\"") == NULL;
     spisor_memory_release(bytes);
     return replaced;

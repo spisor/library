@@ -866,11 +866,21 @@ static void prepare_hold_start(void) {
     snapshot_left_out = "/state";
 }
 
+/** @implNote Asked without allocating, since it runs inside a run whose allocations fail. */
+static int marker_exists(void) {
+#if defined(_WIN32)
+    return GetFileAttributesA(start_marker) != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat status;
+    return stat(start_marker, &status) == 0;
+#endif
+}
+
 static int marker_written(void) {
-    for (int waited = 0; waited < 10000 && spisor_probe_file(start_marker) != SPISOR_FILE_PRESENT; waited += 50) {
+    for (int waited = 0; waited < 10000 && !marker_exists(); waited += 50) {
         pause_milliseconds(50);
     }
-    return spisor_probe_file(start_marker) == SPISOR_FILE_PRESENT;
+    return marker_exists();
 }
 
 static spisor_status run_hold_start(void) {

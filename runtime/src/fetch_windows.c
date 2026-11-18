@@ -198,10 +198,11 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
     return wide;
 }
 
+/** Sends the request and reads its answer's head: 1 when sent, 0 when it failed, -1 when memory ran out first. */
 static int send_request(const runtime_fetch_request *request, HINTERNET handle, int is_authorized) {
     wchar_t *headers = request_headers(request, is_authorized);
     if (headers == NULL) {
-        return 0;
+        return -1;
     }
     int sent = WinHttpSendRequest(handle, headers[0] == 0 ? WINHTTP_NO_ADDITIONAL_HEADERS : headers,
                                   headers[0] == 0 ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
@@ -335,7 +336,10 @@ static hop_outcome take_hop(const runtime_fetch_request *request, const url_part
                             wchar_t **next) {
     winhttp_handles handles;
     hop_outcome outcome = HOP_ANSWERED;
-    if (!open_handles(request, parts, &handles) || !send_request(request, handles.request, is_authorized)) {
+    int sent = open_handles(request, parts, &handles) ? send_request(request, handles.request, is_authorized) : 0;
+    if (sent < 0) {
+        runtime_fetch_out_of_memory(answer);
+    } else if (sent == 0) {
         refuse_error(request, GetLastError(), answer);
     } else if (is_redirect(status_of(handles.request))) {
         *next = redirect_target(handles.request, parts->wide_url);

@@ -34,87 +34,50 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OUT_OF_MEMORY_SUITE, "fetch's get", 0, BREAKS_ON_BOTH,
-     "fetch.c open_partial reads a failed allocation as an unwritable destination"},
-    {OUT_OF_MEMORY_SUITE, "changes' apply", 0, BREAKS_ON_BOTH,
-     "changes.c runtime_changes_apply: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
-     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "changes' apply after settling", 0, BREAKS_ON_BOTH,
-     "changes.c runtime_changes_apply: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
-     "is_directory wide path as an uncreatable folder, so the lock is refused"},
-    {OUT_OF_MEMORY_SUITE, "changes' reverse", 0, BREAKS_ON_BOTH,
-     "change_reversal.c reverse_steps: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
-     "is_directory wide path as an uncreatable folder, so the lock is refused"},
-    {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, BREAKS_ON_BOTH,
-     "cache.c runtime_cache_sweep_operation: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
-     "failed allocation as an uncreatable folder, so the lock is refused"},
+     "changes.c own_record_of: change_kinds.c runtime_change_repeats: runtime_change_paths_equal reads a failed "
+     "normal_path join as unequal paths, so a held change is applied again"},
     {OUT_OF_MEMORY_SUITE, "cache's locate", 0, BREAKS_ON_BOTH,
      "cache_place.c runtime_cache_bundle_directory reads a failed runtime_cache_joined as no folder"},
     {OUT_OF_MEMORY_SUITE, "cache's deploy", 0, BREAKS_ON_BOTH,
-     "cache_deploy.c write_files: file.c spisor_make_directories reads a failed allocation as an uncreatable "
-     "folder"},
-    {OUT_OF_MEMORY_SUITE, "cache's install", 0, BREAKS_ON_BOTH,
-     "cache_store.c fetched: fetch.c open_partial reads a failed allocation as an unwritable destination"},
-    {OUT_OF_MEMORY_SUITE, "catalog's check", 0, BREAKS_ON_BOTH,
-     "catalog_refresh.c prepare_order: catalog_url.c runtime_catalog_file_url_of_path answers NULL out of memory, "
-     "read as no origin"},
+     "cache_deploy.c write_files writes the plugin's files one after another, so memory running out at a later one "
+     "(file.c spisor_replace_file) answers out of memory after the earlier ones were written"},
     {OUT_OF_MEMORY_SUITE, "install's by_id", 0, BREAKS_ON_BOTH,
      "fetch_windows.c take_hops reads a failed to_wide as a failed request"},
     {OUT_OF_MEMORY_SUITE, "install's ecosystem", 0, BREAKS_ON_BOTH,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OUT_OF_MEMORY_SUITE, "commands' request", 0, BREAKS_ON_BOTH,
-     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
-     "wide path as an uncreatable folder, so the lock is refused"},
+     "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
+     "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
     {OUT_OF_MEMORY_SUITE, "commands' add", 0, BREAKS_ON_BOTH,
-     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
-     "wide path as an uncreatable folder, so the lock is refused"},
+     "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
+     "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
     {OUT_OF_MEMORY_SUITE, "commands' rename", 0, BREAKS_ON_BOTH,
      "commands.c is_shim_taken reads a failed shim_file join as a held name"},
     {ECOSYSTEM_SUITE, "install's ecosystem", 0, BREAKS_ON_BOTH,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
-    {OPERATIONS_SUITE, "runtime", 0, BREAKS_ON_BOTH,
-     "install_runtime.c runtime_on_path: on_path.c matching_file: followed_entry.c runtime_is_followed_file reads "
-     "a failed wide path as no file, so a node on the PATH is acquired again"},
     {OPERATIONS_SUITE, "updates' rollback", 1, BREAKS_ON_BOTH,
-     "host_references.c write_text: file.c move_over reads a failed wide path as a failed move, so the hint is "
-     "rolled back and the references are not"},
-    {OPERATIONS_SUITE, "updates' check", 0, BREAKS_ON_BOTH,
-     "catalog_state.c runtime_catalog_origin_of: catalog_url.c runtime_catalog_file_url_of_path answers NULL out "
-     "of memory, read as no origin"},
-    {OPERATIONS_SUITE, "boot's resolve", 0, BREAKS_ON_WINDOWS,
-     "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
-     "for a failed open and out of memory"},
+     "updates_rollback.c record_rollback: the hint (boot_hint.c runtime_hint_host_version) fails under sticky "
+     "failure and the undo of the references through runtime_write_references_draft allocates too, so the "
+     "references stay rolled back without the hint"},
     {OPERATIONS_SUITE, "boot's place", 0, BREAKS_ON_BOTH,
      "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
      "for a failed open and out of memory"},
-    {OPERATIONS_SUITE, "processes' live_runs", 0, BREAKS_ON_WINDOWS,
-     "run_records.c add_live_run: directory_tree.c runtime_remove_file_entry reads a failed wide path as a failed "
-     "removal, answering OK"},
-    {OPERATIONS_SUITE, "processes' hold starting", 0, BREAKS_ON_BOTH,
-     "processes.c runtime_processes_with_holders reads a failed spisor_make_directories as an unwritable folder"},
-    {OPERATIONS_SUITE, "hosts' register_host", 0, BREAKS_ON_BOTH,
-     "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation "
-     "as an uncreatable folder, so the lock is refused"},
-    {OPERATIONS_SUITE, "hosts' remove", 0, BREAKS_ON_BOTH,
-     "json_key_change.c read_bytes: file.c spisor_read_file answers NULL alike for a failed read and out of "
-     "memory, answering OK"},
-    {OPERATIONS_SUITE, "hosts' start", 0, BREAKS_ON_BOTH,
-     "run_records.c runtime_record_run: file.c spisor_make_directories reads a failed allocation as an "
-     "uncreatable folder"},
-    {OPERATIONS_SUITE, "changes' json-key create", 0, BREAKS_ON_BOTH,
-     "json_key_change.c may_create: directory_tree.c runtime_probe_entry reads a failed wide path as no file"},
     {OPERATIONS_SUITE, "processes' hold starting", 1, BREAKS_ON_WINDOWS,
      "holders.c runtime_write_holders_draft: file.c move_over reads a failed wide path as a failed move, "
      "answering OK without recording the started host"},
     {OPERATIONS_SUITE, "hosts' remove", 1, BREAKS_ON_WINDOWS,
-     "registry.c remove_registration_file: directory_tree.c attributes_of reads a failed wide path as nothing to "
-     "remove, answering OK with the tree changed"},
+     "registry.c remove_registration_file: directory_tree.c runtime_remove_tree after the host's files are removed "
+     "runs out under sticky failure, answering OUT_OF_MEMORY with the tree changed"},
     {OPERATIONS_SUITE, "hosts' start", 1, BREAKS_ON_BOTH,
-     "run_records.c write_record fails under sticky failure and the undo through runtime_remove_run_record "
-     "allocates too, answering OUT_OF_MEMORY with a run record left"},
+     "run_records.c write_record fails under sticky failure and file.c replace_resolved_file cannot remove its "
+     "temporary sibling, which allocates too, answering OUT_OF_MEMORY with the run records changed"},
+    {OPERATIONS_SUITE, "hosts' start beside a session", 1, BREAKS_ON_BOTH,
+     "run_records.c write_record fails under sticky failure and file.c replace_resolved_file cannot remove its "
+     "temporary sibling, which allocates too, answering OUT_OF_MEMORY with the run records changed"},
     {OPERATIONS_SUITE, "changes' json-key create", 1, BREAKS_ON_BOTH,
-     "json_key_change.c perform_created: directory_tree.c runtime_create_new_file reads a failed wide path as an "
-     "existing file, answering OK without the file"},
+     "changes.c perform_recorded: the registration store after the file is created runs out (registry.c "
+     "registration_path), and under sticky failure the undo of the created file allocates too, so the file is left"},
 };
 
 static const known_out_of_memory_break *known_out_of_memory_break_of(const char *suite, const char *label,

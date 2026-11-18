@@ -17,6 +17,7 @@
 #include <windows.h>
 
 #include "spisor/status.h"
+#include "wide_path.h"
 
 #ifdef SPISOR_PATH_ENTRY_TEST_HOOKS
 #include "path_entry_windows_hooks.h"
@@ -339,12 +340,19 @@ runtime_change_step runtime_path_entry_prepare(const cJSON *change, const cJSON 
     return step;
 }
 
-static int append_entry(HKEY key, const path_value *value, cJSON *record) {
-    wchar_t *entry = to_wide(text_of(record, "entry"));
+/** Appends the record's entry to the value: SPISOR_REFUSED when it cannot be stored, or SPISOR_OUT_OF_MEMORY. */
+static spisor_status append_entry(HKEY key, const path_value *value, cJSON *record) {
+    const char *text = text_of(record, "entry");
+    wchar_t *entry = to_wide(text);
     int separated = needs_separator(value->text);
     wchar_t *joined = entry == NULL ? NULL : with_entry(value->text, entry, separated);
-    int stored = joined != NULL && note_placement(record, value) &&
-                 store_path_text(key, value->present ? value->type : REG_EXPAND_SZ, joined);
+    spisor_status stored = SPISOR_OUT_OF_MEMORY;
+    if (entry == NULL && !spisor_is_convertible_path(text)) {
+        stored = SPISOR_REFUSED;
+    } else if (joined != NULL && note_placement(record, value)) {
+        stored = store_path_text(key, value->present ? value->type : REG_EXPAND_SZ, joined) ? SPISOR_OK
+                                                                                            : SPISOR_REFUSED;
+    }
     spisor_memory_release(joined);
     spisor_memory_release(entry);
     return stored;
@@ -358,9 +366,13 @@ runtime_change_step runtime_path_entry_perform(const cJSON *change, cJSON *recor
     if (read != SPISOR_OK) {
         return unread_environment(read, note, directory);
     }
-    int done = holds_directory(&value, directory) || append_entry(key, &value, record);
+    spisor_status done = holds_directory(&value, directory) ? SPISOR_OK : append_entry(key, &value, record);
     close_environment(key, &value);
-    return done ? RUNTIME_CHANGE_DONE : fail(note, "the directory could not be added to the user's Path", directory);
+    if (done == SPISOR_OUT_OF_MEMORY) {
+        return run_out_of_memory(note, directory);
+    }
+    return done == SPISOR_OK ? RUNTIME_CHANGE_DONE
+                             : fail(note, "the directory could not be added to the user's Path", directory);
 }
 
 runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
