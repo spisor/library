@@ -18,6 +18,7 @@
 #include "file_times.h"
 #include "platform_key.h"
 #include "runtime/boot.h"
+#include "runtime/changes.h"
 #include "runtime/install.h"
 #include "runtime/loader.h"
 #include "runtime/processes.h"
@@ -1176,6 +1177,48 @@ static spisor_status run_loader_installed(void) {
     return last_status;
 }
 
+/** The entry loader registered and its value tree true, for a json-key change that creates its file. */
+static void prepare_created_key(void) {
+    start_install_base(&base, "operations", "created-key");
+    register_entry_loader();
+    CHECK(value_of_text("true", &application));
+}
+
+static spisor_status run_created_key(void) {
+    static const char *const key[2] = {"enabledPlugins", "spisor@spisor"};
+    const runtime_changes_definition *changes = runtime_changes_definition_of();
+    runtime_change change = SPISOR_INIT(runtime_change);
+    runtime_changes_apply_argument argument = SPISOR_INIT(runtime_changes_apply_argument);
+    runtime_changes_apply_answer answer = SPISOR_INIT(runtime_changes_apply_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char *file = joined(base.user, "created.json");
+    change.kind = RUNTIME_CHANGE_KIND_JSON_KEY;
+    change.file = file;
+    change.key = key;
+    change.key_count = 2;
+    change.value = &application.root;
+    change.create = 1;
+    argument.state = base.state;
+    argument.host = ENTRY_LOADER;
+    argument.change = &change;
+    last_status = changes->apply(changes->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && !answer.recorded) {
+        last_status = WRONG_RUN;
+    }
+    keep_refusal(&refusal);
+    free(file);
+    return last_status;
+}
+
+/** Whether a create that did not answer OK left no file, since its record was withdrawn. */
+static int created_no_file_unless_ok(void) {
+    int kept = last_status == SPISOR_OK || !exists_in(base.user, "created.json");
+    if (!kept) {
+        fprintf(stderr, "changes' json-key create: an answer of %d left the file created\n", (int)last_status);
+    }
+    return kept;
+}
+
 /** Everything under the base, its timestamps replaced; freed with free. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
@@ -1302,6 +1345,8 @@ int main(int argc, char **argv) {
         {"processes' record_run", prepare_record, run_record_run, recorded_no_new_run_unless_ok},
         {"processes' live_runs", prepare_processes, run_live_runs, kept_the_live_record},
         {"processes' remove_runs", prepare_processes, run_remove_runs, removed_nothing_unless_ok}};
+    static const operation_case created_key = {"changes' json-key create", prepare_created_key, run_created_key,
+                                               created_no_file_unless_ok};
     static const operation_case loader_cases[3] = {
         {"loader's check", prepare_loader_check, run_loader_check, NULL},
         {"loader's home", prepare_loader_home, run_loader_home, NULL},
@@ -1393,6 +1438,12 @@ int main(int argc, char **argv) {
             every_failure_of(&loader_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
             sticky_failures = 0;
         }
+    }
+    if (is_selected(only, created_key.label)) {
+        every_failure_of(&created_key, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 1;
+        every_failure_of(&created_key, SPISOR_OK, first == 0 ? 1 : first, last);
+        sticky_failures = 0;
     }
     return check_summary("out_of_memory_install_operations_test");
 }

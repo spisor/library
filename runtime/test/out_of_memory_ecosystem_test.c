@@ -97,11 +97,80 @@ static spisor_status install_ecosystem(const install_base *base) {
     return status;
 }
 
+static int is_registration(const char *relative) {
+    size_t length = strlen(relative);
+    return strncmp(relative, "state/hosts/", 12) == 0 && strchr(relative + 12, '/') == NULL && length > 5 &&
+           strcmp(relative + length - 5, ".json") == 0;
+}
+
+/** The position in `changes` of the record numbered `sequence`, -1 for none. */
+static int ordinal_of(const cJSON *changes, double sequence) {
+    int index = 0;
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, changes) {
+        if (cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(entry, "sequence")) == sequence) {
+            return index;
+        }
+        index++;
+    }
+    return -1;
+}
+
+/**
+ * Numbers every change record by its position, and its parent by the parent's position, dropping nextSequence.
+ *
+ * @implNote A withdrawn number is never handed out again, so a repeat that completes an install memory stopped may
+ * number its records differently from a clean one; it is their content, order and family that must match.
+ */
+static void renumber_changes(cJSON *registration) {
+    cJSON *changes = cJSON_GetObjectItemCaseSensitive(registration, "changes");
+    cJSON *entry;
+    int index = 0;
+    cJSON_DeleteItemFromObjectCaseSensitive(registration, "nextSequence");
+    cJSON_ArrayForEach(entry, changes) {
+        cJSON *parent = cJSON_GetObjectItemCaseSensitive(entry, "parent");
+        if (parent != NULL) {
+            cJSON_SetNumberValue(parent, ordinal_of(changes, cJSON_GetNumberValue(parent)));
+        }
+    }
+    cJSON_ArrayForEach(entry, changes) {
+        cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
+        if (sequence != NULL) {
+            cJSON_SetNumberValue(sequence, index);
+        }
+        index++;
+    }
+}
+
+/** A registration's text with its change records renumbered, or `text` itself when it is no JSON object. */
+static char *renumbered(char *text) {
+    cJSON *registration = cJSON_Parse(text);
+    char *printed;
+    if (!cJSON_IsObject(registration)) {
+        cJSON_Delete(registration);
+        return text;
+    }
+    renumber_changes(registration);
+    printed = cJSON_Print(registration);
+    cJSON_Delete(registration);
+    CHECK(printed != NULL);
+    free(text);
+    size_t length = strlen(printed) + 1;
+    text = malloc(length);
+    CHECK(text != NULL);
+    memcpy(text, printed, length);
+    cJSON_free(printed);
+    return text;
+}
+
 static void add_file(cJSON *snapshot, const char *path, const char *relative) {
     size_t length = 0;
     uint8_t *content = spisor_read_file(path, &length);
     size_t normalized_length = 0;
     char *normalized = content == NULL ? NULL : without_timestamps(content, length, &normalized_length);
+    if (normalized != NULL && is_registration(relative)) {
+        normalized = renumbered(normalized);
+    }
     cJSON_AddStringToObject(snapshot, relative, normalized == NULL ? "(unreadable)" : normalized);
     free(normalized);
     free(content);
