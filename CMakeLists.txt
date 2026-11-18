@@ -15,7 +15,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sanitizers.cmake)
 
 add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
 target_include_directories(spisor_cjson PUBLIC vendor/cjson)
-set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Hidden, and cJSON's default dllexport off, so a shared library linking these exports only what it declares itself.
+target_compile_definitions(spisor_cjson PUBLIC CJSON_HIDE_SYMBOLS)
+set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 
 set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
     src/windows_file.c src/prepared_undo.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/refusal.c
@@ -23,7 +25,7 @@ set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c s
 add_library(spisor_library STATIC ${spisor_library_sources})
 target_include_directories(spisor_library PUBLIC include)
 target_link_libraries(spisor_library PUBLIC spisor_cjson)
-set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 if(UNIX)
     target_link_libraries(spisor_library PUBLIC m)
 endif()
@@ -43,7 +45,7 @@ spisor_strict_warnings(spisor_library)
 # allocations without a second definition of the allocator beside it.
 add_library(spisor_allocator OBJECT src/allocation.c)
 target_include_directories(spisor_allocator PRIVATE include)
-set_target_properties(spisor_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON SPISOR_ALLOCATOR TRUE)
+set_target_properties(spisor_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden SPISOR_ALLOCATOR TRUE)
 spisor_strict_warnings(spisor_allocator)
 
 add_library(spisor_allocator_counting OBJECT EXCLUDE_FROM_ALL src/allocation.c)
