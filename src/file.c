@@ -242,6 +242,10 @@ int spisor_is_link(const char *path) {
     return lstat(path, &status) == 0 && S_ISLNK(status.st_mode);
 }
 
+#ifndef PATH_MAX
+#define PATH_MAX 4096 /* POSIX lets limits.h leave it out */
+#endif
+
 /** @implNote realpath into a buffer, since realpath(path, NULL) answers memory the binary's allocator never saw. */
 static char *resolved_link(const char *path) {
     char resolved[PATH_MAX];
