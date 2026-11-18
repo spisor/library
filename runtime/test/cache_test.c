@@ -66,7 +66,7 @@ static int exists_in_cache(const char *rest) {
 
 static void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
@@ -103,7 +103,8 @@ static char *source_url(const char *name, const char *content) {
     snprintf(rest, sizeof rest, "sources/%s", name);
     char *path = joined(scratch, rest);
     write_file(path, content);
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
     spisor_memory_release(path);
     return url;
 }
@@ -273,7 +274,7 @@ static void start_cache(const char *label) {
 }
 
 static void finish_cache(void) {
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
 }
 
 static void it_fetches_into_a_fresh_store_then_answers_cached_without_fetching(void) {
@@ -425,7 +426,7 @@ static void it_refuses_when_its_rename_fails_and_the_destination_holds_other_byt
 static void it_leaves_no_temporary_file_behind_even_when_the_rename_into_place_fails(void) {
     start_cache("occupied");
     char *occupied = in_cache("bundles/a/1.0.0/p.js/occupied");
-    CHECK(spisor_make_directories(occupied) == 1);
+    CHECK(spisor_make_directories(occupied) == SPISOR_OK);
     spisor_memory_release(occupied);
     expect_refused(install("a", single_file_item(reference_to("p.js", INDEX_JS)), "1.0.0", "linux-x64"),
                    "could not be written", "occupied");
@@ -485,7 +486,7 @@ static char *read_text_in(const char *rest) {
 static void it_reports_nothing_for_a_version_whose_marker_is_gone(void) {
     start_cache("damage-absent");
     char *directory = in_cache("bundles/a/1.0.0");
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     int out_of_memory = 1;
     cJSON *damage = runtime_cache_version_damage(directory, &out_of_memory);
     CHECK(damage == NULL);
@@ -725,7 +726,7 @@ static char *marked_bundle(const char *id, const char *version, int marked) {
     char rest[256];
     snprintf(rest, sizeof rest, "bundles/%s/%s", id, version);
     char *directory = in_cache(rest);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     const char *names[2] = {"plugin.json", "index.js"};
     const char *contents[2] = {PLUGIN_JSON, INDEX_JS};
     cJSON *marker = cJSON_CreateObject();
@@ -827,7 +828,7 @@ static void it_answers_damaged_for_a_marker_that_names_a_file_outside_its_versio
 
 static void make_version(const char *rest, const char *marker) {
     char *directory = in_cache(rest);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     if (marker != NULL) {
         write_in(directory, ".installed.json", marker);
     }
@@ -1038,7 +1039,7 @@ static void it_does_not_follow_a_reference_file_s_names_out_of_the_bundles_folde
     installed_bundle("a", "1.0.0", 1);
     installed_bundle("a", "2.0.0", 1);
     char *outside = joined(scratch, "outside");
-    CHECK(spisor_make_directories(outside) == 1);
+    CHECK(spisor_make_directories(outside) == SPISOR_OK);
     record_references("claude-code", "{\"run\":{\"..\":\"..\",\"a\":\"../../../outside\"},\"next\":{\"a\":\"../..\"}}");
     expect_removed("[\"a@1.0.0\"]", "escape");
     CHECK(spisor_probe_file(outside) == SPISOR_FILE_PRESENT);
@@ -1141,7 +1142,7 @@ static void it_skips_a_reference_file_that_is_not_two_maps_of_versions(void) {
     record_references("flat", "{\"a\":\"3.0.0\"}");
     record_references("wrong", "{\"run\":{\"a\":1,\"b\":\"3.0.0\"},\"next\":{\"a\":\"4.0.0\"}}");
     char *folder = joined(state, "bundles/folder.json");
-    CHECK(spisor_make_directories(folder) == 1);
+    CHECK(spisor_make_directories(folder) == SPISOR_OK);
     spisor_memory_release(folder);
     expect_removed("[\"a@3.0.0\",\"a@4.0.0\"]", "broken references");
     finish_cache();
@@ -1364,7 +1365,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     CHECK(spisor_probe_file(directory) != SPISOR_FILE_PRESENT);
     CHECK(bundle_present("a", "2.0.0"));
     spisor_memory_release(directory);
-    CHECK(runtime_remove_tree(deep) == 1);
+    CHECK(runtime_remove_tree(deep) == SPISOR_OK);
     finish_cache();
 }
 

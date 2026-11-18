@@ -59,7 +59,7 @@ static void write_text(const char *rest, const char *text) {
     char *path = joined(state, rest);
     char *slash = strrchr(path, '/');
     *slash = 0;
-    CHECK(spisor_make_directories(path) == 1);
+    CHECK(spisor_make_directories(path) == SPISOR_OK);
     *slash = '/';
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(path);
@@ -229,7 +229,7 @@ static void it_reads_back_what_was_written_and_reads_as_empty_when_there_is_none
     double holders[2] = {7, 9};
     runtime_holders_record record = {41, 1000, 200, holders, 2};
     char *path = joined(state, "processes/" HOST ".json");
-    CHECK(spisor_make_directories(state) == 1);
+    CHECK(spisor_make_directories(state) == SPISOR_OK);
     CHECK(runtime_write_holders(path, &record) == SPISOR_OK);
     spisor_memory_release(path);
     runtime_holders_record back = read_record();
@@ -297,7 +297,7 @@ static char *lock_path(void) {
 
 static runtime_holders_guard *take_lock(void) {
     char *folder = joined(state, "processes");
-    CHECK(spisor_make_directories(folder) == 1);
+    CHECK(spisor_make_directories(folder) == SPISOR_OK);
     spisor_memory_release(folder);
     char *path = lock_path();
     runtime_holders_guard *guard = NULL;
@@ -538,7 +538,7 @@ static void it_waits_for_a_lock_whose_name_is_still_being_deleted(void) {
 static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void) {
     fresh_state("lock-directory");
     char *path = lock_path();
-    CHECK(spisor_make_directories(path) == 1);
+    CHECK(spisor_make_directories(path) == SPISOR_OK);
     double started = runtime_now_milliseconds();
     runtime_holders_guard *guard = NULL;
     CHECK(runtime_lock_holders(path, &guard) == SPISOR_REFUSED && guard == NULL);
@@ -726,7 +726,7 @@ static void it_starts_the_host_in_the_environment_and_directory_given(void) {
     fresh_state("environment");
     char *answer_path = joined(state, "environment.json");
     char *directory = joined(state, "work");
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     const char *arguments[3] = {"environment", answer_path, "SPISOR_FIXTURE_VALUE"};
     cJSON *start = start_of(arguments, 3);
     cJSON *environment = cJSON_AddObjectToObject(start, "environment");
@@ -785,7 +785,7 @@ static void it_never_runs_a_host_whose_record_cannot_be_written(void) {
     fresh_state("unrecorded");
     char *ran = joined(state, "ran.json");
     char *holders = joined(state, "processes/" HOST ".json");
-    CHECK(spisor_make_directories(holders) == 1);
+    CHECK(spisor_make_directories(holders) == SPISOR_OK);
     const char *arguments[3] = {"environment", ran, "SPISOR_FIXTURE_VALUE"};
     catalog_answer answer = hold(self_pid(), start_of(arguments, 3));
     CHECK(answer.status == SPISOR_REFUSED);

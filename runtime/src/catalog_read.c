@@ -203,10 +203,11 @@ static spisor_status resolve_files(const char *id, const cJSON *version, cJSON *
     spisor_status status = SPISOR_OK;
     for (size_t index = 0; status == SPISOR_OK && index < count; index++) {
         cJSON *reference = (cJSON *)references[index];
-        char *resolved = runtime_catalog_resolve_within_origin(member(reference, "url")->valuestring, origin);
-        if (resolved == NULL) {
+        char *resolved;
+        status = runtime_catalog_resolve_within_origin(member(reference, "url")->valuestring, origin, &resolved);
+        if (status == SPISOR_REFUSED) {
             status = refuse_url(id, version->string, reference->string, origin, refusal);
-        } else {
+        } else if (status == SPISOR_OK) {
             cJSON *replacement = cJSON_CreateString(resolved);
             if (replacement == NULL || !cJSON_ReplaceItemInObjectCaseSensitive(reference, "url", replacement)) {
                 cJSON_Delete(replacement);

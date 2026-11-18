@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "spisor/status.h"
+
 #define RUNTIME_SHA256_HEX_SIZE 65
 
 typedef struct runtime_sha256 {
@@ -20,10 +22,13 @@ void runtime_sha256_add(runtime_sha256 *hash, const uint8_t *bytes, size_t lengt
 /** Ends the hash and writes its digest as 64 lowercase hex digits and a NUL. */
 void runtime_sha256_finish_hex(runtime_sha256 *hash, char out_hex[RUNTIME_SHA256_HEX_SIZE]);
 
-/** The SHA-256 of the whole file at path, as lowercase hex. 1 on success, 0 when it cannot be read. */
-int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]);
+/**
+ * The SHA-256 of the whole file at path, as lowercase hex: SPISOR_REFUSED when it cannot be read, SPISOR_OUT_OF_MEMORY
+ * when memory runs out.
+ */
+spisor_status spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]);
 
 /** spisor_sha256_file that also answers the file's length in bytes into *size. */
-int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size);
+spisor_status runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size);
 
 #endif

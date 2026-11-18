@@ -54,8 +54,8 @@ static void fresh_scratch(scratch *place, const char *label) {
     snprintf(place->state, sizeof place->state, "%s/state", place->directory);
     snprintf(place->shims, sizeof place->shims, "%s/bin", place->state);
     start_empty_directory(place->directory);
-    CHECK(spisor_make_directories(place->home) == 1);
-    CHECK(spisor_make_directories(place->shims) == 1);
+    CHECK(spisor_make_directories(place->home) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->shims) == SPISOR_OK);
 }
 
 static cJSON *places_for(const scratch *place) {

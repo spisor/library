@@ -105,7 +105,7 @@ static void refuses_an_application_that_is_not_on_the_path_leaving_nothing_held(
     host_world world;
     install_launch_world(&world, "launch", "absent", 0);
     char *empty = joined(world.base.root, "empty-path");
-    CHECK(spisor_make_directories(empty) == 1);
+    CHECK(spisor_make_directories(empty) == SPISOR_OK);
     program launcher;
     const char *passed[] = {"absent", "0", NULL};
     launch(&world, &launcher, passed, empty);
@@ -216,7 +216,7 @@ static void make_shim_unrewritable(const host_world *world) {
         if (changed != NULL && strstr(changed, "fx") != NULL && cJSON_HasObjectItem(change, "digest")) {
             cJSON_ReplaceItemInObjectCaseSensitive(change, "digest", cJSON_CreateString("stale"));
             CHECK(runtime_remove_file_entry(changed) == RUNTIME_ENTRY_DONE);
-            CHECK(spisor_make_directories(changed) == 1);
+            CHECK(spisor_make_directories(changed) == SPISOR_OK);
         }
     }
     char *text = cJSON_PrintUnformatted(registration);
@@ -261,7 +261,7 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
     char *recorded = joined(world.base.root, "node-bin/node" EXECUTABLE_ENDING);
     char *again = joined(world.base.root, "node-again");
     char *moved = joined(again, "node" EXECUTABLE_ENDING);
-    CHECK(spisor_make_directories(again) == 1);
+    CHECK(spisor_make_directories(again) == SPISOR_OK);
     copy_file(LAYER_FIXTURE_PATH, moved);
     CHECK(runtime_remove_file_entry(recorded) == RUNTIME_ENTRY_DONE);
     char path[4096];
@@ -321,7 +321,7 @@ static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(voi
 /** A file where acquired runtimes are unpacked, so acquiring the pinned one is refused before any download. */
 static void block_runtime_acquisition(const host_world *world) {
     char *folder = joined(world->base.cache, "runtimes/node");
-    CHECK(runtime_remove_tree(folder) == 1);
+    CHECK(runtime_remove_tree(folder) == SPISOR_OK);
     write_file(folder, "no runtime may be unpacked here");
     spisor_memory_release(folder);
 }
@@ -404,7 +404,7 @@ static void refuses_a_launch_naming_the_required_plugin_that_is_not_installed(vo
     host_world world;
     install_launch_world_requiring_session_plugin(&world, "launch", "required-missing");
     char *folder = joined(world.base.cache, "bundles/" SESSION_PLUGIN);
-    CHECK(runtime_remove_tree(folder) == 1);
+    CHECK(runtime_remove_tree(folder) == SPISOR_OK);
     spisor_memory_release(folder);
     expect_refused_launch(&world, "missing", SESSION_PLUGIN, "run spisor-host install --catalog <path or url> again");
     char *node = joined(world.base.root, "node-bin");

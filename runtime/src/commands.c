@@ -561,26 +561,29 @@ static name_hold is_held_by_a_command(const char *state, const char *name) {
     return hold;
 }
 
-static int is_shim_taken(const command_call *call, const char *name) {
-    int taken = 0;
-    for (size_t index = 0; index < SHIM_FILE_COUNT && !taken; index++) {
+static name_hold shim_hold(const command_call *call, const char *name) {
+    name_hold hold = NAME_FREE;
+    for (size_t index = 0; index < SHIM_FILE_COUNT && hold == NAME_FREE; index++) {
         char *path = shim_file(call->shims, name, index);
-        taken = path == NULL || runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING;
+        runtime_entry_kind found = path == NULL ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : runtime_probe_entry(path);
+        hold = found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY ? NAME_HOLD_OUT_OF_MEMORY
+               : found != RUNTIME_ENTRY_MISSING         ? NAME_HELD
+                                                        : NAME_FREE;
         spisor_memory_release(path);
     }
-    return taken;
+    return hold;
 }
 
 static name_hold is_name_held(const command_call *call, const char *name) {
     name_hold hold = is_held_by_a_command(call->state, name);
+    if (hold == NAME_FREE) {
+        hold = shim_hold(call, name);
+    }
     if (hold != NAME_FREE) {
         return hold;
     }
-    return is_shim_taken(call, name) ||
-                   runtime_commands_held_on_path(cJSON_GetObjectItemCaseSensitive(call->argument, "environment"),
-                                                 call->shims, name)
-               ? NAME_HELD
-               : NAME_FREE;
+    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
+    return runtime_commands_held_on_path(environment, call->shims, name) ? NAME_HELD : NAME_FREE;
 }
 
 /** Refuses with fix and reason when name is held; answers 1 when it is free. */
@@ -699,9 +702,13 @@ static int load_registration(command_call *call) {
 }
 
 static int store_registration(command_call *call) {
-    if (runtime_registry_store(call->state, call->registration) == RUNTIME_REGISTRY_OK) {
+    runtime_registry_answer stored = runtime_registry_store(call->state, call->registration);
+    if (stored == RUNTIME_REGISTRY_OK) {
         call->committed = 1;
         return 1;
+    }
+    if (stored == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        return out_of_memory(call);
     }
     return refuse(call, "make the registry writable and try again", "the registration of host %s could not be written",
                   call->host);
@@ -884,7 +891,10 @@ static int copy_shim_file(command_call *call, const char *from, const char *to, 
     char *source = shim_file(call->shims, from, index);
     char *path = shim_file(call->shims, to, index);
     int copied = 0;
-    if (source != NULL && runtime_probe_entry(source) == RUNTIME_ENTRY_MISSING) {
+    runtime_entry_kind found = source == NULL ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : runtime_probe_entry(source);
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        copied = out_of_memory(call);
+    } else if (found == RUNTIME_ENTRY_MISSING) {
         refuse(call, "let the host ask for the command again, which writes its shim", "the shim of %s is missing",
                from);
     } else {

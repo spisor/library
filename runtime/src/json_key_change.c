@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "file_reading.h"
 #include "json_edit.h"
 #include "paths.h"
 #include "spisor/file.h"
@@ -119,11 +120,14 @@ static int first_missing_depth(cJSON *root, const cJSON *key) {
 typedef struct file_bytes {
     char *bytes;
     size_t length;
+    int out_of_memory;
 } file_bytes;
 
 static file_bytes read_bytes(const char *path) {
-    file_bytes read = {NULL, 0};
-    read.bytes = (char *)spisor_read_file(path, &read.length);
+    file_bytes read = {NULL, 0, 0};
+    spisor_read_outcome outcome;
+    read.bytes = (char *)spisor_read_file_reporting(path, &read.length, &outcome);
+    read.out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
     return read;
 }
 
@@ -244,9 +248,8 @@ static runtime_change_step describe_edit(const cJSON *change, cJSON *root, const
 
 static const char *const recorded_members[] = {"file", "key", "value"};
 
-static int may_create(const cJSON *change, const char *path) {
-    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "create")) &&
-           runtime_probe_entry(path) == RUNTIME_ENTRY_MISSING;
+static int asks_to_create(const cJSON *change) {
+    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "create"));
 }
 
 static runtime_change_step record_created(const cJSON *change, cJSON **record, runtime_change_note *note) {
@@ -304,12 +307,19 @@ static runtime_change_step prepare_existing(const cJSON *change, const file_byte
 runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record, runtime_change_note *note) {
     const char *path = text_of(change, "file");
     file_bytes before = read_bytes(path);
-    if (before.bytes == NULL && may_create(change, path)) {
-        return record_created(change, record, note);
+    if (before.out_of_memory) {
+        return out_of_memory(note);
     }
     if (before.bytes == NULL) {
-        return runtime_probe_entry(path) == RUNTIME_ENTRY_MISSING ? refuse(note, "the JSON file does not exist", path)
-                                                                  : refuse(note, unreadable_object, path);
+        runtime_entry_kind found = runtime_probe_entry(path);
+        if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+            return out_of_memory(note);
+        }
+        if (found == RUNTIME_ENTRY_MISSING && asks_to_create(change)) {
+            return record_created(change, record, note);
+        }
+        return found == RUNTIME_ENTRY_MISSING ? refuse(note, "the JSON file does not exist", path)
+                                              : refuse(note, unreadable_object, path);
     }
     runtime_change_step step = prepare_existing(change, &before, record, note);
     spisor_memory_release(before.bytes);
@@ -328,7 +338,7 @@ static runtime_change_step perform_created(const cJSON *change, cJSON *record, r
                                      ? runtime_create_new_file(path, (const uint8_t *)created.bytes, created.length, 0)
                                      : RUNTIME_ENTRY_FAILED;
     spisor_memory_release(created.bytes);
-    if (!recorded) {
+    if (!recorded || made == RUNTIME_ENTRY_OUT_OF_MEMORY) {
         return out_of_memory(note);
     }
     if (made == RUNTIME_ENTRY_EXISTS) {
@@ -356,8 +366,13 @@ static runtime_change_step perform_edit(const cJSON *change, cJSON *record, cons
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
     runtime_change_step step = describe_edit(change, root, current, record, &edited, note);
     cJSON_Delete(root);
-    if (step == RUNTIME_CHANGE_DONE &&
-        spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length) != SPISOR_OK) {
+    spisor_status written = SPISOR_OK;
+    if (step == RUNTIME_CHANGE_DONE) {
+        written = spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length);
+    }
+    if (written == SPISOR_OUT_OF_MEMORY) {
+        step = out_of_memory(note);
+    } else if (written != SPISOR_OK) {
         step = fail(note, "the key could not be written", path);
     }
     spisor_memory_release(edited.bytes);
@@ -370,7 +385,8 @@ runtime_change_step runtime_json_key_perform(const cJSON *change, cJSON *record,
     }
     file_bytes current = read_bytes(text_of(change, "file"));
     if (current.bytes == NULL) {
-        return fail(note, "the JSON file could not be read", text_of(change, "file"));
+        return current.out_of_memory ? out_of_memory(note)
+                                     : fail(note, "the JSON file could not be read", text_of(change, "file"));
     }
     runtime_change_step step = perform_edit(change, record, &current, note);
     spisor_memory_release(current.bytes);
@@ -418,16 +434,27 @@ static int is_created(const cJSON *record) {
     return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(record, "created"));
 }
 
+static runtime_change_reversal reversal_out_of_memory(runtime_change_note *note) {
+    write_note(note, "memory ran out");
+    return RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY;
+}
+
 static runtime_change_reversal remove_created_file(const cJSON *record, runtime_change_note *note) {
-    return runtime_remove_file_entry(text_of(record, "file")) == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_REVERSED
-                                                                                     : not_reversed(record, note);
+    runtime_entry_outcome removed = runtime_remove_file_entry(text_of(record, "file"));
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
+    return removed == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_REVERSED : not_reversed(record, note);
 }
 
 static runtime_change_reversal write_back(const cJSON *record, const json_edit_text *restored,
                                           runtime_change_note *note) {
-    return spisor_replace_file(text_of(record, "file"), (const uint8_t *)restored->bytes, restored->length) == SPISOR_OK
-               ? RUNTIME_CHANGE_REVERSED
-               : not_reversed(record, note);
+    spisor_status written =
+        spisor_replace_file(text_of(record, "file"), (const uint8_t *)restored->bytes, restored->length);
+    if (written == SPISOR_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
+    return written == SPISOR_OK ? RUNTIME_CHANGE_REVERSED : not_reversed(record, note);
 }
 
 static int number_of(const cJSON *record, const char *member, size_t *number) {
@@ -529,7 +556,11 @@ static runtime_change_reversal reverse_drifted_file(const cJSON *record, const f
 }
 
 static runtime_change_reversal reverse_missing_file(const cJSON *record, runtime_change_note *note) {
-    if (runtime_probe_entry(text_of(record, "file")) != RUNTIME_ENTRY_MISSING) {
+    runtime_entry_kind found = runtime_probe_entry(text_of(record, "file"));
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
+    if (found != RUNTIME_ENTRY_MISSING) {
         return drifted_key(record, "is in a file that is no longer readable JSON", note);
     }
     return is_created(record) ? RUNTIME_CHANGE_REVERSED : drifted_key(record, "is gone with its file", note);
@@ -557,6 +588,9 @@ static runtime_change_reversal reverse_present_file(const cJSON *record, const f
 
 runtime_change_reversal runtime_json_key_reverse(const cJSON *record, runtime_change_note *note) {
     file_bytes current = read_bytes(text_of(record, "file"));
+    if (current.out_of_memory) {
+        return reversal_out_of_memory(note);
+    }
     if (current.bytes == NULL) {
         return reverse_missing_file(record, note);
     }

@@ -65,10 +65,10 @@ static void fresh_scratch(scratch *place, const char *label) {
     snprintf(place->programs, sizeof place->programs, "%s/programs", place->directory);
     snprintf(place->targets, sizeof place->targets, "%s/targets", place->directory);
     start_empty_directory(place->directory);
-    CHECK(spisor_make_directories(place->home) == 1);
-    CHECK(spisor_make_directories(place->state) == 1);
-    CHECK(spisor_make_directories(place->programs) == 1);
-    CHECK(spisor_make_directories(place->targets) == 1);
+    CHECK(spisor_make_directories(place->home) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->state) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->programs) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->targets) == SPISOR_OK);
     char profile[1200];
     snprintf(profile, sizeof profile, "%s/.profile", place->home);
     CHECK(spisor_replace_file(profile, (const uint8_t *)"# profile\n", 10) == SPISOR_OK);
@@ -665,7 +665,7 @@ static int run_program(const char *program, const char *const *arguments, size_t
 static void place_probe(const scratch *place, const char *directory, char *target, size_t size) {
     char folder[1300];
     snprintf(folder, sizeof folder, "%s/%s", place->targets, directory);
-    CHECK(spisor_make_directories(folder) == 1);
+    CHECK(spisor_make_directories(folder) == SPISOR_OK);
     snprintf(target, size, "%s/probe" PROGRAM_SUFFIX, folder);
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(RUNTIME_PROBE_PATH, &length);

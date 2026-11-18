@@ -628,22 +628,24 @@ static place_status place_value(cJSON *root, const char *key, const cJSON *value
     return status;
 }
 
-static int write_settings(const config_target *target, const cJSON *root) {
+static spisor_status write_settings(const config_target *target, const cJSON *root) {
     char *text = spisor_json_stringify_pretty(root);
     if (text == NULL) {
-        return 0;
+        return SPISOR_OUT_OF_MEMORY;
     }
     size_t length = strlen(text);
     char *bytes = spisor_memory_reallocate(text, length + 2);
     if (bytes == NULL) {
         spisor_memory_release(text);
-        return 0;
+        return SPISOR_OUT_OF_MEMORY;
     }
     bytes[length] = '\n';
-    int written = spisor_make_directories(target->directory) &&
-                  spisor_replace_file(target->file, (const uint8_t *)bytes, length + 1) == SPISOR_OK;
+    spisor_status status = spisor_make_directories(target->directory);
+    if (status == SPISOR_OK) {
+        status = spisor_replace_file(target->file, (const uint8_t *)bytes, length + 1);
+    }
     spisor_memory_release(bytes);
-    return written;
+    return status;
 }
 
 /** The tree a set writes into, taking file's tree; NULL with *refused set when the file must not be replaced. */
@@ -689,8 +691,9 @@ static spisor_status store_value(const config_target *target, settings_file *fil
         status = refuse_path(target->file, request->key, refusal);
     } else if (placed == PLACE_OUT_OF_MEMORY) {
         status = SPISOR_OUT_OF_MEMORY;
-    } else if (!write_settings(target, root)) {
-        status = refuse_write(target->file, refusal);
+    } else {
+        status = write_settings(target, root);
+        status = status == SPISOR_REFUSED ? refuse_write(target->file, refusal) : status;
     }
     cJSON_Delete(root);
     return status;
@@ -823,8 +826,9 @@ static spisor_status store_locked(const runtime_config_request *request, const c
 static spisor_status lock_layer(const config_target *target, spisor_lock **guard) {
     const char *segments[2] = {target->directory, ".settings.lock"};
     *guard = NULL;
-    if (!spisor_make_directories(target->directory)) {
-        return SPISOR_REFUSED;
+    spisor_status made = spisor_make_directories(target->directory);
+    if (made != SPISOR_OK) {
+        return made;
     }
     char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     spisor_status status = path == NULL ? SPISOR_OUT_OF_MEMORY : spisor_lock_file(path, guard);

@@ -24,7 +24,7 @@ static char *move_into_profile(host_world *world) {
     world->base.state = joined(profile, "spisor/state");
     world->base.cache = joined(profile, "spisor/cache");
     world->bin = joined(profile, "spisor/bin");
-    CHECK(spisor_make_directories(world->bin) == 1);
+    CHECK(spisor_make_directories(world->bin) == SPISOR_OK);
     write_in(profile, ".profile", "# J\xc3\xb6rg's profile\n");
     write_in(profile, "notes/caf\xc3\xa9.txt", "kept as it is\n");
     write_in(profile, "homes/claude/settings.json",

@@ -49,11 +49,11 @@ static void prepare_ecosystem(install_base *base) {
 
 /** Empties every place an install writes, keeping the catalog and PATH, so each attempt starts as the first did. */
 static void fresh_places(const install_base *base) {
-    CHECK(runtime_remove_tree(base->portable) == 1 && runtime_remove_tree(base->state) == 1 &&
-          runtime_remove_tree(base->cache) == 1 && runtime_remove_tree(base->user) == 1);
+    CHECK(runtime_remove_tree(base->portable) == SPISOR_OK && runtime_remove_tree(base->state) == SPISOR_OK &&
+          runtime_remove_tree(base->cache) == SPISOR_OK && runtime_remove_tree(base->user) == SPISOR_OK);
     write_in(base->user, ".profile", "# profile\n");
     char *homes = joined(base->user, "homes/claude");
-    CHECK(spisor_make_directories(homes) == 1);
+    CHECK(spisor_make_directories(homes) == SPISOR_OK);
     spisor_memory_release(homes);
 }
 

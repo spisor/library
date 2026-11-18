@@ -45,9 +45,9 @@ static void a_pinned_https_file_is_fetched_over_the_os_stack(void) {
     fetch->release_answer(fetch->context, &answer);
     fetch->release_refusal(fetch->context, &refusal);
     char stored[RUNTIME_SHA256_HEX_SIZE] = "";
-    CHECK(spisor_sha256_file(destination, stored) == 1);
+    CHECK(spisor_sha256_file(destination, stored) == SPISOR_OK);
     check_text(stored, PINNED_SHA256, "stored file");
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
 }
 
 int main(void) {

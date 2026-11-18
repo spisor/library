@@ -46,7 +46,7 @@ static char *install_binary(const install_base *base, const char *binary) {
 
 static void make_directory_in_user(const install_base *base, const char *name) {
     char *directory = joined(base->user, name);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     spisor_memory_release(directory);
 }
 

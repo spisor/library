@@ -158,7 +158,7 @@ static void fresh(lists_scratch *place, const char *label) {
     scratch_in(place->base, sizeof place->base, "lists", label);
     place->state = joined_path(place->base, "state");
     place->bin = joined_path(place->base, "bin");
-    CHECK(spisor_make_directories(place->state) == 1 && spisor_make_directories(place->bin) == 1);
+    CHECK(spisor_make_directories(place->state) == SPISOR_OK && spisor_make_directories(place->bin) == SPISOR_OK);
 }
 
 static void discard(lists_scratch *place) {

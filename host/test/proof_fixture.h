@@ -146,7 +146,7 @@ static inline char *write_proof_plugin(const host_world *world) {
  * each of the NULL-ended loader_versions, written into the world's catalog, run with no PATH at all.
  */
 static inline void build_proof_catalog(host_world *world, const char *const *loader_versions) {
-    CHECK(runtime_remove_tree(world->base.catalog) == 1);
+    CHECK(runtime_remove_tree(world->base.catalog) == SPISOR_OK);
     char host_argument[1200];
     char library_argument[1200];
     snprintf(host_argument, sizeof host_argument, "%s/spisor-host@%s", STAGED_BUNDLES_PATH, runtime_platform_key());
@@ -165,7 +165,7 @@ static inline void build_proof_catalog(host_world *world, const char *const *loa
     arguments[count++] = world->base.catalog;
     arguments[count] = NULL;
     char *empty = joined(world->base.root, "empty-path");
-    CHECK(spisor_make_directories(empty) == 1);
+    CHECK(spisor_make_directories(empty) == SPISOR_OK);
     char *spisor_host = staged_spisor_host();
     program run;
     CHECK(proof_run(world, &run, spisor_host, arguments, empty) == 0);
@@ -180,7 +180,7 @@ static inline void build_proof_catalog(host_world *world, const char *const *loa
 
 /** The home of the user the world installs for, holding Claude Code's home with settings of its own. */
 static inline void prepare_user(const host_world *world) {
-    CHECK(spisor_make_directories(world->base.user) == 1);
+    CHECK(spisor_make_directories(world->base.user) == SPISOR_OK);
     write_in(world->base.user, ".profile", "# profile\n");
     write_in(world->base.user, "homes/claude/settings.json", "{\n  \"theme\": \"dark\"\n}\n");
 }

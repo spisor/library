@@ -62,11 +62,11 @@ static void a_file_is_hashed_whole_and_a_missing_one_is_refused(void) {
     snprintf(path, sizeof path, "%s/abc.txt", directory);
     CHECK(spisor_replace_file(path, (const uint8_t *)"abc", 3) == SPISOR_OK);
     char hex[RUNTIME_SHA256_HEX_SIZE] = "";
-    CHECK(spisor_sha256_file(path, hex) == 1);
+    CHECK(spisor_sha256_file(path, hex) == SPISOR_OK);
     check_text(hex, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "file abc");
     snprintf(path, sizeof path, "%s/absent.txt", directory);
-    CHECK(spisor_sha256_file(path, hex) == 0);
-    CHECK(runtime_remove_tree(directory) == 1);
+    CHECK(spisor_sha256_file(path, hex) == SPISOR_REFUSED);
+    CHECK(runtime_remove_tree(directory) == SPISOR_OK);
 }
 
 int main(void) {

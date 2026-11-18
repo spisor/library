@@ -94,10 +94,10 @@ static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_refere
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
     char *record = runtime_record_run(state, TEST_HOST, run, 5000, &record_out_of_memory);
     CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
-    CHECK(runtime_remove_host_references(state, TEST_HOST) == 1);
+    CHECK(runtime_remove_host_references(state, TEST_HOST) == SPISOR_OK);
     CHECK(!exists_in(state, "bundles/" TEST_HOST ".json"));
     CHECK(!exists_in(state, "bundles/runs/" TEST_HOST));
-    CHECK(runtime_remove_host_references(state, "never-recorded") == 1);
+    CHECK(runtime_remove_host_references(state, "never-recorded") == SPISOR_OK);
     spisor_memory_release(record);
     cJSON_Delete(run);
     finish_base();
@@ -921,7 +921,7 @@ static void it_reports_a_hint_it_could_not_write_and_still_starts(void) {
     install_libraries();
     write_catalog();
     char *blocker = joined(cache, "hosts/" SPISOR_HOST ".json");
-    CHECK(spisor_make_directories(blocker) == 1);
+    CHECK(spisor_make_directories(blocker) == SPISOR_OK);
     spisor_memory_release(blocker);
     double started_at = runtime_now_milliseconds();
     catalog_answer started = apply_booted();

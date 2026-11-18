@@ -209,6 +209,6 @@ int main(void) {
     escapes_a_quote_and_a_trailing_backslash_as_cross_spawn_does();
     doubles_a_run_of_backslashes_before_a_quote_and_at_the_end();
     reads_options_given_both_ways_and_refuses_an_unknown_one_or_a_missing_value();
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
     return check_summary("command_line_test");
 }

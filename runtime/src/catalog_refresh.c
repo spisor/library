@@ -301,10 +301,16 @@ static void free_order(check_order *order) {
     runtime_catalog_free_state(&order->previous);
 }
 
+/** 1 with the order's places and previous state read, an origin NULL when the location has no url; 0 out of memory. */
 static int prepare_order(check_order *order) {
     order->location = runtime_catalog_location_of(&order->source);
-    order->origin = order->location == NULL ? NULL : runtime_catalog_origin_of(&order->source, order->location);
-    order->state_path = order->location == NULL ? NULL : runtime_catalog_state_path(order->cache, order->location);
+    spisor_status origin = order->location == NULL
+                               ? SPISOR_OUT_OF_MEMORY
+                               : runtime_catalog_origin_of(&order->source, order->location, &order->origin);
+    if (origin == SPISOR_OUT_OF_MEMORY) {
+        return 0;
+    }
+    order->state_path = runtime_catalog_state_path(order->cache, order->location);
     return order->state_path != NULL && runtime_catalog_read_state(order->state_path, &order->previous);
 }
 

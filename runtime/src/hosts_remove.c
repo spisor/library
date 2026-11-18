@@ -105,11 +105,13 @@ static cJSON *forget_into(const removal *request, cJSON *answer, cJSON **refusal
 static cJSON *remove_recorded_and_forget(const removal *request, cJSON *answer, cJSON **refusal) {
     spisor_lock *guard;
     spisor_status locked = runtime_hosts_lock(request->state, &guard);
-    if (locked == SPISOR_OUT_OF_MEMORY) {
+    spisor_status references = locked == SPISOR_OK ? runtime_remove_host_references(request->state, request->id)
+                                                   : SPISOR_OK;
+    if (locked == SPISOR_OUT_OF_MEMORY || references == SPISOR_OUT_OF_MEMORY) {
         *refusal = NULL;
     } else if (locked != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file, run records and boot hint");
-    } else if (!runtime_remove_host_references(request->state, request->id)) {
+    } else if (references != SPISOR_OK) {
         *refusal = refuse_leftover(request, "references file or a run record");
     } else if (!remove_boot_hint(request)) {
         *refusal = refuse_leftover(request, "boot hint");

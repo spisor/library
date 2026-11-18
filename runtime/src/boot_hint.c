@@ -283,14 +283,16 @@ static char *hint_text(const cJSON *libraries, const char *host) {
     return text;
 }
 
-/** Writes the hint's text; 0 with *out_of_memory set to 1 when memory ran out naming its folder. */
+/** Writes the hint's text; 0 with *out_of_memory set to 1 when memory ran out making its folder or writing it. */
 static int write_text(const char *cache, const char *path, const char *text, int *out_of_memory) {
     char *folder = hosts_folder(cache);
-    *out_of_memory = folder == NULL;
-    int written = folder != NULL && spisor_make_directories(folder) &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
+    spisor_status status = folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
+    if (status == SPISOR_OK) {
+        status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    }
+    *out_of_memory = status == SPISOR_OUT_OF_MEMORY;
     spisor_memory_release(folder);
-    return written;
+    return status == SPISOR_OK;
 }
 
 int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON *libraries, const char *host,

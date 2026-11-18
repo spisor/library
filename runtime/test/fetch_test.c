@@ -164,7 +164,7 @@ static void expect_stored_body(answer result, const char *label) {
     check_text(result.answer.sha256, body_sha256, label);
     CHECK(result.answer.bytes == BODY_LENGTH);
     char stored_sha256[RUNTIME_SHA256_HEX_SIZE] = "";
-    CHECK(spisor_sha256_file(destination, stored_sha256) == 1);
+    CHECK(spisor_sha256_file(destination, stored_sha256) == SPISOR_OK);
     check_text(stored_sha256, body_sha256, label);
     CHECK(has_no_partial_file());
     release(&result);
@@ -568,6 +568,6 @@ int main(void) {
 #else
     libcurl_honours_https_proxy_and_no_proxy();
 #endif
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
     return check_summary("fetch_test");
 }

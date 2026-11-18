@@ -110,16 +110,18 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
     return store;
 }
 
-static int writes_store(const cJSON *store, const char *state, const char *path) {
+static spisor_status writes_store(const cJSON *store, const char *state, const char *path) {
     char *pretty = spisor_json_stringify_pretty(store);
     size_t length = pretty == NULL ? 0 : strlen(pretty);
     char *text = pretty == NULL ? NULL : spisor_memory_reallocate(pretty, length + 2);
-    int written = 0;
+    spisor_status written = SPISOR_OUT_OF_MEMORY;
     if (text != NULL) {
         text[length] = '\n';
         text[length + 1] = '\0';
-        written = spisor_make_directories(state) == 1 &&
-            spisor_replace_file(path, (const uint8_t *)text, length + 1) == SPISOR_OK;
+        written = spisor_make_directories(state);
+    }
+    if (written == SPISOR_OK) {
+        written = spisor_replace_file(path, (const uint8_t *)text, length + 1);
     }
     spisor_memory_release(text == NULL ? pretty : text);
     return written;
@@ -194,9 +196,10 @@ static cJSON *settled_answer(cJSON *store, const remembered_name *request, const
         cJSON_Delete(answer);
         return NULL;
     }
-    if (!writes_store(store, request->state, path)) {
+    spisor_status written = writes_store(store, request->state, path);
+    if (written != SPISOR_OK) {
         cJSON_Delete(answer);
-        return refuse(refusal, "check that the state place can be written",
+        return written == SPISOR_OUT_OF_MEMORY ? NULL : refuse(refusal, "check that the state place can be written",
                       "the record of marketplace names could not be written to %s", path);
     }
     return answer;

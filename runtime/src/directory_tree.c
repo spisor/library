@@ -103,7 +103,7 @@ static spisor_status finish_listing(entry_buffer *buffer, spisor_status status, 
     return SPISOR_OK;
 }
 
-static int remove_children(const char *path);
+static spisor_status remove_children(const char *path);
 
 #if defined(_WIN32)
 
@@ -172,66 +172,91 @@ spisor_status runtime_list_directory(const char *path, runtime_directory_listing
     return finish_listing(&buffer, status, listing);
 }
 
-static DWORD attributes_of(const char *path) {
+/** The UTF-16 form of path, freed; NULL with *out_of_memory set to 1 when memory, not the path, was the cause. */
+static wchar_t *wide_of(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return NULL;
+    }
     wchar_t *wide = spisor_wide_path(path);
-    DWORD attributes = wide == NULL ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(wide);
-    spisor_memory_release(wide);
-    return attributes;
+    *out_of_memory = wide == NULL;
+    return wide;
 }
 
-static int delete_link_at(const char *path, int is_directory) {
-    wchar_t *wide = spisor_wide_path(path);
-    int deleted = wide != NULL && (is_directory ? RemoveDirectoryW(wide) : DeleteFileW(wide)) != 0;
-    spisor_memory_release(wide);
-    return deleted;
+static int delete_link_at(const wchar_t *wide, int is_directory) {
+    return (is_directory ? RemoveDirectoryW(wide) : DeleteFileW(wide)) != 0;
 }
 
 /**
  * @implNote Attributes are reset only after an access-denied failure, and never on a link, because
  * SetFileAttributesW follows a link and would change the attributes of its target.
  */
-static int delete_file_at(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    int deleted = wide != NULL && DeleteFileW(wide) != 0;
-    if (!deleted && wide != NULL && GetLastError() == ERROR_ACCESS_DENIED) {
+static int delete_file_at(const wchar_t *wide) {
+    int deleted = DeleteFileW(wide) != 0;
+    if (!deleted && GetLastError() == ERROR_ACCESS_DENIED) {
         SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
         deleted = DeleteFileW(wide) != 0;
     }
-    spisor_memory_release(wide);
     return deleted;
 }
 
-static int delete_directory_at(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    int deleted = wide != NULL && RemoveDirectoryW(wide) != 0;
-    spisor_memory_release(wide);
-    return deleted;
+static spisor_status removed_if(int removed) {
+    return removed ? SPISOR_OK : SPISOR_REFUSED;
 }
 
-int runtime_remove_tree(const char *path) {
-    DWORD attributes = attributes_of(path);
+static spisor_status remove_tree_at(const char *path, const wchar_t *wide) {
+    DWORD attributes = GetFileAttributesW(wide);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        return spisor_probe_file(path) != SPISOR_FILE_PRESENT;
+        spisor_file_presence presence = spisor_probe_file(path);
+        return presence == SPISOR_FILE_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                                                     : removed_if(presence != SPISOR_FILE_PRESENT);
     }
     if (is_reparse_point(attributes)) {
-        return delete_link_at(path, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+        return removed_if(delete_link_at(wide, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0));
     }
     if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-        return delete_file_at(path);
+        return removed_if(delete_file_at(wide));
     }
-    return remove_children(path) && delete_directory_at(path);
+    spisor_status emptied = remove_children(path);
+    return emptied == SPISOR_OK ? removed_if(RemoveDirectoryW(wide) != 0) : emptied;
+}
+
+spisor_status runtime_remove_tree(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    }
+    spisor_status removed = remove_tree_at(path, wide);
+    spisor_memory_release(wide);
+    return removed;
 }
 
 static int is_missing_error(DWORD error) {
     return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
 }
 
-runtime_entry_kind runtime_probe_entry(const char *path) {
-    DWORD attributes = attributes_of(path);
+static runtime_entry_kind kind_of(DWORD attributes, DWORD error) {
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_MISSING : RUNTIME_ENTRY_UNKNOWN;
+        return is_missing_error(error) ? RUNTIME_ENTRY_MISSING : RUNTIME_ENTRY_UNKNOWN;
     }
     return is_real_directory(attributes) ? RUNTIME_ENTRY_DIRECTORY : RUNTIME_ENTRY_OTHER;
+}
+
+runtime_entry_kind runtime_probe_entry(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return out_of_memory ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : RUNTIME_ENTRY_UNKNOWN;
+    }
+    DWORD attributes = GetFileAttributesW(wide);
+    DWORD error = GetLastError();
+    spisor_memory_release(wide);
+    return kind_of(attributes, error);
+}
+
+static runtime_entry_outcome unconverted(int out_of_memory) {
+    return out_of_memory ? RUNTIME_ENTRY_OUT_OF_MEMORY : RUNTIME_ENTRY_FAILED;
 }
 
 static int write_all(HANDLE handle, const uint8_t *bytes, size_t length) {
@@ -280,9 +305,10 @@ static int met_a_file_being_deleted(DWORD error, LONG status) {
 
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
     (void)executable;
-    wchar_t *wide = spisor_wide_path(path);
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
     if (wide == NULL) {
-        return RUNTIME_ENTRY_FAILED;
+        return unconverted(out_of_memory);
     }
     nt_status_reader reader = nt_status_reader_of_process();
     HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -304,39 +330,67 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
 }
 
 runtime_entry_outcome runtime_create_directory(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    int created = wide != NULL && CreateDirectoryW(wide, NULL) != 0;
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return unconverted(out_of_memory);
+    }
+    int created = CreateDirectoryW(wide, NULL) != 0;
+    DWORD attributes = GetFileAttributesW(wide);
     spisor_memory_release(wide);
-    return created || runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    int is_directory = attributes != INVALID_FILE_ATTRIBUTES && is_real_directory(attributes);
+    return created || is_directory ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
-runtime_entry_outcome runtime_remove_file_entry(const char *path) {
-    DWORD attributes = attributes_of(path);
+static runtime_entry_outcome remove_file_entry_at(const wchar_t *wide) {
+    DWORD attributes = GetFileAttributesW(wide);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
         return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
     }
     if (is_reparse_point(attributes)) {
-        return delete_link_at(path, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) ? RUNTIME_ENTRY_DONE
+        return delete_link_at(wide, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) ? RUNTIME_ENTRY_DONE
                                                                                    : RUNTIME_ENTRY_FAILED;
     }
     if (is_real_directory(attributes)) {
         return RUNTIME_ENTRY_KEPT;
     }
-    return delete_file_at(path) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    return delete_file_at(wide) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
-runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
-    DWORD attributes = attributes_of(path);
+runtime_entry_outcome runtime_remove_file_entry(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return unconverted(out_of_memory);
+    }
+    runtime_entry_outcome outcome = remove_file_entry_at(wide);
+    spisor_memory_release(wide);
+    return outcome;
+}
+
+static runtime_entry_outcome remove_empty_directory_at(const wchar_t *wide) {
+    DWORD attributes = GetFileAttributesW(wide);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
         return is_missing_error(GetLastError()) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
     }
     if (!is_real_directory(attributes)) {
         return RUNTIME_ENTRY_KEPT;
     }
-    if (delete_directory_at(path)) {
+    if (RemoveDirectoryW(wide)) {
         return RUNTIME_ENTRY_DONE;
     }
     return GetLastError() == ERROR_DIR_NOT_EMPTY ? RUNTIME_ENTRY_KEPT : RUNTIME_ENTRY_FAILED;
+}
+
+runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    if (wide == NULL) {
+        return unconverted(out_of_memory);
+    }
+    runtime_entry_outcome outcome = remove_empty_directory_at(wide);
+    spisor_memory_release(wide);
+    return outcome;
 }
 
 #else
@@ -365,15 +419,19 @@ spisor_status runtime_list_directory(const char *path, runtime_directory_listing
     return finish_listing(&buffer, complete ? SPISOR_OK : SPISOR_OUT_OF_MEMORY, listing);
 }
 
-int runtime_remove_tree(const char *path) {
+spisor_status runtime_remove_tree(const char *path) {
     struct stat status;
     if (lstat(path, &status) != 0) {
-        return errno == ENOENT || errno == ENOTDIR;
+        return errno == ENOENT || errno == ENOTDIR ? SPISOR_OK : SPISOR_REFUSED;
     }
     if (!S_ISDIR(status.st_mode)) {
-        return unlink(path) == 0;
+        return unlink(path) == 0 ? SPISOR_OK : SPISOR_REFUSED;
     }
-    return remove_children(path) && rmdir(path) == 0;
+    spisor_status emptied = remove_children(path);
+    if (emptied != SPISOR_OK) {
+        return emptied;
+    }
+    return rmdir(path) == 0 ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 static int is_missing_errno(int error) {
@@ -448,12 +506,12 @@ runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
 
 #endif
 
-static int remove_children(const char *path) {
+static spisor_status remove_children(const char *path) {
     runtime_directory_listing listing;
-    int removed = runtime_list_directory(path, &listing) == SPISOR_OK;
-    for (size_t index = 0; removed && index < listing.count; index++) {
+    spisor_status removed = runtime_list_directory(path, &listing);
+    for (size_t index = 0; removed == SPISOR_OK && index < listing.count; index++) {
         char *child = child_path(path, listing.entries[index].name);
-        removed = child != NULL && runtime_remove_tree(child);
+        removed = child == NULL ? SPISOR_OUT_OF_MEMORY : runtime_remove_tree(child);
         spisor_memory_release(child);
     }
     runtime_free_directory_listing(&listing);

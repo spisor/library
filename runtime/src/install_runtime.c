@@ -242,7 +242,8 @@ static int is_unpacked(const acquisition *runtime, const runtime_layout *layout)
         memcpy(recorded, bytes, length);
         recorded[length] = 0;
         unpacked = strncmp(recorded, runtime->build.sha256, RUNTIME_SHA256_HEX_SIZE - 1) == 0 &&
-                   recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' && spisor_sha256_file(layout->executable, actual) &&
+                   recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' &&
+                   spisor_sha256_file(layout->executable, actual) == SPISOR_OK &&
                    strncmp(recorded + RUNTIME_SHA256_HEX_SIZE, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
     }
     spisor_memory_release(bytes);
@@ -316,7 +317,7 @@ static int mark_runnable(const char *executable) {
 static int make_executable_folder(const acquisition *runtime) {
     const char *segments[2] = {runtime->staged.executable, ".."};
     char *folder = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    int made = folder != NULL && spisor_make_directories(folder) == 1;
+    int made = folder != NULL && spisor_make_directories(folder) == SPISOR_OK;
     spisor_memory_release(folder);
     return made;
 }
@@ -355,7 +356,7 @@ static cJSON *unpack(const acquisition *runtime) {
 
 static int write_marker(const acquisition *runtime) {
     char executable_hash[RUNTIME_SHA256_HEX_SIZE];
-    if (!spisor_sha256_file(runtime->staged.executable, executable_hash)) {
+    if (spisor_sha256_file(runtime->staged.executable, executable_hash) != SPISOR_OK) {
         return 0;
     }
     const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
@@ -368,7 +369,8 @@ static int write_marker(const acquisition *runtime) {
 
 /** Fetches, unpacks and marks the runtime in the staging folder; NULL on success, else the refusal. */
 static cJSON *build_staged(const acquisition *runtime) {
-    if (!runtime_remove_tree(runtime->staged.directory) || spisor_make_directories(runtime->staged.directory) != 1) {
+    if (runtime_remove_tree(runtime->staged.directory) != SPISOR_OK ||
+        spisor_make_directories(runtime->staged.directory) != SPISOR_OK) {
         return refused("the runtime's staging folder could not be made: ", runtime->staged.directory, CACHE_FIX);
     }
     int stored = 0;
@@ -404,7 +406,7 @@ static cJSON *publish(const acquisition *runtime) {
         is_unpacked(runtime, &runtime->final)) {
         return NULL;
     }
-    if (runtime_remove_tree(runtime->final.directory) &&
+    if (runtime_remove_tree(runtime->final.directory) == SPISOR_OK &&
         (rename_directory(runtime->staged.directory, runtime->final.directory) ||
          is_unpacked(runtime, &runtime->final))) {
         return NULL;
@@ -577,7 +579,7 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
     *out_of_memory = folder == NULL || file == NULL || text == NULL;
-    int recorded = !*out_of_memory && spisor_make_directories(folder) == 1 &&
+    int recorded = !*out_of_memory && spisor_make_directories(folder) == SPISOR_OK &&
                    spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(text);
     spisor_memory_release(pretty);
@@ -612,9 +614,10 @@ static char *recorded_executable(const char *cache, int *out_of_memory) {
     *out_of_memory = record == NULL;
     cJSON *recorded = record == NULL ? NULL : runtime_read_node_json(record, out_of_memory);
     const char *executable = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(recorded, "executable"));
-    int followed = executable != NULL && runtime_is_followed_file(executable, 0);
+    int out_of_memory_asking = 0;
+    int followed = executable != NULL && runtime_is_followed_file(executable, 0, &out_of_memory_asking);
     char *copy = followed ? runtime_catalog_copy(executable) : NULL;
-    *out_of_memory = *out_of_memory || (followed && copy == NULL);
+    *out_of_memory = *out_of_memory || out_of_memory_asking || (followed && copy == NULL);
     cJSON_Delete(recorded);
     spisor_memory_release(record);
     return copy;

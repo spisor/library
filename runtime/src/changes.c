@@ -237,8 +237,8 @@ static cJSON *pending_entry(long sequence, const char *kind, cJSON *record) {
     return entry;
 }
 
-static int store(apply_session *session) {
-    return runtime_registry_store(session->state, session->registration) == RUNTIME_REGISTRY_OK;
+static runtime_registry_answer store(apply_session *session) {
+    return runtime_registry_store(session->state, session->registration);
 }
 
 static void conclude_unwritable(apply_session *session) {
@@ -246,6 +246,17 @@ static void conclude_unwritable(apply_session *session) {
     snprintf(reason, sizeof reason, "the registration of host %s could not be written under %s; nothing was changed",
              session->host, session->state);
     conclude(session, RUNTIME_CHANGES_FAILED, reason);
+}
+
+/** Stores the registration; 0 having concluded the session when it could not be written or memory ran out. */
+static int stored(apply_session *session) {
+    runtime_registry_answer answer = store(session);
+    if (answer == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+    } else if (answer != RUNTIME_REGISTRY_OK) {
+        conclude_unwritable(session);
+    }
+    return answer == RUNTIME_REGISTRY_OK;
 }
 
 static runtime_changes_answer answer_of_step(runtime_change_step step) {
@@ -296,8 +307,7 @@ static void record_and_perform(apply_session *session, cJSON *record) {
         conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return;
     }
-    if (!store(session)) {
-        conclude_unwritable(session);
+    if (!stored(session)) {
         return;
     }
     perform_recorded(session, entry);
@@ -496,8 +506,7 @@ static void record_family(apply_session *session, cJSON *parent_record, long exi
         conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return;
     }
-    if (!store(session)) {
-        conclude_unwritable(session);
+    if (!stored(session)) {
         return;
     }
     perform_family(session, new_parent, parent_sequence, prepared);
@@ -550,9 +559,7 @@ static void rewrite_own_file(apply_session *session, cJSON *own) {
     runtime_change_step step = runtime_change_rewrite(session->change, own, &note);
     if (step != RUNTIME_CHANGE_DONE) {
         conclude_step(session, step, note.detail);
-    } else if (!store(session)) {
-        conclude_unwritable(session);
-    } else {
+    } else if (stored(session)) {
         conclude_held_already(session, own);
     }
 }
@@ -621,12 +628,13 @@ static runtime_changes_outcome apply_locked(const char *state, const char *host,
     }
     if (!ensure_changes_list(session.registration)) {
         conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
-    } else if (runtime_changes_settle_pending(session.registration, &out_of_memory) && !store(&session)) {
-        conclude_unwritable(&session);
-    } else if (out_of_memory) {
-        conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
     } else {
-        prepare_and_apply(&session);
+        int settled = runtime_changes_settle_pending(session.registration, &out_of_memory);
+        if (out_of_memory) {
+            conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+        } else if (!settled || stored(&session)) {
+            prepare_and_apply(&session);
+        }
     }
     cJSON_Delete(session.registration);
     return session.outcome;

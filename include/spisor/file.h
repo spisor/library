@@ -35,11 +35,17 @@ spisor_file_presence spisor_probe_file(const char *path);
  */
 uint8_t *spisor_read_file(const char *path, size_t *length);
 
-/** Creates path and every missing parent. 1 on success, including when path already exists. */
-int spisor_make_directories(const char *path);
+/**
+ * Creates path and every missing parent: SPISOR_OK, including when path already exists, SPISOR_REFUSED when it cannot
+ * be made, SPISOR_OUT_OF_MEMORY when memory runs out.
+ */
+spisor_status spisor_make_directories(const char *path);
 
-/** Appends length bytes, creating the file when absent. 1 on success. */
-int spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
+/**
+ * Appends length bytes, creating the file and its missing parent folders when absent: SPISOR_REFUSED when it
+ * cannot be written, SPISOR_OUT_OF_MEMORY when memory runs out before anything is written.
+ */
+spisor_status spisor_append_file(const char *path, const uint8_t *bytes, size_t length);
 
 /**
  * Writes length bytes so a reader sees the old content or the new, never a mix: SPISOR_REFUSED when it
@@ -65,9 +71,9 @@ int spisor_remove_set_aside(const char *path);
 
 /**
  * Whether path itself is a symbolic link, dangling or not; on Windows, any reparse point, which is
- * what spisor_replace_file follows.
+ * what spisor_replace_file follows. 0 with *out_of_memory set to 1 when memory ran out asking.
  */
-int spisor_is_link(const char *path);
+int spisor_is_link(const char *path, int *out_of_memory);
 
 /**
  * spisor_replace_file for a file only its owner may read, such as a secrets file. On POSIX the

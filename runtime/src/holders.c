@@ -144,10 +144,10 @@ static char *record_text(const runtime_holders_record *record) {
     return text;
 }
 
-static int make_parent(const char *path) {
+static spisor_status make_parent(const char *path) {
     char *parent = spisor_memory_allocate(strlen(path) + 1);
     if (parent == NULL) {
-        return 0;
+        return SPISOR_OUT_OF_MEMORY;
     }
     memcpy(parent, path, strlen(path) + 1);
     char *slash = strrchr(parent, '/');
@@ -156,7 +156,7 @@ static int make_parent(const char *path) {
     if (last != NULL) {
         *last = 0;
     }
-    int made = last == NULL || spisor_make_directories(parent);
+    spisor_status made = last == NULL ? SPISOR_OK : spisor_make_directories(parent);
     spisor_memory_release(parent);
     return made;
 }
@@ -165,8 +165,9 @@ spisor_status runtime_write_holders(const char *path, const runtime_holders_reco
     if (isnan(record->pid) && record->count == 0) {
         return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE ? SPISOR_OK : SPISOR_REFUSED;
     }
-    if (!make_parent(path)) {
-        return SPISOR_REFUSED;
+    spisor_status made = make_parent(path);
+    if (made != SPISOR_OK) {
+        return made;
     }
     char *text = record_text(record);
     if (text == NULL) {

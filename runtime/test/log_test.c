@@ -52,14 +52,14 @@ static void write_settings(const scratch_home *home, const char *directory_name,
     char directory[1200];
     char path[1300];
     snprintf(directory, sizeof directory, "%s/%s", home->path, directory_name);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     snprintf(path, sizeof path, "%s/settings.json", directory);
     write_text(path, text);
 }
 
 static void write_settings_file(const scratch_home *home, const char *name, const char *text) {
     char path[1200];
-    CHECK(spisor_make_directories(home->config_directory) == 1);
+    CHECK(spisor_make_directories(home->config_directory) == SPISOR_OK);
     snprintf(path, sizeof path, "%s/%s.json", home->config_directory, name);
     write_text(path, text);
 }
@@ -402,7 +402,7 @@ static void write_portable(const scratch_home *home, const char *relative_direct
     char directory[1300];
     char path[1400];
     snprintf(directory, sizeof directory, "%s%s", home->portable, relative_directory);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     snprintf(path, sizeof path, "%s/%s", directory, file_name);
     write_text(path, text);
 }

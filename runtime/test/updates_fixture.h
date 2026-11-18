@@ -54,7 +54,7 @@ static inline char *joined(const char *base, const char *rest) {
 
 static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
@@ -121,7 +121,7 @@ static inline void start_base(const char *label) {
 static inline void finish_base(void) {
     cJSON_Delete(catalog_items);
     catalog_items = NULL;
-    CHECK(runtime_remove_tree(scratch) == 1);
+    CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
 }
 
 static inline void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
@@ -138,7 +138,8 @@ static inline cJSON *served_reference(const char *id, const char *version, const
     snprintf(rest, sizeof rest, "%s/%s/%s", id, version, name);
     char *path = joined(catalog_folder, rest);
     write_file(path, served);
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
     spisor_memory_release(path);
     char sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);

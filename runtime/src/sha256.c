@@ -113,15 +113,15 @@ void runtime_sha256_finish_hex(runtime_sha256 *hash, char out_hex[RUNTIME_SHA256
     out_hex[64] = 0;
 }
 
-int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size) {
-    FILE *file = runtime_open_file(path, RUNTIME_FILE_READ);
-    uint8_t *chunk = spisor_memory_allocate(FILE_CHUNK);
-    if (file == NULL || chunk == NULL) {
+spisor_status runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE], uint64_t *size) {
+    int out_of_memory;
+    FILE *file = runtime_open_file(path, RUNTIME_FILE_READ, &out_of_memory);
+    uint8_t *chunk = file == NULL ? NULL : spisor_memory_allocate(FILE_CHUNK);
+    if (chunk == NULL) {
         if (file != NULL) {
             fclose(file);
         }
-        spisor_memory_release(chunk);
-        return 0;
+        return file != NULL || out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
     }
     runtime_sha256 hash;
     runtime_sha256_start(&hash);
@@ -138,10 +138,10 @@ int runtime_sha256_file_sized(const char *path, char out_hex[RUNTIME_SHA256_HEX_
         runtime_sha256_finish_hex(&hash, out_hex);
         *size = total;
     }
-    return complete;
+    return complete ? SPISOR_OK : SPISOR_REFUSED;
 }
 
-int spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]) {
+spisor_status spisor_sha256_file(const char *path, char out_hex[RUNTIME_SHA256_HEX_SIZE]) {
     uint64_t size;
     return runtime_sha256_file_sized(path, out_hex, &size);
 }

@@ -48,7 +48,7 @@ static inline char *touch_file(const char *directory, const char *name, const ch
 
 static inline void make_directory_in(const char *directory, const char *name) {
     char *path = joined_path(directory, name);
-    CHECK(path != NULL && spisor_make_directories(path) == 1);
+    CHECK(path != NULL && spisor_make_directories(path) == SPISOR_OK);
     spisor_memory_release(path);
 }
 

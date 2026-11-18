@@ -249,7 +249,7 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
     size_t length = 0;
     uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length);
     char hash[RUNTIME_SHA256_HEX_SIZE];
-    int copied = bytes != NULL && spisor_make_directories(parent) == 1 &&
+    int copied = bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
         spisor_replace_file(destination, bytes, length) == SPISOR_OK;
     cJSON *reference = copied ? cJSON_CreateObject() : NULL;
     char *url = reference == NULL ? NULL : url_of(input, folder, key);
@@ -393,7 +393,8 @@ char *host_build_local_catalog(const catalog_inputs *inputs, const char *out, cJ
     char *absolute = host_absolute_path(out);
     const char *segments[2] = {absolute, CATALOG_FILE};
     char *path = absolute == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    cJSON *catalog = path == NULL || spisor_make_directories(absolute) != 1 ? NULL : catalog_of(inputs, absolute, refusal);
+    int made = path != NULL && spisor_make_directories(absolute) == SPISOR_OK;
+    cJSON *catalog = made ? catalog_of(inputs, absolute, refusal) : NULL;
     if (catalog == NULL || !write_catalog(catalog, path)) {
         if (catalog != NULL || *refusal == NULL) {
             const char *parts[2] = {"the catalog could not be written into ", absolute == NULL ? out : absolute};

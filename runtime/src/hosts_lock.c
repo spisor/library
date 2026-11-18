@@ -14,9 +14,10 @@ static spisor_status lock_path(const char *state, char **path) {
     if (directory == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    if (!spisor_make_directories(directory)) {
+    spisor_status made = spisor_make_directories(directory);
+    if (made != SPISOR_OK) {
         spisor_memory_release(directory);
-        return SPISOR_REFUSED;
+        return made;
     }
     const char *segments[2] = {directory, ".lock"};
     *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);

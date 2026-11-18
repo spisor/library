@@ -91,7 +91,7 @@ static spisor_value_tree manifest_packages = SPISOR_INIT(spisor_value_tree);
 
 static void write_text(const char *directory, const char *name, const char *text) {
     char path[1400];
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     snprintf(path, sizeof path, "%s/%s", directory, name);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
@@ -1558,6 +1558,6 @@ int main(int argc, char **argv) {
     spisor_value_release(&manifest_packages);
     release_cache_and_catalog_values();
     forget_test_path_value();
-    CHECK(runtime_remove_tree(place.base) == 1);
+    CHECK(runtime_remove_tree(place.base) == SPISOR_OK);
     return check_summary("out_of_memory_test");
 }

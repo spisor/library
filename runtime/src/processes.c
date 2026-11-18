@@ -125,9 +125,10 @@ cJSON *runtime_processes_with_holders(const runtime_processes_request *request, 
     char *path = runtime_holders_path(request->state, request->host_id, RUNTIME_JSON_EXTENSION, &problem);
     char *folder = runtime_processes_folder(request->state);
     cJSON *answer = NULL;
-    if (path != NULL && folder != NULL && !spisor_make_directories(folder)) {
+    spisor_status made = path == NULL || folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
+    if (made == SPISOR_REFUSED) {
         *refusal = runtime_processes_state_refusal("the processes folder", folder);
-    } else if (path != NULL && folder != NULL) {
+    } else if (made == SPISOR_OK) {
         answer = locked_step(request, path, step, refusal);
     }
     spisor_memory_release(folder);

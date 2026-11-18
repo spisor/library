@@ -63,8 +63,8 @@ static void fresh_scratch(scratch *place, const char *label) {
     snprintf(place->state, sizeof place->state, "%s/state", place->directory);
     snprintf(place->cache, sizeof place->cache, "%s/cache", place->directory);
     start_empty_directory(place->directory);
-    CHECK(spisor_make_directories(place->home) == 1);
-    CHECK(spisor_make_directories(place->state) == 1);
+    CHECK(spisor_make_directories(place->home) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->state) == SPISOR_OK);
 }
 
 static void in_home(const scratch *place, const char *relative, char *path, size_t size) {
@@ -532,7 +532,7 @@ static void what_the_user_already_has_is_not_recorded(void) {
     seed_home(&place);
     char existing[1400];
     in_home(&place, "existing", existing, sizeof existing);
-    CHECK(spisor_make_directories(existing) == 1);
+    CHECK(spisor_make_directories(existing) == SPISOR_OK);
     CHECK(apply_unneeded(&place, "alpha", directory_change(&place, "existing")));
     CHECK(apply_unneeded(&place, "alpha", profile_line_change(&place, ".bashrc", "export A=1")));
     CHECK(apply_unneeded(&place, "alpha", json_key_change(&place, "[\"theme\"]", "\"dark\"")));

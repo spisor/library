@@ -209,7 +209,10 @@ static void every_url_resolves_as_node_does(void) {
     for (const cJSON *vector = cJSON_GetObjectItemCaseSensitive(recorded, "vectors")->child; vector != NULL;
          vector = vector->next) {
         const cJSON *expected = cJSON_GetObjectItemCaseSensitive(vector, "resolved");
-        char *resolved = runtime_catalog_resolve_within_origin(text_at(vector, "url"), text_at(vector, "origin"));
+        char *resolved = NULL;
+        spisor_status status =
+            runtime_catalog_resolve_within_origin(text_at(vector, "url"), text_at(vector, "origin"), &resolved);
+        CHECK((status == SPISOR_OK) == (resolved != NULL) && status != SPISOR_OUT_OF_MEMORY);
         const char *wanted = cJSON_IsString(expected) ? expected->valuestring : NULL;
         if ((wanted == NULL) != (resolved == NULL) || (wanted != NULL && strcmp(wanted, resolved) != 0)) {
             fprintf(stderr, "url \"%s\" against \"%s\": expected %s, got %s\n", text_at(vector, "url"),
@@ -224,7 +227,8 @@ static void every_url_resolves_as_node_does(void) {
 
 static void expect_file_urls(const cJSON *vectors, int windows) {
     for (const cJSON *vector = vectors->child; vector != NULL; vector = vector->next) {
-        char *url = runtime_catalog_file_url_of_path(windows, text_at(vector, "path"));
+        char *url = NULL;
+        runtime_catalog_file_url_of_path(windows, text_at(vector, "path"), &url);
         check_text(url, text_at(vector, "url"), text_at(vector, "path"));
         spisor_memory_release(url);
     }

@@ -142,7 +142,7 @@ static char *contained(const char *root, const char *const *steps, size_t count,
 }
 
 /** @implNote A version that cannot be removed (a file another process holds open on Windows) is skipped for the next sweep. */
-static int remove_doomed(const char *cache, const cJSON *entry) {
+static spisor_status remove_doomed(const char *cache, const cJSON *entry) {
     int unfit = 0;
     char *folder = runtime_item_folder(cJSON_GetArrayItem(entry, 0)->valuestring, &unfit);
     const char *steps[3] = {folder, cJSON_GetArrayItem(entry, 1)->valuestring,
@@ -151,10 +151,11 @@ static int remove_doomed(const char *cache, const cJSON *entry) {
     const char *root_segments[2] = {cache, count == 3 ? "libraries" : "bundles"};
     char *root = runtime_cache_joined(root_segments, 2);
     char *parent = NULL;
-    char *directory = root == NULL ? NULL : contained(root, steps, count, &parent);
-    int removed = directory != NULL && runtime_remove_tree(directory);
-    if (removed && count == 3) {
-        runtime_remove_empty_directory(parent);
+    char *directory = root == NULL || folder == NULL ? NULL : contained(root, steps, count, &parent);
+    spisor_status removed = directory == NULL ? SPISOR_OUT_OF_MEMORY : runtime_remove_tree(directory);
+    if (removed == SPISOR_OK && count == 3 &&
+        runtime_remove_empty_directory(parent) == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        removed = SPISOR_OUT_OF_MEMORY;
     }
     spisor_memory_release(directory);
     spisor_memory_release(parent);
@@ -175,7 +176,9 @@ static cJSON *removed_name(const cJSON *entry) {
 static cJSON *remove_all(const char *cache, const cJSON *doomed) {
     cJSON *removed = cJSON_CreateArray();
     for (const cJSON *entry = removed == NULL ? NULL : doomed->child; entry != NULL; entry = entry->next) {
-        if (remove_doomed(cache, entry) && !cJSON_AddItemToArray(removed, removed_name(entry))) {
+        spisor_status status = remove_doomed(cache, entry);
+        if (status == SPISOR_OUT_OF_MEMORY ||
+            (status == SPISOR_OK && !cJSON_AddItemToArray(removed, removed_name(entry)))) {
             cJSON_Delete(removed);
             return NULL;
         }

@@ -23,7 +23,7 @@ static void fresh(path_scratch *place, const char *label) {
     scratch_in(place->base, sizeof place->base, "detect", label);
     place->first = joined_path(place->base, "first");
     place->second = joined_path(place->base, "second");
-    CHECK(spisor_make_directories(place->first) == 1 && spisor_make_directories(place->second) == 1);
+    CHECK(spisor_make_directories(place->first) == SPISOR_OK && spisor_make_directories(place->second) == SPISOR_OK);
 }
 
 static void discard(path_scratch *place) {

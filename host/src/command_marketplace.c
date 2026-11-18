@@ -97,7 +97,7 @@ static int write_copy(const cJSON *copy, const char *path) {
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
     const char *parent_segments[2] = {path, ".."};
     char *parent = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parent_segments, 2);
-    int written = text != NULL && parent != NULL && spisor_make_directories(parent) == 1 &&
+    int written = text != NULL && parent != NULL && spisor_make_directories(parent) == SPISOR_OK &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(parent);
     spisor_memory_release(text);

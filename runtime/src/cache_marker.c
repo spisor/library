@@ -228,9 +228,12 @@ static file_verdict check_file(const char *directory, const char *resolved_direc
     if (path == NULL) {
         return verdict;
     }
+    spisor_status hashed = SPISOR_REFUSED;
     if (strcmp(key, RUNTIME_INSTALL_MARKER) == 0 || !runtime_cache_is_strictly_inside(resolved_directory, path)) {
         verdict = outside_verdict(directory, key);
-    } else if (!spisor_sha256_file(path, actual)) {
+    } else if ((hashed = spisor_sha256_file(path, actual)) == SPISOR_OUT_OF_MEMORY) {
+        verdict.out_of_memory = 1;
+    } else if (hashed != SPISOR_OK) {
         verdict = missing_verdict(directory, key);
     } else if (strcmp(actual, recorded->valuestring) != 0) {
         verdict = changed_verdict(directory, key, actual, recorded->valuestring);
@@ -280,11 +283,12 @@ cJSON *runtime_cache_check_version(const char *directory) {
     return answer;
 }
 
-/** The size of the file at path in bytes in *size; 0 when it cannot be opened. */
-static int file_size(const char *path, double *size) {
-    FILE *file = runtime_open_file(path, RUNTIME_FILE_READ);
+/** The size of the file at path in bytes in *size: SPISOR_REFUSED when it cannot be opened or measured. */
+static spisor_status file_size(const char *path, double *size) {
+    int out_of_memory;
+    FILE *file = runtime_open_file(path, RUNTIME_FILE_READ, &out_of_memory);
     if (file == NULL) {
-        return 0;
+        return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
     }
 #if defined(_WIN32)
     long long end = _fseeki64(file, 0, SEEK_END) == 0 ? _ftelli64(file) : -1;
@@ -293,7 +297,7 @@ static int file_size(const char *path, double *size) {
 #endif
     fclose(file);
     *size = (double)end;
-    return end >= 0;
+    return end >= 0 ? SPISOR_OK : SPISOR_REFUSED;
 }
 
 static file_verdict unsized_verdict(const char *directory, const char *key) {
@@ -322,9 +326,12 @@ static file_verdict check_size(const char *directory, const char *resolved_direc
     if (path == NULL) {
         return verdict;
     }
+    spisor_status measured = SPISOR_REFUSED;
     if (strcmp(key, RUNTIME_INSTALL_MARKER) == 0 || !runtime_cache_is_strictly_inside(resolved_directory, path)) {
         verdict = outside_verdict(directory, key);
-    } else if (!file_size(path, &actual)) {
+    } else if ((measured = file_size(path, &actual)) == SPISOR_OUT_OF_MEMORY) {
+        verdict.out_of_memory = 1;
+    } else if (measured != SPISOR_OK) {
         verdict = missing_verdict(directory, key);
     } else if (actual != recorded->valuedouble) {
         verdict = resized_verdict(directory, key, actual, recorded->valuedouble);

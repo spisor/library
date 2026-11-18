@@ -206,7 +206,7 @@ static void writes_the_declared_files_with_every_placeholder_filled(void) {
     start_install_base(&base, "entries", "marketplace");
     char *home = home_of(&base, "sample");
     register_loader(&base, "sample", home);
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     catalog_answer answer = write_entry(&base, "sample", home);
     cJSON_Delete(answer.tree);
     char *root = entry_root(&base);
@@ -251,7 +251,7 @@ static void creates_a_settings_json_that_does_not_exist_and_deletes_it_again(voi
     start_install_base(&base, "entries", "creates-settings");
     char *home = home_of(&base, "sample");
     register_loader(&base, "sample", home);
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     catalog_answer answer = write_entry(&base, "sample", home);
     cJSON_Delete(answer.tree);
     char *root = entry_root(&base);
@@ -281,7 +281,7 @@ static void creates_an_application_home_that_does_not_exist_and_removes_it_again
     char *home = home_of(&base, "sample");
     register_loader(&base, "sample", home);
     char *homes = joined(base.user, "homes");
-    CHECK(spisor_make_directories(homes) == 1);
+    CHECK(spisor_make_directories(homes) == SPISOR_OK);
     catalog_answer answer = write_entry(&base, "sample", home);
     cJSON_Delete(answer.tree);
     CHECK(exists_in(home, "settings.json"));
@@ -404,11 +404,11 @@ static void takes_back_what_it_wrote_when_a_later_change_is_refused(void) {
     start_install_base(&base, "entries", "refused-later");
     char *home = home_of(&base, "sample");
     register_loader(&base, "sample", home);
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     char *root = entry_root(&base);
     char blocked[2048];
     snprintf(blocked, sizeof blocked, "%s/hooks/hooks.json", root);
-    CHECK(spisor_make_directories(blocked) == 1);
+    CHECK(spisor_make_directories(blocked) == SPISOR_OK);
     catalog_answer answer = write_entry(&base, "sample", home);
     CHECK(answer.status == SPISOR_REFUSED);
     cJSON_Delete(answer.tree);
@@ -440,11 +440,11 @@ static void keeps_a_change_another_call_recorded_when_a_later_change_is_refused(
     start_install_base(&base, "entries", "foreign-kept");
     char *home = home_of(&base, "sample");
     register_loader(&base, "sample", home);
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     char *root = entry_root(&base);
     char blocked[2048];
     snprintf(blocked, sizeof blocked, "%s/hooks/hooks.json", root);
-    CHECK(spisor_make_directories(blocked) == 1);
+    CHECK(spisor_make_directories(blocked) == SPISOR_OK);
     foreign_base = &base;
     runtime_install_after_entry_change(record_a_foreign_change);
     catalog_answer answer = write_entry(&base, "sample", home);

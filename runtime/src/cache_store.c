@@ -31,7 +31,7 @@ static file_reference reference_of(const cJSON *reference) {
 static int holds(const char *destination, const file_reference *reference) {
     char actual[RUNTIME_SHA256_HEX_SIZE];
     uint64_t size = 0;
-    return runtime_sha256_file_sized(destination, actual, &size) && size == reference->size &&
+    return runtime_sha256_file_sized(destination, actual, &size) == SPISOR_OK && size == reference->size &&
            strcmp(actual, reference->sha256) == 0;
 }
 

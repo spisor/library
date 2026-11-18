@@ -122,7 +122,7 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     char *signals = joined(root, "signals");
     char *paused = joined(signals, "paused");
     char *release = joined(signals, "release");
-    CHECK(spisor_make_directories(home) == 1 && spisor_make_directories(signals) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK && spisor_make_directories(signals) == SPISOR_OK);
     runtime_config_pause_after_read(signals);
     settings_write first = {home, portable, "plugins.first.enabled", SPISOR_REFUSED};
     settings_write second = {home, portable, "plugins.second.enabled", SPISOR_REFUSED};
@@ -148,7 +148,7 @@ static void keeps_both_keys_of_two_writers_one_paused_between_its_read_and_its_w
     spisor_memory_release(signals);
     spisor_memory_release(portable);
     spisor_memory_release(home);
-    CHECK(runtime_remove_tree(root) == 1);
+    CHECK(runtime_remove_tree(root) == SPISOR_OK);
 }
 
 int main(void) {

@@ -129,7 +129,7 @@ static void make_host_file(const scratch *place, const char *id, const char *rel
     char path[1600];
     snprintf(directory, sizeof directory, "%s/hosts/%s", in_cache ? place->cache : place->state, id);
     snprintf(path, sizeof path, "%s/%s", directory, relative_file);
-    CHECK(spisor_make_directories(directory) == 1);
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     write_raw_file(path, "kept");
 }
 
@@ -299,7 +299,7 @@ static void list_sorts_hosts_and_marks_a_missing_location_as_orphan(void) {
     fresh_scratch(&place, "orphan");
     char location[1200];
     snprintf(location, sizeof location, "%s/binary", place.directory);
-    CHECK(spisor_make_directories(location) == 1);
+    CHECK(spisor_make_directories(location) == SPISOR_OK);
     CHECK(register_host(&place, registration_for("zulu", "1.0.0", "npm", location)));
     CHECK(register_host(&place, registration_for("alpha", "1.0.0", "npm", location)));
 
@@ -312,7 +312,7 @@ static void list_sorts_hosts_and_marks_a_missing_location_as_orphan(void) {
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(hosts, 1), "orphan")));
     cJSON_Delete(present.tree);
 
-    CHECK(runtime_remove_tree(location) == 1);
+    CHECK(runtime_remove_tree(location) == SPISOR_OK);
     answer gone = call(REGISTRY_LIST, request_for(&place));
     hosts = cJSON_GetObjectItemCaseSensitive(gone.tree, "hosts");
     CHECK(cJSON_GetArraySize(hosts) == 2);
@@ -391,7 +391,7 @@ static void a_bad_id_is_refused_everywhere(void) {
     fresh_scratch(&place, "badid");
     char sentinel[1200];
     snprintf(sentinel, sizeof sentinel, "%s/sentinel.txt", place.state);
-    CHECK(spisor_make_directories(place.state) == 1);
+    CHECK(spisor_make_directories(place.state) == SPISOR_OK);
     write_raw_file(sentinel, "kept");
     for (size_t index = 0; index < sizeof bad_ids / sizeof bad_ids[0]; index++) {
         const char *id = bad_ids[index];
@@ -615,7 +615,7 @@ static void forget_deletes_links_and_never_follows_them(void) {
     snprintf(outside_directory, sizeof outside_directory, "%s/outside", place.directory);
     snprintf(outside_file, sizeof outside_file, "%s/outside-file.txt", place.directory);
     snprintf(outside_content, sizeof outside_content, "%s/keep.txt", outside_directory);
-    CHECK(spisor_make_directories(outside_directory) == 1);
+    CHECK(spisor_make_directories(outside_directory) == SPISOR_OK);
     write_raw_file(outside_content, "kept");
     write_raw_file(outside_file, "kept");
     set_read_only(outside_file);

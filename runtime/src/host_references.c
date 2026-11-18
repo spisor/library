@@ -137,8 +137,8 @@ static char *references_text(const runtime_host_references *references) {
 }
 
 static spisor_status write_in_folder(const char *folder, const char *path, const char *text) {
-    return spisor_make_directories(folder) ? spisor_replace_file(path, (const uint8_t *)text, strlen(text))
-                                           : SPISOR_REFUSED;
+    spisor_status made = spisor_make_directories(folder);
+    return made == SPISOR_OK ? spisor_replace_file(path, (const uint8_t *)text, strlen(text)) : made;
 }
 
 /** Writes the references' text; 0 with *out_of_memory set to 1 when memory ran out. */
@@ -187,13 +187,19 @@ void runtime_free_references_draft(runtime_references_draft *draft) {
     draft->text = NULL;
 }
 
-int runtime_remove_host_references(const char *state, const char *host_id) {
+spisor_status runtime_remove_host_references(const char *state, const char *host_id) {
     char *problem = NULL;
     char *path = runtime_host_references_path(state, host_id, &problem);
-    spisor_memory_release(problem);
     runtime_entry_outcome removed = path == NULL ? RUNTIME_ENTRY_FAILED : runtime_remove_file_entry(path);
+    if (path == NULL && problem == NULL) {
+        removed = RUNTIME_ENTRY_OUT_OF_MEMORY;
+    }
+    spisor_memory_release(problem);
     spisor_memory_release(path);
-    return removed == RUNTIME_ENTRY_DONE && runtime_remove_run_records(state, host_id);
+    if (removed != RUNTIME_ENTRY_DONE) {
+        return removed == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    }
+    return runtime_remove_run_records(state, host_id);
 }
 
 void runtime_free_host_references(runtime_host_references *references) {

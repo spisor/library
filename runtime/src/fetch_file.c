@@ -205,10 +205,12 @@ void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_f
         return;
     }
     stall_if_asked(url);
-    FILE *file = runtime_open_file(local, RUNTIME_FILE_READ);
+    int out_of_memory;
+    FILE *file = runtime_open_file(local, RUNTIME_FILE_READ, &out_of_memory);
     spisor_memory_release(local);
     if (file == NULL) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read", url);
+        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, out_of_memory ? "%s could not be read: out of memory"
+                                                                       : "%s could not be read", url);
         return;
     }
     copy_into_sink(file, url, sink, answer);

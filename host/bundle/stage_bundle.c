@@ -56,7 +56,7 @@ static int copy_into(const char *source, const char *directory, const char *name
 }
 
 static int start_empty(const char *directory) {
-    if (runtime_remove_tree(directory) != 1 || spisor_make_directories(directory) != 1) {
+    if (runtime_remove_tree(directory) != SPISOR_OK || spisor_make_directories(directory) != SPISOR_OK) {
         fprintf(stderr, "stage-bundle: %s could not be emptied\n", directory);
         return 0;
     }
@@ -90,7 +90,7 @@ static int stage_host(int count, char **arguments) {
     }
     const char *directory = arguments[2];
     char *platform = joined(directory, runtime_platform_key());
-    int staged = platform != NULL && start_empty(directory) && spisor_make_directories(platform) == 1 &&
+    int staged = platform != NULL && start_empty(directory) && spisor_make_directories(platform) == SPISOR_OK &&
                  write_host_manifest(directory, arguments[3]) &&
                  copy_into(arguments[4], platform, "spisor-host" EXECUTABLE_ENDING) &&
                  copy_into(arguments[5], platform, "spisor-boot" EXECUTABLE_ENDING) &&

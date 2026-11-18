@@ -123,7 +123,7 @@ static void remove_stale_lock(const char *path, const char *judged) {
     const char *parts[4] = {path, ".", token, ".stale"};
     char *moved = token == NULL ? NULL : runtime_cache_text(parts, 4);
     spisor_memory_release(token);
-    if (moved == NULL || !runtime_move_file_over(path, moved)) {
+    if (moved == NULL || runtime_move_file_over(path, moved) != SPISOR_OK) {
         spisor_memory_release(moved);
         return;
     }
@@ -134,6 +134,12 @@ static void remove_stale_lock(const char *path, const char *judged) {
     spisor_memory_release(held);
     runtime_remove_file_entry(moved);
     spisor_memory_release(moved);
+}
+
+static void release_guard(runtime_holders_guard *guard) {
+    spisor_memory_release(guard->path);
+    spisor_memory_release(guard->token);
+    spisor_memory_release(guard);
 }
 
 static runtime_holders_guard *guard_of(const char *path, char *token) {
@@ -150,28 +156,45 @@ static runtime_holders_guard *guard_of(const char *path, char *token) {
     return guard;
 }
 
-/** Whether waiting on longer cannot help: something not a file stands at path, or the wait outlived any lock. */
-static int is_hopeless(const char *path, double started) {
-    return runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ||
-           runtime_now_milliseconds() - started > LONGEST_WAIT_MILLISECONDS;
+/**
+ * Whether waiting on longer cannot help: something not a file stands at path, or the wait outlived any lock;
+ * SPISOR_OUT_OF_MEMORY when memory ran out asking, SPISOR_OK to wait on.
+ */
+static spisor_status hopelessness(const char *path, double started) {
+    runtime_entry_kind found = runtime_probe_entry(path);
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    int hopeless = found == RUNTIME_ENTRY_DIRECTORY || runtime_now_milliseconds() - started > LONGEST_WAIT_MILLISECONDS;
+    return hopeless ? SPISOR_REFUSED : SPISOR_OK;
 }
 
+static spisor_status refused_creating(runtime_entry_outcome created, const char *path, double started) {
+    if (created == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return created == RUNTIME_ENTRY_EXISTS ? hopelessness(path, started) : SPISOR_REFUSED;
+}
+
+/** @implNote The guard is made before the lock file, so memory running out never leaves a lock nobody holds. */
 spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **guard) {
     *guard = NULL;
     char *token = new_token();
-    if (token == NULL) {
+    runtime_holders_guard *made = token == NULL ? NULL : guard_of(path, token);
+    if (made == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
     double started = runtime_now_milliseconds();
     for (;;) {
         runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)token, strlen(token), 0);
         if (created == RUNTIME_ENTRY_DONE) {
-            *guard = guard_of(path, token);
-            return *guard == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+            *guard = made;
+            return SPISOR_OK;
         }
-        if (created != RUNTIME_ENTRY_EXISTS || is_hopeless(path, started)) {
-            spisor_memory_release(token);
-            return SPISOR_REFUSED;
+        spisor_status refused = refused_creating(created, path, started);
+        if (refused != SPISOR_OK) {
+            release_guard(made);
+            return refused;
         }
         char *held = read_lock(path);
         int stale = held != NULL && is_stale(path, held);
@@ -194,7 +217,5 @@ void runtime_unlock_holders(runtime_holders_guard *guard) {
         runtime_remove_file_entry(guard->path);
     }
     spisor_memory_release(held);
-    spisor_memory_release(guard->path);
-    spisor_memory_release(guard->token);
-    spisor_memory_release(guard);
+    release_guard(guard);
 }

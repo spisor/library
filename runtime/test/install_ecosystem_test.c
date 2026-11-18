@@ -409,7 +409,7 @@ static void write_incompressible(const char *path, size_t size) {
         bytes[index] = (char)(state & 0xff);
     }
     char *parent = joined(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     CHECK(spisor_replace_file(path, (const uint8_t *)bytes, size) == SPISOR_OK);
     spisor_memory_release(parent);
     spisor_memory_release(bytes);
@@ -449,8 +449,9 @@ static void serve_runtime_build(install_base *base, size_t size, served_build *s
     int exit_code = -1;
     char *problem = NULL;
     CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
-    CHECK(spisor_sha256_file(archive, served->sha256));
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive);
+    CHECK(spisor_sha256_file(archive, served->sha256) == SPISOR_OK);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive, &url);
     snprintf(served->url, sizeof served->url, "%s", url);
     runtime_install_use_runtime_build("1.2.3", served->url, served->sha256);
     spisor_memory_release(url);
@@ -591,7 +592,7 @@ static int runtime_is_intact(const install_base *base) {
 #endif
     char *marker = text_in(directory, ".unpacked");
     char hash[RUNTIME_SHA256_HEX_SIZE];
-    int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) &&
+    int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) == SPISOR_OK &&
                  strncmp(marker + 65, hash, 64) == 0;
     spisor_memory_release(marker);
     spisor_memory_release(executable);

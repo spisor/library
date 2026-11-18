@@ -148,7 +148,7 @@ static void prepare_entry(void) {
     start_install_base(&base, "operations", "entry");
     keep_run_path(base.user, "homes/sample");
     char *homes = joined(base.user, "homes");
-    CHECK(spisor_make_directories(homes) == 1);
+    CHECK(spisor_make_directories(homes) == SPISOR_OK);
     spisor_memory_release(homes);
     register_entry_loader();
     declare_hook_entry();
@@ -183,7 +183,7 @@ static void install_claude(const char *packages_json, const char *choices_json) 
     list_loader(&base, CLAUDE_LOADER, "1.0.0", application_json("claude", BINARY, packages_json), "[]", 0, "[]");
     write_catalog(&base);
     char *homes = joined(base.user, "homes/claude");
-    CHECK(spisor_make_directories(homes) == 1);
+    CHECK(spisor_make_directories(homes) == SPISOR_OK);
     spisor_memory_release(homes);
     char extra[256];
     snprintf(extra, sizeof extra, "{\"choices\": %s}", choices_json);
@@ -267,7 +267,8 @@ static void prepare_runtime(void) {
     spisor_memory_release(node);
     spisor_memory_release(probe);
     char *missing = joined(base.root, "unreachable/node.zip");
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, missing);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, missing, &url);
     runtime_install_use_runtime_build(UNREACHABLE_VERSION, url, UNREACHABLE_SHA256);
     spisor_memory_release(url);
     spisor_memory_release(missing);
@@ -458,7 +459,7 @@ static void prepare_check(void) {
 static void prepare_run(void) {
     prepare_check();
     char *home = joined(base.user, "homes/spisor-host");
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     cJSON *registration = cJSON_CreateObject();
     cJSON_AddStringToObject(registration, "id", "spisor-host");
     cJSON_AddStringToObject(registration, "home", home);
@@ -1145,7 +1146,7 @@ static spisor_status run_loader_check(void) {
 static void prepare_loader_home(void) {
     start_install_base(&base, "operations", "loader-home");
     char *home = joined(base.user, "homes/sample");
-    CHECK(spisor_make_directories(home) == 1);
+    CHECK(spisor_make_directories(home) == SPISOR_OK);
     spisor_memory_release(home);
 }
 

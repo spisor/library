@@ -59,7 +59,7 @@ static char *index_text(const char *latest) {
 
 static void start_scratch(const char *label) {
     if (base[0] != 0) {
-        CHECK(runtime_remove_tree(base) == 1);
+        CHECK(runtime_remove_tree(base) == SPISOR_OK);
     }
     snprintf(base, sizeof base, "%s/catalog-check-J\xc3\xb6rg-%d-%s", RUNTIME_SCRATCH_PATH, (int)current_process_id(),
              label);
@@ -368,7 +368,7 @@ static void it_keeps_an_https_index_without_its_byte_order_mark(void) {
 static char *write_local(const char *name, const char *latest) {
     char directory[1200];
     snprintf(directory, sizeof directory, "%s/local", base);
-    CHECK(spisor_make_directories(directory));
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
     char *path = spisor_memory_allocate(1300);
     snprintf(path, 1300, "%s/%s", directory, name);
     char *text = index_text(latest);

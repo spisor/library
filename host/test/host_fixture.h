@@ -274,7 +274,7 @@ static inline void copy_file(const char *source, const char *path) {
     uint8_t *bytes = spisor_read_file(source, &length);
     CHECK(bytes != NULL);
     char *parent = joined(path, "..");
-    CHECK(spisor_make_directories(parent) == 1);
+    CHECK(spisor_make_directories(parent) == SPISOR_OK);
     CHECK(spisor_replace_file(path, bytes, length) == SPISOR_OK);
 #if !defined(_WIN32)
     CHECK(chmod(path, 0755) == 0);
@@ -289,10 +289,11 @@ static inline cJSON *served_copy(install_base *base, const char *id, const char 
     snprintf(rest, sizeof rest, "files/%s/%s/%s", id, version, name);
     char *path = joined(base->catalog, rest);
     copy_file(source, path);
-    char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
+    char *url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
     char sha256[RUNTIME_SHA256_HEX_SIZE];
     uint64_t size = 0;
-    CHECK(runtime_sha256_file_sized(path, sha256, &size));
+    CHECK(runtime_sha256_file_sized(path, sha256, &size) == SPISOR_OK);
     cJSON *reference = cJSON_CreateObject();
     cJSON_AddStringToObject(reference, "url", url);
     cJSON_AddStringToObject(reference, "sha256", sha256);
@@ -327,8 +328,8 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->layer_delay = NULL;
     world->fixture_ready = NULL;
     world->ready_timeout = NULL;
-    CHECK(spisor_make_directories(world->bin) == 1 && spisor_make_directories(world->signals) == 1 &&
-          spisor_make_directories(world->streams) == 1);
+    CHECK(spisor_make_directories(world->bin) == SPISOR_OK && spisor_make_directories(world->signals) == SPISOR_OK &&
+          spisor_make_directories(world->streams) == SPISOR_OK);
 }
 
 static inline void finish_world(host_world *world) {
@@ -337,7 +338,7 @@ static inline void finish_world(host_world *world) {
     spisor_memory_release(world->streams);
     spisor_memory_release(world->starts);
     spisor_memory_release(world->portable_secrets);
-    for (int attempt = 0; attempt < 50 && runtime_remove_tree(world->base.root) != 1; attempt++) {
+    for (int attempt = 0; attempt < 50 && runtime_remove_tree(world->base.root) != SPISOR_OK; attempt++) {
         pause_milliseconds(200);
     }
     finish_install_base(&world->base);
@@ -619,7 +620,7 @@ static inline cJSON *references_of(const host_world *world, const char *id) {
 static inline void copy_tree(const char *source, const char *destination) {
     runtime_directory_listing listing;
     CHECK(runtime_list_directory(source, &listing) == SPISOR_OK);
-    CHECK(spisor_make_directories(destination) == 1);
+    CHECK(spisor_make_directories(destination) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         char *from = joined(source, listing.entries[index].name);
         char *to = joined(destination, listing.entries[index].name);

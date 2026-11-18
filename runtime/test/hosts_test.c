@@ -56,8 +56,8 @@ static void fresh(hosts_scratch *place, const char *label) {
     place->cache = joined_path(place->base, "cache");
     place->user = joined_path(place->base, "user");
     place->path = joined_path(place->base, "path");
-    CHECK(spisor_make_directories(place->state) == 1 && spisor_make_directories(place->cache) == 1);
-    CHECK(spisor_make_directories(place->user) == 1 && spisor_make_directories(place->path) == 1);
+    CHECK(spisor_make_directories(place->state) == SPISOR_OK && spisor_make_directories(place->cache) == SPISOR_OK);
+    CHECK(spisor_make_directories(place->user) == SPISOR_OK && spisor_make_directories(place->path) == SPISOR_OK);
     spisor_memory_release(touch_file(place->user, ".profile", "# profile\n", 0644));
 }
 
@@ -576,7 +576,7 @@ static void deletes_the_holders_file_of_the_host(void) {
     char *holders = runtime_holders_path(place.state, HOST_ID, ".json", &problem);
     char *other = runtime_holders_path(place.state, "other-host", ".json", &problem);
     char *folder = runtime_processes_folder(place.state);
-    CHECK(holders != NULL && other != NULL && folder != NULL && spisor_make_directories(folder) == 1);
+    CHECK(holders != NULL && other != NULL && folder != NULL && spisor_make_directories(folder) == SPISOR_OK);
     runtime_holders_record record = runtime_no_holders();
     CHECK(runtime_add_holder(&record, 1.0));
     CHECK(runtime_write_holders(holders, &record) == SPISOR_OK && runtime_write_holders(other, &record) == SPISOR_OK);

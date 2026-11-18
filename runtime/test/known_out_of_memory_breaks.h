@@ -34,21 +34,8 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OUT_OF_MEMORY_SUITE, "secrets' set", 0, BREAKS_ON_BOTH,
-     "secret_file.c make_parent_directory reads a failed directory_of allocation as an unwritable folder"},
-    {OUT_OF_MEMORY_SUITE, "config's set", 0, BREAKS_ON_BOTH,
-     "config.c lock_layer: file.c spisor_make_directories reads a failed is_directory wide path as no directory, "
-     "answering OK"},
-    {OUT_OF_MEMORY_SUITE, "log's write", 0, BREAKS_ON_BOTH,
-     "log.c append_line reads a failed log_directory join as a failed append, answering OK"},
     {OUT_OF_MEMORY_SUITE, "fetch's get", 0, BREAKS_ON_BOTH,
      "fetch.c open_partial reads a failed allocation as an unwritable destination"},
-    {OUT_OF_MEMORY_SUITE, "detect's on_path", 0, BREAKS_ON_WINDOWS,
-     "on_path.c matching_file: followed_entry.c runtime_is_followed_file reads a failed wide path as no file, "
-     "answering NONE"},
-    {OUT_OF_MEMORY_SUITE, "registry's register_host", 0, BREAKS_ON_BOTH,
-     "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
-     "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "changes' apply", 0, BREAKS_ON_BOTH,
      "changes.c runtime_changes_apply: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
      "is_directory wide path as an uncreatable folder, so the lock is refused"},
@@ -58,9 +45,6 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "changes' reverse", 0, BREAKS_ON_BOTH,
      "change_reversal.c reverse_steps: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
      "is_directory wide path as an uncreatable folder, so the lock is refused"},
-    {OUT_OF_MEMORY_SUITE, "lists' applications", 0, BREAKS_ON_WINDOWS,
-     "lists.c find_detected: on_path.c matching_file: followed_entry.c runtime_is_followed_file reads a failed "
-     "wide path as no file, answering OK"},
     {OUT_OF_MEMORY_SUITE, "marketplace's remember", 0, BREAKS_ON_BOTH,
      "marketplace_memory.c writes_store reads a failed spisor_json_stringify_pretty as an unwritable store"},
     {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, BREAKS_ON_BOTH,
@@ -73,12 +57,7 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "folder"},
     {OUT_OF_MEMORY_SUITE, "cache's install", 0, BREAKS_ON_BOTH,
      "cache_store.c fetched: fetch.c open_partial reads a failed allocation as an unwritable destination"},
-    {OUT_OF_MEMORY_SUITE, "catalog's read", 0, BREAKS_ON_BOTH,
-     "catalog_url.c parse_url reads a failed cleaned_input as a malformed url"},
     {OUT_OF_MEMORY_SUITE, "catalog's check", 0, BREAKS_ON_BOTH,
-     "catalog_refresh.c prepare_order: catalog_url.c runtime_catalog_file_url_of_path answers NULL out of memory, "
-     "read as no origin"},
-    {OUT_OF_MEMORY_SUITE, "catalog's current", 0, BREAKS_ON_BOTH,
      "catalog_refresh.c prepare_order: catalog_url.c runtime_catalog_file_url_of_path answers NULL out of memory, "
      "read as no origin"},
     {OUT_OF_MEMORY_SUITE, "install's by_id", 0, BREAKS_ON_BOTH,
@@ -96,9 +75,6 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' rename", 0, BREAKS_ON_BOTH,
      "commands.c is_shim_taken reads a failed shim_file join as a held name"},
-    {OUT_OF_MEMORY_SUITE, "commands' rename onto a held name", 0, BREAKS_ON_WINDOWS,
-     "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
-     "wide path as an uncreatable folder, so the lock is refused, answering OK"},
     {ECOSYSTEM_SUITE, "install's ecosystem", 0, BREAKS_ON_BOTH,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OPERATIONS_SUITE, "entry", 0, BREAKS_ON_BOTH,

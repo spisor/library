@@ -294,11 +294,10 @@ static spisor_status write_record(const install_request *request, const cJSON *s
     char *path = text == NULL ? NULL : record_path(request);
     const char *parent_segment[1] = {".."};
     char *directory = path == NULL ? NULL : runtime_cache_resolve(path, parent_segment, 1);
-    spisor_status status = directory == NULL                  ? SPISOR_OUT_OF_MEMORY
-                           : spisor_make_directories(directory) &&
-                                   spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK
-                               ? SPISOR_OK
-                               : SPISOR_REFUSED;
+    spisor_status status = directory == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(directory);
+    if (status == SPISOR_OK) {
+        status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    }
     spisor_memory_release(directory);
     spisor_memory_release(path);
     cJSON_free(text);

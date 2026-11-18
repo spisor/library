@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "directory_tree.h"
+#include "file_reading.h"
 #include "json_key_change.h"
 #include "path_entry.h"
 #include "paths.h"
@@ -267,6 +268,11 @@ static runtime_change_step out_of_memory(runtime_change_note *note) {
     return RUNTIME_CHANGE_OUT_OF_MEMORY;
 }
 
+static runtime_change_reversal reversal_out_of_memory(runtime_change_note *note) {
+    write_note(note, "memory ran out");
+    return RUNTIME_CHANGE_REVERSAL_OUT_OF_MEMORY;
+}
+
 void runtime_change_digest(const uint8_t *bytes, size_t length, char digest[RUNTIME_CHANGE_DIGEST_SIZE]) {
     uint64_t hash = 14695981039346656037ull;
     for (size_t index = 0; index < length; index++) {
@@ -278,22 +284,31 @@ void runtime_change_digest(const uint8_t *bytes, size_t length, char digest[RUNT
 typedef struct file_bytes {
     uint8_t *bytes;
     size_t length;
+    int out_of_memory;
 } file_bytes;
 
 /** The bytes a file change asks for: its content, or what its source file holds; bytes is NULL when unreadable. */
 static file_bytes bytes_asked_for(const cJSON *change) {
-    file_bytes asked = {NULL, 0};
+    file_bytes asked = {NULL, 0, 0};
     const char *content = text_of(change, "content");
     if (content == NULL) {
-        asked.bytes = spisor_read_file(text_of(change, "source"), &asked.length);
+        spisor_read_outcome outcome;
+        asked.bytes = spisor_read_file_reporting(text_of(change, "source"), &asked.length, &outcome);
+        asked.out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
         return asked;
     }
     asked.length = strlen(content);
     asked.bytes = spisor_memory_allocate(asked.length + 1);
+    asked.out_of_memory = asked.bytes == NULL;
     if (asked.bytes != NULL) {
         memcpy(asked.bytes, content, asked.length + 1);
     }
     return asked;
+}
+
+static runtime_change_step unread_source(const file_bytes *asked, const cJSON *change, runtime_change_note *note,
+                                         const char *detail) {
+    return asked->out_of_memory ? out_of_memory(note) : refuse(note, detail, text_of(change, "source"));
 }
 
 static int set_digest(cJSON *record, const file_bytes *asked) {
@@ -311,12 +326,16 @@ static int set_digest(cJSON *record, const file_bytes *asked) {
 
 static runtime_change_step prepare_file(const cJSON *change, cJSON **record, runtime_change_note *note) {
     const char *path = text_of(change, "path");
-    if (runtime_probe_entry(path) != RUNTIME_ENTRY_MISSING) {
+    runtime_entry_kind found = runtime_probe_entry(path);
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
+    if (found != RUNTIME_ENTRY_MISSING) {
         return refuse(note, "something already exists where the file would be created; it was left unchanged", path);
     }
     file_bytes asked = bytes_asked_for(change);
     if (asked.bytes == NULL) {
-        return refuse(note, "the file to copy cannot be read", text_of(change, "source"));
+        return unread_source(&asked, change, note, "the file to copy cannot be read");
     }
     static const char *const members[] = {"path"};
     *record = runtime_change_record_with(change, members, 1);
@@ -351,26 +370,35 @@ int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
 
 static runtime_entry_outcome write_content(const char *path, const file_bytes *asked, int executable) {
     runtime_entry_kind found = runtime_probe_entry(path);
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return RUNTIME_ENTRY_OUT_OF_MEMORY;
+    }
     if (found == RUNTIME_ENTRY_MISSING) {
         return runtime_create_new_file(path, asked->bytes, asked->length, executable);
     }
-    if (found != RUNTIME_ENTRY_OTHER || spisor_is_link(path)) {
+    int out_of_memory_asking = 0;
+    if (found != RUNTIME_ENTRY_OTHER || spisor_is_link(path, &out_of_memory_asking)) {
         return RUNTIME_ENTRY_KEPT;
     }
-    int written = spisor_replace_file(path, asked->bytes, asked->length) == SPISOR_OK;
-    return written ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    spisor_status written =
+        out_of_memory_asking ? SPISOR_OUT_OF_MEMORY : spisor_replace_file(path, asked->bytes, asked->length);
+    return written == SPISOR_OK              ? RUNTIME_ENTRY_DONE
+           : written == SPISOR_OUT_OF_MEMORY ? RUNTIME_ENTRY_OUT_OF_MEMORY
+                                             : RUNTIME_ENTRY_FAILED;
 }
 
 runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, runtime_change_note *note) {
     const char *path = text_of(change, "path");
     file_bytes asked = bytes_asked_for(change);
     if (asked.bytes == NULL) {
-        return refuse(note, "the file to copy cannot be read", text_of(change, "source"));
+        return unread_source(&asked, change, note, "the file to copy cannot be read");
     }
     runtime_entry_outcome written =
         write_content(path, &asked, cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable")));
     runtime_change_step step = RUNTIME_CHANGE_DONE;
-    if (written == RUNTIME_ENTRY_KEPT || written == RUNTIME_ENTRY_EXISTS) {
+    if (written == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        step = out_of_memory(note);
+    } else if (written == RUNTIME_ENTRY_KEPT || written == RUNTIME_ENTRY_EXISTS) {
         step = refuse(note, "a directory or link now stands where the host's file was; it was left unchanged", path);
     } else if (written != RUNTIME_ENTRY_DONE) {
         step = fail(note, "the host's file could not be rewritten", path);
@@ -386,10 +414,14 @@ static runtime_change_step perform_file(const cJSON *change, runtime_change_note
     int executable = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(change, "executable"));
     file_bytes asked = bytes_asked_for(change);
     if (asked.bytes == NULL) {
-        return fail(note, "the file to copy could not be read", text_of(change, "source"));
+        return asked.out_of_memory ? out_of_memory(note)
+                                   : fail(note, "the file to copy could not be read", text_of(change, "source"));
     }
     runtime_entry_outcome created = runtime_create_new_file(path, asked.bytes, asked.length, executable);
     spisor_memory_release(asked.bytes);
+    if (created == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
     if (created == RUNTIME_ENTRY_EXISTS) {
         return refuse(note, "something already exists where the file would be created; it was left unchanged", path);
     }
@@ -402,6 +434,9 @@ static runtime_change_step perform_file(const cJSON *change, runtime_change_note
 static runtime_change_reversal reverse_file(const cJSON *record, runtime_change_note *note) {
     const char *path = text_of(record, "path");
     runtime_entry_outcome removed = runtime_remove_file_entry(path);
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
     if (removed == RUNTIME_ENTRY_KEPT) {
         write_note(note, "a directory now stands where the host created a file; it was left: %s", path);
         return RUNTIME_CHANGE_DRIFTED;
@@ -420,6 +455,9 @@ static runtime_change_step prepare_directory(const cJSON *change, const cJSON *h
                                              runtime_change_note *note) {
     const char *path = text_of(change, "path");
     runtime_entry_kind found = runtime_probe_entry(path);
+    if (found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
     if (found == RUNTIME_ENTRY_OTHER || found == RUNTIME_ENTRY_UNKNOWN) {
         return refuse(note, "something that is not a directory already exists there; it was left unchanged", path);
     }
@@ -433,14 +471,22 @@ static runtime_change_step prepare_directory(const cJSON *change, const cJSON *h
 
 static runtime_change_step perform_directory(const cJSON *change, runtime_change_note *note) {
     const char *path = text_of(change, "path");
-    return runtime_create_directory(path) == RUNTIME_ENTRY_DONE
-               ? RUNTIME_CHANGE_DONE
-               : fail(note, "the directory could not be created (does its parent exist?)", path);
+    runtime_entry_outcome created = runtime_create_directory(path);
+    if (created == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
+    if (created != RUNTIME_ENTRY_DONE) {
+        return fail(note, "the directory could not be created (does its parent exist?)", path);
+    }
+    return RUNTIME_CHANGE_DONE;
 }
 
 static runtime_change_reversal reverse_directory(const cJSON *record, int held, runtime_change_note *note) {
     const char *path = text_of(record, "path");
     runtime_entry_outcome removed = held ? RUNTIME_ENTRY_DONE : runtime_remove_empty_directory(path);
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
     if (removed == RUNTIME_ENTRY_KEPT) {
         write_note(note, "the directory the host created holds something it did not create, or is no longer a "
                          "directory; it was left: %s", path);
@@ -709,12 +755,18 @@ static runtime_change_presence presence_of(int on_disk) {
     return on_disk ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
 }
 
+static runtime_change_presence presence_as(const cJSON *record, runtime_entry_kind wanted) {
+    runtime_entry_kind found = runtime_probe_entry(text_of(record, "path"));
+    return found == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY ? RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY
+                                                       : presence_of(found == wanted);
+}
+
 runtime_change_presence runtime_change_is_on_disk(const cJSON *record) {
     if (is_kind(record, "file")) {
-        return presence_of(runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_OTHER);
+        return presence_as(record, RUNTIME_ENTRY_OTHER);
     }
     if (is_kind(record, "directory")) {
-        return presence_of(runtime_probe_entry(text_of(record, "path")) == RUNTIME_ENTRY_DIRECTORY);
+        return presence_as(record, RUNTIME_ENTRY_DIRECTORY);
     }
     if (is_kind(record, "json-key")) {
         return runtime_json_key_is_on_disk(record);
