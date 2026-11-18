@@ -16,6 +16,15 @@
 
 static int record_out_of_memory;
 
+static char *written_run_record(const char *at, const char *host, const cJSON *run, double check_milliseconds) {
+    spisor_prepared_removal removal;
+    char *record = runtime_record_run(at, host, run, check_milliseconds, &removal, &record_out_of_memory);
+    if (record != NULL) {
+        spisor_release_prepared_removal(&removal);
+    }
+    return record;
+}
+
 static cJSON *no_settings(void) {
     return settings_with("{}");
 }
@@ -92,7 +101,7 @@ static void it_deletes_the_host_s_file_and_every_run_of_the_host_when_its_refere
     start_base("references-remove");
     record_references(TEST_HOST, "{\"run\":{\"a\":\"1.0.0\"},\"next\":{}}");
     cJSON *run = parsed("{\"a\":\"1.0.0\"}");
-    char *record = runtime_record_run(state, TEST_HOST, run, 5000, &record_out_of_memory);
+    char *record = written_run_record(state, TEST_HOST, run, 5000);
     CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
     CHECK(runtime_remove_host_references(state, TEST_HOST) == SPISOR_OK);
     CHECK(!exists_in(state, "bundles/" TEST_HOST ".json"));

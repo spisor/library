@@ -74,6 +74,39 @@ wchar_t *spisor_wide_path(const char *path) {
     spisor_memory_release(full);
     return extended;
 }
+
+/** Writes the extended-length prefix text needs at buffer's start, moving text past what the prefix replaces. */
+static wchar_t *after_extended_prefix(wchar_t *buffer, const wchar_t **text) {
+    int is_share = wcsncmp(*text, L"\\\\", 2) == 0;
+    const wchar_t *prefix = is_share ? L"\\\\?\\UNC" : L"\\\\?\\";
+    size_t length = wcslen(prefix);
+    wmemcpy(buffer, prefix, length);
+    *text += is_share ? 1 : 0;
+    return buffer + length;
+}
+
+int spisor_wide_path_into(const char *path, wchar_t *buffer, size_t capacity) {
+    const size_t reserved = 8;
+    if (capacity <= reserved) {
+        return 0;
+    }
+    wchar_t *text = buffer + reserved;
+    int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, text, (int)(capacity - reserved));
+    if (converted <= 0) {
+        return 0;
+    }
+    size_t length = (size_t)converted - 1;
+    wchar_t *target = buffer;
+    const wchar_t *source = text;
+    if (!has_device_prefix(text) && length >= SHORT_PATH_LIMIT) {
+        for (size_t index = 0; index < length; index++) {
+            text[index] = text[index] == L'/' ? L'\\' : text[index];
+        }
+        target = after_extended_prefix(buffer, &source);
+    }
+    wmemmove(target, source, length + 1 - (size_t)(source - text));
+    return 1;
+}
 #else
 typedef int spisor_wide_path_is_windows_only;
 #endif

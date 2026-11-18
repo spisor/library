@@ -50,6 +50,15 @@ typedef struct hosts_scratch {
 
 static int record_out_of_memory;
 
+static char *written_run_record(const char *at, const char *host, const cJSON *run, double check_milliseconds) {
+    spisor_prepared_removal removal;
+    char *record = runtime_record_run(at, host, run, check_milliseconds, &removal, &record_out_of_memory);
+    if (record != NULL) {
+        spisor_release_prepared_removal(&removal);
+    }
+    return record;
+}
+
 static void fresh(hosts_scratch *place, const char *label) {
     scratch_in(place->base, sizeof place->base, "hosts", label);
     place->state = joined_path(place->base, "state");
@@ -548,8 +557,7 @@ static void deletes_every_run_record_of_the_host_with_its_references(void) {
     fresh(&place, "runs");
     register_present(&place, HOST_ID);
     cJSON *run = parsed("{\"a\": \"1.0.0\"}");
-    char *record =
-        runtime_record_run(place.state, HOST_ID, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory);
+    char *record = written_run_record(place.state, HOST_ID, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS);
     CHECK(record != NULL);
     cJSON *runs = runtime_live_runs(place.state, runtime_now_milliseconds());
     CHECK(cJSON_GetArraySize(runs) == 1);

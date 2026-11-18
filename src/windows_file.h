@@ -3,6 +3,7 @@
 
 #if defined(_WIN32)
 #include <stdio.h>
+#include <wchar.h>
 
 /**
  * Opens the UTF-8 path as a binary stream, for reading an existing file or, with writing, creating or
@@ -27,6 +28,9 @@ FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory);
  * allows, and from takes its place; when that cannot be done the retries above still run.
  */
 int spisor_windows_move_over(const char *from, const char *to, int *out_of_memory);
+
+/** spisor_windows_move_over's rename and retries for wide paths, allocating nothing; no running image is set aside. */
+int spisor_windows_move_wide_over(const wchar_t *from, const wchar_t *to);
 
 /**
  * Deletes every <path>.old and <path>.old-<n> a replace set aside for the .exe path, answering how many are

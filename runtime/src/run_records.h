@@ -3,6 +3,7 @@
 
 #include "cJSON.h"
 
+#include "prepared_undo.h"
 #include "spisor/status.h"
 
 /** How often a start stamps its run record alive unless told otherwise, as a background host's holders are. */
@@ -11,8 +12,10 @@
 /**
  * Records that this process runs run as a start of host_id, as
  * JSON.stringify({pid, aliveAt, checkMilliseconds, run}) and a newline in its own file under
- * state/bundles/runs/<host_id>/, and answers that file's path, freed. NULL when host_id is no
- * plain file name or the file cannot be written, and NULL with *out_of_memory set to 1 when memory runs out.
+ * state/bundles/runs/<host_id>/, and answers that file's path, freed, with *removal prepared before the file was
+ * written so a caller that cannot go on removes it without allocating, and releases it either way. NULL, with nothing
+ * to release, when host_id is no plain file name or the file cannot be written, and NULL with *out_of_memory set to 1
+ * when memory runs out.
  *
  * @implNote One file per start, named by the process id and a number no other start of this process
  * takes, so two starts of one host on different versions never overwrite each other's: a sweep keeps
@@ -20,7 +23,7 @@
  * it when the start stops.
  */
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
-                         int *out_of_memory);
+                         spisor_prepared_removal *removal, int *out_of_memory);
 
 /**
  * Whether record is the path of one run record of host_id, a .json file named directly inside its

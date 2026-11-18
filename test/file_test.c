@@ -216,16 +216,16 @@ static void private_replace_creates_and_keeps_an_owner_only_file(void) {
 }
 
 static int replacement_mode(const char *target, int owner_only) {
-    char *temporary = NULL;
+    spisor_prepared_removal temporary;
     int out_of_memory;
     FILE *file = spisor_open_replacement(target, owner_only, &temporary, &out_of_memory);
     if (file == NULL) {
         return -1;
     }
-    int mode = mode_of(temporary);
+    int mode = mode_of(temporary.path);
     fclose(file);
-    remove(temporary);
-    spisor_memory_release(temporary);
+    spisor_remove_prepared(&temporary);
+    spisor_release_prepared_removal(&temporary);
     return mode;
 }
 

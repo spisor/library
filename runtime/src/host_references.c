@@ -167,8 +167,12 @@ int runtime_record_host_references(const char *state, const char *host_id, const
 
 int runtime_draft_host_references(const char *state, const char *host_id, const runtime_host_references *references,
                                   runtime_references_draft *draft, char **problem) {
-    draft->path = runtime_host_references_path(state, host_id, problem);
-    draft->text = draft->path == NULL ? NULL : references_text(references);
+    memset(draft, 0, sizeof *draft);
+    char *path = runtime_host_references_path(state, host_id, problem);
+    spisor_status prepared =
+        path == NULL ? SPISOR_OUT_OF_MEMORY : spisor_prepare_replacement(path, &draft->replacement);
+    draft->text = prepared == SPISOR_OK ? references_text(references) : NULL;
+    spisor_memory_release(path);
     if (draft->text == NULL) {
         runtime_free_references_draft(draft);
         return 0;
@@ -177,13 +181,12 @@ int runtime_draft_host_references(const char *state, const char *host_id, const 
 }
 
 int runtime_write_references_draft(const runtime_references_draft *draft) {
-    return spisor_replace_file(draft->path, (const uint8_t *)draft->text, strlen(draft->text)) == SPISOR_OK;
+    return spisor_replace_prepared(&draft->replacement, (const uint8_t *)draft->text, strlen(draft->text));
 }
 
 void runtime_free_references_draft(runtime_references_draft *draft) {
-    spisor_memory_release(draft->path);
+    spisor_release_prepared_replacement(&draft->replacement);
     spisor_memory_release(draft->text);
-    draft->path = NULL;
     draft->text = NULL;
 }
 

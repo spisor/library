@@ -167,27 +167,6 @@ static char *normal_path(const char *path) {
     return joined;
 }
 
-static char folded(char character) {
-    return RUNTIME_HOST_IS_WINDOWS && character >= 'A' && character <= 'Z' ? (char)(character - 'A' + 'a') : character;
-}
-
-static int same_folded(const char *left, const char *right) {
-    while (*left != '\0' && folded(*left) == folded(*right)) {
-        left++;
-        right++;
-    }
-    return folded(*left) == folded(*right);
-}
-
-int runtime_change_paths_equal(const char *left, const char *right) {
-    char *left_normal = left == NULL ? NULL : normal_path(left);
-    char *right_normal = right == NULL ? NULL : normal_path(right);
-    int equal = left_normal != NULL && right_normal != NULL && same_folded(left_normal, right_normal);
-    spisor_memory_release(left_normal);
-    spisor_memory_release(right_normal);
-    return equal;
-}
-
 static int same_path_member(const cJSON *left, const cJSON *right, const char *member) {
     return runtime_change_paths_equal(text_of(left, member), text_of(right, member));
 }

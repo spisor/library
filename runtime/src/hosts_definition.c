@@ -440,8 +440,7 @@ static spisor_status fill_start(const cJSON *answered, runtime_hosts_start_answe
 }
 
 /** Starts the host, and when the answer cannot be filled removes the run record the start wrote. */
-static spisor_status serve_start(const runtime_hosts_start_argument *argument, cJSON *call,
-                                 runtime_hosts_start_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_start(cJSON *call, runtime_hosts_start_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered = runtime_call_operation(runtime_hosts_start_operation, call, &operation_refusal);
     spisor_status status;
@@ -451,8 +450,7 @@ static spisor_status serve_start(const runtime_hosts_start_argument *argument, c
     status = fill_start(answered, answer);
     if (status != SPISOR_OK) {
         runtime_release_stored_answer(answer, START_ANSWER_SHAPE);
-        runtime_hosts_start_undo(text_of(cJSON_GetObjectItemCaseSensitive(answered, "places"), "state"),
-                                 argument->host_id, cJSON_GetObjectItemCaseSensitive(answered, "plan"));
+        runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(answered, "plan"));
         status = SPISOR_OUT_OF_MEMORY;
     }
     cJSON_Delete(answered);
@@ -468,7 +466,7 @@ static spisor_status start(void *context, const runtime_hosts_start_argument *ar
         return runtime_refuse_shape(refusal, "hosts' start");
     }
     status = check_start(argument, refusal);
-    return status != SPISOR_OK ? status : serve_start(argument, start_call(argument), answer, refusal);
+    return status != SPISOR_OK ? status : serve_start(start_call(argument), answer, refusal);
 }
 
 static void release_register_answer(void *context, runtime_install_register_loader_answer *answer) {

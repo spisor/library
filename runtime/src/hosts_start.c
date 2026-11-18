@@ -208,8 +208,9 @@ static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
 
 static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON **refusal) {
     int out_of_memory = 0;
+    spisor_prepared_removal removal;
     char *record = runtime_record_run(context->state, context->argument.host_id, run,
-                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS, &out_of_memory);
+                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS, &removal, &out_of_memory);
     if (record == NULL) {
         *refusal = out_of_memory ? NULL : unwritable_run_record(context->argument.host_id);
         return NULL;
@@ -220,10 +221,11 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
                 runtime_catalog_attach(plan, "unrecorded", cJSON_CreateArray()) &&
                 cJSON_AddStringToObject(plan, "runRecord", record) != NULL;
     if (!built) {
-        runtime_remove_run_record(context->state, context->argument.host_id, record);
+        spisor_remove_prepared(&removal);
         cJSON_Delete(plan);
         plan = NULL;
     }
+    spisor_release_prepared_removal(&removal);
     spisor_memory_release(record);
     return plan;
 }
@@ -309,7 +311,7 @@ static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
                 cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL &&
                 cJSON_AddItemToObjectCS(answer, "plan", plan);
     if (!built) {
-        runtime_hosts_start_undo(context->state, context->argument.host_id, plan);
+        runtime_hosts_start_undo(plan);
         cJSON_Delete(plan);
         cJSON_Delete(answer);
         return NULL;
@@ -358,6 +360,6 @@ cJSON *runtime_hosts_start_operation(const cJSON *argument, cJSON **refusal) {
     return start_for(argument, refusal);
 }
 
-void runtime_hosts_start_undo(const char *state, const char *host_id, const cJSON *plan) {
-    runtime_remove_run_record(state, host_id, string_of(plan, "runRecord"));
+void runtime_hosts_start_undo(const cJSON *plan) {
+    spisor_remove_file_in_place(string_of(plan, "runRecord"));
 }
