@@ -517,11 +517,16 @@ static cJSON *get_host(const registry_request *request, cJSON **refusal) {
     return answer_with(result, refusal);
 }
 
-static int is_orphan(const cJSON *registration) {
+static int is_orphan(const cJSON *registration, int *out_of_memory) {
     const cJSON *provenance = cJSON_GetObjectItemCaseSensitive(registration, "provenance");
     const char *location = string_member(provenance, "location");
-    return location == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, location) ||
-           spisor_probe_file(location) == SPISOR_FILE_MISSING;
+    *out_of_memory = 0;
+    if (location == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, location)) {
+        return 1;
+    }
+    spisor_file_presence presence = spisor_probe_file(location);
+    *out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
+    return presence == SPISOR_FILE_MISSING;
 }
 
 static cJSON *listed_host(cJSON *registration) {
@@ -531,7 +536,9 @@ static cJSON *listed_host(cJSON *registration) {
         cJSON_Delete(registration);
         return NULL;
     }
-    if (cJSON_AddBoolToObject(entry, "orphan", is_orphan(registration)) == NULL) {
+    int out_of_memory;
+    int orphan = is_orphan(registration, &out_of_memory);
+    if (out_of_memory || cJSON_AddBoolToObject(entry, "orphan", orphan) == NULL) {
         cJSON_Delete(entry);
         return NULL;
     }

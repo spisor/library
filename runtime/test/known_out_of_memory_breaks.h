@@ -38,16 +38,16 @@ typedef struct known_out_of_memory_break {
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "secrets' set", 0, MEASURED_ON_WINDOWS,
-     "secret_file.c: file.c spisor_probe_file reads a failed wide path as an absent file"},
+     "secret_file.c make_parent_directory reads a failed directory_of allocation as an unwritable folder"},
     {OUT_OF_MEMORY_SUITE, "config's set", 0, MEASURED_ON_WINDOWS,
      "config.c lock_layer: file.c spisor_make_directories reads a failed is_directory wide path as no directory, "
      "answering OK"},
     {OUT_OF_MEMORY_SUITE, "settings' all", 0, MEASURED_ON_WINDOWS,
-     "config.c read_settings_file: file.c spisor_probe_file reads a failed wide path as an absent file, answering "
-     "OK"},
+     "config.c read_settings_file: json_file.c spisor_read_json_file: file.c spisor_read_file_reporting reads a "
+     "failed is_directory wide path as a failed read, answering OK"},
     {OUT_OF_MEMORY_SUITE, "log's write", 0, MEASURED_ON_WINDOWS,
-     "config.c read_settings_file: file.c spisor_probe_file reads a failed wide path as an absent file, so the "
-     "line is appended before OUT_OF_MEMORY"},
+     "config.c read_settings_file: json_file.c spisor_read_json_file: file.c spisor_read_file_reporting reads a "
+     "failed is_directory wide path as a failed read, so the line is appended before OUT_OF_MEMORY"},
     {OUT_OF_MEMORY_SUITE, "fetch's get", 0, MEASURED_ON_WINDOWS,
      "fetch.c open_partial reads a failed allocation as an unwritable destination"},
     {OUT_OF_MEMORY_SUITE, "detect's on_path", 0, MEASURED_ON_WINDOWS,
@@ -66,8 +66,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "change_reversal.c reverse_steps: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
      "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "lists' applications", 0, MEASURED_ON_WINDOWS,
-     "registry.c list_one: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed wide "
-     "path as an absent file, answering OK"},
+     "registry.c list_one: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting reads a failed is_directory wide path as a failed read, answering OK"},
     {OUT_OF_MEMORY_SUITE, "marketplace's remember", 0, MEASURED_ON_WINDOWS,
      "marketplace_memory.c loaded_store: file.c spisor_file_exists reads a failed wide path as an absent file, "
      "then writes the store"},
@@ -75,7 +75,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "cache_marker.c recorded_hashes: file.c spisor_read_file_reporting reads a failed is_directory wide path as "
      "a failed read, answering OK with no versions"},
     {OUT_OF_MEMORY_SUITE, "install's packages", 0, MEASURED_ON_WINDOWS,
-     "install.c merge_user_file: file.c spisor_probe_file reads a failed wide path as an absent file"},
+     "install.c merge_user_file: json_file.c spisor_read_json_file: file.c spisor_read_file_reporting reads a "
+     "failed is_directory wide path as a failed read, answering OK"},
     {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, MEASURED_ON_WINDOWS,
      "cache.c runtime_cache_sweep_operation: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
      "failed allocation as an uncreatable folder, so the lock is refused"},
@@ -114,33 +115,34 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
      "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' rename", 0, MEASURED_ON_WINDOWS,
-     "commands.c load_registration: registry.c runtime_registry_load through file.c spisor_probe_file reads a "
-     "failed wide path as an absent file"},
+     "commands.c load_registration: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OUT_OF_MEMORY_SUITE, "commands' rename onto a held name", 0, MEASURED_ON_WINDOWS,
      "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
      "wide path as an uncreatable folder, so the lock is refused, answering OK"},
     {ECOSYSTEM_SUITE, "install's ecosystem", 0, MEASURED_ON_WINDOWS,
      "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OPERATIONS_SUITE, "entry", 0, MEASURED_ON_WINDOWS,
-     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
-     "wide path as an absent file"},
+     "changes.c apply_locked: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "entry refused", 0, MEASURED_ON_WINDOWS,
-     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
-     "wide path as an absent file"},
+     "changes.c apply_locked: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "application", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
-     "a failed wide path as an absent file"},
+     "registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c spisor_read_file_reporting "
+     "answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "application on path", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
-     "a failed wide path as an absent file"},
+     "registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c spisor_read_file_reporting "
+     "answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "runtime", 0, MEASURED_ON_WINDOWS,
      "install_runtime.c runtime_on_path: on_path.c matching_file: followed_entry.c runtime_is_followed_file reads "
      "a failed wide path as no file, so a node on the PATH is acquired again"},
     {OPERATIONS_SUITE, "register_loader", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "updates' apply", 0, MEASURED_ON_WINDOWS,
-     "updates.c runtime_updates_lock_registered: registry.c runtime_registry_load through file.c "
-     "spisor_probe_file reads a failed wide path as an absent file"},
+     "updates.c runtime_updates_lock_registered: registry.c runtime_registry_load: json_file.c "
+     "spisor_read_json_file: file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out "
+     "of memory"},
     {OPERATIONS_SUITE, "updates' rollback", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting reads a failed is_directory as a failed read, answering OK"},
     {OPERATIONS_SUITE, "updates' rollback", 1, MEASURED_ON_WINDOWS,
@@ -153,8 +155,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "catalog_state.c runtime_catalog_origin_of: catalog_url.c runtime_catalog_file_url_of_path answers NULL out "
      "of memory, read as no origin"},
     {OPERATIONS_SUITE, "updates' run", 0, MEASURED_ON_WINDOWS,
-     "updates_run.c registrations_of: registry.c list_one: registry.c runtime_registry_load through file.c "
-     "spisor_probe_file reads a failed wide path as an absent file"},
+     "updates_run.c registrations_of: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "boot's read", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "boot's write", 0, MEASURED_ON_WINDOWS,
@@ -186,21 +188,22 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation "
      "as an uncreatable folder, so the lock is refused"},
     {OPERATIONS_SUITE, "hosts' list", 0, MEASURED_ON_WINDOWS,
-     "registry.c list_one: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed wide "
-     "path as an absent file"},
+     "registry.c list_one: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "hosts' remove", 0, MEASURED_ON_WINDOWS,
-     "change_reversal.c reverse_step: registry.c runtime_registry_load through file.c spisor_probe_file reads a "
-     "failed wide path as an absent file"},
+     "change_reversal.c reverse_step: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "hosts' start", 0, MEASURED_ON_WINDOWS,
-     "registry.c runtime_usable_registration: json_file.c spisor_read_json_file through file.c spisor_probe_file "
-     "reads a failed wide path as an absent file"},
+     "registry.c runtime_usable_registration: registry.c runtime_registry_load: json_file.c "
+     "spisor_read_json_file: file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out "
+     "of memory"},
     {OPERATIONS_SUITE, "loader's home", 0, MEASURED_ON_WINDOWS,
      "application_home.c candidate_home reads a failed runtime_is_followed_directory as no directory"},
     {OPERATIONS_SUITE, "loader's installed", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "changes' json-key create", 0, MEASURED_ON_WINDOWS,
-     "changes.c apply_locked: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed "
-     "wide path as an absent file"},
+     "changes.c apply_locked: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
+     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "processes' hold starting", 1, MEASURED_ON_WINDOWS,
      "holders.c runtime_write_holders_draft: file.c move_over reads a failed wide path as a failed move, "
      "answering OK without recording the started host"},

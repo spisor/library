@@ -50,9 +50,12 @@ int spisor_file_exists(const char *path) {
 }
 
 spisor_file_presence spisor_probe_file(const char *path) {
+    if (!spisor_is_convertible_path(path)) {
+        return SPISOR_FILE_UNKNOWN;
+    }
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
-        return SPISOR_FILE_UNKNOWN;
+        return SPISOR_FILE_OUT_OF_MEMORY;
     }
     DWORD attributes = GetFileAttributesW(wide);
     DWORD error = GetLastError();
