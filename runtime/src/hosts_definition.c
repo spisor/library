@@ -5,11 +5,15 @@
 
 #include "answer_storage.h"
 #include "catalog_time.h"
+#include "changes_definition.h"
 #include "definition_support.h"
 #include "hosts.h"
 #include "hosts_start.h"
+#include "install_definition.h"
 #include "json_service.h"
 #include "json_value.h"
+#include "registry_definition.h"
+#include "updates_definition.h"
 
 #define HEADER "the hosts header"
 #define REGISTER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_register_argument, environment_count)

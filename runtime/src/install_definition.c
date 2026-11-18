@@ -6,6 +6,7 @@
 #include "answer_storage.h"
 #include "catalog_listed_source.h"
 #include "definition_support.h"
+#include "install_definition.h"
 #include "identity.h"
 #include "install.h"
 #include "install_by_id.h"

@@ -6,12 +6,8 @@
 
 #include "cJSON.h"
 #include "json_service.h"
-#include "runtime/changes.h"
 #include "runtime/environment.h"
-#include "runtime/install.h"
 #include "runtime/item_version.h"
-#include "runtime/registry.h"
-#include "runtime/updates.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -77,40 +73,6 @@ spisor_status runtime_refuse_member(spisor_refusal *refusal, const char *member,
  * @implNote Defined in definition_host_target.c, linked beside the host id and platform rules it reads.
  */
 spisor_status runtime_check_host_id(spisor_refusal *refusal, const char *host_id, const char *header);
-
-/**
- * The registration as the record registry's operations take, `*json` NULL unless the answer is OK.
- *
- * @return OK; MALFORMED, the refusal filled, for a registration that is absent, short of its first shape, or holding a
- * field registry's register_host refuses; OUT_OF_MEMORY.
- * @implNote Defined in registry_definition.c, beside the record rules it reads.
- */
-spisor_status runtime_registration_record_json(const runtime_registration *registration, cJSON **json,
-                                               spisor_refusal *refusal);
-
-/**
- * Fills a runtime_install_register_loader_answer from what hosts' register answered, as a runtime_answer_filler.
- *
- * @implNote Defined in install_definition.c, where register_loader answers the same shape.
- */
-spisor_status runtime_fill_register_answer(const cJSON *answered, void *filled);
-
-/**
- * Fills every field of `answer` but its `size` and `storage` from what updates' apply answered, into `storage`.
- *
- * @return OK; OUT_OF_MEMORY, what was taken left in `storage` for its owner to release.
- * @implNote Defined in updates_definition.c, where apply answers the same shape.
- */
-spisor_status runtime_fill_apply_plan(void **storage, const cJSON *answered, runtime_updates_apply_answer *answer);
-
-/**
- * Copies the drifted changes a reversal answered, a JSON array of {sequence, kind, detail}, into `storage`.
- *
- * @return OK; OUT_OF_MEMORY, what was taken left in `storage` for its owner to release.
- * @implNote Defined in changes_definition.c, where reverse answers the same shape.
- */
-spisor_status runtime_fill_drifted(void **storage, const cJSON *drifted, const runtime_change_drift **out,
-                                  size_t *count);
 
 /** OK for a NULL platform or a platform key; otherwise MALFORMED, refused through runtime_refuse_member. */
 spisor_status runtime_check_platform(spisor_refusal *refusal, const char *platform, const char *header);

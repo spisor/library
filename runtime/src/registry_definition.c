@@ -4,6 +4,7 @@
 
 #include "answer_storage.h"
 #include "definition_support.h"
+#include "registry_definition.h"
 #include "json_service.h"
 #include "json_value.h"
 #include "paths.h"
