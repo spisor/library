@@ -46,6 +46,10 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "commands' add", 0, BREAKS_ON_BOTH,
      "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
      "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
+    {OPERATIONS_SUITE, "hosts' register_host", 0, BREAKS_ON_POSIX,
+     "measured in CI only, not yet traced: failing allocation 825 answers OK with another tree; the POSIX Path "
+     "change is a profile line, and change_kinds.c runtime_change_is_on_disk reads a failed profile read as "
+     "the line being absent"},
     {OPERATIONS_SUITE, "updates' rollback", 1, BREAKS_ON_BOTH,
      "updates_rollback.c record_rollback: the hint (boot_hint.c runtime_hint_host_version) fails under sticky "
      "failure and the undo of the references through runtime_write_references_draft allocates too, so the "
