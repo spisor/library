@@ -26,9 +26,14 @@ static FILE *stream_of(HANDLE handle, int writing) {
     return file;
 }
 
-FILE *spisor_windows_open(const char *path, int writing) {
+FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return NULL;
+    }
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL) {
+        *out_of_memory = 1;
         return NULL;
     }
     HANDLE handle = CreateFileW(wide, writing ? GENERIC_WRITE : GENERIC_READ,

@@ -4,7 +4,8 @@
 #include "windows_file.h"
 
 FILE *runtime_open_file(const char *path, runtime_file_mode mode) {
-    return spisor_windows_open(path, mode != RUNTIME_FILE_READ);
+    int out_of_memory;
+    return spisor_windows_open(path, mode != RUNTIME_FILE_READ, &out_of_memory);
 }
 
 int runtime_move_file_over(const char *from, const char *to) {
