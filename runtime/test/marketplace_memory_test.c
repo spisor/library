@@ -38,7 +38,7 @@ static catalog_answer remember(const char *marketplace, const char *name, const 
 static char *store_text(void) {
     char *path = joined_path(scratch, "marketplace-names.json");
     size_t length = 0;
-    char *text = (char *)spisor_read_file(path, &length);
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     return text;
 }

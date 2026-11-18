@@ -6,7 +6,6 @@
 #include "spisor/file.h"
 
 #include "allocation.h"
-#include "file_reading.h"
 #include "file_replacement.h"
 #include "prepared_undo.h"
 
@@ -414,11 +413,6 @@ uint8_t *spisor_read_file_reporting(const char *path, size_t *length, spisor_rea
     return bytes;
 }
 
-uint8_t *spisor_read_file(const char *path, size_t *length) {
-    spisor_read_outcome outcome;
-    return spisor_read_file_reporting(path, length, &outcome);
-}
-
 static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {
     int written = fwrite(bytes, 1, length, file) == length;
     return fclose(file) == 0 && written;
@@ -451,15 +445,15 @@ char *spisor_temporary_path_for(const char *path) {
     return temporary;
 }
 
-FILE *spisor_open_replacement(const char *target, int owner_only, spisor_prepared_removal *temporary,
+FILE *spisor_open_replacement(const char *target, int owner_only, spisor_prepared_path *temporary,
                               int *out_of_memory) {
     char *name = spisor_temporary_path_for(target);
-    spisor_status prepared = name == NULL ? SPISOR_OUT_OF_MEMORY : spisor_prepare_removal(name, temporary);
+    spisor_status prepared = name == NULL ? SPISOR_OUT_OF_MEMORY : spisor_prepare_path(name, temporary);
     spisor_memory_release(name);
     *out_of_memory = prepared == SPISOR_OUT_OF_MEMORY;
     FILE *file = prepared != SPISOR_OK ? NULL : create_temporary(temporary->path, target, owner_only, out_of_memory);
     if (file == NULL && prepared == SPISOR_OK) {
-        spisor_release_prepared_removal(temporary);
+        spisor_release_prepared_path(temporary);
     }
     return file;
 }
@@ -478,7 +472,7 @@ spisor_status spisor_append_file(const char *path, const uint8_t *bytes, size_t 
 }
 
 static spisor_status replace_resolved_file(const char *target, const uint8_t *bytes, size_t length, int owner_only) {
-    spisor_prepared_removal temporary;
+    spisor_prepared_path temporary;
     int out_of_memory;
     FILE *file = spisor_open_replacement(target, owner_only, &temporary, &out_of_memory);
     if (file == NULL) {
@@ -487,9 +481,9 @@ static spisor_status replace_resolved_file(const char *target, const uint8_t *by
     out_of_memory = 0;
     int replaced = write_and_close(file, bytes, length) && move_over(temporary.path, target, &out_of_memory);
     if (!replaced) {
-        spisor_remove_prepared(&temporary);
+        spisor_remove_prepared_file(&temporary);
     }
-    spisor_release_prepared_removal(&temporary);
+    spisor_release_prepared_path(&temporary);
     return replaced ? SPISOR_OK : refused_unless_out_of_memory(out_of_memory);
 }
 

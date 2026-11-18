@@ -62,7 +62,7 @@ static char *read_settings_file(const scratch_home *home, const char *name) {
     char path[1200];
     size_t length = 0;
     snprintf(path, sizeof path, "%s/%s.json", home->config_directory, name);
-    return (char *)spisor_read_file(path, &length);
+    return (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
 }
 
 static cJSON *request_for(const scratch_home *home, const char *plugin, const char *config_json, const char *names_json) {
@@ -494,7 +494,7 @@ static void expect_portable_file(const scratch_home *home, const char *plugin, c
     char path[1400];
     size_t length = 0;
     portable_file_path(home, plugin, path, sizeof path);
-    char *actual = (char *)spisor_read_file(path, &length);
+    char *actual = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(actual, expected, label);
     spisor_memory_release(actual);
 }
@@ -684,7 +684,7 @@ static void portable_set_through_a_dotfiles_link(void) {
     finish(&result);
     CHECK(is_link(link));
     size_t length = 0;
-    char *content = (char *)spisor_read_file(target, &length);
+    char *content = (char *)spisor_read_file_reporting(target, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(content, "{\n  \"kept\": true,\n  \"added\": 1\n}\n", "the link's target changed");
     spisor_memory_release(content);
     CHECK(count_temporary_entries(dotfiles) == 0);
@@ -710,7 +710,7 @@ static void portable_set_through_a_link_to_a_malformed_file_is_refused(void) {
     finish(&refused);
     CHECK(is_link(link));
     size_t length = 0;
-    char *content = (char *)spisor_read_file(target, &length);
+    char *content = (char *)spisor_read_file_reporting(target, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(content, "{\"a\":", "the link's malformed target unchanged");
     spisor_memory_release(content);
     CHECK(count_temporary_entries(dotfiles) == 0);

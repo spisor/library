@@ -79,7 +79,7 @@ static inline int exists_in(const char *base, const char *rest) {
 static inline char *text_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     char *text = bytes == NULL ? NULL : spisor_memory_allocate(length + 1);
     if (text != NULL) {

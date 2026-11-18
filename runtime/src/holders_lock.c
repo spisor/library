@@ -69,9 +69,13 @@ static char *new_token(void) {
     return token;
 }
 
-static char *read_lock(const char *path) {
+/** The lock's token, freed; NULL when there is none to read, with *out_of_memory set when memory ran out. */
+static char *read_lock(const char *path, int *out_of_memory) {
     size_t length = 0;
-    return (char *)spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    char *token = (char *)spisor_read_file_reporting(path, &length, &outcome);
+    *out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
+    return token;
 }
 
 /** parseInt(token, 10): leading whitespace, an optional sign, then digits; NaN when there are none. */
@@ -127,7 +131,8 @@ static void remove_stale_lock(const char *path, const char *judged) {
         spisor_memory_release(moved);
         return;
     }
-    char *held = read_lock(moved);
+    int out_of_memory = 0;
+    char *held = read_lock(moved, &out_of_memory);
     if (held == NULL || strcmp(held, judged) != 0) {
         link_back(moved, path);
     }
@@ -196,7 +201,12 @@ spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **gua
             release_guard(made);
             return refused;
         }
-        char *held = read_lock(path);
+        int out_of_memory = 0;
+        char *held = read_lock(path, &out_of_memory);
+        if (out_of_memory) {
+            release_guard(made);
+            return SPISOR_OUT_OF_MEMORY;
+        }
         int stale = held != NULL && is_stale(path, held);
         if (stale) {
             remove_stale_lock(path, held);
@@ -212,7 +222,8 @@ void runtime_unlock_holders(runtime_holders_guard *guard) {
     if (guard == NULL) {
         return;
     }
-    char *held = read_lock(guard->path);
+    int out_of_memory = 0;
+    char *held = read_lock(guard->path, &out_of_memory);
     if (held != NULL && strcmp(held, guard->token) == 0) {
         runtime_remove_file_entry(guard->path);
     }

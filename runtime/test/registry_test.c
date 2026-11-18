@@ -509,7 +509,7 @@ static void unusable_places_are_refused(void) {
 
 static void expect_file_bytes(const char *path, const char *expected, const char *label) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text((const char *)bytes, expected, label);
     spisor_memory_release(bytes);
 }

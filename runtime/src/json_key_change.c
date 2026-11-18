@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "directory_tree.h"
-#include "file_reading.h"
 #include "json_edit.h"
 #include "paths.h"
 #include "spisor/file.h"

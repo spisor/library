@@ -29,11 +29,12 @@ static cJSON *refusal_naming(const char *first, const char *second, const char *
 
 static cJSON *read_list(const char *path, cJSON **refusal) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     int was_read = bytes != NULL;
     cJSON *list = was_read ? spisor_parse_json(bytes, length) : NULL;
     spisor_memory_release(bytes);
-    if (list == NULL) {
+    if (list == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY) {
         *refusal = refusal_naming(was_read ? "the list is not JSON: " : "the list could not be read: ", path,
                                   "check that --list names a readable marketplace list");
     }
@@ -168,7 +169,8 @@ static const char *token_from(const char *variable, cJSON **refusal) {
 /** The copy already at path, or NULL when there is none or, with *refusal set, when it is not JSON. */
 static cJSON *read_previous(const char *path, cJSON **refusal) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     cJSON *previous = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
     if (bytes != NULL && previous == NULL) {
         *refusal = refusal_naming("the copy already at --out is not JSON: ", path,

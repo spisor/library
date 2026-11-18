@@ -42,12 +42,15 @@ static const char *base_name_of(const char *path) {
 static int copy_into(const char *source, const char *directory, const char *name) {
     char *destination = joined(directory, name);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(source, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(source, &length, &outcome);
     int copied = destination != NULL && bytes != NULL && spisor_replace_file(destination, bytes, length) == SPISOR_OK;
 #if !defined(_WIN32)
     copied = copied && chmod(destination, 0755) == 0;
 #endif
-    if (!copied) {
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        fprintf(stderr, "stage-bundle: memory ran out reading %s\n", source);
+    } else if (!copied) {
         fprintf(stderr, "stage-bundle: %s could not be copied to %s\n", source, destination == NULL ? name : destination);
     }
     spisor_memory_release(bytes);

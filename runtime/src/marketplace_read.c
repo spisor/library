@@ -130,9 +130,10 @@ static char *fetched_text(const reading *order, size_t *length, cJSON **refusal)
     if (!fetch_copy(order, refusal)) {
         return NULL;
     }
-    char *bytes = (char *)spisor_read_file(order->destination, length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    char *bytes = (char *)spisor_read_file_reporting(order->destination, length, &outcome);
     runtime_remove_file_entry(order->destination);
-    if (bytes == NULL) {
+    if (bytes == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY) {
         refuse(refusal, "try again", "%s was fetched but the download could not be read", order->source_id);
     }
     return bytes;

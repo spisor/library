@@ -9,7 +9,8 @@
 
 static cJSON *load_vectors(void) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(SPISOR_JSON_WRITE_VECTORS_PATH, &length);
+    uint8_t *bytes = spisor_read_file_reporting(SPISOR_JSON_WRITE_VECTORS_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
     if (bytes == NULL) {
         fprintf(stderr, "cannot read %s\n", SPISOR_JSON_WRITE_VECTORS_PATH);
         return NULL;

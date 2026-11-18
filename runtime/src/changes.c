@@ -287,7 +287,7 @@ typedef enum undo_kind { UNDO_BY_REVERSAL, UNDO_BY_REMOVING_FILE, UNDO_BY_REMOVI
 /** What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. */
 typedef struct prepared_undo {
     undo_kind kind;
-    spisor_prepared_removal removal;
+    spisor_prepared_path removal;
 } prepared_undo;
 
 static int is_created_json_file(const cJSON *entry) {
@@ -307,7 +307,7 @@ static spisor_status prepare_undo(const cJSON *entry, prepared_undo *undo) {
         undo->kind = UNDO_BY_REMOVING_FILE;
         path = text_of(entry, "file");
     }
-    spisor_status prepared = path == NULL ? SPISOR_OK : spisor_prepare_removal(path, &undo->removal);
+    spisor_status prepared = path == NULL ? SPISOR_OK : spisor_prepare_path(path, &undo->removal);
     if (prepared == SPISOR_REFUSED) {
         undo->kind = UNDO_BY_REVERSAL;
         prepared = SPISOR_OK;
@@ -318,7 +318,7 @@ static spisor_status prepare_undo(const cJSON *entry, prepared_undo *undo) {
 /** @implNote A change that edits what was there before, rather than creating it, is undone by its kind's reversal. */
 static int is_undone(const cJSON *entry, const prepared_undo *undo) {
     if (undo->kind == UNDO_BY_REMOVING_FILE) {
-        return spisor_remove_prepared(&undo->removal);
+        return spisor_remove_prepared_file(&undo->removal);
     }
     if (undo->kind == UNDO_BY_REMOVING_DIRECTORY) {
         return spisor_remove_prepared_directory(&undo->removal);
@@ -368,7 +368,7 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
         return;
     }
     perform_prepared(session, entry, &undo);
-    spisor_release_prepared_removal(&undo.removal);
+    spisor_release_prepared_path(&undo.removal);
 }
 
 static int set_counter(cJSON *registration, long next) {

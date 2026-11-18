@@ -228,7 +228,8 @@ static char *destination_of(const char *out, const catalog_input *input, const c
 static uint8_t *bytes_of(const cJSON *file, size_t *length) {
     const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(file, HOST_GENERATED_TEXT));
     if (!cJSON_IsObject(file)) {
-        return spisor_read_file(file->valuestring, length);
+        spisor_read_outcome outcome = SPISOR_READ_FAILED;
+        return spisor_read_file_reporting(file->valuestring, length, &outcome);
     }
     *length = text == NULL ? 0 : strlen(text);
     uint8_t *bytes = text == NULL ? NULL : spisor_memory_allocate(*length + 1);

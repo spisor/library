@@ -49,12 +49,14 @@ static void a_missing_file_does_not(void) {
     CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/missing.json") != SPISOR_FILE_PRESENT);
     CHECK(spisor_probe_file("") != SPISOR_FILE_PRESENT);
     size_t length = 7;
-    CHECK(spisor_read_file(SPISOR_SCRATCH_PATH "/missing.json", &length) == NULL);
+    CHECK(spisor_read_file_reporting(SPISOR_SCRATCH_PATH "/missing.json", &length,
+                                     &(spisor_read_outcome){SPISOR_READ_FAILED}) == NULL);
 }
 
 static void a_directory_is_not_readable(void) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(SPISOR_SCRATCH_PATH, &length);
+    uint8_t *bytes = spisor_read_file_reporting(SPISOR_SCRATCH_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes == NULL);
     spisor_memory_release(bytes);
 }
@@ -63,7 +65,7 @@ static void a_non_ascii_name_round_trips(void) {
     CHECK(write_fixture(NON_ASCII_NAME, CONTENT));
     CHECK(spisor_probe_file(NON_ASCII_NAME) == SPISOR_FILE_PRESENT);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(NON_ASCII_NAME, &length);
+    uint8_t *bytes = spisor_read_file_reporting(NON_ASCII_NAME, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL);
     CHECK(length == strlen(CONTENT));
     if (bytes != NULL) {
@@ -76,7 +78,7 @@ static void an_empty_file_reads_as_empty(void) {
     const char *path = SPISOR_SCRATCH_PATH "/empty.txt";
     CHECK(write_fixture(path, ""));
     size_t length = 9;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL);
     CHECK(length == 0);
     spisor_memory_release(bytes);
@@ -84,7 +86,7 @@ static void an_empty_file_reads_as_empty(void) {
 
 static void read_back_equals(const char *path, const char *expected) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL);
     if (bytes != NULL) {
         CHECK(length == strlen(expected));
@@ -216,7 +218,7 @@ static void private_replace_creates_and_keeps_an_owner_only_file(void) {
 }
 
 static int replacement_mode(const char *target, int owner_only) {
-    spisor_prepared_removal temporary;
+    spisor_prepared_path temporary;
     int out_of_memory;
     FILE *file = spisor_open_replacement(target, owner_only, &temporary, &out_of_memory);
     if (file == NULL) {
@@ -224,8 +226,8 @@ static int replacement_mode(const char *target, int owner_only) {
     }
     int mode = mode_of(temporary.path);
     fclose(file);
-    spisor_remove_prepared(&temporary);
-    spisor_release_prepared_removal(&temporary);
+    spisor_remove_prepared_file(&temporary);
+    spisor_release_prepared_path(&temporary);
     return mode;
 }
 
@@ -304,7 +306,7 @@ static uint8_t *bytes_of_ping(size_t *length) {
     char ping[MAX_PATH + 16];
     UINT used = GetSystemDirectoryA(system, MAX_PATH);
     snprintf(ping, sizeof ping, "%.*s\\ping.exe", (int)used, system);
-    return spisor_read_file(ping, length);
+    return spisor_read_file_reporting(ping, length, &(spisor_read_outcome){SPISOR_READ_FAILED});
 }
 
 static void stop_image(PROCESS_INFORMATION *information) {

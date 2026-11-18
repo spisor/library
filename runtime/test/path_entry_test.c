@@ -400,7 +400,7 @@ static int home_file_is(const scratch *place, const char *relative, const char *
     char path[1400];
     in_home(place, relative, path, sizeof path);
     size_t length = 0;
-    char *actual = (char *)spisor_read_file(path, &length);
+    char *actual = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int same = check_text(actual, expected, relative);
     spisor_memory_release(actual);
     return same;

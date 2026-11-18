@@ -55,7 +55,7 @@ static void an_append_writes_or_memory_is_answered_with_nothing_made(void) {
         spisor_memory_fail_at(0);
         if (!failed) {
             size_t length = 0;
-            uint8_t *bytes = spisor_read_file(file, &length);
+            uint8_t *bytes = spisor_read_file_reporting(file, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
             CHECK(appended == SPISOR_OK && bytes != NULL && length == 5 && memcmp(bytes, "line\n", 5) == 0);
             spisor_memory_release(bytes);
             CHECK(spisor_memory_live_blocks() == 0);

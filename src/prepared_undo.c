@@ -34,31 +34,31 @@ static char *copy_of(const char *text) {
 }
 
 #if defined(_WIN32)
-spisor_status spisor_prepare_removal(const char *path, spisor_prepared_removal *removal) {
-    removal->path = NULL;
-    removal->wide = NULL;
+spisor_status spisor_prepare_path(const char *path, spisor_prepared_path *prepared) {
+    prepared->path = NULL;
+    prepared->wide = NULL;
     if (!spisor_is_convertible_path(path)) {
         return SPISOR_REFUSED;
     }
-    removal->path = copy_of(path);
-    removal->wide = removal->path == NULL ? NULL : spisor_wide_path(path);
-    if (removal->wide == NULL) {
-        spisor_release_prepared_removal(removal);
+    prepared->path = copy_of(path);
+    prepared->wide = prepared->path == NULL ? NULL : spisor_wide_path(path);
+    if (prepared->wide == NULL) {
+        spisor_release_prepared_path(prepared);
         return SPISOR_OUT_OF_MEMORY;
     }
     return SPISOR_OK;
 }
 
-int spisor_remove_prepared(const spisor_prepared_removal *removal) {
-    if (removal->wide == NULL || DeleteFileW(removal->wide)) {
+int spisor_remove_prepared_file(const spisor_prepared_path *prepared) {
+    if (prepared->wide == NULL || DeleteFileW(prepared->wide)) {
         return 1;
     }
     DWORD error = GetLastError();
     return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
 }
 
-int spisor_remove_prepared_directory(const spisor_prepared_removal *removal) {
-    if (removal->wide == NULL || RemoveDirectoryW(removal->wide)) {
+int spisor_remove_prepared_directory(const spisor_prepared_path *prepared) {
+    if (prepared->wide == NULL || RemoveDirectoryW(prepared->wide)) {
         return 1;
     }
     DWORD error = GetLastError();
@@ -104,37 +104,37 @@ static int write_temporary(const spisor_prepared_replacement *replacement, const
     return CloseHandle(handle) && written;
 }
 
-static int move_temporary(const spisor_prepared_replacement *replacement) {
-    return spisor_windows_move_wide_over(replacement->temporary.wide, replacement->target.wide);
+int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_prepared_path *to) {
+    return from->wide != NULL && to->wide != NULL && spisor_windows_move_wide_over(from->wide, to->wide);
 }
 
-void spisor_release_prepared_removal(spisor_prepared_removal *removal) {
-    spisor_memory_release(removal->wide);
-    spisor_memory_release(removal->path);
-    removal->wide = NULL;
-    removal->path = NULL;
+void spisor_release_prepared_path(spisor_prepared_path *prepared) {
+    spisor_memory_release(prepared->wide);
+    spisor_memory_release(prepared->path);
+    prepared->wide = NULL;
+    prepared->path = NULL;
 }
 #else
-spisor_status spisor_prepare_removal(const char *path, spisor_prepared_removal *removal) {
-    removal->path = copy_of(path);
-    return removal->path == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+spisor_status spisor_prepare_path(const char *path, spisor_prepared_path *prepared) {
+    prepared->path = copy_of(path);
+    return prepared->path == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-int spisor_remove_prepared(const spisor_prepared_removal *removal) {
-    return removal->path == NULL || remove(removal->path) == 0 || errno == ENOENT;
+int spisor_remove_prepared_file(const spisor_prepared_path *prepared) {
+    return prepared->path == NULL || remove(prepared->path) == 0 || errno == ENOENT;
 }
 
-int spisor_remove_prepared_directory(const spisor_prepared_removal *removal) {
-    return removal->path == NULL || rmdir(removal->path) == 0 || errno == ENOENT;
+int spisor_remove_prepared_directory(const spisor_prepared_path *prepared) {
+    return prepared->path == NULL || rmdir(prepared->path) == 0 || errno == ENOENT;
 }
 
 int spisor_remove_file_in_place(const char *path) {
     return path == NULL || remove(path) == 0 || errno == ENOENT;
 }
 
-void spisor_release_prepared_removal(spisor_prepared_removal *removal) {
-    spisor_memory_release(removal->path);
-    removal->path = NULL;
+void spisor_release_prepared_path(spisor_prepared_path *prepared) {
+    spisor_memory_release(prepared->path);
+    prepared->path = NULL;
 }
 
 static mode_t replacement_mode(const char *target) {
@@ -164,8 +164,8 @@ static int write_temporary(const spisor_prepared_replacement *replacement, const
     return close(descriptor) == 0 && written;
 }
 
-static int move_temporary(const spisor_prepared_replacement *replacement) {
-    return rename(replacement->temporary.path, replacement->target.path) == 0;
+int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_prepared_path *to) {
+    return from->path != NULL && to->path != NULL && rename(from->path, to->path) == 0;
 }
 #endif
 
@@ -173,10 +173,10 @@ spisor_status spisor_prepare_replacement(const char *path, spisor_prepared_repla
     memset(replacement, 0, sizeof *replacement);
     char *temporary = spisor_temporary_path_for(path);
     spisor_status prepared = temporary == NULL ? SPISOR_OUT_OF_MEMORY
-                                               : spisor_prepare_removal(temporary, &replacement->temporary);
+                                               : spisor_prepare_path(temporary, &replacement->temporary);
     spisor_memory_release(temporary);
     if (prepared == SPISOR_OK) {
-        prepared = spisor_prepare_removal(path, &replacement->target);
+        prepared = spisor_prepare_path(path, &replacement->target);
     }
     if (prepared != SPISOR_OK) {
         spisor_release_prepared_replacement(replacement);
@@ -185,14 +185,15 @@ spisor_status spisor_prepare_replacement(const char *path, spisor_prepared_repla
 }
 
 int spisor_replace_prepared(const spisor_prepared_replacement *replacement, const uint8_t *bytes, size_t length) {
-    int replaced = write_temporary(replacement, bytes, length) && move_temporary(replacement);
+    int replaced = write_temporary(replacement, bytes, length) &&
+                   spisor_move_prepared_file(&replacement->temporary, &replacement->target);
     if (!replaced) {
-        spisor_remove_prepared(&replacement->temporary);
+        spisor_remove_prepared_file(&replacement->temporary);
     }
     return replaced;
 }
 
 void spisor_release_prepared_replacement(spisor_prepared_replacement *replacement) {
-    spisor_release_prepared_removal(&replacement->temporary);
-    spisor_release_prepared_removal(&replacement->target);
+    spisor_release_prepared_path(&replacement->temporary);
+    spisor_release_prepared_path(&replacement->target);
 }
