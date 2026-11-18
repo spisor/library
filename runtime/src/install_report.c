@@ -54,16 +54,6 @@ const char *runtime_install_target_version(const cJSON *catalog, const cJSON *ta
     return item == NULL ? NULL : pin != NULL ? pin : runtime_install_text(item, "latest");
 }
 
-static cJSON *install_call(const cJSON *item, const char *id, const char *version, const char *cache) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || cJSON_AddStringToObject(call, "cache", cache) == NULL ||
-        cJSON_AddStringToObject(call, "id", id) == NULL || !runtime_install_copy_into(call, "item", item) ||
-        cJSON_AddStringToObject(call, "version", version) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 static int record_installed(cJSON *report, const char *id, const char *version, const cJSON *answer) {
     if (cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer, "fetched")) == 0) {
@@ -102,7 +92,8 @@ const char *runtime_install_item(const cJSON *catalog, const cJSON *target, cons
         return NULL;
     }
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_cache_install_operation, install_call(item, id, version, cache), &refusal);
+    runtime_cache_install_request request = {cache, id, item, version, NULL};
+    cJSON *answer = runtime_cache_finish_installation(runtime_cache_install_storing(&request, &refusal), &refusal);
     if (answer == NULL) {
         *out_of_memory = !runtime_install_report_refusal(report, id, refusal);
         return NULL;

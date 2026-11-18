@@ -465,21 +465,6 @@ static int read_release_index(const install_request *request, const cJSON *repos
     return index->item != NULL && is_plugin_item(index->item, refusal);
 }
 
-static cJSON *deploy_argument(const char *directory, const char *plugin_directory, const char *id, const char *name,
-                              const char *replaces) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON *identity = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "identity");
-    int built = identity != NULL && cJSON_AddStringToObject(identity, "id", id) != NULL &&
-                cJSON_AddStringToObject(identity, "name", name) != NULL &&
-                cJSON_AddStringToObject(argument, "directory", directory) != NULL &&
-                cJSON_AddStringToObject(argument, "pluginDir", plugin_directory) != NULL &&
-                (replaces == NULL || cJSON_AddStringToObject(argument, "replaces", replaces) != NULL);
-    if (!built) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    return argument;
-}
 
 static const char *chosen_version(const install_request *request, const release_index *index, cJSON **refusal) {
     const char *version = request->version != NULL ? request->version : text_of(index->item, "latest");
@@ -496,16 +481,10 @@ static const char *install_and_deploy(const install_request *request, const cJSO
     cJSON *installed = version == NULL ? NULL
                                        : runtime_cache_install_version(request->cache, request->id, index->item, version,
                                                                        runtime_platform_key(), refusal);
-    const char *directory = text_of(installed, "directory");
-    cJSON *deployed = directory == NULL ? NULL
-                                        : runtime_call_operation(runtime_cache_deploy_operation,
-                                                                 deploy_argument(directory, request->plugin_directory, request->id,
-                                                                                 text_of(repository, "name"),
-                                                                                 request->replaces),
-                                                                 refusal);
+    runtime_cache_deploy_request deploy = {text_of(installed, "directory"), request->plugin_directory, request->id,
+                                           text_of(repository, "name"), request->replaces};
+    int succeeded = deploy.directory != NULL && runtime_cache_deploy(&deploy, refusal);
     cJSON_Delete(installed);
-    int succeeded = deployed != NULL;
-    cJSON_Delete(deployed);
     return succeeded ? version : NULL;
 }
 

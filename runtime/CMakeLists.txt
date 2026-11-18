@@ -202,7 +202,7 @@ target_include_directories(runtime_processes PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_processes PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_processes)
 
-set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c src/hosts.c
+set(runtime_hosts_sources src/application_home.c src/application_provenance.c src/followed_entry.c
     src/hosts_register.c src/hosts_remove.c src/lists.c src/loader_installed.c
     src/loader_definition.c src/loader_standard.c src/loader_application_facts.c src/entry_template.c src/on_path.c
     src/lists_definition.c)

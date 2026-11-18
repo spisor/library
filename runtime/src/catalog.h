@@ -6,16 +6,16 @@
 
 /**
  * @file
- * The catalog service's operations over JSON, for runtime's own callers: each answers its result, or NULL with *refusal
- * set to {message, fix}, or with it NULL when memory runs out.
+ * The catalog service's functions, for runtime's own callers: each answers its result, or NULL with *refusal set to
+ * {message, fix}, or with it NULL when memory runs out.
  */
 
 /**
- * catalog's read: {text, origin} answers {catalog}, the index checked against catalog.schema.json and the
- * rules no schema can say, every file url resolved against origin; an index it refuses is refused with a
+ * catalog's read: the index text, read from origin, as {catalog}, the index checked against catalog.schema.json and
+ * the rules no schema can say, every file url resolved against origin; an index it refuses is refused with a
  * message naming the JSON pointer at fault.
  */
-cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_catalog_read(const char *text, const char *origin, cJSON **refusal);
 
 /**
  * catalog's sources: {sources, skipped}, from the sources `settings`, the merged settings object, name under
@@ -23,8 +23,8 @@ cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal);
  */
 cJSON *runtime_catalog_sources(const cJSON *settings);
 
-/** catalog's merge: {catalogs: [{source, catalog}]} answers {catalog, shadowed}, an earlier source winning an id. */
-cJSON *runtime_catalog_merge_operation(const cJSON *argument, cJSON **refusal);
+/** catalog's merge: catalogs, [{source, catalog}], as {catalog, shadowed}, an earlier source winning an id. */
+cJSON *runtime_catalog_merge(const cJSON *catalogs, cJSON **refusal);
 
 /** One check: the source as catalog's sources answers it, the cache place, the time now, and the update interval. */
 typedef struct runtime_catalog_check_request {

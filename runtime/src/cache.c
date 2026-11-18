@@ -11,29 +11,25 @@
 #include "hosts_lock.h"
 #include "platform_key.h"
 
-static const char *nonempty_text(const cJSON *argument, const char *member) {
-    const char *text = runtime_catalog_text_member(argument, member);
+static const char *nonempty(const char *text) {
     return text != NULL && text[0] != 0 ? text : NULL;
 }
 
-/** The platform member, this machine's key when it is absent, or NULL when it is there but not text. */
-static const char *platform_member(const cJSON *argument) {
-    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
-    if (platform == NULL) {
-        return runtime_platform_key();
-    }
-    return cJSON_IsString(platform) ? platform->valuestring : NULL;
+/** The platform a call names, this machine's key for NULL. */
+static const char *platform_or_own(const char *platform) {
+    return platform == NULL ? runtime_platform_key() : platform;
 }
 
 #define CACHE_SHAPE "the cache folder's path"
-#define PLATFORM_SHAPE "a platform key such as linux-x64, or leave it out"
 
-runtime_cache_installation *runtime_cache_install_storing(const cJSON *argument, cJSON **refusal) {
-    const char *cache = nonempty_text(argument, "cache");
-    const char *id = nonempty_text(argument, "id");
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "item");
-    const char *version = nonempty_text(argument, "version");
-    const char *platform = platform_member(argument);
+runtime_cache_installation *runtime_cache_install_storing(const runtime_cache_install_request *request,
+                                                          cJSON **refusal) {
+    const char *cache = nonempty(request->cache);
+    const char *id = nonempty(request->id);
+    const cJSON *item = request->item;
+    const char *version = nonempty(request->version);
+    const char *platform = platform_or_own(request->platform);
+    *refusal = NULL;
     if (cache == NULL) {
         runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
         return NULL;
@@ -50,39 +46,28 @@ runtime_cache_installation *runtime_cache_install_storing(const cJSON *argument,
         runtime_catalog_refuse_member("version", "one of the versions the item lists", refusal);
         return NULL;
     }
-    if (platform == NULL) {
-        runtime_catalog_refuse_member("platform", PLATFORM_SHAPE, refusal);
-        return NULL;
-    }
     return runtime_cache_store_version(cache, id, item, version, platform, refusal);
 }
 
-cJSON *runtime_cache_install_operation(const cJSON *argument, cJSON **refusal) {
-    return runtime_cache_finish_installation(runtime_cache_install_storing(argument, refusal), refusal);
-}
-
-cJSON *runtime_cache_installed_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = nonempty_text(argument, "cache");
-    const char *platform = platform_member(argument);
+cJSON *runtime_cache_installed(const char *cache, const char *platform, cJSON **refusal) {
+    const char *own_platform = platform_or_own(platform);
     cJSON *answer;
-    if (cache == NULL) {
+    *refusal = NULL;
+    if (nonempty(cache) == NULL) {
         return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
-    }
-    if (platform == NULL) {
-        return runtime_catalog_refuse_member("platform", PLATFORM_SHAPE, refusal);
     }
     answer = cJSON_CreateObject();
     if (!runtime_catalog_attach(answer, "bundles", runtime_cache_installed_bundles(cache)) ||
-        !runtime_catalog_attach(answer, "libraries", runtime_cache_installed_libraries(cache, platform))) {
+        !runtime_catalog_attach(answer, "libraries", runtime_cache_installed_libraries(cache, own_platform))) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-cJSON *runtime_cache_check_operation(const cJSON *argument, cJSON **refusal) {
-    const char *directory = nonempty_text(argument, "directory");
-    if (directory == NULL) {
+cJSON *runtime_cache_check(const char *directory, cJSON **refusal) {
+    *refusal = NULL;
+    if (nonempty(directory) == NULL) {
         return runtime_catalog_refuse_member("directory", "an installed version's folder", refusal);
     }
     return runtime_cache_check_version(directory);
@@ -102,22 +87,17 @@ static cJSON *answer_of(const char *name, cJSON *item) {
     return answer;
 }
 
-cJSON *runtime_cache_damaged_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = nonempty_text(argument, "cache");
-    const char *platform = platform_member(argument);
-    if (cache == NULL) {
+cJSON *runtime_cache_damaged(const char *cache, const char *platform, cJSON **refusal) {
+    *refusal = NULL;
+    if (nonempty(cache) == NULL) {
         return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
     }
-    if (platform == NULL) {
-        return runtime_catalog_refuse_member("platform", PLATFORM_SHAPE, refusal);
-    }
-    return answer_of("damaged", runtime_cache_damaged_versions(cache, platform));
+    return answer_of("damaged", runtime_cache_damaged_versions(cache, platform_or_own(platform)));
 }
 
-cJSON *runtime_cache_locate_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = nonempty_text(argument, "cache");
-    const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(argument, "plugins");
-    if (cache == NULL) {
+cJSON *runtime_cache_locate(const char *cache, const cJSON *plugins, cJSON **refusal) {
+    *refusal = NULL;
+    if (nonempty(cache) == NULL) {
         return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
     }
     if (!cJSON_IsObject(plugins)) {
@@ -126,13 +106,12 @@ cJSON *runtime_cache_locate_operation(const cJSON *argument, cJSON **refusal) {
     return runtime_cache_locate_plugins(cache, plugins);
 }
 
-cJSON *runtime_cache_sweep_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = nonempty_text(argument, "cache");
-    const char *state = nonempty_text(argument, "state");
-    if (cache == NULL) {
+cJSON *runtime_cache_sweep(const char *cache, const char *state, cJSON **refusal) {
+    *refusal = NULL;
+    if (nonempty(cache) == NULL) {
         return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
     }
-    if (state == NULL) {
+    if (nonempty(state) == NULL) {
         return runtime_catalog_refuse_member("state", "the state folder's path", refusal);
     }
     spisor_lock *guard;

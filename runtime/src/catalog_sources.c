@@ -164,8 +164,8 @@ static cJSON *merge(const cJSON *catalogs, cJSON **refusal) {
     return result;
 }
 
-cJSON *runtime_catalog_merge_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *catalogs = cJSON_GetObjectItemCaseSensitive(argument, "catalogs");
+cJSON *runtime_catalog_merge(const cJSON *catalogs, cJSON **refusal) {
+    *refusal = NULL;
     return cJSON_IsArray(catalogs) ? merge(catalogs, refusal)
                                    : runtime_catalog_refuse_member("catalogs",
                                                                    "an array of {source, catalog}, each catalog with items",

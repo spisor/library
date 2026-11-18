@@ -35,21 +35,6 @@ static spisor_status refuse_missing(spisor_refusal *refusal, const char *member)
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
-static int add_text(cJSON *call, const char *name, const char *text) {
-    return text == NULL || cJSON_AddStringToObject(call, name, text) != NULL;
-}
-
-/** A call of up to three named texts, a NULL text left out; NULL when memory runs out. */
-static cJSON *call_of(const char *const *names, const char *const *texts, size_t count) {
-    cJSON *call = cJSON_CreateObject();
-    for (size_t index = 0; call != NULL && index < count; index++) {
-        if (!add_text(call, names[index], texts[index])) {
-            cJSON_Delete(call);
-            call = NULL;
-        }
-    }
-    return call;
-}
 
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
@@ -91,9 +76,10 @@ static spisor_status fill_install(const cJSON *answered, void *filled) {
 }
 
 /** Stores the version and takes the answer's storage before the completion marker is written. */
-static spisor_status serve_install(cJSON *call, runtime_cache_install_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_install(const runtime_cache_install_request *request, runtime_cache_install_answer *answer,
+                                   spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    runtime_cache_installation *installation = runtime_cache_install_storing(call, &operation_refusal);
+    runtime_cache_installation *installation = runtime_cache_install_storing(request, &operation_refusal);
     spisor_status status = installation == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                                 : fill_install(runtime_cache_installation_answer(installation), answer);
     if (status == SPISOR_OK && !runtime_cache_mark_installation(installation, &operation_refusal)) {
@@ -103,7 +89,6 @@ static spisor_status serve_install(cJSON *call, runtime_cache_install_answer *an
         runtime_release_stored_answer(answer, INSTALL_ANSWER_SHAPE);
     }
     runtime_cache_free_installation(installation);
-    cJSON_Delete(call);
     return status;
 }
 
@@ -118,10 +103,7 @@ static spisor_status item_json(const spisor_value *item, cJSON **json) {
 
 static spisor_status install(void *context, const runtime_cache_install_argument *argument,
                              runtime_cache_install_answer *answer, spisor_refusal *refusal) {
-    const char *names[4] = {"cache", "id", "version", "platform"};
-    const char *texts[4];
     cJSON *item = NULL;
-    cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, INSTALL_SHAPE) ||
@@ -143,17 +125,11 @@ static spisor_status install(void *context, const runtime_cache_install_argument
     if (status != SPISOR_OK) {
         return status;
     }
-    texts[0] = argument->cache;
-    texts[1] = argument->id;
-    texts[2] = argument->version;
-    texts[3] = argument->platform;
-    call = call_of(names, texts, 4);
-    if (call == NULL || !cJSON_AddItemToObject(call, "item", item)) {
-        cJSON_Delete(item);
-        cJSON_Delete(call);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    return serve_install(call, answer, refusal);
+    runtime_cache_install_request request = {argument->cache, argument->id, item, argument->version,
+                                             argument->platform};
+    status = serve_install(&request, answer, refusal);
+    cJSON_Delete(item);
+    return status;
 }
 
 /** An {id: [version]} object as an array of versions, in its order. */
@@ -192,31 +168,21 @@ static spisor_status fill_installed(const cJSON *answered, void *filled) {
                : fill_versions(&answer->storage, libraries, &answer->libraries, &answer->library_count);
 }
 
-static spisor_status place_call(const runtime_cache_place_argument *argument, cJSON **call, spisor_refusal *refusal) {
-    const char *names[2] = {"cache", "platform"};
-    const char *texts[2];
-    if (!runtime_is_text(argument->cache)) {
-        return refuse_missing(refusal, "cache");
-    }
-    texts[0] = argument->cache;
-    texts[1] = argument->platform;
-    *call = call_of(names, texts, 2);
-    return *call == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-}
-
 static spisor_status installed(void *context, const runtime_cache_place_argument *argument,
                                runtime_cache_installed_answer *answer, spisor_refusal *refusal) {
-    cJSON *call = NULL;
-    spisor_status status;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, INSTALLED_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's installed");
     }
-    status = place_call(argument, &call, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_cache_installed_operation, call, fill_installed, answer,
-                                       INSTALLED_ANSWER_SHAPE, refusal);
+    if (!runtime_is_text(argument->cache)) {
+        return refuse_missing(refusal, "cache");
+    }
+    answered = runtime_cache_installed(argument->cache, argument->platform, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_installed, answer, INSTALLED_ANSWER_SHAPE,
+                                  refusal);
 }
 
 static uint32_t verdict_of(const char *kind) {
@@ -244,8 +210,8 @@ static spisor_status fill_check(const cJSON *answered, void *filled) {
 
 static spisor_status check(void *context, const runtime_cache_check_argument *argument,
                            runtime_cache_check_answer *answer, spisor_refusal *refusal) {
-    const char *name = "directory";
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
@@ -254,9 +220,8 @@ static spisor_status check(void *context, const runtime_cache_check_argument *ar
     if (!runtime_is_text(argument->directory)) {
         return refuse_missing(refusal, "directory");
     }
-    call = call_of(&name, &argument->directory, 1);
-    return call == NULL ? SPISOR_OUT_OF_MEMORY
-                        : runtime_serve_operation(runtime_cache_check_operation, call, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
+    answered = runtime_cache_check(argument->directory, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_check, answer, CHECK_ANSWER_SHAPE, refusal);
 }
 
 /** A JSON array of {id, version, detail, fix, file?} as damages, in order. */
@@ -298,17 +263,18 @@ static spisor_status fill_damaged(const cJSON *answered, void *filled) {
 
 static spisor_status damaged(void *context, const runtime_cache_place_argument *argument,
                              runtime_cache_damaged_answer *answer, spisor_refusal *refusal) {
-    cJSON *call = NULL;
-    spisor_status status;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, DAMAGED_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "cache's damaged");
     }
-    status = place_call(argument, &call, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_cache_damaged_operation, call, fill_damaged, answer,
-                                       DAMAGED_ANSWER_SHAPE, refusal);
+    if (!runtime_is_text(argument->cache)) {
+        return refuse_missing(refusal, "cache");
+    }
+    answered = runtime_cache_damaged(argument->cache, argument->platform, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_damaged, answer, DAMAGED_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_located(void **storage, const cJSON *array, const runtime_cache_located **filled,
@@ -370,23 +336,24 @@ static int are_plugins(const runtime_cache_locate_argument *argument) {
     return 1;
 }
 
-/** The plugins as the {id: version} object locate reads, from plugins are_plugins accepted. */
-static spisor_status plugins_json(const runtime_cache_locate_argument *argument, cJSON *call) {
-    cJSON *plugins = cJSON_AddObjectToObject(call, "plugins");
+/** The plugins as the {id: version} object locate reads, from plugins are_plugins accepted; NULL out of memory. */
+static cJSON *plugins_json(const runtime_cache_locate_argument *argument) {
+    cJSON *plugins = cJSON_CreateObject();
     for (size_t index = 0; plugins != NULL && index < argument->plugin_count; index++) {
         const runtime_item_version *plugin = &argument->plugins[index];
         if (cJSON_AddStringToObject(plugins, plugin->id, plugin->version) == NULL) {
-            return SPISOR_OUT_OF_MEMORY;
+            cJSON_Delete(plugins);
+            plugins = NULL;
         }
     }
-    return plugins == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    return plugins;
 }
 
 static spisor_status locate(void *context, const runtime_cache_locate_argument *argument,
                             runtime_cache_locate_answer *answer, spisor_refusal *refusal) {
-    const char *name = "cache";
-    cJSON *call;
-    spisor_status status;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
+    cJSON *plugins;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LOCATE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, LOCATE_ANSWER_SHAPE)) {
@@ -399,13 +366,13 @@ static spisor_status locate(void *context, const runtime_cache_locate_argument *
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "a plugin lacks its id or its version, or is twice",
                                  "send each plugin once, with its id and the version it runs as text");
     }
-    call = call_of(&name, &argument->cache, 1);
-    status = call == NULL ? SPISOR_OUT_OF_MEMORY : plugins_json(argument, call);
-    if (status != SPISOR_OK) {
-        cJSON_Delete(call);
-        return status;
+    plugins = plugins_json(argument);
+    if (plugins == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
     }
-    return runtime_serve_operation(runtime_cache_locate_operation, call, fill_locate, answer, LOCATE_ANSWER_SHAPE, refusal);
+    answered = runtime_cache_locate(argument->cache, plugins, &operation_refusal);
+    cJSON_Delete(plugins);
+    return runtime_serve_answered(answered, operation_refusal, fill_locate, answer, LOCATE_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status platform(void *context, runtime_cache_platform_answer *answer, spisor_refusal *refusal) {
@@ -428,9 +395,8 @@ static spisor_status fill_sweep(const cJSON *answered, void *filled) {
 
 static spisor_status sweep(void *context, const runtime_cache_sweep_argument *argument,
                            runtime_cache_sweep_answer *answer, spisor_refusal *refusal) {
-    const char *names[2] = {"cache", "state"};
-    const char *texts[2];
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SWEEP_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, SWEEP_ANSWER_SHAPE)) {
@@ -439,18 +405,17 @@ static spisor_status sweep(void *context, const runtime_cache_sweep_argument *ar
     if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->state)) {
         return refuse_missing(refusal, !runtime_is_text(argument->cache) ? "cache" : "state");
     }
-    texts[0] = argument->cache;
-    texts[1] = argument->state;
-    call = call_of(names, texts, 2);
-    return call == NULL ? SPISOR_OUT_OF_MEMORY
-                        : runtime_serve_operation(runtime_cache_sweep_operation, call, fill_sweep, answer, SWEEP_ANSWER_SHAPE, refusal);
+    answered = runtime_cache_sweep(argument->cache, argument->state, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_sweep, answer, SWEEP_ANSWER_SHAPE, refusal);
 }
 
 /** Plans the deploy and takes the answer's storage before carrying it out, so out of memory never follows a write. */
-static spisor_status serve_deploy(cJSON *call, runtime_cache_deploy_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_deploy(const runtime_cache_deploy_argument *argument, runtime_cache_deploy_answer *answer,
+                                  spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    runtime_cache_deployment *plan = runtime_cache_plan_deployment(call, &operation_refusal);
-    cJSON_Delete(call);
+    runtime_cache_deploy_request request = {argument->directory, argument->plugin_directory, argument->id,
+                                            argument->name, argument->replaces};
+    runtime_cache_deployment *plan = runtime_cache_plan_deployment(&request, &operation_refusal);
     if (plan == NULL) {
         return runtime_refuse_json(refusal, operation_refusal);
     }
@@ -467,27 +432,10 @@ static spisor_status serve_deploy(cJSON *call, runtime_cache_deploy_answer *answ
     return status;
 }
 
-static cJSON *deploy_call(const runtime_cache_deploy_argument *argument) {
-    const char *names[3] = {"directory", "pluginDir", "replaces"};
-    const char *texts[3];
-    cJSON *call;
-    cJSON *identity;
-    texts[0] = argument->directory;
-    texts[1] = argument->plugin_directory;
-    texts[2] = argument->replaces;
-    call = call_of(names, texts, 3);
-    identity = call == NULL ? NULL : cJSON_AddObjectToObject(call, "identity");
-    if (identity == NULL || !add_text(identity, "id", argument->id) || !add_text(identity, "name", argument->name)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 static spisor_status deploy(void *context, const runtime_cache_deploy_argument *argument,
                             runtime_cache_deploy_answer *answer, spisor_refusal *refusal) {
     runtime_identity parsed;
-    cJSON *call;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, DEPLOY_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, DEPLOY_ANSWER_SHAPE)) {
@@ -503,8 +451,7 @@ static spisor_status deploy(void *context, const runtime_cache_deploy_argument *
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the identity id is not a valid id",
                                  "send an id such as github:<number> or local:<name>");
     }
-    call = deploy_call(argument);
-    return call == NULL ? SPISOR_OUT_OF_MEMORY : serve_deploy(call, answer, refusal);
+    return serve_deploy(argument, answer, refusal);
 }
 
 static void release_install_answer(void *context, runtime_cache_install_answer *answer) {
