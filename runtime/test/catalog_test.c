@@ -22,7 +22,7 @@
 static char *fixture_text(const char *name, size_t *length) {
     char path[1024];
     snprintf(path, sizeof path, "%s/%s", FIXTURES, name);
-    uint8_t *bytes = spisor_read_file(path, length);
+    uint8_t *bytes = spisor_read_file_reporting(path, length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     if (bytes == NULL) {
         fprintf(stderr, "cannot read fixture %s\n", path);
         exit(2);

@@ -46,7 +46,7 @@ static inline void snapshot_entry(const char *directory, const char *relative, c
         return;
     }
     size_t content_length = 0;
-    uint8_t *content = spisor_read_file(path, &content_length);
+    uint8_t *content = spisor_read_file_reporting(path, &content_length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     snprintf(header, sizeof header, "file %s %zu\n", name, content_length);
     snapshot_append(snapshot, length, header, strlen(header));
     if (content != NULL) {

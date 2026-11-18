@@ -317,7 +317,7 @@ static void fetches_spisor_host_again_when_its_bytes_changed(void) {
     CHECK(install(&world, &first, NULL) == 0);
     char *executable = cached_file(&world, HOST_EXECUTABLE);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(executable, &length);
+    uint8_t *bytes = spisor_read_file_reporting(executable, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL && length > 0);
     if (bytes != NULL && length > 0) {
         bytes[length - 1] ^= 0xff;
@@ -488,7 +488,7 @@ static void with_a_file_that_cannot_be_fetched(host_world *world, cJSON *files) 
 
 static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(SPISOR_HOST_PATH, &length);
+    uint8_t *bytes = spisor_read_file_reporting(SPISOR_HOST_PATH, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     char *path = joined(world->base.catalog, "cut-short/" HOST_EXECUTABLE);
     char *parent = joined(path, "..");
     CHECK(bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
@@ -844,7 +844,8 @@ static cJSON *schema_pattern(const cJSON *schema, const char *path) {
 
 static void both_scripts_check_the_patterns_the_catalog_schema_holds(void) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(CATALOG_SCHEMA_PATH, &length);
+    uint8_t *bytes = spisor_read_file_reporting(CATALOG_SCHEMA_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
     cJSON *schema = bytes == NULL ? NULL : cJSON_ParseWithLength((const char *)bytes, length);
     char *powershell = read_text_file(INSTALL_SCRIPTS_PATH "/install.ps1");
     for (size_t index = 0; index < sizeof SCHEMA_PATTERNS / sizeof SCHEMA_PATTERNS[0]; index++) {
@@ -863,7 +864,7 @@ static void both_scripts_check_the_patterns_the_catalog_schema_holds(void) {
 
 static void expect_ascii(const char *path) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL && length > 0);
     for (size_t index = 0; bytes != NULL && index < length; index++) {
         if (!(bytes[index] == '\t' || bytes[index] == '\n' || (bytes[index] >= 0x20 && bytes[index] <= 0x7e))) {

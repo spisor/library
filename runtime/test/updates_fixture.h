@@ -75,7 +75,7 @@ static inline int exists_in(const char *base, const char *rest) {
 static inline char *text_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(path, &length);
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     return text;
 }

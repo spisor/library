@@ -275,7 +275,7 @@ static char *shim_bytes(const scratch *place, const char *name) {
         char path[1400];
         shim_part(place, name, index, path, sizeof path);
         size_t length = 0;
-        uint8_t *bytes = spisor_read_file(path, &length);
+        uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
         char *grown = bytes == NULL ? NULL : spisor_memory_reallocate(all, used + length + 1);
         if (grown != NULL) {
             memcpy(grown + used, bytes, length);
@@ -669,7 +669,8 @@ static void place_probe(const scratch *place, const char *directory, char *targe
     CHECK(spisor_make_directories(folder) == SPISOR_OK);
     snprintf(target, size, "%s/probe" PROGRAM_SUFFIX, folder);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(RUNTIME_PROBE_PATH, &length);
+    uint8_t *bytes = spisor_read_file_reporting(RUNTIME_PROBE_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL);
     CHECK(bytes != NULL && runtime_create_new_file(target, bytes, length, 1) == RUNTIME_ENTRY_DONE);
     spisor_memory_release(bytes);
@@ -693,7 +694,7 @@ static int shim_passes_through(const scratch *place, const char *name, const cha
     const char *const arguments[] = {output, exit_code, "one", "two words", "say \"hi\"", "it's $x"};
     int code = run_program(shim, arguments, 6);
     size_t length = 0;
-    char *received = (char *)spisor_read_file(output, &length);
+    char *received = (char *)spisor_read_file_reporting(output, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int passed = code == atoi(exit_code) && check_text(received, awkward_arguments, "arguments the target received");
     if (code != atoi(exit_code)) {
         fprintf(stderr, "the shim %s exited %d, expected %s\n", name, code, exit_code);
@@ -755,7 +756,7 @@ static int shim_delivers(const scratch *place, const char *name, const char *out
     shim_file(place, name, shim, sizeof shim);
     int code = run_program(shim, callers, count);
     size_t length = 0;
-    char *received = (char *)spisor_read_file(output, &length);
+    char *received = (char *)spisor_read_file_reporting(output, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int delivered = code == exit_code && check_text(received, expected, "the arguments the target received");
     if (code != exit_code) {
         fprintf(stderr, "the shim %s exited %d, expected %d\n", name, code, exit_code);
@@ -965,7 +966,7 @@ static int shims_on_path(const scratch *place) {
     snprintf(profile, sizeof profile, "%s/.profile", place->home);
     snprintf(line, sizeof line, "export PATH=\"%s:$PATH\"", place->shims);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(profile, &length);
+    char *text = (char *)spisor_read_file_reporting(profile, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int found = text != NULL && strstr(text, line) != NULL;
     spisor_memory_release(text);
     return found;

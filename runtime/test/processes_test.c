@@ -68,7 +68,7 @@ static void write_text(const char *rest, const char *text) {
 static char *read_text(const char *rest) {
     char *path = joined(state, rest);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(path, &length);
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     return text;
 }

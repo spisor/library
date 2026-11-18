@@ -193,7 +193,7 @@ static int refuses_naming(secrets_operation operation, request request, const ch
 
 static void expect_file_bytes(const char *path, const char *expected, const char *label) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text((const char *)bytes, expected, label);
     spisor_memory_release(bytes);
 }
@@ -505,7 +505,7 @@ static void a_malformed_file_is_never_overwritten(void) {
     CHECK(refuses(SECRETS_SET, request_for(&place, "github", "token", "v1")));
     CHECK(refuses(SECRETS_CLEAR, request_for(&place, "github", NULL, NULL)));
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(place.file, &length);
+    uint8_t *bytes = spisor_read_file_reporting(place.file, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text((const char *)bytes, "{ not json", "malformed file");
     spisor_memory_release(bytes);
 }

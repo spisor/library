@@ -37,7 +37,7 @@ static void write_file(const two_step *step, const char *text) {
 
 static void file_is(const two_step *step, const char *expected, const char *label) {
     size_t length = 0;
-    char *actual = (char *)spisor_read_file(step->file, &length);
+    char *actual = (char *)spisor_read_file_reporting(step->file, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(actual, expected, label);
     spisor_memory_release(actual);
 }

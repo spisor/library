@@ -1,7 +1,7 @@
 #include "spisor/javascript.h"
 
 #include "allocation.h"
-#include "file_reading.h"
+#include "spisor/file.h"
 
 #include <math.h>
 #include <stdio.h>

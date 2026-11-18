@@ -270,7 +270,7 @@ static void an_unreadable_start_file_installs_and_says_the_primary_is_unconfirme
 static char *read_scratch(const char *relative) {
     char *path = in_scratch(relative);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(path, &length);
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     return text;
 }

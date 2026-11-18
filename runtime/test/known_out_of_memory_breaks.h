@@ -34,9 +34,6 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OUT_OF_MEMORY_SUITE, "cache's deploy", 0, BREAKS_ON_BOTH,
-     "cache_deploy.c write_files writes the plugin's files one after another, so memory running out at a later one "
-     "(file.c spisor_replace_file) answers out of memory after the earlier ones were written"},
     {OPERATIONS_SUITE, "hosts' register_host", 0, BREAKS_ON_POSIX,
      "measured in CI only, not yet traced: failing allocation 825 answers OK with another tree; the POSIX Path "
      "change is a profile line, and change_kinds.c runtime_change_is_on_disk reads a failed profile read as "

@@ -254,7 +254,8 @@ static void prepare_runtime(void) {
     path_directory = joined(base.root, "path-node");
     write_in(path_directory, "version.txt", "22.1.0");
     size_t length = 0;
-    uint8_t *probe = spisor_read_file(RUNTIME_NODE_PROBE_PATH, &length);
+    uint8_t *probe = spisor_read_file_reporting(RUNTIME_NODE_PROBE_PATH, &length,
+                                                &(spisor_read_outcome){SPISOR_READ_FAILED});
 #if defined(_WIN32)
     char *node = joined(path_directory, "node.exe");
 #else

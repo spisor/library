@@ -68,7 +68,7 @@ static char *read_log(const scratch_home *home) {
     char path[1200];
     size_t length = 0;
     snprintf(path, sizeof path, "%s" LOG_FILE, home->path);
-    return (char *)spisor_read_file(path, &length);
+    return (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
 }
 
 static cJSON *request_for(const scratch_home *home, const char *level, const char *config_json, const char *names_json,

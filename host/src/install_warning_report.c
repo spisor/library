@@ -79,7 +79,8 @@ static cJSON *located_plugins(const host_context *context, cJSON *plugins) {
 
 static cJSON *manifest_at(const char *path) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
     spisor_memory_release(bytes);
     return manifest;

@@ -210,7 +210,7 @@ static int packages_file_unchanged(void) {
     char file[1300];
     size_t length = 0;
     snprintf(file, sizeof file, "%s/packages.json", place.portable);
-    uint8_t *bytes = spisor_read_file(file, &length);
+    uint8_t *bytes = spisor_read_file_reporting(file, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int unchanged = bytes != NULL && length == strlen(PACKAGES_FILE) && memcmp(bytes, PACKAGES_FILE, length) == 0;
     spisor_memory_release(bytes);
     return unchanged;
@@ -485,7 +485,7 @@ static int file_unchanged(void) {
     char file[1300];
     size_t length = 0;
     snprintf(file, sizeof file, "%s/p.json", place.config_directory);
-    uint8_t *bytes = spisor_read_file(file, &length);
+    uint8_t *bytes = spisor_read_file_reporting(file, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     int unchanged = bytes != NULL && length == strlen(CHANGED_FILE) && memcmp(bytes, CHANGED_FILE, length) == 0;
     spisor_memory_release(bytes);
     return unchanged;
@@ -789,7 +789,7 @@ static int every_profile_line_is_recorded(const cJSON *registration) {
         char profile[1400];
         size_t length = 0;
         snprintf(profile, sizeof profile, "%s/%s", place.home, profiles[index]);
-        uint8_t *bytes = spisor_read_file(profile, &length);
+        uint8_t *bytes = spisor_read_file_reporting(profile, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
         int names_shims = bytes != NULL && strstr((const char *)bytes, shims) != NULL;
         spisor_memory_release(bytes);
         all = !names_shims || recorded(registration, "profile-line", "file", profiles[index]);
@@ -1412,7 +1412,7 @@ static int replaced_the_old_run(void) {
     size_t length = 0;
     snprintf(path, sizeof path, "%s/bundles/spisor-host.json", place.state);
     spisor_memory_suspend_failures(1);
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_suspend_failures(0);
     int replaced = bytes != NULL && strstr((const char *)bytes, "\"old\"") == NULL;
     spisor_memory_release(bytes);

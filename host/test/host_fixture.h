@@ -223,7 +223,7 @@ static inline int program_wait(program *run, unsigned milliseconds) {
 
 static inline char *read_text_file(const char *path) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     char *text = spisor_memory_allocate(length + 1);
     if (bytes != NULL) {
         memcpy(text, bytes, length);
@@ -271,7 +271,7 @@ static inline cJSON *strings_of(const char *const *values) {
 /** Writes a copy of the file at source to path, keeping it runnable. */
 static inline void copy_file(const char *source, const char *path) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(source, &length);
+    uint8_t *bytes = spisor_read_file_reporting(source, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL);
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == SPISOR_OK);

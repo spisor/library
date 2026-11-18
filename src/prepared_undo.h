@@ -11,30 +11,34 @@
 #include "spisor/status.h"
 
 /**
- * A file or folder an undo may delete, held in every form the delete needs.
+ * A path an undo may delete or move a file to or from, held in every form those need.
  *
  * @implNote AN UNDO MUST NEVER ALLOCATE. An undo runs because something failed, and when that was memory running out
  * every later allocation can fail too, so an undo that builds a path, a wide form or a text at undo time leaves the
  * very change it exists to reverse. Everything an undo needs is prepared before the first write it would reverse,
  * here or in the caller's own prepared state, and the undo uses only what was prepared.
  */
-typedef struct spisor_prepared_removal {
+typedef struct spisor_prepared_path {
     char *path;
 #if defined(_WIN32)
     wchar_t *wide;
 #endif
-} spisor_prepared_removal;
+} spisor_prepared_path;
 
-/** Prepares the removal of path, which need not exist yet: SPISOR_OK, SPISOR_OUT_OF_MEMORY, or SPISOR_REFUSED. */
-spisor_status spisor_prepare_removal(const char *path, spisor_prepared_removal *removal);
+/** Prepares path, which need not exist yet: SPISOR_OK, or SPISOR_OUT_OF_MEMORY or SPISOR_REFUSED holding nothing. */
+spisor_status spisor_prepare_path(const char *path, spisor_prepared_path *prepared);
 
 /** Deletes the prepared file, allocating nothing: whether no file stands there afterwards. */
-int spisor_remove_prepared(const spisor_prepared_removal *removal);
+int spisor_remove_prepared_file(const spisor_prepared_path *prepared);
 
 /** Deletes the prepared folder when it is empty, allocating nothing: whether no folder stands there afterwards. */
-int spisor_remove_prepared_directory(const spisor_prepared_removal *removal);
+int spisor_remove_prepared_directory(const spisor_prepared_path *prepared);
 
-void spisor_release_prepared_removal(spisor_prepared_removal *removal);
+/** Renames the file from over to, replacing it, allocating nothing: whether it was moved. */
+int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_prepared_path *to);
+
+/** Releases what was prepared; a path never prepared, or released already, holds nothing. */
+void spisor_release_prepared_path(spisor_prepared_path *prepared);
 
 /**
  * Deletes the file at path, allocating nothing: whether no file stands there afterwards. For an undo whose path reaches
@@ -45,10 +49,10 @@ void spisor_release_prepared_removal(spisor_prepared_removal *removal);
  */
 int spisor_remove_file_in_place(const char *path);
 
-/** A file an undo may write back whole: its temporary sibling's removal and the file's own path in every form. */
+/** A file an undo may write back whole: its temporary sibling and the file's own path, both prepared. */
 typedef struct spisor_prepared_replacement {
-    spisor_prepared_removal temporary;
-    spisor_prepared_removal target;
+    spisor_prepared_path temporary;
+    spisor_prepared_path target;
 } spisor_prepared_replacement;
 
 /** Prepares replacing the file at path as spisor_replace_private_file does, links not followed. */

@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "directory_tree.h"
-#include "file_reading.h"
 #include "json_key_change.h"
 #include "path_entry.h"
 #include "paths.h"
@@ -664,19 +663,22 @@ static int remove_line(const char *path, const text_buffer *text, line_span span
     return written;
 }
 
-static int is_empty_file(const char *path) {
+static int is_empty_file(const char *path, int *out_of_memory) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     spisor_memory_release(bytes);
+    *out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
     return bytes != NULL && length == 0;
 }
 
 /** Deletes a profile the host created once the line is all it held; anything the user added keeps it. */
-static int remove_emptied_profile(const cJSON *record, const char *path) {
-    if (!is_holder_flag(record, "created") || !is_empty_file(path)) {
-        return 1;
+static runtime_entry_outcome remove_emptied_profile(const cJSON *record, const char *path) {
+    int out_of_memory = 0;
+    if (!is_holder_flag(record, "created") || !is_empty_file(path, &out_of_memory)) {
+        return out_of_memory ? RUNTIME_ENTRY_OUT_OF_MEMORY : RUNTIME_ENTRY_DONE;
     }
-    return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
+    return runtime_remove_file_entry(path);
 }
 
 static runtime_change_reversal reverse_profile_line(const cJSON *record, int held, runtime_change_note *note) {
@@ -696,7 +698,11 @@ static runtime_change_reversal reverse_profile_line(const cJSON *record, int hel
         write_note(note, "the line could not be removed from %s", path);
         return RUNTIME_CHANGE_NOT_REVERSED;
     }
-    if (!remove_emptied_profile(record, path)) {
+    runtime_entry_outcome emptied = remove_emptied_profile(record, path);
+    if (emptied == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return reversal_out_of_memory(note);
+    }
+    if (emptied != RUNTIME_ENTRY_DONE) {
         write_note(note, "the profile the host created could not be deleted: %s", path);
         return RUNTIME_CHANGE_NOT_REVERSED;
     }

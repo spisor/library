@@ -38,7 +38,7 @@ static void write_in_scratch(const char *relative, const char *text) {
 static char *read_from_scratch(const char *relative) {
     char *path = in_scratch(relative);
     size_t length = 0;
-    char *text = (char *)spisor_read_file(path, &length);
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     spisor_memory_release(path);
     return text;
 }

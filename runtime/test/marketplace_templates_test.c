@@ -40,7 +40,7 @@ static char *read_text(const char *root, const char *host, const char *file) {
     char path[1024];
     snprintf(path, sizeof path, "%s/marketplace-template-%s/%s", root, host, file);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(path, &length);
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     if (bytes == NULL) {
         fprintf(stderr, "missing file: %s\n", path);
         check_failures++;
@@ -181,7 +181,7 @@ int main(void) {
     char probe[1024];
     snprintf(probe, sizeof probe, "%s/marketplace-template-github/.git/HEAD", root);
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(probe, &length);
+    uint8_t *bytes = spisor_read_file_reporting(probe, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     if (bytes == NULL) {
         printf("skipped: no template checkouts under %s\n", root);
         return SKIP_STATUS;

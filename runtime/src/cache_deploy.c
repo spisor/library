@@ -6,9 +6,10 @@
 
 #include "cache_place.h"
 #include "directory_tree.h"
+#include "file_replacement.h"
+#include "prepared_undo.h"
 #include "allocation.h"
 #include "cache_refusal.h"
-#include "file_reading.h"
 #include "json_parse.h"
 #include "identity.h"
 #include "import_name.h"
@@ -49,6 +50,16 @@ struct runtime_cache_deployment {
 };
 
 typedef runtime_cache_deployment deployment;
+
+/** The deploy's files staged inside pluginDir, each with the path it moves to, all prepared. */
+typedef struct staging {
+    spisor_prepared_path plugin_directory;
+    int made_plugin_directory;
+    spisor_prepared_path folder;
+    int made_folder;
+    spisor_prepared_path staged[DESTINATION_COUNT];
+    spisor_prepared_path destinations[DESTINATION_COUNT];
+} staging;
 
 
 static int ends_with_ignoring_case(const char *text, const char *suffix) {
@@ -195,18 +206,6 @@ static char *destination(deployment *plan, const char *suffix) {
     return path;
 }
 
-static int write_destination(deployment *plan, destination_index index, const uint8_t *bytes, size_t length) {
-    spisor_status status = spisor_replace_file(plan->destinations[index], bytes, length);
-    plan->out_of_memory = status == SPISOR_OUT_OF_MEMORY;
-    return status == SPISOR_OK;
-}
-
-static int make_plugin_directory(deployment *plan) {
-    spisor_status status = spisor_make_directories(plan->plugin_directory);
-    plan->out_of_memory = status == SPISOR_OUT_OF_MEMORY;
-    return status == SPISOR_OK;
-}
-
 /** Resolves every destination, 0 when one lies outside pluginDir or memory runs out. */
 static int resolve_destinations(deployment *plan) {
     static const char *const suffixes[] = {MANIFEST_SUFFIX, ENTRY_SUFFIX, IDENTITY_SUFFIX};
@@ -277,21 +276,115 @@ static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
     return same;
 }
 
-static int remove_destination(deployment *plan, destination_index index) {
-    runtime_entry_outcome removed = runtime_remove_file_entry(plan->destinations[index]);
-    plan->out_of_memory = removed == RUNTIME_ENTRY_OUT_OF_MEMORY;
-    return removed == RUNTIME_ENTRY_DONE;
+/** Notes in plan when status is out of memory: whether status is SPISOR_OK. */
+static int succeeded(deployment *plan, spisor_status status) {
+    plan->out_of_memory = plan->out_of_memory || status == SPISOR_OUT_OF_MEMORY;
+    return status == SPISOR_OK;
+}
+
+static int make_folder(deployment *plan, const char *path, spisor_prepared_path *prepared, int *made) {
+    spisor_file_presence presence = spisor_probe_file(path);
+    spisor_status ready =
+        presence == SPISOR_FILE_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : spisor_prepare_path(path, prepared);
+    if (!succeeded(plan, ready)) {
+        return 0;
+    }
+    int made_now = succeeded(plan, spisor_make_directories(path));
+    *made = made_now && presence == SPISOR_FILE_MISSING;
+    return made_now;
+}
+
+static int make_staging_folder(deployment *plan, staging *stage) {
+    char *folder = spisor_temporary_path_for(plan->destinations[MANIFEST_DESTINATION]);
+    int made = folder != NULL && make_folder(plan, folder, &stage->folder, &stage->made_folder);
+    plan->out_of_memory = plan->out_of_memory || folder == NULL;
+    spisor_memory_release(folder);
+    return made;
+}
+
+static int prepare_move(deployment *plan, staging *stage, size_t index) {
+    static const char *const staged_names[DESTINATION_COUNT] = {"manifest.json", "entry.js", "identity.json",
+                                                                "package.json"};
+    char *staged = runtime_cache_resolve(stage->folder.path, &staged_names[index], 1);
+    spisor_status ready = staged == NULL ? SPISOR_OUT_OF_MEMORY : spisor_prepare_path(staged, &stage->staged[index]);
+    spisor_memory_release(staged);
+    return succeeded(plan, ready) &&
+           succeeded(plan, spisor_prepare_path(plan->destinations[index], &stage->destinations[index]));
+}
+
+static int prepare_moves(deployment *plan, staging *stage) {
+    int prepared = 1;
+    for (size_t index = 0; prepared && index < DESTINATION_COUNT; index++) {
+        prepared = prepare_move(plan, stage, index);
+    }
+    return prepared;
+}
+
+static int write_staged(deployment *plan, staging *stage, destination_index index, const uint8_t *bytes,
+                        size_t length) {
+    return succeeded(plan, spisor_replace_file(stage->staged[index].path, bytes, length));
+}
+
+static int write_staged_files(deployment *plan, staging *stage) {
+    const uint8_t *marker = (const uint8_t *)MODULE_MARKER_TEXT;
+    return (!plan->has_entry || write_staged(plan, stage, ENTRY_DESTINATION, plan->entry_bytes, plan->entry_length)) &&
+           write_staged(plan, stage, MANIFEST_DESTINATION, plan->manifest_bytes, plan->manifest_length) &&
+           write_staged(plan, stage, MARKER_DESTINATION, marker, strlen(MODULE_MARKER_TEXT)) &&
+           write_staged(plan, stage, IDENTITY_DESTINATION, plan->identity_bytes, plan->identity_length);
+}
+
+/** Writes every file into a staging folder inside pluginDir and prepares every move and the clearing. */
+static int stage_files(deployment *plan, staging *stage) {
+    return make_folder(plan, plan->plugin_directory, &stage->plugin_directory, &stage->made_plugin_directory) &&
+           make_staging_folder(plan, stage) && prepare_moves(plan, stage) && write_staged_files(plan, stage);
+}
+
+static int move_staged(const staging *stage, destination_index index) {
+    return spisor_move_prepared_file(&stage->staged[index], &stage->destinations[index]);
 }
 
 /** The identity goes first and returns last, so a failure part way leaves a plugin with no identity rather than a wrong one. */
+static int move_staged_files(const deployment *plan, const staging *stage) {
+    return spisor_remove_prepared_file(&stage->destinations[IDENTITY_DESTINATION]) &&
+           (plan->has_entry || spisor_remove_prepared_file(&stage->destinations[ENTRY_DESTINATION])) &&
+           (!plan->has_entry || move_staged(stage, ENTRY_DESTINATION)) && move_staged(stage, MANIFEST_DESTINATION) &&
+           move_staged(stage, MARKER_DESTINATION) && move_staged(stage, IDENTITY_DESTINATION);
+}
+
+/** Removes the staging folder and what is left in it, and pluginDir when this deploy made it and it is empty. */
+static void clear_staging(const staging *stage) {
+    for (size_t index = 0; index < DESTINATION_COUNT; index++) {
+        spisor_remove_prepared_file(&stage->staged[index]);
+    }
+    if (stage->made_folder) {
+        spisor_remove_prepared_directory(&stage->folder);
+    }
+    if (stage->made_plugin_directory) {
+        spisor_remove_prepared_directory(&stage->plugin_directory);
+    }
+}
+
+static void release_staging(staging *stage) {
+    spisor_release_prepared_path(&stage->plugin_directory);
+    spisor_release_prepared_path(&stage->folder);
+    for (size_t index = 0; index < DESTINATION_COUNT; index++) {
+        spisor_release_prepared_path(&stage->staged[index]);
+        spisor_release_prepared_path(&stage->destinations[index]);
+    }
+}
+
+/**
+ * @implNote Every file is written into a staging folder, and every path and wide form the moves and the clearing need
+ * is prepared, before the first file is moved into place; the moves allocate nothing, so memory running out leaves
+ * nothing behind, and once they begin it cannot run out. See prepared_undo.h.
+ */
 static int write_files(deployment *plan, cJSON **refusal) {
-    int written =
-        make_plugin_directory(plan) && remove_destination(plan, IDENTITY_DESTINATION) &&
-        (plan->has_entry || remove_destination(plan, ENTRY_DESTINATION)) &&
-        (!plan->has_entry || write_destination(plan, ENTRY_DESTINATION, plan->entry_bytes, plan->entry_length)) &&
-        write_destination(plan, MANIFEST_DESTINATION, plan->manifest_bytes, plan->manifest_length) &&
-        write_destination(plan, MARKER_DESTINATION, (const uint8_t *)MODULE_MARKER_TEXT, strlen(MODULE_MARKER_TEXT)) &&
-        write_destination(plan, IDENTITY_DESTINATION, plan->identity_bytes, plan->identity_length);
+    staging stage;
+    memset(&stage, 0, sizeof stage);
+    int written = stage_files(plan, &stage) && move_staged_files(plan, &stage);
+    stage.made_plugin_directory = stage.made_plugin_directory && !written;
+    clear_staging(&stage);
+    release_staging(&stage);
     if (!written) {
         refuse_unless_out_of_memory(plan, refusal, "the plugin could not be written into pluginDir",
                                     "free the plugin's files or point pluginDir at a writable directory, then try again");

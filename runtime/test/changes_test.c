@@ -85,7 +85,7 @@ static void write_home_file(const scratch *place, const char *relative, const ch
 /** The file's bytes as text, freed, or NULL when it cannot be read. */
 static char *read_text(const char *path) {
     size_t length = 0;
-    return (char *)spisor_read_file(path, &length);
+    return (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
 }
 
 static int home_file_is(const scratch *place, const char *relative, const char *expected) {

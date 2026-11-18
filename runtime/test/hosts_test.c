@@ -51,10 +51,10 @@ typedef struct hosts_scratch {
 static int record_out_of_memory;
 
 static char *written_run_record(const char *at, const char *host, const cJSON *run, double check_milliseconds) {
-    spisor_prepared_removal removal;
+    spisor_prepared_path removal;
     char *record = runtime_record_run(at, host, run, check_milliseconds, &removal, &record_out_of_memory);
     if (record != NULL) {
-        spisor_release_prepared_removal(&removal);
+        spisor_release_prepared_path(&removal);
     }
     return record;
 }

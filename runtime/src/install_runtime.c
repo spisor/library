@@ -234,7 +234,8 @@ static int lay_out(acquisition *runtime, const char *cache, const char *platform
 /** Whether layout's marker names the pinned archive and its executable still has the hash the marker names. */
 static int is_unpacked(const acquisition *runtime, const runtime_layout *layout) {
     size_t length = 0;
-    uint8_t *bytes = spisor_read_file(layout->marker, &length);
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(layout->marker, &length, &outcome);
     char recorded[2 * RUNTIME_SHA256_HEX_SIZE + 2];
     char actual[RUNTIME_SHA256_HEX_SIZE];
     int unpacked = bytes != NULL && length == 2 * (RUNTIME_SHA256_HEX_SIZE - 1) + 2;

@@ -64,7 +64,7 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
         return stamp_again(request, record->valuestring, run, check, refusal);
     }
     int out_of_memory = 0;
-    spisor_prepared_removal removal;
+    spisor_prepared_path removal;
     char *path = runtime_record_run(request->state, request->host_id, run, check, &removal, &out_of_memory);
     if (path == NULL) {
         *refusal = out_of_memory ? NULL : unwritable(request->host_id);
@@ -72,9 +72,9 @@ cJSON *runtime_processes_record_run_for(const runtime_processes_request *request
     }
     cJSON *answer = record_answer(path);
     if (answer == NULL) {
-        spisor_remove_prepared(&removal);
+        spisor_remove_prepared_file(&removal);
     }
-    spisor_release_prepared_removal(&removal);
+    spisor_release_prepared_path(&removal);
     spisor_memory_release(path);
     return answer;
 }

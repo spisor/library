@@ -79,7 +79,7 @@ static void write_in(const char *base, const char *rest, const char *content) {
 
 static char *read_text(const char *path) {
     size_t length = 0;
-    return (char *)spisor_read_file(path, &length);
+    return (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
 }
 
 static void expect_file_text(const char *base, const char *rest, const char *expected, const char *label) {
