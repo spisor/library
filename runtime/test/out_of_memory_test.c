@@ -16,7 +16,6 @@
 
 #include "allocation.h"
 #include "check.h"
-#include "known_out_of_memory_breaks.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/cache.h"
@@ -919,10 +918,7 @@ static void every_failure_of(const failure_case *each) {
     if (strstr(each->label, only_label) == NULL) {
         return;
     }
-    int before = check_failures;
     every_failure_of_case(each);
-    check_failures = before + settled_out_of_memory_failures("out_of_memory_test", each->label, each->sticky,
-                                                             check_failures - before);
 }
 
 static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
