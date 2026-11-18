@@ -5,27 +5,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cache.h"
 #include "cache_installed.h"
 #include "config.h"
 #include "host_output.h"
 #include "host_service.h"
 #include "install_settings.h"
-#include "json_service.h"
+#include "runtime/cache.h"
 
 static int is_located(const host_context *context, const char *id, const char *version) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON *plugins = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "plugins");
-    if (plugins == NULL || cJSON_AddStringToObject(argument, "cache", context->cache) == NULL ||
-        cJSON_AddStringToObject(plugins, id, version) == NULL) {
-        cJSON_Delete(argument);
-        return 0;
-    }
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_cache_locate_operation, argument, &refusal);
-    int located = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer, "located")) > 0;
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    runtime_item_version plugin = {id, version};
+    runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
+    runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
+    argument.cache = context->cache;
+    argument.plugins = &plugin;
+    argument.plugin_count = 1;
+    int located = cache->locate(cache->context, &argument, &answer, NULL) == SPISOR_OK && answer.located_count > 0;
+    cache->release_locate_answer(cache->context, &answer);
     return located;
 }
 

@@ -1,28 +1,7 @@
-#include "cache.h"
 #include "host_commands.h"
 #include "host_context.h"
+#include "host_definition.h"
 #include "host_output.h"
-#include "hosts.h"
-#include "json_service.h"
-
-static cJSON *remove_call(const host_context *context, const char *id) {
-    cJSON *call = host_places_argument(context);
-    if (call != NULL && cJSON_AddStringToObject(call, "id", id) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
-static cJSON *sweep_call(const host_context *context) {
-    cJSON *call = cJSON_CreateObject();
-    if (call != NULL && (cJSON_AddStringToObject(call, "cache", context->cache) == NULL ||
-                         cJSON_AddStringToObject(call, "state", context->state) == NULL)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 /**
  * Removes host id through hosts.remove, then sweeps the cache of what nothing references any more, and
@@ -32,8 +11,8 @@ static cJSON *sweep_call(const host_context *context) {
  */
 static int remove_host(const host_context *context, const char *id) {
     cJSON *refusal = NULL;
-    cJSON *removed = runtime_call_operation(runtime_hosts_remove_operation, remove_call(context, id), &refusal);
-    cJSON *swept = removed == NULL ? NULL : runtime_call_operation(runtime_cache_sweep_operation, sweep_call(context), &refusal);
+    cJSON *removed = host_removal_of(context->state, context->cache, id, &refusal);
+    cJSON *swept = removed == NULL ? NULL : host_sweep_of(context->cache, context->state, &refusal);
     cJSON *summary = swept == NULL ? NULL : cJSON_CreateObject();
     if (summary == NULL || !cJSON_AddItemToObject(summary, "removed", removed)) {
         cJSON_Delete(summary);

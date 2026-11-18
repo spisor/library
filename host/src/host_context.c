@@ -12,7 +12,7 @@
 #include "cache_refusal.h"
 #include "places.h"
 #include "config.h"
-#include "json_service.h"
+#include "host_definition.h"
 #include "registry.h"
 #include "spisor/path.h"
 
@@ -149,16 +149,28 @@ cJSON *host_places_argument(const host_context *context) {
     return argument;
 }
 
-cJSON *host_registration(const host_context *context, const char *id, cJSON **refusal) {
-    cJSON *argument = host_places_argument(context);
-    if (argument != NULL && cJSON_AddStringToObject(argument, "id", id) == NULL) {
-        cJSON_Delete(argument);
-        argument = NULL;
+/** Host id's registration as its record, NULL with *refusal set when there is none or it cannot be read. */
+static cJSON *recorded_registration(const host_context *context, const char *id, cJSON **refusal) {
+    const runtime_registry_definition *registry = runtime_registry_definition_of();
+    runtime_registry_host_argument argument = SPISOR_INIT(runtime_registry_host_argument);
+    runtime_registry_registration_answer answer = SPISOR_INIT(runtime_registry_registration_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    argument.state = context->state;
+    argument.id = id;
+    spisor_status status = registry->get(registry->context, &argument, &answer, &declined);
+    cJSON *registration = status == SPISOR_OK ? host_registration_json(answer.registration) : NULL;
+    *refusal = status == SPISOR_OK || status == SPISOR_NONE ? NULL : host_refusal_json(&declined);
+    registry->release_answer(registry->context, &answer);
+    registry->release_refusal(registry->context, &declined);
+    if (status == SPISOR_NONE) {
+        runtime_registration_usable(NULL, id, context->state, refusal);
     }
-    cJSON *answer = runtime_call_operation(runtime_registry_get_host, argument, refusal);
-    cJSON *registration = cJSON_DetachItemFromObjectCaseSensitive(answer, "registration");
-    cJSON_Delete(answer);
-    if (answer != NULL && !runtime_registration_usable(registration, id, context->state, refusal)) {
+    return registration;
+}
+
+cJSON *host_registration(const host_context *context, const char *id, cJSON **refusal) {
+    cJSON *registration = recorded_registration(context, id, refusal);
+    if (registration != NULL && !runtime_registration_usable(registration, id, context->state, refusal)) {
         cJSON_Delete(registration);
         registration = NULL;
     }

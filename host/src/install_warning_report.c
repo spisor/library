@@ -5,11 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cache.h"
 #include "host_output.h"
 #include "host_service.h"
 #include "install_warnings.h"
-#include "json_service.h"
+#include "json_value.h"
+#include "runtime/cache.h"
+#include "runtime/install.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -62,19 +63,31 @@ static cJSON *reported_versions(const cJSON *report) {
     return plugins;
 }
 
-/** The plugins among plugins that the cache holds a plugin.json for, as cache.locate answers them. */
-static cJSON *located_plugins(const host_context *context, cJSON *plugins) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument == NULL || cJSON_AddStringToObject(argument, "cache", context->cache) == NULL ||
-        !cJSON_AddItemToObject(argument, "plugins", plugins)) {
-        cJSON_Delete(argument);
-        cJSON_Delete(plugins);
-        return NULL;
+/** The {id, version} pairs of plugins, borrowing its keys and strings; freed, NULL when memory runs out. */
+static runtime_item_version *item_versions_of(const cJSON *plugins, size_t *count) {
+    size_t capacity = (size_t)cJSON_GetArraySize(plugins);
+    runtime_item_version *versions = spisor_memory_allocate((capacity == 0 ? 1 : capacity) * sizeof *versions);
+    const cJSON *listed = versions == NULL ? NULL : plugins;
+    const cJSON *plugin;
+    *count = 0;
+    cJSON_ArrayForEach(plugin, listed) {
+        versions[*count].id = plugin->string;
+        versions[*count].version = plugin->valuestring;
+        (*count)++;
     }
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_cache_locate_operation, argument, &refusal);
-    cJSON_Delete(refusal);
-    return answer;
+    return versions;
+}
+
+/** Finds the plugins among plugins that the cache holds a plugin.json for, as cache.locate answers them; 0 if not. */
+static int locate_plugins(const host_context *context, const cJSON *plugins, runtime_cache_locate_answer *answer) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
+    argument.cache = context->cache;
+    runtime_item_version *versions = item_versions_of(plugins, &argument.plugin_count);
+    argument.plugins = versions;
+    int located = versions != NULL && cache->locate(cache->context, &argument, answer, NULL) == SPISOR_OK;
+    spisor_memory_release(versions);
+    return located;
 }
 
 static cJSON *manifest_at(const char *path) {
@@ -106,45 +119,45 @@ static void print_unchecked(const char *plugin_id) {
     print_line(plugin_id, NULL, "could not check this plugin's manifest");
 }
 
-static void print_warnings_of(const char *plugin_id, cJSON *manifest) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON *refusal = NULL;
-    cJSON *answer = NULL;
-    if (argument != NULL && cJSON_AddItemToObject(argument, "manifest", manifest)) {
-        answer = runtime_call_operation(runtime_install_warnings_operation, argument, &refusal);
-    } else {
-        cJSON_Delete(argument);
-        cJSON_Delete(manifest);
-    }
-    if (answer == NULL) {
+static void print_warnings_of(const char *plugin_id, const cJSON *manifest) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    runtime_install_warnings_argument argument = SPISOR_INIT(runtime_install_warnings_argument);
+    runtime_install_warnings_answer answer = SPISOR_INIT(runtime_install_warnings_answer);
+    argument.manifest = &tree.root;
+    if (spisor_value_of_json(manifest, &tree) != SPISOR_OK ||
+        install->warnings(install->context, &argument, &answer, NULL) != SPISOR_OK) {
         print_unchecked(plugin_id);
     }
-    const cJSON *warning;
-    cJSON_ArrayForEach(warning, cJSON_GetObjectItemCaseSensitive(answer, "warnings")) {
-        print_line(plugin_id, host_text(warning, "subject"), host_text(warning, "detail"));
+    for (size_t index = 0; index < answer.warning_count; index++) {
+        print_line(plugin_id, answer.warnings[index].subject, answer.warnings[index].detail);
     }
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
+    install->release_warnings_answer(install->context, &answer);
+    spisor_value_release(&tree);
 }
 
 void host_print_install_warnings(const host_context *context, const cJSON *report) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    runtime_cache_locate_answer located = SPISOR_INIT(runtime_cache_locate_answer);
     cJSON *plugins = reported_versions(report);
-    cJSON *located = plugins == NULL ? NULL : located_plugins(context, plugins);
-    const cJSON *item;
-    cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(located, "located")) {
-        const char *manifest_path = host_text(item, "manifest");
-        cJSON *manifest = manifest_path == NULL ? NULL : manifest_at(manifest_path);
-        if (manifest == NULL) {
-            print_unchecked(host_text(item, "id"));
-        } else {
-            print_warnings_of(host_text(item, "id"), manifest);
+    if (plugins != NULL && locate_plugins(context, plugins, &located)) {
+        for (size_t index = 0; index < located.located_count; index++) {
+            const runtime_cache_located *item = &located.located[index];
+            cJSON *manifest = item->manifest == NULL ? NULL : manifest_at(item->manifest);
+            if (manifest == NULL) {
+                print_unchecked(item->id);
+            } else {
+                print_warnings_of(item->id, manifest);
+            }
+            cJSON_Delete(manifest);
+        }
+        for (size_t index = 0; index < located.problem_count; index++) {
+            const runtime_cache_damage *problem = &located.problems[index];
+            if (problem->file != NULL && strcmp(problem->file, MANIFEST_FILE) == 0) {
+                print_unchecked(problem->id);
+            }
         }
     }
-    cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(located, "problems")) {
-        const char *file = host_text(item, "file");
-        if (file != NULL && strcmp(file, MANIFEST_FILE) == 0) {
-            print_unchecked(host_text(item, "id"));
-        }
-    }
-    cJSON_Delete(located);
+    cache->release_locate_answer(cache->context, &located);
+    cJSON_Delete(plugins);
 }
