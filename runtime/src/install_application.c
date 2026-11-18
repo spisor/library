@@ -197,15 +197,16 @@ static cJSON *operate_through_record(const application_operation *request, cJSON
     return answer;
 }
 
-cJSON *runtime_install_application_operation(const cJSON *argument, cJSON **refusal) {
-    application_operation request = {cJSON_GetObjectItemCaseSensitive(argument, "places"),
-                                     runtime_install_text(argument, "loader"),
-                                     runtime_install_text(argument, "operation")};
-    int usable = runtime_install_place(argument, "state") != NULL && runtime_install_place(argument, "cache") != NULL &&
+cJSON *runtime_install_operate_application(const cJSON *places, const char *loader, const char *operation,
+                                           cJSON **refusal) {
+    application_operation request = {places, loader, operation};
+    *refusal = NULL;
+    int usable = runtime_install_place(places, "state") != NULL &&
+                 runtime_install_place(places, "cache") != NULL &&
                  request.loader != NULL && request.loader[0] != 0 && request.operation != NULL &&
                  (strcmp(request.operation, "update") == 0 || strcmp(request.operation, "remove") == 0);
     if (!usable) {
-        *refusal = runtime_refusal("the argument carries no usable places, loader or operation", APPLICATION_FIX);
+        *refusal = runtime_refusal("the call carries no usable places, loader or operation", APPLICATION_FIX);
         return NULL;
     }
     return operate_through_record(&request, refusal);

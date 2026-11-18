@@ -14,14 +14,4 @@
  */
 cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **refusal);
 
-/**
- * install's entry: { places: { state, cache }, loader: { id, application: { id, label, entry }, home } }
- * answering what runtime_install_entry answers.
- *
- * @implNote A json-key change sets its member wholesale, so an entry must declare members it owns outright
- * rather than one the user also writes to. A change already on disk is not recorded again, so writing the
- * entry twice changes nothing.
- */
-cJSON *runtime_install_entry_operation(const cJSON *argument, cJSON **refusal);
-
 #endif

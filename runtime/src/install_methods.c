@@ -92,15 +92,6 @@ int runtime_install_operate(const cJSON *places, const char *method_name, const 
     return method->operate(places, operation, mapped, refusal);
 }
 
-static cJSON *packages_call(const cJSON *places, const char *item, const cJSON *manifest_packages) {
-    cJSON *call = runtime_install_places_call(places);
-    if (call == NULL || cJSON_AddStringToObject(call, "item", item) == NULL ||
-        !runtime_install_copy_into(call, "manifestPackages", manifest_packages)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 static int add_detections(cJSON *detections, const cJSON *places, const char *item, const cJSON *packages) {
     for (size_t index = 0; METHODS[index] != NULL; index++) {
@@ -116,7 +107,8 @@ static int add_detections(cJSON *detections, const cJSON *places, const char *it
 
 cJSON *runtime_install_detections(const cJSON *places, const char *item, const cJSON *manifest_packages,
                                   cJSON **refusal) {
-    cJSON *merged = runtime_call_operation(runtime_install_packages_operation, packages_call(places, item, manifest_packages), refusal);
+    runtime_install_packages_request request = {runtime_install_text(places, "portable"), item, manifest_packages};
+    cJSON *merged = runtime_install_packages(&request, refusal);
     cJSON *detections = merged == NULL ? NULL : cJSON_CreateArray();
     if (detections != NULL &&
         !add_detections(detections, places, item, cJSON_GetObjectItemCaseSensitive(merged, "packages"))) {
@@ -127,16 +119,15 @@ cJSON *runtime_install_detections(const cJSON *places, const char *item, const c
     return detections;
 }
 
-cJSON *runtime_install_detect_operation(const cJSON *argument, cJSON **refusal) {
-    const char *item = runtime_install_text(argument, "item");
-    const cJSON *manifest_packages = cJSON_GetObjectItemCaseSensitive(argument, "manifestPackages");
-    if (item == NULL || item[0] == 0 || runtime_install_place(argument, "cache") == NULL ||
+cJSON *runtime_install_detect(const cJSON *places, const char *item, const cJSON *manifest_packages,
+                              cJSON **refusal) {
+    *refusal = NULL;
+    if (item == NULL || item[0] == 0 || runtime_install_place(places, "cache") == NULL ||
         (manifest_packages != NULL && !cJSON_IsObject(manifest_packages))) {
-        *refusal = runtime_refusal("the argument carries no usable places, item or manifestPackages", DETECT_FIX);
+        *refusal = runtime_refusal("the call carries no usable places, item or manifestPackages", DETECT_FIX);
         return NULL;
     }
-    cJSON *detections = runtime_install_detections(cJSON_GetObjectItemCaseSensitive(argument, "places"), item,
-                                                   manifest_packages, refusal);
+    cJSON *detections = runtime_install_detections(places, item, manifest_packages, refusal);
     cJSON *answer = detections == NULL ? NULL : cJSON_CreateObject();
     if (answer == NULL || !cJSON_AddItemToObject(answer, "detections", detections)) {
         cJSON_Delete(answer);

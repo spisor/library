@@ -79,14 +79,17 @@ static int is_settled(const char *state) {
     return state != NULL && (strcmp(state, "installed") == 0 || strcmp(state, "detected") == 0);
 }
 
+static runtime_install_packages_request packages_request(const runtime_install_run *run,
+                                                         const cJSON *application) {
+    runtime_install_packages_request request = {runtime_install_text(run->places, "portable"),
+                                                application_id(application),
+                                                cJSON_GetObjectItemCaseSensitive(application, "packages")};
+    return request;
+}
+
 static cJSON *mapping_of(const runtime_install_run *run, const cJSON *application, cJSON **refusal) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call == NULL || cJSON_AddStringToObject(call, "item", application_id(application)) == NULL ||
-        !runtime_install_copy_into(call, "manifestPackages", cJSON_GetObjectItemCaseSensitive(application, "packages"))) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    cJSON *answer = runtime_call_operation(runtime_install_packages_operation, call, refusal);
+    runtime_install_packages_request request = packages_request(run, application);
+    cJSON *answer = runtime_install_packages(&request, refusal);
     cJSON *packages = cJSON_DetachItemFromObjectCaseSensitive(answer, "packages");
     cJSON_Delete(answer);
     return packages;
@@ -257,16 +260,11 @@ static cJSON *failed_row(const char *id, const char *method, cJSON *refusal) {
     return row;
 }
 
-static cJSON *plan_call(const runtime_install_run *run, const pending_application *pending, const char *method) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call == NULL || cJSON_AddStringToObject(call, "item", application_id(pending->application)) == NULL ||
-        !runtime_install_copy_into(call, "manifestPackages", cJSON_GetObjectItemCaseSensitive(pending->application, "packages")) ||
-        !runtime_install_copy_into(call, "methods", pending->offered) || cJSON_AddStringToObject(call, "chosen", method) == NULL ||
-        !runtime_install_copy_into(call, "installedProviders", pending->offered)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
+static runtime_install_plan_request plan_request(const runtime_install_run *run, const pending_application *pending,
+                                                 const char *method) {
+    runtime_install_plan_request request = {packages_request(run, pending->application), method, pending->offered,
+                                            pending->offered, NULL};
+    return request;
 }
 
 /** The origin an install through method records: the package and what the method reports after it. */
@@ -305,7 +303,8 @@ static cJSON *installed_row(const char *id, const char *method, cJSON *origin) {
 static cJSON *install_through(const runtime_install_run *run, const pending_application *pending, const char *method) {
     const char *id = application_id(pending->application);
     cJSON *refusal = NULL;
-    cJSON *plan = runtime_call_operation(runtime_install_plan_operation, plan_call(run, pending, method), &refusal);
+    runtime_install_plan_request request = plan_request(run, pending, method);
+    cJSON *plan = runtime_install_plan(&request, &refusal);
     if (plan == NULL) {
         return refusal == NULL ? NULL : failed_row(id, method, refusal);
     }

@@ -643,17 +643,15 @@ char *runtime_javascript_executable(const char *cache, const cJSON *environment,
     return executable;
 }
 
-cJSON *runtime_install_runtime_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = runtime_install_text(argument, "cache");
-    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
+cJSON *runtime_install_runtime(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal) {
+    *refusal = NULL;
     if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache) || !cJSON_IsObject(environment) ||
-        (platform != NULL && !(cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring)))) {
-        *refusal = runtime_refusal("the argument carries no usable cache, environment or platform",
-                                   "send {\"cache\": \"<absolute directory>\", \"environment\": {<name>: <value>}, "
-                                   "\"platform\"?: \"<os>-<arch>\"}");
+        (platform != NULL && !runtime_is_platform_key(platform))) {
+        *refusal = runtime_refusal("the call carries no usable cache, environment or platform",
+                                   "pass the cache as an absolute directory, the environment as {<name>: <value>} "
+                                   "and the platform, when given, as <os>-<arch>");
         return NULL;
     }
-    return runtime_acquire_javascript(cache, platform == NULL ? runtime_platform_key() : platform->valuestring,
-                                      environment, refusal);
+    return runtime_acquire_javascript(cache, platform == NULL ? runtime_platform_key() : platform, environment,
+                                      refusal);
 }

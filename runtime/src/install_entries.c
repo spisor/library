@@ -431,7 +431,3 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
     return answer;
 }
 
-cJSON *runtime_install_entry_operation(const cJSON *argument, cJSON **refusal) {
-    return runtime_install_entry(cJSON_GetObjectItemCaseSensitive(argument, "places"),
-                                 cJSON_GetObjectItemCaseSensitive(argument, "loader"), refusal);
-}

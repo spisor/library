@@ -7,6 +7,9 @@
 #include "cJSON.h"
 #include "spisor/status.h"
 
+/** Takes a finished report into `taken`: OK, or OUT_OF_MEMORY to stop the install before its last write. */
+typedef spisor_status (*runtime_install_ecosystem_taker)(const cJSON *report, void *taken);
+
 /**
  * install's ecosystem: { sources, places: { portable, state, cache }, environment, choices?, defaults?,
  * requested?, platform? } installs the ecosystem from catalog sources and answers the report
@@ -34,36 +37,32 @@
  * @implNote No install or download runs under the registry lock: each version is recorded as a
  * reference first under a short lock, then stored unlocked, so a sweep running meanwhile keeps
  * it and two installs at once end with one consistent registry and cache.
- */
-cJSON *runtime_install_ecosystem_operation(const cJSON *argument, cJSON **refusal);
-
-/** Takes a finished report into `taken`: OK, or OUT_OF_MEMORY to stop the install before its last write. */
-typedef spisor_status (*runtime_install_ecosystem_taker)(const cJSON *report, void *taken);
-
-/**
- * runtime_install_ecosystem_operation, handing the finished report to `take` before the running versions are recorded,
- * and again when that record's refusal adds to it; NULL with no refusal when `take` runs out of memory.
+ *
+ * Hands the finished report to `take` before the running versions are recorded, and again when that record's
+ * refusal adds to it; NULL with no refusal when `take` runs out of memory.
  */
 cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken,
                                         cJSON **refusal);
 
 /**
- * install's application: { places: { portable, state, cache }, loader, operation: "update" | "remove" }
+ * install's application: under places { portable, state, cache }, operation "update" or "remove"
  * updates or removes the application loader is registered for through the method its registration
  * recorded, and answers { operation, version? }; after an update the version the method reports is
  * recorded in the registration's application provenance. Refused, naming where the application came
  * from, when it was found on the PATH or how it was installed is not recorded, since only what an
  * install method installed is that method's to change; the loader stays registered either way.
  */
-cJSON *runtime_install_application_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_install_operate_application(const cJSON *places, const char *loader, const char *operation,
+                                           cJSON **refusal);
 
 /**
- * install's registerLoader: { places: { portable, state, cache }, environment, id, version } registers the
+ * install's registerLoader: under places { portable, state, cache } with environment, registers the
  * loader id at the installed version as install registers it, and answers what hosts.register answers:
  * its application read from that version's host.json, the provenance its registration records kept, and
  * its commands, which run spisor-boot, requested again. What every start of a loader does, a launch or
  * an application's own hook, with no catalog read.
  */
-cJSON *runtime_install_register_loader_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_install_register_loader(const cJSON *places, const cJSON *environment, const char *id,
+                                       const char *version, cJSON **refusal);
 
 #endif

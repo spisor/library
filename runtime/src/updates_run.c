@@ -96,15 +96,6 @@ static cJSON *check_call(const update_run *run, const cJSON *registration, const
 }
 
 /** install's application call updating the loader `id`; NULL when memory runs out. */
-static cJSON *update_call(const update_run *run, const char *id) {
-    cJSON *call = places_call(run);
-    if (call == NULL || cJSON_AddStringToObject(call, "loader", id) == NULL ||
-        cJSON_AddStringToObject(call, "operation", "update") == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 /** Whether the registration is a loader whose application an install method installed, which that method updates. */
 static int has_method_application(const cJSON *registration) {
@@ -147,7 +138,7 @@ static int update_one(const update_run *run, const cJSON *registration, const cJ
     int complete = record(run, "checks", id, checked, refusal);
     if (complete && settings_read && has_method_application(registration)) {
         refusal = NULL;
-        cJSON *updated = runtime_call_operation(runtime_install_application_operation, update_call(run, id), &refusal);
+        cJSON *updated = runtime_install_operate_application(run->places, id, "update", &refusal);
         complete = record(run, "applications", id, updated, refusal);
     }
     return complete;

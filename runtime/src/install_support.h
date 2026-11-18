@@ -3,8 +3,8 @@
 
 #include "cJSON.h"
 
-/** argument.places.<name> when it is an absolute path, else NULL. */
-const char *runtime_install_place(const cJSON *argument, const char *name);
+/** places.<name> when it is an absolute path, else NULL. */
+const char *runtime_install_place(const cJSON *places, const char *name);
 
 /** The string member name of object, or NULL when absent or no string. */
 const char *runtime_install_text(const cJSON *object, const char *name);

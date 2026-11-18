@@ -620,9 +620,6 @@ static cJSON *install_from_set(const install_request *request, const cJSON *repo
     return answer;
 }
 
-cJSON *runtime_install_by_id_operation(const cJSON *argument, cJSON **refusal) {
-    return runtime_install_by_id_taking(argument, NULL, NULL, refusal);
-}
 
 cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id_taker take, void *taken,
                                     cJSON **refusal) {
