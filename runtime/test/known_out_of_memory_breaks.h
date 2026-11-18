@@ -209,9 +209,8 @@ static int settled_out_of_memory_failures(const char *suite, const char *label, 
         return failures;
     }
     if ((known->measured_on & MEASURED_HERE) == 0) {
-        printf("%s%s: listed, not measured on this platform, and it %s\n", label, sticky ? " (sticky)" : "",
-               failures > 0 ? "broke" : "held");
-        return 0;
+        printf("POSIX-MEASURE %s|%s|%d|%s\n", suite, label, sticky, failures > 0 ? "broke" : "held");
+        return 1;
     }
     if (failures > 0) {
         printf("%s%s: known out-of-memory break, %s\n", label, sticky ? " (sticky)" : "", known->finding);
