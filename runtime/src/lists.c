@@ -97,33 +97,21 @@ cJSON *runtime_three_state_list(const cJSON *installed, const cJSON *detected, c
     return list;
 }
 
-static cJSON *items_answer(cJSON *items) {
-    cJSON *answer = items == NULL ? NULL : cJSON_CreateObject();
-    if (answer == NULL || !cJSON_AddItemToObject(answer, "items", items)) {
-        cJSON_Delete(answer);
-        cJSON_Delete(items);
-        return NULL;
-    }
-    return answer;
-}
-
-cJSON *runtime_lists_plugins_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *installed = cJSON_GetObjectItemCaseSensitive(argument, "installed");
-    const cJSON *detected = cJSON_GetObjectItemCaseSensitive(argument, "detected");
-    const cJSON *available = cJSON_GetObjectItemCaseSensitive(argument, "available");
+cJSON *runtime_lists_plugins(const cJSON *installed, const cJSON *detected, const cJSON *available,
+                             cJSON **refusal) {
+    *refusal = NULL;
     if (!is_row_list(installed) || !is_row_list(detected) || !is_row_list(available)) {
-        *refusal = runtime_refusal("the argument carries no usable installed, detected or available rows",
-                                   "send each of installed, detected and available as an array of {\"id\": "
+        *refusal = runtime_refusal("the call carries no usable installed, detected or available rows",
+                                   "pass each of installed, detected and available as an array of {\"id\": "
                                    "\"<plugin id>\", ...} rows");
         return NULL;
     }
-    return items_answer(runtime_three_state_list(installed, detected, available));
+    return runtime_three_state_list(installed, detected, available);
 }
 
 /** The registered hosts' application ids, as an array of rows { id }; NULL with *refusal when the registry is unreadable. */
-static cJSON *registered_rows(const cJSON *places, cJSON **refusal) {
-    cJSON *listed = runtime_registry_list(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(places, "state")),
-                                          refusal);
+static cJSON *registered_rows(const char *state, cJSON **refusal) {
+    cJSON *listed = runtime_registry_list(state, refusal);
     cJSON *rows = listed == NULL ? NULL : cJSON_CreateArray();
     const cJSON *hosts = rows == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(listed, "hosts");
     const cJSON *entry;
@@ -227,24 +215,22 @@ static cJSON *application_rows(const cJSON *items, const cJSON *registered, cons
 }
 
 static cJSON *refuse_applications(cJSON **refusal) {
-    *refusal = runtime_refusal("the argument carries no usable catalog, places, environment or detections",
-                               "send {\"catalog\": {\"items\": {...}}, the catalog catalog.read answers, \"places\": "
-                               "{\"state\": \"<absolute directory>\"}, \"environment\": {<name>: <value>}, "
-                               "\"detections\": [{\"method\", \"item\", \"package\", \"answer\": {\"installed\"}} or "
-                               "{\"method\", \"item\", \"refused\"}]}");
+    *refusal = runtime_refusal("the call carries no usable catalog items, state place, environment or detections",
+                               "pass the catalog's items as catalog.read answers them, the state place as an "
+                               "absolute directory, the environment as {<name>: <value>}, and the detections as "
+                               "[{\"method\", \"item\", \"package\", \"answer\": {\"installed\"}} or "
+                               "{\"method\", \"item\", \"refused\"}]");
     return NULL;
 }
 
-cJSON *runtime_lists_applications_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *items = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "catalog"), "items");
-    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    const cJSON *detections = cJSON_GetObjectItemCaseSensitive(argument, "detections");
-    if (!cJSON_IsObject(items) || !cJSON_IsObject(places) || !cJSON_IsObject(environment) || !cJSON_IsArray(detections)) {
+cJSON *runtime_lists_applications(const cJSON *items, const char *state, const cJSON *environment,
+                                  const cJSON *detections, cJSON **refusal) {
+    *refusal = NULL;
+    if (!cJSON_IsObject(items) || state == NULL || !cJSON_IsObject(environment) || !cJSON_IsArray(detections)) {
         return refuse_applications(refusal);
     }
-    cJSON *registered = registered_rows(places, refusal);
-    cJSON *answer = registered == NULL ? NULL : items_answer(application_rows(items, registered, environment, detections));
+    cJSON *registered = registered_rows(state, refusal);
+    cJSON *answer = registered == NULL ? NULL : application_rows(items, registered, environment, detections);
     cJSON_Delete(registered);
     return answer;
 }

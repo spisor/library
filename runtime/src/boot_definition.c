@@ -37,16 +37,6 @@ static int add_text(cJSON *object, const char *name, const char *text) {
     return text == NULL || cJSON_AddStringToObject(object, name, text) != NULL;
 }
 
-/** {cache, hostId, platform?}; NULL when memory runs out. */
-static cJSON *host_call(const char *cache, const char *host_id, const char *platform) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || !add_text(call, "cache", cache) || !add_text(call, "hostId", host_id) ||
-        !add_text(call, "platform", platform)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 static spisor_status copy_text(void **storage, const char *text, const char **copy) {
     return runtime_storage_copy(storage, text, copy) ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
@@ -85,6 +75,8 @@ static spisor_status fill_hint(const cJSON *answered, void *filled) {
 
 static spisor_status read_hint(void *context, const runtime_boot_host_argument *argument,
                                runtime_boot_hint_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOST_SHAPE) ||
@@ -92,30 +84,36 @@ static spisor_status read_hint(void *context, const runtime_boot_host_argument *
         return runtime_refuse_shape(refusal, "boot's read");
     }
     status = check_host(argument->cache, argument->host_id, NULL, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_boot_read_operation,
-                                                         host_call(argument->cache, argument->host_id, NULL),
-                                                         fill_hint, answer, HINT_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    answered = runtime_boot_read(argument->cache, argument->host_id, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_hint, answer, HINT_ANSWER_SHAPE, refusal);
 }
 
-static cJSON *write_call(const runtime_boot_write_argument *argument) {
-    cJSON *call = host_call(argument->cache, argument->host_id, argument->platform);
-    cJSON *libraries = call == NULL ? NULL : cJSON_AddObjectToObject(call, "libraries");
-    int built = libraries != NULL && add_text(call, "host", argument->host) && add_text(call, "state", argument->state);
+/** The libraries as an object of library id to version; NULL when memory runs out. */
+static cJSON *libraries_of(const runtime_boot_write_argument *argument) {
+    cJSON *libraries = cJSON_CreateObject();
+    int built = libraries != NULL;
     for (size_t index = 0; built && index < argument->library_count; index++) {
         built = add_text(libraries, argument->libraries[index].id, argument->libraries[index].version);
     }
     if (!built) {
-        cJSON_Delete(call);
+        cJSON_Delete(libraries);
         return NULL;
     }
-    return call;
+    return libraries;
 }
 
 /** Prepares the write, takes the answer's storage, then writes the one file, so a filled answer is never lost. */
-static spisor_status serve_write(cJSON *call, runtime_boot_hint_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_write(const runtime_boot_write_argument *argument, runtime_boot_hint_answer *answer,
+                                 spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    runtime_boot_hint_write *write = call == NULL ? NULL : runtime_boot_prepare_write(call, &operation_refusal);
+    cJSON *libraries = libraries_of(argument);
+    runtime_boot_hint_request request = {argument->cache, argument->host_id, libraries,
+                                         argument->host,  argument->state,   argument->platform};
+    runtime_boot_hint_write *write =
+        libraries == NULL ? NULL : runtime_boot_prepare_write(&request, &operation_refusal);
     spisor_status status = write == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                          : fill_hint(runtime_boot_write_answer(write), answer);
     if (status == SPISOR_OK && !runtime_boot_commit_write(write, &operation_refusal)) {
@@ -125,7 +123,7 @@ static spisor_status serve_write(cJSON *call, runtime_boot_hint_answer *answer, 
         runtime_release_stored_answer(answer, HINT_ANSWER_SHAPE);
     }
     runtime_boot_free_write(write);
-    cJSON_Delete(call);
+    cJSON_Delete(libraries);
     return status;
 }
 
@@ -147,7 +145,7 @@ static spisor_status write_hint(void *context, const runtime_boot_write_argument
     if (status == SPISOR_OK && argument->state != NULL && !runtime_is_text(argument->state)) {
         status = runtime_refuse_member(refusal, "state", HEADER);
     }
-    return status != SPISOR_OK ? status : serve_write(write_call(argument), answer, refusal);
+    return status != SPISOR_OK ? status : serve_write(argument, answer, refusal);
 }
 
 static spisor_status fill_resolve(const cJSON *answered, void *filled) {
@@ -170,25 +168,11 @@ static spisor_status fill_resolve(const cJSON *answered, void *filled) {
     return status;
 }
 
-static cJSON *resolve_call(const runtime_boot_resolve_argument *argument) {
-    cJSON *call = host_call(argument->cache, argument->host_id, argument->platform);
-    cJSON *arguments = call == NULL ? NULL : cJSON_AddArrayToObject(call, "arguments");
-    for (size_t index = 0; arguments != NULL && index < argument->argument_count; index++) {
-        cJSON *text = cJSON_CreateString(argument->arguments[index]);
-        if (text == NULL || !cJSON_AddItemToArray(arguments, text)) {
-            cJSON_Delete(text);
-            arguments = NULL;
-        }
-    }
-    if (arguments == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 static spisor_status resolve_host(void *context, const runtime_boot_resolve_argument *argument,
                              runtime_boot_resolve_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, RESOLVE_SHAPE) ||
@@ -199,9 +183,12 @@ static spisor_status resolve_host(void *context, const runtime_boot_resolve_argu
     if (status == SPISOR_OK && !runtime_are_arguments(argument->arguments, argument->argument_count)) {
         status = runtime_refuse_member(refusal, "arguments", HEADER);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_boot_resolve_operation, resolve_call(argument),
-                                                         fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    answered = runtime_boot_resolve(argument->cache, argument->host_id, argument->arguments, argument->argument_count,
+                                    argument->platform, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_place(const cJSON *answered, runtime_boot_place_answer *answer) {
@@ -211,9 +198,9 @@ static spisor_status fill_place(const cJSON *answered, runtime_boot_place_answer
 }
 
 /** Places spisor-boot, and when the answer cannot be filled removes the copy this call put there. */
-static spisor_status serve_place(cJSON *call, runtime_boot_place_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_place(const char *cache, runtime_boot_place_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(runtime_boot_place_operation, call, &operation_refusal);
+    cJSON *answered = runtime_boot_place(cache, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_place(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
@@ -228,7 +215,6 @@ static spisor_status serve_place(cJSON *call, runtime_boot_place_answer *answer,
 
 static spisor_status place_stub(void *context, const runtime_boot_place_argument *argument,
                            runtime_boot_place_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, PLACE_ANSWER_SHAPE)) {
@@ -237,12 +223,7 @@ static spisor_status place_stub(void *context, const runtime_boot_place_argument
     if (!runtime_is_text(argument->cache)) {
         return runtime_refuse_member(refusal, "cache", HEADER);
     }
-    call = cJSON_CreateObject();
-    if (call != NULL && !add_text(call, "cache", argument->cache)) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    return serve_place(call, answer, refusal);
+    return serve_place(argument->cache, answer, refusal);
 }
 
 static void release_hint_answer(void *context, runtime_boot_hint_answer *answer) {

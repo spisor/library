@@ -74,9 +74,10 @@ static cJSON *host_screen(cJSON *node) {
     return screen;
 }
 
-cJSON *runtime_ui_plugin_list_operation(const cJSON *argument, cJSON **refusal) {
-    cJSON *listed = runtime_call_operation(runtime_lists_plugins_operation, cJSON_Duplicate(argument, 1), refusal);
-    cJSON *items = listed == NULL ? NULL : runtime_ui_presented_items(cJSON_GetObjectItemCaseSensitive(listed, "items"));
+cJSON *runtime_ui_plugin_list(const cJSON *installed, const cJSON *detected, const cJSON *available,
+                              cJSON **refusal) {
+    cJSON *listed = runtime_lists_plugins(installed, detected, available, refusal);
+    cJSON *items = listed == NULL ? NULL : runtime_ui_presented_items(listed);
     cJSON_Delete(listed);
     return items == NULL ? NULL : host_screen(table_node(items));
 }

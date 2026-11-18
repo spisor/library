@@ -60,18 +60,13 @@ static cJSON *all_detections(const runtime_install_run *run, const cJSON *applic
 }
 
 static cJSON *states_of(const runtime_install_run *run, const cJSON *detections, cJSON **refusal) {
-    cJSON *call = runtime_install_places_call(run->places);
-    if (call == NULL || !runtime_install_copy_into(call, "catalog", run->catalog) ||
-        !runtime_install_copy_into(call, "environment", run->environment) ||
-        !runtime_install_copy_into(call, "detections", detections)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return runtime_call_operation(runtime_lists_applications_operation, call, refusal);
+    return runtime_lists_applications(cJSON_GetObjectItemCaseSensitive(run->catalog, "items"),
+                                      runtime_install_text(run->places, "state"), run->environment, detections,
+                                      refusal);
 }
 
 static const char *state_of(const cJSON *states, const char *id) {
-    for (const cJSON *row = cJSON_GetObjectItemCaseSensitive(states, "items")->child; row != NULL; row = row->next) {
+    for (const cJSON *row = states->child; row != NULL; row = row->next) {
         const char *row_id = runtime_install_text(row, "id");
         if (row_id != NULL && strcmp(row_id, id) == 0) {
             return runtime_install_text(row, "state");

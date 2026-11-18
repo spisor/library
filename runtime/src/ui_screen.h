@@ -20,7 +20,7 @@ typedef struct ui_screen {
  * Opens the screen argument's screen names among its descriptions: 1, or 0 with *refusal set (NULL when
  * memory ran out). Closed with runtime_ui_close_screen.
  */
-int runtime_ui_open_screen(const cJSON *argument, ui_screen *screen, cJSON **refusal);
+int runtime_ui_open_screen(const cJSON *descriptions, const cJSON *entry, ui_screen *screen, cJSON **refusal);
 
 void runtime_ui_close_screen(ui_screen *screen);
 

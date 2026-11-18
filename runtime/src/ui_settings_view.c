@@ -89,11 +89,11 @@ cJSON *runtime_ui_settings_view_of(const cJSON *description) {
     return view;
 }
 
-cJSON *runtime_ui_settings_view_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *description = cJSON_GetObjectItemCaseSensitive(argument, "description");
+cJSON *runtime_ui_settings_view(const cJSON *description, cJSON **refusal) {
+    *refusal = NULL;
     if (!runtime_ui_is_description(description)) {
-        *refusal = runtime_refusal("the argument carries no usable description",
-                                   "send {\"description\": {\"id\": \"<plugin id>\", \"settings\": {...}}}, the plugin's manifest");
+        *refusal = runtime_refusal("the call carries no usable description",
+                                   "pass the plugin's manifest {\"id\": \"<plugin id>\", \"settings\": {...}}");
         return NULL;
     }
     return runtime_ui_settings_view_of(description);

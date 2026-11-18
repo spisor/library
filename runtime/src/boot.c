@@ -26,10 +26,6 @@ struct runtime_boot_hint_write {
     cJSON *answer;
 };
 
-static const char *nonempty_text(const cJSON *argument, const char *member) {
-    const char *text = runtime_catalog_text_member(argument, member);
-    return text != NULL && text[0] != 0 ? text : NULL;
-}
 
 /** Sets *refusal to problem with fix, taking problem; *refusal stays NULL for a NULL problem, memory running out. */
 static cJSON *refuse_problem(char *problem, const char *fix, cJSON **refusal) {
@@ -57,12 +53,6 @@ static int is_checked_host(const char *cache, const char *host_id, cJSON **refus
     return 1;
 }
 
-/** The argument's cache and host id, or NULL with *refusal set as every boot operation refuses them. */
-static const char *checked_host(const cJSON *argument, const char **cache, cJSON **refusal) {
-    const char *host_id = nonempty_text(argument, "hostId");
-    *cache = nonempty_text(argument, "cache");
-    return is_checked_host(*cache, host_id, refusal) ? host_id : NULL;
-}
 
 cJSON *runtime_boot_resolve_host(const char *cache, const char *host_id, cJSON **refusal) {
     *refusal = NULL;
@@ -81,20 +71,22 @@ static cJSON *hint_answer(cJSON *hint) {
     return answer;
 }
 
-cJSON *runtime_boot_read_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = NULL;
-    const char *host_id = checked_host(argument, &cache, refusal);
+cJSON *runtime_boot_read(const char *cache, const char *host_id, cJSON **refusal) {
     int out_of_memory = 0;
-    cJSON *hint = host_id == NULL ? NULL : runtime_read_boot_hint(cache, host_id, &out_of_memory);
-    return host_id == NULL || out_of_memory ? NULL : hint_answer(hint);
+    *refusal = NULL;
+    if (!is_checked_host(cache, host_id, refusal)) {
+        return NULL;
+    }
+    cJSON *hint = runtime_read_boot_hint(cache, host_id, &out_of_memory);
+    return out_of_memory ? NULL : hint_answer(hint);
 }
 
-static const char *platform_member(const cJSON *argument) {
-    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
+/** The platform a call names, this machine's for NULL; NULL for one that is no platform key. */
+static const char *platform_or_own(const char *platform) {
     if (platform == NULL) {
         return runtime_platform_key();
     }
-    return cJSON_IsString(platform) && runtime_is_platform_key(platform->valuestring) ? platform->valuestring : NULL;
+    return runtime_is_platform_key(platform) ? platform : NULL;
 }
 
 static int is_version_map(const cJSON *value) {
@@ -109,22 +101,21 @@ static int is_version_map(const cJSON *value) {
     return 1;
 }
 
-static cJSON *refuse_write_argument(const cJSON *argument, cJSON **refusal) {
-    const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
-    if (!is_version_map(cJSON_GetObjectItemCaseSensitive(argument, "libraries"))) {
+static cJSON *refuse_write_request(const runtime_boot_hint_request *request, cJSON **refusal) {
+    if (!is_version_map(request->libraries)) {
         return runtime_catalog_refuse_member("libraries", "an object of library id to version", refusal);
     }
-    if (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0)) {
+    if (request->host != NULL && request->host[0] == 0) {
         return runtime_catalog_refuse_member("host", "the host bundle version, or leave it out", refusal);
     }
     return runtime_catalog_refuse_member("platform", "a platform key such as linux-x64, or leave it out", refusal);
 }
 
 /** The host version the write records: the one given, else the one the hint names now; *out_of_memory as it reads. */
-static char *recorded_host(const char *cache, const char *host_id, const cJSON *given, int *out_of_memory) {
+static char *recorded_host(const char *cache, const char *host_id, const char *given, int *out_of_memory) {
     cJSON *hint = given == NULL ? runtime_read_boot_hint(cache, host_id, out_of_memory) : NULL;
-    const cJSON *host = given != NULL ? given : cJSON_GetObjectItemCaseSensitive(hint, "host");
-    const char *parts[1] = {cJSON_GetStringValue(host)};
+    const char *recorded = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(hint, "host"));
+    const char *parts[1] = {given != NULL ? given : recorded};
     char *copy = parts[0] == NULL ? NULL : runtime_cache_text(parts, 1);
     *out_of_memory = *out_of_memory || (parts[0] != NULL && copy == NULL);
     cJSON_Delete(hint);
@@ -154,8 +145,9 @@ void runtime_boot_free_write(runtime_boot_hint_write *write) {
 }
 
 /** Takes the registry lock under state, when given, and reads the host version the write keeps. */
-static runtime_boot_hint_write *held_write(const cJSON *argument, runtime_boot_hint_write *write, cJSON **refusal) {
-    const char *state = nonempty_text(argument, "state");
+static runtime_boot_hint_write *held_write(const runtime_boot_hint_request *request, runtime_boot_hint_write *write,
+                                           cJSON **refusal) {
+    const char *state = request->state != NULL && request->state[0] != 0 ? request->state : NULL;
     int out_of_memory = 0;
     spisor_status locked = state == NULL ? SPISOR_OK : runtime_hosts_lock(state, &write->guard);
     if (locked == SPISOR_OUT_OF_MEMORY) {
@@ -168,8 +160,7 @@ static runtime_boot_hint_write *held_write(const cJSON *argument, runtime_boot_h
         runtime_boot_free_write(write);
         return NULL;
     }
-    write->host = recorded_host(write->cache, write->host_id, cJSON_GetObjectItemCaseSensitive(argument, "host"),
-                                &out_of_memory);
+    write->host = recorded_host(write->cache, write->host_id, request->host, &out_of_memory);
     write->answer = out_of_memory ? NULL : written_answer(write->libraries, write->host);
     if (write->answer == NULL) {
         runtime_boot_free_write(write);
@@ -178,34 +169,31 @@ static runtime_boot_hint_write *held_write(const cJSON *argument, runtime_boot_h
     return write;
 }
 
-runtime_boot_hint_write *runtime_boot_prepare_write(const cJSON *argument, cJSON **refusal) {
-    const char *cache = NULL;
-    const char *host_id = checked_host(argument, &cache, refusal);
-    const cJSON *host = cJSON_GetObjectItemCaseSensitive(argument, "host");
-    const char *platform = platform_member(argument);
-    if (host_id == NULL) {
+runtime_boot_hint_write *runtime_boot_prepare_write(const runtime_boot_hint_request *request, cJSON **refusal) {
+    const char *platform = platform_or_own(request->platform);
+    *refusal = NULL;
+    if (!is_checked_host(request->cache, request->host_id, refusal)) {
         return NULL;
     }
-    if (!is_version_map(cJSON_GetObjectItemCaseSensitive(argument, "libraries")) || platform == NULL ||
-        (host != NULL && (!cJSON_IsString(host) || host->valuestring[0] == 0))) {
-        refuse_write_argument(argument, refusal);
+    if (!is_version_map(request->libraries) || platform == NULL ||
+        (request->host != NULL && request->host[0] == 0)) {
+        refuse_write_request(request, refusal);
         return NULL;
     }
     char *problem = NULL;
     runtime_boot_hint_write *write = spisor_memory_allocate_zeroed(1, sizeof *write);
     cJSON *libraries = write == NULL ? NULL
-                                     : runtime_boot_hint_libraries(
-                                           cache, cJSON_GetObjectItemCaseSensitive(argument, "libraries"), platform,
-                                           &problem);
+                                     : runtime_boot_hint_libraries(request->cache, request->libraries, platform,
+                                                                   &problem);
     if (libraries == NULL) {
         spisor_memory_release(write);
         refuse_problem(problem, RUNTIME_REINSTALL_FIX, refusal);
         return NULL;
     }
-    write->cache = cache;
-    write->host_id = host_id;
+    write->cache = request->cache;
+    write->host_id = request->host_id;
     write->libraries = libraries;
-    return held_write(argument, write, refusal);
+    return held_write(request, write, refusal);
 }
 
 const cJSON *runtime_boot_write_answer(const runtime_boot_hint_write *write) {
@@ -221,45 +209,41 @@ int runtime_boot_commit_write(runtime_boot_hint_write *write, cJSON **refusal) {
     return 0;
 }
 
-cJSON *runtime_boot_write_operation(const cJSON *argument, cJSON **refusal) {
-    runtime_boot_hint_write *write = runtime_boot_prepare_write(argument, refusal);
-    cJSON *answer = NULL;
-    if (write != NULL && runtime_boot_commit_write(write, refusal)) {
-        answer = write->answer;
-        write->answer = NULL;
-    }
+int runtime_boot_write(const runtime_boot_hint_request *request, cJSON **refusal) {
+    runtime_boot_hint_write *write = runtime_boot_prepare_write(request, refusal);
+    int written = write != NULL && runtime_boot_commit_write(write, refusal);
     runtime_boot_free_write(write);
-    return answer;
+    return written;
 }
 
-static int is_string_array(const cJSON *value) {
-    if (!cJSON_IsArray(value)) {
-        return 0;
-    }
-    for (const cJSON *entry = value->child; entry != NULL; entry = entry->next) {
-        if (!cJSON_IsString(entry)) {
-            return 0;
+static cJSON *passed_arguments(const char *const *arguments, size_t count) {
+    cJSON *passed = cJSON_CreateArray();
+    for (size_t index = 0; passed != NULL && index < count; index++) {
+        cJSON *text = cJSON_CreateString(arguments[index]);
+        if (text == NULL || !cJSON_AddItemToArray(passed, text)) {
+            cJSON_Delete(text);
+            cJSON_Delete(passed);
+            passed = NULL;
         }
     }
-    return 1;
+    return passed;
 }
 
-cJSON *runtime_boot_resolve_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = NULL;
-    const char *host_id = checked_host(argument, &cache, refusal);
-    const char *platform = platform_member(argument);
-    const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(argument, "arguments");
-    if (host_id == NULL) {
+cJSON *runtime_boot_resolve(const char *cache, const char *host_id, const char *const *arguments,
+                            size_t argument_count, const char *platform, cJSON **refusal) {
+    const char *resolved_platform = platform_or_own(platform);
+    *refusal = NULL;
+    if (!is_checked_host(cache, host_id, refusal)) {
         return NULL;
     }
-    if (platform == NULL) {
+    if (resolved_platform == NULL) {
         return runtime_catalog_refuse_member("platform", "a platform key such as linux-x64, or leave it out", refusal);
     }
-    if (arguments != NULL && !is_string_array(arguments)) {
+    if (argument_count > 0 && arguments == NULL) {
         return runtime_catalog_refuse_member("arguments", "an array of strings, or leave it out", refusal);
     }
-    cJSON *answer = runtime_resolve_booted_host(cache, host_id, platform, refusal);
-    cJSON *passed = answer == NULL ? NULL : arguments == NULL ? cJSON_CreateArray() : cJSON_Duplicate(arguments, 1);
+    cJSON *answer = runtime_resolve_booted_host(cache, host_id, resolved_platform, refusal);
+    cJSON *passed = answer == NULL ? NULL : passed_arguments(arguments, argument_count);
     if (answer != NULL && !runtime_catalog_attach(answer, "arguments", passed)) {
         cJSON_Delete(answer);
         answer = NULL;

@@ -83,10 +83,8 @@ static int open_entry(const cJSON *description, const cJSON *entry, ui_screen *s
                                               screen->kind, " is none of view or settings", NULL));
 }
 
-int runtime_ui_open_screen(const cJSON *argument, ui_screen *screen, cJSON **refusal) {
+int runtime_ui_open_screen(const cJSON *descriptions, const cJSON *entry, ui_screen *screen, cJSON **refusal) {
     memset(screen, 0, sizeof *screen);
-    const cJSON *descriptions = cJSON_GetObjectItemCaseSensitive(argument, "descriptions");
-    const cJSON *entry = cJSON_GetObjectItemCaseSensitive(argument, "screen");
     screen->plugin = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "plugin"));
     screen->kind = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "kind"));
     const cJSON *description = description_of(descriptions, screen->plugin);

@@ -274,22 +274,19 @@ static int record_sources(ecosystem *install, const cJSON *sources) {
            (refusal != NULL && runtime_install_report_refusal(install->run.report, "catalog", refusal));
 }
 
-static cJSON *hint_call(const ecosystem *install, const char *host_id, const char *const *libraries, size_t count) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *versions = call == NULL ? NULL : cJSON_AddObjectToObject(call, "libraries");
-    int built = versions != NULL && cJSON_AddStringToObject(call, "cache", install->run.cache) != NULL &&
-                cJSON_AddStringToObject(call, "hostId", host_id) != NULL &&
-                cJSON_AddStringToObject(call, "state", install->run.state) != NULL &&
-                cJSON_AddStringToObject(call, "platform", install->run.platform) != NULL &&
-                runtime_install_copy_into(call, "host", cJSON_GetObjectItemCaseSensitive(install->running, host_id));
+/** The running versions of the libraries, as an object of library id to version; NULL when memory runs out. */
+static cJSON *hint_libraries(const ecosystem *install, const char *const *libraries, size_t count) {
+    cJSON *versions = cJSON_CreateObject();
+    int built = versions != NULL;
     for (size_t index = 0; built && index < count; index++) {
-        built = runtime_install_copy_into(versions, libraries[index], cJSON_GetObjectItemCaseSensitive(install->running, libraries[index]));
+        built = runtime_install_copy_into(versions, libraries[index],
+                                          cJSON_GetObjectItemCaseSensitive(install->running, libraries[index]));
     }
     if (!built) {
-        cJSON_Delete(call);
+        cJSON_Delete(versions);
         return NULL;
     }
-    return call;
+    return versions;
 }
 
 /** Records the libraries and host version the next start of host_id boots, when that host is installed. */
@@ -298,10 +295,16 @@ static int write_hint(ecosystem *install, const char *host_id, const char *const
         return 1;
     }
     cJSON *refusal = NULL;
-    cJSON *hint = runtime_call_operation(runtime_boot_write_operation, hint_call(install, host_id, libraries, count),
-                                         &refusal);
-    cJSON_Delete(hint);
-    return hint != NULL || (refusal != NULL && runtime_install_report_refusal(install->run.report, host_id, refusal));
+    cJSON *versions = hint_libraries(install, libraries, count);
+    runtime_boot_hint_request request = {install->run.cache,
+                                         host_id,
+                                         versions,
+                                         runtime_install_text(install->running, host_id),
+                                         install->run.state,
+                                         install->run.platform};
+    int written = versions != NULL && runtime_boot_write(&request, &refusal);
+    cJSON_Delete(versions);
+    return written || (refusal != NULL && runtime_install_report_refusal(install->run.report, host_id, refusal));
 }
 
 static int register_ecosystem_host(ecosystem *install) {

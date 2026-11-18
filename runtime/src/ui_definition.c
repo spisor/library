@@ -113,6 +113,7 @@ static spisor_status fill_navigation(const cJSON *answered, void *filled) {
 
 static spisor_status navigation(void *context, const runtime_ui_navigation_argument *argument,
                                 runtime_ui_navigation_answer *answer, spisor_refusal *refusal) {
+    cJSON *answered;
     cJSON *call;
     spisor_status status;
     (void)context;
@@ -136,8 +137,11 @@ static spisor_status navigation(void *context, const runtime_ui_navigation_argum
         cJSON_Delete(call);
         call = NULL;
     }
-    return runtime_serve_operation(runtime_ui_navigation_operation, call, fill_navigation, answer,
-                                   NAVIGATION_ANSWER_SHAPE, refusal);
+    answered = call == NULL ? NULL
+                            : runtime_ui_navigation(cJSON_GetObjectItemCaseSensitive(call, "descriptions"),
+                                                    cJSON_GetObjectItemCaseSensitive(call, "ui"));
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, NULL, fill_navigation, answer, NAVIGATION_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_settings_node(void **storage, const cJSON *json, runtime_ui_settings_node *node) {
@@ -175,6 +179,9 @@ static spisor_status fill_settings_view(const cJSON *answered, void *filled) {
 
 static spisor_status settings_view(void *context, const runtime_ui_settings_view_argument *argument,
                                    runtime_ui_settings_view_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
+    cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SETTINGS_VIEW_SHAPE) ||
@@ -183,11 +190,31 @@ static spisor_status settings_view(void *context, const runtime_ui_settings_view
     }
     status = check_member(refusal, argument->description, SPISOR_VALUE_RECORD, runtime_ui_is_manifest,
                           "description");
-    return status != SPISOR_OK
-               ? status
-               : runtime_serve_operation(runtime_ui_settings_view_operation,
-                                         value_call("description", argument->description), fill_settings_view,
-                                         answer, SETTINGS_VIEW_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = value_call("description", argument->description);
+    answered = call == NULL ? NULL
+                            : runtime_ui_settings_view(cJSON_GetObjectItemCaseSensitive(call, "description"),
+                                                       &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_settings_view, answer, SETTINGS_VIEW_ANSWER_SHAPE,
+                                  refusal);
+}
+
+/** Answers plan or render, `screen_function`, for a checked argument, filling the answer with `fill`. */
+static spisor_status serve_screen(cJSON *(*screen_function)(const cJSON *, const cJSON *, const cJSON *, cJSON **),
+                                  const runtime_ui_screen_argument *argument, runtime_answer_filler fill, void *answer,
+                                  size_t answer_shape, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *call = runtime_ui_screen_call(argument);
+    cJSON *answered = call == NULL ? NULL
+                                   : screen_function(cJSON_GetObjectItemCaseSensitive(call, "descriptions"),
+                                                     cJSON_GetObjectItemCaseSensitive(call, "screen"),
+                                                     cJSON_GetObjectItemCaseSensitive(call, "answers"),
+                                                     &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill, answer, answer_shape, refusal);
 }
 
 static spisor_status plan(void *context, const runtime_ui_screen_argument *argument, runtime_ui_plan_answer *answer,
@@ -200,8 +227,8 @@ static spisor_status plan(void *context, const runtime_ui_screen_argument *argum
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
     return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_ui_plan_operation, runtime_ui_screen_call(argument),
-                                                         runtime_ui_fill_plan, answer, PLAN_ANSWER_SHAPE, refusal);
+                               : serve_screen(runtime_ui_plan, argument, runtime_ui_fill_plan, answer,
+                                              PLAN_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status render(void *context, const runtime_ui_screen_argument *argument, runtime_ui_screen *answer,
@@ -214,8 +241,8 @@ static spisor_status render(void *context, const runtime_ui_screen_argument *arg
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
     return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_ui_render_operation, runtime_ui_screen_call(argument),
-                                                         runtime_ui_fill_screen, answer, SCREEN_SHAPE, refusal);
+                               : serve_screen(runtime_ui_render, argument, runtime_ui_fill_screen, answer,
+                                              SCREEN_SHAPE, refusal);
 }
 
 static spisor_status check_groups(const runtime_ui_plugin_list_argument *argument, spisor_refusal *refusal) {
@@ -245,6 +272,9 @@ static cJSON *groups_call(const runtime_ui_plugin_list_argument *argument) {
 
 static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_argument *argument,
                                  runtime_ui_screen *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
+    cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLUGIN_LIST_SHAPE) ||
@@ -252,9 +282,17 @@ static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_arg
         return runtime_refuse_shape(refusal, "ui's plugin_list");
     }
     status = check_groups(argument, refusal);
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_ui_plugin_list_operation, groups_call(argument),
-                                                         runtime_ui_fill_screen, answer, SCREEN_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = groups_call(argument);
+    answered = call == NULL ? NULL
+                            : runtime_ui_plugin_list(cJSON_GetObjectItemCaseSensitive(call, "installed"),
+                                                     cJSON_GetObjectItemCaseSensitive(call, "detected"),
+                                                     cJSON_GetObjectItemCaseSensitive(call, "available"),
+                                                     &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, runtime_ui_fill_screen, answer, SCREEN_SHAPE, refusal);
 }
 
 static void release_navigation_answer(void *context, runtime_ui_navigation_answer *answer) {

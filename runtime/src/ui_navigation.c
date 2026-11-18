@@ -208,10 +208,7 @@ static cJSON *preferences_of(const cJSON *ui) {
     return preferences;
 }
 
-cJSON *runtime_ui_navigation_operation(const cJSON *argument, cJSON **refusal) {
-    (void)refusal;
-    const cJSON *descriptions = cJSON_GetObjectItemCaseSensitive(argument, "descriptions");
-    const cJSON *ui = cJSON_GetObjectItemCaseSensitive(argument, "ui");
+cJSON *runtime_ui_navigation(const cJSON *descriptions, const cJSON *ui) {
     cJSON *navigation = cJSON_CreateObject();
     if (navigation == NULL || !runtime_add_owned(navigation, "entries", entries_of(descriptions, ui)) ||
         !runtime_add_owned(navigation, "preferences", preferences_of(ui))) {
