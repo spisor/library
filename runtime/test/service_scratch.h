@@ -37,7 +37,7 @@ static inline char *joined_path(const char *directory, const char *name) {
 /** Writes text to directory/name with mode on POSIX (ignored on Windows), answering the joined path. */
 static inline char *touch_file(const char *directory, const char *name, const char *text, int mode) {
     char *path = joined_path(directory, name);
-    CHECK(path != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(path != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 #if !defined(_WIN32)
     CHECK(path != NULL && chmod(path, (mode_t)mode) == 0);
 #else

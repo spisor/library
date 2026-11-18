@@ -106,7 +106,7 @@ static void starts_a_same_size_corruption_which_status_then_refuses(void) {
     CHECK(bytes != NULL && length > 0);
     if (bytes != NULL && length > 0) {
         bytes[length - 1] ^= 0xff;
-        CHECK(spisor_replace_file(carried, bytes, length) == 1);
+        CHECK(spisor_replace_file(carried, bytes, length) == SPISOR_OK);
     }
     program run;
     const char *arguments[] = {"spisor-host", "status", NULL};

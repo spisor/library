@@ -87,11 +87,10 @@ static FILE *open_for_appending(const char *path) {
     return open_for_writing(path, L"ab");
 }
 
-static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
+static FILE *create_temporary(const char *temporary, const char *target, int owner_only, int *out_of_memory) {
     (void)target;
     (void)owner_only;
-    int out_of_memory;
-    return spisor_windows_open(temporary, 1, &out_of_memory);
+    return spisor_windows_open(temporary, 1, out_of_memory);
 }
 
 static int create_directory(const char *path) {
@@ -112,8 +111,8 @@ static void remove_file(const char *path) {
     }
 }
 
-static int move_over(const char *from, const char *to) {
-    return spisor_windows_move_over(from, to);
+static int move_over(const char *from, const char *to, int *out_of_memory) {
+    return spisor_windows_move_over(from, to, out_of_memory);
 }
 
 static char *to_utf8(const wchar_t *wide) {
@@ -135,7 +134,7 @@ static const wchar_t *without_extended_prefix(const wchar_t *final_path) {
     return has_drive_prefix ? final_path + 4 : final_path;
 }
 
-static char *final_path_of_link(const wchar_t *wide) {
+static char *final_path_of_link(const wchar_t *wide, int *out_of_memory) {
     HANDLE handle = CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
@@ -144,8 +143,10 @@ static char *final_path_of_link(const wchar_t *wide) {
     DWORD needed = GetFinalPathNameByHandleW(handle, NULL, 0, FILE_NAME_NORMALIZED);
     wchar_t *final_path = needed == 0 ? NULL : spisor_memory_allocate((size_t)needed * sizeof(wchar_t));
     char *resolved = NULL;
+    *out_of_memory = needed != 0 && final_path == NULL;
     if (final_path != NULL && GetFinalPathNameByHandleW(handle, final_path, needed, FILE_NAME_NORMALIZED) < needed) {
         resolved = to_utf8(without_extended_prefix(final_path));
+        *out_of_memory = resolved == NULL;
     }
     spisor_memory_release(final_path);
     CloseHandle(handle);
@@ -162,12 +163,21 @@ int spisor_is_link(const char *path) {
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 
-static char *write_target_of(const char *path) {
-    if (!spisor_is_link(path)) {
-        return duplicate_text(path);
+/** The file a write to path lands in, freed: path itself, or the final target of a link; NULL when none. */
+static char *write_target_of(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (!spisor_is_convertible_path(path)) {
+        return NULL;
     }
     wchar_t *wide = spisor_wide_path(path);
-    char *target = wide == NULL ? NULL : final_path_of_link(wide);
+    if (wide == NULL) {
+        *out_of_memory = 1;
+        return NULL;
+    }
+    DWORD attributes = GetFileAttributesW(wide);
+    int is_link = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    char *target = is_link ? final_path_of_link(wide, out_of_memory) : duplicate_text(path);
+    *out_of_memory = *out_of_memory || (!is_link && target == NULL);
     spisor_memory_release(wide);
     return target;
 }
@@ -205,8 +215,9 @@ static mode_t replacement_mode(const char *target, int owner_only, int *exact) {
     return *exact ? status.st_mode & 07777 : 0666;
 }
 
-static FILE *create_temporary(const char *temporary, const char *target, int owner_only) {
+static FILE *create_temporary(const char *temporary, const char *target, int owner_only, int *out_of_memory) {
     int exact;
+    *out_of_memory = 0;
     mode_t mode = replacement_mode(target, owner_only, &exact);
     int descriptor = open(temporary, O_CREAT | O_EXCL | O_WRONLY, mode);
     if (descriptor < 0) {
@@ -228,7 +239,8 @@ static void remove_file(const char *path) {
     remove(path);
 }
 
-static int move_over(const char *from, const char *to) {
+static int move_over(const char *from, const char *to, int *out_of_memory) {
+    *out_of_memory = 0;
     return rename(from, to) == 0;
 }
 
@@ -242,13 +254,25 @@ int spisor_is_link(const char *path) {
 #endif
 
 /** @implNote realpath into a buffer, since realpath(path, NULL) answers memory the binary's allocator never saw. */
-static char *resolved_link(const char *path) {
+static char *resolved_link(const char *path, int *out_of_memory) {
     char resolved[PATH_MAX];
-    return realpath(path, resolved) == NULL ? NULL : duplicate_text(resolved);
+    if (realpath(path, resolved) == NULL) {
+        return NULL;
+    }
+    char *copy = duplicate_text(resolved);
+    *out_of_memory = copy == NULL;
+    return copy;
 }
 
-static char *write_target_of(const char *path) {
-    return spisor_is_link(path) ? resolved_link(path) : duplicate_text(path);
+/** The file a write to path lands in, freed: path itself, or the final target of a link; NULL when none. */
+static char *write_target_of(const char *path, int *out_of_memory) {
+    *out_of_memory = 0;
+    if (spisor_is_link(path)) {
+        return resolved_link(path, out_of_memory);
+    }
+    char *copy = duplicate_text(path);
+    *out_of_memory = copy == NULL;
+    return copy;
 }
 #endif
 
@@ -376,9 +400,10 @@ static char *temporary_path_for(const char *path) {
     return temporary;
 }
 
-FILE *spisor_open_replacement(const char *target, int owner_only, char **temporary_path) {
+FILE *spisor_open_replacement(const char *target, int owner_only, char **temporary_path, int *out_of_memory) {
     char *temporary = temporary_path_for(target);
-    FILE *file = temporary == NULL ? NULL : create_temporary(temporary, target, owner_only);
+    *out_of_memory = temporary == NULL;
+    FILE *file = temporary == NULL ? NULL : create_temporary(temporary, target, owner_only, out_of_memory);
     if (file == NULL) {
         spisor_memory_release(temporary);
         temporary = NULL;
@@ -387,36 +412,39 @@ FILE *spisor_open_replacement(const char *target, int owner_only, char **tempora
     return file;
 }
 
-static int replace_resolved_file(const char *target, const uint8_t *bytes, size_t length, int owner_only) {
+static spisor_status refused_unless_out_of_memory(int out_of_memory) {
+    return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+}
+
+static spisor_status replace_resolved_file(const char *target, const uint8_t *bytes, size_t length, int owner_only) {
     char *temporary;
-    FILE *file = spisor_open_replacement(target, owner_only, &temporary);
+    int out_of_memory;
+    FILE *file = spisor_open_replacement(target, owner_only, &temporary, &out_of_memory);
     if (file == NULL) {
-        return 0;
+        return refused_unless_out_of_memory(out_of_memory);
     }
-    int replaced = write_and_close(file, bytes, length) && move_over(temporary, target);
+    out_of_memory = 0;
+    int replaced = write_and_close(file, bytes, length) && move_over(temporary, target, &out_of_memory);
     if (!replaced) {
         remove_file(temporary);
     }
     spisor_memory_release(temporary);
-    return replaced;
+    return replaced ? SPISOR_OK : refused_unless_out_of_memory(out_of_memory);
 }
 
-static int replace_through_links(const char *path, const uint8_t *bytes, size_t length) {
-    char *target = write_target_of(path);
+spisor_status spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
+    int out_of_memory;
+    char *target = write_target_of(path, &out_of_memory);
     if (target == NULL) {
-        return 0;
+        return refused_unless_out_of_memory(out_of_memory);
     }
-    int replaced = replace_resolved_file(target, bytes, length, 0);
+    spisor_status status = replace_resolved_file(target, bytes, length, 0);
     spisor_memory_release(target);
-    return replaced;
+    return status;
 }
 
-int spisor_replace_file(const char *path, const uint8_t *bytes, size_t length) {
-    return replace_through_links(path, bytes, length);
-}
-
-int spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
-    return !spisor_is_link(path) && replace_resolved_file(path, bytes, length, 1);
+spisor_status spisor_replace_private_file(const char *path, const uint8_t *bytes, size_t length) {
+    return spisor_is_link(path) ? SPISOR_REFUSED : replace_resolved_file(path, bytes, length, 1);
 }
 
 int spisor_remove_set_aside(const char *path) {

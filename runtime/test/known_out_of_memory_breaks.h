@@ -98,8 +98,7 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
      "wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "commands' rename", 0, MEASURED_ON_WINDOWS,
-     "commands.c load_registration: registry.c runtime_registry_load: json_file.c spisor_read_json_file: file.c "
-     "spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
+     "commands.c is_shim_taken reads a failed shim_file join as a held name"},
     {OUT_OF_MEMORY_SUITE, "commands' rename onto a held name", 0, MEASURED_ON_WINDOWS,
      "commands.c run_locked: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed is_directory "
      "wide path as an uncreatable folder, so the lock is refused, answering OK"},
@@ -150,13 +149,9 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
     {OPERATIONS_SUITE, "processes' prune", 0, MEASURED_ON_WINDOWS,
      "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
-    {OPERATIONS_SUITE, "processes' ready", 0, MEASURED_ON_WINDOWS,
-     "processes_ready.c write_record: file.c spisor_replace_file reads a failed write_target_of as a failed write"},
-    {OPERATIONS_SUITE, "processes' record_run", 0, MEASURED_ON_WINDOWS,
-     "run_records.c write_record: file.c spisor_replace_file reads a failed write_target_of as a failed write"},
     {OPERATIONS_SUITE, "processes' live_runs", 0, MEASURED_ON_WINDOWS,
-     "run_records.c add_live_run: file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading "
-     "runs out of memory"},
+     "run_records.c add_live_run: directory_tree.c runtime_remove_file_entry reads a failed wide path as a failed "
+     "removal, answering OK"},
     {OPERATIONS_SUITE, "processes' remove_runs", 0, MEASURED_ON_WINDOWS,
      "run_records.c runs_folder reads a failed runtime_cache_joined (cache_folders.c) as a failed removal"},
     {OPERATIONS_SUITE, "processes' hold starting", 0, MEASURED_ON_WINDOWS,
@@ -168,7 +163,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "json_key_change.c read_bytes: file.c spisor_read_file answers NULL alike for a failed read and out of "
      "memory, answering OK"},
     {OPERATIONS_SUITE, "hosts' start", 0, MEASURED_ON_WINDOWS,
-     "host_references.c write_text: file.c spisor_replace_file reads a failed write_target_of as a failed write"},
+     "run_records.c runtime_record_run: file.c spisor_make_directories reads a failed allocation as an "
+     "uncreatable folder"},
     {OPERATIONS_SUITE, "loader's home", 0, MEASURED_ON_WINDOWS,
      "application_home.c candidate_home reads a failed runtime_is_followed_directory as no directory"},
     {OPERATIONS_SUITE, "loader's installed", 0, MEASURED_ON_WINDOWS,

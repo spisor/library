@@ -90,7 +90,7 @@ static int run_hold(int count, char **values) {
     cJSON_Delete(refusal);
     char *text = answer == NULL ? NULL : cJSON_PrintUnformatted(answer);
     cJSON_Delete(answer);
-    int written = text != NULL && spisor_replace_file(values[4], (const uint8_t *)text, strlen(text));
+    int written = text != NULL && spisor_replace_file(values[4], (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     cJSON_free(text);
     if (!written) {
         return 4;
@@ -128,7 +128,7 @@ static int run_environment(int count, char **values) {
     cJSON_AddBoolToObject(answer, "path", getenv("PATH") != NULL);
     char *text = cJSON_PrintUnformatted(answer);
     cJSON_Delete(answer);
-    int written = text != NULL && spisor_replace_file(values[2], (const uint8_t *)text, strlen(text));
+    int written = text != NULL && spisor_replace_file(values[2], (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     cJSON_free(text);
     return written ? 0 : 4;
 }

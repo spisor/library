@@ -43,7 +43,7 @@ static int copy_into(const char *source, const char *directory, const char *name
     char *destination = joined(directory, name);
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(source, &length);
-    int copied = destination != NULL && bytes != NULL && spisor_replace_file(destination, bytes, length) == 1;
+    int copied = destination != NULL && bytes != NULL && spisor_replace_file(destination, bytes, length) == SPISOR_OK;
 #if !defined(_WIN32)
     copied = copied && chmod(destination, 0755) == 0;
 #endif
@@ -74,7 +74,8 @@ static int write_host_manifest(const char *directory, const char *version) {
     cJSON_AddStringToObject(manifest, "entry", entry);
     char *text = spisor_json_stringify_pretty(manifest);
     char *path = joined(directory, "host.json");
-    int written = text != NULL && path != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
+    int written = text != NULL && path != NULL &&
+        spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(path);
     spisor_memory_release(text);
     cJSON_Delete(manifest);

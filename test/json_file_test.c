@@ -76,7 +76,7 @@ static void strips_a_comment_holding_a_nul(void) {
 }
 
 static cJSON *read_content(const char *content, size_t length, spisor_json_file_state *state) {
-    CHECK(spisor_replace_file(SCRATCH_FILE, (const uint8_t *)content, length));
+    CHECK(spisor_replace_file(SCRATCH_FILE, (const uint8_t *)content, length) == SPISOR_OK);
     return spisor_read_json_file(SCRATCH_FILE, state);
 }
 
@@ -89,7 +89,7 @@ static void read_absent_file(void) {
 
 static void read_beneath_a_file(void) {
     spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
-    CHECK(spisor_replace_file(SCRATCH_FILE, (const uint8_t *)"{}", 2));
+    CHECK(spisor_replace_file(SCRATCH_FILE, (const uint8_t *)"{}", 2) == SPISOR_OK);
     cJSON *tree = spisor_read_json_file(SCRATCH_FILE "/inner.json", &state);
     CHECK(tree == NULL);
     CHECK(state == SPISOR_JSON_FILE_ABSENT);
@@ -107,7 +107,7 @@ static void read_where_the_os_will_not_answer(void) {
     const char *sealed = SPISOR_SCRATCH_PATH "/sealed";
     const char *inside = SPISOR_SCRATCH_PATH "/sealed/settings.json";
     CHECK(spisor_make_directories(sealed) == 1);
-    CHECK(spisor_replace_file(inside, (const uint8_t *)"{}", 2));
+    CHECK(spisor_replace_file(inside, (const uint8_t *)"{}", 2) == SPISOR_OK);
     CHECK(chmod(sealed, 0600) == 0);
     spisor_json_file_state state = SPISOR_JSON_FILE_PARSED;
     cJSON *tree = spisor_read_json_file(inside, &state);

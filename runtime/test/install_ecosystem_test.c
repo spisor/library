@@ -410,7 +410,7 @@ static void write_incompressible(const char *path, size_t size) {
     }
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    CHECK(spisor_replace_file(path, (const uint8_t *)bytes, size) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)bytes, size) == SPISOR_OK);
     spisor_memory_release(parent);
     spisor_memory_release(bytes);
 }

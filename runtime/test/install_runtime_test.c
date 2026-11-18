@@ -260,7 +260,7 @@ static char *path_node(const install_base *base, const char *version) {
 #else
     char *node = joined(folder, "node");
 #endif
-    CHECK(probe != NULL && spisor_replace_file(node, probe, length) == 1);
+    CHECK(probe != NULL && spisor_replace_file(node, probe, length) == SPISOR_OK);
 #if !defined(_WIN32)
     CHECK(chmod(node, 0755) == 0);
 #endif

@@ -35,7 +35,7 @@ static void fresh_portable(const char *label) {
 static void write_packages_file(const char *text) {
     char path[1200];
     snprintf(path, sizeof path, "%s/packages.json", portable);
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static answer call_with(install_operation operation, const char *arguments_json) {

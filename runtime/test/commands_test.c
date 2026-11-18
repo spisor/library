@@ -71,7 +71,7 @@ static void fresh_scratch(scratch *place, const char *label) {
     CHECK(spisor_make_directories(place->targets) == 1);
     char profile[1200];
     snprintf(profile, sizeof profile, "%s/.profile", place->home);
-    CHECK(spisor_replace_file(profile, (const uint8_t *)"# profile\n", 10) == 1);
+    CHECK(spisor_replace_file(profile, (const uint8_t *)"# profile\n", 10) == SPISOR_OK);
 }
 
 static answer call(commands_operation operation, cJSON *request) {
@@ -807,7 +807,7 @@ static void a_shim_file_without_the_format_line_is_refused_by_the_launcher(void)
     char line[1500];
     snprintf(shim, sizeof shim, "%s/cc.shim", place.shims);
     snprintf(line, sizeof line, "%s\n", target);
-    CHECK(spisor_replace_file(shim, (const uint8_t *)line, strlen(line)) == 1);
+    CHECK(spisor_replace_file(shim, (const uint8_t *)line, strlen(line)) == SPISOR_OK);
     char program[1400];
     shim_file(&place, "cc", program, sizeof program);
     CHECK(run_program(program, caller_arguments, CALLER_ARGUMENT_COUNT) == 127);

@@ -360,7 +360,8 @@ static int write_marker(const acquisition *runtime) {
     }
     const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
     char *text = runtime_cache_text(parts, 4);
-    int written = text != NULL && spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text)) == 1;
+    int written = text != NULL &&
+        spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(text);
     return written;
 }
@@ -577,7 +578,7 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
     *out_of_memory = folder == NULL || file == NULL || text == NULL;
     int recorded = !*out_of_memory && spisor_make_directories(folder) == 1 &&
-                   spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == 1;
+                   spisor_replace_file(file, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(text);
     spisor_memory_release(pretty);
     spisor_memory_release(file);

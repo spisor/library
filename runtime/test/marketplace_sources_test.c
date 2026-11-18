@@ -216,7 +216,7 @@ static void reads_a_copy_from_a_file_url(void) {
     char path[1200];
     char url[1300];
     snprintf(path, sizeof path, "%s/copy.json", scratch);
-    CHECK(spisor_replace_file(path, (const uint8_t *)COPY_ONE, sizeof COPY_ONE - 1) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)COPY_ONE, sizeof COPY_ONE - 1) == SPISOR_OK);
     snprintf(url, sizeof url, path[0] == '/' ? "file://%s" : "file:///%s", path);
     catalog_answer answer = read_fetched("spisor", url);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
@@ -426,7 +426,7 @@ static void lookup_refuses_an_unusable_call(void) {
 static void a_destination_that_exists_is_refused_and_left_alone(void) {
     char path[1200];
     snprintf(path, sizeof path, "%s/existing.json", scratch);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"keep", 4) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"keep", 4) == SPISOR_OK);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "source", source_object("spisor", "https://example.com/m.json"));
     cJSON_AddStringToObject(argument, "destination", path);

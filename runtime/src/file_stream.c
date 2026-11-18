@@ -9,7 +9,8 @@ FILE *runtime_open_file(const char *path, runtime_file_mode mode) {
 }
 
 int runtime_move_file_over(const char *from, const char *to) {
-    return spisor_windows_move_over(from, to);
+    int out_of_memory;
+    return spisor_windows_move_over(from, to, &out_of_memory);
 }
 
 #else
