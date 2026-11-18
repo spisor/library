@@ -70,12 +70,13 @@ static void environment_of_base(const install_base *base, runtime_variable envir
 
 static spisor_status install_ecosystem(const install_base *base) {
     const runtime_install_definition *install = runtime_install_definition_of();
-    char *index = index_path_of(base);
+    char index[1200];
     runtime_catalog_source source;
     runtime_variable environment[4];
     runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
     runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    snprintf(index, sizeof index, "%s/catalog.json", base->catalog);
     memset(&source, 0, sizeof source);
     source.kind = RUNTIME_CATALOG_LOCAL;
     source.location = index;
@@ -94,7 +95,6 @@ static spisor_status install_ecosystem(const install_base *base) {
     spisor_status status = install->ecosystem(install->context, &argument, &answer, &refusal);
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
-    spisor_memory_release(index);
     return status;
 }
 
