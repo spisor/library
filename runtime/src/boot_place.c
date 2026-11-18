@@ -52,7 +52,7 @@ static int copy_runnable(const char *source, const char *destination) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(source, &length);
     int copied = parent != NULL && bytes != NULL && spisor_make_directories(parent) == 1 &&
-                 spisor_replace_file(destination, bytes, length) == 1;
+                 spisor_replace_file(destination, bytes, length) == SPISOR_OK;
 #if !defined(_WIN32)
     copied = copied && chmod(destination, 0755) == 0;
 #endif

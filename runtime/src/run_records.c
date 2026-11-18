@@ -74,10 +74,11 @@ static char *record_path(const char *folder) {
 /** Writes the record; 0 with *out_of_memory set to 1 when memory ran out building its text. */
 static int write_record(const char *path, const cJSON *run, double check_milliseconds, int *out_of_memory) {
     char *text = record_text(run, check_milliseconds);
-    *out_of_memory = text == NULL;
-    int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    spisor_status status = text == NULL ? SPISOR_OUT_OF_MEMORY
+                                        : spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    *out_of_memory = status == SPISOR_OUT_OF_MEMORY;
     spisor_memory_release(text);
-    return written;
+    return status == SPISOR_OK;
 }
 
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,

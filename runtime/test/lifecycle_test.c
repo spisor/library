@@ -62,7 +62,7 @@ static const char *const portable_bytes = "{\"portable\":true}\n";
 static const char *const secrets_bytes = "{\"alpha\":{\"token\":\"kept\"}}\n";
 
 static void write_text(const char *path, const char *text) {
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static void fresh_scratch(scratch *place) {

@@ -121,7 +121,7 @@ static cJSON *get_registration(const scratch *place, const char *id) {
 }
 
 static void write_raw_file(const char *path, const char *content) {
-    CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == SPISOR_OK);
 }
 
 static void make_host_file(const scratch *place, const char *id, const char *relative_file, int in_cache) {

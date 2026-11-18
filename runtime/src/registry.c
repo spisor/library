@@ -155,10 +155,12 @@ runtime_registry_answer runtime_registry_store(const char *state, const cJSON *r
         spisor_memory_release(path);
         return RUNTIME_REGISTRY_OUT_OF_MEMORY;
     }
-    int written = make_hosts_directory(state) && spisor_replace_file(path, bytes, length);
+    spisor_status written = make_hosts_directory(state) ? spisor_replace_file(path, bytes, length) : SPISOR_REFUSED;
     spisor_memory_release(path);
     spisor_memory_release(bytes);
-    return written ? RUNTIME_REGISTRY_OK : RUNTIME_REGISTRY_UNWRITABLE;
+    return written == SPISOR_OK              ? RUNTIME_REGISTRY_OK
+           : written == SPISOR_OUT_OF_MEMORY ? RUNTIME_REGISTRY_OUT_OF_MEMORY
+                                             : RUNTIME_REGISTRY_UNWRITABLE;
 }
 
 #define UNREADABLE_MESSAGE "the host's registration is not a readable JSON object for that id"

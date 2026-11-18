@@ -112,15 +112,15 @@ static void replace_overwrites_existing(void) {
     const char *directory = SPISOR_SCRATCH_PATH "/replace";
     const char *path = SPISOR_SCRATCH_PATH "/replace/settings.json";
     CHECK(spisor_make_directories(directory) == 1);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"old", 3) == 1);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"old", 3) == SPISOR_OK);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == SPISOR_OK);
     read_back_equals(path, "new");
     CHECK(count_temporary_entries(directory) == 0);
 }
 
 static void replace_into_missing_directory_fails(void) {
     const char *path = SPISOR_SCRATCH_PATH "/no-such-directory/settings.json";
-    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) == 0);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new", 3) != SPISOR_OK);
     CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/no-such-directory") != SPISOR_FILE_PRESENT);
 }
 
@@ -135,7 +135,7 @@ static void replace_through_a_link_changes_the_target_and_keeps_the_link(void) {
     if (!create_link_or_skip(link, target)) {
         return;
     }
-    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == 1);
+    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == SPISOR_OK);
     CHECK(is_link(link));
     read_back_equals(target, "new");
     read_back_equals(link, "new");
@@ -151,7 +151,7 @@ static void replace_through_a_dangling_link_is_refused(void) {
     if (!create_link_or_skip(link, "no-such-target.json")) {
         return;
     }
-    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) == 0);
+    CHECK(spisor_replace_file(link, (const uint8_t *)"new", 3) != SPISOR_OK);
     CHECK(is_link(link));
     CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/dangling-home/no-such-target.json") != SPISOR_FILE_PRESENT);
     CHECK(count_temporary_entries(home_directory) == 0);
@@ -170,7 +170,7 @@ static void a_private_replace_never_writes_through_a_link(void) {
         return;
     }
     CHECK(spisor_is_link(link) == 1);
-    CHECK(spisor_replace_private_file(link, (const uint8_t *)"new", 3) == 0);
+    CHECK(spisor_replace_private_file(link, (const uint8_t *)"new", 3) != SPISOR_OK);
     CHECK(is_link(link));
     read_back_equals(target, "old");
     CHECK(count_temporary_entries(real_directory) == 0);
@@ -190,10 +190,10 @@ static void replace_keeps_the_permission_bits(void) {
     CHECK(spisor_make_directories(directory) == 1);
     CHECK(write_fixture(target, "old"));
     CHECK(chmod(target, 0600) == 0);
-    CHECK(spisor_replace_file(target, (const uint8_t *)"direct", 6) == 1);
+    CHECK(spisor_replace_file(target, (const uint8_t *)"direct", 6) == SPISOR_OK);
     CHECK(mode_of(target) == 0600);
     CHECK(create_link(link, target) == 1);
-    CHECK(spisor_replace_file(link, (const uint8_t *)"linked", 6) == 1);
+    CHECK(spisor_replace_file(link, (const uint8_t *)"linked", 6) == SPISOR_OK);
     CHECK(mode_of(target) == 0600);
     read_back_equals(target, "linked");
 }
@@ -204,10 +204,10 @@ static void private_replace_creates_and_keeps_an_owner_only_file(void) {
     CHECK(spisor_make_directories(directory) == 1);
     remove(path);
     mode_t previous = umask(0);
-    CHECK(spisor_replace_private_file(path, (const uint8_t *)"first", 5) == 1);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"first", 5) == SPISOR_OK);
     CHECK(mode_of(path) == 0600);
     CHECK(chmod(path, 0644) == 0);
-    CHECK(spisor_replace_private_file(path, (const uint8_t *)"second", 6) == 1);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"second", 6) == SPISOR_OK);
     CHECK(mode_of(path) == 0600);
     umask(previous);
     read_back_equals(path, "second");
@@ -216,7 +216,8 @@ static void private_replace_creates_and_keeps_an_owner_only_file(void) {
 
 static int replacement_mode(const char *target, int owner_only) {
     char *temporary = NULL;
-    FILE *file = spisor_open_replacement(target, owner_only, &temporary);
+    int out_of_memory;
+    FILE *file = spisor_open_replacement(target, owner_only, &temporary, &out_of_memory);
     if (file == NULL) {
         return -1;
     }
@@ -251,8 +252,8 @@ static void private_replace_writes_the_bytes(void) {
     const char *directory = SPISOR_SCRATCH_PATH "/private-bytes";
     const char *path = SPISOR_SCRATCH_PATH "/private-bytes/secrets.json";
     CHECK(spisor_make_directories(directory) == 1);
-    CHECK(spisor_replace_private_file(path, (const uint8_t *)"old", 3) == 1);
-    CHECK(spisor_replace_private_file(path, (const uint8_t *)"new", 3) == 1);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"old", 3) == SPISOR_OK);
+    CHECK(spisor_replace_private_file(path, (const uint8_t *)"new", 3) == SPISOR_OK);
     read_back_equals(path, "new");
     CHECK(count_temporary_entries(directory) == 0);
 }
@@ -286,7 +287,7 @@ static void replace_sets_a_running_image_aside_and_takes_its_place(void) {
     CHECK(spisor_make_directories(directory) == 1);
     PROCESS_INFORMATION information;
     CHECK(run_image_at(path, &information));
-    CHECK(spisor_replace_file(path, (const uint8_t *)"new shim", 8) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"new shim", 8) == SPISOR_OK);
     read_back_equals(path, "new shim");
     CHECK(spisor_probe_file(aside) == SPISOR_FILE_PRESENT);
     CHECK(WaitForSingleObject(information.hProcess, 0) == WAIT_TIMEOUT);
@@ -321,7 +322,7 @@ static void sets_two_running_images_aside_in_turn_and_removes_both_once_they_exi
     CHECK(run_image_at(path, &first));
     size_t length = 0;
     uint8_t *ping = bytes_of_ping(&length);
-    CHECK(ping != NULL && spisor_replace_file(path, ping, length) == 1);
+    CHECK(ping != NULL && spisor_replace_file(path, ping, length) == SPISOR_OK);
     wchar_t wide[1024];
     MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 1024);
     wchar_t line[1200];
@@ -331,7 +332,7 @@ static void sets_two_running_images_aside_in_turn_and_removes_both_once_they_exi
     startup.cb = sizeof startup;
     PROCESS_INFORMATION second;
     CHECK(CreateProcessW(wide, line, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &startup, &second) != 0);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"third shim", 10) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"third shim", 10) == SPISOR_OK);
     read_back_equals(path, "third shim");
     CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old") == SPISOR_FILE_PRESENT);
     CHECK(spisor_probe_file(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1") == SPISOR_FILE_PRESENT);
@@ -354,13 +355,13 @@ static void replaces_a_fresh_executable_held_for_a_moment_after_retrying(void) {
     const char *directory = SPISOR_SCRATCH_PATH "/held-executable";
     const char *path = SPISOR_SCRATCH_PATH "/held-executable/fresh.exe";
     CHECK(spisor_make_directories(directory) == 1);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"fresh", 5) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"fresh", 5) == SPISOR_OK);
     wchar_t wide[1024];
     MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 1024);
     HANDLE scanner = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     CHECK(scanner != INVALID_HANDLE_VALUE);
     HANDLE thread = CreateThread(NULL, 0, close_after_a_moment, scanner, 0, NULL);
-    CHECK(spisor_replace_file(path, (const uint8_t *)"replaced", 8) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)"replaced", 8) == SPISOR_OK);
     WaitForSingleObject(thread, 5000);
     CloseHandle(thread);
     read_back_equals(path, "replaced");

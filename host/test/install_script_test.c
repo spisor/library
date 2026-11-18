@@ -320,7 +320,7 @@ static void fetches_spisor_host_again_when_its_bytes_changed(void) {
     CHECK(bytes != NULL && length > 0);
     if (bytes != NULL && length > 0) {
         bytes[length - 1] ^= 0xff;
-        CHECK(spisor_replace_file(executable, bytes, length) == 1);
+        CHECK(spisor_replace_file(executable, bytes, length) == SPISOR_OK);
     }
     program second;
     CHECK(install(&world, &second, NULL) == 0);
@@ -489,7 +489,8 @@ static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     uint8_t *bytes = spisor_read_file(SPISOR_HOST_PATH, &length);
     char *path = joined(world->base.catalog, "cut-short/" HOST_EXECUTABLE);
     char *parent = joined(path, "..");
-    CHECK(bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(path, bytes, length / 2) == 1);
+    CHECK(bytes != NULL && spisor_make_directories(parent) == 1 &&
+        spisor_replace_file(path, bytes, length / 2) == SPISOR_OK);
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("cut-short/" HOST_EXECUTABLE));
     spisor_memory_release(parent);
     spisor_memory_release(path);

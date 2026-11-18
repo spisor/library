@@ -28,11 +28,11 @@ static void fresh_file(two_step *step, const char *label, const char *text) {
     snprintf(directory, sizeof directory, RUNTIME_SCRATCH_PATH "/json-key-%d-%s", (int)CURRENT_PROCESS_ID, label);
     start_empty_directory(directory);
     snprintf(step->file, sizeof step->file, "%s/settings.json", directory);
-    CHECK(spisor_replace_file(step->file, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(step->file, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static void write_file(const two_step *step, const char *text) {
-    CHECK(spisor_replace_file(step->file, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(step->file, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static void file_is(const two_step *step, const char *expected, const char *label) {

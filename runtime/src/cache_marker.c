@@ -167,7 +167,8 @@ spisor_status runtime_cache_write_marker(const char *directory, const cJSON *has
     char *text = path == NULL ? NULL : marker_text(hashes, sizes);
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     if (text != NULL) {
-        int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text);
+        int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK ||
+            holds_text(path, text);
         status = written ? SPISOR_OK : SPISOR_REFUSED;
     }
     spisor_memory_release(text);

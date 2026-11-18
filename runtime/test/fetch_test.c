@@ -186,7 +186,7 @@ static void a_200_stores_the_file_with_its_hash_and_validators(void) {
 
 static void a_stored_file_replaces_what_stood_at_the_destination(void) {
     expect_stored_body(get(request_for_path("/file")), "first");
-    CHECK(spisor_replace_file(destination, (const uint8_t *)"old", 3) == 1);
+    CHECK(spisor_replace_file(destination, (const uint8_t *)"old", 3) == SPISOR_OK);
     expect_stored_body(get(request_for_path("/file")), "replacing");
     remove_destination();
 }
@@ -390,7 +390,7 @@ static void file_url_of(const char *path, char *url, size_t capacity) {
 static void a_file_url_is_copied_through_the_same_verification(void) {
     char source[1200];
     snprintf(source, sizeof source, "%s/local catalog.bin", scratch);
-    CHECK(spisor_replace_file(source, (const uint8_t *)body, BODY_LENGTH) == 1);
+    CHECK(spisor_replace_file(source, (const uint8_t *)body, BODY_LENGTH) == SPISOR_OK);
     char url[2400];
     file_url_of(source, url, sizeof url);
     cJSON *request = request_for(url);

@@ -61,7 +61,7 @@ static void write_text(const char *rest, const char *text) {
     *slash = 0;
     CHECK(spisor_make_directories(path) == 1);
     *slash = '/';
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(path);
 }
 

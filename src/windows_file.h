@@ -6,7 +6,7 @@
 
 /**
  * Opens the UTF-8 path as a binary stream, for reading an existing file or, with writing, creating or
- * truncating one; NULL when it cannot be opened.
+ * truncating one; NULL when it cannot be opened, with *out_of_memory set when memory ran out.
  *
  * @implNote Opened through CreateFileW sharing read, write and delete, then handed to the C runtime with
  * _open_osfhandle, because _wfopen shares no delete access: a reader holding a file open made every
@@ -16,7 +16,8 @@
 FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory);
 
 /**
- * Renames from over to, replacing it, as one step. 1 on success.
+ * Renames from over to, replacing it, as one step. 1 on success; 0 otherwise, with *out_of_memory set when
+ * memory ran out converting the paths.
  *
  * @implNote Retried a bounded number of times on a sharing violation or access denied, which is what a
  * replace meets while another process (a virus scanner, the search indexer, or a reader opened by
@@ -25,7 +26,7 @@ FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory);
  * in use) is first renamed aside to <to>.old, or <to>.old-<n> when an earlier one still runs, which Windows
  * allows, and from takes its place; when that cannot be done the retries above still run.
  */
-int spisor_windows_move_over(const char *from, const char *to);
+int spisor_windows_move_over(const char *from, const char *to, int *out_of_memory);
 
 /**
  * Deletes every <path>.old and <path>.old-<n> a replace set aside for the .exe path, answering how many are

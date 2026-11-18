@@ -136,14 +136,18 @@ static char *references_text(const runtime_host_references *references) {
     return text;
 }
 
-/** Writes the references' text; 0 with *out_of_memory set to 1 when memory ran out naming their folder. */
+static spisor_status write_in_folder(const char *folder, const char *path, const char *text) {
+    return spisor_make_directories(folder) ? spisor_replace_file(path, (const uint8_t *)text, strlen(text))
+                                           : SPISOR_REFUSED;
+}
+
+/** Writes the references' text; 0 with *out_of_memory set to 1 when memory ran out. */
 static int write_text(const char *state, const char *path, const char *text, int *out_of_memory) {
     char *folder = bundles_folder(state);
-    *out_of_memory = folder == NULL;
-    int written = folder != NULL && spisor_make_directories(folder) &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    spisor_status written = folder == NULL ? SPISOR_OUT_OF_MEMORY : write_in_folder(folder, path, text);
+    *out_of_memory = written == SPISOR_OUT_OF_MEMORY;
     spisor_memory_release(folder);
-    return written;
+    return written == SPISOR_OK;
 }
 
 int runtime_record_host_references(const char *state, const char *host_id, const runtime_host_references *references,
@@ -173,7 +177,7 @@ int runtime_draft_host_references(const char *state, const char *host_id, const 
 }
 
 int runtime_write_references_draft(const runtime_references_draft *draft) {
-    return spisor_replace_file(draft->path, (const uint8_t *)draft->text, strlen(draft->text));
+    return spisor_replace_file(draft->path, (const uint8_t *)draft->text, strlen(draft->text)) == SPISOR_OK;
 }
 
 void runtime_free_references_draft(runtime_references_draft *draft) {

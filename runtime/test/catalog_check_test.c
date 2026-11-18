@@ -372,7 +372,7 @@ static char *write_local(const char *name, const char *latest) {
     char *path = spisor_memory_allocate(1300);
     snprintf(path, 1300, "%s/%s", directory, name);
     char *text = index_text(latest);
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)));
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
     spisor_memory_release(text);
     return path;
 }

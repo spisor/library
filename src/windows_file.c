@@ -157,9 +157,16 @@ static int is_running_image_refusal(DWORD error, const char *to) {
     return image;
 }
 
-int spisor_windows_move_over(const char *from, const char *to) {
-    wchar_t *wide_from = spisor_wide_path(from);
-    wchar_t *wide_to = spisor_wide_path(to);
+int spisor_windows_move_over(const char *from, const char *to, int *out_of_memory) {
+    int convertible = spisor_is_convertible_path(from) && spisor_is_convertible_path(to);
+    wchar_t *wide_from = convertible ? spisor_wide_path(from) : NULL;
+    wchar_t *wide_to = convertible ? spisor_wide_path(to) : NULL;
+    *out_of_memory = convertible && (wide_from == NULL || wide_to == NULL);
+    if (*out_of_memory) {
+        spisor_memory_release(wide_to);
+        spisor_memory_release(wide_from);
+        return 0;
+    }
     int moved = wide_from != NULL && wide_to != NULL &&
                 MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     DWORD error = moved ? ERROR_SUCCESS : GetLastError();

@@ -93,7 +93,7 @@ static void write_text(const char *directory, const char *name, const char *text
     char path[1400];
     CHECK(spisor_make_directories(directory) == 1);
     snprintf(path, sizeof path, "%s/%s", directory, name);
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 #ifdef _WIN32

@@ -172,9 +172,9 @@ spisor_status runtime_write_holders(const char *path, const runtime_holders_reco
     if (text == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
+    spisor_status written = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
     spisor_memory_release(text);
-    return written ? SPISOR_OK : SPISOR_REFUSED;
+    return written;
 }
 
 int runtime_draft_started_host(const runtime_holders_record *record, runtime_holders_draft *draft) {
@@ -207,7 +207,7 @@ int runtime_print_started_host(runtime_holders_draft *draft, double pid, double 
 }
 
 spisor_status runtime_write_holders_draft(const char *path, const runtime_holders_draft *draft) {
-    return spisor_replace_file(path, (const uint8_t *)draft->text, strlen(draft->text)) ? SPISOR_OK : SPISOR_REFUSED;
+    return spisor_replace_file(path, (const uint8_t *)draft->text, strlen(draft->text));
 }
 
 void runtime_free_holders_draft(runtime_holders_draft *draft) {

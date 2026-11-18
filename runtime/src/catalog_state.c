@@ -87,7 +87,7 @@ static spisor_status replace_with_text(const char *path, const char *text) {
     if (bytes != NULL && spisor_make_directories(parent)) {
         memcpy(bytes, text, length);
         bytes[length] = '\n';
-        status = spisor_replace_file(path, (const uint8_t *)bytes, length + 1) ? SPISOR_OK : SPISOR_REFUSED;
+        status = spisor_replace_file(path, (const uint8_t *)bytes, length + 1);
     }
     spisor_memory_release(bytes);
     spisor_memory_release(parent);

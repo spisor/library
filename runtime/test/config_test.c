@@ -48,7 +48,7 @@ static void fresh_home(scratch_home *home, const char *label) {
 }
 
 static void write_text(const char *path, const char *text) {
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
+    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
 }
 
 static void write_settings_file(const scratch_home *home, const char *name, const char *text) {

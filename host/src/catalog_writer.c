@@ -249,7 +249,8 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
     size_t length = 0;
     uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length);
     char hash[RUNTIME_SHA256_HEX_SIZE];
-    int copied = bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(destination, bytes, length) == 1;
+    int copied = bytes != NULL && spisor_make_directories(parent) == 1 &&
+        spisor_replace_file(destination, bytes, length) == SPISOR_OK;
     cJSON *reference = copied ? cJSON_CreateObject() : NULL;
     char *url = reference == NULL ? NULL : url_of(input, folder, key);
     if (reference != NULL) {
@@ -373,7 +374,7 @@ static int write_catalog(const cJSON *catalog, const char *path) {
     char *pretty = spisor_json_stringify_pretty(catalog);
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
+    int written = text != NULL && spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(text);
     spisor_memory_release(pretty);
     return written;

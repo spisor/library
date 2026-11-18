@@ -357,7 +357,8 @@ static runtime_entry_outcome write_content(const char *path, const file_bytes *a
     if (found != RUNTIME_ENTRY_OTHER || spisor_is_link(path)) {
         return RUNTIME_ENTRY_KEPT;
     }
-    return spisor_replace_file(path, asked->bytes, asked->length) ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
+    int written = spisor_replace_file(path, asked->bytes, asked->length) == SPISOR_OK;
+    return written ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
 runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, runtime_change_note *note) {
@@ -569,7 +570,8 @@ static int append_line(const char *path, const text_buffer *text, const char *li
     }
     memcpy(bytes, text->bytes, text->length);
     int appended = snprintf(bytes + text->length, size - text->length, "%s%s%s", separated ? ending : "", line, ending);
-    int written = appended > 0 && spisor_replace_file(path, (const uint8_t *)bytes, text->length + (size_t)appended);
+    int written = appended > 0 &&
+        spisor_replace_file(path, (const uint8_t *)bytes, text->length + (size_t)appended) == SPISOR_OK;
     spisor_memory_release(bytes);
     return written;
 }
@@ -623,7 +625,7 @@ static int remove_line(const char *path, const text_buffer *text, line_span span
     if (separated && span.end == text->length) {
         kept -= trailing_newline_length(bytes, kept);
     }
-    int written = spisor_replace_file(path, (const uint8_t *)bytes, kept);
+    int written = spisor_replace_file(path, (const uint8_t *)bytes, kept) == SPISOR_OK;
     spisor_memory_release(bytes);
     return written;
 }
