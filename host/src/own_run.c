@@ -10,8 +10,7 @@
 #include "cache_place.h"
 #include "own_executable.h"
 #include "paths.h"
-#include "processes.h"
-#include "json_service.h"
+#include "runtime/processes.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -103,31 +102,25 @@ static char *own_version(const host_context *context) {
     return version;
 }
 
-static cJSON *run_call(const own_run *run, const char *version) {
-    cJSON *call = cJSON_CreateObject();
-    int built = call != NULL && cJSON_AddStringToObject(call, "state", run->context->state) != NULL &&
-                cJSON_AddStringToObject(call, "hostId", RUNTIME_ECOSYSTEM_HOST_ID) != NULL &&
-                cJSON_AddNumberToObject(call, "checkMilliseconds", HOST_OWN_RUN_INTERVAL_MILLISECONDS) != NULL;
-    cJSON *ran = built ? cJSON_AddObjectToObject(call, "run") : NULL;
-    built = ran != NULL && (version == NULL || cJSON_AddStringToObject(ran, RUNTIME_ECOSYSTEM_HOST_ID, version) != NULL) &&
-            (run->record == NULL || cJSON_AddStringToObject(call, "record", run->record) != NULL);
-    if (!built) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 static char *recorded(const own_run *run, const char *version) {
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_record_run_operation, run_call(run, version), &refusal);
-    const char *record = host_text(answer, "record");
-    char *copy = record == NULL ? NULL : spisor_memory_allocate(strlen(record) + 1);
-    if (copy != NULL) {
-        strcpy(copy, record);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_item_version ran = {RUNTIME_ECOSYSTEM_HOST_ID, version};
+    runtime_processes_record_argument argument = SPISOR_INIT(runtime_processes_record_argument);
+    runtime_processes_record_answer answer = SPISOR_INIT(runtime_processes_record_answer);
+    argument.state = run->context->state;
+    argument.host_id = RUNTIME_ECOSYSTEM_HOST_ID;
+    argument.run = version == NULL ? NULL : &ran;
+    argument.run_count = version == NULL ? 0 : 1;
+    argument.check_milliseconds = HOST_OWN_RUN_INTERVAL_MILLISECONDS;
+    argument.record = run->record;
+    char *copy = NULL;
+    if (processes->record_run(processes->context, &argument, &answer, NULL) == SPISOR_OK) {
+        copy = spisor_memory_allocate(strlen(answer.record) + 1);
     }
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
+    if (copy != NULL) {
+        strcpy(copy, answer.record);
+    }
+    processes->release_record_answer(processes->context, &answer);
     return copy;
 }
 
@@ -153,16 +146,12 @@ void host_finish_own_run(own_run *run) {
     if (run->record == NULL) {
         return;
     }
-    cJSON *call = cJSON_CreateObject();
-    if (call != NULL && (cJSON_AddStringToObject(call, "state", run->context->state) == NULL ||
-                         cJSON_AddStringToObject(call, "hostId", RUNTIME_ECOSYSTEM_HOST_ID) == NULL ||
-                         cJSON_AddStringToObject(call, "record", run->record) == NULL)) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    cJSON *refusal = NULL;
-    cJSON_Delete(runtime_call_operation(runtime_processes_remove_runs_operation, call, &refusal));
-    cJSON_Delete(refusal);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_remove_argument argument = SPISOR_INIT(runtime_processes_remove_argument);
+    argument.state = run->context->state;
+    argument.host_id = RUNTIME_ECOSYSTEM_HOST_ID;
+    argument.record = run->record;
+    processes->remove_runs(processes->context, &argument, NULL);
     spisor_memory_release(run->record);
     run->record = NULL;
 }
