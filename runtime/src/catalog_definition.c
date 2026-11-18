@@ -154,20 +154,21 @@ static spisor_status fill_sources(const cJSON *answered, void *filled) {
 
 static spisor_status sources(void *context, const runtime_catalog_sources_argument *argument,
                              runtime_catalog_sources_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    cJSON *settings = NULL;
+    cJSON *answered;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SOURCES_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, SOURCES_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "catalog's sources");
     }
-    call = cJSON_CreateObject();
-    status = call == NULL ? SPISOR_OUT_OF_MEMORY : runtime_add_value_json(call, "settings", argument->settings, SPISOR_VALUE_RECORD);
+    status = runtime_value_json(argument->settings, SPISOR_VALUE_RECORD, &settings);
     if (status != SPISOR_OK) {
-        cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? runtime_refuse_member(refusal, "settings record", HEADER) : status;
     }
-    return runtime_serve_operation(runtime_catalog_sources_operation, call, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
+    answered = runtime_catalog_sources(settings);
+    cJSON_Delete(settings);
+    return runtime_serve_answered(answered, NULL, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
 }
 
 /** Whether every reading has a source and a catalog: OK, MALFORMED, or OUT_OF_MEMORY from a catalog's walk. */
@@ -261,12 +262,13 @@ static spisor_status fill_check(const cJSON *answered, void *filled) {
  * Serves check with its answer filled before the state the check keeps is written, so an answer that runs out of
  * memory keeps nothing and the next check still answers changed.
  */
-static spisor_status serve_check(cJSON *call, runtime_catalog_check_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_check(const runtime_catalog_check_request *request, runtime_catalog_check_answer *answer,
+                                 spisor_refusal *refusal) {
     runtime_catalog_kept_state kept;
     cJSON *operation_refusal = NULL;
     memset(&kept, 0, sizeof kept);
-    cJSON *answered = call == NULL ? NULL : runtime_catalog_check_deciding(call, &operation_refusal, &kept);
-    cJSON_Delete(call);
+    cJSON *answered = request->source == NULL ? NULL
+                                              : runtime_catalog_check_deciding(request, &operation_refusal, &kept);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill_check(answered, answer);
     cJSON_Delete(answered);
     status = status == SPISOR_OK ? runtime_catalog_keep_state(&kept) : status;
@@ -287,7 +289,9 @@ static spisor_status serve_check(cJSON *call, runtime_catalog_check_answer *answ
 
 static spisor_status check(void *context, const runtime_catalog_check_argument *argument,
                            runtime_catalog_check_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    runtime_catalog_check_request request;
+    cJSON *source;
+    spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
@@ -301,20 +305,25 @@ static spisor_status check(void *context, const runtime_catalog_check_argument *
                                                                                      : "now",
                                      HEADER);
     }
-    call = cJSON_CreateObject();
-    if (call != NULL &&
-        (!add_member(call, "source", runtime_catalog_listed_source_json(argument->source)) ||
-         cJSON_AddStringToObject(call, "cache", argument->cache) == NULL ||
-         cJSON_AddStringToObject(call, "now", argument->now) == NULL ||
-         cJSON_AddNumberToObject(call, "intervalHours", argument->interval_hours) == NULL)) {
-        cJSON_Delete(call);
-        call = NULL;
-    }
-    return serve_check(call, answer, refusal);
+    source = runtime_catalog_listed_source_json(argument->source);
+    request.source = source;
+    request.cache = argument->cache;
+    request.now = argument->now;
+    request.interval_hours = argument->interval_hours;
+    status = serve_check(&request, answer, refusal);
+    cJSON_Delete(source);
+    return status;
+}
+
+static spisor_status fill_current(const cJSON *answered, void *filled) {
+    runtime_catalog_answer *answer = filled;
+    return fill_catalog(&answer->storage, answered, &answer->catalog);
 }
 
 static spisor_status current(void *context, const runtime_catalog_current_argument *argument,
                              runtime_catalog_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call;
     spisor_status status;
     (void)context;
@@ -327,14 +336,14 @@ static spisor_status current(void *context, const runtime_catalog_current_argume
     }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY : runtime_catalog_add_sources(call, argument->sources, argument->source_count);
-    if (status == SPISOR_OK && cJSON_AddStringToObject(call, "cache", argument->cache) == NULL) {
-        status = SPISOR_OUT_OF_MEMORY;
-    }
+    answered = status == SPISOR_OK ? runtime_catalog_current(cJSON_GetObjectItemCaseSensitive(call, "sources"),
+                                                             argument->cache, &operation_refusal)
+                                   : NULL;
+    cJSON_Delete(call);
     if (status != SPISOR_OK) {
-        cJSON_Delete(call);
         return status;
     }
-    return runtime_serve_operation(runtime_catalog_current_operation, call, fill_answer, answer, ANSWER_SHAPE, refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_current, answer, ANSWER_SHAPE, refusal);
 }
 
 static int are_enabled(const runtime_catalog_resolve_argument *argument) {
@@ -422,9 +431,6 @@ static spisor_status resolve_call(const runtime_catalog_resolve_argument *argume
     if (status == SPISOR_OK) {
         status = add_installed(call, argument);
     }
-    if (status == SPISOR_OK && cJSON_AddStringToObject(call, "kind", ITEM_KINDS[argument->kind]) == NULL) {
-        status = SPISOR_OUT_OF_MEMORY;
-    }
     return status;
 }
 
@@ -461,6 +467,8 @@ static spisor_status fill_resolve(const cJSON *answered, void *filled) {
 
 static spisor_status resolve(void *context, const runtime_catalog_resolve_argument *argument,
                              runtime_catalog_resolve_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call;
     spisor_status status;
     (void)context;
@@ -479,11 +487,16 @@ static spisor_status resolve(void *context, const runtime_catalog_resolve_argume
     }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY : resolve_call(argument, call);
+    answered = status == SPISOR_OK ? runtime_catalog_resolve(cJSON_GetObjectItemCaseSensitive(call, "catalog"),
+                                                             cJSON_GetObjectItemCaseSensitive(call, "enabled"),
+                                                             cJSON_GetObjectItemCaseSensitive(call, "installed"),
+                                                             ITEM_KINDS[argument->kind], &operation_refusal)
+                                   : NULL;
+    cJSON_Delete(call);
     if (status != SPISOR_OK) {
-        cJSON_Delete(call);
         return status;
     }
-    return runtime_serve_operation(runtime_catalog_resolve_operation, call, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_resolve, answer, RESOLVE_ANSWER_SHAPE, refusal);
 }
 
 static void release_answer(void *context, runtime_catalog_answer *answer) {

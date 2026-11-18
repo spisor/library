@@ -58,10 +58,8 @@ static cJSON *read_sources(const cJSON *settings) {
     return result;
 }
 
-cJSON *runtime_catalog_sources_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *settings = cJSON_GetObjectItemCaseSensitive(argument, "settings");
-    return cJSON_IsObject(settings) ? read_sources(settings)
-                                    : runtime_catalog_refuse_member("settings", "the merged settings object", refusal);
+cJSON *runtime_catalog_sources(const cJSON *settings) {
+    return read_sources(settings);
 }
 
 static int add_shadowed(cJSON *shadowed, const char *id, const runtime_catalog_location *source) {

@@ -14,6 +14,7 @@
 #include "host_references.h"
 #include "install_run.h"
 #include "plugin_choices.h"
+#include "catalog.h"
 #include "updates_catalog.h"
 #include "updates_request.h"
 #include "version_map.h"
@@ -186,7 +187,7 @@ static cJSON *plugin_fetches(const runtime_updates_request *request, const cJSON
     cJSON *installed = runtime_cache_installed_bundles(request->cache);
     cJSON *resolved = candidates == NULL || installed == NULL
                           ? NULL
-                          : runtime_updates_resolve(catalog, candidates, installed, "plugin", refusal);
+                          : runtime_catalog_resolve(catalog, candidates, installed, "plugin", refusal);
     cJSON *fetch = cJSON_DetachItemFromObjectCaseSensitive(resolved, "fetch");
     cJSON_Delete(resolved);
     cJSON_Delete(installed);
@@ -402,7 +403,7 @@ static int plan_check(const runtime_updates_request *request, const char *now, c
                       check_progress *progress, cJSON **refusal) {
     plan->sources = runtime_updates_sources(settings_of(request), refusal);
     int checked = plan->sources != NULL && check_sources(request, plan->sources, now, progress->checked, refusal);
-    plan->catalog = checked ? runtime_updates_current_catalog(plan->sources, request->cache, refusal) : NULL;
+    plan->catalog = checked ? runtime_catalog_current(plan->sources, request->cache, refusal) : NULL;
     return plan->catalog != NULL && plan_targets(request, plan, refusal);
 }
 

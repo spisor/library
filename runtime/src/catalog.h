@@ -17,41 +17,58 @@
  */
 cJSON *runtime_catalog_read_operation(const cJSON *argument, cJSON **refusal);
 
-/** catalog's sources: {settings} answers {sources, skipped}, from the sources settings name under catalog.sources. */
-cJSON *runtime_catalog_sources_operation(const cJSON *argument, cJSON **refusal);
+/**
+ * catalog's sources: {sources, skipped}, from the sources `settings`, the merged settings object, name under
+ * catalog.sources; NULL when memory runs out.
+ */
+cJSON *runtime_catalog_sources(const cJSON *settings);
 
 /** catalog's merge: {catalogs: [{source, catalog}]} answers {catalog, shadowed}, an earlier source winning an id. */
 cJSON *runtime_catalog_merge_operation(const cJSON *argument, cJSON **refusal);
 
+/** One check: the source as catalog's sources answers it, the cache place, the time now, and the update interval. */
+typedef struct runtime_catalog_check_request {
+    const cJSON *source;
+    const char *cache;
+    const char *now;
+    double interval_hours;
+} runtime_catalog_check_request;
+
 /**
- * catalog's check: {source, cache, now, intervalHours} answers {kind: skipped | unchanged | changed, catalog
- * | failed, detail}, asking an https source at most once per interval, conditionally on the etag kept
- * under cache/catalog, and reading a local source from disk every time.
+ * catalog's check: {kind: skipped | unchanged | changed, catalog | failed, detail}, asking an https source at most
+ * once per interval, conditionally on the etag kept under cache/catalog, and reading a local source from disk every
+ * time; or NULL with *refusal set, or with it NULL when memory runs out.
  *
  * @implNote A failed check never moves checkedAt, so the next start asks again.
  */
-cJSON *runtime_catalog_check_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_catalog_check(const runtime_catalog_check_request *request, cJSON **refusal);
 
 /**
- * runtime_catalog_check_operation without its write: the state the check keeps goes to *kept, empty when it keeps
- * none or the answer is NULL, for the caller to write with runtime_catalog_keep_state once its own answer stands.
+ * runtime_catalog_check without its write: the state the check keeps goes to *kept, empty when it keeps none or the
+ * answer is NULL, for the caller to write with runtime_catalog_keep_state once its own answer stands.
  */
-cJSON *runtime_catalog_check_deciding(const cJSON *argument, cJSON **refusal, runtime_catalog_kept_state *kept);
+cJSON *runtime_catalog_check_deciding(const runtime_catalog_check_request *request, cJSON **refusal,
+                                      runtime_catalog_kept_state *kept);
 
 /** The failed answer of a check whose kept state could not be written; NULL out of memory. */
 cJSON *runtime_catalog_unkept_answer(const runtime_catalog_kept_state *kept);
 
-/** catalog's current: {sources, cache} answers {catalog}, every source's current index merged, with no request. */
-cJSON *runtime_catalog_current_operation(const cJSON *argument, cJSON **refusal);
+/**
+ * catalog's current: the catalog of every one of `sources`, as catalog's sources answers them, merged from its
+ * current index under `cache`, with no request; or NULL with *refusal set, or with it NULL when memory runs out.
+ */
+cJSON *runtime_catalog_current(const cJSON *sources, const char *cache, cJSON **refusal);
 
 /**
- * catalog's resolve: {catalog, enabled, installed, kind?} answers {run, fetch}: which installed version each
- * enabled item of kind runs this start, and which versions to fetch for the next.
+ * catalog's resolve: {run, fetch}, which installed version each of `enabled`, [{id, pin?}], of `kind` (plugin when
+ * NULL) runs this start, given each id's `installed` versions, and which versions to fetch for the next; or NULL with
+ * *refusal set, or with it NULL when memory runs out.
  *
  * @implNote Only an installed version is ever chosen to run, so a fetch that fails or is still under way
  * never changes what runs. An unpinned item runs the catalog's latest when it is installed, over a newer
  * installed version, so a publisher can roll a broken release back.
  */
-cJSON *runtime_catalog_resolve_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_catalog_resolve(const cJSON *catalog, const cJSON *enabled, const cJSON *installed, const char *kind,
+                               cJSON **refusal);
 
 #endif

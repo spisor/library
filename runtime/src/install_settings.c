@@ -101,15 +101,14 @@ static int same_source(const cJSON *left, const cJSON *right) {
 
 /** Whether entries, read as catalog.sources reads a list, names source; -1 when memory runs out. */
 static int is_listed(const cJSON *entries, const cJSON *source) {
-    cJSON *call = cJSON_Parse("{\"settings\": {\"catalog\": {}}}");
-    cJSON *catalog = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(call, "settings"), "catalog");
+    cJSON *settings = cJSON_CreateObject();
+    cJSON *catalog = settings == NULL ? NULL : cJSON_AddObjectToObject(settings, "catalog");
     if (catalog == NULL || !runtime_install_copy_into(catalog, "sources", entries)) {
-        cJSON_Delete(call);
+        cJSON_Delete(settings);
         return -1;
     }
-    cJSON *refusal = NULL;
-    cJSON *read = runtime_call_operation(runtime_catalog_sources_operation, call, &refusal);
-    cJSON_Delete(refusal);
+    cJSON *read = runtime_catalog_sources(settings);
+    cJSON_Delete(settings);
     int listed = read == NULL ? -1 : 0;
     const cJSON *sources = cJSON_GetObjectItemCaseSensitive(read, "sources");
     for (const cJSON *listed_source = sources == NULL ? NULL : sources->child; listed == 0 && listed_source != NULL;

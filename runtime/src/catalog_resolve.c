@@ -94,13 +94,12 @@ static int usable_enabled(const cJSON *enabled) {
     return 1;
 }
 
-static const char *kind_of(const cJSON *argument) {
-    const cJSON *kind = cJSON_GetObjectItemCaseSensitive(argument, "kind");
+static const char *kind_of(const char *kind) {
     if (kind == NULL) {
         return KINDS[0];
     }
-    for (size_t index = 0; cJSON_IsString(kind) && index < sizeof KINDS / sizeof KINDS[0]; index++) {
-        if (strcmp(kind->valuestring, KINDS[index]) == 0) {
+    for (size_t index = 0; index < sizeof KINDS / sizeof KINDS[0]; index++) {
+        if (strcmp(kind, KINDS[index]) == 0) {
             return KINDS[index];
         }
     }
@@ -123,11 +122,10 @@ static cJSON *resolved(const cJSON *catalog, const cJSON *enabled, const cJSON *
     return result;
 }
 
-cJSON *runtime_catalog_resolve_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(argument, "catalog");
-    const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(argument, "enabled");
-    const cJSON *installed = cJSON_GetObjectItemCaseSensitive(argument, "installed");
-    const char *kind = kind_of(argument);
+cJSON *runtime_catalog_resolve(const cJSON *catalog, const cJSON *enabled, const cJSON *installed,
+                               const char *kind_name, cJSON **refusal) {
+    const char *kind = kind_of(kind_name);
+    *refusal = NULL;
     if (!cJSON_IsObject(catalog) || !cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(catalog, "items"))) {
         return runtime_catalog_refuse_member("catalog", "a catalog with items, as catalog.read answers it", refusal);
     }
