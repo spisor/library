@@ -5,10 +5,8 @@
 #include "catalog_call.h"
 #include "check.h"
 #include "directory_tree.h"
-#include "json_service.h"
 #include "cache_call.h"
 #include "processes_call.h"
-#include "processes_ready.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
 
@@ -30,8 +28,12 @@ static cJSON *call_with(const char *tail) {
     return parsed(text);
 }
 
+static catalog_answer publish_call(cJSON *call) {
+    return processes_call(PROCESSES_READY, call);
+}
+
 static catalog_answer publish(const char *tail) {
-    return processes_call(PROCESSES_READY, call_with(tail));
+    return publish_call(call_with(tail));
 }
 
 static catalog_answer await_ready(const char *tail) {
@@ -114,24 +116,21 @@ static void it_refuses_a_record_that_is_no_usable_publication(void) {
     runtime_remove_tree(state);
 }
 
-/** The JSON operation's own answer to an unusable environment: a refusal naming it, never memory running out. */
-static void expect_json_environment_refused(const char *label, cJSON *environment) {
+/** The definition's answer to an unusable environment: a refusal naming it, never memory running out. */
+static void expect_environment_refused(const char *label, cJSON *environment) {
     cJSON *argument = call_with("\"pid\":7");
     cJSON_AddItemToObject(argument, "environment", environment);
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_processes_ready_operation(argument, &refusal);
-    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message"));
-    if (answer != NULL || message == NULL || strstr(message, "environment") == NULL) {
+    catalog_answer answer = publish_call(argument);
+    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "message"));
+    if (answer.status != SPISOR_MALFORMED || message == NULL || strstr(message, "environment") == NULL) {
         fprintf(stderr, "ready with %s did not refuse its environment\n", label);
         check_failures++;
     }
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
-    cJSON_Delete(argument);
+    cJSON_Delete(answer.tree);
 }
 
-static void it_refuses_an_unusable_json_environment_writing_nothing(void) {
-    fresh_state("json-environment");
+static void it_refuses_an_unusable_environment_writing_nothing(void) {
+    fresh_state("environment");
     cJSON *holding_equals = cJSON_CreateObject();
     cJSON *empty_name = cJSON_CreateObject();
     cJSON *named_twice = cJSON_CreateObject();
@@ -139,9 +138,9 @@ static void it_refuses_an_unusable_json_environment_writing_nothing(void) {
     cJSON_AddStringToObject(empty_name, "", "1");
     cJSON_AddStringToObject(named_twice, "A", "1");
     cJSON_AddStringToObject(named_twice, "A", "2");
-    expect_json_environment_refused("a name holding =", holding_equals);
-    expect_json_environment_refused("an empty name", empty_name);
-    expect_json_environment_refused("a name given twice", named_twice);
+    expect_environment_refused("a name holding =", holding_equals);
+    expect_environment_refused("an empty name", empty_name);
+    expect_environment_refused("a name given twice", named_twice);
     char record[1200];
     snprintf(record, sizeof record, "%s/processes/" HOST ".ready.json", state);
     CHECK(spisor_probe_file(record) != SPISOR_FILE_PRESENT);
@@ -169,7 +168,7 @@ int main(void) {
     it_times_out_when_nothing_was_published();
     it_answers_a_published_refusal_as_it_is();
     it_refuses_a_record_that_is_no_usable_publication();
-    it_refuses_an_unusable_json_environment_writing_nothing();
+    it_refuses_an_unusable_environment_writing_nothing();
     it_replaces_the_record_of_an_earlier_pid();
     return check_summary("processes_ready_test");
 }

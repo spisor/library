@@ -9,51 +9,22 @@
 #include "file_times.h"
 #include "paths.h"
 #include "process_start.h"
-#include "processes_request.h"
+#include "json_service.h"
+#include "processes.h"
+#include "processes_holders.h"
 #include "spisor/path.h"
 
 #define START_FIX "check the start the host's registration records names an executable that exists, then try again"
 
-static int is_text_list(const cJSON *list) {
-    if (!cJSON_IsArray(list)) {
-        return 0;
+/** The start the request names, its directory defaulted to state; NULL directory when the request's is not absolute. */
+static runtime_detached_start start_of(const runtime_processes_hold_request *request) {
+    runtime_detached_start start = request->start;
+    if (start.directory == NULL) {
+        start.directory = request->state;
+    } else if (!spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, start.directory)) {
+        start.directory = NULL;
     }
-    for (const cJSON *item = list->child; item != NULL; item = item->next) {
-        if (!cJSON_IsString(item)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static const char *absolute_text(const cJSON *object, const char *name) {
-    const char *text = runtime_catalog_text_member(object, name);
-    return text != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, text) ? text : NULL;
-}
-
-/** Reads the start member into *start, answering the refusal of a member that is not usable, or NULL. */
-static cJSON *read_start(const runtime_processes_request *request, runtime_detached_start *start) {
-    const cJSON *member = cJSON_GetObjectItemCaseSensitive(request->argument, "start");
-    start->executable = absolute_text(member, "executable");
-    start->arguments = cJSON_GetObjectItemCaseSensitive(member, "arguments");
-    start->environment = cJSON_GetObjectItemCaseSensitive(member, "environment");
-    start->directory = cJSON_GetObjectItemCaseSensitive(member, "directory") == NULL ? request->state
-                                                                                      : absolute_text(member, "directory");
-    if (start->executable == NULL) {
-        return runtime_processes_argument_refusal("start.executable", "the absolute path of the program that runs the host");
-    }
-    if (start->arguments != NULL && !is_text_list(start->arguments)) {
-        return runtime_processes_argument_refusal("start.arguments", "an array of strings, or leave it out");
-    }
-    if (start->environment != NULL && !runtime_processes_is_environment(start->environment)) {
-        return runtime_processes_argument_refusal("start.environment",
-                                                  "an object of strings whose names hold no = and appear once, "
-                                                  "or leave it out");
-    }
-    if (start->directory == NULL) {
-        return runtime_processes_argument_refusal("start.directory", "an absolute folder, or leave it out");
-    }
-    return NULL;
+    return start;
 }
 
 static int is_host_running(const runtime_holders_record *record) {
@@ -119,16 +90,15 @@ static cJSON *run_recorded(runtime_detached_host *host, const char *path, runtim
  * runs until it is recorded, so a record that cannot be written ends a host that never ran, through the handle or
  * pipe the start holds rather than by a pid another process may have taken since.
  */
-static cJSON *start_host(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
-                         cJSON **refusal) {
+static cJSON *start_host(const runtime_processes_hold_request *request, const char *path,
+                         runtime_holders_record *record, cJSON **refusal) {
     runtime_holders_draft draft;
     cJSON *answer = held_answer(0, 1, 1);
     if (answer == NULL || !runtime_draft_started_host(record, &draft)) {
         cJSON_Delete(answer);
         return NULL;
     }
-    runtime_detached_start start;
-    read_start(request, &start);
+    runtime_detached_start start = start_of(request);
     runtime_detached_host host;
     char *problem = NULL;
     spisor_status recorded = SPISOR_REFUSED;
@@ -148,11 +118,10 @@ static cJSON *start_host(const runtime_processes_request *request, const char *p
     return answer;
 }
 
-static cJSON *hold_step(const runtime_processes_request *request, const char *path, runtime_holders_record *record,
-                        cJSON **refusal) {
-    double holder = runtime_processes_pid_member(request->argument, "holder");
-    runtime_keep_live_holders(record, holder);
-    if (!runtime_add_holder(record, holder)) {
+static cJSON *hold_step(const void *context, const char *path, runtime_holders_record *record, cJSON **refusal) {
+    const runtime_processes_hold_request *request = context;
+    runtime_keep_live_holders(record, request->holder);
+    if (!runtime_add_holder(record, request->holder)) {
         return NULL;
     }
     if (!is_host_running(record)) {
@@ -161,12 +130,11 @@ static cJSON *hold_step(const runtime_processes_request *request, const char *pa
     return runtime_processes_write_answered(path, record, held_answer(record->pid, 0, 1), refusal);
 }
 
-cJSON *runtime_processes_hold_for(const runtime_processes_request *request, cJSON **refusal) {
-    if (isnan(runtime_processes_pid_member(request->argument, "holder"))) {
-        *refusal = runtime_processes_argument_refusal("holder", "the pid of the holding process, a whole number above zero");
+cJSON *runtime_processes_hold(const runtime_processes_hold_request *request, cJSON **refusal) {
+    *refusal = NULL;
+    if (start_of(request).directory == NULL) {
+        *refusal = runtime_refusal("the call carries no usable start directory", "pass an absolute folder, or none");
         return NULL;
     }
-    runtime_detached_start start;
-    *refusal = read_start(request, &start);
-    return *refusal != NULL ? NULL : runtime_processes_with_holders(request, hold_step, refusal);
+    return runtime_processes_with_holders(request->state, request->host_id, hold_step, request, refusal);
 }

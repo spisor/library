@@ -14,7 +14,8 @@
 #include "catalog_answer.h"
 #include "file_times.h"
 #include "node_json_file.h"
-#include "processes_request.h"
+#include "processes_holders.h"
+#include "spisor/status.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -41,60 +42,31 @@ static void pause_milliseconds(unsigned milliseconds) {
 #endif
 }
 
-static char *ready_path(const runtime_processes_request *request) {
+static char *ready_path(const char *state, const char *host_id) {
     char *problem = NULL;
-    char *path = runtime_holders_path(request->state, request->host_id, READY_EXTENSION, &problem);
+    char *path = runtime_holders_path(state, host_id, READY_EXTENSION, &problem);
     spisor_memory_release(problem);
     return path;
 }
 
-static int is_text_member(const cJSON *argument, const char *name) {
-    const cJSON *value = cJSON_GetObjectItemCaseSensitive(argument, name);
-    return cJSON_IsString(value) && *value->valuestring != 0;
+static int add_text(cJSON *record, const char *name, const char *text) {
+    return text == NULL || cJSON_AddStringToObject(record, name, text) != NULL;
 }
 
-static int is_refusal_published(const cJSON *argument) {
-    return cJSON_HasObjectItem(argument, "refused") && is_text_member(argument, "refused") && is_text_member(argument, "fix");
-}
-
-/** A member of a publication that is unusable and the shape it takes; a NULL member for a usable publication. */
-typedef struct publication_problem {
-    const char *member;
-    const char *shape;
-} publication_problem;
-
-/** What makes a publication neither an environment nor a refusal with its fix, the member NULL when nothing does. */
-static publication_problem publication_problem_of(const cJSON *argument) {
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    int refuses = cJSON_HasObjectItem(argument, "refused");
-    publication_problem problem = {NULL, NULL};
-    if (isnan(runtime_processes_pid_member(argument, "pid"))) {
-        problem = (publication_problem){"pid", "the pid of the session host, a whole number above zero"};
-    } else if (environment != NULL && !runtime_processes_is_environment(environment)) {
-        problem = (publication_problem){"environment",
-                                        "an object of strings whose names hold no = and appear once, or leave it out"};
-    } else if (refuses && environment != NULL) {
-        problem = (publication_problem){"environment",
-                                        "nothing beside refused, which publishes that the host cannot serve"};
-    } else if (refuses != cJSON_HasObjectItem(argument, "fix") || (refuses && !is_refusal_published(argument))) {
-        problem = (publication_problem){"refused and fix", "both as text, or neither"};
+static int add_environment(cJSON *record, const runtime_processes_publication *publication) {
+    if (publication->refused != NULL) {
+        return 1;
     }
-    return problem;
+    cJSON *environment = publication->environment == NULL ? cJSON_CreateObject()
+                                                          : cJSON_Duplicate(publication->environment, 1);
+    return runtime_catalog_attach(record, "environment", environment);
 }
 
-static int copy_member(cJSON *record, const cJSON *argument, const char *name) {
-    const cJSON *member = cJSON_GetObjectItemCaseSensitive(argument, name);
-    return member == NULL || runtime_catalog_attach(record, name, cJSON_Duplicate(member, 1));
-}
-
-static cJSON *record_of(const cJSON *argument) {
+static cJSON *record_of(const runtime_processes_publication *publication) {
     cJSON *record = cJSON_CreateObject();
-    int built = record != NULL && cJSON_AddNumberToObject(record, "pid", runtime_processes_pid_member(argument, "pid")) != NULL &&
-                copy_member(record, argument, "refused") && copy_member(record, argument, "fix") &&
-                copy_member(record, argument, "environment");
-    if (built && !cJSON_HasObjectItem(record, "refused") && !cJSON_HasObjectItem(record, "environment")) {
-        built = cJSON_AddObjectToObject(record, "environment") != NULL;
-    }
+    int built = record != NULL && cJSON_AddNumberToObject(record, "pid", publication->pid) != NULL &&
+                add_text(record, "refused", publication->refused) && add_text(record, "fix", publication->fix) &&
+                add_environment(record, publication);
     if (!built) {
         cJSON_Delete(record);
         return NULL;
@@ -103,9 +75,9 @@ static cJSON *record_of(const cJSON *argument) {
 }
 
 /** Writes the record at path; REFUSED when it cannot be written, OUT_OF_MEMORY having written nothing. */
-static spisor_status write_record(const runtime_processes_request *request, const char *path, const cJSON *record) {
+static spisor_status write_record(const char *state, const char *path, const cJSON *record) {
     char *text = cJSON_PrintUnformatted(record);
-    char *folder = text == NULL ? NULL : runtime_processes_folder(request->state);
+    char *folder = text == NULL ? NULL : runtime_processes_folder(state);
     spisor_status status = folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
     if (status == SPISOR_OK) {
         status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
@@ -115,52 +87,31 @@ static spisor_status write_record(const runtime_processes_request *request, cons
     return status;
 }
 
-static cJSON *ready_for(const runtime_processes_request *request, cJSON **refusal) {
-    publication_problem problem = publication_problem_of(request->argument);
-    if (problem.member != NULL) {
-        *refusal = runtime_processes_argument_refusal(problem.member, problem.shape);
-        return NULL;
-    }
-    cJSON *record = record_of(request->argument);
-    char *path = record == NULL ? NULL : ready_path(request);
-    cJSON *answer = path == NULL ? NULL : cJSON_CreateObject();
-    spisor_status written = answer == NULL ? SPISOR_OUT_OF_MEMORY : write_record(request, path, record);
-    if (written != SPISOR_OK) {
-        *refusal = written == SPISOR_REFUSED ? runtime_processes_state_refusal("the ready record", path) : NULL;
-        cJSON_Delete(answer);
-        answer = NULL;
-    }
+int runtime_processes_ready(const runtime_processes_publication *publication, cJSON **refusal) {
+    cJSON *record = record_of(publication);
+    char *path = record == NULL ? NULL : ready_path(publication->state, publication->host_id);
+    spisor_status written = path == NULL ? SPISOR_OUT_OF_MEMORY : write_record(publication->state, path, record);
+    *refusal = written == SPISOR_REFUSED ? runtime_processes_state_refusal("the ready record", path) : NULL;
     spisor_memory_release(path);
     cJSON_Delete(record);
-    return answer;
-}
-
-static cJSON *refusal_publication(const cJSON *refusal) {
-    const char *message = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message"));
-    const char *fix = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "fix"));
-    cJSON *argument = message == NULL || fix == NULL ? NULL : cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddNumberToObject(argument, "pid", (double)current_process_id()) != NULL &&
-                cJSON_AddStringToObject(argument, "refused", message) != NULL &&
-                cJSON_AddStringToObject(argument, "fix", fix) != NULL;
-    if (!built) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
+    return written == SPISOR_OK;
 }
 
 int runtime_publish_ready_refusal(const char *state, const char *host_id, const cJSON *refusal) {
-    cJSON *argument = refusal_publication(refusal);
-    runtime_processes_request request = {argument, state, host_id};
+    runtime_processes_publication publication = {
+        state,
+        host_id,
+        (double)current_process_id(),
+        NULL,
+        cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "message")),
+        cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refusal, "fix")),
+    };
     cJSON *publication_refused = NULL;
-    cJSON *answer = argument == NULL ? NULL : ready_for(&request, &publication_refused);
-    int published = answer != NULL;
-    cJSON_Delete(answer);
+    int published = publication.refused != NULL && publication.fix != NULL &&
+                    runtime_processes_ready(&publication, &publication_refused);
     cJSON_Delete(publication_refused);
-    cJSON_Delete(argument);
     return published;
 }
-
 
 static int is_record_of(const cJSON *record, double pid) {
     const cJSON *recorded = cJSON_GetObjectItemCaseSensitive(record, "pid");
@@ -195,14 +146,10 @@ static int is_refusal_record(const cJSON *record) {
     return cJSON_IsString(cJSON_GetObjectItemCaseSensitive(record, "refused"));
 }
 
-static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **refusal) {
-    double pid = runtime_processes_pid_member(request->argument, "pid");
-    double timeout = runtime_processes_positive_member(request->argument, "timeoutMilliseconds", NAN);
-    if (isnan(pid) || isnan(timeout)) {
-        *refusal = runtime_processes_argument_refusal("pid and timeoutMilliseconds", "whole numbers above zero");
-        return NULL;
-    }
-    char *path = ready_path(request);
+cJSON *runtime_processes_await_ready(const char *state, const char *host_id, double pid, double timeout,
+                                     cJSON **refusal) {
+    *refusal = NULL;
+    char *path = ready_path(state, host_id);
     double started = runtime_now_milliseconds();
     cJSON *answer = NULL;
     int settled = 0;
@@ -217,7 +164,7 @@ static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **
         }
         cJSON_Delete(record);
         if (!settled && runtime_now_milliseconds() - started >= timeout) {
-            *refusal = timeout_refusal(request->host_id, timeout);
+            *refusal = timeout_refusal(host_id, timeout);
             settled = 1;
         } else if (!settled) {
             pause_milliseconds(POLL_MILLISECONDS);
@@ -225,12 +172,4 @@ static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **
     }
     spisor_memory_release(path);
     return answer;
-}
-
-cJSON *runtime_processes_ready_operation(const cJSON *argument, cJSON **refusal) {
-    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, ready_for, refusal);
-}
-
-cJSON *runtime_processes_await_ready_operation(const cJSON *argument, cJSON **refusal) {
-    return runtime_processes_serve(argument, RUNTIME_PROCESSES_BACKGROUND_HOST, await_ready_for, refusal);
 }

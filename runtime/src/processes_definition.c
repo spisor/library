@@ -7,7 +7,6 @@
 #include "answer_storage.h"
 #include "definition_support.h"
 #include "host_references.h"
-#include "json_service.h"
 #include "paths.h"
 #include "processes.h"
 #include "processes_ready.h"
@@ -55,20 +54,6 @@ static int add_text(cJSON *object, const char *name, const char *text) {
     return text == NULL || cJSON_AddStringToObject(object, name, text) != NULL;
 }
 
-static int add_number(cJSON *object, const char *name, double number) {
-    return cJSON_AddNumberToObject(object, name, number) != NULL;
-}
-
-/** {state, hostId?}; NULL when memory runs out. */
-static cJSON *target_call(const process_target *target) {
-    cJSON *call = cJSON_CreateObject();
-    if (call == NULL || !add_text(call, "state", target->state) || !add_text(call, "hostId", target->host_id)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
 /** Deletes `call` and answers NULL unless `built`. */
 static cJSON *built_call(cJSON *call, int built) {
     if (!built) {
@@ -97,18 +82,11 @@ static uint32_t flag_of(const cJSON *answered, const char *name) {
 }
 
 /**
- * Serves an operation whose answer holds no text, taking the answer's storage before the operation writes anything,
- * so filling it cannot run out of memory after the operation acted: `fill` sets fields only.
+ * Fills an answer that holds no text from what a call answered, its storage taken before the call acted, so filling
+ * it cannot run out of memory after the call acted: `fill` sets fields only.
  */
-static spisor_status serve_fixed(runtime_json_operation operation, cJSON *call, void (*fill)(const cJSON *, void *),
-                                 void *answer, void **storage, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = NULL;
-    if (runtime_start_storage(storage) != SPISOR_OK) {
-        cJSON_Delete(call);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    answered = runtime_call_operation(operation, call, &operation_refusal);
+static spisor_status fill_fixed(cJSON *answered, cJSON *operation_refusal, void (*fill)(const cJSON *, void *),
+                                void *answer, void **storage, spisor_refusal *refusal) {
     if (answered == NULL) {
         runtime_release_storage(*storage);
         *storage = NULL;
@@ -148,12 +126,11 @@ static spisor_status check_hold(const runtime_processes_hold_argument *argument,
     return status;
 }
 
-/** The start member, with an environment only for a caller that gave one, so NULL leaves the caller's to inherit. */
+/** {arguments, environment?}, the environment only for a caller that gave one, so none inherits the caller's. */
 static cJSON *hold_start(const runtime_processes_hold_argument *argument) {
     cJSON *start = cJSON_CreateObject();
     cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
-    int built = arguments != NULL && add_text(start, "executable", argument->executable) &&
-                add_text(start, "directory", argument->directory) &&
+    int built = arguments != NULL &&
                 (argument->environment == NULL ||
                  add_environment(start, "environment", argument->environment, argument->environment_count));
     for (size_t index = 0; built && index < argument->argument_count; index++) {
@@ -166,15 +143,25 @@ static cJSON *hold_start(const runtime_processes_hold_argument *argument) {
     return built_call(start, built);
 }
 
-static cJSON *hold_call(const runtime_processes_hold_argument *argument) {
-    process_target target = {argument->state, argument->host_id};
-    cJSON *call = target_call(&target);
-    cJSON *start = call == NULL ? NULL : hold_start(argument);
-    int built = start != NULL && cJSON_AddItemToObject(call, "start", start);
-    if (start != NULL && !built) {
+static spisor_status serve_hold(const runtime_processes_hold_argument *argument, runtime_processes_hold_answer *answer,
+                                spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *start = hold_start(argument);
+    runtime_processes_hold_request request = {
+        argument->state,
+        argument->host_id,
+        (double)argument->holder,
+        {argument->executable, cJSON_GetObjectItemCaseSensitive(start, "arguments"),
+         cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory}};
+    spisor_status status;
+    if (start == NULL || runtime_start_storage(&answer->storage) != SPISOR_OK) {
         cJSON_Delete(start);
+        return SPISOR_OUT_OF_MEMORY;
     }
-    return built_call(call, built && add_number(call, "holder", (double)argument->holder));
+    status = fill_fixed(runtime_processes_hold(&request, &operation_refusal), operation_refusal, fill_hold, answer,
+                        &answer->storage, refusal);
+    cJSON_Delete(start);
+    return status;
 }
 
 static spisor_status hold(void *context, const runtime_processes_hold_argument *argument,
@@ -186,9 +173,7 @@ static spisor_status hold(void *context, const runtime_processes_hold_argument *
         return runtime_refuse_shape(refusal, "processes' hold");
     }
     status = check_hold(argument, refusal);
-    return status != SPISOR_OK ? status
-                               : serve_fixed(runtime_processes_hold_operation, hold_call(argument), fill_hold,
-                                             answer, &answer->storage, refusal);
+    return status != SPISOR_OK ? status : serve_hold(argument, answer, refusal);
 }
 
 static spisor_status fill_release(const cJSON *answered, void *filled) {
@@ -212,7 +197,8 @@ static spisor_status release(void *context, const runtime_processes_holder_argum
                              runtime_processes_release_answer *answer, spisor_refusal *refusal) {
     process_target target;
     spisor_status status;
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOLDER_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, RELEASE_ANSWER_SHAPE)) {
@@ -226,10 +212,9 @@ static spisor_status release(void *context, const runtime_processes_holder_argum
     if (status != SPISOR_OK) {
         return status;
     }
-    call = target_call(&target);
-    call = built_call(call, call != NULL && add_number(call, "holder", (double)argument->holder));
-    return runtime_serve_operation(runtime_processes_release_operation, call, fill_release, answer,
-                                   RELEASE_ANSWER_SHAPE, refusal);
+    answered = runtime_processes_release(argument->state, argument->host_id, (double)argument->holder,
+                                         &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_release, answer, RELEASE_ANSWER_SHAPE, refusal);
 }
 
 static void fill_prune(const cJSON *answered, void *filled) {
@@ -237,14 +222,16 @@ static void fill_prune(const cJSON *answered, void *filled) {
     answer->exit = flag_of(answered, "exit");
 }
 
-static cJSON *prune_call(const runtime_processes_prune_argument *argument) {
-    process_target target = {argument->state, argument->host_id};
-    cJSON *call = target_call(&target);
-    int built = call != NULL && add_number(call, "self", (double)argument->self) &&
-                (argument->now == 0 || add_number(call, "now", argument->now)) &&
-                (argument->check_milliseconds == 0 ||
-                 add_number(call, "checkMilliseconds", argument->check_milliseconds));
-    return built_call(call, built);
+static spisor_status serve_prune(const runtime_processes_prune_argument *argument,
+                                 runtime_processes_prune_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    runtime_processes_prune_request request = {argument->state, argument->host_id, (double)argument->self,
+                                               argument->now, argument->check_milliseconds};
+    if (runtime_start_storage(&answer->storage) != SPISOR_OK) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return fill_fixed(runtime_processes_prune(&request, &operation_refusal), operation_refusal, fill_prune, answer,
+                      &answer->storage, refusal);
 }
 
 static spisor_status prune(void *context, const runtime_processes_prune_argument *argument,
@@ -264,18 +251,7 @@ static spisor_status prune(void *context, const runtime_processes_prune_argument
     if (status == SPISOR_OK && (!is_time(argument->now) || !is_time(argument->check_milliseconds))) {
         status = runtime_refuse_member(refusal, !is_time(argument->now) ? "now" : "check_milliseconds", HEADER);
     }
-    return status != SPISOR_OK ? status
-                               : serve_fixed(runtime_processes_prune_operation, prune_call(argument), fill_prune,
-                                             answer, &answer->storage, refusal);
-}
-
-/** Serves `call` through an operation that answers {}, with no answer to fill. */
-static spisor_status serve_unanswered(runtime_json_operation operation, cJSON *call, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
-    spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : SPISOR_OK;
-    cJSON_Delete(answered);
-    return status;
+    return status != SPISOR_OK ? status : serve_prune(argument, answer, refusal);
 }
 
 static spisor_status check_ready(const runtime_processes_ready_argument *argument, spisor_refusal *refusal) {
@@ -295,14 +271,20 @@ static spisor_status check_ready(const runtime_processes_ready_argument *argumen
     return status;
 }
 
-static cJSON *ready_call(const runtime_processes_ready_argument *argument) {
-    process_target target = {argument->state, argument->host_id};
-    cJSON *call = target_call(&target);
-    int built = call != NULL && add_number(call, "pid", (double)argument->pid) &&
-                add_text(call, "refused", argument->refused) && add_text(call, "fix", argument->fix) &&
-                (argument->refused != NULL ||
-                 add_environment(call, "environment", argument->environment, argument->environment_count));
-    return built_call(call, built);
+static spisor_status serve_ready(const runtime_processes_ready_argument *argument, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *environment = NULL;
+    runtime_processes_publication publication = {
+        argument->state, argument->host_id, (double)argument->pid, NULL, argument->refused, argument->fix};
+    int published;
+    if (argument->refused == NULL &&
+        runtime_environment_json(argument->environment, argument->environment_count, &environment) != SPISOR_OK) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    publication.environment = environment;
+    published = runtime_processes_ready(&publication, &operation_refusal);
+    cJSON_Delete(environment);
+    return published ? SPISOR_OK : runtime_refuse_json(refusal, operation_refusal);
 }
 
 static spisor_status ready(void *context, const runtime_processes_ready_argument *argument,
@@ -313,8 +295,7 @@ static spisor_status ready(void *context, const runtime_processes_ready_argument
         return runtime_refuse_shape(refusal, "processes' ready");
     }
     status = check_ready(argument, refusal);
-    return status != SPISOR_OK ? status
-                               : serve_unanswered(runtime_processes_ready_operation, ready_call(argument), refusal);
+    return status != SPISOR_OK ? status : serve_ready(argument, refusal);
 }
 
 static spisor_status fill_await(const cJSON *answered, void *filled) {
@@ -342,7 +323,8 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
                                  runtime_processes_await_answer *answer, spisor_refusal *refusal) {
     process_target target;
     spisor_status status;
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, AWAIT_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, AWAIT_ANSWER_SHAPE)) {
@@ -356,11 +338,9 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
     if (status != SPISOR_OK) {
         return status;
     }
-    call = target_call(&target);
-    call = built_call(call, call != NULL && add_number(call, "pid", (double)argument->pid) &&
-                                add_number(call, "timeoutMilliseconds", (double)argument->timeout_milliseconds));
-    return runtime_serve_operation(runtime_processes_await_ready_operation, call, fill_await, answer,
-                                   AWAIT_ANSWER_SHAPE, refusal);
+    answered = runtime_processes_await_ready(argument->state, argument->host_id, (double)argument->pid,
+                                             (double)argument->timeout_milliseconds, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_await, answer, AWAIT_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_record(const cJSON *answered, void *filled) {
@@ -372,24 +352,24 @@ static spisor_status fill_record(const cJSON *answered, void *filled) {
     return status;
 }
 
-static cJSON *record_call(const runtime_processes_record_argument *argument) {
-    process_target target = {argument->state, argument->host_id};
-    cJSON *call = target_call(&target);
-    cJSON *run = call == NULL ? NULL : cJSON_AddObjectToObject(call, "run");
-    int built = run != NULL && add_text(call, "record", argument->record) &&
-                (argument->check_milliseconds == 0 ||
-                 add_number(call, "checkMilliseconds", argument->check_milliseconds));
+/** The run as an object of item ids to versions; NULL when memory runs out. */
+static cJSON *run_of(const runtime_processes_record_argument *argument) {
+    cJSON *run = cJSON_CreateObject();
+    int built = run != NULL;
     for (size_t index = 0; built && index < argument->run_count; index++) {
         built = add_text(run, argument->run[index].id, argument->run[index].version);
     }
-    return built_call(call, built);
+    return built_call(run, built);
 }
 
 /** Records the run, and when the answer cannot be filled removes a record this call wrote anew. */
-static spisor_status serve_record(const runtime_processes_record_argument *argument, cJSON *call,
+static spisor_status serve_record(const runtime_processes_record_argument *argument,
                                   runtime_processes_record_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(runtime_processes_record_run_operation, call, &operation_refusal);
+    cJSON *run = run_of(argument);
+    runtime_processes_record_request request = {argument->state, argument->host_id, run,
+                                                argument->check_milliseconds, argument->record};
+    cJSON *answered = run == NULL ? NULL : runtime_processes_record_run(&request, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_record(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
@@ -399,6 +379,7 @@ static spisor_status serve_record(const runtime_processes_record_argument *argum
         }
     }
     cJSON_Delete(answered);
+    cJSON_Delete(run);
     return status;
 }
 
@@ -422,7 +403,7 @@ static spisor_status record_run(void *context, const runtime_processes_record_ar
     if (status == SPISOR_OK && argument->record != NULL && !runtime_is_text(argument->record)) {
         status = runtime_refuse_member(refusal, "record", HEADER);
     }
-    return status != SPISOR_OK ? status : serve_record(argument, record_call(argument), answer, refusal);
+    return status != SPISOR_OK ? status : serve_record(argument, answer, refusal);
 }
 
 static spisor_status fill_run(void **storage, const cJSON *object, runtime_processes_run *run) {
@@ -466,7 +447,8 @@ static spisor_status live_runs(void *context, const runtime_processes_live_argum
                                runtime_processes_live_answer *answer, spisor_refusal *refusal) {
     process_target target;
     spisor_status status;
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LIVE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, LIVE_ANSWER_SHAPE)) {
@@ -480,17 +462,15 @@ static spisor_status live_runs(void *context, const runtime_processes_live_argum
     if (status != SPISOR_OK) {
         return status;
     }
-    call = target_call(&target);
-    call = built_call(call, call != NULL && (argument->now == 0 || add_number(call, "now", argument->now)));
-    return runtime_serve_operation(runtime_processes_live_runs_operation, call, fill_live, answer, LIVE_ANSWER_SHAPE,
-                                   refusal);
+    answered = runtime_processes_live_runs(argument->state, argument->now, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_live, answer, LIVE_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status remove_runs(void *context, const runtime_processes_remove_argument *argument,
                                  spisor_refusal *refusal) {
     process_target target;
     spisor_status status;
-    cJSON *call;
+    cJSON *operation_refusal = NULL;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REMOVE_SHAPE)) {
         return runtime_refuse_shape(refusal, "processes' remove_runs");
@@ -503,9 +483,9 @@ static spisor_status remove_runs(void *context, const runtime_processes_remove_a
     if (status != SPISOR_OK) {
         return status;
     }
-    call = target_call(&target);
-    call = built_call(call, call != NULL && add_text(call, "record", argument->record));
-    return serve_unanswered(runtime_processes_remove_runs_operation, call, refusal);
+    return runtime_processes_remove_runs(argument->state, argument->host_id, argument->record, &operation_refusal)
+               ? SPISOR_OK
+               : runtime_refuse_json(refusal, operation_refusal);
 }
 
 static void release_hold_answer(void *context, runtime_processes_hold_answer *answer) {
