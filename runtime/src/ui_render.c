@@ -114,7 +114,7 @@ static cJSON *planned(const ui_screen *screen, const cJSON *answers) {
     return plan_answer(calls);
 }
 
-static cJSON *plan_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
     if (answers != NULL && !runtime_ui_is_answer_list(answers)) {
         return refuse_answers(refusal);
@@ -129,9 +129,6 @@ static cJSON *plan_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_ui_plan(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, plan_for);
-}
 
 static int is_one_of(const char *text, const char *const *names, size_t count) {
     for (size_t index = 0; text != NULL && index < count; index++) {
@@ -326,7 +323,7 @@ static cJSON *rendered_screen(const ui_screen *screen, const cJSON *answers, cJS
     return rendered;
 }
 
-static cJSON *render_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_render_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
     if (!runtime_ui_is_answer_list(answers)) {
         return refuse_answers(refusal);
@@ -339,8 +336,4 @@ static cJSON *render_for(const cJSON *argument, cJSON **refusal) {
     cJSON *rendered = rendered_screen(&screen, answers, refusal);
     runtime_ui_close_screen(&screen);
     return rendered;
-}
-
-RUNTIME_EXPORT int32_t runtime_ui_render(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, render_for);
 }

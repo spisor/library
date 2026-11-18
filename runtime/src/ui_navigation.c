@@ -207,7 +207,7 @@ static cJSON *preferences_of(const cJSON *ui) {
     return preferences;
 }
 
-static cJSON *navigation_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_navigation_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *descriptions = cJSON_GetObjectItemCaseSensitive(argument, "descriptions");
     const cJSON *ui = cJSON_GetObjectItemCaseSensitive(argument, "ui");
     if (!runtime_ui_is_description_list(descriptions) || !cJSON_IsObject(ui)) {
@@ -223,8 +223,4 @@ static cJSON *navigation_for(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return navigation;
-}
-
-RUNTIME_EXPORT int32_t runtime_ui_navigation(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, navigation_for);
 }

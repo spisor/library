@@ -209,8 +209,8 @@ target_include_directories(runtime_hosts_definition PRIVATE ${PROJECT_SOURCE_DIR
 set_target_properties(runtime_hosts_definition PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts_definition)
 
-set(runtime_ui_sources src/ui_binding.c src/ui_items.c src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c
-    src/ui_settings_view.c)
+set(runtime_ui_sources src/ui_binding.c src/ui_definition.c src/ui_items.c src/ui_navigation.c src/ui_refusal.c
+    src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_settings_view.c)
 add_library(runtime_ui OBJECT ${runtime_ui_sources})
 target_link_libraries(runtime_ui PUBLIC runtime_objects)
 target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
