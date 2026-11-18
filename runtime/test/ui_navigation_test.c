@@ -1,7 +1,9 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "definition_fixture.h"
 #include "ui_fixture.h"
 
 #define VIEW_NODES "\"nodes\": [{\"id\": \"root\", \"component\": \"stack\"}]"
@@ -16,6 +18,8 @@ static const char *TOOLS =
 
 static const char *NOTES = "{\"id\": \"notes\", \"api\": 1, \"views\": {\"list\": {\"title\": \"List\", " VIEW_NODES "}}}";
 
+#define NOTES_LIST "[{\"id\": \"notes\", \"views\": {\"list\": {\"title\": \"List\", " VIEW_NODES "}}}]"
+
 static const char *ARCHIVE = "{\"id\": \"archive\", \"api\": 1, \"views\": {\"old\": {\"title\": \"Old\", " VIEW_NODES "}}}";
 
 /** ui.navigation of the manifests given as JSON texts, under the ui settings given as JSON text. */
@@ -26,7 +30,7 @@ static cJSON *navigation_of(const char *const *manifests, size_t count, const ch
         cJSON_AddItemToArray(descriptions, parsed(manifests[index]));
     }
     cJSON_AddItemToObject(request, "ui", parsed(ui));
-    return successful(runtime_ui_navigation, request, "ui.navigation");
+    return successful(UI_NAVIGATION, request, "ui.navigation");
 }
 
 /** The entries as plugin/kind/id keys joined by commas. */
@@ -177,12 +181,39 @@ static void keeps_two_plugins_of_one_order_in_id_order_whatever_order_they_arriv
 
 static void refuses_descriptions_that_are_no_list_of_manifests_with_an_id(void) {
     const char *requests[] = {"{\"ui\": {}}", "{\"descriptions\": {}, \"ui\": {}}",
-                              "{\"descriptions\": [{\"api\": 1}], \"ui\": {}}", "{\"descriptions\": [], \"ui\": []}"};
+                              "{\"descriptions\": [{\"api\": 1}], \"ui\": {}}", "{\"descriptions\": [], \"ui\": []}",
+                              "{\"descriptions\": []}"};
+    const char *members[] = {"descriptions", "descriptions", "descriptions", "ui", "ui"};
     for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
-        catalog_answer answer = call_catalog(runtime_ui_navigation, parsed(requests[index]));
-        expect_refusal(answer, "descriptions", requests[index]);
-        cJSON_Delete(answer.tree);
+        expect_ui_refusal(ui_call(UI_NAVIGATION, parsed(requests[index])), SPISOR_MALFORMED, members[index],
+                          requests[index]);
     }
+}
+
+static void refuses_an_argument_short_of_its_shape_and_an_answer_already_holding_storage(void) {
+    const runtime_ui_definition *ui = runtime_ui_definition_of();
+    spisor_value_tree descriptions = SPISOR_INIT(spisor_value_tree);
+    spisor_value_tree settings = SPISOR_INIT(spisor_value_tree);
+    runtime_ui_navigation_argument argument = SPISOR_INIT(runtime_ui_navigation_argument);
+    runtime_ui_navigation_answer answer = SPISOR_INIT(runtime_ui_navigation_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    int held = 0;
+    CHECK(value_of_text(NOTES_LIST, &descriptions) && value_of_text("{}", &settings));
+    argument.descriptions = &descriptions.root;
+    argument.ui = &settings.root;
+    argument.size = (uint32_t)offsetof(runtime_ui_navigation_argument, ui);
+    CHECK(ui->navigation(ui->context, &argument, &answer, &refusal) == SPISOR_MALFORMED && answer.storage == NULL);
+    ui->release_refusal(ui->context, &refusal);
+    argument.size = (uint32_t)sizeof argument;
+    answer.storage = &held;
+    CHECK(ui->navigation(ui->context, &argument, &answer, &refusal) == SPISOR_MALFORMED && answer.storage == &held);
+    ui->release_refusal(ui->context, &refusal);
+    answer.storage = NULL;
+    CHECK(ui->navigation(ui->context, &argument, &answer, NULL) == SPISOR_OK && answer.entry_count == 1);
+    ui->release_navigation_answer(ui->context, &answer);
+    CHECK(answer.storage == NULL && answer.entries == NULL);
+    spisor_value_release(&descriptions);
+    spisor_value_release(&settings);
 }
 
 int main(void) {
@@ -199,5 +230,6 @@ int main(void) {
     adds_no_settings_entry_for_a_plugin_declaring_an_empty_settings_object();
     keeps_two_plugins_of_one_order_in_id_order_whatever_order_they_arrive_in();
     refuses_descriptions_that_are_no_list_of_manifests_with_an_id();
+    refuses_an_argument_short_of_its_shape_and_an_answer_already_holding_storage();
     return check_summary("ui_navigation_test");
 }

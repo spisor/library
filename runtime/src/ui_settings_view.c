@@ -88,7 +88,7 @@ cJSON *runtime_ui_settings_view_of(const cJSON *description) {
     return view;
 }
 
-static cJSON *settings_view_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_settings_view_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *description = cJSON_GetObjectItemCaseSensitive(argument, "description");
     if (!runtime_ui_is_description(description)) {
         *refusal = runtime_refusal("the argument carries no usable description",
@@ -96,8 +96,4 @@ static cJSON *settings_view_for(const cJSON *argument, cJSON **refusal) {
         return NULL;
     }
     return runtime_ui_settings_view_of(description);
-}
-
-RUNTIME_EXPORT int32_t runtime_ui_settings_view(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, settings_view_for);
 }

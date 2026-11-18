@@ -6,7 +6,7 @@
 static cJSON *settings_view_of(const char *manifest) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "description", parsed(manifest));
-    return successful(runtime_ui_settings_view, request, "ui.settingsView");
+    return successful(UI_SETTINGS_VIEW, request, "ui.settingsView");
 }
 
 static int is_model_node_id(const char *id) {
@@ -69,9 +69,8 @@ static void generates_an_empty_form_for_a_plugin_declaring_no_settings(void) {
 static void refuses_a_description_that_is_no_manifest_with_an_id(void) {
     const char *requests[] = {"{}", "{\"description\": []}", "{\"description\": {\"api\": 1}}"};
     for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
-        catalog_answer answer = call_catalog(runtime_ui_settings_view, parsed(requests[index]));
-        expect_refusal(answer, "description", requests[index]);
-        cJSON_Delete(answer.tree);
+        expect_ui_refusal(ui_call(UI_SETTINGS_VIEW, parsed(requests[index])), SPISOR_MALFORMED, "description",
+                          requests[index]);
     }
 }
 

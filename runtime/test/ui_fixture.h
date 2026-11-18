@@ -6,7 +6,7 @@
 
 #include "catalog_call.h"
 #include "check.h"
-#include "ui.h"
+#include "ui_call.h"
 
 /** The manifest of one of the fixture plugins under fixtures/ui. */
 static inline cJSON *fixture_manifest(const char *plugin) {
@@ -43,9 +43,9 @@ static inline void check_json_at(const cJSON *tree, const char *slashed, const c
     check_json(found == NULL ? NULL : cJSON_Duplicate(found, 1), expected, label);
 }
 
-/** Answers the successful tree of function called with argument, which it frees; NULL after a failed check. */
-static inline cJSON *successful(catalog_function function, cJSON *argument, const char *label) {
-    catalog_answer answer = call_catalog(function, argument);
+/** Answers the successful tree of operation called with argument, which it frees; NULL after a failed check. */
+static inline cJSON *successful(ui_operation operation, cJSON *argument, const char *label) {
+    catalog_answer answer = ui_call(operation, argument);
     if (answer.status != SPISOR_STATUS_SUCCESS) {
         const char *message = text_at(answer.tree, "message");
         fprintf(stderr, "%s: expected success, got status %d: %s\n", label, (int)answer.status,
@@ -55,6 +55,19 @@ static inline cJSON *successful(catalog_function function, cJSON *argument, cons
         return NULL;
     }
     return answer.tree;
+}
+
+/** Fails unless the answer, whose tree it frees, is `status` with a refusal whose message holds `fragment`. */
+static inline void expect_ui_refusal(catalog_answer answer, spisor_status status, const char *fragment,
+                                     const char *label) {
+    const char *message = text_at(answer.tree, "message");
+    if (answer.status != (int32_t)status || message == NULL || text_at(answer.tree, "fix") == NULL ||
+        strstr(message, fragment) == NULL) {
+        fprintf(stderr, "%s: expected status %d refusing with \"%s\", got status %d and \"%s\"\n", label,
+                (int)status, fragment, (int)answer.status, message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    cJSON_Delete(answer.tree);
 }
 
 #endif

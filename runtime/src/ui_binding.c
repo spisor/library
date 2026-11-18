@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "json_service.h"
+
 static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
 }
@@ -24,7 +26,7 @@ cJSON *runtime_ui_call_of(const char *plugin, const cJSON *node) {
                          : cJSON_AddObjectToObject(call, "binding");
     int complete = binding != NULL && cJSON_AddStringToObject(binding, "service", text_of(bind, "service")) != NULL &&
                    cJSON_AddStringToObject(binding, "method", text_of(bind, "method")) != NULL &&
-                   cJSON_AddItemToObject(call, "arguments", arguments_of(bind));
+                   runtime_add_owned(call, "arguments", arguments_of(bind));
     if (!complete) {
         cJSON_Delete(call);
         return NULL;
@@ -55,7 +57,7 @@ cJSON *runtime_ui_check_of(const cJSON *node) {
     int complete = check != NULL && cJSON_AddStringToObject(check, "against", against == NULL ? "" : against) != NULL;
     if (complete && is_chart(node) && !is_meter(node)) {
         const char *members[] = {"series"};
-        complete = cJSON_AddItemToObject(check, "members", cJSON_CreateStringArray(members, 1));
+        complete = runtime_add_owned(check, "members", cJSON_CreateStringArray(members, 1));
     }
     if (!complete) {
         cJSON_Delete(check);

@@ -114,7 +114,7 @@ static cJSON *planned(const ui_screen *screen, const cJSON *answers) {
     return plan_answer(calls);
 }
 
-static cJSON *plan_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
     if (answers != NULL && !runtime_ui_is_answer_list(answers)) {
         return refuse_answers(refusal);
@@ -129,9 +129,6 @@ static cJSON *plan_for(const cJSON *argument, cJSON **refusal) {
     return answer;
 }
 
-RUNTIME_EXPORT int32_t runtime_ui_plan(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, plan_for);
-}
 
 static int is_one_of(const char *text, const char *const *names, size_t count) {
     for (size_t index = 0; text != NULL && index < count; index++) {
@@ -147,7 +144,7 @@ static cJSON *picked(const cJSON *object, const char *const *names, size_t count
     cJSON *copy = cJSON_CreateObject();
     for (size_t index = 0; copy != NULL && index < count; index++) {
         const cJSON *member = cJSON_GetObjectItemCaseSensitive(object, names[index]);
-        if (member != NULL && !cJSON_AddItemToObject(copy, names[index], cJSON_Duplicate(member, 1))) {
+        if (member != NULL && !runtime_add_owned(copy, names[index], cJSON_Duplicate(member, 1))) {
             cJSON_Delete(copy);
             copy = NULL;
         }
@@ -237,7 +234,7 @@ static int add_checked_answer(cJSON *rendered, const cJSON *node, const cJSON *c
         return is_issue(issue) && add_error(rendered, issue, "message");
     }
     return cJSON_AddStringToObject(rendered, "state", "ready") != NULL &&
-           cJSON_AddItemToObject(rendered, "data", data_of(node, cJSON_GetObjectItemCaseSensitive(answer, "answer")));
+           runtime_add_owned(rendered, "data", data_of(node, cJSON_GetObjectItemCaseSensitive(answer, "answer")));
 }
 
 static cJSON *unanswered(const cJSON *node, const cJSON *call) {
@@ -272,7 +269,7 @@ static cJSON *props_of(const cJSON *node) {
     cJSON *props = cJSON_CreateObject();
     for (size_t index = 0; props != NULL && index < COUNT_OF(PROP_MEMBERS); index++) {
         const cJSON *member = cJSON_GetObjectItemCaseSensitive(node, PROP_MEMBERS[index]);
-        if (member != NULL && !cJSON_AddItemToObject(props, PROP_MEMBERS[index], cJSON_Duplicate(member, 1))) {
+        if (member != NULL && !runtime_add_owned(props, PROP_MEMBERS[index], cJSON_Duplicate(member, 1))) {
             cJSON_Delete(props);
             props = NULL;
         }
@@ -280,14 +277,18 @@ static cJSON *props_of(const cJSON *node) {
     return props;
 }
 
+/** Adds a copy of node's own member under the same name; 0 when memory runs out. */
+static int add_copy(cJSON *rendered, const cJSON *node, const char *member) {
+    return runtime_add_owned(rendered, member, cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, member), 1));
+}
+
 static cJSON *rendered_node(const char *plugin, const cJSON *node, const cJSON *answers, cJSON **refusal) {
     const char *parent = text_of(node, "parent");
     cJSON *rendered = cJSON_CreateObject();
-    int complete = rendered != NULL &&
-                   cJSON_AddItemToObject(rendered, "id", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "id"), 1)) &&
-                   cJSON_AddItemToObject(rendered, "component", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(node, "component"), 1)) &&
+    int complete = rendered != NULL && add_copy(rendered, node, "id") && add_copy(rendered, node, "component") &&
                    (parent == NULL || cJSON_AddStringToObject(rendered, "parent", parent) != NULL) &&
-                   add_outcome(rendered, plugin, node, answers, refusal) && cJSON_AddItemToObject(rendered, "props", props_of(node));
+                   add_outcome(rendered, plugin, node, answers, refusal) &&
+                   runtime_add_owned(rendered, "props", props_of(node));
     if (!complete) {
         cJSON_Delete(rendered);
         return NULL;
@@ -326,7 +327,7 @@ static cJSON *rendered_screen(const ui_screen *screen, const cJSON *answers, cJS
     return rendered;
 }
 
-static cJSON *render_for(const cJSON *argument, cJSON **refusal) {
+cJSON *runtime_ui_render_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
     if (!runtime_ui_is_answer_list(answers)) {
         return refuse_answers(refusal);
@@ -339,8 +340,4 @@ static cJSON *render_for(const cJSON *argument, cJSON **refusal) {
     cJSON *rendered = rendered_screen(&screen, answers, refusal);
     runtime_ui_close_screen(&screen);
     return rendered;
-}
-
-RUNTIME_EXPORT int32_t runtime_ui_render(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len) {
-    return runtime_serve_json(in, in_len, out, out_len, render_for);
 }

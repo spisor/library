@@ -97,7 +97,7 @@ static cJSON *screen_request(const cJSON *descriptions, const char *screen, cons
 }
 
 static cJSON *plan_of(const cJSON *descriptions, const char *screen, const cJSON *answers) {
-    return successful(runtime_ui_plan, screen_request(descriptions, screen, answers), "ui.plan");
+    return successful(UI_PLAN, screen_request(descriptions, screen, answers), "ui.plan");
 }
 
 /** Every call one plan asked for, answered from fixtures. */
@@ -116,7 +116,7 @@ static cJSON *rendered_with(cJSON *descriptions, const char *screen, const bindi
     cJSON *answers = answers_to(plan, fixtures, count);
     cJSON *second = plan_of(descriptions, screen, answers);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(second, "done")));
-    cJSON *screen_tree = successful(runtime_ui_render, screen_request(descriptions, screen, answers), "ui.render");
+    cJSON *screen_tree = successful(UI_RENDER, screen_request(descriptions, screen, answers), "ui.render");
     cJSON_Delete(plan);
     cJSON_Delete(second);
     cJSON_Delete(answers);
@@ -285,7 +285,7 @@ static void renders_a_declared_view_named_settings_as_itself_and_keeps_the_gener
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "descriptions", fixture_descriptions(plugins, 1));
     cJSON_AddItemToObject(request, "ui", cJSON_CreateObject());
-    cJSON *navigation = successful(runtime_ui_navigation, request, "ui.navigation");
+    cJSON *navigation = successful(UI_NAVIGATION, request, "ui.navigation");
     const cJSON *entry;
     int screens = 0;
     cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(navigation, "entries")) {
@@ -310,15 +310,12 @@ static void renders_a_declared_view_named_settings_as_itself_and_keeps_the_gener
     cJSON_Delete(navigation);
 }
 
-static void expect_screen_refused(const char *const *plugins, size_t count, const char *screen, const char *fragment) {
+static void expect_screen_refused(const char *const *plugins, size_t count, const char *screen, spisor_status status,
+                                  const char *fragment) {
     cJSON *descriptions = fixture_descriptions(plugins, count);
     cJSON *answers = cJSON_CreateArray();
-    catalog_answer plan = call_catalog(runtime_ui_plan, screen_request(descriptions, screen, NULL));
-    expect_refusal(plan, fragment, "ui.plan");
-    catalog_answer render = call_catalog(runtime_ui_render, screen_request(descriptions, screen, answers));
-    expect_refusal(render, fragment, "ui.render");
-    cJSON_Delete(plan.tree);
-    cJSON_Delete(render.tree);
+    expect_ui_refusal(ui_call(UI_PLAN, screen_request(descriptions, screen, NULL)), status, fragment, "ui.plan");
+    expect_ui_refusal(ui_call(UI_RENDER, screen_request(descriptions, screen, answers)), status, fragment, "ui.render");
     cJSON_Delete(answers);
     cJSON_Delete(descriptions);
 }
@@ -328,6 +325,7 @@ static void refuses_to_render_an_action_entry_as_a_screen(void) {
     expect_screen_refused(plugins, 1,
                           "{\"plugin\": \"viewer\", \"kind\": \"action\", \"id\": \"restart\", \"title\": \"Restart\", "
                           "\"pinned\": false}",
+                          SPISOR_REFUSED,
                           "restart");
 }
 
@@ -357,33 +355,33 @@ static void renders_a_quarantined_plugins_node_unavailable_while_another_provide
 
 static void refuses_a_view_the_plugin_does_not_declare(void) {
     const char *plugins[] = {"viewer"};
-    expect_screen_refused(plugins, 1, "{\"plugin\": \"viewer\", \"kind\": \"view\", \"id\": \"nowhere\"}", "nowhere");
+    expect_screen_refused(plugins, 1, "{\"plugin\": \"viewer\", \"kind\": \"view\", \"id\": \"nowhere\"}",
+                          SPISOR_REFUSED, "nowhere");
 }
 
 static void refuses_a_declared_view_that_carries_no_nodes_or_a_node_with_no_id(void) {
     cJSON *descriptions = cJSON_CreateArray();
     cJSON_AddItemToArray(descriptions, parsed("{\"id\": \"hollow\", \"api\": 1, \"views\": {\"empty\": {\"title\": \"Empty\"}}}"));
     const char *screen = "{\"plugin\": \"hollow\", \"kind\": \"view\", \"id\": \"empty\"}";
-    catalog_answer plan = call_catalog(runtime_ui_plan, screen_request(descriptions, screen, NULL));
-    expect_refusal(plan, "empty", "a view of no nodes");
-    cJSON_Delete(plan.tree);
+    expect_ui_refusal(ui_call(UI_PLAN, screen_request(descriptions, screen, NULL)), SPISOR_REFUSED, "empty",
+                      "a view of no nodes");
     cJSON_Delete(descriptions);
     descriptions = cJSON_CreateArray();
     cJSON_AddItemToArray(descriptions, parsed("{\"id\": \"hollow\", \"api\": 1, \"views\": {\"empty\": {\"title\": \"Empty\", "
                                               "\"nodes\": [{\"component\": \"text\", \"bind\": {\"service\": \"s\", \"method\": \"m\"}}]}}}"));
     cJSON *answers = cJSON_CreateArray();
-    catalog_answer render = call_catalog(runtime_ui_render, screen_request(descriptions, screen, answers));
-    expect_refusal(render, "empty", "a node with no id");
-    cJSON_Delete(render.tree);
+    expect_ui_refusal(ui_call(UI_RENDER, screen_request(descriptions, screen, answers)), SPISOR_REFUSED, "empty",
+                      "a node with no id");
     cJSON_Delete(answers);
     cJSON_Delete(descriptions);
 }
 
 static void refuses_a_screen_of_a_plugin_no_description_names(void) {
     const char *plugins[] = {"viewer"};
-    expect_screen_refused(plugins, 1, "{\"plugin\": \"ghost\", \"kind\": \"view\", \"id\": \"overview\"}", "ghost");
-    expect_screen_refused(plugins, 1, "{\"plugin\": \"viewer\", \"kind\": \"view\"}", "screen");
-    expect_screen_refused(plugins, 1, "{\"kind\": \"settings\"}", "screen");
+    expect_screen_refused(plugins, 1, "{\"plugin\": \"ghost\", \"kind\": \"view\", \"id\": \"overview\"}",
+                          SPISOR_REFUSED, "ghost");
+    expect_screen_refused(plugins, 1, "{\"plugin\": \"viewer\", \"kind\": \"view\"}", SPISOR_REFUSED, "screen");
+    expect_screen_refused(plugins, 1, "{\"kind\": \"settings\"}", SPISOR_MALFORMED, "screen");
 }
 
 static void gives_a_plugins_own_detected_row_the_unavailable_treatment_in_every_items_family(void) {
@@ -480,7 +478,7 @@ static void tells_bindings_apart_by_their_arguments_and_shares_one_whose_argumen
     cJSON_ArrayForEach(call, cJSON_GetObjectItemCaseSensitive(plan, "calls")) {
         cJSON_AddItemToArray(answers, echo_answer(call));
     }
-    cJSON *tree = successful(runtime_ui_render, screen_request(descriptions, screen, answers), "ui.render");
+    cJSON *tree = successful(UI_RENDER, screen_request(descriptions, screen, answers), "ui.render");
     check_json_at(node_of(tree, "left"), "data", "{\"text\": \"left\"}", "the left node");
     check_json_at(node_of(tree, "right"), "data", "{\"text\": \"right\"}", "the right node");
     check_json_at(node_of(tree, "again"), "data", "{\"text\": \"left\"}", "the node sharing left's call");
@@ -490,12 +488,11 @@ static void tells_bindings_apart_by_their_arguments_and_shares_one_whose_argumen
     cJSON_Delete(descriptions);
 }
 
-static void expect_render_refused(const char *screen, cJSON *answers, const char *fragment, const char *label) {
+static void expect_render_refused(const char *screen, cJSON *answers, spisor_status status, const char *fragment,
+                                  const char *label) {
     const char *plugins[] = {"viewer"};
     cJSON *descriptions = fixture_descriptions(plugins, 1);
-    catalog_answer answer = call_catalog(runtime_ui_render, screen_request(descriptions, screen, answers));
-    expect_refusal(answer, fragment, label);
-    cJSON_Delete(answer.tree);
+    expect_ui_refusal(ui_call(UI_RENDER, screen_request(descriptions, screen, answers)), status, fragment, label);
     cJSON_Delete(answers);
     cJSON_Delete(descriptions);
 }
@@ -516,11 +513,11 @@ static const char *CHARTS = "{\"plugin\": \"viewer\", \"kind\": \"view\", \"id\"
 static void refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks(void) {
     cJSON *missing = answers_for(OVERVIEW);
     cJSON_DeleteItemFromArray(missing, 1);
-    expect_render_refused(OVERVIEW, missing, "viewer:status.greeting", "a missing answer");
-    expect_render_refused(OVERVIEW, NULL, "answers", "no answers at all");
+    expect_render_refused(OVERVIEW, missing, SPISOR_REFUSED, "viewer:status.greeting", "a missing answer");
+    expect_render_refused(OVERVIEW, NULL, SPISOR_REFUSED, "answers", "no answers at all");
     cJSON *unchecked = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(unchecked, 0), "checked");
-    expect_render_refused(OVERVIEW, unchecked, "table", "an answer never checked");
+    expect_render_refused(OVERVIEW, unchecked, SPISOR_REFUSED, "table", "an answer never checked");
     cJSON *whole = answers_for(CHARTS);
     cJSON *answer;
     cJSON_ArrayForEach(answer, whole) {
@@ -529,20 +526,20 @@ static void refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks(vo
             cJSON_DeleteItemFromObjectCaseSensitive(check, "members");
         }
     }
-    expect_render_refused(CHARTS, whole, "chart", "a chart checked against the whole answer");
+    expect_render_refused(CHARTS, whole, SPISOR_REFUSED, "chart", "a chart checked against the whole answer");
 }
 
 static void refuses_an_answer_with_no_outcome_or_two(void) {
     cJSON *none = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "answer");
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "checked");
-    expect_render_refused(OVERVIEW, none, "outcome", "no outcome");
+    expect_render_refused(OVERVIEW, none, SPISOR_MALFORMED, "replies", "no outcome");
     cJSON *two = answers_for(OVERVIEW);
     cJSON_AddTrueToObject(cJSON_GetArrayItem(two, 0), "unavailable");
-    expect_render_refused(OVERVIEW, two, "outcome", "two outcomes");
+    expect_render_refused(OVERVIEW, two, SPISOR_MALFORMED, "replies", "two outcomes");
     cJSON *keyless = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(keyless, 0), "arguments");
-    expect_render_refused(OVERVIEW, keyless, "answers", "no arguments");
+    expect_render_refused(OVERVIEW, keyless, SPISOR_MALFORMED, "replies", "no arguments");
 }
 
 static const char *LISTER =
@@ -583,7 +580,7 @@ static cJSON *plugin_list_screen(const char *detected) {
     cJSON_AddItemToObject(request, "installed", parsed("[{\"id\": \"viewer\"}]"));
     cJSON_AddItemToObject(request, "detected", parsed(detected));
     cJSON_AddItemToObject(request, "available", parsed("[{\"id\": \"viewer\"}, {\"id\": \"greeter\"}, {\"id\": \"rival\"}]"));
-    return successful(runtime_ui_plugin_list, request, "ui.pluginList");
+    return successful(UI_PLUGIN_LIST, request, "ui.pluginList");
 }
 
 static const cJSON *row_of(const cJSON *screen, const char *id) {
@@ -626,9 +623,7 @@ static void refuses_a_plugin_list_group_that_is_no_list_of_rows(void) {
     cJSON_AddItemToObject(request, "installed", parsed("[]"));
     cJSON_AddItemToObject(request, "detected", parsed("[\"greeter\"]"));
     cJSON_AddItemToObject(request, "available", parsed("[]"));
-    catalog_answer answer = call_catalog(runtime_ui_plugin_list, request);
-    expect_refusal(answer, "detected", "a group of strings");
-    cJSON_Delete(answer.tree);
+    expect_ui_refusal(ui_call(UI_PLUGIN_LIST, request), SPISOR_MALFORMED, "detected", "a group of strings");
 }
 
 int main(void) {

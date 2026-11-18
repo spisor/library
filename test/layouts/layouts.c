@@ -22,6 +22,7 @@
 #include "runtime/registry.h"
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
+#include "runtime/ui.h"
 #include "runtime/updates.h"
 #include "spisor/json_kind.h"
 #include "spisor/status.h"
@@ -1571,6 +1572,119 @@ static void print_processes_layouts(void) {
     SIZE(runtime_processes_definition);
 }
 
+static void print_ui_layouts(void) {
+    FIELD(runtime_ui_navigation_argument, size);
+    FIELD(runtime_ui_navigation_argument, descriptions);
+    FIELD(runtime_ui_navigation_argument, ui);
+    SIZE(runtime_ui_navigation_argument);
+    FIELD(runtime_ui_entry, plugin);
+    FIELD(runtime_ui_entry, kind);
+    FIELD(runtime_ui_entry, id);
+    FIELD(runtime_ui_entry, title);
+    FIELD(runtime_ui_entry, pinned);
+    SIZE(runtime_ui_entry);
+    FIELD(runtime_ui_navigation_answer, size);
+    FIELD(runtime_ui_navigation_answer, entries);
+    FIELD(runtime_ui_navigation_answer, entry_count);
+    FIELD(runtime_ui_navigation_answer, preferences);
+    FIELD(runtime_ui_navigation_answer, storage);
+    SIZE(runtime_ui_navigation_answer);
+    FIELD(runtime_ui_settings_view_argument, size);
+    FIELD(runtime_ui_settings_view_argument, description);
+    SIZE(runtime_ui_settings_view_argument);
+    FIELD(runtime_ui_settings_node, id);
+    FIELD(runtime_ui_settings_node, parent);
+    FIELD(runtime_ui_settings_node, component);
+    FIELD(runtime_ui_settings_node, field);
+    FIELD(runtime_ui_settings_node, label);
+    SIZE(runtime_ui_settings_node);
+    FIELD(runtime_ui_settings_view_answer, size);
+    FIELD(runtime_ui_settings_view_answer, title);
+    FIELD(runtime_ui_settings_view_answer, nodes);
+    FIELD(runtime_ui_settings_view_answer, node_count);
+    FIELD(runtime_ui_settings_view_answer, storage);
+    SIZE(runtime_ui_settings_view_answer);
+    FIELD(runtime_ui_target, plugin);
+    FIELD(runtime_ui_target, service);
+    FIELD(runtime_ui_target, method);
+    FIELD(runtime_ui_target, arguments);
+    SIZE(runtime_ui_target);
+    FIELD(runtime_ui_check, against);
+    FIELD(runtime_ui_check, has_members);
+    FIELD(runtime_ui_check, members);
+    FIELD(runtime_ui_check, member_count);
+    SIZE(runtime_ui_check);
+    FIELD(runtime_ui_call, target);
+    FIELD(runtime_ui_call, checks);
+    FIELD(runtime_ui_call, check_count);
+    SIZE(runtime_ui_call);
+    FIELD(runtime_ui_issue, message);
+    FIELD(runtime_ui_issue, fix);
+    FIELD(runtime_ui_issue, path);
+    SIZE(runtime_ui_issue);
+    FIELD(runtime_ui_checked, check);
+    FIELD(runtime_ui_checked, issues);
+    FIELD(runtime_ui_checked, issue_count);
+    SIZE(runtime_ui_checked);
+    FIELD(runtime_ui_error, detail);
+    FIELD(runtime_ui_error, fix);
+    FIELD(runtime_ui_error, path);
+    SIZE(runtime_ui_error);
+    FIELD(runtime_ui_reply, target);
+    FIELD(runtime_ui_reply, outcome);
+    FIELD(runtime_ui_reply, answer);
+    FIELD(runtime_ui_reply, checked);
+    FIELD(runtime_ui_reply, checked_count);
+    FIELD(runtime_ui_reply, error);
+    SIZE(runtime_ui_reply);
+    FIELD(runtime_ui_screen_argument, size);
+    FIELD(runtime_ui_screen_argument, descriptions);
+    FIELD(runtime_ui_screen_argument, screen);
+    FIELD(runtime_ui_screen_argument, replies);
+    FIELD(runtime_ui_screen_argument, reply_count);
+    SIZE(runtime_ui_screen_argument);
+    FIELD(runtime_ui_plan_answer, size);
+    FIELD(runtime_ui_plan_answer, calls);
+    FIELD(runtime_ui_plan_answer, call_count);
+    FIELD(runtime_ui_plan_answer, storage);
+    SIZE(runtime_ui_plan_answer);
+    FIELD(runtime_ui_node, id);
+    FIELD(runtime_ui_node, component);
+    FIELD(runtime_ui_node, parent);
+    FIELD(runtime_ui_node, state);
+    FIELD(runtime_ui_node, data);
+    FIELD(runtime_ui_node, error);
+    FIELD(runtime_ui_node, props);
+    SIZE(runtime_ui_node);
+    FIELD(runtime_ui_screen, size);
+    FIELD(runtime_ui_screen, plugin);
+    FIELD(runtime_ui_screen, kind);
+    FIELD(runtime_ui_screen, view);
+    FIELD(runtime_ui_screen, title);
+    FIELD(runtime_ui_screen, nodes);
+    FIELD(runtime_ui_screen, node_count);
+    FIELD(runtime_ui_screen, storage);
+    SIZE(runtime_ui_screen);
+    FIELD(runtime_ui_plugin_list_argument, size);
+    FIELD(runtime_ui_plugin_list_argument, installed);
+    FIELD(runtime_ui_plugin_list_argument, detected);
+    FIELD(runtime_ui_plugin_list_argument, available);
+    SIZE(runtime_ui_plugin_list_argument);
+    FIELD(runtime_ui_definition, size);
+    FIELD(runtime_ui_definition, context);
+    FIELD(runtime_ui_definition, navigation);
+    FIELD(runtime_ui_definition, settings_view);
+    FIELD(runtime_ui_definition, plan);
+    FIELD(runtime_ui_definition, render);
+    FIELD(runtime_ui_definition, plugin_list);
+    FIELD(runtime_ui_definition, release_navigation_answer);
+    FIELD(runtime_ui_definition, release_settings_view_answer);
+    FIELD(runtime_ui_definition, release_plan_answer);
+    FIELD(runtime_ui_definition, release_screen);
+    FIELD(runtime_ui_definition, release_refusal);
+    SIZE(runtime_ui_definition);
+}
+
 int main(void) {
     print_status_layouts();
     print_value_layouts();
@@ -1597,5 +1711,6 @@ int main(void) {
     print_processes_layouts();
     print_hosts_layouts();
     print_loader_layouts();
+    print_ui_layouts();
     return 0;
 }
