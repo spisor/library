@@ -4,8 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "boot.h"
-#include "json_service.h"
+#include "runtime/boot.h"
 #include "cache.h"
 #include "cache_marker.h"
 #include "cache_place.h"
@@ -127,21 +126,17 @@ int host_start_append_arguments(cJSON *start, const char *const *extra, size_t c
 }
 
 static char *hinted_version(const host_context *context, const char *id) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && (cJSON_AddStringToObject(argument, "cache", context->cache) == NULL ||
-                             cJSON_AddStringToObject(argument, "hostId", id) == NULL)) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    cJSON *refusal = NULL;
-    cJSON *read = runtime_call_operation(runtime_boot_read_operation, argument, &refusal);
-    cJSON_Delete(refusal);
-    const char *host = host_text(cJSON_GetObjectItemCaseSensitive(read, "hint"), "host");
-    char *version = host == NULL ? NULL : spisor_memory_allocate(strlen(host) + 1);
+    const runtime_boot_definition *boot = runtime_boot_definition_of();
+    runtime_boot_host_argument argument = SPISOR_INIT(runtime_boot_host_argument);
+    runtime_boot_hint_answer hint = SPISOR_INIT(runtime_boot_hint_answer);
+    argument.cache = context->cache;
+    argument.host_id = id;
+    int hinted = boot->read(boot->context, &argument, &hint, NULL) == SPISOR_OK && hint.host != NULL;
+    char *version = hinted ? spisor_memory_allocate(strlen(hint.host) + 1) : NULL;
     if (version != NULL) {
-        strcpy(version, host);
+        strcpy(version, hint.host);
     }
-    cJSON_Delete(read);
+    boot->release_hint_answer(boot->context, &hint);
     return version;
 }
 

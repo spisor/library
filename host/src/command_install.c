@@ -3,16 +3,14 @@
 
 #include "application_choices.h"
 #include "allocation.h"
-#include "boot.h"
 #include "cache_refusal.h"
 #include "host_commands.h"
 #include "host_context.h"
+#include "host_definition.h"
 #include "host_options.h"
 #include "host_output.h"
 #include "install_by_name.h"
-#include "install_ecosystem.h"
 #include "install_warning_report.h"
-#include "json_service.h"
 #include "terminal_question.h"
 
 #define CHOICE_REFUSAL_PREFIX "the choice"
@@ -91,17 +89,11 @@ static cJSON *choices_of(const cJSON *flags, char **problem) {
     return choices;
 }
 
-static cJSON *ecosystem_call(const host_context *context, const cJSON *sources, const cJSON *plugins, const cJSON *choices) {
-    cJSON *call = host_places_argument(context);
-    int built = call != NULL && cJSON_AddItemToObject(call, "sources", cJSON_Duplicate(sources, 1)) &&
-                cJSON_AddItemToObject(call, "environment", cJSON_Duplicate(context->environment, 1)) &&
-                cJSON_AddItemToObject(call, "choices", cJSON_Duplicate(choices, 1)) &&
-                cJSON_AddItemToObject(call, "requested", plugins == NULL ? cJSON_CreateArray() : cJSON_Duplicate(plugins, 1));
-    if (!built) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
+static cJSON *install_ecosystem(const host_context *context, const cJSON *sources, const cJSON *plugins,
+                                const cJSON *choices, cJSON **refusal) {
+    host_ecosystem_call call = {context->portable, context->state, context->cache, context->environment,
+                                sources, choices, plugins};
+    return host_install_ecosystem(&call, refusal);
 }
 
 static char *ask_on_the_terminal(const char *question, void *context) {
@@ -123,19 +115,15 @@ static int merge_asked(cJSON *choices, const cJSON *report) {
 
 /** boot.place for the context's cache: NULL when spisor-boot is in place, else its refusal. */
 static cJSON *place_boot_stub(const host_context *context) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument != NULL && cJSON_AddStringToObject(argument, "cache", context->cache) == NULL) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
     cJSON *refusal = NULL;
-    cJSON *placed = runtime_call_operation(runtime_boot_place_operation, argument, &refusal);
-    cJSON_Delete(placed);
-    if (placed == NULL && refusal == NULL) {
+    if (host_place_boot(context->cache, &refusal)) {
+        return NULL;
+    }
+    if (refusal == NULL) {
         const char *parts[1] = {"spisor-host ran out of memory"};
         refusal = host_refusal_of(parts, 1, "close other programs, then run install again");
     }
-    return placed == NULL ? refusal : NULL;
+    return refusal;
 }
 
 /**
@@ -147,12 +135,10 @@ static cJSON *place_boot_stub(const host_context *context) {
  */
 static int install_through(const host_context *context, const cJSON *sources, const cJSON *plugins, cJSON *choices) {
     cJSON *refusal = NULL;
-    cJSON *report = runtime_call_operation(runtime_install_ecosystem_operation,
-                                           ecosystem_call(context, sources, plugins, choices), &refusal);
+    cJSON *report = install_ecosystem(context, sources, plugins, choices, &refusal);
     if (report != NULL && merge_asked(choices, report)) {
         cJSON_Delete(report);
-        report = runtime_call_operation(runtime_install_ecosystem_operation,
-                                        ecosystem_call(context, sources, plugins, choices), &refusal);
+        report = install_ecosystem(context, sources, plugins, choices, &refusal);
     }
     if (report == NULL) {
         const char *message = host_text(refusal, "message");

@@ -13,7 +13,6 @@
 #include "host_service.h"
 #include "host_output.h"
 #include "json_allocation.h"
-#include "json_service.h"
 #include "own_executable.h"
 #include "paths.h"
 #include "spisor/path.h"
@@ -38,19 +37,18 @@ static char *own_cache(void) {
     return cache;
 }
 
-static cJSON *resolve_call(const char *cache, const char *host_id, int count, char **arguments) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *passed = call == NULL ? NULL : cJSON_AddArrayToObject(call, "arguments");
-    int built = passed != NULL && cJSON_AddStringToObject(call, "cache", cache) != NULL &&
-                cJSON_AddStringToObject(call, "hostId", host_id) != NULL;
-    for (int index = 0; built && index < count; index++) {
-        built = cJSON_AddItemToArray(passed, cJSON_CreateString(arguments[index]));
+/** The arguments to pass through as an array of strings; NULL when memory runs out. */
+static cJSON *passed_arguments(int count, char **arguments) {
+    cJSON *passed = cJSON_CreateArray();
+    for (int index = 0; passed != NULL && index < count; index++) {
+        cJSON *argument = cJSON_CreateString(arguments[index]);
+        if (argument == NULL || !cJSON_AddItemToArray(passed, argument)) {
+            cJSON_Delete(argument);
+            cJSON_Delete(passed);
+            passed = NULL;
+        }
     }
-    if (!built) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
+    return passed;
 }
 
 /** Runs the version of host argument 0 its boot hint names, with the rest of the arguments passed through. */
@@ -61,15 +59,17 @@ static int boot(int count, char **arguments) {
     }
     char *cache = own_cache();
     cJSON *refusal = NULL;
-    cJSON *call = cache == NULL ? NULL : resolve_call(cache, arguments[0], count - 1, arguments + 1);
-    cJSON *resolved = call == NULL ? NULL : runtime_call_operation(runtime_boot_resolve_operation, call, &refusal);
+    cJSON *resolved = cache == NULL ? NULL : runtime_boot_resolve_host(cache, arguments[0], &refusal);
+    cJSON *passed = resolved == NULL ? NULL : passed_arguments(count - 1, arguments + 1);
     spisor_memory_release(cache);
-    if (resolved != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
+    if (passed != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
         const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};
-        refusal = host_refusal_of(parts, 2, "check that the cache SPISOR_CACHE names is writable, then run the command again");
-    } else if (resolved != NULL) {
-        refusal = host_replace_process(host_text(resolved, "executable"), cJSON_GetObjectItemCaseSensitive(resolved, "arguments"), NULL);
+        refusal = host_refusal_of(parts, 2,
+                                  "check that the cache SPISOR_CACHE names is writable, then run the command again");
+    } else if (passed != NULL) {
+        refusal = host_replace_process(host_text(resolved, "executable"), passed, NULL);
     }
+    cJSON_Delete(passed);
     cJSON_Delete(resolved);
     return host_refuse(refusal);
 }

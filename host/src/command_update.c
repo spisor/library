@@ -2,26 +2,18 @@
 #include "file_times.h"
 #include "host_commands.h"
 #include "host_context.h"
+#include "host_definition.h"
 #include "host_output.h"
-#include "json_service.h"
-#include "updates.h"
 
 #define UPDATE_FIX "see each one's fix under refused above, then update again"
-
-static cJSON *run_call(const host_context *context) {
-    char now[RUNTIME_CATALOG_TIME_SIZE];
-    cJSON *call = runtime_catalog_format_time(runtime_now_milliseconds(), now) ? host_places_argument(context) : NULL;
-    if (call != NULL && cJSON_AddStringToObject(call, "now", now) == NULL) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
 
 /** updates.run, which checks every registered host and updates each method-installed application; prints {checks, applications, refused}. */
 static int update_everything(const host_context *context) {
     cJSON *refusal = NULL;
-    cJSON *summary = runtime_call_operation(runtime_updates_run_operation, run_call(context), &refusal);
+    char now[RUNTIME_CATALOG_TIME_SIZE];
+    cJSON *summary = runtime_catalog_format_time(runtime_now_milliseconds(), now)
+                         ? host_update_run(context->portable, context->state, context->cache, now, &refusal)
+                         : NULL;
     if (summary == NULL) {
         return host_refuse(refusal);
     }

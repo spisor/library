@@ -53,6 +53,13 @@ void runtime_boot_free_write(runtime_boot_hint_write *write);
 cJSON *runtime_boot_resolve_operation(const cJSON *argument, cJSON **refusal);
 
 /**
+ * boot's resolve for this machine's platform, with no arguments to pass: {executable, version, directory}, or NULL
+ * with *refusal set as resolve refuses, NULL when memory runs out. spisor-boot calls this rather than the definition,
+ * so it links only what a resolve needs.
+ */
+cJSON *runtime_boot_resolve_host(const char *cache, const char *host_id, cJSON **refusal);
+
+/**
  * boot's place: {cache} copies the spisor-boot the hinted spisor-host version carries to cache/boot when
  * none is there yet, made runnable, and answers {placed, path}; placed is false when one was already there
  * or no hinted version carries one. A copy that cannot be written is refused.

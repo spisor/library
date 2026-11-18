@@ -342,6 +342,24 @@ add_dependencies(definition_exports_test runtime)
 spisor_strict_warnings(definition_exports_test)
 add_test(NAME definition_exports_test COMMAND definition_exports_test)
 
+file(READ ${PROJECT_SOURCE_DIR}/runtime/library.json runtime_declaration)
+string(JSON runtime_release_symbol GET "${runtime_declaration}" release)
+if(MSVC)
+    set(runtime_export_lister ${CMAKE_LINKER})
+    set(runtime_export_format pe)
+elseif(APPLE)
+    set(runtime_export_lister ${CMAKE_NM})
+    set(runtime_export_format macho)
+else()
+    set(runtime_export_lister ${CMAKE_NM})
+    set(runtime_export_format elf)
+endif()
+string(JOIN "," runtime_expected_exports ${runtime_definition_symbols} ${runtime_release_symbol})
+add_test(NAME runtime_exports_only_definitions_test
+    COMMAND ${CMAKE_COMMAND} -DLIBRARY=$<TARGET_FILE:runtime> -DLISTER=${runtime_export_lister}
+        -DFORMAT=${runtime_export_format} -DEXPECTED=${runtime_expected_exports}
+        -P ${PROJECT_SOURCE_DIR}/cmake/exports_check.cmake)
+
 runtime_test_with_allocator(environment_check_test spisor_allocator_counting ${runtime_install_test_objects})
 target_link_libraries(environment_check_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(environment_check_test PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/runtime/src)
