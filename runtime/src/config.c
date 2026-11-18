@@ -3,6 +3,7 @@
 #endif
 
 #include "config.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -57,7 +58,7 @@ static const cJSON *optional_object(const cJSON *parent, const char *member) {
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -71,8 +72,8 @@ char *runtime_config_name(const char *plugin, const cJSON *config) {
 }
 
 static void free_target(config_target *target) {
-    free(target->directory);
-    free(target->file);
+    spisor_memory_release(target->directory);
+    spisor_memory_release(target->file);
     target->directory = NULL;
     target->file = NULL;
 }
@@ -84,7 +85,7 @@ static void free_targets(config_targets *targets) {
 
 static char *file_name_of(const char *name) {
     size_t size = strlen(name) + sizeof(".json");
-    char *file_name = malloc(size);
+    char *file_name = spisor_memory_allocate(size);
     if (file_name != NULL) {
         snprintf(file_name, size, "%s.json", name);
     }
@@ -105,7 +106,7 @@ static locate_status join_target(const char *directory, const char *file_name, c
 static locate_status join_named_target(const char *directory, const char *name, config_target *target) {
     char *file_name = file_name_of(name);
     locate_status status = file_name != NULL ? join_target(directory, file_name, target) : LOCATE_OUT_OF_MEMORY;
-    free(file_name);
+    spisor_memory_release(file_name);
     return status;
 }
 
@@ -125,7 +126,7 @@ static locate_status locate_application(const runtime_config_request *request, c
         return UNUSABLE_NAME;
     }
     locate_status status = locate_in_config_directory(request, name, target);
-    free(name);
+    spisor_memory_release(name);
     return status;
 }
 
@@ -140,8 +141,8 @@ static locate_status locate_portable(const runtime_config_request *request, conf
     }
     char *folder = runtime_plugin_folder(request->portable, folder_name);
     locate_status status = folder != NULL ? join_target(folder, PORTABLE_CONFIG_FILE, target) : LOCATE_OUT_OF_MEMORY;
-    free(folder);
-    free(folder_name);
+    spisor_memory_release(folder);
+    spisor_memory_release(folder_name);
     return status;
 }
 
@@ -399,7 +400,7 @@ static int remove_at(cJSON *tree, const char *key) {
     if (cJSON_IsObject(parent)) {
         cJSON_DeleteItemFromObjectCaseSensitive(parent, last_dot + 1);
     }
-    free(parent_key);
+    spisor_memory_release(parent_key);
     return 1;
 }
 
@@ -527,7 +528,7 @@ static spisor_status get_secret_setting(const runtime_config_request *request, c
         status = *value == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
         runtime_overwrite(text, strlen(text));
     }
-    free(text);
+    spisor_memory_release(text);
     return status;
 }
 
@@ -608,7 +609,7 @@ static place_status place_value(cJSON *root, const char *key, const cJSON *value
                           : node == NULL          ? CROSSES_NON_OBJECT
                           : attach_value(node, segment, value) ? PLACED
                                                                : PLACE_OUT_OF_MEMORY;
-    free(path);
+    spisor_memory_release(path);
     return status;
 }
 
@@ -618,15 +619,15 @@ static int write_settings(const config_target *target, const cJSON *root) {
         return 0;
     }
     size_t length = strlen(text);
-    char *bytes = realloc(text, length + 2);
+    char *bytes = spisor_memory_reallocate(text, length + 2);
     if (bytes == NULL) {
-        free(text);
+        spisor_memory_release(text);
         return 0;
     }
     bytes[length] = '\n';
     int written = spisor_make_directories(target->directory) &&
                   spisor_replace_file(target->file, (const uint8_t *)bytes, length + 1);
-    free(bytes);
+    spisor_memory_release(bytes);
     return written;
 }
 
@@ -724,7 +725,7 @@ static void pause_briefly(void) {
 static char *pause_signals = NULL;
 
 void runtime_config_pause_after_read(const char *signals) {
-    free(pause_signals);
+    spisor_memory_release(pause_signals);
     pause_signals = signals == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, &signals, 1);
 }
 
@@ -743,9 +744,9 @@ static void pause_after_read(void) {
     for (int waited = 0; waited < 500 && !spisor_file_exists(release); waited++) {
         pause_briefly();
     }
-    free(release);
-    free(paused);
-    free(signals);
+    spisor_memory_release(release);
+    spisor_memory_release(paused);
+    spisor_memory_release(signals);
 }
 #else
 static void pause_after_read(void) {
@@ -808,7 +809,7 @@ static spisor_lock *lock_layer(const config_target *target) {
     const char *segments[2] = {target->directory, ".settings.lock"};
     char *path = spisor_make_directories(target->directory) ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
     spisor_lock *guard = path == NULL ? NULL : spisor_lock_file(path);
-    free(path);
+    spisor_memory_release(path);
     return guard;
 }
 

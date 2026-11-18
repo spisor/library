@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "catalog_build.h"
 #include "catalog_patterns.h"
 #include "catalog_text.h"
@@ -28,7 +29,7 @@ static char *joined(const char *base, const char *rest) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
 }
 
-/** value as JSON.stringify writes it, undefined for none; freed with free. */
+/** value as JSON.stringify writes it, undefined for none; freed. */
 static char *shown(const cJSON *value) {
     char *printed = value == NULL ? NULL : cJSON_PrintUnformatted(value);
     char *copy = copy_of(printed == NULL ? "undefined" : printed);
@@ -44,7 +45,7 @@ static cJSON *read_manifest(const char *path, cJSON **refusal) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
     cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     if (manifest == NULL) {
         const char *parts[2] = {path, " could not be read as JSON"};
         *refusal = refused(parts, 2, "write the manifest as a JSON object");
@@ -68,8 +69,8 @@ static int accepts_id(const cJSON *manifest, const char *identity_member, int (*
     const char *fix_parts[3] = {"give the manifest an ", identity_member, " of lowercase words joined by single hyphens or dots, never an id and not a Windows reserved name"};
     char *fix = runtime_cache_text(fix_parts, 3);
     *refusal = fix == NULL ? NULL : refused(parts, 6, fix);
-    free(fix);
-    free(named);
+    spisor_memory_release(fix);
+    spisor_memory_release(named);
     return 0;
 }
 
@@ -86,7 +87,7 @@ static int accepts_version(const cJSON *manifest, const char *path, cJSON **refu
     char *named = shown(version);
     const char *parts[4] = {path, " names the version ", named, ", which the catalog's version pattern refuses"};
     *refusal = refused(parts, 4, "give the manifest a semver version such as 1.0.0 or 1.0.0-beta.1, with no trailing dot and no empty part");
-    free(named);
+    spisor_memory_release(named);
     return 0;
 }
 
@@ -99,7 +100,7 @@ static cJSON *identified_manifest(const char *directory, const char *file_name, 
         const char *fix_parts[3] = {"give the directory the ", file_name, " that names its id and version"};
         char *fix = runtime_cache_text(fix_parts, 3);
         *refusal = fix == NULL ? NULL : refused(parts, 3, fix);
-        free(fix);
+        spisor_memory_release(fix);
         return NULL;
     }
     cJSON *manifest = *path == NULL ? NULL : read_manifest(*path, refusal);
@@ -123,7 +124,7 @@ static const char *entry_of(const cJSON *manifest, const char *path, cJSON **ref
         const char *parts[4] = {path, " names the entry ", named, ", which is not a relative path inside the bundle"};
         *refusal = refused(parts, 4,
                            "name the entry file in the manifest as a relative path with / separators, for example \"entry\": \"index.js\"");
-        free(named);
+        spisor_memory_release(named);
         return NULL;
     }
     if (host_equals_ignoring_case(entry->valuestring, PLUGIN_MANIFEST) || host_equals_ignoring_case(base_name(entry->valuestring), MODULE_MARKER)) {
@@ -143,7 +144,7 @@ static char *module_marker_key(const char *entry) {
     }
     const char *slash = strrchr(entry, '/');
     size_t directory = slash == NULL ? 0 : (size_t)(slash - entry) + 1;
-    char *key = malloc(directory + sizeof MODULE_MARKER);
+    char *key = spisor_memory_allocate(directory + sizeof MODULE_MARKER);
     if (key != NULL) {
         memcpy(key, entry, directory);
         strcpy(key + directory, MODULE_MARKER);
@@ -199,7 +200,7 @@ static int add_module_marker(cJSON *files, const char *entry, int sorted) {
     if (!added) {
         cJSON_Delete(marker);
     }
-    free(key);
+    spisor_memory_release(key);
     return added;
 }
 
@@ -217,7 +218,7 @@ static int add_every_file(cJSON *keys, const char *directory, const char *prefix
     for (size_t index = 0; complete && index < listing.count; index++) {
         const runtime_directory_entry *entry = &listing.entries[index];
         char *path = joined(directory, entry->name);
-        char *key = malloc(strlen(prefix) + strlen(entry->name) + 2);
+        char *key = spisor_memory_allocate(strlen(prefix) + strlen(entry->name) + 2);
         complete = path != NULL && key != NULL;
         if (complete) {
             strcpy(key, prefix);
@@ -225,8 +226,8 @@ static int add_every_file(cJSON *keys, const char *directory, const char *prefix
             strcat(key, entry->name);
             complete = entry->is_directory ? add_every_file(keys, path, key) : add_file(keys, key, path);
         }
-        free(key);
-        free(path);
+        spisor_memory_release(key);
+        spisor_memory_release(path);
     }
     runtime_free_directory_listing(&listing);
     return complete;
@@ -240,7 +241,7 @@ static cJSON *every_file(const char *directory) {
         return NULL;
     }
     int count = cJSON_GetArraySize(found);
-    const char **keys = calloc((size_t)count + 1, sizeof *keys);
+    const char **keys = spisor_memory_allocate_zeroed((size_t)count + 1, sizeof *keys);
     cJSON *files = keys == NULL ? NULL : cJSON_CreateObject();
     int index = 0;
     for (const cJSON *file = files == NULL ? NULL : found->child; file != NULL; file = file->next) {
@@ -253,7 +254,7 @@ static cJSON *every_file(const char *directory) {
             files = NULL;
         }
     }
-    free(keys);
+    spisor_memory_release(keys);
     cJSON_Delete(found);
     return files;
 }
@@ -261,7 +262,7 @@ static cJSON *every_file(const char *directory) {
 static int append(catalog_inputs *inputs, catalog_input *input) {
     if (inputs->count == inputs->capacity) {
         size_t capacity = inputs->capacity == 0 ? 8 : inputs->capacity * 2;
-        catalog_input *grown = realloc(inputs->items, capacity * sizeof *grown);
+        catalog_input *grown = spisor_memory_reallocate(inputs->items, capacity * sizeof *grown);
         if (grown == NULL) {
             return 0;
         }
@@ -273,11 +274,11 @@ static int append(catalog_inputs *inputs, catalog_input *input) {
 }
 
 static void free_input(catalog_input *input) {
-    free(input->id);
-    free(input->version);
-    free(input->platform);
-    free(input->install_method);
-    free(input->runtime);
+    spisor_memory_release(input->id);
+    spisor_memory_release(input->version);
+    spisor_memory_release(input->platform);
+    spisor_memory_release(input->install_method);
+    spisor_memory_release(input->runtime);
     cJSON_Delete(input->files);
     cJSON_Delete(input->application);
 }
@@ -302,7 +303,7 @@ static char *absolute(const char *directory) {
     char *path = host_absolute_path(directory);
     const char *segments[1] = {path};
     char *normalized = path == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 1);
-    free(path);
+    spisor_memory_release(path);
     return normalized;
 }
 
@@ -314,7 +315,7 @@ static int add_bundled_file(cJSON *files, const char *root, const char *key, cJS
         *refusal = refused(parts, 4, "bundle the plugin into this directory first");
     }
     int added = exists && add_file(files, key, path);
-    free(path);
+    spisor_memory_release(path);
     return added;
 }
 
@@ -332,8 +333,8 @@ int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJ
         cJSON_Delete(input.files);
     }
     cJSON_Delete(manifest);
-    free(path);
-    free(root);
+    spisor_memory_release(path);
+    spisor_memory_release(root);
     return added;
 }
 
@@ -369,7 +370,7 @@ static int only_the_manifest(const cJSON *files, const char *root, cJSON **refus
                                 listed == NULL ? "" : listed, ""};
         *refusal = refused(parts, 4, "bundle the loader with spisor-host bundle-loader into an empty directory");
     }
-    free(listed);
+    spisor_memory_release(listed);
     return others == 0;
 }
 
@@ -404,8 +405,8 @@ int host_read_host_directory(catalog_inputs *inputs, const char *directory, cons
         cJSON_Delete(input.application);
     }
     cJSON_Delete(manifest);
-    free(path);
-    free(root);
+    spisor_memory_release(path);
+    spisor_memory_release(root);
     return added;
 }
 
@@ -431,9 +432,9 @@ int host_read_library_directory(catalog_inputs *inputs, const char *id, const ch
         added = add_input(inputs, &input, id, manifest, platform);
     }
     cJSON_Delete(manifest);
-    free(package);
-    free(library);
-    free(root);
+    spisor_memory_release(package);
+    spisor_memory_release(library);
+    spisor_memory_release(root);
     return added;
 }
 
@@ -441,6 +442,6 @@ void host_free_catalog_inputs(catalog_inputs *inputs) {
     for (size_t index = 0; index < inputs->count; index++) {
         free_input(&inputs->items[index]);
     }
-    free(inputs->items);
+    spisor_memory_release(inputs->items);
     memset(inputs, 0, sizeof *inputs);
 }

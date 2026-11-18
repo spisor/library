@@ -13,7 +13,7 @@ typedef struct json_edit_splice {
     size_t written_length;
 } json_edit_splice;
 
-/** Bytes an edit produced, freed with free; NUL terminated one past length, splice being the last edit made. */
+/** Bytes an edit produced, freed; NUL terminated one past length, splice being the last edit made. */
 typedef struct json_edit_text {
     char *bytes;
     size_t length;

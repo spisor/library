@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "allocation.h"
 #include "cache_installed.h"
 #include "cache_refusal.h"
 #include "host_references.h"
@@ -225,7 +226,7 @@ static int hint_libraries(const runtime_updates_request *request, const start_pl
          !runtime_write_boot_hint(request->cache, request->host_id, libraries, record->version, &problem))) {
         hinted = note_unrecorded(record->unrecorded, problem);
     } else {
-        free(problem);
+        spisor_memory_release(problem);
     }
     cJSON_Delete(libraries);
     cJSON_Delete(versions);
@@ -289,7 +290,7 @@ cJSON *runtime_updates_apply_for(const runtime_updates_request *request, cJSON *
     if (recorded && run_record == NULL && !out_of_memory) {
         *refusal = runtime_updates_unrecorded(unrecorded_run(request));
     }
-    free(run_record);
+    spisor_memory_release(run_record);
     runtime_free_host_references(&record.references);
     cJSON_Delete(record.plugins);
     cJSON_Delete(record.unrecorded);

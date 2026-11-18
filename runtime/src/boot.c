@@ -1,4 +1,5 @@
 #include "boot.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -33,7 +34,7 @@ static const char *nonempty_text(const cJSON *argument, const char *member) {
 /** Sets *refusal to problem with fix, taking problem; *refusal stays NULL for a NULL problem, memory running out. */
 static cJSON *refuse_problem(char *problem, const char *fix, cJSON **refusal) {
     *refusal = problem == NULL ? NULL : runtime_refusal(problem, fix);
-    free(problem);
+    spisor_memory_release(problem);
     return NULL;
 }
 
@@ -51,7 +52,7 @@ static const char *checked_host(const cJSON *argument, const char **cache, cJSON
     }
     if (!runtime_is_plain_host_id(host_id)) {
         char *problem = NULL;
-        free(runtime_boot_hint_path(*cache, host_id, &problem));
+        spisor_memory_release(runtime_boot_hint_path(*cache, host_id, &problem));
         refuse_problem(problem, RUNTIME_PLAIN_HOST_ID_FIX, refusal);
         return NULL;
     }
@@ -134,9 +135,9 @@ void runtime_boot_free_write(runtime_boot_hint_write *write) {
     if (write != NULL) {
         spisor_unlock(write->guard);
         cJSON_Delete(write->libraries);
-        free(write->host);
+        spisor_memory_release(write->host);
         cJSON_Delete(write->answer);
-        free(write);
+        spisor_memory_release(write);
     }
 }
 
@@ -175,13 +176,13 @@ runtime_boot_hint_write *runtime_boot_prepare_write(const cJSON *argument, cJSON
         return NULL;
     }
     char *problem = NULL;
-    runtime_boot_hint_write *write = calloc(1, sizeof *write);
+    runtime_boot_hint_write *write = spisor_memory_allocate_zeroed(1, sizeof *write);
     cJSON *libraries = write == NULL ? NULL
                                      : runtime_boot_hint_libraries(
                                            cache, cJSON_GetObjectItemCaseSensitive(argument, "libraries"), platform,
                                            &problem);
     if (libraries == NULL) {
-        free(write);
+        spisor_memory_release(write);
         refuse_problem(problem, RUNTIME_REINSTALL_FIX, refusal);
         return NULL;
     }

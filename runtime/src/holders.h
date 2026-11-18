@@ -25,12 +25,12 @@ runtime_holders_record runtime_no_holders(void);
 void runtime_free_holders(runtime_holders_record *record);
 
 /**
- * state/processes/<host_id> and extension, freed with free; NULL with *problem set (freed with free)
+ * state/processes/<host_id> and extension, freed; NULL with *problem set (freed)
  * when host_id is no plain file name, or with *problem NULL when memory runs out.
  */
 char *runtime_holders_path(const char *state, const char *host_id, const char *extension, char **problem);
 
-/** state/processes, freed with free; NULL when memory runs out. */
+/** state/processes, freed; NULL when memory runs out. */
 char *runtime_processes_folder(const char *state);
 
 /**

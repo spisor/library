@@ -192,7 +192,8 @@ spisor_status runtime_environment_json(const runtime_variable *environment, size
 
 runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *count) {
     const cJSON *member;
-    runtime_variable *variables = malloc(((size_t)cJSON_GetArraySize(environment) + 1) * sizeof *variables);
+    size_t variable_count = (size_t)cJSON_GetArraySize(environment) + 1;
+    runtime_variable *variables = spisor_memory_allocate(variable_count * sizeof *variables);
     *count = 0;
     cJSON_ArrayForEach(member, environment) {
         if (variables != NULL && cJSON_IsString(member) && member->string != NULL) {

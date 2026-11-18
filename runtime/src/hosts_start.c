@@ -1,4 +1,5 @@
 #include "hosts_start.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -223,7 +224,7 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
         cJSON_Delete(plan);
         plan = NULL;
     }
-    free(record);
+    spisor_memory_release(record);
     return plan;
 }
 

@@ -1,4 +1,5 @@
 #include "catalog_fold.h"
+#include "allocation.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -114,7 +115,7 @@ static void order_canonically(uint32_t *code_points, size_t length) {
 
 static int fold_key(const char *key, folded_key *folded) {
     size_t bytes = strlen(key);
-    folded->code_points = malloc((bytes * LONGEST_FOLD + 1) * sizeof *folded->code_points);
+    folded->code_points = spisor_memory_allocate((bytes * LONGEST_FOLD + 1) * sizeof *folded->code_points);
     folded->length = 0;
     if (folded->code_points == NULL) {
         return 0;
@@ -136,13 +137,13 @@ static int same_fold(const folded_key *left, const folded_key *right) {
 
 static void free_folded(folded_key *folded, size_t count) {
     for (size_t index = 0; index < count; index++) {
-        free(folded[index].code_points);
+        spisor_memory_release(folded[index].code_points);
     }
-    free(folded);
+    spisor_memory_release(folded);
 }
 
 int runtime_catalog_folded_duplicate(const char *const *keys, size_t count, size_t *first, size_t *second) {
-    folded_key *folded = calloc(count == 0 ? 1 : count, sizeof *folded);
+    folded_key *folded = spisor_memory_allocate_zeroed(count == 0 ? 1 : count, sizeof *folded);
     if (folded == NULL) {
         return -1;
     }

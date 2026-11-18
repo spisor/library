@@ -8,6 +8,7 @@
  * RUNTIME_PATH_ENTRY_TEST_VALUE instead of Path.
  */
 #include "path_entry.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,9 +60,9 @@ static runtime_change_step run_out_of_memory(runtime_change_note *note, const ch
 
 static wchar_t *to_wide(const char *text) {
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    wchar_t *wide = length > 0 ? malloc((size_t)length * sizeof(wchar_t)) : NULL;
+    wchar_t *wide = length > 0 ? spisor_memory_allocate((size_t)length * sizeof(wchar_t)) : NULL;
     if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
-        free(wide);
+        spisor_memory_release(wide);
         wide = NULL;
     }
     return wide;
@@ -69,9 +70,9 @@ static wchar_t *to_wide(const char *text) {
 
 static char *to_narrow(const wchar_t *text, size_t length) {
     int size = WideCharToMultiByte(CP_UTF8, 0, text, (int)length, NULL, 0, NULL, NULL);
-    char *narrow = size > 0 ? malloc((size_t)size + 1) : NULL;
+    char *narrow = size > 0 ? spisor_memory_allocate((size_t)size + 1) : NULL;
     if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, text, (int)length, narrow, size, NULL, NULL) <= 0) {
-        free(narrow);
+        spisor_memory_release(narrow);
         return NULL;
     }
     if (narrow != NULL) {
@@ -104,7 +105,7 @@ static HKEY open_environment(void) {
 static int read_absent(path_value *value) {
     value->type = REG_EXPAND_SZ;
     value->present = 0;
-    value->text = calloc(1, sizeof(wchar_t));
+    value->text = spisor_memory_allocate_zeroed(1, sizeof(wchar_t));
     return value->text != NULL;
 }
 
@@ -123,7 +124,7 @@ static int read_path_value(HKEY key, path_value *value) {
         if (status == ERROR_FILE_NOT_FOUND) {
             return read_absent(value);
         }
-        wchar_t *text = status == ERROR_SUCCESS ? malloc(size + sizeof(wchar_t)) : NULL;
+        wchar_t *text = status == ERROR_SUCCESS ? spisor_memory_allocate(size + sizeof(wchar_t)) : NULL;
         if (text == NULL) {
             return 0;
         }
@@ -133,7 +134,7 @@ static int read_path_value(HKEY key, path_value *value) {
             value->present = 1;
             return 1;
         }
-        free(text);
+        spisor_memory_release(text);
         if (status != ERROR_MORE_DATA) {
             return 0;
         }
@@ -173,7 +174,7 @@ static int delete_path_value(HKEY key) {
 static int is_same_directory(const wchar_t *entry, size_t length, const void *wanted) {
     char *narrow = to_narrow(entry, length);
     int same = narrow != NULL && runtime_change_paths_equal(narrow, (const char *)wanted);
-    free(narrow);
+    spisor_memory_release(narrow);
     return same;
 }
 
@@ -211,7 +212,7 @@ static int needs_separator(const wchar_t *text) {
 static wchar_t *with_entry(const wchar_t *text, const wchar_t *entry, int separated) {
     size_t length = wcslen(text);
     size_t entry_length = wcslen(entry);
-    wchar_t *joined = malloc((length + entry_length + 2) * sizeof(wchar_t));
+    wchar_t *joined = spisor_memory_allocate((length + entry_length + 2) * sizeof(wchar_t));
     if (joined == NULL) {
         return NULL;
     }
@@ -239,7 +240,7 @@ static wchar_t *without_entry(const wchar_t *text, entry_span span, int separate
         cut_start--;
     }
     size_t kept = length - (cut_end - cut_start);
-    wchar_t *remaining = malloc((kept + 1) * sizeof(wchar_t));
+    wchar_t *remaining = spisor_memory_allocate((kept + 1) * sizeof(wchar_t));
     if (remaining != NULL) {
         wmemcpy(remaining, text, cut_start);
         wmemcpy(remaining + cut_start, text + cut_end, length - cut_end);
@@ -305,7 +306,7 @@ static int read_environment(HKEY *key, path_value *value) {
 }
 
 static void close_environment(HKEY key, path_value *value) {
-    free(value->text);
+    spisor_memory_release(value->text);
     RegCloseKey(key);
 }
 
@@ -335,8 +336,8 @@ static int append_entry(HKEY key, const path_value *value, cJSON *record) {
     wchar_t *joined = entry == NULL ? NULL : with_entry(value->text, entry, separated);
     int stored = joined != NULL && note_placement(record, value) &&
                  store_path_text(key, value->present ? value->type : REG_EXPAND_SZ, joined);
-    free(joined);
-    free(entry);
+    spisor_memory_release(joined);
+    spisor_memory_release(entry);
     return stored;
 }
 
@@ -369,7 +370,7 @@ static int remove_entry(HKEY key, const path_value *value, const cJSON *record) 
         return 0;
     }
     entry_span span = last_entry(value->text, is_exact_entry, entry);
-    free(entry);
+    spisor_memory_release(entry);
     if (!span.found) {
         return 1;
     }
@@ -377,7 +378,7 @@ static int remove_entry(HKEY key, const path_value *value, const cJSON *record) 
     int removed = remaining != NULL && (remaining[0] == L'\0' && is_flag_set(record, "created")
                                             ? delete_path_value(key)
                                             : store_path_text(key, value->type, remaining));
-    free(remaining);
+    spisor_memory_release(remaining);
     return removed;
 }
 

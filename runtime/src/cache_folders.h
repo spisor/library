@@ -17,7 +17,7 @@ cJSON *runtime_cache_folder_names(const char *const *segments, size_t count);
  */
 cJSON *runtime_cache_json_names(const char *const *segments, size_t count);
 
-/** The path segments joined for this platform, freed with free; NULL when memory runs out. */
+/** The path segments joined for this platform, freed; NULL when memory runs out. */
 char *runtime_cache_joined(const char *const *segments, size_t count);
 
 #endif

@@ -67,6 +67,11 @@ foreach(scenario
             -P ${CMAKE_CURRENT_SOURCE_DIR}/link_graph/link_graph_test.cmake)
 endforeach()
 
+add_test(NAME allocation_check_refuses_a_plain_allocation
+    COMMAND ${CMAKE_COMMAND} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/allocation-check-work
+        -DALLOCATION_CHECK=${PROJECT_SOURCE_DIR}/cmake/allocation_check.cmake
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/allocation_check/allocation_check_test.cmake)
+
 set(spisor_layouts_prefix "^(spisor|runtime)_")
 add_executable(layouts layouts/layouts.c)
 target_link_libraries(layouts PRIVATE spisor_library)

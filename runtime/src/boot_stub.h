@@ -8,7 +8,7 @@
 #endif
 
 /**
- * cache/boot/spisor-boot, with .exe on Windows, freed with free; NULL when memory runs out.
+ * cache/boot/spisor-boot, with .exe on Windows, freed; NULL when memory runs out.
  *
  * @implNote The one place the versionless stub lives, which every command shim and application entry
  * runs as spisor-boot <host-id> <arguments>; the stub reads the host's boot hint, so no target names a

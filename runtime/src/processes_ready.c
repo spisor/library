@@ -3,6 +3,7 @@
 #endif
 
 #include "processes_ready.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -43,7 +44,7 @@ static void pause_milliseconds(unsigned milliseconds) {
 static char *ready_path(const runtime_processes_request *request) {
     char *problem = NULL;
     char *path = runtime_holders_path(request->state, request->host_id, READY_EXTENSION, &problem);
-    free(problem);
+    spisor_memory_release(problem);
     return path;
 }
 
@@ -110,7 +111,7 @@ static spisor_status write_record(const runtime_processes_request *request, cons
                                 !spisor_replace_file(path, (const uint8_t *)text, strlen(text)))) {
         status = SPISOR_REFUSED;
     }
-    free(folder);
+    spisor_memory_release(folder);
     cJSON_free(text);
     return status;
 }
@@ -130,7 +131,7 @@ static cJSON *ready_for(const runtime_processes_request *request, cJSON **refusa
         cJSON_Delete(answer);
         answer = NULL;
     }
-    free(path);
+    spisor_memory_release(path);
     cJSON_Delete(record);
     return answer;
 }
@@ -223,7 +224,7 @@ static cJSON *await_ready_for(const runtime_processes_request *request, cJSON **
             pause_milliseconds(POLL_MILLISECONDS);
         }
     }
-    free(path);
+    spisor_memory_release(path);
     return answer;
 }
 

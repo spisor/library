@@ -3,6 +3,7 @@
 #endif
 
 #include "catalog_path.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,32 +20,32 @@
 #if defined(_WIN32)
 static char *working_directory(void) {
     DWORD length = GetCurrentDirectoryW(0, NULL);
-    wchar_t *wide = length == 0 ? NULL : malloc(length * sizeof *wide);
+    wchar_t *wide = length == 0 ? NULL : spisor_memory_allocate(length * sizeof *wide);
     if (wide == NULL || GetCurrentDirectoryW(length, wide) == 0) {
-        free(wide);
+        spisor_memory_release(wide);
         return NULL;
     }
     int size = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
-    char *narrow = size <= 0 ? NULL : malloc((size_t)size);
+    char *narrow = size <= 0 ? NULL : spisor_memory_allocate((size_t)size);
     if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, size, NULL, NULL) != size) {
-        free(narrow);
+        spisor_memory_release(narrow);
         narrow = NULL;
     }
-    free(wide);
+    spisor_memory_release(wide);
     return narrow;
 }
 #else
 static char *working_directory(void) {
     size_t size = 4096;
     for (;;) {
-        char *buffer = malloc(size);
+        char *buffer = spisor_memory_allocate(size);
         if (buffer == NULL) {
             return NULL;
         }
         if (getcwd(buffer, size) != NULL) {
             return buffer;
         }
-        free(buffer);
+        spisor_memory_release(buffer);
         if (size > (size_t)1 << 20) {
             return NULL;
         }
@@ -104,6 +105,6 @@ char *runtime_catalog_resolve_path(const char *path) {
         return NULL;
     }
     char *resolved = anchored(path, working);
-    free(working);
+    spisor_memory_release(working);
     return resolved == NULL ? NULL : without_trailing_separator(resolved);
 }

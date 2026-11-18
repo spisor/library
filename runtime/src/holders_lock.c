@@ -3,6 +3,7 @@
 #endif
 
 #include "holders_lock.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -60,7 +61,7 @@ static void pause_milliseconds(long milliseconds) {
 
 /** A text no other taker of any lock writes: the pid, a space, then a number and the time. */
 static char *new_token(void) {
-    char *token = malloc(64);
+    char *token = spisor_memory_allocate(64);
     if (token != NULL) {
         snprintf(token, 64, "%d %lu-%.0f", (int)current_process_id(), next_token_number(),
                  floor(runtime_now_milliseconds()));
@@ -108,8 +109,8 @@ static int link_back(const char *moved, const char *path) {
     wchar_t *wide_moved = spisor_wide_path(moved);
     wchar_t *wide_path = spisor_wide_path(path);
     int linked = wide_moved != NULL && wide_path != NULL && CreateHardLinkW(wide_path, wide_moved, NULL) != 0;
-    free(wide_moved);
-    free(wide_path);
+    spisor_memory_release(wide_moved);
+    spisor_memory_release(wide_path);
     return linked;
 #else
     return link(moved, path) == 0;
@@ -121,26 +122,26 @@ static void remove_stale_lock(const char *path, const char *judged) {
     char *token = new_token();
     const char *parts[4] = {path, ".", token, ".stale"};
     char *moved = token == NULL ? NULL : runtime_cache_text(parts, 4);
-    free(token);
+    spisor_memory_release(token);
     if (moved == NULL || !runtime_move_file_over(path, moved)) {
-        free(moved);
+        spisor_memory_release(moved);
         return;
     }
     char *held = read_lock(moved);
     if (held == NULL || strcmp(held, judged) != 0) {
         link_back(moved, path);
     }
-    free(held);
+    spisor_memory_release(held);
     runtime_remove_file_entry(moved);
-    free(moved);
+    spisor_memory_release(moved);
 }
 
 static runtime_holders_guard *guard_of(const char *path, char *token) {
-    runtime_holders_guard *guard = malloc(sizeof *guard);
-    char *copy = guard == NULL ? NULL : malloc(strlen(path) + 1);
+    runtime_holders_guard *guard = spisor_memory_allocate(sizeof *guard);
+    char *copy = guard == NULL ? NULL : spisor_memory_allocate(strlen(path) + 1);
     if (copy == NULL) {
-        free(guard);
-        free(token);
+        spisor_memory_release(guard);
+        spisor_memory_release(token);
         return NULL;
     }
     memcpy(copy, path, strlen(path) + 1);
@@ -167,7 +168,7 @@ runtime_holders_guard *runtime_lock_holders(const char *path) {
             return guard_of(path, token);
         }
         if (created != RUNTIME_ENTRY_EXISTS || is_hopeless(path, started)) {
-            free(token);
+            spisor_memory_release(token);
             return NULL;
         }
         char *held = read_lock(path);
@@ -175,7 +176,7 @@ runtime_holders_guard *runtime_lock_holders(const char *path) {
         if (stale) {
             remove_stale_lock(path, held);
         }
-        free(held);
+        spisor_memory_release(held);
         if (!stale) {
             pause_milliseconds(LOCK_RETRY_MILLISECONDS);
         }
@@ -190,8 +191,8 @@ void runtime_unlock_holders(runtime_holders_guard *guard) {
     if (held != NULL && strcmp(held, guard->token) == 0) {
         runtime_remove_file_entry(guard->path);
     }
-    free(held);
-    free(guard->path);
-    free(guard->token);
-    free(guard);
+    spisor_memory_release(held);
+    spisor_memory_release(guard->path);
+    spisor_memory_release(guard->token);
+    spisor_memory_release(guard);
 }

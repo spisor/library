@@ -1,4 +1,5 @@
 #include "json_style.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,7 @@ static void append(growing_text *out, const char *bytes, size_t count) {
     }
     if (out->length + count + 1 > out->capacity) {
         size_t capacity = (out->length + count + 1) * 2;
-        char *grown = realloc(out->bytes, capacity);
+        char *grown = spisor_memory_reallocate(out->bytes, capacity);
         if (grown == NULL) {
             out->failed = 1;
             return;
@@ -40,7 +41,7 @@ static void append_text(growing_text *out, json_text text) {
 
 static char *finished(growing_text *out, size_t *length) {
     if (out->failed || out->bytes == NULL) {
-        free(out->bytes);
+        spisor_memory_release(out->bytes);
         return NULL;
     }
     *length = out->length;
@@ -228,7 +229,7 @@ static void append_value(growing_text *out, const json_style *style, const cJSON
     } else {
         append_compact(out, pretty);
     }
-    free(pretty);
+    spisor_memory_release(pretty);
 }
 
 static void append_key(growing_text *out, const char *name) {
@@ -240,7 +241,7 @@ static void append_key(growing_text *out, const char *name) {
         return;
     }
     append(out, quoted, strlen(quoted));
-    free(quoted);
+    spisor_memory_release(quoted);
 }
 
 char *json_style_member_text(const json_style *style, json_placement placement, const char *name,

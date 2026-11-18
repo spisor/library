@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "secret_backend.h"
+#include "allocation.h"
 #ifdef SPISOR_SECRET_TEST_HOOKS
 #include "secret_linux_hooks.h"
 #endif
@@ -259,7 +260,7 @@ runtime_secret_answer runtime_secret_store_get(const char *entry, char **value) 
     if (found == NULL) {
         return RUNTIME_SECRET_ABSENT;
     }
-    *value = strdup(found);
+    *value = spisor_memory_duplicate_text(found);
     api->free_password(found);
     return *value == NULL ? RUNTIME_SECRET_FAILED : RUNTIME_SECRET_DONE;
 }
@@ -303,14 +304,14 @@ runtime_secret_answer runtime_secret_store_delete(const char *entry) {
 static int append_name(runtime_secret_names *names, size_t *capacity, const char *name) {
     if (names->count == *capacity) {
         size_t grown = *capacity == 0 ? 8 : *capacity * 2;
-        char **resized = realloc(names->names, grown * sizeof *resized);
+        char **resized = spisor_memory_reallocate(names->names, grown * sizeof *resized);
         if (resized == NULL) {
             return 0;
         }
         names->names = resized;
         *capacity = grown;
     }
-    names->names[names->count] = strdup(name);
+    names->names[names->count] = spisor_memory_duplicate_text(name);
     if (names->names[names->count] == NULL) {
         return 0;
     }

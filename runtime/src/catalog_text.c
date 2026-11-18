@@ -1,4 +1,5 @@
 #include "catalog_text.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +24,7 @@ static int reserve(runtime_catalog_text *text, size_t more) {
     while (capacity < text->length + more + 1) {
         capacity *= 2;
     }
-    char *grown = realloc(text->bytes, capacity);
+    char *grown = spisor_memory_reallocate(text->bytes, capacity);
     if (grown == NULL) {
         text->failed = 1;
         return 0;
@@ -78,12 +79,12 @@ char *runtime_catalog_text_finish(runtime_catalog_text *text) {
 }
 
 void runtime_catalog_text_discard(runtime_catalog_text *text) {
-    free(text->bytes);
+    spisor_memory_release(text->bytes);
     runtime_catalog_text_start(text);
 }
 
 char *runtime_catalog_copy_bytes(const char *bytes, size_t length) {
-    char *copy = malloc(length + 1);
+    char *copy = spisor_memory_allocate(length + 1);
     if (copy != NULL) {
         memcpy(copy, bytes, length);
         copy[length] = 0;

@@ -1,4 +1,5 @@
 #include "spisor/path.h"
+#include "allocation.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -40,7 +41,7 @@ static void text_reserve(text *buffer, size_t extra) {
     while (capacity < buffer->length + extra + 1) {
         capacity *= 2;
     }
-    char *grown = realloc(buffer->data, capacity);
+    char *grown = spisor_memory_reallocate(buffer->data, capacity);
     if (grown == NULL) {
         buffer->failed = 1;
         return;
@@ -75,7 +76,7 @@ static void text_truncate(text *buffer, size_t length) {
 static char *text_finish(text *buffer) {
     text_reserve(buffer, 0);
     if (buffer->failed) {
-        free(buffer->data);
+        spisor_memory_release(buffer->data);
         return NULL;
     }
     buffer->data[buffer->length] = '\0';
@@ -205,7 +206,7 @@ static char *posix_normalize(path_view path) {
     int trailing_separator = path.data[path.length - 1] == '/';
     text normalized = normalize_string(0, path, !is_absolute);
     if (normalized.length == 0 && !normalized.failed) {
-        free(normalized.data);
+        spisor_memory_release(normalized.data);
         return is_absolute ? copy_of("/", 1) : copy_of(trailing_separator ? "./" : ".", trailing_separator ? 2 : 1);
     }
     text result = {NULL, 0, 0, normalized.failed};
@@ -216,7 +217,7 @@ static char *posix_normalize(path_view path) {
     if (trailing_separator) {
         text_append_string(&result, "/");
     }
-    free(normalized.data);
+    spisor_memory_release(normalized.data);
     return text_finish(&result);
 }
 
@@ -384,8 +385,8 @@ static char *win32_assemble(path_view path, win32_root *root, text *tail) {
         }
     }
     text_append(&result, tail->data, tail->length);
-    free(tail->data);
-    free(root->device.data);
+    spisor_memory_release(tail->data);
+    spisor_memory_release(root->device.data);
     return text_finish(&result);
 }
 
@@ -402,7 +403,7 @@ static char *win32_normalize(path_view path) {
         if (is_win32_separator(path.data[1])) {
             char *finished = match_double_separator_root(path, &root);
             if (finished != NULL) {
-                free(root.device.data);
+                spisor_memory_release(root.device.data);
                 return finished;
             }
         } else {
@@ -467,7 +468,7 @@ static size_t leading_separators_to_collapse(const char *first_part, const text 
 
 static char *win32_join_finish(text *joined, const char *first_part) {
     if (joined->failed) {
-        free(joined->data);
+        spisor_memory_release(joined->data);
         return NULL;
     }
     size_t collapse = leading_separators_to_collapse(first_part, joined);
@@ -486,7 +487,7 @@ static char *win32_join_finish(text *joined, const char *first_part) {
     }
     path_view view = {joined->data, joined->length};
     char *normalized = win32_normalize(view);
-    free(joined->data);
+    spisor_memory_release(joined->data);
     return normalized;
 }
 
@@ -512,7 +513,7 @@ char *spisor_path_join(int windows, const char *const *segments, size_t count) {
     }
     path_view view = {joined.data, joined.length};
     char *normalized = joined.failed ? NULL : posix_normalize(view);
-    free(joined.data);
+    spisor_memory_release(joined.data);
     return normalized;
 }
 

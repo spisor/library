@@ -1,4 +1,5 @@
 #include "path_entry.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,7 @@ const char *runtime_path_entry_defect(const char *directory) {
 
 static char *export_line(const char *directory) {
     size_t size = strlen(directory) + sizeof "export PATH=\":$PATH\"";
-    char *line = malloc(size);
+    char *line = spisor_memory_allocate(size);
     if (line != NULL) {
         snprintf(line, size, "export PATH=\"%s:$PATH\"", directory);
     }
@@ -72,7 +73,7 @@ static int add_child(cJSON *children, const char *home, const char *name, const 
     if (!added) {
         cJSON_Delete(child);
     }
-    free(file);
+    spisor_memory_release(file);
     return added;
 }
 
@@ -84,7 +85,7 @@ static cJSON *profile_lines(const cJSON *change, const char *login) {
     for (size_t index = 0; complete && index < sizeof profile_names / sizeof profile_names[0]; index++) {
         complete = add_child(children, text_of(change, "home"), profile_names[index], line, login);
     }
-    free(line);
+    spisor_memory_release(line);
     if (!complete) {
         cJSON_Delete(children);
         return NULL;

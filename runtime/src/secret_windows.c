@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "secret_backend.h"
+#include "allocation.h"
 #include "secret_windows_fault.h"
 
 #define LOGICAL_ROOT "spisor/"
@@ -22,9 +23,9 @@ _Static_assert(RUNTIME_SECRET_VALUE_CAP_BYTES == MAX_CHUNK_COUNT * CRED_MAX_CRED
 
 static wchar_t *widen(const char *text) {
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
-    wchar_t *wide = length > 0 ? malloc((size_t)length * sizeof(wchar_t)) : NULL;
+    wchar_t *wide = length > 0 ? spisor_memory_allocate((size_t)length * sizeof(wchar_t)) : NULL;
     if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) == 0) {
-        free(wide);
+        spisor_memory_release(wide);
         wide = NULL;
     }
     return wide;
@@ -32,9 +33,9 @@ static wchar_t *widen(const char *text) {
 
 static char *narrow(const wchar_t *text) {
     int length = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
-    char *utf8 = length > 0 ? malloc((size_t)length) : NULL;
+    char *utf8 = length > 0 ? spisor_memory_allocate((size_t)length) : NULL;
     if (utf8 != NULL && WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, length, NULL, NULL) == 0) {
-        free(utf8);
+        spisor_memory_release(utf8);
         utf8 = NULL;
     }
     return utf8;
@@ -103,13 +104,13 @@ static int base_reads_exhausted(void) {
 static wchar_t *chunk_target(const char *entry, unsigned generation, size_t number) {
     const char *below_root = entry + sizeof LOGICAL_ROOT - 1;
     size_t size = sizeof CHUNK_ROOT + strlen(below_root) + 2 * COUNT_TEXT_CAPACITY;
-    char *name = malloc(size);
+    char *name = spisor_memory_allocate(size);
     wchar_t *target = NULL;
     if (name != NULL) {
         snprintf(name, size, CHUNK_ROOT "%s#%u#%zu", below_root, generation, number);
         target = widen(name);
     }
-    free(name);
+    spisor_memory_release(name);
     return target;
 }
 
@@ -140,7 +141,7 @@ static runtime_secret_answer write_named(const char *name, const char *blob, siz
         return RUNTIME_SECRET_FAILED;
     }
     runtime_secret_answer answer = write_credential(target, blob, size, comment);
-    free(target);
+    spisor_memory_release(target);
     return answer;
 }
 
@@ -152,7 +153,7 @@ static runtime_secret_answer write_chunk(const char *entry, unsigned generation,
     }
     runtime_secret_answer answer = chunk_writes_exhausted() ? RUNTIME_SECRET_FAILED
                                                            : write_credential(target, blob, size, NULL);
-    free(target);
+    spisor_memory_release(target);
     return answer;
 }
 
@@ -163,7 +164,7 @@ static runtime_secret_answer sweep_generation(const char *entry, unsigned genera
             return RUNTIME_SECRET_FAILED;
         }
         runtime_secret_answer answer = delete_credential(target);
-        free(target);
+        spisor_memory_release(target);
         if (answer == RUNTIME_SECRET_ABSENT) {
             return RUNTIME_SECRET_DONE;
         }
@@ -191,7 +192,7 @@ static int is_chunked(const CREDENTIALW *credential) {
 }
 
 static char *copy_blob_as_text(const CREDENTIALW *credential) {
-    char *text = malloc((size_t)credential->CredentialBlobSize + 1);
+    char *text = spisor_memory_allocate((size_t)credential->CredentialBlobSize + 1);
     if (text != NULL) {
         if (credential->CredentialBlobSize > 0) {
             memcpy(text, credential->CredentialBlob, credential->CredentialBlobSize);
@@ -211,7 +212,7 @@ static int parse_chunk_layout(const CREDENTIALW *credential, unsigned *generatio
                 (parsed_generation == FIRST_GENERATION || parsed_generation == SECOND_GENERATION);
     *generation = valid ? (unsigned)parsed_generation : 0;
     *count = valid ? (size_t)parsed_count : 0;
-    free(text);
+    spisor_memory_release(text);
     return valid;
 }
 
@@ -230,7 +231,7 @@ static runtime_secret_answer generation_in_use(const char *entry, unsigned *gene
         return answer;
     }
     answer = base_reads_exhausted() ? RUNTIME_SECRET_FAILED : read_credential(target, &base);
-    free(target);
+    spisor_memory_release(target);
     if (answer == RUNTIME_SECRET_DONE) {
         if (!is_chunked(base) || !parse_chunk_layout(base, generation, &count)) {
             *generation = SECOND_GENERATION;
@@ -307,14 +308,14 @@ static runtime_secret_answer append_chunk(const char *entry, unsigned generation
         return RUNTIME_SECRET_FAILED;
     }
     runtime_secret_answer answer = read_credential(target, &chunk);
-    free(target);
+    spisor_memory_release(target);
     if (answer == RUNTIME_SECRET_ABSENT) {
         return RUNTIME_SECRET_FAILED;
     }
     if (answer != RUNTIME_SECRET_DONE) {
         return answer;
     }
-    char *grown = realloc(*value, *length + chunk->CredentialBlobSize + 1);
+    char *grown = spisor_memory_reallocate(*value, *length + chunk->CredentialBlobSize + 1);
     if (grown == NULL) {
         CredFree(chunk);
         return RUNTIME_SECRET_FAILED;
@@ -329,11 +330,11 @@ static runtime_secret_answer append_chunk(const char *entry, unsigned generation
 
 static runtime_secret_answer join_chunks(const char *entry, unsigned generation, size_t count, char **value) {
     size_t length = 0;
-    *value = calloc(1, 1);
+    *value = spisor_memory_allocate_zeroed(1, 1);
     for (size_t number = 1; *value != NULL && number <= count; number++) {
         runtime_secret_answer answer = append_chunk(entry, generation, number, value, &length);
         if (answer != RUNTIME_SECRET_DONE) {
-            free(*value);
+            spisor_memory_release(*value);
             *value = NULL;
             return answer;
         }
@@ -372,7 +373,7 @@ runtime_secret_answer runtime_secret_store_get(const char *entry, char **value) 
         return RUNTIME_SECRET_FAILED;
     }
     runtime_secret_answer answer = read_credential(target, &base);
-    free(target);
+    spisor_memory_release(target);
     if (answer == RUNTIME_SECRET_DONE) {
         answer = value_of(entry, base, value);
         CredFree(base);
@@ -398,7 +399,7 @@ runtime_secret_answer runtime_secret_store_delete(const char *entry) {
         return RUNTIME_SECRET_FAILED;
     }
     runtime_secret_answer base_answer = delete_credential(target);
-    free(target);
+    spisor_memory_release(target);
     if (base_answer != RUNTIME_SECRET_DONE && base_answer != RUNTIME_SECRET_ABSENT) {
         return base_answer;
     }
@@ -408,7 +409,7 @@ runtime_secret_answer runtime_secret_store_delete(const char *entry) {
 
 static runtime_secret_answer collect_names(PCREDENTIALW *credentials, DWORD count, const char *prefix,
                                            runtime_secret_names *names) {
-    names->names = calloc(count > 0 ? count : 1, sizeof(char *));
+    names->names = spisor_memory_allocate_zeroed(count > 0 ? count : 1, sizeof(char *));
     if (names->names == NULL) {
         return RUNTIME_SECRET_FAILED;
     }
@@ -421,7 +422,7 @@ static runtime_secret_answer collect_names(PCREDENTIALW *credentials, DWORD coun
         if (strncmp(name, prefix, strlen(prefix)) == 0 && strncmp(name, CHUNK_ROOT, sizeof CHUNK_ROOT - 1) != 0) {
             names->names[names->count++] = name;
         } else {
-            free(name);
+            spisor_memory_release(name);
         }
     }
     return RUNTIME_SECRET_DONE;
@@ -429,7 +430,7 @@ static runtime_secret_answer collect_names(PCREDENTIALW *credentials, DWORD coun
 
 runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secret_names *names) {
     size_t filter_size = strlen(prefix) + 2;
-    char *filter_text = malloc(filter_size);
+    char *filter_text = spisor_memory_allocate(filter_size);
     wchar_t *filter = NULL;
     DWORD count = 0;
     PCREDENTIALW *credentials = NULL;
@@ -439,13 +440,13 @@ runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secr
         snprintf(filter_text, filter_size, "%s*", prefix);
         filter = widen(filter_text);
     }
-    free(filter_text);
+    spisor_memory_release(filter_text);
     if (filter == NULL) {
         return RUNTIME_SECRET_FAILED;
     }
     BOOL enumerated = CredEnumerateW(filter, 0, &count, &credentials);
     DWORD error = enumerated ? ERROR_SUCCESS : GetLastError();
-    free(filter);
+    spisor_memory_release(filter);
     if (!enumerated) {
         return error == ERROR_NOT_FOUND ? RUNTIME_SECRET_DONE : answer_for(error);
     }

@@ -82,15 +82,15 @@ static char *parent_of(const char *path) {
 static spisor_status replace_with_text(const char *path, const char *text) {
     char *parent = parent_of(path);
     size_t length = strlen(text);
-    char *bytes = parent == NULL ? NULL : malloc(length + 2);
+    char *bytes = parent == NULL ? NULL : spisor_memory_allocate(length + 2);
     spisor_status status = bytes == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
     if (bytes != NULL && spisor_make_directories(parent)) {
         memcpy(bytes, text, length);
         bytes[length] = '\n';
         status = spisor_replace_file(path, (const uint8_t *)bytes, length + 1) ? SPISOR_OK : SPISOR_REFUSED;
     }
-    free(bytes);
-    free(parent);
+    spisor_memory_release(bytes);
+    spisor_memory_release(parent);
     return status;
 }
 
@@ -101,7 +101,7 @@ spisor_status runtime_catalog_write_state(const char *path, const runtime_catalo
     char *text = built ? spisor_json_stringify_pretty(object) : NULL;
     cJSON_Delete(object);
     spisor_status status = text == NULL ? SPISOR_OUT_OF_MEMORY : replace_with_text(path, text);
-    free(text);
+    spisor_memory_release(text);
     return status;
 }
 
@@ -110,16 +110,16 @@ spisor_status runtime_catalog_keep_state(const runtime_catalog_kept_state *kept)
 }
 
 void runtime_catalog_free_kept_state(runtime_catalog_kept_state *kept) {
-    free(kept->path);
-    free(kept->location);
+    spisor_memory_release(kept->path);
+    spisor_memory_release(kept->location);
     runtime_catalog_free_state(&kept->state);
     kept->path = NULL;
     kept->location = NULL;
 }
 
 void runtime_catalog_free_state(runtime_catalog_state *state) {
-    free(state->etag);
-    free(state->checked_at);
-    free(state->index);
+    spisor_memory_release(state->etag);
+    spisor_memory_release(state->checked_at);
+    spisor_memory_release(state->index);
     memset(state, 0, sizeof *state);
 }

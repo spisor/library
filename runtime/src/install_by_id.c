@@ -1,4 +1,5 @@
 #include "install_by_id.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -111,7 +112,7 @@ static int read_request(const cJSON *argument, install_request *request, cJSON *
         return 0;
     }
     size_t repo_length = parsed.path.length == 0 ? strlen(request->id) : (size_t)(parsed.path.start - 1 - request->id);
-    char *repo_id = malloc(repo_length + 1);
+    char *repo_id = spisor_memory_allocate(repo_length + 1);
     if (repo_id != NULL) {
         memcpy(repo_id, request->id, repo_length);
         repo_id[repo_length] = '\0';
@@ -141,9 +142,9 @@ static int is_readable_file_url(const char *url) {
     return strncmp(url, "file:", 5) == 0 && runtime_fetch_plain_http_is_allowed();
 }
 
-/** The bytes at url, freed with free and NUL terminated, with their length; NULL with a refusal, or without one out of memory. */
+/** The bytes at url, freed and NUL terminated, with their length; NULL with a refusal, or without one out of memory. */
 static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJSON **refusal) {
-    uint8_t *body = malloc(capacity + 1);
+    uint8_t *body = spisor_memory_allocate(capacity + 1);
     if (body == NULL) {
         return NULL;
     }
@@ -163,10 +164,10 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
     } else {
         refuse_fetch(&answer, url, refusal);
     }
-    free(answer.etag);
-    free(answer.last_modified);
+    spisor_memory_release(answer.etag);
+    spisor_memory_release(answer.last_modified);
     if (!received) {
-        free(body);
+        spisor_memory_release(body);
         return NULL;
     }
     return body;
@@ -241,7 +242,7 @@ static cJSON *verified_set(const install_request *request, cJSON **refusal) {
     return found == NULL ? NULL : unconfirmed_set(request->repo_id);
 }
 
-/** cache/identities/<folder>.json, where the set and primary of each installed id are kept; freed with free. */
+/** cache/identities/<folder>.json, where the set and primary of each installed id are kept; freed. */
 static char *record_path(const install_request *request) {
     int unfit = 0;
     char *folder = runtime_item_folder(request->repo_id, &unfit);
@@ -249,8 +250,8 @@ static char *record_path(const install_request *request) {
     char *file_name = folder == NULL ? NULL : runtime_cache_text(file_parts, 2);
     const char *segments[2] = {"identities", file_name};
     char *path = file_name == NULL ? NULL : runtime_cache_resolve(request->cache, segments, 2);
-    free(file_name);
-    free(folder);
+    spisor_memory_release(file_name);
+    spisor_memory_release(folder);
     return path;
 }
 
@@ -271,7 +272,7 @@ static int read_recorded_primary(install_request *request, cJSON **refusal) {
         refuse(refusal, "delete the record so the next install records it again", "%s holds no recorded primary", path);
     }
     cJSON_Delete(record);
-    free(path);
+    spisor_memory_release(path);
     return !out_of_memory && (!present || primary != NULL);
 }
 
@@ -298,8 +299,8 @@ static spisor_status write_record(const install_request *request, const cJSON *s
                                    spisor_replace_file(path, (const uint8_t *)text, strlen(text))
                                ? SPISOR_OK
                                : SPISOR_REFUSED;
-    free(directory);
-    free(path);
+    spisor_memory_release(directory);
+    spisor_memory_release(path);
     cJSON_free(text);
     cJSON_Delete(record);
     return status;
@@ -342,7 +343,7 @@ static int same_repository_as(const cJSON *before, const cJSON *after) {
     return before_name != NULL && after_name != NULL && strcmp(before_name, after_name) == 0;
 }
 
-/** The index url of the latest release, freed with free; NULL with a refusal or, out of memory, without one. */
+/** The index url of the latest release, freed; NULL with a refusal or, out of memory, without one. */
 static char *find_index_url(const install_request *request, const cJSON *repository, cJSON **refusal) {
     char url[URL_SIZE];
     const char *full_name = text_of(repository, "fullName");
@@ -356,13 +357,13 @@ static char *find_index_url(const install_request *request, const cJSON *reposit
     int out_of_memory = 0;
     cJSON *release = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
     int fetched = bytes != NULL && !out_of_memory;
-    free(bytes);
+    spisor_memory_release(bytes);
     const char *asset_url = release == NULL ? NULL : index_asset_url(release);
     if (fetched && asset_url == NULL) {
         refuse(refusal, "ask the owner to publish " INDEX_ASSET " with each release", "the latest release of %s has no %s",
                full_name, INDEX_ASSET);
     }
-    char *copy = asset_url == NULL ? NULL : malloc(strlen(asset_url) + 1);
+    char *copy = asset_url == NULL ? NULL : spisor_memory_allocate(strlen(asset_url) + 1);
     if (copy != NULL) {
         strcpy(copy, asset_url);
     }
@@ -387,7 +388,7 @@ static void refuse_catalog(runtime_catalog_refusal *catalog_refusal, const char 
     char *message = runtime_catalog_refusal_message(catalog_refusal);
     refuse(refusal, catalog_refusal->fix == NULL ? "correct the release index" : catalog_refusal->fix, "%s is not a usable release index: %s",
            url, message == NULL ? "it is refused" : message);
-    free(message);
+    spisor_memory_release(message);
     runtime_catalog_free_refusal(catalog_refusal);
 }
 
@@ -458,8 +459,8 @@ static int read_release_index(const install_request *request, const cJSON *repos
     if (bytes != NULL) {
         digest_of(bytes, length, index->sha256);
     }
-    free(bytes);
-    free(url);
+    spisor_memory_release(bytes);
+    spisor_memory_release(url);
     return index->item != NULL && is_plugin_item(index->item, refusal);
 }
 
@@ -634,8 +635,8 @@ static cJSON *install_from_set(const install_request *request, const cJSON *repo
                      : install_verified(request, &source, is_mirror ? primary_repository : repository, set, refusal);
         cJSON_Delete(primary_repository);
     }
-    free(replaced_id);
-    free(source_id);
+    spisor_memory_release(replaced_id);
+    spisor_memory_release(source_id);
     return answer;
 }
 
@@ -650,8 +651,8 @@ cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id
     request.take = take;
     request.taken = taken;
     if (!read || !read_recorded_primary(&request, refusal)) {
-        free(request.recorded_primary);
-        free((char *)request.repo_id);
+        spisor_memory_release(request.recorded_primary);
+        spisor_memory_release((char *)request.repo_id);
         return NULL;
     }
     cJSON *repository = resolve_repository(&request, refusal);
@@ -659,7 +660,7 @@ cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id
     cJSON *answer = set == NULL ? NULL : install_from_set(&request, repository, set, refusal);
     cJSON_Delete(set);
     cJSON_Delete(repository);
-    free(request.recorded_primary);
-    free((char *)request.repo_id);
+    spisor_memory_release(request.recorded_primary);
+    spisor_memory_release((char *)request.repo_id);
     return answer;
 }

@@ -1,4 +1,5 @@
 #include "install_by_name.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -70,7 +71,7 @@ static int refuse_with(const char *const *parts, size_t count, const char *fix) 
 static int refuse_with_fix_parts(const char *const *parts, size_t count, const char *const *fix_parts, size_t fix_count) {
     char *fix = runtime_cache_text(fix_parts, fix_count);
     int code = refuse_with(parts, count, fix == NULL ? RUN_AGAIN_FIX : fix);
-    free(fix);
+    spisor_memory_release(fix);
     return code;
 }
 
@@ -80,12 +81,12 @@ static int refuse_ambiguous(const char *name, const cJSON *forms) {
     cJSON_ArrayForEach(form, forms) {
         const char *parts[3] = {joined_forms == NULL ? "" : joined_forms, joined_forms == NULL ? "" : ", ", form->valuestring};
         char *longer = runtime_cache_text(parts, 3);
-        free(joined_forms);
+        spisor_memory_release(joined_forms);
         joined_forms = longer;
     }
     const char *parts[3] = {name, " is in more than one marketplace under different ids: ", joined_forms == NULL ? "" : joined_forms};
     int code = refuse_with(parts, 3, "install it by the form that names the marketplace you mean, as --name <marketplace>/<name>");
-    free(joined_forms);
+    spisor_memory_release(joined_forms);
     return code;
 }
 
@@ -124,7 +125,7 @@ static char *plugin_directory_under(const char *home, cJSON **refusal) {
     char *directory = NULL;
     argument.home = home;
     if (paths->resolve(paths->context, &argument, &answer, &refused) == SPISOR_OK) {
-        directory = malloc(strlen(answer.plugin) + 1);
+        directory = spisor_memory_allocate(strlen(answer.plugin) + 1);
         if (directory != NULL) {
             strcpy(directory, answer.plugin);
         }
@@ -201,7 +202,7 @@ static int settles_name(const host_context *context, const host_name_request *re
         char *label = marketplace == NULL ? NULL : runtime_cache_text(label_parts, 3);
         *code = refuse_changed_name(marketplace == NULL ? found->bare : (label == NULL ? found->bare : label), host_text(answer, "was"),
                                     host_text(answer, "now"), request->application);
-        free(label);
+        spisor_memory_release(label);
     }
     cJSON_Delete(answer);
     return is_settled;
@@ -222,12 +223,12 @@ static int install_found(const host_context *context, const host_name_request *r
     }
     int code = HOST_EXIT_DONE;
     if (!settles_names(context, request, found, 0, &code)) {
-        free(plugin_directory);
+        spisor_memory_release(plugin_directory);
         return code;
     }
     cJSON *installed = runtime_call_operation(runtime_install_by_id_operation,
                                                install_call(context, found->id, plugin_directory, request->accepted_primary), &refusal);
-    free(plugin_directory);
+    spisor_memory_release(plugin_directory);
     if (installed == NULL) {
         return refusal == NULL ? refuse_out_of_memory() : host_refuse_printably(refusal);
     }

@@ -1,4 +1,5 @@
 #include "required_plugins.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,14 +54,14 @@ static cJSON *not_enabled(const host_context *context, const char *id, const cha
     char *settings_file =
         key == NULL ? NULL : runtime_ecosystem_settings_file_holding(loader_home, context->portable, key);
     size_t size = settings_file == NULL ? 0 : strlen(key) + strlen(settings_file) + 32;
-    char *fix = size == 0 ? NULL : malloc(size);
+    char *fix = size == 0 ? NULL : spisor_memory_allocate(size);
     if (fix != NULL) {
         snprintf(fix, size, "set %s to true in %s", key, settings_file);
     }
     cJSON *refusal = fix == NULL ? NULL : refusal_with(id, loader_id, " requires is disabled", fix);
-    free(fix);
-    free(settings_file);
-    free(key);
+    spisor_memory_release(fix);
+    spisor_memory_release(settings_file);
+    spisor_memory_release(key);
     return refusal;
 }
 

@@ -1,4 +1,5 @@
 #include "runtime/secrets.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +20,7 @@ static spisor_status fill_secret(char *value, runtime_secrets_get_answer *answer
     size_t length = strlen(value);
     int filled = runtime_pack_texts((const char *const *)&value, &packed, 1, &answer->storage);
     runtime_overwrite(value, length);
-    free(value);
+    spisor_memory_release(value);
     if (!filled) {
         return SPISOR_OUT_OF_MEMORY;
     }

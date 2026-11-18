@@ -1,4 +1,5 @@
 #include "hosts.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -51,7 +52,7 @@ static int add_location(cJSON *provenance, const cJSON *argument) {
     const char *home = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "home"));
     int added = searched != RUNTIME_ON_PATH_OUT_OF_MEMORY &&
                 cJSON_AddStringToObject(provenance, "location", found == NULL ? home : found) != NULL;
-    free(found);
+    spisor_memory_release(found);
     return added;
 }
 

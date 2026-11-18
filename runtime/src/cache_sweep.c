@@ -1,4 +1,5 @@
 #include "cache_sweep.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,7 @@ static int is_referenced(sweep_scope *scope, const char *id, const char *version
     char *name = runtime_cache_text(parts, 3);
     scope->out_of_memory |= name == NULL;
     int referenced = name == NULL || cJSON_GetObjectItemCaseSensitive(scope->referenced, name) != NULL;
-    free(name);
+    spisor_memory_release(name);
     return referenced;
 }
 
@@ -79,7 +80,7 @@ static int is_abandoned(sweep_scope *scope, const char *const *segments, size_t 
     double newest = 0;
     int abandoned = presence == RUNTIME_CACHE_NOT_PRESENT &&
                     runtime_newest_change(directory, &newest) && scope->now - newest > ABANDONED_AFTER_MILLISECONDS;
-    free(directory);
+    spisor_memory_release(directory);
     return abandoned;
 }
 
@@ -95,7 +96,7 @@ static int doom_abandoned(sweep_scope *scope, const char **segments, size_t coun
             char *key = runtime_item_key_of_folder(segments[2]);
             doomed = key != NULL && (is_referenced(scope, key, segments[3]) ||
                                      doom(scope, key, segments[3], depth == 3 ? segments[4] : NULL));
-            free(key);
+            spisor_memory_release(key);
         }
     }
     cJSON_Delete(names);
@@ -130,11 +131,11 @@ static char *contained(const char *root, const char *const *steps, size_t count,
     for (size_t index = 0; at != NULL && index < count; index++) {
         char *next = runtime_cache_resolve(at, &steps[index], 1);
         int inside = next != NULL && runtime_cache_is_strictly_inside(at, next);
-        free(*parent);
+        spisor_memory_release(*parent);
         *parent = at;
         at = inside ? next : NULL;
         if (!inside) {
-            free(next);
+            spisor_memory_release(next);
         }
     }
     return at;
@@ -155,10 +156,10 @@ static int remove_doomed(const char *cache, const cJSON *entry) {
     if (removed && count == 3) {
         runtime_remove_empty_directory(parent);
     }
-    free(directory);
-    free(parent);
-    free(root);
-    free(folder);
+    spisor_memory_release(directory);
+    spisor_memory_release(parent);
+    spisor_memory_release(root);
+    spisor_memory_release(folder);
     return removed;
 }
 
@@ -167,7 +168,7 @@ static cJSON *removed_name(const cJSON *entry) {
                             " for ", cJSON_GetArraySize(entry) == 3 ? cJSON_GetArrayItem(entry, 2)->valuestring : ""};
     char *name = runtime_cache_text(parts, cJSON_GetArraySize(entry) == 3 ? 5 : 3);
     cJSON *removed = name == NULL ? NULL : cJSON_CreateString(name);
-    free(name);
+    spisor_memory_release(name);
     return removed;
 }
 

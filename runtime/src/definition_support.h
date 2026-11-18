@@ -149,7 +149,7 @@ spisor_status runtime_environment_json(const runtime_variable *environment, size
 
 /**
  * A JSON environment object as the variables a definition takes, borrowing its string members and skipping any other,
- * for a caller that holds its environment as JSON. Freed with free; NULL when memory runs out.
+ * for a caller that holds its environment as JSON. Freed; NULL when memory runs out.
  */
 runtime_variable *runtime_variables_of_json(const cJSON *environment, size_t *count);
 

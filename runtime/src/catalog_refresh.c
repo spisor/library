@@ -110,7 +110,7 @@ static cJSON *answer_failed(const char *subject, const char *middle, const char 
         cJSON_Delete(result);
         result = NULL;
     }
-    free(written);
+    spisor_memory_release(written);
     return result;
 }
 
@@ -127,7 +127,7 @@ static cJSON *refused_index(const check_order *order, const runtime_catalog_refu
     char *message = runtime_catalog_refusal_message(refusal);
     cJSON *result = message == NULL ? NULL
                                     : answer_failed(order->location, " served an index the host refuses: ", message);
-    free(message);
+    spisor_memory_release(message);
     return result;
 }
 
@@ -207,7 +207,7 @@ static int is_within_interval(const check_order *order) {
 
 static char *download_path(const char *state_path) {
     size_t size = strlen(state_path) + 48;
-    char *path = malloc(size);
+    char *path = spisor_memory_allocate(size);
     if (path != NULL) {
         snprintf(path, size, "%s.download-%d-%lu", state_path, (int)current_process_id(), next_download_number());
     }
@@ -227,7 +227,7 @@ static spisor_status fetch_answer(const char *url, const char *destination, cons
     argument.etag = etag;
     argument.timeout_seconds = INDEX_TIMEOUT_SECONDS;
     spisor_status status = fetch->get(fetch->context, &argument, answer, refusal);
-    free(requested);
+    spisor_memory_release(requested);
     return status;
 }
 
@@ -290,14 +290,14 @@ static cJSON *check_https(const check_order *order) {
     cJSON *result = status == SPISOR_OUT_OF_MEMORY ? NULL : settle_fetch(order, status, &answer, &refusal, download);
     fetch->release_answer(fetch->context, &answer);
     fetch->release_refusal(fetch->context, &refusal);
-    free(download);
+    spisor_memory_release(download);
     return result;
 }
 
 static void free_order(check_order *order) {
-    free(order->location);
-    free(order->origin);
-    free(order->state_path);
+    spisor_memory_release(order->location);
+    spisor_memory_release(order->origin);
+    spisor_memory_release(order->state_path);
     runtime_catalog_free_state(&order->previous);
 }
 
@@ -324,7 +324,7 @@ static int read_check_order(const cJSON *argument, check_order *order, cJSON **r
     char *problem = NULL;
     int usable = runtime_catalog_source_of(cJSON_GetObjectItemCaseSensitive(argument, "source"), &order->source, &problem);
     int out_of_memory = !usable && problem == NULL;
-    free(problem);
+    spisor_memory_release(problem);
     if (out_of_memory) {
         return 0;
     }
@@ -424,7 +424,7 @@ static spisor_status current_catalog(const runtime_catalog_location *source, con
 }
 
 static cJSON *current(const runtime_catalog_location *sources, size_t count, const char *cache) {
-    runtime_catalog_reading *readings = malloc((count + 1) * sizeof *readings);
+    runtime_catalog_reading *readings = spisor_memory_allocate((count + 1) * sizeof *readings);
     if (readings == NULL) {
         return NULL;
     }
@@ -442,7 +442,7 @@ static cJSON *current(const runtime_catalog_location *sources, size_t count, con
     for (size_t index = 0; index < read; index++) {
         cJSON_Delete((cJSON *)readings[index].catalog);
     }
-    free(readings);
+    spisor_memory_release(readings);
     cJSON *result = cJSON_CreateObject();
     if (!runtime_catalog_attach(result, "catalog", merged)) {
         cJSON_Delete(result);
@@ -467,7 +467,7 @@ cJSON *runtime_catalog_current_operation(const cJSON *argument, cJSON **refusal)
     } else {
         answer = current(sources, count, cache);
     }
-    free(problem);
-    free(sources);
+    spisor_memory_release(problem);
+    spisor_memory_release(sources);
     return answer;
 }

@@ -1,4 +1,5 @@
 #include "runtime/fetch.h"
+#include "allocation.h"
 
 #include <inttypes.h>
 #include <math.h>
@@ -199,7 +200,7 @@ static char *parent_of(const char *path) {
         last = backslash != NULL && (last == NULL || backslash > last) ? backslash : last;
     }
     size_t length = last == NULL ? 0 : (size_t)(last - path);
-    char *parent = malloc(length + 1);
+    char *parent = spisor_memory_allocate(length + 1);
     if (parent != NULL) {
         memcpy(parent, path, length);
         parent[length] = 0;
@@ -210,13 +211,13 @@ static char *parent_of(const char *path) {
 static int make_parent(const char *destination) {
     char *parent = parent_of(destination);
     int made = parent != NULL && (parent[0] == 0 || spisor_make_directories(parent));
-    free(parent);
+    spisor_memory_release(parent);
     return made;
 }
 
 static int open_partial(const char *destination, fetch_files *files) {
     size_t size = strlen(destination) + 48;
-    files->partial = malloc(size);
+    files->partial = spisor_memory_allocate(size);
     files->file = NULL;
     if (files->partial == NULL) {
         return 0;
@@ -237,7 +238,7 @@ static void discard_partial(fetch_files *files) {
     if (files->partial != NULL) {
         runtime_remove_file_entry(files->partial);
     }
-    free(files->partial);
+    spisor_memory_release(files->partial);
 }
 
 static spisor_status refuse(spisor_refusal *refusal, const char *detail, const char *fix) {
@@ -403,8 +404,8 @@ static spisor_status fetch(const fetch_order *order, runtime_fetch_get_answer *a
     memset(&received, 0, sizeof received);
     transfer(order, scheme, &sink, &received);
     spisor_status status = settle(order, &files, &sink, &received, answer, refusal);
-    free(received.etag);
-    free(received.last_modified);
+    spisor_memory_release(received.etag);
+    spisor_memory_release(received.last_modified);
     return status;
 }
 

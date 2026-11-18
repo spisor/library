@@ -1,4 +1,5 @@
 #include "marketplace_build.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -225,10 +226,10 @@ static lookup_result resolved(const char *repository_id, const build_request *re
     return result;
 }
 
-/** The id of the repository itself: id up to the folder below it, freed with free; NULL when memory runs out. */
+/** The id of the repository itself: id up to the folder below it, freed; NULL when memory runs out. */
 static char *repository_id_of(const char *id) {
     size_t length = strcspn(id, "/");
-    char *repository = malloc(length + 1);
+    char *repository = spisor_memory_allocate(length + 1);
     if (repository != NULL) {
         memcpy(repository, id, length);
         repository[length] = '\0';
@@ -252,11 +253,11 @@ static int is_word_character(char character) {
 
 /**
  * text as an import name: lowercased, each run of characters outside [a-z0-9.-] turned into one "-", every run of
- * separators reduced to its first, and none left at either end. Freed with free; NULL when memory runs out. The
+ * separators reduced to its first, and none left at either end. Freed; NULL when memory runs out. The
  * result can still be no import name (empty, or reserved), which the caller checks.
  */
 static char *derived_name(const char *text) {
-    char *name = malloc(strlen(text) + 1);
+    char *name = spisor_memory_allocate(strlen(text) + 1);
     size_t used = 0;
     char pending = '\0';
     for (size_t index = 0; name != NULL && text[index] != '\0'; index++) {
@@ -281,7 +282,7 @@ static char *derived_name(const char *text) {
 static char *shown_name(const cJSON *entry, const char *source_name) {
     const char *alias = text_of(entry, "alias");
     if (alias != NULL) {
-        char *copy = malloc(strlen(alias) + 1);
+        char *copy = spisor_memory_allocate(strlen(alias) + 1);
         return copy == NULL ? NULL : strcpy(copy, alias);
     }
     return derived_name(source_name);
@@ -380,7 +381,7 @@ static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *
     } else if (name != NULL && adds_skipped_for_name(skipped, id, source_name)) {
         result.outcome = ENTRY_SKIPPED;
     }
-    free(name);
+    spisor_memory_release(name);
     return result;
 }
 
@@ -405,7 +406,7 @@ static entry_result copied_entry(const build_request *request, const cJSON *entr
     }
     result.was_rate_limited = found.status == 429 || found.status == 403;
     cJSON_Delete(found.answer);
-    free(repository_id);
+    spisor_memory_release(repository_id);
     return result;
 }
 

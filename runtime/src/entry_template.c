@@ -1,4 +1,5 @@
 #include "entry_template.h"
+#include "allocation.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -71,7 +72,7 @@ static void append(text_buffer *buffer, const char *text, size_t length) {
     }
     if (buffer->length + length + 1 > buffer->capacity) {
         size_t capacity = (buffer->length + length + 1) * 2;
-        char *grown = realloc(buffer->data, capacity);
+        char *grown = spisor_memory_reallocate(buffer->data, capacity);
         if (grown == NULL) {
             buffer->failed = 1;
             return;
@@ -117,7 +118,7 @@ char *runtime_entry_expand(const char *template_text, const runtime_entry_values
     }
     append(&buffer, rest, strlen(rest));
     if (buffer.failed) {
-        free(buffer.data);
+        spisor_memory_release(buffer.data);
         return NULL;
     }
     return buffer.data;

@@ -1,4 +1,5 @@
 #include "holders.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -26,7 +27,7 @@ runtime_holders_record runtime_no_holders(void) {
 }
 
 void runtime_free_holders(runtime_holders_record *record) {
-    free(record->holders);
+    spisor_memory_release(record->holders);
     *record = runtime_no_holders();
 }
 
@@ -39,14 +40,14 @@ char *runtime_holders_path(const char *state, const char *host_id, const char *e
     *problem = NULL;
     char *folder = runtime_processes_folder(state);
     char *json = folder == NULL ? NULL : runtime_host_file_path(folder, host_id, "processes", problem);
-    free(folder);
+    spisor_memory_release(folder);
     if (json == NULL || strcmp(extension, RUNTIME_JSON_EXTENSION) == 0) {
         return json;
     }
     const char *parts[2] = {json, extension};
     json[strlen(json) - strlen(RUNTIME_JSON_EXTENSION)] = 0;
     char *path = runtime_cache_text(parts, 2);
-    free(json);
+    spisor_memory_release(json);
     return path;
 }
 
@@ -144,7 +145,7 @@ static char *record_text(const runtime_holders_record *record) {
 }
 
 static int make_parent(const char *path) {
-    char *parent = malloc(strlen(path) + 1);
+    char *parent = spisor_memory_allocate(strlen(path) + 1);
     if (parent == NULL) {
         return 0;
     }
@@ -156,7 +157,7 @@ static int make_parent(const char *path) {
         *last = 0;
     }
     int made = last == NULL || spisor_make_directories(parent);
-    free(parent);
+    spisor_memory_release(parent);
     return made;
 }
 
@@ -172,7 +173,7 @@ spisor_status runtime_write_holders(const char *path, const runtime_holders_reco
         return SPISOR_OUT_OF_MEMORY;
     }
     int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-    free(text);
+    spisor_memory_release(text);
     return written ? SPISOR_OK : SPISOR_REFUSED;
 }
 
@@ -185,7 +186,7 @@ int runtime_draft_started_host(const runtime_holders_record *record, runtime_hol
     char *printed = draft->tree == NULL ? NULL : cJSON_PrintUnformatted(draft->tree);
     draft->capacity = printed == NULL ? 0 : strlen(printed) + 2 * NUMBER_TEXT_WIDTH + PREALLOCATED_SLACK + 2;
     cJSON_free(printed);
-    draft->text = draft->capacity == 0 ? NULL : malloc(draft->capacity);
+    draft->text = draft->capacity == 0 ? NULL : spisor_memory_allocate(draft->capacity);
     if (draft->text == NULL) {
         runtime_free_holders_draft(draft);
         return 0;
@@ -211,7 +212,7 @@ spisor_status runtime_write_holders_draft(const char *path, const runtime_holder
 
 void runtime_free_holders_draft(runtime_holders_draft *draft) {
     cJSON_Delete(draft->tree);
-    free(draft->text);
+    spisor_memory_release(draft->text);
     draft->tree = NULL;
     draft->text = NULL;
     draft->capacity = 0;
@@ -229,7 +230,7 @@ void runtime_keep_live_holders(runtime_holders_record *record, double dropped) {
 }
 
 int runtime_add_holder(runtime_holders_record *record, double holder) {
-    double *grown = realloc(record->holders, (record->count + 1) * sizeof *grown);
+    double *grown = spisor_memory_reallocate(record->holders, (record->count + 1) * sizeof *grown);
     if (grown == NULL) {
         return 0;
     }

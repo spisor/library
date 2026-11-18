@@ -1,4 +1,5 @@
 #include "runtime/identity.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,7 +105,7 @@ static spisor_status folder(void *context, const runtime_identity_id_argument *a
         return refuse_folder(status, refusal);
     }
     copied = runtime_storage_copy(&answer->storage, name, &answer->folder);
-    free(name);
+    spisor_memory_release(name);
     if (!copied) {
         runtime_release_stored_answer(answer, FOLDER_SHAPE);
         return SPISOR_OUT_OF_MEMORY;

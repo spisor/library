@@ -1,4 +1,5 @@
 #include "install_settings.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ cJSON *runtime_install_settings_values(const runtime_install_settings *settings,
         values = runtime_ecosystem_settings_values(application ? settings->home : no_home,
                                                    portable ? settings->portable : NULL, refusal);
     }
-    free(no_home);
+    spisor_memory_release(no_home);
     return values;
 }
 
@@ -57,7 +58,7 @@ int runtime_install_enable_plugin(const runtime_install_settings *settings, cons
                                   cJSON **refusal) {
     char *key = runtime_install_enabled_key(id);
     int enabled = key != NULL && runtime_install_settings_set(settings, key, cJSON_CreateTrue(), layer, refusal);
-    free(key);
+    spisor_memory_release(key);
     return enabled;
 }
 

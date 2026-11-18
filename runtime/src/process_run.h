@@ -9,10 +9,10 @@
 /**
  * Runs the absolute executable with arguments, an array of strings or NULL, under the caller's
  * environment with its standard input and error on the null device, and waits for it to exit: 1 with
- * *exit_code set, 0 with *problem set (freed with free) when it could not be started, or did not exit
+ * *exit_code set, 0 with *problem set (freed) when it could not be started, or did not exit
  * within timeout_milliseconds and was terminated, and 0 with *problem NULL when memory ran out. With
  * output not NULL its standard output, up to
- * RUNTIME_RUN_OUTPUT_LIMIT bytes, is answered there (freed with free); without, it goes to the null
+ * RUNTIME_RUN_OUTPUT_LIMIT bytes, is answered there (freed); without, it goes to the null
  * device too.
  *
  * @implNote The child inherits only its three standard handles on Windows (a handle list, as

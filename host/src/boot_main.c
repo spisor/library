@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "boot.h"
+#include "allocation.h"
 #include "host_child.h"
 #include "host_service.h"
 #include "host_output.h"
@@ -33,7 +34,7 @@ static char *own_cache(void) {
     char *executable = host_own_executable();
     const char *segments[3] = {executable, "..", ".."};
     char *cache = executable == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
-    free(executable);
+    spisor_memory_release(executable);
     return cache;
 }
 
@@ -62,7 +63,7 @@ static int boot(int count, char **arguments) {
     cJSON *refusal = NULL;
     cJSON *call = cache == NULL ? NULL : resolve_call(cache, arguments[0], count - 1, arguments + 1);
     cJSON *resolved = call == NULL ? NULL : runtime_call_operation(runtime_boot_resolve_operation, call, &refusal);
-    free(cache);
+    spisor_memory_release(cache);
     if (resolved != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
         const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};
         refusal = host_refusal_of(parts, 2, "check that the cache SPISOR_CACHE names is writable, then run the command again");

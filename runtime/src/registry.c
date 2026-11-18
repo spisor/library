@@ -1,4 +1,5 @@
 #include "registry.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,7 +54,7 @@ static char *join_three(const char *base, const char *middle, const char *name) 
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -63,20 +64,20 @@ static char *copy_text(const char *text) {
 static int is_host_id(const char *id) {
     char *segment = runtime_portable_segment(id);
     int portable = segment != NULL && strcmp(segment, id) == 0;
-    free(segment);
+    spisor_memory_release(segment);
     return portable;
 }
 
 static char *registration_path(const char *state, const char *id) {
     char *hosts = join_two(state, "hosts");
-    char *file_name = malloc(strlen(id) + REGISTRATION_SUFFIX_LENGTH + 1);
+    char *file_name = spisor_memory_allocate(strlen(id) + REGISTRATION_SUFFIX_LENGTH + 1);
     char *path = NULL;
     if (hosts != NULL && file_name != NULL) {
         snprintf(file_name, strlen(id) + REGISTRATION_SUFFIX_LENGTH + 1, "%s%s", id, REGISTRATION_SUFFIX);
         path = join_two(hosts, file_name);
     }
-    free(hosts);
-    free(file_name);
+    spisor_memory_release(hosts);
+    spisor_memory_release(file_name);
     return path;
 }
 
@@ -107,7 +108,7 @@ runtime_registry_answer runtime_registry_load(const char *state, const char *id,
     }
     spisor_json_file_state file_state;
     cJSON *record = spisor_read_json_file(path, &file_state);
-    free(path);
+    spisor_memory_release(path);
     if (file_state == SPISOR_JSON_FILE_ABSENT) {
         return RUNTIME_REGISTRY_ABSENT;
     }
@@ -128,9 +129,9 @@ static uint8_t *registration_bytes(const cJSON *registration, size_t *length) {
         return NULL;
     }
     size_t text_length = strlen(text);
-    char *terminated = realloc(text, text_length + 2);
+    char *terminated = spisor_memory_reallocate(text, text_length + 2);
     if (terminated == NULL) {
-        free(text);
+        spisor_memory_release(text);
         return NULL;
     }
     terminated[text_length] = '\n';
@@ -142,7 +143,7 @@ static uint8_t *registration_bytes(const cJSON *registration, size_t *length) {
 static int make_hosts_directory(const char *state) {
     char *hosts = join_two(state, "hosts");
     int made = hosts != NULL && spisor_make_directories(hosts);
-    free(hosts);
+    spisor_memory_release(hosts);
     return made;
 }
 
@@ -155,12 +156,12 @@ runtime_registry_answer runtime_registry_store(const char *state, const cJSON *r
     size_t length = 0;
     uint8_t *bytes = path == NULL ? NULL : registration_bytes(registration, &length);
     if (bytes == NULL) {
-        free(path);
+        spisor_memory_release(path);
         return RUNTIME_REGISTRY_OUT_OF_MEMORY;
     }
     int written = make_hosts_directory(state) && spisor_replace_file(path, bytes, length);
-    free(path);
-    free(bytes);
+    spisor_memory_release(path);
+    spisor_memory_release(bytes);
     return written ? RUNTIME_REGISTRY_OK : RUNTIME_REGISTRY_UNWRITABLE;
 }
 
@@ -170,7 +171,7 @@ static void unreadable_fix(const char *state, const char *id, char *fix, size_t 
     char *path = registration_path(state, id);
     snprintf(fix, size, "repair %s so it holds the host's registration as one JSON object, or remove it; it was left unchanged",
              path != NULL ? path : "the registration file");
-    free(path);
+    spisor_memory_release(path);
 }
 
 static cJSON *refuse_unreadable(const char *state, const char *id, cJSON **refusal) {
@@ -186,12 +187,12 @@ int runtime_registration_usable(const cJSON *registration, const char *id, const
     }
     const char *format = "the host %s is not registered in %s";
     size_t size = strlen(format) + strlen(id) + strlen(state) + 1;
-    char *message = malloc(size);
+    char *message = spisor_memory_allocate(size);
     if (message != NULL) {
         snprintf(message, size, format, id, state);
         *refusal = runtime_refusal(message, RUNTIME_REINSTALL_FIX);
     }
-    free(message);
+    spisor_memory_release(message);
     return 0;
 }
 
@@ -590,7 +591,7 @@ static int list_each(const registry_request *request, const runtime_directory_li
         if (is_registration_file(&listing->entries[index])) {
             char *id = id_of_file(listing->entries[index].name);
             complete = id != NULL && (!is_host_id(id) || list_one(request, id, hosts, unreadable));
-            free(id);
+            spisor_memory_release(id);
         }
     }
     return complete;
@@ -609,7 +610,7 @@ static cJSON *list_hosts(const registry_request *request, cJSON **refusal) {
         return out_of_memory(refusal);
     }
     int listed = runtime_list_directory(directory, &listing);
-    free(directory);
+    spisor_memory_release(directory);
     if (!listed) {
         return refuse_unlistable(request->state, refusal);
     }
@@ -647,14 +648,14 @@ static cJSON *refuse_unreversed(const char *id, int count, cJSON **refusal) {
 static int remove_host_directory(const char *place, const char *id) {
     char *directory = join_three(place, "hosts", id);
     int removed = directory != NULL && runtime_remove_tree(directory);
-    free(directory);
+    spisor_memory_release(directory);
     return removed;
 }
 
 static int remove_registration_file(const char *state, const char *id) {
     char *path = registration_path(state, id);
     int removed = path != NULL && runtime_remove_tree(path);
-    free(path);
+    spisor_memory_release(path);
     return removed;
 }
 

@@ -1,4 +1,5 @@
 #include "changes.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -107,7 +108,7 @@ static int is_registration_of_another(const runtime_directory_entry *entry, cons
 static void search_registration(const char *state, const char *file_name, const cJSON *record,
                                 runtime_changes_holders *holders) {
     size_t id_length = strlen(file_name) - REGISTRATION_SUFFIX_LENGTH;
-    char *id = malloc(id_length + 1);
+    char *id = spisor_memory_allocate(id_length + 1);
     if (id == NULL) {
         holders->failed = 1;
         return;
@@ -116,7 +117,7 @@ static void search_registration(const char *state, const char *file_name, const 
     id[id_length] = '\0';
     cJSON *registration = NULL;
     runtime_registry_answer loaded = runtime_registry_load(state, id, &registration);
-    free(id);
+    spisor_memory_release(id);
     if (loaded == RUNTIME_REGISTRY_UNREADABLE) {
         holders->unreadable = 1;
     } else if (loaded == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
@@ -134,11 +135,11 @@ static void search_other_registrations(const char *state, const char *host, cons
     char *directory = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     runtime_directory_listing listing;
     if (directory == NULL || !runtime_list_directory(directory, &listing)) {
-        free(directory);
+        spisor_memory_release(directory);
         holders->unreadable = 1;
         return;
     }
-    free(directory);
+    spisor_memory_release(directory);
     for (size_t index = 0; index < listing.count && holders->holder == NULL && !holders->failed; index++) {
         if (is_registration_of_another(&listing.entries[index], host)) {
             search_registration(state, listing.entries[index].name, record, holders);
@@ -337,7 +338,7 @@ static void discard_prepared(prepared_children *prepared) {
     for (size_t index = 0; index < prepared->count; index++) {
         cJSON_Delete(prepared->items[index].record);
     }
-    free(prepared->items);
+    spisor_memory_release(prepared->items);
 }
 
 static runtime_change_step prepare_child(apply_session *session, const cJSON *child, prepared_children *prepared,
@@ -368,7 +369,7 @@ static runtime_change_step prepare_child(apply_session *session, const cJSON *ch
  */
 static int prepare_children(apply_session *session, const cJSON *children, prepared_children *prepared) {
     prepared->count = 0;
-    prepared->items = calloc((size_t)cJSON_GetArraySize(children) + 1, sizeof *prepared->items);
+    prepared->items = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(children) + 1, sizeof *prepared->items);
     if (prepared->items == NULL) {
         conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
         return 0;

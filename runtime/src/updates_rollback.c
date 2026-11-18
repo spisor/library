@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "allocation.h"
 #include "boot_resolve.h"
 #include "cache_refusal.h"
 #include "catalog_answer.h"
@@ -15,7 +16,7 @@ static cJSON *no_rollback(const char *item) {
     const char *fix_parts[3] = {"pin the version to run with plugins.", item, ".pin in the settings"};
     char *fix = runtime_cache_text(fix_parts, 3);
     cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 3, fix);
-    free(fix);
+    spisor_memory_release(fix);
     return refusal;
 }
 
@@ -49,7 +50,7 @@ static int swap(runtime_host_references *references, const char *item, const cha
                    (runtime_map_set(references->rollback, item, switched_from) &&
                     references->rolled_back_from != NULL &&
                     runtime_map_set(references->rolled_back_from, item, switched_from)));
-    free(switched_from);
+    spisor_memory_release(switched_from);
     return swapped;
 }
 
@@ -65,7 +66,7 @@ static cJSON *rolled_answer(const runtime_host_references *references) {
     return answer;
 }
 
-/** The version the host keeps as item's rollback now, freed with free; NULL when it keeps none or memory runs out. */
+/** The version the host keeps as item's rollback now, freed; NULL when it keeps none or memory runs out. */
 static char *kept_version(const runtime_updates_request *request, const char *item, int *out_of_memory) {
     runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
     const char *kept = recorded.rollback == NULL ? NULL : runtime_map_version(recorded.rollback, item);
@@ -157,7 +158,7 @@ static cJSON *roll_back(const runtime_updates_request *request, const char *item
     } else if (!out_of_memory && swap(&recorded, item, version)) {
         answer = record_rollback(request, item, version, &recorded, &before, refusal);
     }
-    free(version);
+    spisor_memory_release(version);
     runtime_free_host_references(&before);
     runtime_free_host_references(&recorded);
     return answer;
@@ -173,12 +174,12 @@ cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSO
     }
     char *kept = kept_version(request, item, &out_of_memory);
     if (kept != NULL && !runtime_bundle_is_intact(request->cache, item, kept, &out_of_memory)) {
-        free(kept);
+        spisor_memory_release(kept);
         kept = NULL;
     }
     spisor_lock *guard = out_of_memory ? NULL : runtime_updates_lock_registered(request, refusal);
     cJSON *answer = guard == NULL ? NULL : roll_back(request, item, kept, refusal);
     spisor_unlock(guard);
-    free(kept);
+    spisor_memory_release(kept);
     return answer;
 }

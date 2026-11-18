@@ -1,4 +1,5 @@
 #include "cache_installed.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,7 +15,7 @@ static runtime_cache_presence is_marked(const char *cache, const char *root, con
     const char *segments[5] = {cache, root, id, version, platform};
     char *directory = runtime_cache_joined(segments, platform == NULL ? 4 : 5);
     runtime_cache_presence marked = directory == NULL ? RUNTIME_CACHE_PRESENCE_OUT_OF_MEMORY : test(directory);
-    free(directory);
+    spisor_memory_release(directory);
     return marked;
 }
 
@@ -53,7 +54,7 @@ static int add_versions(cJSON *installed, const char *folder, cJSON *versions) {
     if (!added) {
         cJSON_Delete(versions);
     }
-    free(key);
+    spisor_memory_release(key);
     return added;
 }
 
@@ -117,7 +118,7 @@ static cJSON *platform_folders(const char *cache) {
 cJSON *runtime_cache_library_platforms(const char *cache) {
     cJSON *found = platform_folders(cache);
     int count = found == NULL ? 0 : cJSON_GetArraySize(found);
-    const char **names = count == 0 ? NULL : malloc((size_t)count * sizeof *names);
+    const char **names = count == 0 ? NULL : spisor_memory_allocate((size_t)count * sizeof *names);
     cJSON *platforms = found == NULL || (count > 0 && names == NULL) ? NULL : cJSON_CreateArray();
     int index = 0;
     for (const cJSON *name = platforms == NULL ? NULL : found->child; name != NULL; name = name->next) {
@@ -131,7 +132,7 @@ cJSON *runtime_cache_library_platforms(const char *cache) {
             cJSON_AddItemToArray(platforms, cJSON_CreateString(names[index]));
         }
     }
-    free((void *)names);
+    spisor_memory_release((void *)names);
     cJSON_Delete(found);
     return platforms;
 }

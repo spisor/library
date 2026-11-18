@@ -5,7 +5,7 @@
 #include "spisor/status.h"
 
 /**
- * cache/hosts/<host_id>.json, freed with free; NULL with *problem set (freed with free) when host_id is
+ * cache/hosts/<host_id>.json, freed; NULL with *problem set (freed) when host_id is
  * no plain file name, or with *problem NULL when memory runs out.
  */
 char *runtime_boot_hint_path(const char *cache, const char *host_id, char **problem);
@@ -29,7 +29,7 @@ cJSON *runtime_read_boot_hint(const char *cache, const char *host_id, int *out_o
  * {version, directory}, directory being the absolute cache/libraries/<id>/<version>/<platform>, and a
  * binary when that folder holds a library.json declaration: the one file directly inside it named with
  * the platform's suffix, .dll on win32-*, .dylib on darwin-*, .so otherwise. NULL with *problem set
- * (freed with free) naming the folder when a declared one holds no such file or several or cannot be
+ * (freed) naming the folder when a declared one holds no such file or several or cannot be
  * listed, or naming the id and version when they name no folder inside cache/libraries; with *problem NULL
  * when memory runs out. Every path is absolute, so a cache moved elsewhere needs its hosts installed again.
  *

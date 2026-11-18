@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "boot.h"
+#include "allocation.h"
 #include "boot_resolve.h"
 #include "boot_stub.h"
 #include "cache_refusal.h"
@@ -39,7 +40,7 @@ static char *carried_stub(const char *cache, int *out_of_memory) {
     cJSON_Delete(refusal);
     cJSON_Delete(resolved);
     if (carried != NULL && !spisor_file_exists(carried)) {
-        free(carried);
+        spisor_memory_release(carried);
         carried = NULL;
     }
     return carried;
@@ -55,8 +56,8 @@ static int copy_runnable(const char *source, const char *destination) {
 #if !defined(_WIN32)
     copied = copied && chmod(destination, 0755) == 0;
 #endif
-    free(bytes);
-    free(parent);
+    spisor_memory_release(bytes);
+    spisor_memory_release(parent);
     return copied;
 }
 
@@ -86,7 +87,7 @@ cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal) {
         answer = NULL;
         *refusal = runtime_cache_refusal(parts, 2, PLACEMENT_FIX);
     }
-    free(carried);
-    free(stub);
+    spisor_memory_release(carried);
+    spisor_memory_release(stub);
     return answer;
 }

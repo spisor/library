@@ -1,4 +1,5 @@
 #include "cache_references.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,7 @@ static int add_reference(cJSON *referenced, const char *id, const char *version)
     char *name = runtime_cache_text(parts, 3);
     int added = name != NULL && (cJSON_GetObjectItemCaseSensitive(referenced, name) != NULL ||
                                  cJSON_AddTrueToObject(referenced, name) != NULL);
-    free(name);
+    spisor_memory_release(name);
     return added;
 }
 
@@ -42,7 +43,7 @@ static cJSON *read_entry(const char *folder, const char *name, int *out_of_memor
     char *path = runtime_cache_joined(segments, 2);
     *out_of_memory = path == NULL;
     cJSON *value = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
-    free(path);
+    spisor_memory_release(path);
     return value;
 }
 
@@ -57,14 +58,14 @@ static int add_hint(cJSON *referenced, const char *hosts, const char *name) {
         const cJSON *host = cJSON_GetObjectItemCaseSensitive(hint, "host");
         added = add_hinted_libraries(referenced, cJSON_GetObjectItemCaseSensitive(hint, "libraries"));
         if (added && cJSON_IsString(host)) {
-            char *id = malloc(id_length + 1);
+            char *id = spisor_memory_allocate(id_length + 1);
             added = id != NULL;
             if (added) {
                 memcpy(id, name, id_length);
                 id[id_length] = 0;
                 added = add_reference(referenced, id, host->valuestring);
             }
-            free(id);
+            spisor_memory_release(id);
         }
     }
     cJSON_Delete(hint);
@@ -80,7 +81,7 @@ static int add_hints(cJSON *referenced, const char *cache) {
         added = add_hint(referenced, hosts, name->valuestring);
     }
     cJSON_Delete(names);
-    free(hosts);
+    spisor_memory_release(hosts);
     return added;
 }
 
@@ -108,7 +109,7 @@ static int add_references(cJSON *referenced, const char *state) {
         added = add_host_references(referenced, folder, name->valuestring);
     }
     cJSON_Delete(names);
-    free(folder);
+    spisor_memory_release(folder);
     return added;
 }
 

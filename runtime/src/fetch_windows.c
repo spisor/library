@@ -1,4 +1,5 @@
 #include "definition_support.h"
+#include "allocation.h"
 #include "fetch_transport.h"
 
 #include <stdlib.h>
@@ -50,9 +51,9 @@ static wchar_t *to_wide(const char *text) {
     if (length <= 0) {
         return NULL;
     }
-    wchar_t *wide = malloc((size_t)length * sizeof(wchar_t));
+    wchar_t *wide = spisor_memory_allocate((size_t)length * sizeof(wchar_t));
     if (wide != NULL && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length) <= 0) {
-        free(wide);
+        spisor_memory_release(wide);
         return NULL;
     }
     return wide;
@@ -63,16 +64,16 @@ static char *to_utf8(const wchar_t *wide) {
     if (length <= 0) {
         return NULL;
     }
-    char *narrow = malloc((size_t)length);
+    char *narrow = spisor_memory_allocate((size_t)length);
     if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, length, NULL, NULL) <= 0) {
-        free(narrow);
+        spisor_memory_release(narrow);
         return NULL;
     }
     return narrow;
 }
 
 static wchar_t *copy_wide(const wchar_t *text, size_t length) {
-    wchar_t *copy = malloc((length + 1) * sizeof(wchar_t));
+    wchar_t *copy = spisor_memory_allocate((length + 1) * sizeof(wchar_t));
     if (copy != NULL) {
         wmemcpy(copy, text, length);
         copy[length] = 0;
@@ -81,9 +82,9 @@ static wchar_t *copy_wide(const wchar_t *text, size_t length) {
 }
 
 static void free_parts(url_parts *parts) {
-    free(parts->wide_url);
-    free(parts->host);
-    free(parts->path);
+    spisor_memory_release(parts->wide_url);
+    spisor_memory_release(parts->host);
+    spisor_memory_release(parts->path);
 }
 
 static size_t without_fragment(const wchar_t *path, size_t length) {
@@ -166,7 +167,7 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
     size_t size = 96 + (request->etag == NULL ? 0 : strlen(request->etag)) +
                   (request->last_modified == NULL ? 0 : strlen(request->last_modified)) +
                   (authorization == NULL ? 0 : strlen(authorization));
-    char *headers = malloc(size);
+    char *headers = spisor_memory_allocate(size);
     if (headers == NULL) {
         return NULL;
     }
@@ -183,7 +184,7 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
     }
     wchar_t *wide = to_wide(headers);
     runtime_overwrite(headers, size);
-    free(headers);
+    spisor_memory_release(headers);
     return wide;
 }
 
@@ -196,7 +197,7 @@ static int send_request(const runtime_fetch_request *request, HINTERNET handle, 
                                   headers[0] == 0 ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
                WinHttpReceiveResponse(handle, NULL);
     runtime_overwrite(headers, wcslen(headers) * sizeof *headers);
-    free(headers);
+    spisor_memory_release(headers);
     return sent;
 }
 
@@ -223,7 +224,7 @@ static int declared_length(HINTERNET handle, uint64_t *declared) {
     if (known) {
         *declared = strtoull(text, NULL, 10);
     }
-    free(text);
+    spisor_memory_release(text);
     return known;
 }
 
@@ -249,19 +250,19 @@ typedef struct body_reading {
 
 static void read_body(const runtime_fetch_request *request, HINTERNET handle, const body_reading *reading,
                       runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
-    uint8_t *chunk = malloc(READ_CHUNK);
+    uint8_t *chunk = spisor_memory_allocate(READ_CHUNK);
     DWORD read = 1;
     int failed = chunk == NULL;
     while (!failed && read > 0 && !is_past(reading->deadline)) {
         failed = !WinHttpReadData(handle, chunk, READ_CHUNK, &read);
         if (!failed && read > 0 && !runtime_fetch_sink_take(sink, chunk, read)) {
-            free(chunk);
+            spisor_memory_release(chunk);
             answer->outcome = RUNTIME_FETCH_STOPPED_BY_SINK;
             return;
         }
     }
     DWORD error = failed ? GetLastError() : (read > 0 ? ERROR_WINHTTP_TIMEOUT : ERROR_SUCCESS);
-    free(chunk);
+    spisor_memory_release(chunk);
     if (reading->declared_known && sink->bytes < reading->declared && error != ERROR_WINHTTP_TIMEOUT) {
         answer->outcome = RUNTIME_FETCH_CUT_OFF;
         answer->declared = reading->declared;
@@ -305,10 +306,10 @@ static wchar_t *redirect_target(HINTERNET handle, const wchar_t *current) {
                              WINHTTP_NO_HEADER_INDEX)) {
         return NULL;
     }
-    wchar_t *target = malloc(URL_LIMIT * sizeof(wchar_t));
+    wchar_t *target = spisor_memory_allocate(URL_LIMIT * sizeof(wchar_t));
     DWORD length = URL_LIMIT;
     if (target != NULL && UrlCombineW(current, location, target, &length, 0) != S_OK) {
-        free(target);
+        spisor_memory_release(target);
         return NULL;
     }
     return target;
@@ -384,7 +385,7 @@ static void take_hops(const runtime_fetch_request *request, origin *first, runti
             return;
         }
     }
-    free(current);
+    spisor_memory_release(current);
     runtime_fetch_refuse(answer, RUNTIME_FETCH_PUBLISHED_FIX, "%s redirected more than %d times", request->url,
                          MAXIMUM_REDIRECTS);
 }
@@ -393,5 +394,5 @@ void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fe
                                 runtime_fetch_answer *answer) {
     origin first = {NULL, 0};
     take_hops(request, &first, sink, answer);
-    free(first.host);
+    spisor_memory_release(first.host);
 }

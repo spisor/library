@@ -1,4 +1,5 @@
 #include "on_path.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,17 +22,18 @@ typedef struct accepted_names {
 
 static void free_names(accepted_names *accepted) {
     for (size_t index = 0; index < accepted->count; index++) {
-        free(accepted->names[index]);
+        spisor_memory_release(accepted->names[index]);
     }
-    free(accepted->names);
+    spisor_memory_release(accepted->names);
 }
 
 static int add_name(accepted_names *accepted, const char *binary, const char *extension, size_t extension_length) {
     size_t length = strlen(binary);
-    char *name = malloc(length + extension_length + 1);
-    char **grown = name == NULL ? NULL : realloc(accepted->names, (accepted->count + 1) * sizeof *grown);
+    char *name = spisor_memory_allocate(length + extension_length + 1);
+    size_t grown_count = accepted->count + 1;
+    char **grown = name == NULL ? NULL : spisor_memory_reallocate(accepted->names, grown_count * sizeof *grown);
     if (grown == NULL) {
-        free(name);
+        spisor_memory_release(name);
         return 0;
     }
     memcpy(name, binary, length);
@@ -77,7 +79,7 @@ static char *matching_file(int windows, const char *directory, const runtime_dir
         if (runtime_is_followed_file(path, !windows)) {
             return path;
         }
-        free(path);
+        spisor_memory_release(path);
     }
     return NULL;
 }
@@ -96,7 +98,7 @@ static char *found_in(int windows, const char *directory, const accepted_names *
 }
 
 static char *directory_of(const char *start, size_t length) {
-    char *directory = malloc(length + 1);
+    char *directory = spisor_memory_allocate(length + 1);
     if (directory != NULL) {
         memcpy(directory, start, length);
         directory[length] = '\0';
@@ -114,7 +116,7 @@ static char *found_on(int windows, const char *search, const accepted_names *acc
         char *directory = length == 0 ? NULL : directory_of(search, length);
         *out_of_memory = length != 0 && directory == NULL;
         found = directory == NULL ? NULL : found_in(windows, directory, accepted, out_of_memory);
-        free(directory);
+        spisor_memory_release(directory);
         search = end == NULL ? search + length : end + 1;
     }
     return found;
@@ -139,7 +141,7 @@ runtime_on_path_status runtime_find_on_path(int windows, const char *binary, con
 
 static spisor_status answer_found(char *found, runtime_detect_on_path_answer *answer) {
     int copied = runtime_storage_copy(&answer->storage, found, &answer->path);
-    free(found);
+    spisor_memory_release(found);
     if (!copied) {
         runtime_release_stored_answer(answer, ANSWER_SHAPE);
         return SPISOR_OUT_OF_MEMORY;

@@ -1,4 +1,5 @@
 #include "spisor/json_write.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -28,7 +29,7 @@ static void append_bytes(text_buffer *buffer, const char *bytes, size_t count) {
         while (buffer->length + count + 1 > capacity) {
             capacity *= 2;
         }
-        char *grown = realloc(buffer->data, capacity);
+        char *grown = spisor_memory_reallocate(buffer->data, capacity);
         if (grown == NULL) {
             buffer->out_of_memory = 1;
             return;
@@ -103,7 +104,7 @@ static void append_number(text_buffer *buffer, const cJSON *number) {
         return;
     }
     append_text(buffer, text);
-    free(text);
+    spisor_memory_release(text);
 }
 
 /** The value of a key that is a canonical array index, or -1 when it is any other string. */
@@ -133,7 +134,7 @@ const cJSON **spisor_json_members_in_javascript_order(const cJSON *object, size_
     if (*count == 0) {
         return NULL;
     }
-    const cJSON **ordered = malloc(*count * sizeof *ordered);
+    const cJSON **ordered = spisor_memory_allocate(*count * sizeof *ordered);
     if (ordered == NULL) {
         return NULL;
     }
@@ -195,7 +196,7 @@ static void append_object(text_buffer *buffer, const cJSON *object, int depth) {
     }
     append_indent(buffer, depth);
     append_bytes(buffer, "}", 1);
-    free(ordered);
+    spisor_memory_release(ordered);
 }
 
 static void append_value(text_buffer *buffer, const cJSON *value, int depth) {
@@ -220,7 +221,7 @@ static char *stringified(const cJSON *value, int escapes_terminal_controls) {
     text_buffer buffer = {NULL, 0, 0, 0, escapes_terminal_controls};
     append_value(&buffer, value, 0);
     if (buffer.out_of_memory) {
-        free(buffer.data);
+        spisor_memory_release(buffer.data);
         return NULL;
     }
     return buffer.data;

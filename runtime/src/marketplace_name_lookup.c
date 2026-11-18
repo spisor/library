@@ -1,4 +1,5 @@
 #include "marketplace_name_lookup.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -82,7 +83,7 @@ static const char *checked_source(const cJSON *copies, const cJSON *pair, cJSON 
 }
 
 static match *grown(match *matches, size_t count) {
-    return realloc(matches, (count + 1) * sizeof *matches);
+    return spisor_memory_reallocate(matches, (count + 1) * sizeof *matches);
 }
 
 /** Adds every entry of the pair's copy named as wanted; 0 when memory ran out. */
@@ -199,6 +200,6 @@ cJSON *runtime_marketplace_lookup_operation(const cJSON *argument, cJSON **refus
     if (finds_matches(copies, &wanted, &matches, &count, refusal)) {
         answer = answer_for(matches, count);
     }
-    free(matches);
+    spisor_memory_release(matches);
     return answer;
 }

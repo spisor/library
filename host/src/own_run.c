@@ -1,4 +1,5 @@
 #include "own_run.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -26,14 +27,14 @@ static int is_separator(char character) {
 
 /**
  * The path the file system finally names for path, 8.3 names and links resolved, without the \\?\ prefix;
- * freed with free, NULL when it cannot be opened.
+ * freed, NULL when it cannot be opened.
  */
 static char *final_path(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     HANDLE handle = wide == NULL ? INVALID_HANDLE_VALUE
                                  : CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     if (handle == INVALID_HANDLE_VALUE) {
         return NULL;
     }
@@ -51,7 +52,7 @@ static char *final_path(const char *path) {
         start = final + 4;
     }
     int bytes = WideCharToMultiByte(CP_UTF8, 0, start, -1, NULL, 0, NULL, NULL);
-    char *narrow = bytes <= 0 ? NULL : malloc((size_t)bytes);
+    char *narrow = bytes <= 0 ? NULL : spisor_memory_allocate((size_t)bytes);
     if (narrow != NULL) {
         WideCharToMultiByte(CP_UTF8, 0, start, -1, narrow, bytes, NULL, NULL);
     }
@@ -73,7 +74,7 @@ static void report(const char *executable, const char *problem) {
     host_write(1, "\nfix: run spisor-host from <cache>/bundles/spisor-host/<version>/, as spisor-boot does\n");
 }
 
-/** The version segment of the executable below cache/bundles/spisor-host, freed with free; NULL outside it. */
+/** The version segment of the executable below cache/bundles/spisor-host, freed; NULL outside it. */
 static char *own_version(const host_context *context) {
     char *executable = host_own_executable();
     const char *segments[2] = {"bundles", RUNTIME_ECOSYSTEM_HOST_ID};
@@ -87,7 +88,7 @@ static char *own_version(const host_context *context) {
         while (start[length] != 0 && !is_separator(start[length])) {
             length++;
         }
-        version = start[length] == 0 ? NULL : malloc(length + 1);
+        version = start[length] == 0 ? NULL : spisor_memory_allocate(length + 1);
         if (version != NULL) {
             memcpy(version, start, length);
             version[length] = 0;
@@ -95,10 +96,10 @@ static char *own_version(const host_context *context) {
             report(executable, " lies in the bundles folder but in no version of it");
         }
     }
-    free(resolved);
-    free(folder);
-    free(joined);
-    free(executable);
+    spisor_memory_release(resolved);
+    spisor_memory_release(folder);
+    spisor_memory_release(joined);
+    spisor_memory_release(executable);
     return version;
 }
 
@@ -121,7 +122,7 @@ static char *recorded(const own_run *run, const char *version) {
     cJSON *refusal = NULL;
     cJSON *answer = runtime_call_operation(runtime_processes_record_run_operation, run_call(run, version), &refusal);
     const char *record = host_text(answer, "record");
-    char *copy = record == NULL ? NULL : malloc(strlen(record) + 1);
+    char *copy = record == NULL ? NULL : spisor_memory_allocate(strlen(record) + 1);
     if (copy != NULL) {
         strcpy(copy, record);
     }
@@ -142,12 +143,12 @@ void host_start_own_run(own_run *run, const host_context *context) {
 
 void host_stamp_own_run(own_run *run) {
     if (run->record != NULL) {
-        free(recorded(run, run->version));
+        spisor_memory_release(recorded(run, run->version));
     }
 }
 
 void host_finish_own_run(own_run *run) {
-    free(run->version);
+    spisor_memory_release(run->version);
     run->version = NULL;
     if (run->record == NULL) {
         return;
@@ -162,6 +163,6 @@ void host_finish_own_run(own_run *run) {
     cJSON *refusal = NULL;
     cJSON_Delete(runtime_call_operation(runtime_processes_remove_runs_operation, call, &refusal));
     cJSON_Delete(refusal);
-    free(run->record);
+    spisor_memory_release(run->record);
     run->record = NULL;
 }

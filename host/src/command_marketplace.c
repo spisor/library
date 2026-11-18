@@ -4,6 +4,7 @@
 #include <time.h>
 
 #include "catalog_time.h"
+#include "allocation.h"
 #include "cache_refusal.h"
 #include "definition_support.h"
 #include "host_commands.h"
@@ -31,7 +32,7 @@ static cJSON *read_list(const char *path, cJSON **refusal) {
     uint8_t *bytes = spisor_read_file(path, &length);
     int was_read = bytes != NULL;
     cJSON *list = was_read ? spisor_parse_json(bytes, length) : NULL;
-    free(bytes);
+    spisor_memory_release(bytes);
     if (list == NULL) {
         *refusal = refusal_naming(was_read ? "the list is not JSON: " : "the list could not be read: ", path,
                                   "check that --list names a readable marketplace list");
@@ -98,9 +99,9 @@ static int write_copy(const cJSON *copy, const char *path) {
     char *parent = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parent_segments, 2);
     int written = text != NULL && parent != NULL && spisor_make_directories(parent) == 1 &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1;
-    free(parent);
-    free(text);
-    free(pretty);
+    spisor_memory_release(parent);
+    spisor_memory_release(text);
+    spisor_memory_release(pretty);
     return written;
 }
 
@@ -114,8 +115,8 @@ static void print_skipped(const cJSON *skipped) {
         host_write(1, ": ");
         host_write(1, reason == NULL ? "" : reason);
         host_write(1, "\n");
-        free(reason);
-        free(id);
+        spisor_memory_release(reason);
+        spisor_memory_release(id);
     }
 }
 
@@ -127,7 +128,7 @@ static int print_wrote(const char *path, const cJSON *copy) {
     host_write(0, "wrote ");
     host_write(0, safe_path == NULL ? "" : safe_path);
     host_write(0, count);
-    free(safe_path);
+    spisor_memory_release(safe_path);
     return HOST_EXIT_DONE;
 }
 
@@ -141,10 +142,10 @@ static int is_same_path(const char *left, const char *right) {
     char *right_normal = right_absolute == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, right_segments, 1);
     int is_same = left_normal != NULL && right_normal != NULL &&
                   (RUNTIME_HOST_IS_WINDOWS ? host_equals_ignoring_case(left_normal, right_normal) : strcmp(left_normal, right_normal) == 0);
-    free(right_normal);
-    free(left_normal);
-    free(right_absolute);
-    free(left_absolute);
+    spisor_memory_release(right_normal);
+    spisor_memory_release(left_normal);
+    spisor_memory_release(right_absolute);
+    spisor_memory_release(left_absolute);
     return is_same;
 }
 
@@ -173,7 +174,7 @@ static cJSON *read_previous(const char *path, cJSON **refusal) {
         *refusal = refusal_naming("the copy already at --out is not JSON: ", path,
                                   "remove it, or point --out at a path that holds a generated copy or nothing");
     }
-    free(bytes);
+    spisor_memory_release(bytes);
     return previous;
 }
 
@@ -190,7 +191,7 @@ static int write_or_refuse(const cJSON *copy, const char *out_path, cJSON **refu
     if (!written) {
         *refusal = refusal_naming("the copy could not be written to ", out_path, "check that --out names a writable file");
     }
-    free(absolute);
+    spisor_memory_release(absolute);
     return written;
 }
 
@@ -212,7 +213,7 @@ static cJSON *built_and_written(const build_paths *paths, cJSON **skipped, cJSON
     }
     cJSON_Delete(previous);
     cJSON_Delete(list);
-    free(absolute);
+    spisor_memory_release(absolute);
     return copy;
 }
 
@@ -254,7 +255,7 @@ int host_command_marketplace_build(int count, char **arguments) {
                              host_last_value(&options[3])};
         code = build_into(&paths);
     }
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, 4);
     return code;
 }

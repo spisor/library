@@ -1,4 +1,5 @@
 #include "marketplace_copies.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,8 +28,8 @@ static void print_note(const char *subject, const char *detail) {
     host_write(1, ": ");
     host_write(1, safe_detail == NULL ? "" : safe_detail);
     host_write(1, "\n");
-    free(safe_detail);
-    free(safe_subject);
+    spisor_memory_release(safe_detail);
+    spisor_memory_release(safe_subject);
 }
 
 static void print_skipped_entries(const cJSON *skipped) {
@@ -46,7 +47,7 @@ static void print_source_refusal(const char *source_id, const cJSON *refusal) {
     host_write(1, safe_id == NULL ? "" : safe_id);
     host_write(1, " could not be read, so its names are not searched: ");
     host_print_refusal_printably(refusal);
-    free(safe_id);
+    spisor_memory_release(safe_id);
 }
 
 static cJSON *listed_sources(const host_context *context, cJSON **refusal) {
@@ -94,8 +95,8 @@ static cJSON *fetched_copy(const host_context *context, const cJSON *source, int
         const char *parts[2] = {"a folder to fetch into could not be made at ", folder};
         *refusal = host_refusal_of(parts, 2, "check that the cache place can be written");
     }
-    free(destination);
-    free(folder);
+    spisor_memory_release(destination);
+    spisor_memory_release(folder);
     return copy;
 }
 
@@ -119,8 +120,8 @@ static int adds_copy_of(const host_context *context, const cJSON *source, int in
         const char *subject_parts[2] = {"marketplace ", host_text(source, "id")};
         char *subject = runtime_cache_text(subject_parts, 2);
         print_note(subject, detail);
-        free(subject);
-        free(detail);
+        spisor_memory_release(subject);
+        spisor_memory_release(detail);
         return 1;
     }
     cJSON *refusal = NULL;

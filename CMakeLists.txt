@@ -42,16 +42,20 @@ spisor_strict_warnings(spisor_library)
 # spisor_library carries no allocator: every binary links exactly one of these two, so a test can count and fail
 # allocations without a second definition of the allocator beside it.
 add_library(spisor_allocator OBJECT src/allocation.c)
+target_include_directories(spisor_allocator PRIVATE include)
 set_target_properties(spisor_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON SPISOR_ALLOCATOR TRUE)
 spisor_strict_warnings(spisor_allocator)
 
 add_library(spisor_allocator_counting OBJECT EXCLUDE_FROM_ALL src/allocation.c)
-target_include_directories(spisor_allocator_counting PUBLIC src)
+target_include_directories(spisor_allocator_counting PUBLIC src include)
 target_compile_definitions(spisor_allocator_counting PUBLIC SPISOR_TESTING)
 set_target_properties(spisor_allocator_counting PROPERTIES SPISOR_TEST_ONLY TRUE SPISOR_ALLOCATOR TRUE)
 spisor_strict_warnings(spisor_allocator_counting)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/link_graph.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/allocation_check.cmake)
+spisor_refuse_plain_allocation(${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/runtime/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/host/src ${CMAKE_CURRENT_SOURCE_DIR}/host/bundle)
 add_subdirectory(testing)
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)

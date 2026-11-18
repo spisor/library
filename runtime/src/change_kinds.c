@@ -1,4 +1,5 @@
 #include "change_kinds.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -180,8 +181,8 @@ int runtime_change_paths_equal(const char *left, const char *right) {
     char *left_normal = left == NULL ? NULL : normal_path(left);
     char *right_normal = right == NULL ? NULL : normal_path(right);
     int equal = left_normal != NULL && right_normal != NULL && same_folded(left_normal, right_normal);
-    free(left_normal);
-    free(right_normal);
+    spisor_memory_release(left_normal);
+    spisor_memory_release(right_normal);
     return equal;
 }
 
@@ -196,7 +197,7 @@ static int normalize_member(cJSON *change, const char *member) {
     }
     char *normal = normal_path(path);
     cJSON *value = normal == NULL ? NULL : cJSON_CreateString(normal);
-    free(normal);
+    spisor_memory_release(normal);
     int replaced = value != NULL && cJSON_ReplaceItemInObjectCaseSensitive(change, member, value);
     if (value != NULL && !replaced) {
         cJSON_Delete(value);
@@ -288,7 +289,7 @@ static file_bytes bytes_asked_for(const cJSON *change) {
         return asked;
     }
     asked.length = strlen(content);
-    asked.bytes = malloc(asked.length + 1);
+    asked.bytes = spisor_memory_allocate(asked.length + 1);
     if (asked.bytes != NULL) {
         memcpy(asked.bytes, content, asked.length + 1);
     }
@@ -323,7 +324,7 @@ static runtime_change_step prepare_file(const cJSON *change, cJSON **record, run
         cJSON_Delete(*record);
         *record = NULL;
     }
-    free(asked.bytes);
+    spisor_memory_release(asked.bytes);
     return *record != NULL ? RUNTIME_CHANGE_DONE : out_of_memory(note);
 }
 
@@ -343,7 +344,7 @@ int runtime_change_asks_new_content(const cJSON *record, const cJSON *change) {
     }
     char digest[RUNTIME_CHANGE_DIGEST_SIZE];
     runtime_change_digest(asked.bytes, asked.length, digest);
-    free(asked.bytes);
+    spisor_memory_release(asked.bytes);
     const char *recorded = text_of(record, "digest");
     return recorded == NULL || strcmp(recorded, digest) != 0;
 }
@@ -375,7 +376,7 @@ runtime_change_step runtime_change_rewrite(const cJSON *change, cJSON *record, r
     } else if (!set_digest(record, &asked)) {
         step = out_of_memory(note);
     }
-    free(asked.bytes);
+    spisor_memory_release(asked.bytes);
     return step;
 }
 
@@ -387,7 +388,7 @@ static runtime_change_step perform_file(const cJSON *change, runtime_change_note
         return fail(note, "the file to copy could not be read", text_of(change, "source"));
     }
     runtime_entry_outcome created = runtime_create_new_file(path, asked.bytes, asked.length, executable);
-    free(asked.bytes);
+    spisor_memory_release(asked.bytes);
     if (created == RUNTIME_ENTRY_EXISTS) {
         return refuse(note, "something already exists where the file would be created; it was left unchanged", path);
     }
@@ -477,7 +478,7 @@ static line_span find_last_line(const text_buffer *text, const char *line) {
 static int has_line(const char *path, const char *line) {
     text_buffer text;
     int found = read_text(path, &text) && find_last_line(&text, line).found;
-    free(text.bytes);
+    spisor_memory_release(text.bytes);
     return found;
 }
 
@@ -530,7 +531,7 @@ static runtime_change_step prepare_profile_line(const cJSON *change, const cJSON
     }
     int present = find_last_line(&text, text_of(change, "line")).found;
     int separated = present ? is_holder_flag(holder, "separated") : is_unterminated(&text);
-    free(text.bytes);
+    spisor_memory_release(text.bytes);
     if (present && holder == NULL) {
         return RUNTIME_CHANGE_UNNEEDED;
     }
@@ -562,26 +563,26 @@ static const char *line_ending_of(const text_buffer *text) {
 static int append_line(const char *path, const text_buffer *text, const char *line, int separated) {
     const char *ending = line_ending_of(text);
     size_t size = text->length + 2 * strlen(ending) + strlen(line) + 1;
-    char *bytes = malloc(size);
+    char *bytes = spisor_memory_allocate(size);
     if (bytes == NULL) {
         return 0;
     }
     memcpy(bytes, text->bytes, text->length);
     int appended = snprintf(bytes + text->length, size - text->length, "%s%s%s", separated ? ending : "", line, ending);
     int written = appended > 0 && spisor_replace_file(path, (const uint8_t *)bytes, text->length + (size_t)appended);
-    free(bytes);
+    spisor_memory_release(bytes);
     return written;
 }
 
 static runtime_change_step create_profile(const char *path, const char *line, runtime_change_note *note) {
     size_t size = strlen(line) + 2;
-    char *bytes = malloc(size);
+    char *bytes = spisor_memory_allocate(size);
     if (bytes == NULL) {
         return out_of_memory(note);
     }
     snprintf(bytes, size, "%s\n", line);
     runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)bytes, size - 1, 0);
-    free(bytes);
+    spisor_memory_release(bytes);
     return created == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_DONE : fail(note, "the profile could not be created", path);
 }
 
@@ -600,7 +601,7 @@ static runtime_change_step perform_profile_line(const cJSON *change, cJSON *reco
         int separated = is_unterminated(&text);
         written = add_separated(record, separated) && append_line(path, &text, line, separated);
     }
-    free(text.bytes);
+    spisor_memory_release(text.bytes);
     return written ? RUNTIME_CHANGE_DONE : fail(note, "the line could not be added", path);
 }
 
@@ -613,7 +614,7 @@ static size_t trailing_newline_length(const char *bytes, size_t length) {
 
 static int remove_line(const char *path, const text_buffer *text, line_span span, int separated) {
     size_t kept = text->length - (span.end - span.start);
-    char *bytes = malloc(kept + 1);
+    char *bytes = spisor_memory_allocate(kept + 1);
     if (bytes == NULL) {
         return 0;
     }
@@ -623,14 +624,14 @@ static int remove_line(const char *path, const text_buffer *text, line_span span
         kept -= trailing_newline_length(bytes, kept);
     }
     int written = spisor_replace_file(path, (const uint8_t *)bytes, kept);
-    free(bytes);
+    spisor_memory_release(bytes);
     return written;
 }
 
 static int is_empty_file(const char *path) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
-    free(bytes);
+    spisor_memory_release(bytes);
     return bytes != NULL && length == 0;
 }
 
@@ -651,7 +652,7 @@ static runtime_change_reversal reverse_profile_line(const cJSON *record, int hel
     line_span span = find_last_line(&text, text_of(record, "line"));
     int removed = !span.found ||
                   remove_line(path, &text, span, cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(record, "separated")));
-    free(text.bytes);
+    spisor_memory_release(text.bytes);
     if (!removed) {
         write_note(note, "the line could not be removed from %s", path);
         return RUNTIME_CHANGE_NOT_REVERSED;

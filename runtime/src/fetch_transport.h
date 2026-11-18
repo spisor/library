@@ -54,7 +54,7 @@ typedef enum runtime_fetch_outcome {
 
 /**
  * What a transport found. STATUS carries the status, CUT_OFF the declared length, and REFUSED its own
- * detail and fix; RECEIVED and NOT_MODIFIED may carry the validators the answer sent, freed with free.
+ * detail and fix; RECEIVED and NOT_MODIFIED may carry the validators the answer sent, freed.
  */
 typedef struct runtime_fetch_answer {
     runtime_fetch_outcome outcome;

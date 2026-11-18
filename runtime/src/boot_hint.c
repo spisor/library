@@ -1,4 +1,5 @@
 #include "boot_hint.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,7 @@ char *runtime_boot_hint_path(const char *cache, const char *host_id, char **prob
     *problem = NULL;
     char *folder = hosts_folder(cache);
     char *path = folder == NULL ? NULL : runtime_host_file_path(folder, host_id, "libraries", problem);
-    free(folder);
+    spisor_memory_release(folder);
     return path;
 }
 
@@ -140,12 +141,12 @@ static char *library_directory(const char *cache, const char *id, const char *ve
         *problem = runtime_cache_text(parts, 5);
     }
     if (!inside) {
-        free(directory);
+        spisor_memory_release(directory);
         directory = NULL;
     }
-    free(id_root);
-    free((char *)root_segments[1]);
-    free(root);
+    spisor_memory_release(id_root);
+    spisor_memory_release((char *)root_segments[1]);
+    spisor_memory_release(root);
     return directory;
 }
 
@@ -184,7 +185,7 @@ static int is_declared_library(const char *directory) {
     const char *segments[2] = {directory, LIBRARY_DECLARATION};
     char *declaration = runtime_cache_joined(segments, 2);
     int declared = declaration != NULL && spisor_file_exists(declaration);
-    free(declaration);
+    spisor_memory_release(declaration);
     return declared;
 }
 
@@ -205,8 +206,8 @@ static int add_binary(cJSON *entry, const char *directory, const char *platform,
     const char *segments[2] = {directory, search.first_name};
     char *binary = searched && search.count == 1 ? runtime_cache_joined(segments, 2) : NULL;
     int added = binary != NULL && cJSON_AddStringToObject(entry, "binary", binary) != NULL;
-    free(binary);
-    free(search.first_name);
+    spisor_memory_release(binary);
+    spisor_memory_release(search.first_name);
     return added;
 }
 
@@ -221,7 +222,7 @@ static cJSON *library_entry(const char *cache, const char *id, const char *versi
         cJSON_Delete(entry);
         entry = NULL;
     }
-    free(directory);
+    spisor_memory_release(directory);
     return entry;
 }
 
@@ -245,9 +246,9 @@ cJSON *runtime_read_boot_hint(const char *cache, const char *host_id, int *out_o
     char *problem = NULL;
     char *path = runtime_boot_hint_path(cache, host_id, &problem);
     *out_of_memory = path == NULL && problem == NULL;
-    free(problem);
+    spisor_memory_release(problem);
     cJSON *recorded = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
-    free(path);
+    spisor_memory_release(path);
     cJSON *hint = *out_of_memory ? NULL : runtime_boot_hint_of(recorded, out_of_memory);
     cJSON_Delete(recorded);
     return hint;
@@ -277,7 +278,7 @@ static char *hint_text(const cJSON *libraries, const char *host) {
     cJSON_Delete(hint);
     const char *parts[2] = {pretty, "\n"};
     char *text = pretty == NULL ? NULL : runtime_cache_text(parts, 2);
-    free(pretty);
+    spisor_memory_release(pretty);
     return text;
 }
 
@@ -287,7 +288,7 @@ static int write_text(const char *cache, const char *path, const char *text, int
     *out_of_memory = folder == NULL;
     int written = folder != NULL && spisor_make_directories(folder) &&
                   spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-    free(folder);
+    spisor_memory_release(folder);
     return written;
 }
 
@@ -302,9 +303,9 @@ int runtime_write_boot_hint(const char *cache, const char *host_id, const cJSON 
         const char *parts[3] = {"the boot hint ", path, " could not be written"};
         *problem = runtime_cache_text(parts, 3);
     }
-    free(text);
-    free(version);
-    free(path);
+    spisor_memory_release(text);
+    spisor_memory_release(version);
+    spisor_memory_release(path);
     return written;
 }
 
@@ -318,7 +319,7 @@ spisor_status runtime_hint_host_version(const char *cache, const char *host_id, 
     int written = runtime_write_boot_hint(cache, host_id, cJSON_GetObjectItemCaseSensitive(hint, "libraries"),
                                           version, &problem);
     spisor_status status = written ? SPISOR_OK : problem == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
-    free(problem);
+    spisor_memory_release(problem);
     cJSON_Delete(hint);
     return status;
 }

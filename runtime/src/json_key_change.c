@@ -1,4 +1,5 @@
 #include "json_key_change.h"
+#include "allocation.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -175,7 +176,7 @@ static int is_storable_text(const char *bytes, size_t length) {
     size_t decoded_length = 0;
     uint8_t *decoded = spisor_decode_utf8_lossy((const uint8_t *)bytes, length, &decoded_length);
     int same = decoded != NULL && decoded_length == length && memcmp(decoded, bytes, length) == 0;
-    free(decoded);
+    spisor_memory_release(decoded);
     return same;
 }
 
@@ -185,14 +186,14 @@ static int set_replaced(cJSON *record, const file_bytes *before, const json_edit
     if (!is_storable_text(replaced, splice->replaced_length)) {
         return 1;
     }
-    char *copy = malloc(splice->replaced_length + 1);
+    char *copy = spisor_memory_allocate(splice->replaced_length + 1);
     if (copy == NULL) {
         return 0;
     }
     memcpy(copy, replaced, splice->replaced_length);
     copy[splice->replaced_length] = '\0';
     int set = add_or_replace(record, "replaced", cJSON_CreateString(copy));
-    free(copy);
+    spisor_memory_release(copy);
     return set;
 }
 
@@ -257,7 +258,7 @@ static runtime_change_step record_created(const cJSON *change, cJSON **record, r
     int complete = *record != NULL && set_number(*record, "createdFrom", 0) &&
                    cJSON_AddTrueToObject(*record, "created") != NULL &&
                    set_digest(*record, "after", created.bytes, created.length);
-    free(created.bytes);
+    spisor_memory_release(created.bytes);
     if (!complete) {
         cJSON_Delete(*record);
         *record = NULL;
@@ -274,7 +275,7 @@ static runtime_change_step record_edit(const cJSON *change, cJSON *root, const f
     }
     json_edit_text edited = {NULL, 0, {0, 0, 0}};
     runtime_change_step step = describe_edit(change, root, before, *record, &edited, note);
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     if (step != RUNTIME_CHANGE_DONE) {
         cJSON_Delete(*record);
         *record = NULL;
@@ -311,7 +312,7 @@ runtime_change_step runtime_json_key_prepare(const cJSON *change, cJSON **record
                                                                   : refuse(note, unreadable_object, path);
     }
     runtime_change_step step = prepare_existing(change, &before, record, note);
-    free(before.bytes);
+    spisor_memory_release(before.bytes);
     return step;
 }
 
@@ -326,7 +327,7 @@ static runtime_change_step perform_created(const cJSON *change, cJSON *record, r
     runtime_entry_outcome made = recorded
                                      ? runtime_create_new_file(path, (const uint8_t *)created.bytes, created.length, 0)
                                      : RUNTIME_ENTRY_FAILED;
-    free(created.bytes);
+    spisor_memory_release(created.bytes);
     if (!recorded) {
         return out_of_memory(note);
     }
@@ -358,7 +359,7 @@ static runtime_change_step perform_edit(const cJSON *change, cJSON *record, cons
     if (step == RUNTIME_CHANGE_DONE && !spisor_replace_file(path, (const uint8_t *)edited.bytes, edited.length)) {
         step = fail(note, "the key could not be written", path);
     }
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     return step;
 }
 
@@ -371,7 +372,7 @@ runtime_change_step runtime_json_key_perform(const cJSON *change, cJSON *record,
         return fail(note, "the JSON file could not be read", text_of(change, "file"));
     }
     runtime_change_step step = perform_edit(change, record, &current, note);
-    free(current.bytes);
+    spisor_memory_release(current.bytes);
     return step;
 }
 
@@ -449,7 +450,7 @@ static int undo_splice(const cJSON *record, const file_bytes *current, json_edit
     if (digest_is(record, "beforeDigest", restored->bytes, restored->length)) {
         return 1;
     }
-    free(restored->bytes);
+    spisor_memory_release(restored->bytes);
     restored->bytes = NULL;
     return 0;
 }
@@ -495,7 +496,7 @@ static runtime_change_reversal undo_member(const cJSON *record, const file_bytes
     } else {
         reversal = outcome == JSON_EDIT_DONE ? write_undone(record, current, &edited, note) : not_reversed(record, note);
     }
-    free(edited.bytes);
+    spisor_memory_release(edited.bytes);
     return reversal;
 }
 
@@ -549,7 +550,7 @@ static runtime_change_reversal reverse_present_file(const cJSON *record, const f
     runtime_change_reversal reversal = undo_splice(record, current, &restored) ? write_back(record, &restored, note)
                                                                                 : reverse_drifted_file(record, current,
                                                                                                        note);
-    free(restored.bytes);
+    spisor_memory_release(restored.bytes);
     return reversal;
 }
 
@@ -559,6 +560,6 @@ runtime_change_reversal runtime_json_key_reverse(const cJSON *record, runtime_ch
         return reverse_missing_file(record, note);
     }
     runtime_change_reversal reversal = reverse_present_file(record, &current, note);
-    free(current.bytes);
+    spisor_memory_release(current.bytes);
     return reversal;
 }

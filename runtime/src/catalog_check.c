@@ -1,4 +1,5 @@
 #include "catalog_check.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -96,7 +97,7 @@ static int fail_pattern(checker *check, runtime_catalog_pattern_index index, con
     runtime_catalog_text_add_character(&message, '"');
     char *finished = runtime_catalog_text_finish(&message);
     int result = finished == NULL ? fail_out_of_memory(check) : fail(check, finished, FIX_PATTERN, key);
-    free(finished);
+    spisor_memory_release(finished);
     return result;
 }
 
@@ -204,7 +205,7 @@ static int check_map(checker *check, const cJSON *object, key_rule key_valid, ru
         valid = value_valid(check, members[index]);
         leave(check, before);
     }
-    free(members);
+    spisor_memory_release(members);
     return valid;
 }
 

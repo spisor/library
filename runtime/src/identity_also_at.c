@@ -1,4 +1,5 @@
 #include "identity_also_at.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -208,7 +209,7 @@ static cJSON *read_copy(const char *id, const char *api_base, cJSON **refusal) {
     } else if (status == RUNTIME_REPO_FILE_UNAVAILABLE) {
         file = cJSON_CreateFalse();
     }
-    free(content);
+    spisor_memory_release(content);
     return file;
 }
 

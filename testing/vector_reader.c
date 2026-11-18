@@ -1,4 +1,5 @@
 #include "vector_reader.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,7 +36,7 @@ cJSON *spisor_vector_read(const char *path) {
         return NULL;
     }
     vector = spisor_parse_json(bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     if (vector == NULL) {
         fprintf(stderr, "vector %s is not JSON\n", path);
     }

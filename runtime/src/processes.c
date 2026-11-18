@@ -1,4 +1,5 @@
 #include "processes.h"
+#include "allocation.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -26,7 +27,7 @@ cJSON *runtime_processes_argument_refusal(const char *member, const char *shape)
     const char *fix[4] = {"send ", member, " as ", shape};
     char *fix_text = runtime_cache_text(fix, 4);
     cJSON *refusal = fix_text == NULL ? NULL : runtime_cache_refusal(message, 2, fix_text);
-    free(fix_text);
+    spisor_memory_release(fix_text);
     return refusal;
 }
 
@@ -91,7 +92,7 @@ static cJSON *lock_refusal(const char *lock) {
                           " when it is no lock file, check that SPISOR_STATE names a writable folder, then try again"};
     char *fix_text = runtime_cache_text(fix, 3);
     cJSON *refusal = fix_text == NULL ? NULL : runtime_cache_refusal(message, 3, fix_text);
-    free(fix_text);
+    spisor_memory_release(fix_text);
     return refusal;
 }
 
@@ -102,8 +103,8 @@ static cJSON *locked_step(const runtime_processes_request *request, const char *
     runtime_holders_guard *guard = lock == NULL ? NULL : runtime_lock_holders(lock);
     if (guard == NULL) {
         *refusal = lock == NULL ? NULL : lock_refusal(lock);
-        free(lock);
-        free(problem);
+        spisor_memory_release(lock);
+        spisor_memory_release(problem);
         return NULL;
     }
     runtime_holders_record record = runtime_no_holders();
@@ -113,7 +114,7 @@ static cJSON *locked_step(const runtime_processes_request *request, const char *
     }
     runtime_free_holders(&record);
     runtime_unlock_holders(guard);
-    free(lock);
+    spisor_memory_release(lock);
     return answer;
 }
 
@@ -128,9 +129,9 @@ cJSON *runtime_processes_with_holders(const runtime_processes_request *request, 
     } else if (path != NULL && folder != NULL) {
         answer = locked_step(request, path, step, refusal);
     }
-    free(folder);
-    free(path);
-    free(problem);
+    spisor_memory_release(folder);
+    spisor_memory_release(path);
+    spisor_memory_release(problem);
     return answer;
 }
 
@@ -212,10 +213,11 @@ static cJSON *refuse_host_id(const runtime_processes_request *request, runtime_p
                                                        : runtime_processes_folder(request->state);
     char *problem = NULL;
     const char *recording = host == RUNTIME_PROCESSES_RUNS_HOST ? "runs" : "processes";
-    free(folder == NULL ? NULL : runtime_host_file_path(folder, request->host_id, recording, &problem));
-    free(folder);
+    char *host_file = folder == NULL ? NULL : runtime_host_file_path(folder, request->host_id, recording, &problem);
+    spisor_memory_release(host_file);
+    spisor_memory_release(folder);
     *refusal = problem == NULL ? NULL : runtime_refusal(problem, RUNTIME_PLAIN_HOST_ID_FIX);
-    free(problem);
+    spisor_memory_release(problem);
     return NULL;
 }
 

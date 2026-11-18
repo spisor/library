@@ -3,6 +3,7 @@
 #endif
 
 #include "file_times.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +42,7 @@ static int own_change(const char *path, double *milliseconds, int *is_directory)
     WIN32_FILE_ATTRIBUTE_DATA data;
     memset(&data, 0, sizeof data);
     int read = wide != NULL && GetFileAttributesExW(wide, GetFileExInfoStandard, &data) != 0;
-    free(wide);
+    spisor_memory_release(wide);
     if (read) {
         *milliseconds = milliseconds_of(data.ftLastWriteTime);
         *is_directory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
@@ -89,7 +90,7 @@ static int newest_child_change(const char *path, double *newest) {
         if (read && change > *newest) {
             *newest = change;
         }
-        free(child);
+        spisor_memory_release(child);
     }
     runtime_free_directory_listing(&listing);
     return read;

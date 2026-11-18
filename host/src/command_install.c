@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "application_choices.h"
+#include "allocation.h"
 #include "boot.h"
 #include "cache_refusal.h"
 #include "host_commands.h"
@@ -50,7 +51,7 @@ static cJSON *sources_of(const char *catalog, int *misused) {
         char *absolute = host_absolute_path(catalog);
         cJSON_AddStringToObject(source, "kind", "local");
         cJSON_AddStringToObject(source, "path", absolute == NULL ? catalog : absolute);
-        free(absolute);
+        spisor_memory_release(absolute);
     }
     cJSON *sources = cJSON_CreateArray();
     if (sources == NULL || !cJSON_AddItemToArray(sources, source)) {
@@ -68,7 +69,7 @@ static cJSON *choices_of(const cJSON *flags, char **problem) {
         const char *value = flag->valuestring;
         const char *equals = strchr(value, '=');
         size_t id_length = equals == NULL ? 0 : (size_t)(equals - value);
-        char *id = id_length == 0 || equals[1] == 0 ? NULL : malloc(id_length + 1);
+        char *id = id_length == 0 || equals[1] == 0 ? NULL : spisor_memory_allocate(id_length + 1);
         if (id == NULL) {
             const char *parts[3] = {"--application ", value, " is not <id>=<method>"};
             *problem = runtime_cache_text(parts, 3);
@@ -81,11 +82,11 @@ static cJSON *choices_of(const cJSON *flags, char **problem) {
         if (repeated || cJSON_AddStringToObject(choices, id, equals + 1) == NULL) {
             const char *parts[3] = {"--application names ", id, " twice"};
             *problem = repeated ? runtime_cache_text(parts, 3) : NULL;
-            free(id);
+            spisor_memory_release(id);
             cJSON_Delete(choices);
             return NULL;
         }
-        free(id);
+        spisor_memory_release(id);
     }
     return choices;
 }
@@ -214,7 +215,7 @@ static int installs_from_catalog(const host_option *options) {
                    : host_refuse(refusal);
         host_close_context(&context);
     }
-    free(problem);
+    spisor_memory_release(problem);
     cJSON_Delete(choices);
     cJSON_Delete(sources);
     return code;
@@ -267,7 +268,7 @@ int host_command_install(int count, char **arguments) {
     } else {
         code = installs_from_catalog(options);
     }
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, OPTION_COUNT);
     return code;
 }

@@ -5,6 +5,7 @@
 #endif
 
 #include "process_run.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,7 +57,7 @@ static int answer_output(const run_output *collected, char **output) {
     if (output == NULL) {
         return 1;
     }
-    *output = malloc(collected->length + 1);
+    *output = spisor_memory_allocate(collected->length + 1);
     if (*output == NULL) {
         return 0;
     }
@@ -106,7 +107,7 @@ static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition) 
     wchar_t *wide = spisor_wide_path(path);
     HANDLE file = wide == NULL ? INVALID_HANDLE_VALUE
                                : CreateFileW(wide, access, FILE_SHARE_READ, &inherited, disposition, FILE_ATTRIBUTE_NORMAL, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     return file;
 }
 
@@ -225,8 +226,8 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
         CloseHandle(information.hProcess);
     }
     release(run);
-    free(line);
-    free(application);
+    spisor_memory_release(line);
+    spisor_memory_release(application);
     if (!started && !out_of_memory) {
         char reason[64];
         snprintf(reason, sizeof reason, "Windows error %lu", (unsigned long)error);
@@ -363,7 +364,7 @@ static int await_exit(pid_t child, int descriptor, double deadline, int *exit_co
 }
 
 static char **argument_list(const char *executable, const cJSON *arguments) {
-    char **list = calloc(argument_count(arguments) + 2, sizeof *list);
+    char **list = spisor_memory_allocate_zeroed(argument_count(arguments) + 2, sizeof *list);
     size_t index = 0;
     if (list != NULL) {
         list[index++] = (char *)executable;
@@ -406,12 +407,12 @@ static int run_with(const char *executable, const cJSON *arguments, unsigned tim
     }
     if (output != NULL && !open_output_pipe(ends)) {
         *problem = problem_of(executable, strerror(errno));
-        free(list);
+        spisor_memory_release(list);
         return 0;
     }
     pid_t child = 0;
     int error = spawn_silenced(executable, list, output == NULL ? NULL : ends, files, &child);
-    free(list);
+    spisor_memory_release(list);
     run_output collected = {{0}, 0};
     if (ends[1] >= 0) {
         close(ends[1]);

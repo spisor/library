@@ -44,7 +44,7 @@ typedef enum json_placement {
 } json_placement;
 
 /**
- * The bytes that add a member name holding value, freed with free; NULL when memory runs out. AFTER_MEMBER
+ * The bytes that add a member name holding value, freed; NULL when memory runs out. AFTER_MEMBER
  * bytes go after the last member's value, comma first. In an object with no member, ALONE bytes stand
  * between its braces and, when multiline, bring the closing brace's line; ABOVE_CLOSING_LINE bytes go
  * before the line break already ending what is inside, so they bring only the member's own line.

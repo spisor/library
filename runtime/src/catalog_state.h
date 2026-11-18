@@ -13,14 +13,14 @@ typedef struct runtime_catalog_state {
 
 /**
  * Where the cache keeps one source's state: cache/catalog/<the SHA-256 of location>.json, location being
- * the resolved path of a local source or the url of an https one. Freed with free.
+ * the resolved path of a local source or the url of an https one. Freed.
  */
 char *runtime_catalog_state_path(const char *cache, const char *location);
 
-/** The source's path resolved, or its url; freed with free, NULL when memory runs out. */
+/** The source's path resolved, or its url; freed, NULL when memory runs out. */
 char *runtime_catalog_location_of(const runtime_catalog_location *source);
 
-/** The url the source's file urls resolve against; freed with free, NULL when it has none. */
+/** The url the source's file urls resolve against; freed, NULL when it has none. */
 char *runtime_catalog_origin_of(const runtime_catalog_location *source, const char *location);
 
 /**

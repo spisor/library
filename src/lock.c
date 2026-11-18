@@ -3,6 +3,7 @@
 #endif
 
 #include "spisor/lock.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -34,7 +35,7 @@ static HANDLE open_lock_file(const char *path) {
         handle = CreateFileW(wide, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                              NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     }
-    free(wide);
+    spisor_memory_release(wide);
     return handle;
 }
 
@@ -44,9 +45,9 @@ spisor_lock *spisor_lock_file(const char *path) {
         return NULL;
     }
     OVERLAPPED whole = {0};
-    spisor_lock *lock = malloc(sizeof *lock);
+    spisor_lock *lock = spisor_memory_allocate(sizeof *lock);
     if (lock == NULL || !LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &whole)) {
-        free(lock);
+        spisor_memory_release(lock);
         CloseHandle(handle);
         return NULL;
     }
@@ -61,7 +62,7 @@ void spisor_unlock(spisor_lock *lock) {
     OVERLAPPED whole = {0};
     UnlockFileEx(lock->handle, 0, 1, 0, &whole);
     CloseHandle(lock->handle);
-    free(lock);
+    spisor_memory_release(lock);
 }
 
 #else
@@ -79,9 +80,9 @@ spisor_lock *spisor_lock_file(const char *path) {
     if (descriptor < 0) {
         return NULL;
     }
-    spisor_lock *lock = malloc(sizeof *lock);
+    spisor_lock *lock = spisor_memory_allocate(sizeof *lock);
     if (lock == NULL || !lock_exclusively(descriptor)) {
-        free(lock);
+        spisor_memory_release(lock);
         close(descriptor);
         return NULL;
     }
@@ -95,7 +96,7 @@ void spisor_unlock(spisor_lock *lock) {
     }
     flock(lock->descriptor, LOCK_UN);
     close(lock->descriptor);
-    free(lock);
+    spisor_memory_release(lock);
 }
 
 #endif

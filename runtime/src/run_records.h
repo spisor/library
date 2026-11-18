@@ -9,7 +9,7 @@
 /**
  * Records that this process runs run as a start of host_id, as
  * JSON.stringify({pid, aliveAt, checkMilliseconds, run}) and a newline in its own file under
- * state/bundles/runs/<host_id>/, and answers that file's path, freed with free. NULL when host_id is no
+ * state/bundles/runs/<host_id>/, and answers that file's path, freed. NULL when host_id is no
  * plain file name or the file cannot be written, and NULL with *out_of_memory set to 1 when memory runs out.
  *
  * @implNote One file per start, named by the process id and a number no other start of this process

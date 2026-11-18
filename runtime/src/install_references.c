@@ -1,4 +1,5 @@
 #include "install_references.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 
@@ -48,7 +49,7 @@ static int change_under_lock(const char *state, const char *host_id, const cJSON
     if (!recorded && problem != NULL) {
         *refusal = runtime_refusal(problem, STATE_FIX);
     }
-    free(problem);
+    spisor_memory_release(problem);
     return recorded;
 }
 

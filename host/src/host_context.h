@@ -42,7 +42,7 @@ cJSON *host_settings_of(const host_context *context, const char *home, cJSON **r
 /** Whether left and right are the same ASCII text, ignoring the case of letters. */
 int host_equals_ignoring_case(const char *left, const char *right);
 
-/** path made absolute against the current directory, freed with free; NULL when memory runs out. */
+/** path made absolute against the current directory, freed; NULL when memory runs out. */
 char *host_absolute_path(const char *path);
 
 /** This process's id. */

@@ -1,4 +1,5 @@
 #include "ui_settings_view.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +50,7 @@ static cJSON *form_node(void) {
 static const cJSON **sorted_settings(const cJSON *description, size_t *count, int *complete) {
     const cJSON *settings = cJSON_GetObjectItemCaseSensitive(description, "settings");
     *count = cJSON_IsObject(settings) ? (size_t)cJSON_GetArraySize(settings) : 0;
-    const cJSON **sorted = *count == 0 ? NULL : malloc(*count * sizeof *sorted);
+    const cJSON **sorted = *count == 0 ? NULL : spisor_memory_allocate(*count * sizeof *sorted);
     *complete = *count == 0 || sorted != NULL;
     size_t index = 0;
     const cJSON *source = sorted == NULL ? NULL : settings;
@@ -72,7 +73,7 @@ static int add_nodes(cJSON *nodes, const cJSON *description) {
         cJSON *field = field_node(settings[index], index);
         complete = field != NULL && cJSON_AddItemToArray(nodes, field);
     }
-    free(settings);
+    spisor_memory_release(settings);
     return complete;
 }
 

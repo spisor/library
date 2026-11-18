@@ -34,7 +34,7 @@ int runtime_host_references_of(const cJSON *recorded, const cJSON **run, const c
 int runtime_is_plain_host_id(const char *host_id);
 
 /**
- * folder/<host_id>.json, freed with free; NULL with *problem set (freed with free) when host_id is no
+ * folder/<host_id>.json, freed; NULL with *problem set (freed) when host_id is no
  * plain file name and so could name a file outside folder, *problem naming what it would record there,
  * or with *problem NULL when memory runs out.
  */

@@ -3,6 +3,7 @@
 #endif
 
 #include "cache_marker.h"
+#include "allocation.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -71,7 +72,7 @@ static cJSON *hashes_in(const char *directory, int *out_of_memory) {
     char *path = marker_path(directory);
     cJSON *hashes = path == NULL ? NULL : recorded_hashes(path, out_of_memory);
     *out_of_memory = path == NULL || *out_of_memory;
-    free(path);
+    spisor_memory_release(path);
     return hashes;
 }
 
@@ -99,9 +100,9 @@ static runtime_cache_presence names_present_files(const char *directory, const c
         } else if (!runtime_cache_is_strictly_inside(resolved_directory, path) || !spisor_file_exists(path)) {
             presence = RUNTIME_CACHE_NOT_PRESENT;
         }
-        free(path);
+        spisor_memory_release(path);
     }
-    free(resolved_directory);
+    spisor_memory_release(resolved_directory);
     return presence;
 }
 
@@ -140,7 +141,7 @@ static char *marker_text(const cJSON *hashes, const cJSON *sizes) {
     runtime_catalog_text_start(&text);
     runtime_catalog_text_add(&text, pretty);
     runtime_catalog_text_add_character(&text, '\n');
-    free(pretty);
+    spisor_memory_release(pretty);
     return runtime_catalog_text_finish(&text);
 }
 
@@ -148,7 +149,7 @@ static int holds_text(const char *path, const char *text) {
     size_t length = 0;
     uint8_t *present = spisor_read_file(path, &length);
     int same = present != NULL && length == strlen(text) && memcmp(present, text, length) == 0;
-    free(present);
+    spisor_memory_release(present);
     return same;
 }
 
@@ -160,8 +161,8 @@ spisor_status runtime_cache_write_marker(const char *directory, const cJSON *has
         int written = spisor_replace_file(path, (const uint8_t *)text, strlen(text)) || holds_text(path, text);
         status = written ? SPISOR_OK : SPISOR_REFUSED;
     }
-    free(text);
-    free(path);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
     return status;
 }
 
@@ -180,7 +181,7 @@ static cJSON *damaged(char *detail, const char *file) {
     int built = answer != NULL && cJSON_AddStringToObject(answer, "detail", detail) != NULL &&
                 cJSON_AddStringToObject(answer, "fix", REINSTALL_FIX) != NULL &&
                 (file == NULL || cJSON_AddStringToObject(answer, "file", file) != NULL);
-    free(detail);
+    spisor_memory_release(detail);
     if (!built) {
         cJSON_Delete(answer);
         return NULL;
@@ -224,7 +225,7 @@ static file_verdict check_file(const char *directory, const char *resolved_direc
     } else if (strcmp(actual, recorded->valuestring) != 0) {
         verdict = changed_verdict(directory, key, actual, recorded->valuestring);
     }
-    free(path);
+    spisor_memory_release(path);
     return verdict;
 }
 
@@ -241,8 +242,8 @@ static cJSON *check_recorded(const char *directory, const cJSON *hashes) {
         }
         answer = verdict.out_of_memory ? NULL : verdict.damaged != NULL ? verdict.damaged : kind_only("intact");
     }
-    free((void *)members);
-    free(resolved_directory);
+    spisor_memory_release((void *)members);
+    spisor_memory_release(resolved_directory);
     return answer;
 }
 
@@ -252,7 +253,7 @@ cJSON *runtime_cache_check_version(const char *directory) {
         return NULL;
     }
     if (!spisor_file_exists(path)) {
-        free(path);
+        spisor_memory_release(path);
         return kind_only("absent");
     }
     int out_of_memory = 0;
@@ -267,7 +268,7 @@ cJSON *runtime_cache_check_version(const char *directory) {
         answer = check_recorded(directory, hashes);
     }
     cJSON_Delete(hashes);
-    free(path);
+    spisor_memory_release(path);
     return answer;
 }
 
@@ -320,7 +321,7 @@ static file_verdict check_size(const char *directory, const char *resolved_direc
     } else if (actual != recorded->valuedouble) {
         verdict = resized_verdict(directory, key, actual, recorded->valuedouble);
     }
-    free(path);
+    spisor_memory_release(path);
     return verdict;
 }
 
@@ -332,7 +333,7 @@ static cJSON *check_sizes(const char *directory, const cJSON *hashes, const cJSO
          member != NULL && verdict.damaged == NULL && !verdict.out_of_memory; member = member->next) {
         verdict = check_size(directory, resolved_directory, member->string, sizes);
     }
-    free(resolved_directory);
+    spisor_memory_release(resolved_directory);
     return verdict.out_of_memory ? NULL : verdict.damaged != NULL ? verdict.damaged : kind_only("intact");
 }
 
@@ -342,7 +343,7 @@ cJSON *runtime_cache_check_version_sizes(const char *directory) {
         return NULL;
     }
     if (!spisor_file_exists(path)) {
-        free(path);
+        spisor_memory_release(path);
         return kind_only("absent");
     }
     int out_of_memory;
@@ -358,6 +359,6 @@ cJSON *runtime_cache_check_version_sizes(const char *directory) {
         answer = check_sizes(directory, files, cJSON_GetObjectItemCaseSensitive(marker, "sizes"));
     }
     cJSON_Delete(marker);
-    free(path);
+    spisor_memory_release(path);
     return answer;
 }

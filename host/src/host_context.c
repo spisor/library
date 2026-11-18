@@ -3,6 +3,7 @@
 #endif
 
 #include "host_context.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -30,7 +31,7 @@ extern char **environ;
 
 static char *narrow_of(const wchar_t *wide, int units) {
     int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, units, NULL, 0, NULL, NULL);
-    char *narrow = bytes <= 0 ? NULL : malloc((size_t)bytes + 1);
+    char *narrow = bytes <= 0 ? NULL : spisor_memory_allocate((size_t)bytes + 1);
     if (narrow != NULL) {
         WideCharToMultiByte(CP_UTF8, 0, wide, units, narrow, bytes, NULL, NULL);
         narrow[bytes] = 0;
@@ -57,8 +58,8 @@ static int add_entry(cJSON *environment, const wchar_t *entry) {
     char *name = narrow_of(entry, (int)(equals - entry));
     char *value = narrow_of(equals + 1, -1);
     int added = name != NULL && value != NULL && (holds_name(environment, name) || cJSON_AddStringToObject(environment, name, value) != NULL);
-    free(value);
-    free(name);
+    spisor_memory_release(value);
+    spisor_memory_release(name);
     return added;
 }
 
@@ -92,14 +93,14 @@ cJSON *host_process_environment(void) {
         if (equals == NULL || equals == *entry) {
             continue;
         }
-        char *name = malloc((size_t)(equals - *entry) + 1);
+        char *name = spisor_memory_allocate((size_t)(equals - *entry) + 1);
         int added = name != NULL;
         if (added) {
             memcpy(name, *entry, (size_t)(equals - *entry));
             name[equals - *entry] = 0;
             added = cJSON_HasObjectItem(environment, name) || cJSON_AddStringToObject(environment, name, equals + 1) != NULL;
         }
-        free(name);
+        spisor_memory_release(name);
         if (!added) {
             cJSON_Delete(environment);
             return NULL;
@@ -172,7 +173,7 @@ cJSON *host_settings_of(const host_context *context, const char *home, cJSON **r
 
 static char *utf8_of(const wchar_t *wide) {
     int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
-    char *narrow = bytes <= 0 ? NULL : malloc((size_t)bytes);
+    char *narrow = bytes <= 0 ? NULL : spisor_memory_allocate((size_t)bytes);
     if (narrow != NULL) {
         WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, bytes, NULL, NULL);
     }
@@ -183,10 +184,10 @@ static char *utf8_of(const wchar_t *wide) {
 char *host_absolute_path(const char *path) {
     wchar_t *wide = runtime_windows_text(path);
     DWORD units = wide == NULL ? 0 : GetFullPathNameW(wide, 0, NULL, NULL);
-    wchar_t *full = units == 0 ? NULL : malloc(units * sizeof *full);
+    wchar_t *full = units == 0 ? NULL : spisor_memory_allocate(units * sizeof *full);
     char *absolute = full != NULL && GetFullPathNameW(wide, units, full, NULL) < units ? utf8_of(full) : NULL;
-    free(full);
-    free(wide);
+    spisor_memory_release(full);
+    spisor_memory_release(wide);
     return absolute;
 }
 
@@ -195,7 +196,7 @@ char *host_absolute_path(const char *path) {
 char *host_absolute_path(const char *path) {
     char *absolute = NULL;
     if (spisor_path_is_absolute(0, path)) {
-        absolute = malloc(strlen(path) + 1);
+        absolute = spisor_memory_allocate(strlen(path) + 1);
         if (absolute != NULL) {
             strcpy(absolute, path);
         }

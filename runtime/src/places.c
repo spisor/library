@@ -1,4 +1,5 @@
 #include "places.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ static char *join_three(int windows, const char *base, const char *middle, const
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -40,7 +41,7 @@ static char *override_or(const char *override, char *fallback) {
     if (override == NULL) {
         return fallback;
     }
-    free(fallback);
+    spisor_memory_release(fallback);
     return copy_text(override);
 }
 
@@ -93,10 +94,10 @@ static int place_secrets_file(int windows, const cJSON *environment, runtime_pla
 }
 
 void runtime_free_places(runtime_places *places) {
-    free(places->portable);
-    free(places->state);
-    free(places->cache);
-    free(places->secrets_file);
+    spisor_memory_release(places->portable);
+    spisor_memory_release(places->state);
+    spisor_memory_release(places->cache);
+    spisor_memory_release(places->secrets_file);
     memset(places, 0, sizeof(*places));
 }
 

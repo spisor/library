@@ -1,4 +1,5 @@
 #include "install_report.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,7 @@ static int record_installed(cJSON *report, const char *id, const char *version, 
         const char *parts[3] = {id, "@", version};
         char *name = runtime_cache_text(parts, 3);
         int added = name != NULL && runtime_install_add_text(cJSON_GetObjectItemCaseSensitive(report, "cached"), name);
-        free(name);
+        spisor_memory_release(name);
         return added;
     }
     cJSON *row = cJSON_CreateObject();
@@ -87,7 +88,7 @@ static int record_absent(cJSON *report, const char *id, const char *kind) {
     char *message = runtime_cache_text(parts, 4);
     int recorded = message != NULL &&
                    runtime_install_report_unavailable(report, id, message, "add a catalog source that lists it, or leave it out");
-    free(message);
+    spisor_memory_release(message);
     return recorded;
 }
 

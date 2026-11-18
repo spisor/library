@@ -1,4 +1,5 @@
 #include "loader.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,16 +39,16 @@ static cJSON *answer_of(const char *home, const char *source) {
 
 static cJSON *relative_refusal(const char *name, const char *value) {
     size_t size = strlen(name) + strlen(value) + 64;
-    char *message = malloc(size);
-    char *fix = malloc(strlen(name) * 2 + 64);
+    char *message = spisor_memory_allocate(size);
+    char *fix = spisor_memory_allocate(strlen(name) * 2 + 64);
     cJSON *refusal = NULL;
     if (message != NULL && fix != NULL) {
         snprintf(message, size, "%s is \"%s\", which is a relative path", name, value);
         snprintf(fix, strlen(name) * 2 + 64, "set %s to an absolute path, or unset it", name);
         refusal = runtime_refusal(message, fix);
     }
-    free(message);
-    free(fix);
+    spisor_memory_release(message);
+    spisor_memory_release(fix);
     return refusal;
 }
 
@@ -83,7 +84,7 @@ static char *xdg_home(const cJSON *home, const cJSON *environment) {
 static char *expanded_candidate(const char *candidate, const char *user_home) {
     if (strncmp(candidate, HOME_PREFIX, HOME_PREFIX_LENGTH) != 0) {
         size_t length = strlen(candidate);
-        char *copy = malloc(length + 1);
+        char *copy = spisor_memory_allocate(length + 1);
         if (copy != NULL) {
             memcpy(copy, candidate, length + 1);
         }
@@ -117,13 +118,13 @@ static cJSON *candidate_home(const cJSON *candidates, const char *user_home) {
         if (first == NULL) {
             first = expanded;
         } else {
-            free(expanded);
+            spisor_memory_release(expanded);
         }
     }
     if (answer == NULL && complete && first != NULL) {
         answer = answer_of(first, "default");
     }
-    free(first);
+    spisor_memory_release(first);
     return answer;
 }
 
@@ -144,7 +145,7 @@ static cJSON *fallback_home(const cJSON *home, const cJSON *environment, cJSON *
     char *xdg = xdg_home(home, environment);
     if (xdg != NULL) {
         cJSON *answer = answer_of(xdg, "xdg");
-        free(xdg);
+        spisor_memory_release(xdg);
         return answer;
     }
     const cJSON *candidates = cJSON_GetObjectItemCaseSensitive(home, "candidates");

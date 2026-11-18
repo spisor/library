@@ -1,4 +1,5 @@
 #include "marketplace_read.h"
+#include "allocation.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -122,7 +123,7 @@ static int fetch_copy(const reading *order, cJSON **refusal) {
 }
 
 /**
- * The bytes fetch's get stored at the destination, freed with free; NULL with *refusal set, or with none when memory
+ * The bytes fetch's get stored at the destination, freed; NULL with *refusal set, or with none when memory
  * ran out.
  */
 static char *fetched_text(const reading *order, size_t *length, cJSON **refusal) {
@@ -235,6 +236,6 @@ cJSON *runtime_marketplace_read_operation(const cJSON *argument, cJSON **refusal
     size_t length = 0;
     char *fetched = fetched_text(&order, &length, refusal);
     cJSON *answer = fetched == NULL ? NULL : interpreted(&order, fetched, length, refusal);
-    free(fetched);
+    spisor_memory_release(fetched);
     return answer;
 }

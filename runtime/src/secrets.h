@@ -14,7 +14,7 @@ spisor_status runtime_refuse_secret_place(spisor_refusal *refusal);
 
 /**
  * The secrets service's operations on a usable place, with the rules, statuses and refusals
- * include/runtime/secrets.h documents for them. A value get answers is freed with free.
+ * include/runtime/secrets.h documents for them. A value get answers is freed.
  */
 spisor_status runtime_get_secret(const runtime_secret_places *place, const char *plugin, const char *name, char **value,
                                  spisor_refusal *refusal);

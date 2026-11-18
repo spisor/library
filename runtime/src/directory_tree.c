@@ -3,6 +3,7 @@
 #endif
 
 #include "directory_tree.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +32,7 @@ typedef struct entry_buffer {
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -47,7 +48,7 @@ static int grow(entry_buffer *buffer) {
         return 1;
     }
     size_t capacity = buffer->capacity == 0 ? 16 : buffer->capacity * 2;
-    runtime_directory_entry *grown = realloc(buffer->entries, capacity * sizeof(*grown));
+    runtime_directory_entry *grown = spisor_memory_reallocate(buffer->entries, capacity * sizeof(*grown));
     if (grown == NULL) {
         return 0;
     }
@@ -81,9 +82,9 @@ static char *child_path(const char *parent, const char *name) {
 
 void runtime_free_directory_listing(runtime_directory_listing *listing) {
     for (size_t index = 0; index < listing->count; index++) {
-        free(listing->entries[index].name);
+        spisor_memory_release(listing->entries[index].name);
     }
-    free(listing->entries);
+    spisor_memory_release(listing->entries);
     listing->entries = NULL;
     listing->count = 0;
 }
@@ -111,9 +112,9 @@ static char *to_utf8(const wchar_t *wide) {
     if (length <= 0) {
         return NULL;
     }
-    char *narrow = malloc((size_t)length);
+    char *narrow = spisor_memory_allocate((size_t)length);
     if (narrow != NULL && WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, length, NULL, NULL) <= 0) {
-        free(narrow);
+        spisor_memory_release(narrow);
         return NULL;
     }
     return narrow;
@@ -136,7 +137,7 @@ static int read_found_entries(HANDLE handle, WIN32_FIND_DATAW *found, entry_buff
         } else if (!is_dot_entry(name)) {
             complete = append(buffer, name, is_real_directory(found->dwFileAttributes));
         }
-        free(name);
+        spisor_memory_release(name);
     } while (complete && FindNextFileW(handle, found));
     return complete && GetLastError() == ERROR_NO_MORE_FILES;
 }
@@ -145,14 +146,14 @@ int runtime_list_directory(const char *path, runtime_directory_listing *listing)
     memset(listing, 0, sizeof(*listing));
     char *pattern = child_path(path, "*");
     wchar_t *wide_pattern = pattern == NULL ? NULL : spisor_wide_path(pattern);
-    free(pattern);
+    spisor_memory_release(pattern);
     if (wide_pattern == NULL) {
         return 0;
     }
     entry_buffer buffer = {NULL, 0, 0};
     WIN32_FIND_DATAW found;
     HANDLE handle = FindFirstFileW(wide_pattern, &found);
-    free(wide_pattern);
+    spisor_memory_release(wide_pattern);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD reason = GetLastError();
         return reason == ERROR_FILE_NOT_FOUND || reason == ERROR_PATH_NOT_FOUND;
@@ -165,14 +166,14 @@ int runtime_list_directory(const char *path, runtime_directory_listing *listing)
 static DWORD attributes_of(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     DWORD attributes = wide == NULL ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(wide);
-    free(wide);
+    spisor_memory_release(wide);
     return attributes;
 }
 
 static int delete_link_at(const char *path, int is_directory) {
     wchar_t *wide = spisor_wide_path(path);
     int deleted = wide != NULL && (is_directory ? RemoveDirectoryW(wide) : DeleteFileW(wide)) != 0;
-    free(wide);
+    spisor_memory_release(wide);
     return deleted;
 }
 
@@ -187,14 +188,14 @@ static int delete_file_at(const char *path) {
         SetFileAttributesW(wide, FILE_ATTRIBUTE_NORMAL);
         deleted = DeleteFileW(wide) != 0;
     }
-    free(wide);
+    spisor_memory_release(wide);
     return deleted;
 }
 
 static int delete_directory_at(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     int deleted = wide != NULL && RemoveDirectoryW(wide) != 0;
-    free(wide);
+    spisor_memory_release(wide);
     return deleted;
 }
 
@@ -279,7 +280,7 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
         LONG status = reader == NULL ? 0 : reader();
-        free(wide);
+        spisor_memory_release(wide);
         int exists = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS ||
                      met_a_file_being_deleted(error, status);
         return exists ? RUNTIME_ENTRY_EXISTS : RUNTIME_ENTRY_FAILED;
@@ -289,14 +290,14 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
     if (!written || !closed) {
         DeleteFileW(wide);
     }
-    free(wide);
+    spisor_memory_release(wide);
     return written && closed ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
 runtime_entry_outcome runtime_create_directory(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     int created = wide != NULL && CreateDirectoryW(wide, NULL) != 0;
-    free(wide);
+    spisor_memory_release(wide);
     return created || runtime_probe_entry(path) == RUNTIME_ENTRY_DIRECTORY ? RUNTIME_ENTRY_DONE : RUNTIME_ENTRY_FAILED;
 }
 
@@ -335,7 +336,7 @@ static int append_directory_entry(entry_buffer *buffer, const char *parent, cons
     char *full = child_path(parent, name);
     struct stat status;
     int is_directory = full != NULL && lstat(full, &status) == 0 && S_ISDIR(status.st_mode);
-    free(full);
+    spisor_memory_release(full);
     return full != NULL && append(buffer, name, is_directory);
 }
 
@@ -444,7 +445,7 @@ static int remove_children(const char *path) {
     for (size_t index = 0; removed && index < listing.count; index++) {
         char *child = child_path(path, listing.entries[index].name);
         removed = child != NULL && runtime_remove_tree(child);
-        free(child);
+        spisor_memory_release(child);
     }
     runtime_free_directory_listing(&listing);
     return removed;

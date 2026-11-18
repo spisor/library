@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "host_child.h"
+#include "allocation.h"
 #include "host_commands.h"
 #include "host_context.h"
 #include "host_holds.h"
@@ -38,13 +39,13 @@ static char *application_binary(const host_context *context, const cJSON *standa
         label = label == NULL ? binary : label;
         const char *parts[5] = {"the ", label, " binary ", binary, " is not on the PATH"};
         size_t length = strlen(label) * 2 + strlen(binary) * 2 + 128;
-        char *fix = malloc(length);
+        char *fix = spisor_memory_allocate(length);
         if (fix != NULL) {
             snprintf(fix, length, "install %s so %s is on the PATH, or run spisor-host install --catalog <path or url> to install it",
                      label, binary);
         }
         *refusal = fix == NULL ? NULL : host_refusal_of(parts, 5, fix);
-        free(fix);
+        spisor_memory_release(fix);
     }
     return found;
 }
@@ -230,7 +231,7 @@ static int launch(const host_context *context, const char *loader_id, int count,
     int code = passed == NULL ? host_refuse(refusal) : run_held(context, loader_id, binary, starts, passed);
     cJSON_Delete(passed);
     cJSON_Delete(starts);
-    free(binary);
+    spisor_memory_release(binary);
     host_finish_loader(&loader);
     return code;
 }

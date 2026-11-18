@@ -1,4 +1,5 @@
 #include "json_edit.h"
+#include "allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -87,7 +88,7 @@ static place_answer locate_object(const char *text, json_span root, const cJSON 
 static int splice(const char *text, size_t length, json_span replaced, const char *inserted, size_t inserted_length,
                   json_edit_text *edited) {
     size_t total = length - (replaced.end - replaced.start) + inserted_length;
-    char *bytes = malloc(total + 1);
+    char *bytes = spisor_memory_allocate(total + 1);
     if (bytes == NULL) {
         return 0;
     }
@@ -183,7 +184,7 @@ static int insert_member(const char *text, size_t length, json_span root, json_s
     size_t member_length = 0;
     char *member = json_style_member_text(&style, placement, name, value, &member_length);
     int done = member != NULL && splice(text, length, point, member, member_length, edited);
-    free(member);
+    spisor_memory_release(member);
     return done;
 }
 
@@ -193,7 +194,7 @@ static int replace_with_value(const char *text, size_t length, json_span root, j
     size_t value_length = 0;
     char *written = json_style_value_text(&style, value, &value_length);
     int done = written != NULL && splice(text, length, replaced, written, value_length, edited);
-    free(written);
+    spisor_memory_release(written);
     return done;
 }
 
@@ -309,7 +310,7 @@ json_edit_outcome json_edit_remove(const char *text, size_t length, const cJSON 
         json_edit_text next = {NULL, 0, {0, 0, 0}};
         removal removed = remove_one(&current, key, depth, depth != last_depth(key), &next);
         if (removed == REMOVAL_MALFORMED || removed == REMOVAL_OUT_OF_MEMORY) {
-            free(current.bytes);
+            spisor_memory_release(current.bytes);
             return removed == REMOVAL_MALFORMED ? JSON_EDIT_MALFORMED : JSON_EDIT_OUT_OF_MEMORY;
         }
         if (removed == REMOVAL_KEPT) {
@@ -318,7 +319,7 @@ json_edit_outcome json_edit_remove(const char *text, size_t length, const cJSON 
         if (removed == REMOVAL_ABSENT) {
             continue;
         }
-        free(current.bytes);
+        spisor_memory_release(current.bytes);
         current = next;
     }
     *edited = current;
@@ -376,6 +377,6 @@ int json_edit_new_document(const cJSON *key, const cJSON *value, json_edit_text 
     }
     json_span end = {strlen(pretty), strlen(pretty)};
     int done = splice(pretty, strlen(pretty), end, "\n", 1, created);
-    free(pretty);
+    spisor_memory_release(pretty);
     return done;
 }

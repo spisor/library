@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "definition_support.h"
+#include "allocation.h"
 #include "fetch_transport.h"
 
 #include <dlfcn.h>
@@ -184,7 +185,7 @@ static char *header_value(const char *line, size_t length, size_t name_length) {
     while (end > start && (line[end - 1] == '\r' || line[end - 1] == '\n' || line[end - 1] == ' ')) {
         end--;
     }
-    char *value = malloc(end - start + 1);
+    char *value = spisor_memory_allocate(end - start + 1);
     if (value != NULL) {
         memcpy(value, line + start, end - start);
         value[end - start] = 0;
@@ -193,7 +194,7 @@ static char *header_value(const char *line, size_t length, size_t name_length) {
 }
 
 static void replace_text(char **slot, char *value) {
-    free(*slot);
+    spisor_memory_release(*slot);
     *slot = value;
 }
 
@@ -210,7 +211,7 @@ static void take_declared_length(transfer *state, const char *line, size_t lengt
     int digits = value != NULL && value[0] != 0 && strspn(value, "0123456789") == strlen(value) && strlen(value) < 20;
     state->declared_known = digits;
     state->declared = digits ? strtoull(value, NULL, 10) : 0;
-    free(value);
+    spisor_memory_release(value);
 }
 
 static int headers_end(transfer *state) {
@@ -264,7 +265,7 @@ static curl_slist *request_headers(const curl_api *api, const runtime_fetch_requ
             continue;
         }
         size_t size = strlen(names[index]) + strlen(values[index]) + 1;
-        char *line = malloc(size);
+        char *line = spisor_memory_allocate(size);
         if (line != NULL) {
             snprintf(line, size, "%s%s", names[index], values[index]);
         }
@@ -272,7 +273,7 @@ static curl_slist *request_headers(const curl_api *api, const runtime_fetch_requ
         if (line != NULL) {
             runtime_overwrite(line, size);
         }
-        free(line);
+        spisor_memory_release(line);
         *built = grown != NULL;
         headers = grown != NULL ? grown : headers;
     }

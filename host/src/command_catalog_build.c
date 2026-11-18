@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "allocation.h"
 #include "catalog_build.h"
 #include "host_commands.h"
 #include "host_options.h"
@@ -14,7 +15,7 @@ static char *split_platform(const char *value, const char **platform) {
     const char *at = strrchr(value, '@');
     *platform = at != NULL && at != value && runtime_is_platform_key(at + 1) ? at + 1 : NULL;
     size_t length = *platform == NULL ? strlen(value) : (size_t)(at - value);
-    char *directory = malloc(length + 1);
+    char *directory = spisor_memory_allocate(length + 1);
     if (directory != NULL) {
         memcpy(directory, value, length);
         directory[length] = 0;
@@ -33,8 +34,8 @@ static int is_library_argument(const char *value) {
 static int read_library(catalog_inputs *inputs, const char *value, cJSON **refusal) {
     const char *equals = strchr(value, '=');
     const char *at = strrchr(value, '@');
-    char *id = malloc((size_t)(equals - value) + 1);
-    char *directory = malloc((size_t)(at - equals));
+    char *id = spisor_memory_allocate((size_t)(equals - value) + 1);
+    char *directory = spisor_memory_allocate((size_t)(at - equals));
     int read = id != NULL && directory != NULL;
     if (read) {
         memcpy(id, value, (size_t)(equals - value));
@@ -43,8 +44,8 @@ static int read_library(catalog_inputs *inputs, const char *value, cJSON **refus
         directory[at - equals - 1] = 0;
         read = host_read_library_directory(inputs, id, directory, at + 1, refusal);
     }
-    free(directory);
-    free(id);
+    spisor_memory_release(directory);
+    spisor_memory_release(id);
     return read;
 }
 
@@ -66,7 +67,7 @@ static int read_inputs(catalog_inputs *inputs, const host_option *options, char 
         const char *platform = NULL;
         char *directory = split_platform(value->valuestring, &platform);
         int read = directory != NULL && host_read_host_directory(inputs, directory, platform, refusal);
-        free(directory);
+        spisor_memory_release(directory);
         if (!read) {
             return 0;
         }
@@ -98,8 +99,8 @@ static int build(const host_option *options, const char *out) {
         host_write(0, line);
     }
     cJSON_Delete(refusal);
-    free(problem);
-    free(path);
+    spisor_memory_release(problem);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
     return code;
 }
@@ -116,7 +117,7 @@ int host_command_catalog_build(int count, char **arguments) {
     } else {
         code = build(options, host_last_value(&options[3]));
     }
-    free(problem);
+    spisor_memory_release(problem);
     host_free_options(options, 4);
     return code;
 }

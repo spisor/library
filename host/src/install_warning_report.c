@@ -1,4 +1,5 @@
 #include "install_warning_report.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +16,7 @@
 #define MANIFEST_FILE "plugin.json"
 
 static int adds_version(cJSON *plugins, const char *id, size_t id_length, const char *version) {
-    char *name = malloc(id_length + 1);
+    char *name = spisor_memory_allocate(id_length + 1);
     if (name == NULL) {
         return 0;
     }
@@ -23,7 +24,7 @@ static int adds_version(cJSON *plugins, const char *id, size_t id_length, const 
     name[id_length] = 0;
     cJSON_DeleteItemFromObjectCaseSensitive(plugins, name);
     int added = cJSON_AddStringToObject(plugins, name, version) != NULL;
-    free(name);
+    spisor_memory_release(name);
     return added;
 }
 
@@ -80,7 +81,7 @@ static cJSON *manifest_at(const char *path) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
     cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     return manifest;
 }
 
@@ -96,8 +97,8 @@ static void print_line(const char *plugin_id, const char *subject, const char *d
     }
     host_write(1, detail);
     host_write(1, "\n");
-    free(safe_subject);
-    free(safe_plugin);
+    spisor_memory_release(safe_subject);
+    spisor_memory_release(safe_plugin);
 }
 
 static void print_unchecked(const char *plugin_id) {

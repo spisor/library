@@ -5,6 +5,7 @@
 #endif
 
 #include "process_start.h"
+#include "allocation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,10 +63,10 @@ static void free_windows_start(windows_start *prepared) {
     if (prepared->null != INVALID_HANDLE_VALUE) {
         CloseHandle(prepared->null);
     }
-    free(prepared->application);
-    free(prepared->line);
-    free(prepared->environment);
-    free(prepared->directory);
+    spisor_memory_release(prepared->application);
+    spisor_memory_release(prepared->line);
+    spisor_memory_release(prepared->environment);
+    spisor_memory_release(prepared->directory);
 }
 
 static int prepare_windows_start(const runtime_detached_start *start, windows_start *prepared) {
@@ -162,14 +163,14 @@ void runtime_cancel_detached(runtime_detached_host *host) {
 
 static void free_list(char **list, size_t count) {
     for (size_t index = 0; list != NULL && index < count; index++) {
-        free(list[index]);
+        spisor_memory_release(list[index]);
     }
-    free(list);
+    spisor_memory_release(list);
 }
 
 static char **argument_list(const char *executable, const cJSON *arguments) {
     size_t count = text_count(arguments);
-    char **list = calloc(count + 2, sizeof *list);
+    char **list = spisor_memory_allocate_zeroed(count + 2, sizeof *list);
     const char *parts[1] = {executable};
     int built = list != NULL && (list[0] = runtime_cache_text(parts, 1)) != NULL;
     size_t index = 1;
@@ -187,7 +188,7 @@ static char **argument_list(const char *executable, const cJSON *arguments) {
 
 static char **environment_list(const cJSON *environment) {
     size_t count = text_count(environment);
-    char **list = calloc(count + 1, sizeof *list);
+    char **list = spisor_memory_allocate_zeroed(count + 1, sizeof *list);
     int built = list != NULL;
     size_t index = 0;
     for (const cJSON *variable = built ? environment->child : NULL; built && variable != NULL; variable = variable->next) {

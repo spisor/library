@@ -3,7 +3,7 @@
 
 #include "cJSON.h"
 
-/** Asks one question and answers what was typed, freed with free, or NULL when nothing can be asked. */
+/** Asks one question and answers what was typed, freed, or NULL when nothing can be asked. */
 typedef char *(*host_question)(const char *question, void *context);
 
 /**
@@ -14,7 +14,7 @@ typedef char *(*host_question)(const char *question, void *context);
  */
 cJSON *host_choose_methods(const cJSON *missing, host_question ask, void *context);
 
-/** The question asked for application id offered the methods, the last choice skip, freed with free. */
+/** The question asked for application id offered the methods, the last choice skip, freed. */
 char *host_method_question(const char *id, const cJSON *methods);
 
 #endif

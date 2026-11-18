@@ -7,6 +7,7 @@
 #include <wchar.h>
 #include <windows.h>
 
+#include "allocation.h"
 #include "wide_path.h"
 
 #define MOVE_ATTEMPTS 40
@@ -33,7 +34,7 @@ FILE *spisor_windows_open(const char *path, int writing) {
     HANDLE handle = CreateFileW(wide, writing ? GENERIC_WRITE : GENERIC_READ,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                                 writing ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     return handle == INVALID_HANDLE_VALUE ? NULL : stream_of(handle, writing);
 }
 
@@ -65,8 +66,8 @@ static int move_retrying(const char *from, const char *to, DWORD flags, retry_te
         }
         Sleep(MOVE_PAUSE_MILLISECONDS);
     }
-    free(wide_from);
-    free(wide_to);
+    spisor_memory_release(wide_from);
+    spisor_memory_release(wide_to);
     return moved;
 }
 
@@ -78,10 +79,10 @@ static int is_executable_name(const wchar_t *destination) {
 
 #define MOST_SET_ASIDE 64
 
-/** destination.old for number 0, else destination.old-<number>, freed with free. */
+/** destination.old for number 0, else destination.old-<number>, freed. */
 static wchar_t *set_aside_name(const wchar_t *destination, int number) {
     size_t length = wcslen(destination) + 24;
-    wchar_t *aside = malloc(length * sizeof *aside);
+    wchar_t *aside = spisor_memory_allocate(length * sizeof *aside);
     if (aside != NULL && number == 0) {
         swprintf(aside, length, L"%ls.old", destination);
     } else if (aside != NULL) {
@@ -97,7 +98,7 @@ static int set_aside(const wchar_t *destination, wchar_t **aside) {
         if (*aside != NULL && MoveFileExW(destination, *aside, MOVEFILE_REPLACE_EXISTING)) {
             return 1;
         }
-        free(*aside);
+        spisor_memory_release(*aside);
         *aside = NULL;
     }
     return 0;
@@ -118,16 +119,16 @@ static int replace_running_image(const char *from, const char *to) {
             MoveFileExW(aside, wide_to, 0);
         }
     }
-    free(aside);
-    free(wide_to);
-    free(wide_from);
+    spisor_memory_release(aside);
+    spisor_memory_release(wide_to);
+    spisor_memory_release(wide_from);
     return moved;
 }
 
 int spisor_windows_remove_set_aside(const char *path) {
     wchar_t *wide = spisor_wide_path(path);
     if (wide == NULL || !is_executable_name(wide)) {
-        free(wide);
+        spisor_memory_release(wide);
         return 0;
     }
     int left = 0;
@@ -137,9 +138,9 @@ int spisor_windows_remove_set_aside(const char *path) {
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && !DeleteFileW(aside)) {
             left++;
         }
-        free(aside);
+        spisor_memory_release(aside);
     }
-    free(wide);
+    spisor_memory_release(wide);
     return left;
 }
 
@@ -147,7 +148,7 @@ static int is_running_image_refusal(DWORD error, const char *to) {
     wchar_t *wide_to = spisor_wide_path(to);
     int image = wide_to != NULL && error == ERROR_ACCESS_DENIED && is_executable_name(wide_to) &&
                 GetFileAttributesW(wide_to) != INVALID_FILE_ATTRIBUTES && !is_unreplaceable(wide_to);
-    free(wide_to);
+    spisor_memory_release(wide_to);
     return image;
 }
 
@@ -157,8 +158,8 @@ int spisor_windows_move_over(const char *from, const char *to) {
     int moved = wide_from != NULL && wide_to != NULL &&
                 MoveFileExW(wide_from, wide_to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     DWORD error = moved ? ERROR_SUCCESS : GetLastError();
-    free(wide_to);
-    free(wide_from);
+    spisor_memory_release(wide_to);
+    spisor_memory_release(wide_from);
     if (moved) {
         return 1;
     }

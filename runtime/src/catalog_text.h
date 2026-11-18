@@ -32,7 +32,7 @@ char *runtime_catalog_text_finish(runtime_catalog_text *text);
 
 void runtime_catalog_text_discard(runtime_catalog_text *text);
 
-/** A copy of length bytes of bytes, NUL-terminated, freed with free. */
+/** A copy of length bytes of bytes, NUL-terminated, freed. */
 char *runtime_catalog_copy_bytes(const char *bytes, size_t length);
 
 char *runtime_catalog_copy(const char *string);
