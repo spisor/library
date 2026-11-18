@@ -461,7 +461,7 @@ static spisor_status serve_deploy(cJSON *call, runtime_cache_deploy_answer *answ
         status = runtime_refuse_json(refusal, operation_refusal);
     }
     if (status != SPISOR_OK) {
-        runtime_release_stored_answer(answer, DEPLOY_ANSWER_SHAPE);
+        runtime_release_packed_answer(answer, DEPLOY_ANSWER_SHAPE);
     }
     runtime_cache_free_deployment(plan);
     return status;
