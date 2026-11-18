@@ -153,13 +153,14 @@ static spisor_status serve_hold(const runtime_processes_hold_argument *argument,
         (double)argument->holder,
         {argument->executable, cJSON_GetObjectItemCaseSensitive(start, "arguments"),
          cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory}};
+    cJSON *answered;
     spisor_status status;
     if (start == NULL || runtime_start_storage(&answer->storage) != SPISOR_OK) {
         cJSON_Delete(start);
         return SPISOR_OUT_OF_MEMORY;
     }
-    status = fill_fixed(runtime_processes_hold(&request, &operation_refusal), operation_refusal, fill_hold, answer,
-                        &answer->storage, refusal);
+    answered = runtime_processes_hold(&request, &operation_refusal);
+    status = fill_fixed(answered, operation_refusal, fill_hold, answer, &answer->storage, refusal);
     cJSON_Delete(start);
     return status;
 }
@@ -227,11 +228,12 @@ static spisor_status serve_prune(const runtime_processes_prune_argument *argumen
     cJSON *operation_refusal = NULL;
     runtime_processes_prune_request request = {argument->state, argument->host_id, (double)argument->self,
                                                argument->now, argument->check_milliseconds};
+    cJSON *answered;
     if (runtime_start_storage(&answer->storage) != SPISOR_OK) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    return fill_fixed(runtime_processes_prune(&request, &operation_refusal), operation_refusal, fill_prune, answer,
-                      &answer->storage, refusal);
+    answered = runtime_processes_prune(&request, &operation_refusal);
+    return fill_fixed(answered, operation_refusal, fill_prune, answer, &answer->storage, refusal);
 }
 
 static spisor_status prune(void *context, const runtime_processes_prune_argument *argument,
