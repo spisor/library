@@ -37,38 +37,19 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "changes' apply after settling", 0, BREAKS_ON_BOTH,
      "changes.c own_record_of: change_kinds.c runtime_change_repeats: runtime_change_paths_equal reads a failed "
      "normal_path join as unequal paths, so a held change is applied again"},
-    {OUT_OF_MEMORY_SUITE, "cache's locate", 0, BREAKS_ON_BOTH,
-     "cache_place.c runtime_cache_bundle_directory reads a failed runtime_cache_joined as no folder"},
     {OUT_OF_MEMORY_SUITE, "cache's deploy", 0, BREAKS_ON_BOTH,
      "cache_deploy.c write_files writes the plugin's files one after another, so memory running out at a later one "
      "(file.c spisor_replace_file) answers out of memory after the earlier ones were written"},
-    {OUT_OF_MEMORY_SUITE, "install's by_id", 0, BREAKS_ON_BOTH,
-     "fetch_windows.c take_hops reads a failed to_wide as a failed request"},
-    {OUT_OF_MEMORY_SUITE, "install's ecosystem", 0, BREAKS_ON_BOTH,
-     "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OUT_OF_MEMORY_SUITE, "commands' request", 0, BREAKS_ON_BOTH,
      "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
      "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
     {OUT_OF_MEMORY_SUITE, "commands' add", 0, BREAKS_ON_BOTH,
      "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
      "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
-    {OUT_OF_MEMORY_SUITE, "commands' rename", 0, BREAKS_ON_BOTH,
-     "commands.c is_shim_taken reads a failed shim_file join as a held name"},
-    {ECOSYSTEM_SUITE, "install's ecosystem", 0, BREAKS_ON_BOTH,
-     "install_ecosystem.c are_sources reads a failed runtime_catalog_sources_of as a refused source"},
     {OPERATIONS_SUITE, "updates' rollback", 1, BREAKS_ON_BOTH,
      "updates_rollback.c record_rollback: the hint (boot_hint.c runtime_hint_host_version) fails under sticky "
      "failure and the undo of the references through runtime_write_references_draft allocates too, so the "
      "references stay rolled back without the hint"},
-    {OPERATIONS_SUITE, "boot's place", 0, BREAKS_ON_BOTH,
-     "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
-     "for a failed open and out of memory"},
-    {OPERATIONS_SUITE, "processes' hold starting", 1, BREAKS_ON_WINDOWS,
-     "holders.c runtime_write_holders_draft: file.c move_over reads a failed wide path as a failed move, "
-     "answering OK without recording the started host"},
-    {OPERATIONS_SUITE, "hosts' remove", 1, BREAKS_ON_WINDOWS,
-     "registry.c remove_registration_file: directory_tree.c runtime_remove_tree after the host's files are removed "
-     "runs out under sticky failure, answering OUT_OF_MEMORY with the tree changed"},
     {OPERATIONS_SUITE, "hosts' start", 1, BREAKS_ON_BOTH,
      "run_records.c write_record fails under sticky failure and file.c replace_resolved_file cannot remove its "
      "temporary sibling, which allocates too, answering OUT_OF_MEMORY with the run records changed"},

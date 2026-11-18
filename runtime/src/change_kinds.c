@@ -18,6 +18,7 @@
 typedef struct text_buffer {
     char *bytes;
     size_t length;
+    int out_of_memory;
 } text_buffer;
 
 typedef struct line_span {
@@ -500,7 +501,9 @@ static runtime_change_reversal reverse_directory(const cJSON *record, int held, 
 }
 
 static int read_text(const char *path, text_buffer *text) {
-    text->bytes = (char *)spisor_read_file(path, &text->length);
+    spisor_read_outcome outcome;
+    text->bytes = (char *)spisor_read_file_reporting(path, &text->length, &outcome);
+    text->out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
     return text->bytes != NULL;
 }
 
@@ -572,7 +575,10 @@ static runtime_change_step prepare_profile_line(const cJSON *change, const cJSON
                                                 runtime_change_note *note) {
     const char *path = text_of(change, "file");
     text_buffer text;
-    if (!read_text(path, &text)) {
+    if (!read_text(path, &text) && text.out_of_memory) {
+        return out_of_memory(note);
+    }
+    if (text.bytes == NULL) {
         return may_create(change, path) ? record_profile_line(change, 0, 1, record, note)
                                         : refuse(note, "the profile file does not exist or cannot be read", path);
     }
@@ -638,7 +644,10 @@ static runtime_change_step perform_profile_line(const cJSON *change, cJSON *reco
     const char *path = text_of(change, "file");
     const char *line = text_of(change, "line");
     text_buffer text;
-    if (!read_text(path, &text) && is_holder_flag(record, "created")) {
+    if (!read_text(path, &text) && text.out_of_memory) {
+        return out_of_memory(note);
+    }
+    if (text.bytes == NULL && is_holder_flag(record, "created")) {
         return create_profile(path, line, note);
     }
     if (text.bytes == NULL) {
@@ -694,8 +703,11 @@ static int remove_emptied_profile(const cJSON *record, const char *path) {
 static runtime_change_reversal reverse_profile_line(const cJSON *record, int held, runtime_change_note *note) {
     const char *path = text_of(record, "file");
     text_buffer text;
-    if (held || !read_text(path, &text)) {
+    if (held) {
         return RUNTIME_CHANGE_REVERSED;
+    }
+    if (!read_text(path, &text)) {
+        return text.out_of_memory ? reversal_out_of_memory(note) : RUNTIME_CHANGE_REVERSED;
     }
     line_span span = find_last_line(&text, text_of(record, "line"));
     int removed = !span.found ||
