@@ -79,10 +79,10 @@ static cJSON *placement(const char *stub, int placed) {
     return answer;
 }
 
-cJSON *runtime_boot_place_operation(const cJSON *argument, cJSON **refusal) {
-    const char *cache = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "cache"));
+cJSON *runtime_boot_place(const char *cache, cJSON **refusal) {
+    *refusal = NULL;
     if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache)) {
-        *refusal = runtime_refusal("the argument carries no usable cache", "send {\"cache\": \"<absolute directory>\"}");
+        *refusal = runtime_refusal("the call carries no usable cache", "pass the cache as an absolute directory");
         return NULL;
     }
     int out_of_memory = 0;
