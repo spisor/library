@@ -39,7 +39,7 @@ static char *system_tar(void) {
     narrow[written] = 0;
     return joined(narrow, "tar.exe");
 #else
-    const char *tar = spisor_file_exists("/usr/bin/tar") ? "/usr/bin/tar" : "/bin/tar";
+    const char *tar = spisor_probe_file("/usr/bin/tar") == SPISOR_FILE_PRESENT ? "/usr/bin/tar" : "/bin/tar";
     char *copy = spisor_memory_allocate(strlen(tar) + 1);
     strcpy(copy, tar);
     return copy;
@@ -137,7 +137,7 @@ static void acquires_the_pinned_runtime_and_answers_its_executable(void) {
     snprintf(expected, sizeof expected, "{\"name\":\"node\",\"version\":\"" TEST_VERSION "\",\"executable\":%s,\"fetched\":true,\"source\":\"acquired\"}",
              executable_json);
     expect_json(answer.tree, expected, "acquired");
-    CHECK(spisor_file_exists(executable));
+    CHECK(spisor_probe_file(executable) == SPISOR_FILE_PRESENT);
     cJSON_free(executable_json);
     cJSON_Delete(quoted);
     cJSON_Delete(answer.tree);
@@ -215,7 +215,7 @@ static void removes_the_runtime_versions_no_longer_pinned(void) {
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(fixture.base.cache, "runtimes/node/1.0.0"));
     char *executable = executable_path(&fixture);
-    CHECK(spisor_file_exists(executable));
+    CHECK(spisor_probe_file(executable) == SPISOR_FILE_PRESENT);
     spisor_memory_release(executable);
     finish_runtime(&fixture);
 }
@@ -228,7 +228,8 @@ static void refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_exe
     cJSON_Delete(answer.tree);
     char *directory = runtime_directory(&fixture);
     char *executable = executable_path(&fixture);
-    CHECK(!spisor_file_exists(executable) && !exists_in(directory, ".unpacked") && !exists_in(directory, ARCHIVE_NAME));
+    CHECK(spisor_probe_file(executable) != SPISOR_FILE_PRESENT && !exists_in(directory, ".unpacked") &&
+        !exists_in(directory, ARCHIVE_NAME));
     spisor_memory_release(executable);
     spisor_memory_release(directory);
     finish_runtime(&fixture);
@@ -319,7 +320,7 @@ static void stops_a_run_that_does_not_exit_in_time_and_refuses_it(void) {
     cJSON_AddItemToArray(arguments, cJSON_CreateString("30"));
     cJSON_AddItemToArray(arguments, cJSON_CreateString("127.0.0.1"));
 #else
-    char *program = joined(spisor_file_exists("/bin/sleep") ? "/bin" : "/usr/bin", "sleep");
+    char *program = joined(spisor_probe_file("/bin/sleep") == SPISOR_FILE_PRESENT ? "/bin" : "/usr/bin", "sleep");
     cJSON_AddItemToArray(arguments, cJSON_CreateString("30"));
 #endif
     double started = runtime_now_milliseconds();
@@ -367,7 +368,7 @@ static void moves_the_runtime_into_place_once_a_scanner_lets_go_of_it(void) {
     runtime_install_before_publish(NULL);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     char *executable = executable_path(&fixture);
-    CHECK(spisor_file_exists(executable));
+    CHECK(spisor_probe_file(executable) == SPISOR_FILE_PRESENT);
     spisor_memory_release(executable);
     cJSON_Delete(answer.tree);
     while (held_executable != INVALID_HANDLE_VALUE) {
@@ -436,7 +437,7 @@ static void sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one(void) {
     catalog_answer answer = acquire(&fixture);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(old) && spisor_file_exists(fresh));
+    CHECK(spisor_probe_file(old) != SPISOR_FILE_PRESENT && spisor_probe_file(fresh) == SPISOR_FILE_PRESENT);
     spisor_memory_release(old_file);
     spisor_memory_release(fresh);
     spisor_memory_release(old);
@@ -458,7 +459,7 @@ static void acquires_into_a_cache_at(const char *label, const char *cache_folder
     catalog_answer answer = acquire_on(&elsewhere, elsewhere.path);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     const char *executable = text_at(answer.tree, "executable");
-    if (executable == NULL || !spisor_file_exists(executable)) {
+    if (executable == NULL || spisor_probe_file(executable) != SPISOR_FILE_PRESENT) {
         fprintf(stderr, "%s: no runtime executable under %s\n", label, elsewhere.cache);
         check_failures++;
     }

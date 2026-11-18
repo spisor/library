@@ -321,7 +321,8 @@ static void it_names_the_windows_executable_with_its_extension(void) {
     catalog_answer resolved = boot_call(BOOT_RESOLVE, argument);
     expect_success(resolved, "windows");
     const char *executable = text_at(resolved.tree, "executable");
-    CHECK(executable != NULL && strstr(executable, "spisor-host.exe") != NULL && spisor_file_exists(executable));
+    CHECK(executable != NULL && strstr(executable, "spisor-host.exe") != NULL &&
+        spisor_probe_file(executable) == SPISOR_FILE_PRESENT);
     cJSON_Delete(resolved.tree);
     finish_base();
 }

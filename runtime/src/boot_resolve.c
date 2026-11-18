@@ -103,7 +103,7 @@ static char *executable_in(const char *directory, const char *host_id, const cha
     if (out_of_memory) {
         spisor_memory_release(executable);
         executable = NULL;
-    } else if (executable != NULL && (!listed || !spisor_file_exists(executable))) {
+    } else if (executable != NULL && (!listed || spisor_probe_file(executable) != SPISOR_FILE_PRESENT)) {
         const char *message[6] = {host_id, " in ", directory, " carries no executable for ", platform,
                                   ", so it cannot be started"};
         *refusal = refused(message, 6);

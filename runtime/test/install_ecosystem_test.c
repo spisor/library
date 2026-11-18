@@ -439,7 +439,7 @@ static void serve_runtime_build(install_base *base, size_t size, served_build *s
     cJSON_AddItemToArray(arguments, cJSON_CreateString("-a"));
     cJSON_AddItemToArray(arguments, cJSON_CreateString("-cf"));
 #else
-    char *tar = joined(spisor_file_exists("/usr/bin/tar") ? "/usr/bin" : "/bin", "tar");
+    char *tar = joined(spisor_probe_file("/usr/bin/tar") == SPISOR_FILE_PRESENT ? "/usr/bin" : "/bin", "tar");
     cJSON_AddItemToArray(arguments, cJSON_CreateString("-czf"));
 #endif
     cJSON_AddItemToArray(arguments, cJSON_CreateString(archive));
@@ -477,7 +477,7 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     expect_installed_ids(report, "[\"forebay-library\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\",\"spisor-host\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
-          spisor_file_exists(text_at(javascript, "executable")));
+          spisor_probe_file(text_at(javascript, "executable")) == SPISOR_FILE_PRESENT);
     cJSON *hint = json_in(base.cache, "hosts/javascript-host.json");
     cJSON *versions = hinted_versions(hint);
     expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");

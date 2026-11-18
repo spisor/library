@@ -134,7 +134,7 @@ static int has_no_partial_file(void) {
 }
 
 static void expect_nothing_stored(const char *label) {
-    if (spisor_file_exists(destination)) {
+    if (spisor_probe_file(destination) == SPISOR_FILE_PRESENT) {
         fprintf(stderr, "%s: the destination exists\n", label);
         check_failures++;
     }

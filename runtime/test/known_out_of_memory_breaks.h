@@ -65,14 +65,10 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "lists.c find_detected: on_path.c matching_file: followed_entry.c runtime_is_followed_file reads a failed "
      "wide path as no file, answering OK"},
     {OUT_OF_MEMORY_SUITE, "marketplace's remember", 0, MEASURED_ON_WINDOWS,
-     "marketplace_memory.c loaded_store: file.c spisor_file_exists reads a failed wide path as an absent file, "
-     "then writes the store"},
+     "marketplace_memory.c writes_store reads a failed spisor_json_stringify_pretty as an unwritable store"},
     {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, MEASURED_ON_WINDOWS,
      "cache.c runtime_cache_sweep_operation: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
      "failed allocation as an uncreatable folder, so the lock is refused"},
-    {OUT_OF_MEMORY_SUITE, "cache's check", 0, MEASURED_ON_WINDOWS,
-     "cache_marker.c runtime_cache_check_version: file.c spisor_file_exists reads a failed wide path as an absent "
-     "file"},
     {OUT_OF_MEMORY_SUITE, "cache's locate", 0, MEASURED_ON_WINDOWS,
      "cache_place.c runtime_cache_bundle_directory reads a failed runtime_cache_joined as no folder"},
     {OUT_OF_MEMORY_SUITE, "cache's deploy", 0, MEASURED_ON_WINDOWS,
@@ -125,33 +121,29 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "loader_installed.c read_standard: file.c spisor_read_file answers NULL alike for a failed read and out of "
      "memory"},
     {OPERATIONS_SUITE, "updates' apply", 0, MEASURED_ON_WINDOWS,
-     "updates_apply.c switch_host: version_map.c runtime_bundle_is_sized through cache_marker.c "
-     "runtime_cache_check_version_sizes: file.c spisor_file_exists reads a failed wide path as an absent file, "
+     "boot_hint.c write_text: file.c spisor_make_directories reads a failed allocation as an uncreatable folder, "
      "answering OK"},
     {OPERATIONS_SUITE, "updates' rollback", 0, MEASURED_ON_WINDOWS,
-     "version_map.c runtime_bundle_is_intact: cache_marker.c runtime_cache_check_version_sizes: file.c "
-     "spisor_file_exists reads a failed wide path as an absent file"},
+     "updates.c runtime_updates_lock_registered: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
+     "failed is_directory wide path as an uncreatable folder, answering OK"},
     {OPERATIONS_SUITE, "updates' rollback", 1, MEASURED_ON_WINDOWS,
      "host_references.c write_text: file.c move_over reads a failed wide path as a failed move, so the hint is "
      "rolled back and the references are not"},
-    {OPERATIONS_SUITE, "updates' recorded", 0, MEASURED_ON_WINDOWS,
-     "updates_recorded.c runtime_updates_recorded_for: file.c spisor_file_exists reads a failed wide path as an "
-     "absent file"},
     {OPERATIONS_SUITE, "updates' check", 0, MEASURED_ON_WINDOWS,
      "catalog_state.c runtime_catalog_origin_of: catalog_url.c runtime_catalog_file_url_of_path answers NULL out "
      "of memory, read as no origin"},
     {OPERATIONS_SUITE, "updates' run", 0, MEASURED_ON_WINDOWS,
-     "updates_check.c damage_on_disk: cache_marker.c runtime_cache_check_version_sizes: file.c spisor_file_exists "
-     "reads a failed wide path as an absent file, answering OK"},
+     "updates.c runtime_updates_lock_registered: hosts_lock.c lock_path: file.c spisor_make_directories reads a "
+     "failed is_directory wide path as an uncreatable folder, answering OK"},
     {OPERATIONS_SUITE, "boot's write", 0, MEASURED_ON_WINDOWS,
      "boot.c held_write: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation as an "
      "uncreatable folder, so the lock is refused"},
     {OPERATIONS_SUITE, "boot's resolve", 0, MEASURED_ON_WINDOWS,
-     "boot_resolve.c is_verified: cache_marker.c runtime_cache_check_version_sizes: file.c spisor_file_exists "
-     "reads a failed wide path as an absent file"},
+     "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
+     "for a failed open and out of memory"},
     {OPERATIONS_SUITE, "boot's place", 0, MEASURED_ON_WINDOWS,
-     "boot_resolve.c is_verified: cache_marker.c runtime_cache_check_version_sizes: file.c spisor_file_exists "
-     "reads a failed wide path as an absent file"},
+     "boot_resolve.c is_verified: cache_marker.c file_size: file_stream.c runtime_open_file answers NULL alike "
+     "for a failed open and out of memory"},
     {OPERATIONS_SUITE, "processes' hold", 0, MEASURED_ON_WINDOWS,
      "holders_lock.c new_token reads a failed allocation as the holders lock being held"},
     {OPERATIONS_SUITE, "processes' release", 0, MEASURED_ON_WINDOWS,
@@ -176,9 +168,7 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "json_key_change.c read_bytes: file.c spisor_read_file answers NULL alike for a failed read and out of "
      "memory, answering OK"},
     {OPERATIONS_SUITE, "hosts' start", 0, MEASURED_ON_WINDOWS,
-     "updates_apply.c switch_host: version_map.c runtime_bundle_is_sized through cache_marker.c "
-     "runtime_cache_check_version_sizes: file.c spisor_file_exists reads a failed wide path as an absent file, "
-     "answering OK"},
+     "host_references.c write_text: file.c spisor_replace_file reads a failed write_target_of as a failed write"},
     {OPERATIONS_SUITE, "loader's home", 0, MEASURED_ON_WINDOWS,
      "application_home.c candidate_home reads a failed runtime_is_followed_directory as no directory"},
     {OPERATIONS_SUITE, "loader's installed", 0, MEASURED_ON_WINDOWS,

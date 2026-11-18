@@ -29,7 +29,7 @@ static void append_tree(char **tree, size_t *length, const char *label, const ch
     char header[1200];
     snprintf(header, sizeof header, "== %s\n", label);
     snapshot_append(tree, length, header, strlen(header));
-    if (!spisor_file_exists(directory)) {
+    if (spisor_probe_file(directory) != SPISOR_FILE_PRESENT) {
         snapshot_append(tree, length, "absent\n", 7);
         return;
     }

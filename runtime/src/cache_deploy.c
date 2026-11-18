@@ -225,7 +225,7 @@ static uint8_t *identity_bytes(deployment *plan, size_t *length) {
 }
 
 static int exists_at(const deployment *plan, destination_index index) {
-    return spisor_file_exists(plan->destinations[index]);
+    return spisor_probe_file(plan->destinations[index]) == SPISOR_FILE_PRESENT;
 }
 
 static char *recorded_id(deployment *plan) {

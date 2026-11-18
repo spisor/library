@@ -185,7 +185,7 @@ static int search_binaries(const char *directory, const char *suffix, binary_sea
 static int is_declared_library(const char *directory) {
     const char *segments[2] = {directory, LIBRARY_DECLARATION};
     char *declaration = runtime_cache_joined(segments, 2);
-    int declared = declaration != NULL && spisor_file_exists(declaration);
+    int declared = declaration != NULL && spisor_probe_file(declaration) == SPISOR_FILE_PRESENT;
     spisor_memory_release(declaration);
     return declared;
 }

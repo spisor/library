@@ -304,7 +304,7 @@ static void a_failing_store_fails_the_set_and_writes_nothing(void) {
     fresh_scratch(&place, "failing");
     fake_store_behave(FAKE_STORE_FAILS);
     CHECK(refuses(SECRETS_SET, request_for(&place, "github", "token", "v1")));
-    CHECK(!spisor_file_exists(place.file));
+    CHECK(spisor_probe_file(place.file) != SPISOR_FILE_PRESENT);
 }
 
 static void a_stored_set_moves_every_file_entry_and_empties_the_file(void) {
@@ -467,7 +467,7 @@ static void reconcile_with_no_file_moves_nothing(void) {
     scratch place;
     fresh_scratch(&place, "reconcile-empty");
     CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 0);
-    CHECK(!spisor_file_exists(place.file));
+    CHECK(spisor_probe_file(place.file) != SPISOR_FILE_PRESENT);
 }
 
 static char *long_utf8_value(size_t repeats) {
@@ -563,7 +563,7 @@ static void an_argument_or_answer_short_of_its_shape_is_malformed(void) {
     check_refused(secrets->get(secrets->context, &entry, &secret, &refusal), SPISOR_MALFORMED, &refusal, "places",
                   "places short of their first shape");
     secrets->release_refusal(secrets->context, &refusal);
-    CHECK(!spisor_file_exists(place.file));
+    CHECK(spisor_probe_file(place.file) != SPISOR_FILE_PRESENT);
 }
 
 static void the_definition_is_one_static_struct(void) {
@@ -682,7 +682,7 @@ static void an_over_cap_value_is_refused_before_either_place_is_touched(void) {
     CHECK(refuses_naming(SECRETS_SET, request_for(&place, "github", "token", over), "message", "2560000"));
     CHECK(fake_store_calls() == 0);
     CHECK(fake_store_entry_count() == 0);
-    CHECK(!spisor_file_exists(place.file));
+    CHECK(spisor_probe_file(place.file) != SPISOR_FILE_PRESENT);
     spisor_memory_release(over);
     char *at_cap = repeated_value(VALUE_CAP_BYTES);
     CHECK(at_cap != NULL);

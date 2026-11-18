@@ -20,7 +20,7 @@ static int run_boot(host_world *world, program *run, const char *const *argument
 static void install_boot_world(host_world *world, const char *label) {
     install_launch_world(world, "boot-stub", label, 0);
     char *stub = stub_of(world);
-    CHECK(spisor_file_exists(stub));
+    CHECK(spisor_probe_file(stub) == SPISOR_FILE_PRESENT);
     spisor_memory_release(stub);
 }
 

@@ -210,7 +210,7 @@ static void absent_file_reads_defaults_and_writes_nothing(void) {
     answer all = call_with(CONFIG_ALL, request_for(&home, "p", "{\"defaults\":{\"x\":1}}", NULL));
     expect_member(&all, "values", "{\"x\":1}", "defaults");
     finish(&all);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
     answer bare = call_with(CONFIG_ALL, request_for(&home, "p", NULL, NULL));
     expect_member(&bare, "values", "{}", "no config");
     finish(&bare);
@@ -224,8 +224,8 @@ static void renamed_config_directory(void) {
     CHECK(ANSWERED(result));
     finish(&result);
     snprintf(path, sizeof path, "%s/settings/p.json", home.path);
-    CHECK(spisor_file_exists(path) != 0);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(path) == SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void set_previous_includes_default(void) {
@@ -300,7 +300,7 @@ static void set_refuses_empty_segment(void) {
         expect_refused(&result, keys[index]);
         finish(&result);
     }
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
     expect_value(&home, "p", "{\"defaults\":{\"a\":1}}", "a.", NULL, "get with an empty segment is absent");
     expect_value(&home, "p", "{\"defaults\":{\"a\":1}}", "", NULL, "get with an empty key is absent");
 }
@@ -313,7 +313,7 @@ static void set_refuses_missing_value(void) {
     answer result = call_with(CONFIG_SET, request);
     expect_refused(&result, "missing value");
     finish(&result);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void bom_file(void) {
@@ -392,7 +392,7 @@ static void typed_shapes_the_json_could_not_carry_are_malformed(void) {
     answer refused_places = call_with(CONFIG_ALL, relative_places);
     CHECK(refused_places.status == SPISOR_MALFORMED);
     finish(&refused_places);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void a_short_plugin_or_answer_is_malformed(void) {
@@ -473,8 +473,8 @@ static void refuses_unusable_home(void) {
         expect_refused(&set, "set");
         finish(&set);
     }
-    CHECK(spisor_file_exists("config-test-relative-home") == 0);
-    CHECK(spisor_file_exists("config") == 0);
+    CHECK(spisor_probe_file("config-test-relative-home") != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file("config") != SPISOR_FILE_PRESENT);
 }
 
 static void portable_file_path(const scratch_home *home, const char *plugin, char *path, size_t size) {
@@ -580,7 +580,7 @@ static void portable_file_alone(void) {
     write_portable_file(&home, "p", "{\"shared\":{\"x\":1}}");
     expect_portable_value(&home, "p", NULL, "shared.x", "1", "get from the portable file alone");
     expect_portable_all(&home, "p", NULL, "{\"shared\":{\"x\":1}}", "all from the portable file alone");
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void absent_portable_folder_changes_nothing(void) {
@@ -590,7 +590,7 @@ static void absent_portable_folder_changes_nothing(void) {
     const char *config = "{\"defaults\":{\"a\":{\"c\":2}}}";
     expect_portable_all(&home, "p", config, "{\"a\":{\"c\":2,\"b\":5}}", "absent portable folder");
     expect_value(&home, "p", config, "a", "{\"c\":2,\"b\":5}", "no portable folder given");
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void set_writes_the_named_layer(void) {
@@ -599,7 +599,7 @@ static void set_writes_the_named_layer(void) {
     answer defaulted = portable_set(&home, "p", NULL, NULL, "a", "1");
     CHECK(ANSWERED(defaulted));
     finish(&defaulted);
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
     answer application = portable_set(&home, "p", NULL, "application", "b", "2");
     CHECK(ANSWERED(application));
     finish(&application);
@@ -629,7 +629,7 @@ static void portable_set_without_portable_is_refused(void) {
     expect_refused(&result, "portable set without portable");
     expect_message_names(&result, "this host has no portable settings layer", "the contract wording");
     finish(&result);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void unknown_layer_and_unusable_portable_are_refused(void) {
@@ -644,8 +644,8 @@ static void unknown_layer_and_unusable_portable_are_refused(void) {
     expect_refused(&relative, "relative portable");
     finish(&relative);
     CHECK(machine.status == SPISOR_MALFORMED && relative.status == SPISOR_MALFORMED);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
-    CHECK(spisor_file_exists("relative-portable") == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file("relative-portable") != SPISOR_FILE_PRESENT);
 }
 
 static void unreadable_portable_file(void) {
@@ -726,7 +726,7 @@ static void portable_folder_is_the_manifest_id(void) {
     finish(&portable);
     expect_portable_file(&home, "p", "{\n  \"a\": 1\n}\n", "the portable folder is named by the id");
     snprintf(renamed, sizeof renamed, "%s/plugins/other", home.portable);
-    CHECK(spisor_file_exists(renamed) == 0);
+    CHECK(spisor_probe_file(renamed) != SPISOR_FILE_PRESENT);
     answer application = portable_set(&home, "p", config, NULL, "b", "2");
     finish(&application);
     expect_file(&home, "other", "{\n  \"b\": 2\n}\n", "the application file keeps config.name");
@@ -739,7 +739,7 @@ static void portable_layer_refuses_an_unusable_id(void) {
     answer result = portable_set(&home, "../p", "{\"name\":\"p\"}", "portable", "a", "1");
     expect_refused(&result, "an id that is no folder name");
     finish(&result);
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 #define SECRET_SETTINGS "{\"token\":{\"type\":\"secret\"},\"nested.key\":{\"type\":\"secret\"}}"
@@ -800,7 +800,7 @@ static void a_declared_key_with_no_layer_defaults_to_portable(void) {
     CHECK(ANSWERED(result));
     finish(&result);
     expect_portable_file(&home, "p", "{\n  \"shared\": 1\n}\n", "a declared key with no layer is portable");
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void a_declared_layer_that_is_neither_is_refused_naming_the_declaration(void) {
@@ -812,8 +812,8 @@ static void a_declared_layer_that_is_neither_is_refused_naming_the_declaration(v
                        "the declaration is named");
     expect_text_member(&result, "fix", "declare the setting's layer as application or portable", "the declaration fix");
     finish(&result);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void an_undeclared_key_keeps_the_application_default(void) {
@@ -823,7 +823,7 @@ static void an_undeclared_key_keeps_the_application_default(void) {
     CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"other\": 1\n}\n", "an undeclared key stays in the application layer");
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void an_explicit_layer_wins_over_the_declaration(void) {
@@ -833,7 +833,7 @@ static void an_explicit_layer_wins_over_the_declaration(void) {
     CHECK(ANSWERED(result));
     finish(&result);
     expect_file(&home, "p", "{\n  \"shared\": 1\n}\n", "the explicit layer wins");
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void a_secret_setting_is_stored_as_a_secret_not_in_a_file(void) {
@@ -845,7 +845,7 @@ static void a_secret_setting_is_stored_as_a_secret_not_in_a_file(void) {
     finish(&result);
     check_text(fake_store_value("spisor/p/token"), "s3cret", "the secret is in the store");
     expect_file(&home, "p", "{\"token\":\"old\"}", "the application file is untouched");
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void null_deletes_a_secret_setting(void) {
@@ -856,7 +856,7 @@ static void null_deletes_a_secret_setting(void) {
     expect_whole_answer(&result, "{\"secret\":true}", "a secret delete answers secret");
     finish(&result);
     CHECK(fake_store_value("spisor/p/token") == NULL);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void a_secret_setting_refuses_a_number(void) {
@@ -868,7 +868,7 @@ static void a_secret_setting_refuses_a_number(void) {
                        "the number refusal wording");
     finish(&result);
     CHECK(fake_store_entry_count() == 0);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
 }
 
 static void a_secret_setting_without_a_store_is_refused(void) {
@@ -882,8 +882,8 @@ static void a_secret_setting_without_a_store_is_refused(void) {
     expect_text_member(&result, "fix", "start the host with a secret store", "the no store fix");
     finish(&result);
     CHECK(fake_store_entry_count() == 0);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
-    CHECK(spisor_file_exists(home.portable) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(home.portable) != SPISOR_FILE_PRESENT);
 }
 
 static void get_reads_a_secret_setting_from_the_store(void) {
@@ -953,7 +953,7 @@ static void set_of_a_parent_refuses_a_value_reaching_a_secret(void) {
                        "config.set(\"nested.key.part\"): nested.key is a secret setting; set it on its own",
                        "the inside refusal wording");
     finish(&inside);
-    CHECK(spisor_file_exists(home.config_directory) == 0);
+    CHECK(spisor_probe_file(home.config_directory) != SPISOR_FILE_PRESENT);
     answer clear = declared_set(&home, SECRET_SETTINGS, 1, "application", "nested", "{\"keep\":1}");
     CHECK(ANSWERED(clear));
     finish(&clear);
@@ -984,7 +984,7 @@ static void settings_set_keeps_the_application_default(void) {
     finish(&result);
     expect_file(&home, "settings", "{\n  \"shared\": 1\n}\n", "settings.set writes the application layer");
     snprintf(path, sizeof path, "%s/settings.json", home.portable);
-    CHECK(spisor_file_exists(path) == 0);
+    CHECK(spisor_probe_file(path) != SPISOR_FILE_PRESENT);
 }
 
 static void releasing_a_tree_overwrites_its_texts_as_a_secret_needs(void) {

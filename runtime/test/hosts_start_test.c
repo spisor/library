@@ -154,7 +154,7 @@ static void a_non_session_start_reuses_a_live_recorded_run(void) {
     expect_member_json(started.tree, "plan/run", RECORDED_RUN, "reused run");
     expect_member_json(started.tree, "plan/unrecorded", "[]", "reused unrecorded");
     const char *record = text_at(value_at(started.tree, "plan"), "runRecord");
-    CHECK(record != NULL && spisor_file_exists(record));
+    CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
     CHECK(record != NULL && live != NULL && strcmp(record, live) != 0);
     cJSON *stamped = record == NULL ? NULL : read_json_file(record);
     expect_member_json(stamped, "run", RECORDED_RUN, "stamped run");

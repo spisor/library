@@ -151,7 +151,7 @@ static char *script_path_variable(const host_world *world, int with_curl) {
     for (size_t index = 0; index < sizeof POSIX_TOOLS / sizeof POSIX_TOOLS[0]; index++) {
         char *found = strcmp(POSIX_TOOLS[index], "curl") == 0 && !with_curl ? NULL : tool_on_path(POSIX_TOOLS[index]);
         char *link = joined(folder, POSIX_TOOLS[index]);
-        if (found != NULL && !spisor_file_exists(link)) {
+        if (found != NULL && spisor_probe_file(link) != SPISOR_FILE_PRESENT) {
             CHECK(symlink(found, link) == 0);
         }
         spisor_memory_release(link);
@@ -362,7 +362,7 @@ static void refuses_with_the_fix_when_no_catalog_is_given_and_writes_nothing(voi
     program run;
     CHECK(run_script(&world, &run, NULL, 1) == 1);
     expect_contains(run.err, "pass the catalog to install from", "the fix");
-    CHECK(!spisor_file_exists(world.base.cache));
+    CHECK(spisor_probe_file(world.base.cache) != SPISOR_FILE_PRESENT);
     program_free(&run);
     finish_world(&world);
 }
@@ -374,7 +374,7 @@ static void refuses_a_catalog_that_is_neither_an_https_url_nor_a_local_path(void
     const char *arguments[] = {"ftp://catalog.test/catalog.json", NULL};
     CHECK(run_script(&world, &run, arguments, 1) == 1);
     expect_contains(run.err, "is neither an https url nor a local path", "names the scheme");
-    CHECK(!spisor_file_exists(world.base.cache));
+    CHECK(spisor_probe_file(world.base.cache) != SPISOR_FILE_PRESENT);
     program_free(&run);
     finish_world(&world);
 }
@@ -575,7 +575,8 @@ static int is_one_of(const char *name, const char *const *allowed, size_t count)
 
 static void expect_only(const char *directory, const char *const *allowed, size_t count, const char *label) {
     runtime_directory_listing listing;
-    if (!spisor_file_exists(directory) || runtime_list_directory(directory, &listing) != SPISOR_OK) {
+    if (spisor_probe_file(directory) != SPISOR_FILE_PRESENT ||
+        runtime_list_directory(directory, &listing) != SPISOR_OK) {
         return;
     }
     for (size_t index = 0; index < listing.count; index++) {
@@ -758,7 +759,7 @@ static void names_curl_as_the_one_thing_to_install_when_it_is_missing(void) {
     const char *arguments[] = {"https://catalog.invalid/catalog.json", NULL};
     CHECK(run_script(&world, &run, arguments, 0) == 1);
     expect_contains(run.err, "install curl, then run this again", "names curl");
-    CHECK(!spisor_file_exists(world.base.cache));
+    CHECK(spisor_probe_file(world.base.cache) != SPISOR_FILE_PRESENT);
     program_free(&run);
     finish_world(&world);
 }
@@ -812,7 +813,7 @@ static void a_script_cut_short_at_any_line_fetches_and_runs_nothing(void) {
         program run;
         world_start(&world, &run, "/bin/sh", arguments, path, IS_DETACHABLE);
         program_finish(&run, SCRIPT_TIMEOUT);
-        if (spisor_file_exists(world.base.cache) || fetched_any(&run)) {
+        if (spisor_probe_file(world.base.cache) == SPISOR_FILE_PRESENT || fetched_any(&run)) {
             fprintf(stderr, "install.sh cut after line %zu fetched or ran something:\n%s\n%s\n", kept, run.out, run.err);
             check_failures++;
             CHECK(runtime_remove_tree(world.base.cache) == 1);

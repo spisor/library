@@ -73,7 +73,8 @@ static char *entry_of(const char *directory, const cJSON *manifest, int *failed)
     const char *entry = text_of(manifest, "entry");
     char *path = entry == NULL ? NULL : runtime_cache_resolve(directory, &entry, 1);
     *failed = entry != NULL && path == NULL;
-    if (path != NULL && (!runtime_cache_is_strictly_inside(directory, path) || !spisor_file_exists(path))) {
+    if (path != NULL && (!runtime_cache_is_strictly_inside(directory, path) ||
+        spisor_probe_file(path) != SPISOR_FILE_PRESENT)) {
         spisor_memory_release(path);
         path = NULL;
     }
@@ -102,7 +103,7 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
         return 0;
     }
     int added = 1;
-    if (spisor_file_exists(manifest_path)) {
+    if (spisor_probe_file(manifest_path) == SPISOR_FILE_PRESENT) {
         int out_of_memory = 0;
         cJSON *manifest = runtime_read_node_json(manifest_path, &out_of_memory);
         const char *named = cJSON_IsObject(manifest) ? text_of(manifest, "version") : NULL;

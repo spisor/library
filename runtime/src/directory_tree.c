@@ -211,7 +211,7 @@ static int delete_directory_at(const char *path) {
 int runtime_remove_tree(const char *path) {
     DWORD attributes = attributes_of(path);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        return !spisor_file_exists(path);
+        return spisor_probe_file(path) != SPISOR_FILE_PRESENT;
     }
     if (is_reparse_point(attributes)) {
         return delete_link_at(path, (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0);

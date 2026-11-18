@@ -370,7 +370,7 @@ static spisor_status fetch_a_file(void) {
 static int fetched_nothing(void) {
     char destination[1400];
     snprintf(destination, sizeof destination, "%s/fetched/settings.json", place.base);
-    return !spisor_file_exists(destination);
+    return spisor_probe_file(destination) != SPISOR_FILE_PRESENT;
 }
 
 static spisor_status find_on_path(void) {
@@ -600,7 +600,7 @@ static spisor_status read_a_copy(void) {
 static int remembered_nothing(void) {
     char record[1300];
     snprintf(record, sizeof record, "%s/marketplace-names.json", place.state);
-    return !spisor_file_exists(record);
+    return spisor_probe_file(record) != SPISOR_FILE_PRESENT;
 }
 
 static spisor_status list_installed_versions(void) {
@@ -640,14 +640,14 @@ static spisor_status merge_catalogs(void) {
 static int registered_nothing(void) {
     char record[1300];
     snprintf(record, sizeof record, "%s/hosts/claude.json", place.state);
-    return !spisor_file_exists(record);
+    return spisor_probe_file(record) != SPISOR_FILE_PRESENT;
 }
 
 /** Whether log's write left no line behind: no logs folder under the home at all. */
 static int appended_nothing(void) {
     char logs[1200];
     snprintf(logs, sizeof logs, "%s/logs", place.home);
-    return !spisor_file_exists(logs);
+    return spisor_probe_file(logs) != SPISOR_FILE_PRESENT;
 }
 
 static void command_argument_of(runtime_command_argument *argument, const char *name, char *target, size_t capacity,
@@ -972,7 +972,7 @@ static void under_base(char *path, size_t capacity, const char *rest) {
 static int exists_under_base(const char *rest) {
     char path[1400];
     under_base(path, sizeof path, rest);
-    return spisor_file_exists(path);
+    return spisor_probe_file(path) == SPISOR_FILE_PRESENT;
 }
 
 static void marked_version(const char *version) {
@@ -1204,7 +1204,7 @@ static int kept_no_catalog_state(void) {
     char *location = runtime_catalog_resolve_path(index);
     char *state = location == NULL ? NULL : runtime_catalog_state_path(cache_place, location);
     CHECK(state != NULL);
-    int kept_none = state == NULL || !spisor_file_exists(state);
+    int kept_none = state == NULL || spisor_probe_file(state) != SPISOR_FILE_PRESENT;
     spisor_memory_release(state);
     spisor_memory_release(location);
     return kept_none;

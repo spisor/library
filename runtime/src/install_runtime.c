@@ -283,9 +283,10 @@ static char *system_tar(void) {
     const char *segments[2] = {narrow, "tar.exe"};
     char *tar = joined(segments, 2);
 #else
-    char *tar = runtime_catalog_copy(spisor_file_exists("/usr/bin/tar") ? "/usr/bin/tar" : "/bin/tar");
+    int has_usr_tar = spisor_probe_file("/usr/bin/tar") == SPISOR_FILE_PRESENT;
+    char *tar = runtime_catalog_copy(has_usr_tar ? "/usr/bin/tar" : "/bin/tar");
 #endif
-    if (tar != NULL && !spisor_file_exists(tar)) {
+    if (tar != NULL && spisor_probe_file(tar) != SPISOR_FILE_PRESENT) {
         spisor_memory_release(tar);
         return NULL;
     }
@@ -343,7 +344,7 @@ static cJSON *unpack(const acquisition *runtime) {
     cJSON *refusal = NULL;
     if (!ran) {
         refusal = runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked" : problem, AGAIN_FIX);
-    } else if (exit_code != 0 || !spisor_file_exists(runtime->staged.executable)) {
+    } else if (exit_code != 0 || spisor_probe_file(runtime->staged.executable) != SPISOR_FILE_PRESENT) {
         refusal = refused("the runtime archive holds no ", runtime->member, AGAIN_FIX);
     } else if (!mark_runnable(runtime->staged.executable)) {
         refusal = refused("the runtime could not be made runnable: ", runtime->staged.executable, CACHE_FIX);

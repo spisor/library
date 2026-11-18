@@ -390,14 +390,14 @@ static void removes_a_host_by_reversing_its_changes_and_then_forgetting_it(void)
     register_present(&place, HOST_ID);
     char *changed = joined_path(place.base, "changed.txt");
     apply_file_change(&place, changed);
-    CHECK(spisor_file_exists(changed));
+    CHECK(spisor_probe_file(changed) == SPISOR_FILE_PRESENT);
     catalog_answer answer = remove_host(&place, HOST_ID);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON *expected = parsed("{\"reversed\": 1, \"drifted\": [], \"forgotten\": true}");
     check_same(answer.tree, expected, "the removal");
     cJSON_Delete(expected);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(changed));
+    CHECK(spisor_probe_file(changed) != SPISOR_FILE_PRESENT);
     CHECK(lists_only(&place, NULL));
     spisor_memory_release(changed);
     discard(&place);
@@ -430,7 +430,7 @@ static void leaves_the_registration_and_its_references_in_place_when_the_reverse
     cJSON_Delete(answer.tree);
     CHECK(lists_only(&place, HOST_ID));
     char *recorded = runtime_host_references_path(place.state, HOST_ID, &problem);
-    CHECK(recorded != NULL && spisor_file_exists(recorded));
+    CHECK(recorded != NULL && spisor_probe_file(recorded) == SPISOR_FILE_PRESENT);
     spisor_memory_release(recorded);
     cJSON *registration = stored_registration(&place, HOST_ID);
     cJSON *first = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(registration, "changes"), 0);
@@ -523,7 +523,7 @@ static void record_references(const hosts_scratch *place, const char *id) {
 static int references_recorded(const hosts_scratch *place, const char *id) {
     char *problem = NULL;
     char *path = runtime_host_references_path(place->state, id, &problem);
-    int recorded = path != NULL && spisor_file_exists(path);
+    int recorded = path != NULL && spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     spisor_memory_release(problem);
     return recorded;
@@ -561,7 +561,7 @@ static void deletes_every_run_record_of_the_host_with_its_references(void) {
     CHECK(runs != NULL && cJSON_GetArraySize(runs) == 0);
     cJSON_Delete(runs);
     char *folder = joined_path(place.state, "bundles/runs/" HOST_ID);
-    CHECK(!spisor_file_exists(folder));
+    CHECK(spisor_probe_file(folder) != SPISOR_FILE_PRESENT);
     spisor_memory_release(folder);
     spisor_memory_release(record);
     cJSON_Delete(run);
@@ -584,10 +584,10 @@ static void deletes_the_holders_file_of_the_host(void) {
     catalog_answer answer = remove_host(&place, HOST_ID);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(holders));
-    CHECK(spisor_file_exists(other));
+    CHECK(spisor_probe_file(holders) != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(other) == SPISOR_FILE_PRESENT);
     char *lock = runtime_holders_path(place.state, HOST_ID, ".lock", &problem);
-    CHECK(lock != NULL && !spisor_file_exists(lock));
+    CHECK(lock != NULL && spisor_probe_file(lock) != SPISOR_FILE_PRESENT);
     spisor_memory_release(lock);
     spisor_memory_release(folder);
     spisor_memory_release(other);
@@ -607,12 +607,12 @@ static void deletes_the_boot_hint_of_the_host_and_leaves_another_hosts(void) {
     cJSON_Delete(libraries);
     char *hint = runtime_boot_hint_path(place.cache, HOST_ID, &problem);
     char *other = runtime_boot_hint_path(place.cache, "other-host", &problem);
-    CHECK(hint != NULL && spisor_file_exists(hint) && other != NULL);
+    CHECK(hint != NULL && spisor_probe_file(hint) == SPISOR_FILE_PRESENT && other != NULL);
     catalog_answer answer = remove_host(&place, HOST_ID);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(hint));
-    CHECK(spisor_file_exists(other));
+    CHECK(spisor_probe_file(hint) != SPISOR_FILE_PRESENT);
+    CHECK(spisor_probe_file(other) == SPISOR_FILE_PRESENT);
     spisor_memory_release(problem);
     spisor_memory_release(other);
     spisor_memory_release(hint);

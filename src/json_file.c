@@ -8,7 +8,6 @@
 #include "spisor/json_kind.h"
 
 #include "allocation.h"
-#include "file_presence.h"
 #include "file_reading.h"
 #include "json_parse.h"
 

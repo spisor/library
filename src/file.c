@@ -6,7 +6,6 @@
 #include "spisor/file.h"
 
 #include "allocation.h"
-#include "file_presence.h"
 #include "file_reading.h"
 #include "file_replacement.h"
 
@@ -39,16 +38,6 @@ static char *duplicate_text(const char *text) {
 
 #if defined(_WIN32)
 /** GetFileAttributesW rather than _wstat, because _wstat refuses a directory named with a trailing separator. */
-int spisor_file_exists(const char *path) {
-    wchar_t *wide = spisor_wide_path(path);
-    if (wide == NULL) {
-        return 0;
-    }
-    DWORD attributes = GetFileAttributesW(wide);
-    spisor_memory_release(wide);
-    return attributes != INVALID_FILE_ATTRIBUTES;
-}
-
 spisor_file_presence spisor_probe_file(const char *path) {
     if (!spisor_is_convertible_path(path)) {
         return SPISOR_FILE_UNKNOWN;
@@ -183,11 +172,6 @@ static char *write_target_of(const char *path) {
     return target;
 }
 #else
-int spisor_file_exists(const char *path) {
-    struct stat status;
-    return path[0] != '\0' && stat(path, &status) == 0;
-}
-
 spisor_file_presence spisor_probe_file(const char *path) {
     struct stat status;
     if (stat(path, &status) == 0) {
@@ -388,7 +372,7 @@ static char *temporary_path_for(const char *path) {
         snprintf(temporary, path_length + 1 + 16 + 4 + 1, "%s.%04x%04x%04x%04x.tmp", path,
                  (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu,
                  (unsigned)rand() & 0xffffu);
-    } while (spisor_file_exists(temporary));
+    } while (spisor_probe_file(temporary) == SPISOR_FILE_PRESENT);
     return temporary;
 }
 

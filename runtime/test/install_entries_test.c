@@ -267,7 +267,7 @@ static void creates_a_settings_json_that_does_not_exist_and_deletes_it_again(voi
     cJSON_Delete(settings);
     expect_clean_remove(&base, "created remove");
     expect_tree(home, "[]", "home emptied");
-    CHECK(spisor_file_exists(home));
+    CHECK(spisor_probe_file(home) == SPISOR_FILE_PRESENT);
     cJSON_free(root_json);
     cJSON_Delete(quoted);
     spisor_memory_release(root);
@@ -286,7 +286,7 @@ static void creates_an_application_home_that_does_not_exist_and_removes_it_again
     cJSON_Delete(answer.tree);
     CHECK(exists_in(home, "settings.json"));
     expect_clean_remove(&base, "home remove");
-    CHECK(!spisor_file_exists(home));
+    CHECK(spisor_probe_file(home) != SPISOR_FILE_PRESENT);
     spisor_memory_release(homes);
     spisor_memory_release(home);
     finish_install_base(&base);
@@ -366,7 +366,7 @@ static void answers_not_written_for_an_application_declaring_no_entry(void) {
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "written")));
     CHECK(strstr(text_at(answer.tree, "message"), "elsewhere") != NULL && strstr(text_at(answer.tree, "fix"), "command") != NULL);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(home));
+    CHECK(spisor_probe_file(home) != SPISOR_FILE_PRESENT);
     cJSON *remove_answer = removed(&base);
     CHECK(cJSON_GetObjectItemCaseSensitive(remove_answer, "reversed")->valuedouble == 0);
     cJSON_Delete(remove_answer);
@@ -394,7 +394,7 @@ static void refuses_an_entry_whose_application_facts_were_never_checked(void) {
     CHECK(answer.status == SPISOR_REFUSED);
     CHECK(text_at(answer.tree, "message") != NULL && strstr(text_at(answer.tree, "message"), "/application/proxy/placeholder") != NULL);
     cJSON_Delete(answer.tree);
-    CHECK(!spisor_file_exists(home));
+    CHECK(spisor_probe_file(home) != SPISOR_FILE_PRESENT);
     spisor_memory_release(home);
     finish_install_base(&base);
 }
@@ -451,7 +451,7 @@ static void keeps_a_change_another_call_recorded_when_a_later_change_is_refused(
     runtime_install_after_entry_change(NULL);
     CHECK(answer.status == SPISOR_REFUSED);
     cJSON_Delete(answer.tree);
-    CHECK(foreign_directory != NULL && spisor_file_exists(foreign_directory));
+    CHECK(foreign_directory != NULL && spisor_probe_file(foreign_directory) == SPISOR_FILE_PRESENT);
     expect_tree(root, "[\"hooks\",\"hooks/hooks.json\"]", "only what was there before");
     spisor_memory_release(foreign_directory);
     foreign_directory = NULL;

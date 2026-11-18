@@ -100,7 +100,7 @@ static void join_writer(writer_thread thread) {
 
 static int wait_for(const char *path) {
     for (int waited = 0; waited < 500; waited++) {
-        if (spisor_file_exists(path)) {
+        if (spisor_probe_file(path) == SPISOR_FILE_PRESENT) {
             return 1;
         }
         pause_milliseconds(20);

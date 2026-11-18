@@ -866,10 +866,10 @@ static void prepare_hold_start(void) {
 }
 
 static int marker_written(void) {
-    for (int waited = 0; waited < 10000 && !spisor_file_exists(start_marker); waited += 50) {
+    for (int waited = 0; waited < 10000 && spisor_probe_file(start_marker) != SPISOR_FILE_PRESENT; waited += 50) {
         pause_milliseconds(50);
     }
-    return spisor_file_exists(start_marker);
+    return spisor_probe_file(start_marker) == SPISOR_FILE_PRESENT;
 }
 
 static spisor_status run_hold_start(void) {
@@ -913,7 +913,8 @@ static int started_and_recorded_or_nothing(void) {
         kept = holders_name_started_host() && started_host_ran;
     } else {
         pause_milliseconds(UNSTARTED_WAIT_MILLISECONDS);
-        kept = !spisor_file_exists(start_marker) && !exists_in(base.state, "processes/" STARTED_HOST ".json");
+        kept = spisor_probe_file(start_marker) != SPISOR_FILE_PRESENT &&
+            !exists_in(base.state, "processes/" STARTED_HOST ".json");
     }
     if (!kept) {
         fprintf(stderr, "processes' hold: an answer of %d %s\n", (int)last_status,

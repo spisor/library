@@ -127,7 +127,7 @@ static void all_on_an_empty_home_is_empty_and_creates_nothing(void) {
     scratch_home home;
     fresh_home(&home, "empty");
     expect_values(&home, "{}", "no files");
-    CHECK(spisor_file_exists(home.application_file) == 0);
+    CHECK(spisor_probe_file(home.application_file) != SPISOR_FILE_PRESENT);
 }
 
 static void set_without_a_layer_writes_the_application_file(void) {
@@ -138,7 +138,7 @@ static void set_without_a_layer_writes_the_application_file(void) {
     CHECK(cJSON_GetObjectItemCaseSensitive(result.tree, "previous") == NULL);
     finish(&result);
     expect_content(home.application_file, "{\n  \"a\": 1\n}\n", "the application file");
-    CHECK(spisor_file_exists(home.portable_file) == 0);
+    CHECK(spisor_probe_file(home.portable_file) != SPISOR_FILE_PRESENT);
 }
 
 static void set_in_the_portable_layer_writes_only_that_file(void) {
@@ -191,7 +191,7 @@ static void set_refuses_a_bad_key_a_missing_value_and_a_bad_layer(void) {
     answer no_home = call_with(SETTINGS_ALL, cJSON_CreateObject());
     CHECK(REFUSED_CALL(no_home));
     finish(&no_home);
-    CHECK(spisor_file_exists(home.application_file) == 0);
+    CHECK(spisor_probe_file(home.application_file) != SPISOR_FILE_PRESENT);
 }
 
 static void set_in_portable_without_portable_is_refused(void) {
@@ -204,7 +204,7 @@ static void set_in_portable_without_portable_is_refused(void) {
     answer result = call_with(SETTINGS_SET, request);
     CHECK(REFUSED_CALL(result));
     finish(&result);
-    CHECK(spisor_file_exists(home.application_file) == 0);
+    CHECK(spisor_probe_file(home.application_file) != SPISOR_FILE_PRESENT);
 }
 
 static void an_unreadable_portable_file_is_refused_and_kept(void) {

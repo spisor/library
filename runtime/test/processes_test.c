@@ -75,7 +75,7 @@ static char *read_text(const char *rest) {
 
 static int present(const char *rest) {
     char *path = joined(state, rest);
-    int found = spisor_file_exists(path);
+    int found = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return found;
 }
@@ -717,7 +717,7 @@ static void it_refuses_a_start_it_cannot_run_leaving_nothing_held(void) {
 }
 
 static int answer_written(const void *path) {
-    return spisor_file_exists((const char *)path);
+    return spisor_probe_file((const char *)path) == SPISOR_FILE_PRESENT;
 }
 
 static void it_starts_the_host_in_the_environment_and_directory_given(void) {
@@ -790,7 +790,7 @@ static void it_never_runs_a_host_whose_record_cannot_be_written(void) {
     const char *message = text_at(answer.tree, "message");
     CHECK(message != NULL && strstr(message, "holders file") != NULL);
     pause_milliseconds(UNRECORDED_WAIT_MILLISECONDS);
-    CHECK(!spisor_file_exists(ran));
+    CHECK(spisor_probe_file(ran) != SPISOR_FILE_PRESENT);
     cJSON_Delete(answer.tree);
     spisor_memory_release(holders);
     spisor_memory_release(ran);
@@ -1143,7 +1143,7 @@ static double recorded_alive_at(const char *record) {
 static void it_records_a_run_and_stamps_the_same_record_again(void) {
     fresh_state("run-stamp");
     char *record = recorded_path("fixture-loader", "{\"a\":\"1.0.0\"}");
-    CHECK(record != NULL && spisor_file_exists(record));
+    CHECK(record != NULL && spisor_probe_file(record) == SPISOR_FILE_PRESENT);
     double first = recorded_alive_at(record);
     pause_milliseconds(30);
     catalog_answer again = record_run("fixture-loader", "{\"a\":\"1.0.0\"}", record);
@@ -1167,7 +1167,7 @@ static void it_refuses_to_stamp_a_record_that_is_no_run_record_of_the_host(void)
         CHECK(answer.status != 0 && text_at(answer.tree, "message") != NULL && text_at(answer.tree, "fix") != NULL);
         cJSON_Delete(answer.tree);
     }
-    CHECK(!spisor_file_exists(elsewhere));
+    CHECK(spisor_probe_file(elsewhere) != SPISOR_FILE_PRESENT);
     CHECK(!present("bundles/runs/another-loader"));
     spisor_memory_release(elsewhere);
     spisor_memory_release(record);
@@ -1220,7 +1220,7 @@ static void it_removes_one_run_record_or_every_run_of_the_host(void) {
     catalog_answer one = remove_runs(first);
     CHECK(one.status == 0);
     cJSON_Delete(one.tree);
-    CHECK(!spisor_file_exists(first) && spisor_file_exists(second));
+    CHECK(spisor_probe_file(first) != SPISOR_FILE_PRESENT && spisor_probe_file(second) == SPISOR_FILE_PRESENT);
     catalog_answer every = remove_runs(NULL);
     CHECK(every.status == 0);
     cJSON_Delete(every.tree);

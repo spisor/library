@@ -67,7 +67,7 @@ static inline void write_in(const char *base, const char *rest, const char *cont
 
 static inline int exists_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
-    int exists = spisor_file_exists(path);
+    int exists = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
     spisor_memory_release(path);
     return exists;
 }
@@ -403,7 +403,8 @@ static inline void expect_executable(catalog_answer answer, const char *host, co
     }
     size_t length = normalized == NULL ? 0 : strlen(normalized);
     int matched = normalized != NULL && length >= strlen(expected) &&
-                  strcmp(normalized + length - strlen(expected), expected) == 0 && spisor_file_exists(executable);
+                  strcmp(normalized + length - strlen(expected), expected) == 0 &&
+                      spisor_probe_file(executable) == SPISOR_FILE_PRESENT;
     if (!matched) {
         fprintf(stderr, "%s: expected an existing executable ending %s, got %s\n", label, expected,
                 executable == NULL ? "(none)" : executable);

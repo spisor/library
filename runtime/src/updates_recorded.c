@@ -43,7 +43,10 @@ cJSON *runtime_updates_recorded_for(const runtime_updates_request *request, cJSO
         return NULL;
     }
     cJSON *answer = NULL;
-    if (!spisor_file_exists(path)) {
+    spisor_file_presence presence = spisor_probe_file(path);
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        answer = NULL;
+    } else if (presence != SPISOR_FILE_PRESENT) {
         answer = run_answer(NULL);
     } else {
         int out_of_memory;
