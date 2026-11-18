@@ -18,7 +18,6 @@
 #include "directory_tree.h"
 #include "runtime/fetch.h"
 #include "paths.h"
-#include "service_call.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"

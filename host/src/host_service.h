@@ -4,10 +4,6 @@
 #include <stddef.h>
 
 #include "cJSON.h"
-#include "service_call.h"
-
-/** Calls the json function with argument, which it frees: the answer, or NULL with *refusal set. */
-cJSON *host_call(runtime_json_function function, cJSON *argument, cJSON **refusal);
 
 /** The string member name of object, or NULL. */
 const char *host_text(const cJSON *object, const char *name);
