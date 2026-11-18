@@ -503,11 +503,14 @@ static line_span find_last_line(const text_buffer *text, const char *line) {
     return span;
 }
 
-static int has_line(const char *path, const char *line) {
+static runtime_change_presence line_presence(const char *path, const char *line) {
     text_buffer text;
     int found = read_text(path, &text) && find_last_line(&text, line).found;
     spisor_memory_release(text.bytes);
-    return found;
+    if (text.out_of_memory) {
+        return RUNTIME_CHANGE_PRESENCE_OUT_OF_MEMORY;
+    }
+    return found ? RUNTIME_CHANGE_PRESENT : RUNTIME_CHANGE_ABSENT;
 }
 
 static int is_unterminated(const text_buffer *text) {
@@ -591,17 +594,18 @@ static const char *line_ending_of(const text_buffer *text) {
     return is_every_line_crlf(text) ? "\r\n" : "\n";
 }
 
-static int append_line(const char *path, const text_buffer *text, const char *line, int separated) {
+static spisor_status append_line(const char *path, const text_buffer *text, const char *line, int separated) {
     const char *ending = line_ending_of(text);
     size_t size = text->length + 2 * strlen(ending) + strlen(line) + 1;
     char *bytes = spisor_memory_allocate(size);
     if (bytes == NULL) {
-        return 0;
+        return SPISOR_OUT_OF_MEMORY;
     }
     memcpy(bytes, text->bytes, text->length);
     int appended = snprintf(bytes + text->length, size - text->length, "%s%s%s", separated ? ending : "", line, ending);
-    int written = appended > 0 &&
-        spisor_replace_file(path, (const uint8_t *)bytes, text->length + (size_t)appended) == SPISOR_OK;
+    spisor_status written = appended > 0 ? spisor_replace_file(path, (const uint8_t *)bytes,
+                                                                text->length + (size_t)appended)
+                                         : SPISOR_REFUSED;
     spisor_memory_release(bytes);
     return written;
 }
@@ -615,6 +619,9 @@ static runtime_change_step create_profile(const char *path, const char *line, ru
     snprintf(bytes, size, "%s\n", line);
     runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)bytes, size - 1, 0);
     spisor_memory_release(bytes);
+    if (created == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
     return created == RUNTIME_ENTRY_DONE ? RUNTIME_CHANGE_DONE : fail(note, "the profile could not be created", path);
 }
 
@@ -631,13 +638,16 @@ static runtime_change_step perform_profile_line(const cJSON *change, cJSON *reco
     if (text.bytes == NULL) {
         return fail(note, "the profile file could not be read", path);
     }
-    int written = 1;
+    spisor_status written = SPISOR_OK;
     if (!find_last_line(&text, line).found) {
         int separated = is_unterminated(&text);
-        written = add_separated(record, separated) && append_line(path, &text, line, separated);
+        written = add_separated(record, separated) ? append_line(path, &text, line, separated) : SPISOR_OUT_OF_MEMORY;
     }
     spisor_memory_release(text.bytes);
-    return written ? RUNTIME_CHANGE_DONE : fail(note, "the line could not be added", path);
+    if (written == SPISOR_OUT_OF_MEMORY) {
+        return out_of_memory(note);
+    }
+    return written == SPISOR_OK ? RUNTIME_CHANGE_DONE : fail(note, "the line could not be added", path);
 }
 
 static size_t trailing_newline_length(const char *bytes, size_t length) {
@@ -771,7 +781,10 @@ runtime_change_presence runtime_change_is_on_disk(const cJSON *record) {
     if (is_kind(record, "path-entry")) {
         return runtime_path_entry_is_on_disk(record);
     }
-    return presence_of(is_kind(record, "profile-line") && has_line(text_of(record, "file"), text_of(record, "line")));
+    if (!is_kind(record, "profile-line")) {
+        return RUNTIME_CHANGE_ABSENT;
+    }
+    return line_presence(text_of(record, "file"), text_of(record, "line"));
 }
 
 runtime_change_reversal runtime_change_reverse(const cJSON *record, int held, runtime_change_note *note) {
