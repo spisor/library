@@ -172,6 +172,8 @@ static spisor_status register_call(const runtime_hosts_register_argument *argume
 
 static spisor_status register_host(void *context, const runtime_hosts_register_argument *argument,
                                    runtime_install_register_loader_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -183,10 +185,16 @@ static spisor_status register_host(void *context, const runtime_hosts_register_a
     if (status == SPISOR_OK) {
         status = register_call(argument, &call, refusal);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_hosts_register_operation, call,
-                                                         runtime_fill_register_answer, answer, REGISTER_ANSWER_SHAPE,
-                                                         refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_hosts_registration_request request = {argument->state, cJSON_GetObjectItemCaseSensitive(call, "identity"),
+                                                  cJSON_GetObjectItemCaseSensitive(call, "provenance"),
+                                                  cJSON_GetObjectItemCaseSensitive(call, "environment")};
+    answered = runtime_hosts_register(&request, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, runtime_fill_register_answer, answer,
+                                  REGISTER_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status list(void *context, const runtime_registry_list_argument *argument,
@@ -316,6 +324,8 @@ static spisor_status fill_provenance(const cJSON *answered, void *filled) {
 
 static spisor_status provenance(void *context, const runtime_hosts_provenance_argument *argument,
                                 runtime_hosts_provenance_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -330,9 +340,16 @@ static spisor_status provenance(void *context, const runtime_hosts_provenance_ar
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_member(refusal, "origin options", HEADER);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_hosts_provenance_operation, call, fill_provenance,
-                                                         answer, PROVENANCE_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_hosts_provenance_request request = {
+        cJSON_GetObjectItemCaseSensitive(call, "origin"), argument->binary, argument->home,
+        cJSON_GetObjectItemCaseSensitive(call, "environment"), argument->now != 0, argument->now};
+    answered = runtime_hosts_provenance(&request, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_provenance, answer, PROVENANCE_ANSWER_SHAPE,
+                                  refusal);
 }
 
 static spisor_status check_start(const runtime_hosts_start_argument *argument, spisor_refusal *refusal) {

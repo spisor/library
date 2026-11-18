@@ -98,16 +98,9 @@ static cJSON *stored_provenance(const runtime_install_run *run, const char *id, 
 
 static cJSON *origin_provenance(const runtime_install_run *run, const catalog_loader *loader, const cJSON *origin,
                                 cJSON **refusal) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *application = call == NULL ? NULL : cJSON_AddObjectToObject(call, "application");
-    if (application == NULL || !runtime_install_copy_into(call, "origin", origin) ||
-        !runtime_install_copy_into(application, "binary", cJSON_GetObjectItemCaseSensitive(loader->application, "binary")) ||
-        cJSON_AddStringToObject(call, "home", loader->home) == NULL ||
-        !runtime_install_copy_into(call, "environment", run->environment)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return runtime_call_operation(runtime_hosts_provenance_operation, call, refusal);
+    runtime_hosts_provenance_request request = {origin, runtime_install_text(loader->application, "binary"),
+                                                loader->home, run->environment, 0, 0};
+    return runtime_hosts_provenance(&request, refusal);
 }
 
 /**
@@ -187,22 +180,16 @@ static cJSON *identity_of(const runtime_install_run *run, const catalog_loader *
     return identity;
 }
 
-static cJSON *register_call(const runtime_install_run *run, const catalog_loader *loader, cJSON **refusal) {
+/** Registers the loader's host with its catalog provenance: what hosts' register answers. */
+static cJSON *register_loader_host(const runtime_install_run *run, const catalog_loader *loader, cJSON **refusal) {
     cJSON *provenance = runtime_install_catalog_provenance(run->cache, loader->id, loader->version, refusal);
     cJSON *identity = provenance == NULL ? NULL : identity_of(run, loader, refusal);
-    cJSON *call = identity == NULL ? NULL : runtime_install_places_call(run->places);
-    int built = call != NULL && cJSON_AddItemToObject(call, "identity", identity);
-    identity = built ? NULL : identity;
-    built = built && cJSON_AddItemToObject(call, "provenance", provenance);
-    provenance = built ? NULL : provenance;
-    built = built && runtime_install_copy_into(call, "environment", run->environment);
+    runtime_hosts_registration_request request = {runtime_install_text(run->places, "state"), identity, provenance,
+                                                  run->environment};
+    cJSON *registered = identity == NULL ? NULL : runtime_hosts_register(&request, refusal);
     cJSON_Delete(identity);
     cJSON_Delete(provenance);
-    if (!built) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
+    return registered;
 }
 
 static cJSON *entry_loader_of(const catalog_loader *loader) {
@@ -397,8 +384,7 @@ static cJSON *register_loader(runtime_install_run *run, catalog_loader *loader) 
     if (!install_required_plugins(run, loader, &refusal)) {
         return report_loader_refusal(run, loader->id, refusal, NULL) ? cJSON_CreateArray() : NULL;
     }
-    cJSON *call = register_call(run, loader, &refusal);
-    cJSON *registered = call == NULL ? NULL : runtime_call_operation(runtime_hosts_register_operation, call, &refusal);
+    cJSON *registered = register_loader_host(run, loader, &refusal);
     if (registered == NULL) {
         return report_loader_refusal(run, loader->id, refusal, NULL) ? cJSON_CreateArray() : NULL;
     }
@@ -514,8 +500,7 @@ cJSON *runtime_install_loaders(runtime_install_run *run) {
 cJSON *runtime_install_register_installed_loader(const runtime_install_run *run, const char *id, const char *version,
                                                  cJSON **refusal) {
     catalog_loader loader = {id, NULL, version, NULL, NULL};
-    cJSON *call = learn(run, &loader, refusal) ? register_call(run, &loader, refusal) : NULL;
-    cJSON *registered = call == NULL ? NULL : runtime_call_operation(runtime_hosts_register_operation, call, refusal);
+    cJSON *registered = learn(run, &loader, refusal) ? register_loader_host(run, &loader, refusal) : NULL;
     cJSON_Delete(loader.standard);
     spisor_memory_release(loader.home);
     return registered;

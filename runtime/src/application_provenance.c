@@ -14,9 +14,10 @@
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
 
-#define PROVENANCE_FIX                                                                                         \
-    "send {\"origin\": {\"method\", \"package\"?, \"options\"?, \"version\"?}, \"application\": {\"binary\"}, " \
-    "\"home\": \"<absolute directory>\", \"environment\": {<name>: <value>}, \"now\"?: <milliseconds since the epoch>}"
+#define PROVENANCE_FIX                                                                                           \
+    "pass the origin {\"method\", \"package\"?, \"options\"?, \"version\"?}, the application's binary, the home " \
+    "as an absolute directory, the environment {<name>: <value>} and, when given, now as milliseconds since the " \
+    "epoch"
 
 static int copy_member(cJSON *target, const cJSON *source, const char *name) {
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(source, name);
@@ -43,15 +44,12 @@ static int add_platform(cJSON *provenance) {
            cJSON_AddStringToObject(provenance, "architecture", hyphen + 1) != NULL;
 }
 
-static int add_location(cJSON *provenance, const cJSON *argument) {
-    const char *binary = cJSON_GetStringValue(
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "application"), "binary"));
+static int add_location(cJSON *provenance, const runtime_hosts_provenance_request *request) {
     char *found = NULL;
-    runtime_on_path_status searched = runtime_find_on_path(
-        RUNTIME_HOST_IS_WINDOWS, binary, cJSON_GetObjectItemCaseSensitive(argument, "environment"), &found);
-    const char *home = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "home"));
+    runtime_on_path_status searched =
+        runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, request->binary, request->environment, &found);
     int added = searched != RUNTIME_ON_PATH_OUT_OF_MEMORY &&
-                cJSON_AddStringToObject(provenance, "location", found == NULL ? home : found) != NULL;
+                cJSON_AddStringToObject(provenance, "location", found == NULL ? request->home : found) != NULL;
     spisor_memory_release(found);
     return added;
 }
@@ -61,12 +59,11 @@ static int add_installed_at(cJSON *provenance, double now) {
     return runtime_catalog_format_time(now, text) && cJSON_AddStringToObject(provenance, "installedAt", text) != NULL;
 }
 
-static double now_of(const cJSON *argument) {
-    const cJSON *now = cJSON_GetObjectItemCaseSensitive(argument, "now");
-    if (now == NULL) {
+static double now_of(const runtime_hosts_provenance_request *request) {
+    if (!request->has_now) {
         return floor(runtime_now_milliseconds());
     }
-    return cJSON_IsNumber(now) && isfinite(now->valuedouble) && now->valuedouble >= 0 ? now->valuedouble : NAN;
+    return isfinite(request->now) && request->now >= 0 ? request->now : NAN;
 }
 
 static int is_writable_time(double now) {
@@ -74,36 +71,30 @@ static int is_writable_time(double now) {
     return !isnan(now) && runtime_catalog_format_time(now, text);
 }
 
-static int is_provenance_argument(const cJSON *argument) {
-    const cJSON *origin = cJSON_GetObjectItemCaseSensitive(argument, "origin");
-    const cJSON *method = cJSON_GetObjectItemCaseSensitive(origin, "method");
-    const cJSON *binary =
-        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(argument, "application"), "binary");
-    const char *home = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(argument, "home"));
-    return cJSON_IsObject(origin) && cJSON_IsString(method) && method->valuestring[0] != '\0' && cJSON_IsString(binary) &&
-           home != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home) &&
-           cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(argument, "environment")) && is_writable_time(now_of(argument));
+static int is_provenance_request(const runtime_hosts_provenance_request *request) {
+    const cJSON *method = cJSON_GetObjectItemCaseSensitive(request->origin, "method");
+    return cJSON_IsObject(request->origin) && cJSON_IsString(method) && method->valuestring[0] != '\0' &&
+           request->binary != NULL && request->home != NULL &&
+           spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, request->home) && cJSON_IsObject(request->environment) &&
+           is_writable_time(now_of(request));
 }
 
-static cJSON *provenance_for(const cJSON *argument, cJSON **refusal) {
-    if (!is_provenance_argument(argument)) {
-        *refusal = runtime_refusal("the argument carries no usable origin, application, home, environment or now",
+cJSON *runtime_hosts_provenance(const runtime_hosts_provenance_request *request, cJSON **refusal) {
+    *refusal = NULL;
+    if (!is_provenance_request(request)) {
+        *refusal = runtime_refusal("the call carries no usable origin, application binary, home, environment or now",
                                    PROVENANCE_FIX);
         return NULL;
     }
-    const cJSON *origin = cJSON_GetObjectItemCaseSensitive(argument, "origin");
+    const cJSON *origin = request->origin;
     cJSON *provenance = cJSON_CreateObject();
     int complete = provenance != NULL && copy_member(provenance, origin, "method") &&
                    copy_member(provenance, origin, "package") && copy_member(provenance, origin, "options") &&
-                   copy_member(provenance, origin, "version") && add_location(provenance, argument) &&
-                   add_platform(provenance) && add_installed_at(provenance, now_of(argument));
+                   copy_member(provenance, origin, "version") && add_location(provenance, request) &&
+                   add_platform(provenance) && add_installed_at(provenance, now_of(request));
     if (!complete) {
         cJSON_Delete(provenance);
         return NULL;
     }
     return provenance;
-}
-
-cJSON *runtime_hosts_provenance_operation(const cJSON *argument, cJSON **refusal) {
-    return provenance_for(argument, refusal);
 }

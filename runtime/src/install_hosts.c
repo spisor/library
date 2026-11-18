@@ -17,23 +17,29 @@ char *runtime_install_own_home(const char *state, const char *id) {
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
 }
 
-static cJSON *provenance_call(const char *location, const char *version) {
-    cJSON *call = cJSON_Parse("{\"origin\": {\"method\": \"catalog\"}, \"application\": {\"binary\": \"" NO_BINARY
-                              "\"}, \"environment\": {}}");
-    if (call == NULL || cJSON_AddStringToObject(cJSON_GetObjectItemCaseSensitive(call, "origin"), "version", version) == NULL ||
-        cJSON_AddStringToObject(call, "home", location) == NULL) {
-        cJSON_Delete(call);
+/** The catalog origin of version; NULL when memory runs out. */
+static cJSON *catalog_origin(const char *version) {
+    cJSON *origin = cJSON_CreateObject();
+    if (origin == NULL || cJSON_AddStringToObject(origin, "method", "catalog") == NULL ||
+        cJSON_AddStringToObject(origin, "version", version) == NULL) {
+        cJSON_Delete(origin);
         return NULL;
     }
-    return call;
+    return origin;
 }
 
 cJSON *runtime_install_catalog_provenance(const char *cache, const char *id, const char *version, cJSON **refusal) {
     const char *segments[4] = {cache, "bundles", id, version};
     char *location = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 4);
-    cJSON *provenance = location == NULL ? NULL
-                                         : runtime_call_operation(runtime_hosts_provenance_operation,
-                                                                  provenance_call(location, version), refusal);
+    cJSON *origin = location == NULL ? NULL : catalog_origin(version);
+    cJSON *environment = origin == NULL ? NULL : cJSON_CreateObject();
+    runtime_hosts_provenance_request request = {origin, NO_BINARY, location, environment, 0, 0};
+    cJSON *provenance = environment == NULL ? NULL : runtime_hosts_provenance(&request, refusal);
+    if (environment == NULL) {
+        *refusal = NULL;
+    }
+    cJSON_Delete(origin);
+    cJSON_Delete(environment);
     spisor_memory_release(location);
     return provenance;
 }
@@ -56,19 +62,13 @@ int runtime_install_register_own_host(const cJSON *places, const char *id, const
                                       cJSON **refusal) {
     cJSON *provenance = runtime_install_catalog_provenance(runtime_install_text(places, "cache"), id, version, refusal);
     cJSON *identity = provenance == NULL ? NULL : own_identity(runtime_install_text(places, "state"), id, version, start);
-    cJSON *call = identity == NULL ? NULL : runtime_install_places_call(places);
-    int built = call != NULL && cJSON_AddItemToObject(call, "identity", identity);
-    identity = built ? NULL : identity;
-    built = built && cJSON_AddItemToObject(call, "provenance", provenance);
-    provenance = built ? NULL : provenance;
-    built = built && cJSON_AddObjectToObject(call, "environment") != NULL;
+    cJSON *environment = identity == NULL ? NULL : cJSON_CreateObject();
+    runtime_hosts_registration_request request = {runtime_install_text(places, "state"), identity, provenance,
+                                                  environment};
+    cJSON *registered = environment == NULL ? NULL : runtime_hosts_register(&request, refusal);
+    cJSON_Delete(environment);
     cJSON_Delete(identity);
     cJSON_Delete(provenance);
-    if (!built) {
-        cJSON_Delete(call);
-        return 0;
-    }
-    cJSON *registered = runtime_call_operation(runtime_hosts_register_operation, call, refusal);
     cJSON_Delete(registered);
     return registered != NULL;
 }

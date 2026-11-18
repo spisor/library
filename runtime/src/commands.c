@@ -1073,20 +1073,3 @@ spisor_status runtime_commands_serve(runtime_command_operation operation, const 
     spisor_memory_release(call.shims);
     return status;
 }
-
-cJSON *runtime_commands_request_operation(const cJSON *argument, cJSON **refusal) {
-    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
-    char name[RUNTIME_COMMAND_NAME_SIZE];
-    cJSON *answer = NULL;
-    spisor_status status = runtime_commands_serve(RUNTIME_COMMAND_REQUEST, argument, name, &refused);
-    *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
-    spisor_refusal_release(&refused);
-    if (status == SPISOR_OK) {
-        answer = cJSON_CreateObject();
-        if (answer != NULL && name[0] != '\0' && cJSON_AddStringToObject(answer, "name", name) == NULL) {
-            cJSON_Delete(answer);
-            answer = NULL;
-        }
-    }
-    return answer;
-}

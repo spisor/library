@@ -39,7 +39,5 @@ typedef enum runtime_command_operation {
 spisor_status runtime_commands_serve(runtime_command_operation operation, const cJSON *argument,
                                      char name[RUNTIME_COMMAND_NAME_SIZE], spisor_refusal *refusal);
 
-/** The request operation for a caller inside the library that holds JSON: its answer, or NULL with *refusal set. */
-cJSON *runtime_commands_request_operation(const cJSON *argument, cJSON **refusal);
 
 #endif

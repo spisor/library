@@ -12,7 +12,6 @@
 #include "holders_lock.h"
 #include "host_references.h"
 #include "hosts_lock.h"
-#include "hosts_request.h"
 #include "json_service.h"
 #include "paths.h"
 #include "registry.h"
