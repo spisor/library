@@ -34,35 +34,13 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OUT_OF_MEMORY_SUITE, "changes' apply after settling", 0, BREAKS_ON_BOTH,
-     "changes.c own_record_of: change_kinds.c runtime_change_repeats: runtime_change_paths_equal reads a failed "
-     "normal_path join as unequal paths, so a held change is applied again"},
     {OUT_OF_MEMORY_SUITE, "cache's deploy", 0, BREAKS_ON_BOTH,
      "cache_deploy.c write_files writes the plugin's files one after another, so memory running out at a later one "
      "(file.c spisor_replace_file) answers out of memory after the earlier ones were written"},
-    {OUT_OF_MEMORY_SUITE, "commands' request", 0, BREAKS_ON_BOTH,
-     "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
-     "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
-    {OUT_OF_MEMORY_SUITE, "commands' add", 0, BREAKS_ON_BOTH,
-     "commands.c runtime_commands_held_on_path: change_kinds.c runtime_change_paths_equal reads a failed "
-     "normal_path join as a PATH entry other than the shims, so a held name reads as free"},
     {OPERATIONS_SUITE, "hosts' register_host", 0, BREAKS_ON_POSIX,
      "measured in CI only, not yet traced: failing allocation 825 answers OK with another tree; the POSIX Path "
      "change is a profile line, and change_kinds.c runtime_change_is_on_disk reads a failed profile read as "
      "the line being absent"},
-    {OPERATIONS_SUITE, "updates' rollback", 1, BREAKS_ON_BOTH,
-     "updates_rollback.c record_rollback: the hint (boot_hint.c runtime_hint_host_version) fails under sticky "
-     "failure and the undo of the references through runtime_write_references_draft allocates too, so the "
-     "references stay rolled back without the hint"},
-    {OPERATIONS_SUITE, "hosts' start", 1, BREAKS_ON_BOTH,
-     "run_records.c write_record fails under sticky failure and file.c replace_resolved_file cannot remove its "
-     "temporary sibling, which allocates too, answering OUT_OF_MEMORY with the run records changed"},
-    {OPERATIONS_SUITE, "hosts' start beside a session", 1, BREAKS_ON_BOTH,
-     "run_records.c write_record fails under sticky failure and file.c replace_resolved_file cannot remove its "
-     "temporary sibling, which allocates too, answering OUT_OF_MEMORY with the run records changed"},
-    {OPERATIONS_SUITE, "changes' json-key create", 1, BREAKS_ON_BOTH,
-     "changes.c perform_recorded: the registration store after the file is created runs out (registry.c "
-     "registration_path), and under sticky failure the undo of the created file allocates too, so the file is left"},
 };
 
 static const known_out_of_memory_break *known_out_of_memory_break_of(const char *suite, const char *label,

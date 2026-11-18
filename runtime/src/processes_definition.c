@@ -395,7 +395,7 @@ static spisor_status serve_record(const runtime_processes_record_argument *argum
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, RECORD_ANSWER_SHAPE);
         if (argument->record == NULL) {
-            runtime_remove_run_record(argument->state, argument->host_id, text_of(answered, "record"));
+            spisor_remove_file_in_place(text_of(answered, "record"));
         }
     }
     cJSON_Delete(answered);

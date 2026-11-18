@@ -2,6 +2,7 @@
 #define RUNTIME_HOST_REFERENCES_H
 
 #include "cJSON.h"
+#include "prepared_undo.h"
 
 #include "spisor/status.h"
 
@@ -65,9 +66,9 @@ runtime_host_references runtime_read_host_references(const char *state, const ch
 int runtime_record_host_references(const char *state, const char *host_id, const runtime_host_references *references,
                                    char **problem);
 
-/** A references file's path and text, built before a write that must not be stopped by memory running out. */
+/** A references file's text and replacement, prepared before a write that memory running out must not stop. */
 typedef struct runtime_references_draft {
-    char *path;
+    spisor_prepared_replacement replacement;
     char *text;
 } runtime_references_draft;
 
@@ -78,7 +79,7 @@ typedef struct runtime_references_draft {
 int runtime_draft_host_references(const char *state, const char *host_id, const runtime_host_references *references,
                                   runtime_references_draft *draft, char **problem);
 
-/** Writes a draft whose folder exists, replaced at once and allocating nothing more; 0 when it cannot be written. */
+/** Writes a draft whose folder exists, replaced at once and allocating nothing; 0 when it cannot be written. */
 int runtime_write_references_draft(const runtime_references_draft *draft);
 
 void runtime_free_references_draft(runtime_references_draft *draft);

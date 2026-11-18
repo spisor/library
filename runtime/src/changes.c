@@ -10,6 +10,7 @@
 #include "hosts_lock.h"
 #include "json_service.h"
 #include "paths.h"
+#include "prepared_undo.h"
 #include "registry.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
@@ -281,25 +282,65 @@ static void withdraw(apply_session *session, cJSON *entry, runtime_change_step s
     conclude_stored(session, store(session), answer_of_step(step), reason);
 }
 
+typedef enum undo_kind { UNDO_BY_REVERSAL, UNDO_BY_REMOVING_FILE, UNDO_BY_REMOVING_DIRECTORY } undo_kind;
+
+/** What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. */
+typedef struct prepared_undo {
+    undo_kind kind;
+    spisor_prepared_removal removal;
+} prepared_undo;
+
+static int is_created_json_file(const cJSON *entry) {
+    return strcmp(text_of(entry, "kind"), "json-key") == 0 &&
+           cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "created"));
+}
+
+static spisor_status prepare_undo(const cJSON *entry, prepared_undo *undo) {
+    memset(undo, 0, sizeof *undo);
+    undo->kind = UNDO_BY_REVERSAL;
+    const char *kind = text_of(entry, "kind");
+    const char *path = NULL;
+    if (strcmp(kind, "file") == 0 || strcmp(kind, "directory") == 0) {
+        undo->kind = strcmp(kind, "file") == 0 ? UNDO_BY_REMOVING_FILE : UNDO_BY_REMOVING_DIRECTORY;
+        path = text_of(entry, "path");
+    } else if (is_created_json_file(entry)) {
+        undo->kind = UNDO_BY_REMOVING_FILE;
+        path = text_of(entry, "file");
+    }
+    spisor_status prepared = path == NULL ? SPISOR_OK : spisor_prepare_removal(path, &undo->removal);
+    if (prepared == SPISOR_REFUSED) {
+        undo->kind = UNDO_BY_REVERSAL;
+        prepared = SPISOR_OK;
+    }
+    return prepared;
+}
+
+/** @implNote A change that edits what was there before, rather than creating it, is undone by its kind's reversal. */
+static int is_undone(const cJSON *entry, const prepared_undo *undo) {
+    if (undo->kind == UNDO_BY_REMOVING_FILE) {
+        return spisor_remove_prepared(&undo->removal);
+    }
+    if (undo->kind == UNDO_BY_REMOVING_DIRECTORY) {
+        return spisor_remove_prepared_directory(&undo->removal);
+    }
+    runtime_change_note ignored = {""};
+    return runtime_change_reverse(entry, 0, &ignored) == RUNTIME_CHANGE_REVERSED;
+}
+
 /**
  * Undoes a change whose applied record memory ran out storing, so the answer of out of memory changed nothing; a
  * change that cannot be undone keeps its pending record on the disk, which the next apply or reverse completes.
  */
-static void undo_unstored(apply_session *session, cJSON *entry) {
-    runtime_change_note ignored = {""};
-    if (runtime_change_reverse(entry, 0, &ignored) == RUNTIME_CHANGE_REVERSED) {
+static void undo_unstored(apply_session *session, cJSON *entry, const prepared_undo *undo) {
+    if (is_undone(entry, undo)) {
         cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
         store(session);
     }
     conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
 }
 
-/**
- * @implNote A record marked applied that could not be stored stays pending on the disk, and the next
- * apply or reverse completes it from the disk, so the change is answered RECORDED either way, unless
- * memory ran out storing it.
- */
-static void perform_recorded(apply_session *session, cJSON *entry) {
+/** Performs the change and stores it applied, undoing it with what undo prepared when memory runs out storing it. */
+static void perform_prepared(apply_session *session, cJSON *entry, const prepared_undo *undo) {
     runtime_change_note note = {""};
     runtime_change_step step = runtime_change_perform(session->change, entry, &note);
     if (step != RUNTIME_CHANGE_DONE) {
@@ -308,11 +349,26 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
     }
     mark_applied(entry);
     if (store(session) == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
-        undo_unstored(session, entry);
+        undo_unstored(session, entry, undo);
         return;
     }
     conclude(session, RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
+}
+
+/**
+ * @implNote A record marked applied that could not be stored stays pending on the disk, and the next
+ * apply or reverse completes it from the disk, so the change is answered RECORDED either way, unless
+ * memory ran out storing it.
+ */
+static void perform_recorded(apply_session *session, cJSON *entry) {
+    prepared_undo undo;
+    if (prepare_undo(entry, &undo) == SPISOR_OUT_OF_MEMORY) {
+        withdraw(session, entry, RUNTIME_CHANGE_OUT_OF_MEMORY, "memory ran out");
+        return;
+    }
+    perform_prepared(session, entry, &undo);
+    spisor_release_prepared_removal(&undo.removal);
 }
 
 static int set_counter(cJSON *registration, long next) {

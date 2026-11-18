@@ -82,15 +82,19 @@ static int write_record(const char *path, const cJSON *run, double check_millise
 }
 
 char *runtime_record_run(const char *state, const char *host_id, const cJSON *run, double check_milliseconds,
-                         int *out_of_memory) {
+                         spisor_prepared_removal *removal, int *out_of_memory) {
     char *folder = runs_folder(state, host_id);
     spisor_status made = folder == NULL ? SPISOR_REFUSED : spisor_make_directories(folder);
     char *path = made == SPISOR_OK ? record_path(folder) : NULL;
+    spisor_status prepared = path == NULL ? SPISOR_REFUSED : spisor_prepare_removal(path, removal);
     *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || made == SPISOR_OUT_OF_MEMORY ||
-                     (made == SPISOR_OK && path == NULL);
-    int written = path != NULL && write_record(path, run, check_milliseconds, out_of_memory);
+                     (made == SPISOR_OK && path == NULL) || prepared == SPISOR_OUT_OF_MEMORY;
+    int written = prepared == SPISOR_OK && write_record(path, run, check_milliseconds, out_of_memory);
     spisor_memory_release(folder);
     if (!written) {
+        if (prepared == SPISOR_OK) {
+            spisor_release_prepared_removal(removal);
+        }
         spisor_memory_release(path);
         return NULL;
     }

@@ -292,15 +292,14 @@ static cJSON *apply_call(const runtime_updates_apply_argument *argument) {
 }
 
 /** Applies, and when the answer cannot be filled removes the run record the apply wrote last. */
-static spisor_status serve_apply(const runtime_updates_apply_argument *argument, cJSON *call,
-                                 runtime_updates_apply_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_apply(cJSON *call, runtime_updates_apply_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered = runtime_call_operation(runtime_updates_apply_operation, call, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_apply(answered, answer);
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, APPLY_ANSWER_SHAPE);
-        runtime_remove_run_record(argument->state, argument->host_id, text_of(answered, "runRecord"));
+        spisor_remove_file_in_place(text_of(answered, "runRecord"));
     }
     cJSON_Delete(answered);
     return status;
@@ -315,7 +314,7 @@ static spisor_status apply(void *context, const runtime_updates_apply_argument *
         return runtime_refuse_shape(refusal, "updates' apply");
     }
     status = check_apply(argument, refusal);
-    return status != SPISOR_OK ? status : serve_apply(argument, apply_call(argument), answer, refusal);
+    return status != SPISOR_OK ? status : serve_apply(apply_call(argument), answer, refusal);
 }
 
 /** A check's sources, fetched, refused and removed into the four arrays of a check or a host's check. */

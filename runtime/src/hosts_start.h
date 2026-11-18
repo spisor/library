@@ -30,7 +30,7 @@
  */
 cJSON *runtime_hosts_start_operation(const cJSON *argument, cJSON **refusal);
 
-/** Removes the run record plan, a start's plan, names as written for host_id in state. */
-void runtime_hosts_start_undo(const char *state, const char *host_id, const cJSON *plan);
+/** Removes the run record plan, a start's plan, names, allocating nothing. */
+void runtime_hosts_start_undo(const cJSON *plan);
 
 #endif

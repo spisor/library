@@ -110,7 +110,8 @@ static cJSON *record_rollback(const runtime_updates_request *request, const char
                               cJSON **refusal) {
     char *problem = NULL;
     cJSON *answer = NULL;
-    runtime_references_draft undo = {NULL, NULL};
+    runtime_references_draft undo;
+    memset(&undo, 0, sizeof undo);
     if (!prepare_rollback(request, rolled, before, &answer, &undo, refusal)) {
         return NULL;
     }

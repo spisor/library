@@ -18,6 +18,14 @@ int spisor_is_convertible_path(const char *path);
  * twelve characters for the 8.3 name of a file inside it.
  */
 wchar_t *spisor_wide_path(const char *path);
+
+/**
+ * spisor_wide_path's form of an absolute path in normal form, written into buffer without allocating: whether it was
+ * valid UTF-8 and fit in capacity characters.
+ *
+ * @implNote No full form is asked of the OS, so a path holding . or .. or a relative one is passed on as given.
+ */
+int spisor_wide_path_into(const char *path, wchar_t *buffer, size_t capacity);
 #endif
 
 #endif
