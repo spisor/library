@@ -51,8 +51,9 @@ static int remove_holders(const removal *request) {
     char *lock = runtime_holders_path(request->state, request->id, ".lock", &lock_problem);
     int removed = folder != NULL && path != NULL && lock != NULL;
     if (removed && spisor_probe_file(folder) == SPISOR_FILE_PRESENT) {
-        runtime_holders_guard *guard = runtime_lock_holders(lock);
-        removed = guard != NULL && runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
+        runtime_holders_guard *guard = NULL;
+        removed = runtime_lock_holders(lock, &guard) == SPISOR_OK &&
+                  runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE;
         if (guard != NULL) {
             runtime_unlock_holders(guard);
         }

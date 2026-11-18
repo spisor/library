@@ -156,20 +156,22 @@ static int is_hopeless(const char *path, double started) {
            runtime_now_milliseconds() - started > LONGEST_WAIT_MILLISECONDS;
 }
 
-runtime_holders_guard *runtime_lock_holders(const char *path) {
+spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **guard) {
+    *guard = NULL;
     char *token = new_token();
     if (token == NULL) {
-        return NULL;
+        return SPISOR_OUT_OF_MEMORY;
     }
     double started = runtime_now_milliseconds();
     for (;;) {
         runtime_entry_outcome created = runtime_create_new_file(path, (const uint8_t *)token, strlen(token), 0);
         if (created == RUNTIME_ENTRY_DONE) {
-            return guard_of(path, token);
+            *guard = guard_of(path, token);
+            return *guard == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
         }
         if (created != RUNTIME_ENTRY_EXISTS || is_hopeless(path, started)) {
             spisor_memory_release(token);
-            return NULL;
+            return SPISOR_REFUSED;
         }
         char *held = read_lock(path);
         int stale = held != NULL && is_stale(path, held);
