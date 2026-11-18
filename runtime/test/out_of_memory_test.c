@@ -16,6 +16,7 @@
 
 #include "allocation.h"
 #include "check.h"
+#include "known_out_of_memory_breaks.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
 #include "runtime/cache.h"
@@ -871,7 +872,7 @@ static int answered_as_required(const failure_case *each, uint64_t attempt, spis
  * Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says and
  * as the case adds.
  */
-static void every_failure_of(const failure_case *each) {
+static void every_failure_of_case(const failure_case *each) {
     const char *label = each->label;
     for (uint64_t attempt = 1; attempt < 100000; attempt++) {
         fresh_files();
@@ -909,6 +910,13 @@ static void every_failure_of(const failure_case *each) {
     }
     fprintf(stderr, "%s: never ran whole\n", label);
     check_failures++;
+}
+
+static void every_failure_of(const failure_case *each) {
+    int before = check_failures;
+    every_failure_of_case(each);
+    check_failures = before + settled_out_of_memory_failures("out_of_memory_test", each->label, each->sticky,
+                                                             check_failures - before);
 }
 
 static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {

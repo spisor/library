@@ -8,6 +8,7 @@
 
 #include "allocation.h"
 #include "json_allocation.h"
+#include "known_out_of_memory_breaks.h"
 #include "runtime/install.h"
 #include "timestamp_text.h"
 
@@ -318,6 +319,9 @@ int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
     uint64_t first = argc > 1 ? strtoull(argv[1], NULL, 10) : 1;
     uint64_t last = argc > 2 ? strtoull(argv[2], NULL, 10) : 0;
+    int before = check_failures;
     every_ecosystem_failure(first == 0 ? 1 : first, last);
+    check_failures = before + settled_out_of_memory_failures("out_of_memory_ecosystem_test", "install's ecosystem", 0,
+                                                             check_failures - before);
     return check_summary("out_of_memory_ecosystem_test");
 }

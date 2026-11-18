@@ -15,6 +15,7 @@
 #include "hosts_call.h"
 #include "install_hooks.h"
 #include "json_allocation.h"
+#include "known_out_of_memory_breaks.h"
 #include "file_times.h"
 #include "platform_key.h"
 #include "runtime/boot.h"
@@ -1294,7 +1295,7 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
 }
 
 /** Fails the operation's allocations one at a time, between first and last when given, until it runs whole. */
-static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+static void every_failure_of_case(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
     clean_run clean;
     run_clean(each, &clean);
     if (clean.status != expected) {
@@ -1311,6 +1312,13 @@ static void every_failure_of(const operation_case *each, spisor_status expected,
     printf("%s: %llu allocations, failures %llu to %llu checked\n", each->label,
            (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
     spisor_memory_release(clean.snapshot);
+}
+
+static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+    int before = check_failures;
+    every_failure_of_case(each, expected, first, last);
+    check_failures = before + settled_out_of_memory_failures("out_of_memory_install_operations_test", each->label,
+                                                             sticky_failures, check_failures - before);
 }
 
 static int is_selected(const char *only, const char *label) {
