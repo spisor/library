@@ -9,9 +9,10 @@
 #include "cJSON.h"
 #include "file_times.h"
 #include "host_context.h"
-#include "json_service.h"
-#include "processes.h"
+#include "host_definition.h"
 #include "processes_ready.h"
+#include "runtime/processes.h"
+#include "spisor/allocation.h"
 #include "spisor/file.h"
 
 #if defined(_WIN32)
@@ -53,20 +54,6 @@ static void record_start(const host_context *context, int count, char **argument
     }
 }
 
-static cJSON *ready_argument(const host_context *context, const char *host_id, const char *mode) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "state", context->state);
-    cJSON_AddStringToObject(argument, "hostId", host_id);
-    cJSON_AddNumberToObject(argument, "pid", host_process_id());
-    if (strcmp(mode, "refuse") == 0) {
-        cJSON_AddStringToObject(argument, "refused", "the fixture session host refused");
-        cJSON_AddStringToObject(argument, "fix", "the fixture fix");
-    } else if (mode[0] != 0) {
-        cJSON_AddItemToObject(argument, "environment", cJSON_Parse(mode));
-    }
-    return argument;
-}
-
 /** Publishes the ready record a session host does on every start, through the library as the real one does. */
 static void publish_ready(const host_context *context, const char *host_id) {
     const char *configured = host_text(context->environment, "SPISOR_FIXTURE_READY");
@@ -74,23 +61,34 @@ static void publish_ready(const host_context *context, const char *host_id) {
     if (strcmp(mode, "none") == 0) {
         return;
     }
-    cJSON *refusal = NULL;
-    cJSON_Delete(runtime_call_operation(runtime_processes_ready_operation, ready_argument(context, host_id, mode),
-                                         &refusal));
-    cJSON_Delete(refusal);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_ready_argument argument = SPISOR_INIT(runtime_processes_ready_argument);
+    cJSON *environment = strcmp(mode, "refuse") == 0 || mode[0] == 0 ? NULL : cJSON_Parse(mode);
+    runtime_variable *variables =
+        environment == NULL ? NULL : host_variables_of(environment, &argument.environment_count);
+    argument.state = context->state;
+    argument.host_id = host_id;
+    argument.pid = (int64_t)host_process_id();
+    argument.environment = variables;
+    if (strcmp(mode, "refuse") == 0) {
+        argument.refused = "the fixture session host refused";
+        argument.fix = "the fixture fix";
+    }
+    processes->ready(processes->context, &argument, NULL);
+    spisor_memory_release(variables);
+    cJSON_Delete(environment);
 }
 
 static int prune_says_exit(const host_context *context, const char *host_id, double interval) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "state", context->state);
-    cJSON_AddStringToObject(argument, "hostId", host_id);
-    cJSON_AddNumberToObject(argument, "self", host_process_id());
-    cJSON_AddNumberToObject(argument, "checkMilliseconds", interval);
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_prune_operation, argument, &refusal);
-    int exit_now = answer == NULL || !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer, "exit"));
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_prune_argument argument = SPISOR_INIT(runtime_processes_prune_argument);
+    runtime_processes_prune_answer answer = SPISOR_INIT(runtime_processes_prune_answer);
+    argument.state = context->state;
+    argument.host_id = host_id;
+    argument.self = (int64_t)host_process_id();
+    argument.check_milliseconds = interval;
+    int exit_now = processes->prune(processes->context, &argument, &answer, NULL) != SPISOR_OK || answer.exit != 0;
+    processes->release_prune_answer(processes->context, &answer);
     return exit_now;
 }
 

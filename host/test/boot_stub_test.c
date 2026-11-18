@@ -4,7 +4,7 @@
 #include "holders.h"
 #include "processes.h"
 #include "processes_request.h"
-#include "json_service.h"
+#include "runtime/processes.h"
 
 static char *stub_of(const host_world *world) {
     return joined(world->base.cache, "boot/spisor-boot" EXECUTABLE_ENDING);
@@ -177,22 +177,29 @@ static void keeps_the_spisor_host_version_a_launch_runs_through_a_sweep_until_it
 }
 
 #if defined(_WIN32)
-/** The live runs processes.liveRuns answers, as one JSON text. */
-static char *live_runs(const host_world *world) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "state", world->base.state);
-    cJSON *refusal = NULL;
-    cJSON *answer = runtime_call_operation(runtime_processes_live_runs_operation, argument, &refusal);
-    char *printed = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(answer, "runs"));
-    cJSON_Delete(answer);
-    cJSON_Delete(refusal);
-    return printed;
+static int runs_version(const runtime_processes_run *run, const char *id, const char *version) {
+    for (size_t index = 0; index < run->version_count; index++) {
+        if (strcmp(run->versions[index].id, id) == 0 && strcmp(run->versions[index].version, version) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
+/** Whether a live run that processes.liveRuns answers runs spisor-host 1.0.0. */
 static int records_spisor_host(const void *context) {
-    char *runs = live_runs(context);
-    int recorded = runs != NULL && strstr(runs, "\"spisor-host\":\"1.0.0\"") != NULL;
-    cJSON_free(runs);
+    const host_world *world = context;
+    const runtime_processes_definition *processes = runtime_processes_definition_of();
+    runtime_processes_live_argument argument = SPISOR_INIT(runtime_processes_live_argument);
+    runtime_processes_live_answer answer = SPISOR_INIT(runtime_processes_live_answer);
+    int recorded = 0;
+    argument.state = world->base.state;
+    if (processes->live_runs(processes->context, &argument, &answer, NULL) == SPISOR_OK) {
+        for (size_t index = 0; !recorded && index < answer.run_count; index++) {
+            recorded = runs_version(&answer.runs[index], "spisor-host", "1.0.0");
+        }
+    }
+    processes->release_live_answer(processes->context, &answer);
     return recorded;
 }
 
