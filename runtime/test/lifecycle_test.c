@@ -315,7 +315,7 @@ static int registry_holds_only_its_lock(const scratch *place) {
     char hosts[1200];
     snprintf(hosts, sizeof hosts, "%s/hosts", place->state);
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(hosts, &listing) == 1);
+    CHECK(runtime_list_directory(hosts, &listing) == SPISOR_OK);
     int only_lock = listing.count == 0 || (listing.count == 1 && strcmp(listing.entries[0].name, ".lock") == 0);
     runtime_free_directory_listing(&listing);
     return only_lock;

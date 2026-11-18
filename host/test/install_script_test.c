@@ -575,7 +575,7 @@ static int is_one_of(const char *name, const char *const *allowed, size_t count)
 
 static void expect_only(const char *directory, const char *const *allowed, size_t count, const char *label) {
     runtime_directory_listing listing;
-    if (!spisor_file_exists(directory) || !runtime_list_directory(directory, &listing)) {
+    if (!spisor_file_exists(directory) || runtime_list_directory(directory, &listing) != SPISOR_OK) {
         return;
     }
     for (size_t index = 0; index < listing.count; index++) {

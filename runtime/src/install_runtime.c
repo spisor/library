@@ -421,7 +421,7 @@ static void sweep_stale_staging(const acquisition *runtime, const char *platform
     char prefix[96];
     snprintf(prefix, sizeof prefix, ".%s-staging-", platform);
     runtime_directory_listing listing;
-    if (version_folder == NULL || !runtime_list_directory(version_folder, &listing)) {
+    if (version_folder == NULL || runtime_list_directory(version_folder, &listing) != SPISOR_OK) {
         spisor_memory_release(version_folder);
         return;
     }
@@ -443,7 +443,7 @@ static void sweep_stale_staging(const acquisition *runtime, const char *platform
 /** @implNote A version still running holds its files, so one that cannot be removed waits for the next acquisition. */
 static void remove_other_versions(const acquisition *runtime) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(runtime->versions, &listing)) {
+    if (runtime_list_directory(runtime->versions, &listing) != SPISOR_OK) {
         return;
     }
     for (size_t index = 0; index < listing.count; index++) {

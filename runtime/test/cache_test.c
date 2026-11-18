@@ -240,7 +240,7 @@ static char *listing_of(const char *rest) {
     char *path = in_cache(rest);
     runtime_directory_listing listing;
     cJSON *names = cJSON_CreateArray();
-    if (runtime_list_directory(path, &listing)) {
+    if (runtime_list_directory(path, &listing) == SPISOR_OK) {
         for (size_t index = 0; index < listing.count; index++) {
             cJSON_AddItemToArray(names, cJSON_CreateString(listing.entries[index].name));
         }
@@ -943,7 +943,7 @@ static double now_milliseconds(void) {
 /** Dates path and everything under it hours into the past. */
 static void age_tree(const char *path, double milliseconds) {
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(path, &listing) == 1);
+    CHECK(runtime_list_directory(path, &listing) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         char *child = joined(path, listing.entries[index].name);
         if (listing.entries[index].is_directory) {

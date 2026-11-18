@@ -163,9 +163,10 @@ static int search_binaries(const char *directory, const char *suffix, binary_sea
     search->first_name = NULL;
     search->count = 0;
     runtime_directory_listing listing;
-    if (!runtime_list_directory(directory, &listing)) {
+    spisor_status listed = runtime_list_directory(directory, &listing);
+    if (listed != SPISOR_OK) {
         const char *parts[2] = {"could not list ", directory};
-        *problem = runtime_cache_text(parts, 2);
+        *problem = listed == SPISOR_OUT_OF_MEMORY ? NULL : runtime_cache_text(parts, 2);
         return 0;
     }
     int searched = 1;

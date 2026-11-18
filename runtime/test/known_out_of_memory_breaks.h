@@ -51,8 +51,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OUT_OF_MEMORY_SUITE, "fetch's get", 0, MEASURED_ON_WINDOWS,
      "fetch.c open_partial reads a failed allocation as an unwritable destination"},
     {OUT_OF_MEMORY_SUITE, "detect's on_path", 0, MEASURED_ON_WINDOWS,
-     "on_path.c found_in: directory_tree.c runtime_list_directory reads a failed child path as an unreadable "
-     "directory, answering NONE"},
+     "on_path.c matching_file: followed_entry.c runtime_is_followed_file reads a failed wide path as no file, "
+     "answering NONE"},
     {OUT_OF_MEMORY_SUITE, "registry's register_host", 0, MEASURED_ON_WINDOWS,
      "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
      "is_directory wide path as an uncreatable folder, so the lock is refused"},
@@ -66,14 +66,14 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "change_reversal.c reverse_steps: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed "
      "is_directory wide path as an uncreatable folder, so the lock is refused"},
     {OUT_OF_MEMORY_SUITE, "lists' applications", 0, MEASURED_ON_WINDOWS,
-     "registry.c list_hosts: directory_tree.c runtime_list_directory reads a failed child path as an unreadable "
-     "directory"},
+     "registry.c list_one: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed wide "
+     "path as an absent file, answering OK"},
     {OUT_OF_MEMORY_SUITE, "marketplace's remember", 0, MEASURED_ON_WINDOWS,
      "marketplace_memory.c loaded_store: file.c spisor_file_exists reads a failed wide path as an absent file, "
      "then writes the store"},
     {OUT_OF_MEMORY_SUITE, "cache's installed", 0, MEASURED_ON_WINDOWS,
-     "cache_folders.c runtime_cache_folder_names: directory_tree.c runtime_list_directory reads a failed child "
-     "path as an unreadable directory, answering OK with no versions"},
+     "cache_marker.c recorded_hashes: file.c spisor_read_file_reporting reads a failed is_directory wide path as "
+     "a failed read, answering OK with no versions"},
     {OUT_OF_MEMORY_SUITE, "install's packages", 0, MEASURED_ON_WINDOWS,
      "install.c merge_user_file: file.c spisor_probe_file reads a failed wide path as an absent file"},
     {OUT_OF_MEMORY_SUITE, "cache's sweep", 0, MEASURED_ON_WINDOWS,
@@ -134,8 +134,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "registry.c runtime_registry_load: json_file.c spisor_read_json_file through file.c spisor_probe_file reads "
      "a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "runtime", 0, MEASURED_ON_WINDOWS,
-     "install_runtime.c runtime_on_path: directory_tree.c runtime_list_directory reads a failed child path as an "
-     "unreadable directory, so a node on the PATH is acquired again"},
+     "install_runtime.c runtime_on_path: on_path.c matching_file: followed_entry.c runtime_is_followed_file reads "
+     "a failed wide path as no file, so a node on the PATH is acquired again"},
     {OPERATIONS_SUITE, "register_loader", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "updates' apply", 0, MEASURED_ON_WINDOWS,
@@ -153,7 +153,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "catalog_state.c runtime_catalog_origin_of: catalog_url.c runtime_catalog_file_url_of_path answers NULL out "
      "of memory, read as no origin"},
     {OPERATIONS_SUITE, "updates' run", 0, MEASURED_ON_WINDOWS,
-     "directory_tree.c runtime_list_directory reads a failed child path as an unreadable directory"},
+     "updates_run.c registrations_of: registry.c list_one: registry.c runtime_registry_load through file.c "
+     "spisor_probe_file reads a failed wide path as an absent file"},
     {OPERATIONS_SUITE, "boot's read", 0, MEASURED_ON_WINDOWS,
      "file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading runs out of memory"},
     {OPERATIONS_SUITE, "boot's write", 0, MEASURED_ON_WINDOWS,
@@ -175,8 +176,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
     {OPERATIONS_SUITE, "processes' record_run", 0, MEASURED_ON_WINDOWS,
      "run_records.c write_record: file.c spisor_replace_file reads a failed write_target_of as a failed write"},
     {OPERATIONS_SUITE, "processes' live_runs", 0, MEASURED_ON_WINDOWS,
-     "run_records.c runtime_live_runs: directory_tree.c runtime_list_directory reads a failed child path as an "
-     "unreadable directory"},
+     "run_records.c add_live_run: file.c spisor_read_file_reporting answers READ_FAILED when open_for_reading "
+     "runs out of memory"},
     {OPERATIONS_SUITE, "processes' remove_runs", 0, MEASURED_ON_WINDOWS,
      "run_records.c runs_folder reads a failed runtime_cache_joined (cache_folders.c) as a failed removal"},
     {OPERATIONS_SUITE, "processes' hold starting", 0, MEASURED_ON_WINDOWS,
@@ -185,7 +186,8 @@ static const known_out_of_memory_break known_out_of_memory_breaks[] = {
      "registry.c register_with: hosts_lock.c lock_path: file.c spisor_make_directories reads a failed allocation "
      "as an uncreatable folder, so the lock is refused"},
     {OPERATIONS_SUITE, "hosts' list", 0, MEASURED_ON_WINDOWS,
-     "directory_tree.c runtime_list_directory reads a failed child path as an unreadable directory"},
+     "registry.c list_one: registry.c runtime_registry_load through file.c spisor_probe_file reads a failed wide "
+     "path as an absent file"},
     {OPERATIONS_SUITE, "hosts' remove", 0, MEASURED_ON_WINDOWS,
      "change_reversal.c reverse_step: registry.c runtime_registry_load through file.c spisor_probe_file reads a "
      "failed wide path as an absent file"},

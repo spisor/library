@@ -58,7 +58,7 @@ static inline void snapshot_entry(const char *directory, const char *relative, c
 static inline void snapshot_directory(const char *directory, const char *relative, const char *left_out,
                                       char **snapshot, size_t *length) {
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(directory, &listing) == 1);
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         snapshot_entry(directory, relative, &listing.entries[index], left_out, snapshot, length);
     }

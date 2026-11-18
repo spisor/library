@@ -211,7 +211,7 @@ static int compare_names(const void *left, const void *right) {
 /** Adds every file under directory as {key: path}, the key relative with / separators. */
 static int add_every_file(cJSON *keys, const char *directory, const char *prefix) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(directory, &listing)) {
+    if (runtime_list_directory(directory, &listing) != SPISOR_OK) {
         return 0;
     }
     int complete = 1;

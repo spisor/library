@@ -40,7 +40,7 @@ static int run_command(const char *list_path, const char *out_path) {
 
 static int count_files_in(const char *directory) {
     runtime_directory_listing listing;
-    int listed = runtime_list_directory(directory, &listing);
+    int listed = runtime_list_directory(directory, &listing) == SPISOR_OK;
     int count = listed ? (int)listing.count : -1;
     runtime_free_directory_listing(&listing);
     return count;

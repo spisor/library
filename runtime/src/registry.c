@@ -607,10 +607,10 @@ static cJSON *list_hosts(const registry_request *request, cJSON **refusal) {
     if (directory == NULL) {
         return out_of_memory(refusal);
     }
-    int listed = runtime_list_directory(directory, &listing);
+    spisor_status listed = runtime_list_directory(directory, &listing);
     spisor_memory_release(directory);
-    if (!listed) {
-        return refuse_unlistable(request->state, refusal);
+    if (listed != SPISOR_OK) {
+        return listed == SPISOR_OUT_OF_MEMORY ? out_of_memory(refusal) : refuse_unlistable(request->state, refusal);
     }
     cJSON *result = cJSON_CreateObject();
     cJSON *hosts = result == NULL ? NULL : cJSON_AddArrayToObject(result, "hosts");

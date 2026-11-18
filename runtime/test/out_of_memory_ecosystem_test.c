@@ -180,7 +180,7 @@ static void add_file(cJSON *snapshot, const char *path, const char *relative) {
 static void add_tree(cJSON *snapshot, const char *root, const char *relative) {
     char *directory = relative[0] == 0 ? joined(root, ".") : joined(root, relative);
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(directory, &listing) == 1);
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         char child[1024];
         snprintf(child, sizeof child, "%s%s%s", relative, relative[0] == 0 ? "" : "/", listing.entries[index].name);

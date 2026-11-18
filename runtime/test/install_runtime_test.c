@@ -171,7 +171,7 @@ static void keeps_only_the_executable_and_the_archive_s_hash_in_place_of_the_arc
     char *marker = text_in(directory, ".unpacked");
     check_text(marker, expected, "unpacked marker");
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(directory, &listing) == 1);
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK);
     size_t visible = 0;
     for (size_t index = 0; index < listing.count; index++) {
         if (listing.entries[index].name[0] != '.') {

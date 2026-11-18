@@ -804,7 +804,7 @@ static int every_change_is_recorded(void) {
     cJSON *registration = NULL;
     snprintf(shims, sizeof shims, "%s/bin", place.command_state);
     CHECK(runtime_registry_load(place.command_state, "namer", &registration) == RUNTIME_REGISTRY_OK);
-    int all = runtime_list_directory(shims, &listing);
+    int all = runtime_list_directory(shims, &listing) == SPISOR_OK;
     for (size_t index = 0; all && index < listing.count; index++) {
         all = recorded(registration, "file", "path", listing.entries[index].name);
     }

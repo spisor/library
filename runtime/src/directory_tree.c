@@ -89,18 +89,18 @@ void runtime_free_directory_listing(runtime_directory_listing *listing) {
     listing->count = 0;
 }
 
-static int finish_listing(entry_buffer *buffer, int complete, runtime_directory_listing *listing) {
-    if (!complete) {
+static spisor_status finish_listing(entry_buffer *buffer, spisor_status status, runtime_directory_listing *listing) {
+    if (status != SPISOR_OK) {
         runtime_directory_listing partial = {buffer->entries, buffer->count};
         runtime_free_directory_listing(&partial);
-        return 0;
+        return status;
     }
     if (buffer->count > 1) {
         qsort(buffer->entries, buffer->count, sizeof(*buffer->entries), compare_entries);
     }
     listing->entries = buffer->entries;
     listing->count = buffer->count;
-    return 1;
+    return SPISOR_OK;
 }
 
 static int remove_children(const char *path);
@@ -128,27 +128,36 @@ static int is_real_directory(DWORD attributes) {
     return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 && !is_reparse_point(attributes);
 }
 
-static int read_found_entries(HANDLE handle, WIN32_FIND_DATAW *found, entry_buffer *buffer) {
-    int complete = 1;
+static spisor_status read_found_entries(HANDLE handle, WIN32_FIND_DATAW *found, entry_buffer *buffer) {
+    spisor_status status = SPISOR_OK;
     do {
         char *name = to_utf8(found->cFileName);
-        if (name == NULL) {
-            complete = 0;
-        } else if (!is_dot_entry(name)) {
-            complete = append(buffer, name, is_real_directory(found->dwFileAttributes));
+        int is_directory = is_real_directory(found->dwFileAttributes);
+        if (name == NULL || (!is_dot_entry(name) && !append(buffer, name, is_directory))) {
+            status = SPISOR_OUT_OF_MEMORY;
         }
         spisor_memory_release(name);
-    } while (complete && FindNextFileW(handle, found));
-    return complete && GetLastError() == ERROR_NO_MORE_FILES;
+    } while (status == SPISOR_OK && FindNextFileW(handle, found));
+    return status == SPISOR_OK && GetLastError() != ERROR_NO_MORE_FILES ? SPISOR_REFUSED : status;
 }
 
-int runtime_list_directory(const char *path, runtime_directory_listing *listing) {
-    memset(listing, 0, sizeof(*listing));
+static spisor_status wide_pattern_of(const char *path, wchar_t **wide_pattern) {
+    *wide_pattern = NULL;
+    if (!spisor_is_convertible_path(path)) {
+        return SPISOR_REFUSED;
+    }
     char *pattern = child_path(path, "*");
-    wchar_t *wide_pattern = pattern == NULL ? NULL : spisor_wide_path(pattern);
+    *wide_pattern = pattern == NULL ? NULL : spisor_wide_path(pattern);
     spisor_memory_release(pattern);
-    if (wide_pattern == NULL) {
-        return 0;
+    return *wide_pattern == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+}
+
+spisor_status runtime_list_directory(const char *path, runtime_directory_listing *listing) {
+    memset(listing, 0, sizeof(*listing));
+    wchar_t *wide_pattern;
+    spisor_status status = wide_pattern_of(path, &wide_pattern);
+    if (status != SPISOR_OK) {
+        return status;
     }
     entry_buffer buffer = {NULL, 0, 0};
     WIN32_FIND_DATAW found;
@@ -156,11 +165,11 @@ int runtime_list_directory(const char *path, runtime_directory_listing *listing)
     spisor_memory_release(wide_pattern);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD reason = GetLastError();
-        return reason == ERROR_FILE_NOT_FOUND || reason == ERROR_PATH_NOT_FOUND;
+        return reason == ERROR_FILE_NOT_FOUND || reason == ERROR_PATH_NOT_FOUND ? SPISOR_OK : SPISOR_REFUSED;
     }
-    int complete = read_found_entries(handle, &found, &buffer);
+    status = read_found_entries(handle, &found, &buffer);
     FindClose(handle);
-    return finish_listing(&buffer, complete, listing);
+    return finish_listing(&buffer, status, listing);
 }
 
 static DWORD attributes_of(const char *path) {
@@ -340,11 +349,11 @@ static int append_directory_entry(entry_buffer *buffer, const char *parent, cons
     return full != NULL && append(buffer, name, is_directory);
 }
 
-int runtime_list_directory(const char *path, runtime_directory_listing *listing) {
+spisor_status runtime_list_directory(const char *path, runtime_directory_listing *listing) {
     memset(listing, 0, sizeof(*listing));
     DIR *handle = opendir(path);
     if (handle == NULL) {
-        return errno == ENOENT || errno == ENOTDIR;
+        return errno == ENOENT || errno == ENOTDIR ? SPISOR_OK : SPISOR_REFUSED;
     }
     entry_buffer buffer = {NULL, 0, 0};
     int complete = 1;
@@ -353,7 +362,7 @@ int runtime_list_directory(const char *path, runtime_directory_listing *listing)
         complete = is_dot_entry(entry->d_name) || append_directory_entry(&buffer, path, entry->d_name);
     }
     closedir(handle);
-    return finish_listing(&buffer, complete, listing);
+    return finish_listing(&buffer, complete ? SPISOR_OK : SPISOR_OUT_OF_MEMORY, listing);
 }
 
 int runtime_remove_tree(const char *path) {
@@ -441,7 +450,7 @@ runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
 
 static int remove_children(const char *path) {
     runtime_directory_listing listing;
-    int removed = runtime_list_directory(path, &listing);
+    int removed = runtime_list_directory(path, &listing) == SPISOR_OK;
     for (size_t index = 0; removed && index < listing.count; index++) {
         char *child = child_path(path, listing.entries[index].name);
         removed = child != NULL && runtime_remove_tree(child);

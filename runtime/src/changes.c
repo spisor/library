@@ -133,10 +133,12 @@ static void search_other_registrations(const char *state, const char *host, cons
                                        runtime_changes_holders *holders) {
     const char *segments[2] = {state, "hosts"};
     char *directory = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    runtime_directory_listing listing;
-    if (directory == NULL || !runtime_list_directory(directory, &listing)) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status listed = directory == NULL ? SPISOR_OUT_OF_MEMORY : runtime_list_directory(directory, &listing);
+    if (listed != SPISOR_OK) {
         spisor_memory_release(directory);
-        holders->unreadable = 1;
+        holders->failed = listed == SPISOR_OUT_OF_MEMORY;
+        holders->unreadable = !holders->failed;
         return;
     }
     spisor_memory_release(directory);

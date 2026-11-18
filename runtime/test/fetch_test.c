@@ -119,7 +119,7 @@ static int has_no_partial_file(void) {
     char parent[1200];
     snprintf(parent, sizeof parent, "%s/cache/bundles", scratch);
     runtime_directory_listing listing;
-    if (!runtime_list_directory(parent, &listing)) {
+    if (runtime_list_directory(parent, &listing) != SPISOR_OK) {
         return 0;
     }
     int clean = 1;

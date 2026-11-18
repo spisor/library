@@ -78,7 +78,7 @@ static int own_change(const char *path, double *milliseconds, int *is_directory)
 
 static int newest_child_change(const char *path, double *newest) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(path, &listing)) {
+    if (runtime_list_directory(path, &listing) != SPISOR_OK) {
         return 0;
     }
     int read = 1;

@@ -364,7 +364,7 @@ static spisor_status run_apply(void) {
 static int recorded_no_run_unless_applied(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/spisor-host");
-    CHECK(runtime_list_directory(runs, &listing) == 1);
+    CHECK(runtime_list_directory(runs, &listing) == SPISOR_OK);
     spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 0;
     runtime_free_directory_listing(&listing);
@@ -614,7 +614,7 @@ static int placed_nothing_unless_placed(void) {
     if (last_status != SPISOR_OK && exists_in(base.cache, "boot")) {
         runtime_directory_listing listing = {NULL, 0};
         char *folder = joined(base.cache, "boot");
-        CHECK(runtime_list_directory(folder, &listing) == 1);
+        CHECK(runtime_list_directory(folder, &listing) == SPISOR_OK);
         spisor_memory_release(folder);
         int empty = listing.count == 0;
         runtime_free_directory_listing(&listing);
@@ -798,7 +798,7 @@ static spisor_status run_record_run(void) {
 static int recorded_no_new_run_unless_ok(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/" BACKGROUND_HOST);
-    CHECK(runtime_list_directory(runs, &listing) == 1);
+    CHECK(runtime_list_directory(runs, &listing) == SPISOR_OK);
     spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 2;
     runtime_free_directory_listing(&listing);

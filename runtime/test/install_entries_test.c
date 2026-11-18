@@ -52,7 +52,7 @@ static const char *const HAND_WRITTEN_SETTINGS =
 /** Every name under directory relative to it, joined with /, depth first in name order, as one JSON array. */
 static void add_names(cJSON *names, const char *directory, const char *relative) {
     runtime_directory_listing listing;
-    if (!runtime_list_directory(directory, &listing)) {
+    if (runtime_list_directory(directory, &listing) != SPISOR_OK) {
         return;
     }
     for (size_t index = 0; index < listing.count; index++) {

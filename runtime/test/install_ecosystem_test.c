@@ -605,7 +605,7 @@ static void expect_no_staging_left(const install_base *base) {
     char prefix[64];
     snprintf(prefix, sizeof prefix, ".%s-staging-", runtime_platform_key());
     runtime_directory_listing listing;
-    CHECK(runtime_list_directory(versions, &listing) == 1);
+    CHECK(runtime_list_directory(versions, &listing) == SPISOR_OK);
     for (size_t index = 0; index < listing.count; index++) {
         if (strncmp(listing.entries[index].name, prefix, strlen(prefix)) == 0) {
             fprintf(stderr, "a staging folder was left: %s\n", listing.entries[index].name);
