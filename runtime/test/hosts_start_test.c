@@ -3,6 +3,7 @@
 #endif
 
 #include "hosts_call.h"
+#include "spisor/allocation.h"
 #include "updates_fixture.h"
 
 #include "hosts_start.h"
@@ -111,7 +112,7 @@ static void a_session_start_applies_updates(void) {
     register_test_host("1.0.0");
     enable_plugin_a();
     record_a_previous_start();
-    free(record_a_live_run());
+    spisor_memory_release(record_a_live_run());
     catalog_answer started = start_host(1);
     expect_success(started, "session start");
     CHECK(is_false_at(started.tree, "reusedRecordedRun"));
@@ -160,7 +161,7 @@ static void a_non_session_start_reuses_a_live_recorded_run(void) {
     CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(stamped, "pid")) == (double)current_process_id());
     cJSON_Delete(stamped);
     expect_references(TEST_HOST, "{\"run\":" RECORDED_RUN ",\"next\":{}}", "references untouched");
-    free(live);
+    spisor_memory_release(live);
     cJSON_Delete(started.tree);
     finish_base();
 }
@@ -270,7 +271,8 @@ static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(v
     char references[1024];
     snprintf(references, sizeof references, "{\"run\":%s,\"next\":{}}", text);
     record_references(TEST_HOST, references);
-    free(runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory));
+    spisor_memory_release(runtime_record_run(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS,
+            &record_out_of_memory));
     catalog_answer started = start_host(0);
     expect_success(started, "plugin case");
     expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Koffi\":\"3.0.0\"}", "case kept");
@@ -286,7 +288,8 @@ static void a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorde
     enable_plugin_a();
     record_a_previous_start();
     cJSON *other = parsed("{\"Test-Host\":\"1.0.0\"}");
-    free(runtime_record_run(state, "other-host", other, RUNTIME_DEFAULT_CHECK_MILLISECONDS, &record_out_of_memory));
+    spisor_memory_release(runtime_record_run(state, "other-host", other, RUNTIME_DEFAULT_CHECK_MILLISECONDS,
+            &record_out_of_memory));
     cJSON_Delete(other);
     catalog_answer started = start_host(0);
     expect_success(started, "host case");
@@ -367,7 +370,7 @@ static void a_refused_session_start_publishes_its_refusal(void) {
     check_text(text_at(record, "refused"), text_at(started.tree, "message"), "published refusal");
     check_text(text_at(record, "fix"), REINSTALL_FIX, "published fix");
     cJSON_Delete(record);
-    free(path);
+    spisor_memory_release(path);
     cJSON_Delete(started.tree);
     finish_base();
 }

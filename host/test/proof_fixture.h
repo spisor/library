@@ -1,6 +1,7 @@
 #ifndef HOST_TEST_PROOF_FIXTURE_H
 #define HOST_TEST_PROOF_FIXTURE_H
 
+#include "spisor/allocation.h"
 #include "host_fixture.h"
 
 #define PROOF_PLUGIN_ID "fixture-plugin"
@@ -15,17 +16,17 @@ static inline char *staged_spisor_host(void) {
     return joined(STAGED_BUNDLES_PATH, rest);
 }
 
-/** The environment variable name of this process, read through the wide API on Windows; freed with free, NULL when unset. */
+/** The environment variable name of this process, read through the wide API on Windows; freed, NULL when unset. */
 static inline char *environment_value(const char *name) {
 #if defined(_WIN32)
     wchar_t *wide_name = wide_of(name);
     const wchar_t *wide = _wgetenv(wide_name);
-    free(wide_name);
+    spisor_memory_release(wide_name);
     if (wide == NULL) {
         return NULL;
     }
     int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
-    char *value = malloc((size_t)bytes);
+    char *value = spisor_memory_allocate((size_t)bytes);
     WideCharToMultiByte(CP_UTF8, 0, wide, -1, value, bytes, NULL, NULL);
     return value;
 #else
@@ -39,7 +40,7 @@ static inline int holds_file(const char *directory, const char *name, const char
     snprintf(file, sizeof file, "%s%.*s", name, (int)extension_length, extension);
     char *path = joined(directory, file);
     int held = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return held;
 }
 
@@ -55,7 +56,7 @@ static inline int holds_runtime(const char *directory, const char *name) {
     char *listed = environment_value("PATHEXT");
     char extensions[2048];
     snprintf(extensions, sizeof extensions, ".EXE;.CMD;.BAT;.COM;%s", listed == NULL ? "" : listed);
-    free(listed);
+    spisor_memory_release(listed);
     for (const char *start = extensions; *start != 0;) {
         const char *end = strchr(start, ';');
         size_t length = end == NULL ? strlen(start) : (size_t)(end - start);
@@ -78,17 +79,17 @@ static inline int holds_javascript_runtime(const char *directory) {
     return 0;
 }
 
-/** The directories of path_variable that hold no JavaScript runtime, joined again; freed with free. */
+/** The directories of path_variable that hold no JavaScript runtime, joined again; freed. */
 static inline char *path_without_javascript(const char *path_variable) {
     char *copy = copy_text(path_variable == NULL ? "" : path_variable);
-    char *kept = calloc(strlen(copy) + 1, 1);
+    char *kept = spisor_memory_allocate_zeroed(strlen(copy) + 1, 1);
     for (char *directory = strtok(copy, PATH_SEPARATOR); directory != NULL; directory = strtok(NULL, PATH_SEPARATOR)) {
         if (directory[0] != 0 && !holds_javascript_runtime(directory)) {
             strcat(kept, kept[0] == 0 ? "" : PATH_SEPARATOR);
             strcat(kept, directory);
         }
     }
-    free(copy);
+    spisor_memory_release(copy);
     return kept;
 }
 
@@ -101,7 +102,7 @@ static inline void expect_no_javascript_on(const char *path_variable, const char
             check_failures++;
         }
     }
-    free(copy);
+    spisor_memory_release(copy);
 }
 
 /** Runs executable with the NULL-ended arguments under the world's environment and path to its end; its exit code. */
@@ -169,12 +170,12 @@ static inline void build_proof_catalog(host_world *world, const char *const *loa
     program run;
     CHECK(proof_run(world, &run, spisor_host, arguments, empty) == 0);
     program_free(&run);
-    free(spisor_host);
-    free(empty);
+    spisor_memory_release(spisor_host);
+    spisor_memory_release(empty);
     for (size_t index = 0; index < loader_count; index++) {
-        free(loaders[index]);
+        spisor_memory_release(loaders[index]);
     }
-    free(plugin);
+    spisor_memory_release(plugin);
 }
 
 /** The home of the user the world installs for, holding Claude Code's home with settings of its own. */

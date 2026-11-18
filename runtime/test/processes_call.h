@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "catalog_call.h"
 #include "check.h"
@@ -59,9 +60,10 @@ static inline void processes_request_read(const cJSON *request, processes_reques
     memset(read, 0, sizeof *read);
     read->state = processes_text(request, "state");
     read->host_id = processes_text(request, "hostId");
-    read->arguments = calloc((size_t)cJSON_GetArraySize(arguments) + 1, sizeof *read->arguments);
-    read->environment = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *read->environment);
-    read->run = calloc((size_t)cJSON_GetArraySize(run) + 1, sizeof *read->run);
+    read->arguments = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(arguments) + 1, sizeof *read->arguments);
+    read->environment = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(environment) + 1,
+            sizeof *read->environment);
+    read->run = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(run) + 1, sizeof *read->run);
     CHECK(read->arguments != NULL && read->environment != NULL && read->run != NULL);
     cJSON_ArrayForEach(entry, arguments) {
         read->arguments[read->argument_count++] = cJSON_GetStringValue(entry);
@@ -77,9 +79,9 @@ static inline void processes_request_read(const cJSON *request, processes_reques
 }
 
 static inline void processes_request_free(processes_request *read) {
-    free((void *)read->arguments);
-    free(read->environment);
-    free(read->run);
+    spisor_memory_release((void *)read->arguments);
+    spisor_memory_release(read->environment);
+    spisor_memory_release(read->run);
 }
 
 static inline void processes_add_text(cJSON *object, const char *name, const char *text) {

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "marketplace_call.h"
 #include "fetch_hooks.h"
@@ -245,7 +246,7 @@ static void refuses_html_naming_the_source(void) {
 
 static char *spaces_over_the_limit(void) {
     size_t length = RUNTIME_MARKETPLACE_MAXIMUM_BYTES + 1;
-    char *body = malloc(length + 1);
+    char *body = spisor_memory_allocate(length + 1);
     if (body != NULL) {
         memset(body, ' ', length);
         body[length] = '\0';
@@ -269,7 +270,7 @@ static void refuses_a_body_over_the_limit_naming_the_source(void) {
     expect_refusal(inline_text, "spisor", "huge text names the source");
     CHECK(message_names(inline_text, "limit"));
     cJSON_Delete(inline_text.tree);
-    free(huge);
+    spisor_memory_release(huge);
 }
 
 static void refuses_text_that_is_not_json_and_a_broken_copy(void) {
@@ -468,9 +469,9 @@ static void run_against_the_server(void) {
         refuses_html_naming_the_source();
         refuses_a_body_over_the_limit_naming_the_source();
         one_bad_source_does_not_stop_the_others();
-        free(http_fixture_stop(server));
+        spisor_memory_release(http_fixture_stop(server));
     }
-    free(huge);
+    spisor_memory_release(huge);
 }
 
 static void run_without_a_server(void) {

@@ -1,6 +1,7 @@
 #ifndef HOST_TEST_HOST_FIXTURE_H
 #define HOST_TEST_HOST_FIXTURE_H
 
+#include "spisor/allocation.h"
 #include "install_fixture.h"
 
 #include "cache.h"
@@ -44,7 +45,7 @@ typedef struct program {
 } program;
 
 static inline char *copy_text(const char *text) {
-    char *copy = malloc(strlen(text) + 1);
+    char *copy = spisor_memory_allocate(strlen(text) + 1);
     strcpy(copy, text);
     return copy;
 }
@@ -53,7 +54,7 @@ static inline char *copy_text(const char *text) {
 
 static inline wchar_t *wide_of(const char *text) {
     int units = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
-    wchar_t *wide = malloc((size_t)units * sizeof *wide);
+    wchar_t *wide = spisor_memory_allocate((size_t)units * sizeof *wide);
     MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, units);
     return wide;
 }
@@ -63,7 +64,7 @@ static inline wchar_t *program_line(const char *executable, const cJSON *argumen
     for (const cJSON *argument = arguments->child; argument != NULL; argument = argument->next) {
         capacity += 2 * strlen(argument->valuestring) + 4;
     }
-    wchar_t *line = malloc(capacity * sizeof *line);
+    wchar_t *line = spisor_memory_allocate(capacity * sizeof *line);
     wchar_t *program_name = wide_of(executable);
     size_t used = 0;
     line[used++] = L'"';
@@ -73,10 +74,10 @@ static inline wchar_t *program_line(const char *executable, const cJSON *argumen
     for (const cJSON *argument = arguments->child; argument != NULL; argument = argument->next) {
         wchar_t *wide = wide_of(argument->valuestring);
         used = runtime_append_quoted_argument(line, used, wide);
-        free(wide);
+        spisor_memory_release(wide);
     }
     line[used] = 0;
-    free(program_name);
+    spisor_memory_release(program_name);
     return line;
 }
 
@@ -85,16 +86,16 @@ static inline wchar_t *program_environment(const cJSON *environment) {
     for (const cJSON *entry = environment->child; entry != NULL; entry = entry->next) {
         capacity += 2 * (strlen(entry->string) + strlen(entry->valuestring)) + 4;
     }
-    wchar_t *block = malloc(capacity * sizeof *block);
+    wchar_t *block = spisor_memory_allocate(capacity * sizeof *block);
     size_t used = 0;
     for (const cJSON *entry = environment->child; entry != NULL; entry = entry->next) {
-        char *line = malloc(strlen(entry->string) + strlen(entry->valuestring) + 2);
+        char *line = spisor_memory_allocate(strlen(entry->string) + strlen(entry->valuestring) + 2);
         sprintf(line, "%s=%s", entry->string, entry->valuestring);
         wchar_t *wide = wide_of(line);
         wcscpy(block + used, wide);
         used += wcslen(wide) + 1;
-        free(wide);
-        free(line);
+        spisor_memory_release(wide);
+        spisor_memory_release(line);
     }
     block[used++] = 0;
     block[used] = 0;
@@ -106,7 +107,7 @@ static inline HANDLE inherited_output(const char *path) {
     wchar_t *wide = wide_of(path);
     HANDLE file = CreateFileW(wide, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &inherited,
                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    free(wide);
+    spisor_memory_release(wide);
     return file;
 }
 
@@ -141,9 +142,9 @@ static inline void program_start(program *run, const char *executable, const cJS
     } else {
         fprintf(stderr, "could not start %s: %lu\n", executable, (unsigned long)GetLastError());
     }
-    free(folder);
-    free(block);
-    free(line);
+    spisor_memory_release(folder);
+    spisor_memory_release(block);
+    spisor_memory_release(line);
     CloseHandle(input);
     CloseHandle(output);
     CloseHandle(error);
@@ -165,17 +166,17 @@ static inline void program_start(program *run, const char *executable, const cJS
                                  const char *directory, int detached) {
     (void)detached;
     size_t count = (size_t)cJSON_GetArraySize(arguments);
-    char **values = calloc(count + 2, sizeof *values);
+    char **values = spisor_memory_allocate_zeroed(count + 2, sizeof *values);
     values[0] = (char *)executable;
     size_t index = 1;
     for (const cJSON *argument = arguments->child; argument != NULL; argument = argument->next) {
         values[index++] = argument->valuestring;
     }
     size_t variables_count = (size_t)cJSON_GetArraySize(environment);
-    char **variables = calloc(variables_count + 1, sizeof *variables);
+    char **variables = spisor_memory_allocate_zeroed(variables_count + 1, sizeof *variables);
     index = 0;
     for (const cJSON *entry = environment->child; entry != NULL; entry = entry->next) {
-        variables[index] = malloc(strlen(entry->string) + strlen(entry->valuestring) + 2);
+        variables[index] = spisor_memory_allocate(strlen(entry->string) + strlen(entry->valuestring) + 2);
         sprintf(variables[index++], "%s=%s", entry->string, entry->valuestring);
     }
     pid_t pid = fork();
@@ -194,10 +195,10 @@ static inline void program_start(program *run, const char *executable, const cJS
         _exit(127);
     }
     for (index = 0; index < variables_count; index++) {
-        free(variables[index]);
+        spisor_memory_release(variables[index]);
     }
-    free(variables);
-    free(values);
+    spisor_memory_release(variables);
+    spisor_memory_release(values);
     run->child.pid = pid > 0 ? (long)pid : 0;
 }
 
@@ -223,12 +224,12 @@ static inline int program_wait(program *run, unsigned milliseconds) {
 static inline char *read_text_file(const char *path) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
-    char *text = malloc(length + 1);
+    char *text = spisor_memory_allocate(length + 1);
     if (bytes != NULL) {
         memcpy(text, bytes, length);
     }
     text[bytes == NULL ? 0 : length] = 0;
-    free(bytes);
+    spisor_memory_release(bytes);
     return text;
 }
 
@@ -246,8 +247,8 @@ static inline int program_finish(program *run, unsigned milliseconds) {
 }
 
 static inline void program_free(program *run) {
-    free(run->out);
-    free(run->err);
+    spisor_memory_release(run->out);
+    spisor_memory_release(run->err);
     run->out = NULL;
     run->err = NULL;
 }
@@ -278,8 +279,8 @@ static inline void copy_file(const char *source, const char *path) {
 #if !defined(_WIN32)
     CHECK(chmod(path, 0755) == 0);
 #endif
-    free(parent);
-    free(bytes);
+    spisor_memory_release(parent);
+    spisor_memory_release(bytes);
 }
 
 /** A FileRef to catalog/files/<id>/<version>/<name> holding a copy of the file at source. */
@@ -296,8 +297,8 @@ static inline cJSON *served_copy(install_base *base, const char *id, const char 
     cJSON_AddStringToObject(reference, "url", url);
     cJSON_AddStringToObject(reference, "sha256", sha256);
     cJSON_AddNumberToObject(reference, "size", (double)size);
-    free(url);
-    free(path);
+    spisor_memory_release(url);
+    spisor_memory_release(path);
     return reference;
 }
 
@@ -331,11 +332,11 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
 }
 
 static inline void finish_world(host_world *world) {
-    free(world->bin);
-    free(world->signals);
-    free(world->streams);
-    free(world->starts);
-    free(world->portable_secrets);
+    spisor_memory_release(world->bin);
+    spisor_memory_release(world->signals);
+    spisor_memory_release(world->streams);
+    spisor_memory_release(world->starts);
+    spisor_memory_release(world->portable_secrets);
     for (int attempt = 0; attempt < 50 && runtime_remove_tree(world->base.root) != 1; attempt++) {
         pause_milliseconds(200);
     }
@@ -346,7 +347,7 @@ static inline void finish_world(host_world *world) {
 static inline void install_fake_application(const host_world *world) {
     char *path = joined(world->bin, APPLICATION_ID EXECUTABLE_ENDING);
     copy_file(FAKE_APPLICATION_PATH, path);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static inline void copy_system_variable(cJSON *environment, const char *name) {
@@ -503,7 +504,7 @@ static inline char *install_fake_node(const host_world *world) {
     char *folder = joined(world->base.root, "node-bin");
     char *path = joined(folder, "node" EXECUTABLE_ENDING);
     copy_file(LAYER_FIXTURE_PATH, path);
-    free(path);
+    spisor_memory_release(path);
     return folder;
 }
 
@@ -522,7 +523,7 @@ static inline int world_install(host_world *world, const char *const *extra, con
         fprintf(stderr, "install answered %d: %s\n%s\n", code, run.out, run.err);
     }
     program_free(&run);
-    free(index);
+    spisor_memory_release(index);
     return code;
 }
 
@@ -627,8 +628,8 @@ static inline void copy_tree(const char *source, const char *destination) {
         } else {
             copy_file(from, to);
         }
-        free(to);
-        free(from);
+        spisor_memory_release(to);
+        spisor_memory_release(from);
     }
     runtime_free_directory_listing(&listing);
 }
@@ -651,9 +652,9 @@ static inline void schedule_second_loader(host_world *world) {
     set_portable(&world->base, "plugins." LOADER_ID ".pin", cJSON_CreateString("2.0.0"));
     write_in(world->base.state, "bundles/" LOADER_ID ".json",
              "{\"run\": {\"" LOADER_ID "\": \"1.0.0\"}, \"next\": {\"" LOADER_ID "\": \"2.0.0\"}}");
-    free(second);
-    free(first);
-    free(bundles);
+    spisor_memory_release(second);
+    spisor_memory_release(first);
+    spisor_memory_release(bundles);
 }
 
 #if defined(_WIN32)
@@ -671,7 +672,7 @@ static inline void install_launch_world(host_world *world, const char *suite, co
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
     const char *plugin[] = {"--plugin", SESSION_PLUGIN, NULL};
     CHECK(world_install(world, javascript ? plugin : NULL, javascript ? path : world->bin) == 0);
-    free(node);
+    spisor_memory_release(node);
 }
 
 /** The launch ecosystem whose loader requires SESSION_PLUGIN, installed with no plugin asked for beside it. */
@@ -683,7 +684,7 @@ static inline void install_launch_world_requiring_session_plugin(host_world *wor
     char path[4096];
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
     CHECK(world_install(world, NULL, path) == 0);
-    free(node);
+    spisor_memory_release(node);
 }
 
 static inline void launch(host_world *world, program *launcher, const char *const *application_arguments, const char *path) {
@@ -711,7 +712,7 @@ static inline void expect_holders(const host_world *world, const char *id, long 
 
 /**
  * What the layers started so far wrote to the starts file once it holds part, or what it holds after
- * START_TIMEOUT; freed with free.
+ * START_TIMEOUT; freed.
  *
  * @implNote A hold records the host's pid as it starts the process, before the layer runs at all, so a held
  * host is no proof its layer has recorded its start yet; a slow start (macOS) shows it.
@@ -720,7 +721,7 @@ static inline char *await_starts_holding(const host_world *world, const char *pa
     double started = runtime_now_milliseconds();
     char *starts = text_in(world->starts, "");
     while ((starts == NULL || strstr(starts, part) == NULL) && runtime_now_milliseconds() - started < START_TIMEOUT) {
-        free(starts);
+        spisor_memory_release(starts);
         pause_milliseconds(25);
         starts = text_in(world->starts, "");
     }

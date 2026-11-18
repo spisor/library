@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "paths.h"
 #include "runtime/paths.h"
@@ -30,7 +31,7 @@ static void expect_joined(const char *actual, const char *name, const char *labe
     if (expected != NULL) {
         check_text(actual, expected, label);
     }
-    free(expected);
+    spisor_memory_release(expected);
 }
 
 static void expect_segment(const char *name, const char *expected) {
@@ -43,7 +44,7 @@ static void expect_segment(const char *name, const char *expected) {
     } else {
         check_text(segment, expected, name);
     }
-    free(segment);
+    spisor_memory_release(segment);
 }
 
 static void segment_rules(void) {
@@ -246,8 +247,8 @@ static void places_add_the_plugin_folders(void) {
     check_text(answer.plugin_cache, cache, "plugin cache");
     expect_joined(answer.cache, "cache", "cache");
     release_both(&answer, NULL);
-    free(portable);
-    free(cache);
+    spisor_memory_release(portable);
+    spisor_memory_release(cache);
 }
 
 static void no_places_adds_nothing(void) {

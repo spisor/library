@@ -1,6 +1,7 @@
 #ifndef RUNTIME_TEST_UPDATES_CALL_H
 #define RUNTIME_TEST_UPDATES_CALL_H
 
+#include "spisor/allocation.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -51,7 +52,8 @@ static inline const char *updates_text(const cJSON *object, const char *name) {
 
 /** The members of a JSON object of texts as id and version pairs, which the caller frees. */
 static inline runtime_item_version *updates_versions_of(const cJSON *object, size_t *count) {
-    runtime_item_version *versions = calloc((size_t)cJSON_GetArraySize(object) + 1, sizeof *versions);
+    runtime_item_version *versions = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(object) + 1,
+            sizeof *versions);
     const cJSON *member;
     *count = 0;
     CHECK(versions != NULL);
@@ -64,7 +66,8 @@ static inline runtime_item_version *updates_versions_of(const cJSON *object, siz
 
 /** The members of a JSON object of texts as binding and plugin pairs, which the caller frees. */
 static inline runtime_updates_default *updates_defaults_of(const cJSON *object, size_t *count) {
-    runtime_updates_default *defaults = calloc((size_t)cJSON_GetArraySize(object) + 1, sizeof *defaults);
+    runtime_updates_default *defaults = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(object) + 1,
+            sizeof *defaults);
     const cJSON *member;
     *count = 0;
     CHECK(defaults != NULL);
@@ -91,14 +94,15 @@ static inline void updates_request_read(const cJSON *request, updates_request *r
     }
     read->defaults = updates_defaults_of(cJSON_GetObjectItemCaseSensitive(request, "defaults"), &read->default_count);
     read->running = updates_versions_of(cJSON_GetObjectItemCaseSensitive(request, "running"), &read->running_count);
-    read->damaged = calloc((size_t)cJSON_GetArraySize(problems) + 1, sizeof *read->damaged);
+    read->damaged = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(problems) + 1, sizeof *read->damaged);
     CHECK(read->damaged != NULL);
     cJSON_ArrayForEach(entry, problems) {
         read->damaged[read->damaged_count].id = updates_text(entry, "id");
         read->damaged[read->damaged_count++].version = updates_text(entry, "version");
     }
     if (cJSON_IsArray(libraries)) {
-        read->libraries = calloc((size_t)cJSON_GetArraySize(libraries) + 1, sizeof *read->libraries);
+        read->libraries = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(libraries) + 1,
+                sizeof *read->libraries);
         CHECK(read->libraries != NULL);
         cJSON_ArrayForEach(entry, libraries) {
             read->libraries[read->library_count++] = cJSON_GetStringValue(entry);
@@ -108,10 +112,10 @@ static inline void updates_request_read(const cJSON *request, updates_request *r
 
 static inline void updates_request_free(updates_request *read) {
     spisor_value_release(&read->settings);
-    free(read->defaults);
-    free(read->running);
-    free(read->damaged);
-    free((void *)read->libraries);
+    spisor_memory_release(read->defaults);
+    spisor_memory_release(read->running);
+    spisor_memory_release(read->damaged);
+    spisor_memory_release((void *)read->libraries);
 }
 
 static inline void updates_add_text(cJSON *object, const char *name, const char *text) {

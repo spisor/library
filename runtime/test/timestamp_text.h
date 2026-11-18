@@ -1,6 +1,7 @@
 #ifndef RUNTIME_TEST_TIMESTAMP_TEXT_H
 #define RUNTIME_TEST_TIMESTAMP_TEXT_H
 
+#include "spisor/allocation.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +39,7 @@ static inline size_t timestamp_length(const char *text, size_t remaining) {
  * *normalized_length; NULL when memory runs out.
  */
 static inline char *without_timestamps(const uint8_t *content, size_t length, size_t *normalized_length) {
-    char *normalized = malloc(length + 1);
+    char *normalized = spisor_memory_allocate(length + 1);
     size_t written = 0;
     for (size_t index = 0; normalized != NULL && index < length;) {
         size_t matched = timestamp_length((const char *)content + index, length - index);

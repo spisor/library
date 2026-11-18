@@ -17,6 +17,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "config_fixture.h"
 #include "scratch_directory.h"
 #include "config.h"
@@ -111,7 +112,7 @@ static void expect_member(const answer *result, const char *member, const char *
     }
     char *actual = item == NULL ? NULL : cJSON_PrintUnformatted(item);
     check_text(actual, expected_json, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void expect_refused(const answer *result, const char *label) {
@@ -126,7 +127,7 @@ static void expect_refused(const answer *result, const char *label) {
 static void expect_file(const scratch_home *home, const char *name, const char *expected, const char *label) {
     char *actual = read_settings_file(home, name);
     check_text(actual, expected, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void expect_value(const scratch_home *home, const char *plugin, const char *config_json, const char *key,
@@ -142,19 +143,19 @@ static void name_rules(void) {
     cJSON *escaping = cJSON_Parse("{\"name\":\"../x\"}");
     char *name = runtime_config_name("plugin-id", named);
     check_text(name, "antigravity", "declared name");
-    free(name);
+    spisor_memory_release(name);
     name = runtime_config_name("plugin-id", empty);
     check_text(name, "plugin-id", "empty name falls back");
-    free(name);
+    spisor_memory_release(name);
     name = runtime_config_name("plugin-id", NULL);
     check_text(name, "plugin-id", "absent config falls back");
-    free(name);
+    spisor_memory_release(name);
     CHECK(runtime_config_name("plugin-id", escaping) == NULL);
     CHECK(runtime_config_name("../plugin", NULL) == NULL);
     cJSON *padded = cJSON_Parse("{\"name\":\" p \"}");
     name = runtime_config_name("plugin-id", padded);
     check_text(name, "p", "declared name trimmed");
-    free(name);
+    spisor_memory_release(name);
     cJSON_Delete(padded);
     cJSON_Delete(named);
     cJSON_Delete(empty);
@@ -349,7 +350,7 @@ static void merge_and_walk_units(void) {
     cJSON *merged = runtime_merge(defaults, file);
     char *text = merged == NULL ? NULL : cJSON_PrintUnformatted(merged);
     check_text(text, "{\"a\":5,\"n\":[1],\"z\":true}", "scalar over object");
-    free(text);
+    spisor_memory_release(text);
     CHECK(runtime_walk(merged, "n.0") != NULL);
     CHECK(runtime_walk(merged, "n.1") == NULL);
     CHECK(runtime_walk(merged, "a.b") == NULL);
@@ -494,7 +495,7 @@ static void expect_portable_file(const scratch_home *home, const char *plugin, c
     portable_file_path(home, plugin, path, sizeof path);
     char *actual = (char *)spisor_read_file(path, &length);
     check_text(actual, expected, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static cJSON *portable_request(const scratch_home *home, const char *plugin, const char *config_json) {
@@ -684,7 +685,7 @@ static void portable_set_through_a_dotfiles_link(void) {
     size_t length = 0;
     char *content = (char *)spisor_read_file(target, &length);
     check_text(content, "{\n  \"kept\": true,\n  \"added\": 1\n}\n", "the link's target changed");
-    free(content);
+    spisor_memory_release(content);
     CHECK(count_temporary_entries(dotfiles) == 0);
 }
 
@@ -710,7 +711,7 @@ static void portable_set_through_a_link_to_a_malformed_file_is_refused(void) {
     size_t length = 0;
     char *content = (char *)spisor_read_file(target, &length);
     check_text(content, "{\"a\":", "the link's malformed target unchanged");
-    free(content);
+    spisor_memory_release(content);
     CHECK(count_temporary_entries(dotfiles) == 0);
 }
 
@@ -769,7 +770,7 @@ static void expect_whole_answer(const answer *result, const char *expected_json,
     CHECK(ANSWERED(*result));
     char *actual = result->tree == NULL ? NULL : cJSON_PrintUnformatted(result->tree);
     check_text(actual, expected_json, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void expect_text_member(const answer *result, const char *member, const char *expected, const char *label) {

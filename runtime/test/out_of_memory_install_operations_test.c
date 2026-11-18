@@ -71,7 +71,7 @@ static void finish(void) {
     spisor_value_release(&application);
     spisor_value_release(&updates_settings);
     snapshot_left_out = NULL;
-    free(path_directory);
+    spisor_memory_release(path_directory);
     path_directory = NULL;
     runtime_install_use_runtime_build(NULL, NULL, NULL);
     finish_install_base(&base);
@@ -84,7 +84,7 @@ static char *place_binary(const char *directory) {
     char *path = joined(directory, BINARY);
     write_file(path, "#!/bin/sh\n");
     CHECK(chmod(path, 0755) == 0);
-    free(path);
+    spisor_memory_release(path);
 #endif
     return runtime_catalog_copy(directory);
 }
@@ -122,7 +122,7 @@ static void register_entry_loader(void) {
     catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static void declare_hook_entry(void) {
@@ -138,7 +138,7 @@ static void prepare_entry(void) {
     start_install_base(&base, "operations", "entry");
     char *homes = joined(base.user, "homes");
     CHECK(spisor_make_directories(homes) == 1);
-    free(homes);
+    spisor_memory_release(homes);
     register_entry_loader();
     declare_hook_entry();
 }
@@ -163,7 +163,7 @@ static spisor_status run_entry(void) {
     spisor_status status = install->entry(install->context, &argument, &answer, &refusal);
     install->release_entry_answer(install->context, &answer);
     keep_refusal(&refusal);
-    free(home);
+    spisor_memory_release(home);
     return status;
 }
 
@@ -174,7 +174,7 @@ static void install_claude(const char *packages_json, const char *choices_json) 
     write_catalog(&base);
     char *homes = joined(base.user, "homes/claude");
     CHECK(spisor_make_directories(homes) == 1);
-    free(homes);
+    spisor_memory_release(homes);
     char extra[256];
     snprintf(extra, sizeof extra, "{\"choices\": %s}", choices_json);
     cJSON_Delete(expect_report(install_with(&base, extra, environment_with_path(&base, path_directory)), "install"));
@@ -184,7 +184,7 @@ static void prepare_path_application(void) {
     start_install_base(&base, "operations", "path-application");
     char *directory = joined(base.root, "bin");
     path_directory = place_binary(directory);
-    free(directory);
+    spisor_memory_release(directory);
     install_claude("{}", "{}");
 }
 
@@ -254,13 +254,13 @@ static void prepare_runtime(void) {
 #if !defined(_WIN32)
     CHECK(chmod(node, 0755) == 0);
 #endif
-    free(node);
-    free(probe);
+    spisor_memory_release(node);
+    spisor_memory_release(probe);
     char *missing = joined(base.root, "unreachable/node.zip");
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, missing);
     runtime_install_use_runtime_build(UNREACHABLE_VERSION, url, UNREACHABLE_SHA256);
-    free(url);
-    free(missing);
+    spisor_memory_release(url);
+    spisor_memory_release(missing);
 }
 
 static spisor_status run_runtime(void) {
@@ -355,7 +355,7 @@ static int recorded_no_run_unless_applied(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/spisor-host");
     CHECK(runtime_list_directory(runs, &listing) == 1);
-    free(runs);
+    spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 0;
     runtime_free_directory_listing(&listing);
     if (!kept) {
@@ -416,7 +416,7 @@ static const char *version_in(const char *place, const char *rest, const char *o
     const char *found = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(map, inner == NULL ? outer : inner));
     snprintf(version, sizeof version, "%s", found == NULL ? "" : found);
     cJSON_Delete(tree);
-    free(text);
+    spisor_memory_release(text);
     return version;
 }
 
@@ -456,7 +456,7 @@ static void prepare_run(void) {
     write_in(base.state, "hosts/spisor-host.json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_run(void) {
@@ -605,7 +605,7 @@ static int placed_nothing_unless_placed(void) {
         runtime_directory_listing listing = {NULL, 0};
         char *folder = joined(base.cache, "boot");
         CHECK(runtime_list_directory(folder, &listing) == 1);
-        free(folder);
+        spisor_memory_release(folder);
         int empty = listing.count == 0;
         runtime_free_directory_listing(&listing);
         if (!empty) {
@@ -658,7 +658,7 @@ static void prepare_record(void) {
 static int holders_unchanged_unless_ok(void) {
     char *text = text_in(base.state, "processes/" BACKGROUND_HOST ".json");
     int kept = last_status == SPISOR_OK || (text != NULL && strcmp(text, prepared_holders) == 0);
-    free(text);
+    spisor_memory_release(text);
     if (!kept) {
         fprintf(stderr, "processes: an answer of %d changed the holders file\n", (int)last_status);
     }
@@ -788,7 +788,7 @@ static int recorded_no_new_run_unless_ok(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *runs = joined(base.state, "bundles/runs/" BACKGROUND_HOST);
     CHECK(runtime_list_directory(runs, &listing) == 1);
-    free(runs);
+    spisor_memory_release(runs);
     int kept = last_status == SPISOR_OK || listing.count == 2;
     runtime_free_directory_listing(&listing);
     if (!kept) {
@@ -822,7 +822,7 @@ static spisor_status run_remove_runs(void) {
     argument.host_id = BACKGROUND_HOST;
     argument.record = gone;
     last_status = processes->remove_runs(processes->context, &argument, &refusal);
-    free(gone);
+    spisor_memory_release(gone);
     keep_refusal(&refusal);
     return last_status;
 }
@@ -893,7 +893,7 @@ static int holders_name_started_host(void) {
     char host[64];
     snprintf(host, sizeof host, "\"pid\":%lld,", (long long)started_pid);
     int named = text != NULL && strstr(text, host) != NULL;
-    free(text);
+    spisor_memory_release(text);
     return named;
 }
 
@@ -1069,7 +1069,7 @@ static void prepare_start(void) {
     write_in(base.state, "hosts/spisor-host.json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_start(void) {
@@ -1136,7 +1136,7 @@ static void prepare_loader_home(void) {
     start_install_base(&base, "operations", "loader-home");
     char *home = joined(base.user, "homes/sample");
     CHECK(spisor_make_directories(home) == 1);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static spisor_status run_loader_home(void) {
@@ -1206,7 +1206,7 @@ static spisor_status run_created_key(void) {
         last_status = WRONG_RUN;
     }
     keep_refusal(&refusal);
-    free(file);
+    spisor_memory_release(file);
     return last_status;
 }
 
@@ -1219,12 +1219,12 @@ static int created_no_file_unless_ok(void) {
     return kept;
 }
 
-/** Everything under the base, its timestamps replaced; freed with free. */
+/** Everything under the base, its timestamps replaced; freed. */
 static char *base_snapshot(size_t *length) {
     size_t raw_length = 0;
     char *raw = tree_snapshot_sized(base.root, snapshot_left_out, &raw_length);
     char *normalized = without_timestamps((const uint8_t *)raw, raw_length, length);
-    free(raw);
+    spisor_memory_release(raw);
     return normalized;
 }
 
@@ -1244,7 +1244,7 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     char *snapshot = base_snapshot(&length);
     int same_tree = snapshot != NULL && length == clean->snapshot_length &&
                     memcmp(snapshot, clean->snapshot, length) == 0;
-    free(snapshot);
+    spisor_memory_release(snapshot);
     if (status == clean->status && strcmp(refusal_detail, clean->refusal) == 0 && same_tree) {
         return 1;
     }
@@ -1310,7 +1310,7 @@ static void every_failure_of(const operation_case *each, spisor_status expected,
     }
     printf("%s: %llu allocations, failures %llu to %llu checked\n", each->label,
            (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
-    free(clean.snapshot);
+    spisor_memory_release(clean.snapshot);
 }
 
 static int is_selected(const char *only, const char *label) {

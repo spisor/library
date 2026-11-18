@@ -1,6 +1,7 @@
 #ifndef RUNTIME_TEST_TREE_SNAPSHOT_H
 #define RUNTIME_TEST_TREE_SNAPSHOT_H
 
+#include "spisor/allocation.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +14,7 @@ static inline void snapshot_directory(const char *directory, const char *relativ
                                       char **snapshot, size_t *length);
 
 static inline void snapshot_append(char **snapshot, size_t *length, const char *text, size_t text_length) {
-    char *grown = realloc(*snapshot, *length + text_length + 1);
+    char *grown = spisor_memory_reallocate(*snapshot, *length + text_length + 1);
     CHECK(grown != NULL);
     if (grown == NULL) {
         return;
@@ -51,7 +52,7 @@ static inline void snapshot_entry(const char *directory, const char *relative, c
     if (content != NULL) {
         snapshot_append(snapshot, length, (const char *)content, content_length);
     }
-    free(content);
+    spisor_memory_release(content);
 }
 
 static inline void snapshot_directory(const char *directory, const char *relative, const char *left_out,
@@ -65,7 +66,7 @@ static inline void snapshot_directory(const char *directory, const char *relativ
 }
 
 /**
- * Every name, kind and byte under root, freed with free, its length in *length; left_out, a path relative
+ * Every name, kind and byte under root, freed, its length in *length; left_out, a path relative
  * to root written "/a/b", is skipped with everything under it, or nothing is when it is NULL.
  *
  * @implNote Compare two of these by length and bytes when the tree may hold an executable: its NUL bytes

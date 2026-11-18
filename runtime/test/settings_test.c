@@ -16,6 +16,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "config_fixture.h"
 #include "scratch_directory.h"
 #include "config.h"
@@ -63,7 +64,7 @@ static void expect_content(const char *path, const char *expected, const char *l
     size_t length = 0;
     char *actual = (char *)spisor_read_file(path, &length);
     check_text(actual, expected, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static cJSON *request_for(const scratch_home *home, int with_portable) {
@@ -99,7 +100,7 @@ static void expect_values(const scratch_home *home, const char *expected_json, c
     const cJSON *values = cJSON_GetObjectItemCaseSensitive(result.tree, "values");
     char *actual = values == NULL ? NULL : cJSON_PrintUnformatted(values);
     check_text(actual, expected_json, label);
-    free(actual);
+    spisor_memory_release(actual);
     finish(&result);
 }
 

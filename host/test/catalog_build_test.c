@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "catalog.h"
 #include "catalog_build.h"
@@ -54,15 +55,15 @@ static cJSON *read_back(const char *path) {
     }
     cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(read.tree, "catalog");
     cJSON_Delete(read.tree);
-    free(origin);
-    free(text);
+    spisor_memory_release(origin);
+    spisor_memory_release(text);
     return catalog;
 }
 
 static char *build(catalog_inputs *inputs, cJSON **refusal) {
     char *out = in_base("catalog");
     char *path = host_build_local_catalog(inputs, out, refusal);
-    free(out);
+    spisor_memory_release(out);
     return path;
 }
 
@@ -88,7 +89,7 @@ static void writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver
     for (size_t index = 0; index < 3; index++) {
         char *directory = bundled_plugin("greeter", versions[index], NULL);
         CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
-        free(directory);
+        spisor_memory_release(directory);
     }
     char *path = build(&inputs, &refusal);
     char *expected = in_base("catalog/catalog.json");
@@ -103,8 +104,8 @@ static void writes_an_index_of_relative_urls_the_reader_accepts_latest_by_semver
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(item_of(catalog, "greeter"), "versions")) == 3);
     cJSON_Delete(catalog);
     cJSON_Delete(raw);
-    free(expected);
-    free(path);
+    spisor_memory_release(expected);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -119,8 +120,8 @@ static void lists_a_plugin_as_the_provider_of_the_install_method_its_manifest_na
     cJSON *catalog = read_back(path);
     check_text(text_at(item_of(catalog, "greeter"), "installMethod"), "fake", "install method");
     cJSON_Delete(catalog);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -136,8 +137,8 @@ static void keys_a_plugin_by_its_import_name_and_ignores_a_stated_id(void) {
     CHECK(item_of(catalog, "greeter") != NULL);
     CHECK(item_of(catalog, "someone-else") == NULL);
     cJSON_Delete(catalog);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -151,7 +152,7 @@ static void refuses_a_plugin_manifest_that_names_an_id_and_no_import_name(void) 
     write_in(directory, "index.js", "export default {};\n");
     CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
     expect_refusal_naming(refusal, "importName", "an id alone");
-    free(directory);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -177,11 +178,11 @@ static void lists_every_copied_file_with_its_real_hash_and_size(void) {
         CHECK(runtime_sha256_file_sized(copied, hash, &size));
         check_text(text_at(file, "sha256"), hash, "hash");
         CHECK((double)size == cJSON_GetObjectItemCaseSensitive(file, "size")->valuedouble);
-        free(copied);
+        spisor_memory_release(copied);
     }
     cJSON_Delete(raw);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -201,11 +202,11 @@ static void places_a_per_platform_item_under_its_platform(void) {
     char *placed = in_base("catalog/files/koffi/2.16.3/linux-x64/lib/native.node");
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, placed);
     check_text(text_at(reference, "url"), url, "resolved under its platform");
-    free(url);
-    free(placed);
+    spisor_memory_release(url);
+    spisor_memory_release(placed);
     cJSON_Delete(catalog);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -230,10 +231,10 @@ static void installs_from_the_index_into_a_bundle_with_every_file(void) {
                 "every file fetched");
     CHECK(exists_in(cache, "bundles/greeter/1.0.0/index.js"));
     cJSON_Delete(installed.tree);
-    free(cache);
+    spisor_memory_release(cache);
     cJSON_Delete(catalog);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -243,7 +244,7 @@ static void add_made_input(catalog_inputs *inputs, const char *kind, const char 
                            const char *files_json) {
     if (inputs->count == inputs->capacity) {
         inputs->capacity = inputs->capacity == 0 ? 4 : inputs->capacity * 2;
-        inputs->items = realloc(inputs->items, inputs->capacity * sizeof *inputs->items);
+        inputs->items = spisor_memory_reallocate(inputs->items, inputs->capacity * sizeof *inputs->items);
     }
     catalog_input *input = &inputs->items[inputs->count++];
     memset(input, 0, sizeof *input);
@@ -290,7 +291,7 @@ static void refuses_one_id_under_two_kinds_and_one_version_twice(void) {
     host_free_catalog_inputs(&twice);
     host_free_catalog_inputs(&kinds);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -307,7 +308,7 @@ static void refuses_an_import_name_that_is_an_id_or_the_module_marker(void) {
         write_in(directory, "index.js", "export default {};\n");
         CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
         expect_refusal_naming(refusal, "importName", refused[index]);
-        free(directory);
+        spisor_memory_release(directory);
         host_free_catalog_inputs(&inputs);
         finish_case();
     }
@@ -323,8 +324,8 @@ static void keys_a_plugin_by_a_dotted_import_name(void) {
     cJSON *catalog = path == NULL ? NULL : read_back(path);
     CHECK(item_of(catalog, "api.http") != NULL);
     cJSON_Delete(catalog);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -343,10 +344,10 @@ static void keys_an_item_by_an_id_as_well_as_by_a_name(void) {
     CHECK(item_of(catalog, "github:12") != NULL);
     CHECK(item_of(catalog, "greeter") != NULL);
     cJSON_Delete(catalog);
-    free(path);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -362,7 +363,7 @@ static void refuses_a_platform_that_is_not_an_os_arch_key_before_copying_anythin
     CHECK(!exists_in(base_folder, "escape") && !catalog_written());
     host_free_catalog_inputs(&inputs);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -378,7 +379,7 @@ static void refuses_a_file_the_installer_would_take_for_its_completion_marker_in
     CHECK(!catalog_written());
     host_free_catalog_inputs(&inputs);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -394,7 +395,7 @@ static void refuses_two_file_keys_that_differ_only_by_case_before_copying_anythi
     CHECK(!catalog_written());
     host_free_catalog_inputs(&inputs);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -412,7 +413,7 @@ static void refuses_a_platform_file_that_differs_only_by_case_from_a_file_given_
     host_free_catalog_inputs(&inputs);
     cJSON_free(platform);
     cJSON_free(shared);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -427,7 +428,7 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
     expect_refusal_naming(refusal, "which a catalog refuses", "bad key");
     host_free_catalog_inputs(&inputs);
     cJSON_free(files);
-    free(source);
+    spisor_memory_release(source);
     finish_case();
 }
 
@@ -457,9 +458,9 @@ static void lists_the_application_of_a_host_json_on_its_host_item_and_its_runtim
     check_text(text_at(cJSON_GetObjectItemCaseSensitive(item, "application"), "binary"), "claude", "application listed");
     check_text(text_at(item, "runtime"), "native", "runtime copied from host.json");
     cJSON_Delete(catalog);
-    free(path);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -472,14 +473,14 @@ static void refuses_a_loader_directory_holding_anything_beside_its_host_json_nam
     CHECK(!host_read_host_directory(&inputs, directory, NULL, &refusal));
     expect_refusal_naming(refusal, "host.js", "names the file");
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
 static void expect_marker_written(const char *rest, const char *label) {
     char *text = text_in(base_folder, rest);
     check_text(text, "{\"type\":\"module\"}\n", label);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static void writes_the_esm_marker_beside_a_plugin_s_js_entry_itself(void) {
@@ -496,8 +497,8 @@ static void writes_the_esm_marker_beside_a_plugin_s_js_entry_itself(void) {
     CHECK(cJSON_HasObjectItem(files, "package.json") && cJSON_HasObjectItem(files, "index.js"));
     cJSON_Delete(catalog);
     cJSON_Delete(refusal);
-    free(path);
-    free(directory);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
     host_free_catalog_inputs(&inputs);
     finish_case();
 }
@@ -516,9 +517,9 @@ static void replaces_a_javascript_host_s_own_package_json_with_the_esm_marker(vo
     CHECK(path != NULL);
     expect_marker_written("catalog/files/scripted-host/1.0.0/lib/package.json", "host marker replaces the bundle's");
     cJSON_Delete(refusal);
-    free(path);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -535,7 +536,7 @@ static void refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replac
         CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
         expect_refusal_naming(refusal, "would replace", entries[index]);
         host_free_catalog_inputs(&inputs);
-        free(directory);
+        spisor_memory_release(directory);
         finish_case();
     }
 }
@@ -553,9 +554,9 @@ static void lists_no_application_for_a_host_json_that_has_none(void) {
     CHECK(!cJSON_HasObjectItem(item_of(catalog, "plain-host"), "application"));
     check_text(text_at(item_of(catalog, "plain-host"), "runtime"), "javascript", "runtime");
     cJSON_Delete(catalog);
-    free(path);
+    spisor_memory_release(path);
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -569,7 +570,7 @@ static void refuses_an_application_on_anything_but_a_host(void) {
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, "application", "application on a plugin");
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -583,7 +584,7 @@ static void refuses_a_host_json_whose_standard_is_invalid(void) {
     CHECK(!host_read_host_directory(&inputs, directory, NULL, &refusal));
     expect_refusal_naming(refusal, "/application/binary", "names the path");
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -597,7 +598,7 @@ static void refuses_a_host_json_that_names_no_runtime(void) {
     CHECK(!host_read_host_directory(&inputs, directory, NULL, &refusal));
     expect_refusal_naming(refusal, "names no runtime", "no runtime");
     host_free_catalog_inputs(&inputs);
-    free(directory);
+    spisor_memory_release(directory);
     finish_case();
 }
 
@@ -648,13 +649,13 @@ static void builds_a_catalog_from_plugin_host_and_library_directories(void) {
         "linux-x64");
     CHECK(cJSON_HasObjectItem(cJSON_GetObjectItemCaseSensitive(native_platform, "files"), "native-host"));
     cJSON_Delete(catalog);
-    free(index);
+    spisor_memory_release(index);
     program_free(&run);
-    free(native_host);
-    free(out);
-    free(library);
-    free(host);
-    free(plugin);
+    spisor_memory_release(native_host);
+    spisor_memory_release(out);
+    spisor_memory_release(library);
+    spisor_memory_release(host);
+    spisor_memory_release(plugin);
     finish_case();
 }
 
@@ -679,7 +680,7 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
     CHECK(run_build(nothing, &refused) == 1);
     expect_contains(refused.err, "has no plugin.json", "a refusal");
     expect_contains(refused.err, "fix: ", "its fix");
-    free(empty);
+    spisor_memory_release(empty);
     program_free(&refused);
     program_free(&library);
     program_free(&no_out);

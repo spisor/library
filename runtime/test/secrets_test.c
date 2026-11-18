@@ -18,6 +18,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "scratch_directory.h"
 #include "fake_secret_backend.h"
@@ -78,7 +79,7 @@ static request request_for(const scratch *place, const char *plugin, const char 
 }
 
 static char *copy_of(const char *text) {
-    char *copy = text == NULL ? NULL : malloc(strlen(text) + 1);
+    char *copy = text == NULL ? NULL : spisor_memory_allocate(strlen(text) + 1);
     if (copy != NULL) {
         memcpy(copy, text, strlen(text) + 1);
     }
@@ -144,9 +145,9 @@ static answer call(secrets_operation operation, request call) {
 }
 
 static void forget(answer *result) {
-    free(result->value);
-    free(result->detail);
-    free(result->fix);
+    spisor_memory_release(result->value);
+    spisor_memory_release(result->detail);
+    spisor_memory_release(result->fix);
 }
 
 static int succeeds(secrets_operation operation, request request) {
@@ -194,11 +195,11 @@ static void expect_file_bytes(const char *path, const char *expected, const char
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
     check_text((const char *)bytes, expected, label);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static char *repeated_value(size_t length) {
-    char *value = malloc(length + 1);
+    char *value = spisor_memory_allocate(length + 1);
     if (value != NULL) {
         memset(value, 'x', length);
         value[length] = '\0';
@@ -220,7 +221,7 @@ static void set_secret(const scratch *place, const char *plugin, const char *nam
     forget(&result);
 }
 
-/** The value get answers, as a copy freed with free, or NULL when it answers none. */
+/** The value get answers, as a copy freed, or NULL when it answers none. */
 static char *get_secret(const scratch *place, const char *plugin, const char *name) {
     answer result = call(SECRETS_GET, request_for(place, plugin, name, NULL));
     char *value = result.value;
@@ -243,7 +244,7 @@ static void expect_get(const scratch *place, const char *plugin, const char *nam
     } else {
         check_text(value, expected, name);
     }
-    free(value);
+    spisor_memory_release(value);
 }
 
 static cJSON *file_entries(const scratch *place) {
@@ -472,7 +473,7 @@ static void reconcile_with_no_file_moves_nothing(void) {
 static char *long_utf8_value(size_t repeats) {
     const char *unit = "caf\xc3\xa9 \xe6\x97\xa5\xe6\x9c\xac \xf0\x9f\x94\x91 ";
     size_t unit_length = strlen(unit);
-    char *value = malloc(unit_length * repeats + 1);
+    char *value = spisor_memory_allocate(unit_length * repeats + 1);
     for (size_t index = 0; value != NULL && index < repeats; index++) {
         memcpy(value + index * unit_length, unit, unit_length);
     }
@@ -493,7 +494,7 @@ static void a_long_utf8_value_round_trips_through_the_file_and_the_move(void) {
     fake_store_behave(FAKE_STORE_ACCEPTS);
     CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 1);
     CHECK(store_holds("spisor/github/token", value));
-    free(value);
+    spisor_memory_release(value);
 }
 
 static void a_malformed_file_is_never_overwritten(void) {
@@ -506,7 +507,7 @@ static void a_malformed_file_is_never_overwritten(void) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(place.file, &length);
     check_text((const char *)bytes, "{ not json", "malformed file");
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void unusable_arguments_are_refused(void) {
@@ -682,14 +683,14 @@ static void an_over_cap_value_is_refused_before_either_place_is_touched(void) {
     CHECK(fake_store_calls() == 0);
     CHECK(fake_store_entry_count() == 0);
     CHECK(!spisor_file_exists(place.file));
-    free(over);
+    spisor_memory_release(over);
     char *at_cap = repeated_value(VALUE_CAP_BYTES);
     CHECK(at_cap != NULL);
     set_secret(&place, "github", "token", at_cap, "file");
     fake_store_behave(FAKE_STORE_ACCEPTS);
     set_secret(&place, "github", "token", at_cap, "store");
     CHECK(store_holds("spisor/github/token", at_cap));
-    free(at_cap);
+    spisor_memory_release(at_cap);
 }
 
 static void a_hand_planted_over_cap_file_entry_never_stops_the_move(void) {
@@ -702,7 +703,7 @@ static void a_hand_planted_over_cap_file_entry_never_stops_the_move(void) {
     char *text = cJSON_PrintUnformatted(entries);
     cJSON_Delete(entries);
     write_raw_file(&place, text);
-    free(text);
+    spisor_memory_release(text);
     CHECK(moved_count(call(SECRETS_RECONCILE, request_for(&place, NULL, NULL, NULL))) == 1);
     CHECK(store_holds("spisor/github/small", "s"));
     CHECK(fake_store_value("spisor/github/huge") == NULL);
@@ -710,7 +711,7 @@ static void a_hand_planted_over_cap_file_entry_never_stops_the_move(void) {
     CHECK(file_entry_count(&place) == 1);
     set_secret(&place, "gitlab", "other", "o", "store");
     CHECK(file_entry_count(&place) == 1);
-    free(over);
+    spisor_memory_release(over);
 }
 
 static void a_linked_secrets_file_is_never_written_through(void) {

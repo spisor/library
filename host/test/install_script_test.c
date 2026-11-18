@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "boot_stub.h"
 #include "platform_key.h"
@@ -63,7 +64,7 @@ static char *staged_copy(const host_world *world, const char *name) {
     char *stage = joined(world->base.root, rest);
     char *staged = joined(STAGED_BUNDLES_PATH, name);
     copy_tree(staged, stage);
-    free(staged);
+    spisor_memory_release(staged);
     return stage;
 }
 
@@ -90,8 +91,8 @@ static void build_catalog(host_world *world) {
         check_failures++;
     }
     program_free(&run);
-    free(library);
-    free(host);
+    spisor_memory_release(library);
+    spisor_memory_release(host);
 }
 
 #if defined(_WIN32)
@@ -117,9 +118,9 @@ static char *script_path_variable(const host_world *world, int with_curl) {
     char *powershell = system_folder("\\System32\\WindowsPowerShell\\v1.0");
     char path[4096];
     snprintf(path, sizeof path, "%s;%s;%s", system32, root, powershell);
-    free(powershell);
-    free(root);
-    free(system32);
+    spisor_memory_release(powershell);
+    spisor_memory_release(root);
+    spisor_memory_release(system32);
     return copy_text(path);
 }
 
@@ -139,7 +140,7 @@ static char *tool_on_path(const char *tool) {
         snprintf(candidate, sizeof candidate, "%s/%s", directory, tool);
         found = is_runnable(candidate) ? copy_text(candidate) : NULL;
     }
-    free(copy);
+    spisor_memory_release(copy);
     return found;
 }
 
@@ -153,8 +154,8 @@ static char *script_path_variable(const host_world *world, int with_curl) {
         if (found != NULL && !spisor_file_exists(link)) {
             CHECK(symlink(found, link) == 0);
         }
-        free(link);
-        free(found);
+        spisor_memory_release(link);
+        spisor_memory_release(found);
     }
     return folder;
 }
@@ -194,8 +195,8 @@ static void start_script(host_world *world, program *run, const char *const *scr
     program_start(run, executable, list, environment, world->base.root, IS_DETACHABLE);
     cJSON_Delete(environment);
     cJSON_Delete(list);
-    free(path);
-    free(executable);
+    spisor_memory_release(path);
+    spisor_memory_release(executable);
 }
 
 static int run_script(host_world *world, program *run, const char *const *script_arguments, int with_curl) {
@@ -215,7 +216,7 @@ static int install(host_world *world, program *run, const char *const *extra) {
     if (code != 0 && (extra == NULL || extra[0] == NULL)) {
         fprintf(stderr, "the script answered %d:\n%s\n%s\n", code, run->out, run->err);
     }
-    free(index);
+    spisor_memory_release(index);
     return code;
 }
 
@@ -249,12 +250,12 @@ static void fetches_spisor_host_for_this_platform_and_runs_its_install(void) {
 #if defined(_WIN32)
     char *launcher = cached_file(&world, LAUNCHER_EXECUTABLE);
     CHECK(has_same_bytes(launcher, RUNTIME_LAUNCHER_PATH));
-    free(launcher);
+    spisor_memory_release(launcher);
 #endif
     CHECK(exists_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/.installed.json"));
     char *spaced_text = text_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/" SPACED_KEY);
     check_text(spaced_text, SPACED_CONTENT, "a key with a space is fetched from its percent-encoded url");
-    free(spaced_text);
+    spisor_memory_release(spaced_text);
     char *stub = runtime_boot_stub_path(world.base.cache);
     CHECK(has_same_bytes(stub, SPISOR_BOOT_PATH));
     cJSON *library = json_in(STAGED_BUNDLES_PATH, "runtime/library.json");
@@ -271,9 +272,9 @@ static void fetches_spisor_host_for_this_platform_and_runs_its_install(void) {
     CHECK(program_finish(&status, 120000) == 0);
     expect_contains(status.out, "\"hosts\"", "spisor-boot runs the installed spisor-host");
     program_free(&status);
-    free(stub);
-    free(boot);
-    free(executable);
+    spisor_memory_release(stub);
+    spisor_memory_release(boot);
+    spisor_memory_release(executable);
     program_free(&run);
     finish_world(&world);
 }
@@ -303,8 +304,8 @@ static void fetches_nothing_on_a_second_run(void) {
     CHECK(rename(away, files) == 0);
     program_free(&second);
     program_free(&first);
-    free(away);
-    free(files);
+    spisor_memory_release(away);
+    spisor_memory_release(files);
     finish_world(&world);
 }
 
@@ -329,8 +330,8 @@ static void fetches_spisor_host_again_when_its_bytes_changed(void) {
     CHECK(has_same_bytes(executable, SPISOR_HOST_PATH));
     program_free(&second);
     program_free(&first);
-    free(bytes);
-    free(executable);
+    spisor_memory_release(bytes);
+    spisor_memory_release(executable);
     finish_world(&world);
 }
 
@@ -338,7 +339,7 @@ static void installs_from_a_catalog_index_that_starts_with_a_byte_order_mark(voi
     host_world world;
     start_script_world(&world, "byte-order-mark");
     char *text = text_in(world.base.catalog, "catalog.json");
-    char *marked = malloc(strlen(text) + 4);
+    char *marked = spisor_memory_allocate(strlen(text) + 4);
     sprintf(marked, "\xef\xbb\xbf%s", text);
     write_in(world.base.catalog, "with-byte-order-mark.json", marked);
     char *index = joined(world.base.catalog, "with-byte-order-mark.json");
@@ -349,9 +350,9 @@ static void installs_from_a_catalog_index_that_starts_with_a_byte_order_mark(voi
     check_text(text_at(registration, "version"), HOST_VERSION, "installed");
     cJSON_Delete(registration);
     program_free(&run);
-    free(index);
-    free(marked);
-    free(text);
+    spisor_memory_release(index);
+    spisor_memory_release(marked);
+    spisor_memory_release(text);
     finish_world(&world);
 }
 
@@ -399,14 +400,14 @@ static cJSON *platform_files(cJSON *catalog) {
 static cJSON *file_named(cJSON *files, const char *name) {
     char *key = platform_key_of(name);
     cJSON *file = cJSON_GetObjectItemCaseSensitive(files, key);
-    free(key);
+    spisor_memory_release(key);
     return file;
 }
 
 static void remove_key(cJSON *files, const char *name) {
     char *key = platform_key_of(name);
     cJSON_DeleteItemFromObjectCaseSensitive(files, key);
-    free(key);
+    spisor_memory_release(key);
 }
 
 static void set_member(cJSON *file, const char *member, cJSON *value) {
@@ -452,19 +453,19 @@ static void with_a_url_outside_the_catalog_directory(host_world *world, cJSON *f
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("../outside/" HOST_EXECUTABLE));
 }
 
-/** url, a relative url of the catalog, as an absolute file url under folder; freed with free. */
+/** url, a relative url of the catalog, as an absolute file url under folder; freed. */
 static char *file_url_under(const char *folder, const char *url) {
     char *base = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, folder);
     char absolute[4096];
     snprintf(absolute, sizeof absolute, "%s/%s", base, url);
-    free(base);
+    spisor_memory_release(base);
     return copy_text(absolute);
 }
 
 static void with_a_file_url_outside_the_catalog_directory(host_world *world, cJSON *files) {
     char *url = file_url_under(world->base.root, "outside/" HOST_EXECUTABLE);
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString(url));
-    free(url);
+    spisor_memory_release(url);
 }
 
 static void with_a_file_url_naming_a_host(host_world *world, cJSON *files) {
@@ -490,9 +491,9 @@ static void with_a_file_served_cut_short(host_world *world, cJSON *files) {
     char *parent = joined(path, "..");
     CHECK(bytes != NULL && spisor_make_directories(parent) == 1 && spisor_replace_file(path, bytes, length / 2) == 1);
     set_member(file_named(files, HOST_EXECUTABLE), "url", cJSON_CreateString("cut-short/" HOST_EXECUTABLE));
-    free(parent);
-    free(path);
-    free(bytes);
+    spisor_memory_release(parent);
+    spisor_memory_release(path);
+    spisor_memory_release(bytes);
 }
 
 static void with_a_size_its_bytes_do_not_have(host_world *world, cJSON *files) {
@@ -560,7 +561,7 @@ static void plant_stale_host(host_world *world) {
     char *stale = cached_file(world, HOST_EXECUTABLE);
     copy_file(FAKE_APPLICATION_PATH, stale);
     write_in(world->signals, "install.release", "");
-    free(stale);
+    spisor_memory_release(stale);
 }
 
 static int is_one_of(const char *name, const char *const *allowed, size_t count) {
@@ -593,8 +594,8 @@ static void expect_no_strays(const host_world *world, const char *label) {
     const char *platform_names[] = {HOST_EXECUTABLE, BOOT_EXECUTABLE, LAUNCHER_EXECUTABLE};
     expect_only(version, version_names, 3, label);
     expect_only(platform, platform_names, 3, label);
-    free(platform);
-    free(version);
+    spisor_memory_release(platform);
+    spisor_memory_release(version);
 }
 
 /** Rewrites every spisor-host file url of the catalog as the absolute file url catalog.read also accepts. */
@@ -602,7 +603,7 @@ static void make_urls_absolute(const host_world *world, cJSON *files) {
     for (cJSON *file = files == NULL ? NULL : files->child; file != NULL; file = file->next) {
         char *url = file_url_under(world->base.catalog, text_at(file, "url"));
         set_member(file, "url", cJSON_CreateString(url));
-        free(url);
+        spisor_memory_release(url);
     }
 }
 
@@ -628,9 +629,9 @@ static void installs_from_a_local_catalog_whose_urls_are_file_urls_inside_its_di
     }
     char *executable = cached_file(&world, HOST_EXECUTABLE);
     CHECK(has_same_bytes(executable, SPISOR_HOST_PATH));
-    free(executable);
+    spisor_memory_release(executable);
     program_free(&run);
-    free(index);
+    spisor_memory_release(index);
     finish_world(&world);
 }
 
@@ -659,7 +660,7 @@ static void refuses_each_hostile_catalog_and_runs_nothing(void) {
         CHECK(!exists_in(world.base.cache, "bundles/spisor-host/escape"));
         expect_no_strays(&world, hostile->name);
         program_free(&run);
-        free(index);
+        spisor_memory_release(index);
     }
     finish_world(&world);
 }
@@ -717,13 +718,13 @@ static void answers_1_when_spisor_host_cannot_be_started(void) {
     if (code != 1) {
         char *traced = read_text_file(trace);
         fprintf(stderr, "a spisor-host that cannot start answered %d:\n%s\n%s\ntrace:\n%s\n", code, run.out, run.err, traced);
-        free(traced);
+        spisor_memory_release(traced);
         check_failures++;
     }
     expect_contains(run.err, "is not a Windows program", "refused before anything starts");
     program_free(&run);
-    free(trace);
-    free(index);
+    spisor_memory_release(trace);
+    spisor_memory_release(index);
     finish_world(&world);
 }
 
@@ -743,8 +744,8 @@ static void leaves_no_preference_or_variable_in_the_shell_that_runs_it_through_i
     CHECK(program_finish(&run, SCRIPT_TIMEOUT) == 0);
     expect_contains(run.out, "Continue|False|1", "the shell is left as it was");
     program_free(&run);
-    free(path);
-    free(executable);
+    spisor_memory_release(path);
+    spisor_memory_release(executable);
     finish_world(&world);
 }
 
@@ -775,7 +776,7 @@ static void installs_from_a_local_catalog_without_curl(void) {
     }
     CHECK(exists_in(world.base.cache, "bundles/spisor-host/" HOST_VERSION "/.installed.json"));
     program_free(&run);
-    free(index);
+    spisor_memory_release(index);
     finish_world(&world);
 }
 
@@ -802,11 +803,11 @@ static void a_script_cut_short_at_any_line_fetches_and_runs_nothing(void) {
     const char *end = script;
     for (size_t kept = 1; kept < lines; kept++) {
         end = strchr(end, '\n') + 1;
-        char *text = malloc((size_t)(end - script) + 1);
+        char *text = spisor_memory_allocate((size_t)(end - script) + 1);
         memcpy(text, script, (size_t)(end - script));
         text[end - script] = 0;
         write_in(world.base.root, "prefix.sh", text);
-        free(text);
+        spisor_memory_release(text);
         const char *arguments[] = {"-c", "/bin/sh -s -- \"$1\" < \"$2\"", "sh", index, prefix, NULL};
         program run;
         world_start(&world, &run, "/bin/sh", arguments, path, IS_DETACHABLE);
@@ -818,10 +819,10 @@ static void a_script_cut_short_at_any_line_fetches_and_runs_nothing(void) {
         }
         program_free(&run);
     }
-    free(path);
-    free(prefix);
-    free(index);
-    free(script);
+    spisor_memory_release(path);
+    spisor_memory_release(prefix);
+    spisor_memory_release(index);
+    spisor_memory_release(script);
     finish_world(&world);
 }
 
@@ -833,7 +834,7 @@ static cJSON *schema_pattern(const cJSON *schema, const char *path) {
     for (char *part = strtok(copy, "/"); part != NULL; part = strtok(NULL, "/")) {
         node = cJSON_GetObjectItemCaseSensitive(node, part);
     }
-    free(copy);
+    spisor_memory_release(copy);
     return cJSON_GetObjectItemCaseSensitive(node, "pattern");
 }
 
@@ -851,9 +852,9 @@ static void both_scripts_check_the_patterns_the_catalog_schema_holds(void) {
         }
         expect_contains(powershell, SCHEMA_PATTERNS[index][1], "install.ps1 carries the schema's pattern");
     }
-    free(powershell);
+    spisor_memory_release(powershell);
     cJSON_Delete(schema);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void expect_ascii(const char *path) {
@@ -867,7 +868,7 @@ static void expect_ascii(const char *path) {
             break;
         }
     }
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void both_scripts_hold_nothing_outside_printable_ascii(void) {

@@ -1,4 +1,5 @@
 #include "proof_fixture.h"
+#include "spisor/allocation.h"
 
 #include "tree_snapshot.h"
 
@@ -35,7 +36,7 @@ static void append_tree(char **tree, size_t *length, const char *label, const ch
     size_t part_length = 0;
     char *part = tree_snapshot_sized(directory, NULL, &part_length);
     snapshot_append(tree, length, part, part_length);
-    free(part);
+    spisor_memory_release(part);
 }
 
 #if defined(_WIN32)
@@ -118,7 +119,7 @@ static int run_step(host_world *world, const host_under_proof *host, program *ru
         build_proof_catalog(world, BOTH_LOADERS);
     }
     int code = proof_run(world, run, host->executable, arguments[step], world->bin);
-    free(index);
+    spisor_memory_release(index);
     return code;
 }
 
@@ -163,11 +164,11 @@ static void run_lifecycle(host_world *world, const host_under_proof *host, lifec
 
 static void free_trees(lifecycle_trees *trees) {
     for (int step = 0; step < STEP_COUNT; step++) {
-        free(trees->tree[step]);
+        spisor_memory_release(trees->tree[step]);
     }
-    free(trees->user_before);
-    free(trees->user_after);
-    free(trees->status);
+    spisor_memory_release(trees->user_before);
+    spisor_memory_release(trees->user_after);
+    spisor_memory_release(trees->status);
 }
 
 static size_t first_difference(const char *left, size_t left_length, const char *right, size_t right_length) {
@@ -235,8 +236,8 @@ static void a_host_in_c_leaves_the_tree_spisor_host_leaves_with_no_javascript_ru
     expect_home_restored(&forebay_trees, spisor_host.name);
     free_trees(&forebay_trees);
     free_trees(&c_trees);
-    free(spisor_host.executable);
-    free(c_host.executable);
+    spisor_memory_release(spisor_host.executable);
+    spisor_memory_release(c_host.executable);
     finish_world(&world);
 }
 

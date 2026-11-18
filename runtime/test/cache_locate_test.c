@@ -1,4 +1,5 @@
 #include "updates_fixture.h"
+#include "spisor/allocation.h"
 
 #include "cache_marker.h"
 
@@ -29,7 +30,7 @@ static void installed(const char *id, const char *version, bundle shape) {
     CHECK(runtime_cache_write_marker(directory, hashes, sizes) == SPISOR_OK);
     cJSON_Delete(sizes);
     cJSON_Delete(hashes);
-    free(directory);
+    spisor_memory_release(directory);
 }
 
 static catalog_answer located(const char *plugins_json) {

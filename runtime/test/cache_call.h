@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "catalog_call.h"
 #include "check.h"
@@ -174,7 +175,8 @@ static inline spisor_status cache_locate_call(const runtime_cache_definition *ca
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(request, "plugins");
     runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
     runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
-    runtime_item_version *listed = calloc((size_t)cJSON_GetArraySize(plugins) + 1, sizeof *listed);
+    runtime_item_version *listed = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(plugins) + 1,
+            sizeof *listed);
     const cJSON *plugin;
     spisor_status status;
     CHECK(listed != NULL);
@@ -191,7 +193,7 @@ static inline spisor_status cache_locate_call(const runtime_cache_definition *ca
         cJSON_AddItemToObject(*tree, "problems", cache_damages_json(answer.problems, answer.problem_count));
     }
     cache->release_locate_answer(cache->context, &answer);
-    free(listed);
+    spisor_memory_release(listed);
     return status;
 }
 

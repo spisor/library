@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "child_process.h"
 #include "directory_tree.h"
@@ -44,7 +45,7 @@ static size_t detached_count = 0;
 
 static char *joined(const char *base, const char *rest) {
     size_t length = strlen(base) + strlen(rest) + 2;
-    char *path = malloc(length);
+    char *path = spisor_memory_allocate(length);
     snprintf(path, length, "%s/%s", base, rest);
     return path;
 }
@@ -61,21 +62,21 @@ static void write_text(const char *rest, const char *text) {
     CHECK(spisor_make_directories(path) == 1);
     *slash = '/';
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static char *read_text(const char *rest) {
     char *path = joined(state, rest);
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
 static int present(const char *rest) {
     char *path = joined(state, rest);
     int found = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return found;
 }
 
@@ -119,7 +120,7 @@ static runtime_holders_record read_record(void) {
     char *path = joined(state, "processes/" HOST ".json");
     runtime_holders_record record = runtime_no_holders();
     CHECK(runtime_read_holders(path, &record) == 1);
-    free(path);
+    spisor_memory_release(path);
     return record;
 }
 
@@ -230,13 +231,13 @@ static void it_reads_back_what_was_written_and_reads_as_empty_when_there_is_none
     char *path = joined(state, "processes/" HOST ".json");
     CHECK(spisor_make_directories(state) == 1);
     CHECK(runtime_write_holders(path, &record) == SPISOR_OK);
-    free(path);
+    spisor_memory_release(path);
     runtime_holders_record back = read_record();
     CHECK(back.pid == 41 && back.alive_at == 1000 && back.check_milliseconds == 200 && holders_are(&back, holders, 2));
     runtime_free_holders(&back);
     char *text = read_text("processes/" HOST ".json");
     check_text(text, "{\"pid\":41,\"aliveAt\":1000,\"checkMilliseconds\":200,\"holders\":[7,9]}\n", "holders file");
-    free(text);
+    spisor_memory_release(text);
     finish_case();
 }
 
@@ -248,11 +249,11 @@ static void it_removes_the_file_once_it_records_neither_a_process_nor_a_holder(v
     CHECK(runtime_write_holders(path, &only_pid) == SPISOR_OK);
     char *text = read_text("processes/" HOST ".json");
     check_text(text, "{\"pid\":41,\"aliveAt\":null,\"checkMilliseconds\":null,\"holders\":[]}\n", "pid only");
-    free(text);
+    spisor_memory_release(text);
     runtime_holders_record none = runtime_no_holders();
     CHECK(runtime_write_holders(path, &none) == SPISOR_OK);
     CHECK(!holders_file_present());
-    free(path);
+    spisor_memory_release(path);
     finish_case();
 }
 
@@ -277,7 +278,7 @@ static void it_refuses_a_host_id_that_would_place_the_file_outside_the_processes
     char *problem = NULL;
     CHECK(runtime_holders_path(state, "../escape", ".json", &problem) == NULL);
     CHECK(problem != NULL && strstr(problem, "would record its processes outside") != NULL);
-    free(problem);
+    spisor_memory_release(problem);
     cJSON *argument = host_argument("../escape");
     cJSON_AddNumberToObject(argument, "holder", self_pid());
     cJSON_AddItemToObject(argument, "start", sleep_start());
@@ -297,10 +298,10 @@ static char *lock_path(void) {
 static runtime_holders_guard *take_lock(void) {
     char *folder = joined(state, "processes");
     CHECK(spisor_make_directories(folder) == 1);
-    free(folder);
+    spisor_memory_release(folder);
     char *path = lock_path();
     runtime_holders_guard *guard = runtime_lock_holders(path);
-    free(path);
+    spisor_memory_release(path);
     return guard;
 }
 
@@ -327,7 +328,7 @@ static void write_lock(const char *text, double age_milliseconds) {
     times[1] = times[0];
     CHECK(utimensat(AT_FDCWD, path, times, 0) == 0);
 #endif
-    free(path);
+    spisor_memory_release(path);
 }
 
 typedef struct lock_events {
@@ -464,7 +465,7 @@ static void it_leaves_a_lock_that_is_no_longer_its_own(void) {
     runtime_unlock_holders(guard);
     char *text = read_text("processes/" HOST ".lock");
     check_text(text, other, "replaced lock");
-    free(text);
+    spisor_memory_release(text);
     finish_case();
 }
 
@@ -477,7 +478,7 @@ static void it_waits_for_a_fresh_lock_a_live_process_holds(void) {
     CHECK(events.entered == 0);
     char *path = lock_path();
     CHECK(runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE);
-    free(path);
+    spisor_memory_release(path);
     CHECK(wait_until(has_entered, NULL, 5000));
     join_thread(waiting);
     finish_case();
@@ -502,7 +503,7 @@ static HANDLE open_lock_deleted(void) {
     char *path = lock_path();
     wchar_t wide[1024];
     MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 1024);
-    free(path);
+    spisor_memory_release(path);
     HANDLE handle = CreateFileW(wide, DELETE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     FILE_DISPOSITION_INFO disposition = {TRUE};
@@ -548,7 +549,7 @@ static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void)
     CHECK(fix != NULL && strstr(fix, HOST ".lock") != NULL);
     CHECK(!holders_file_present());
     cJSON_Delete(answer.tree);
-    free(path);
+    spisor_memory_release(path);
     finish_case();
 }
 
@@ -707,7 +708,7 @@ static void it_refuses_a_start_it_cannot_run_leaving_nothing_held(void) {
     cJSON *missing = cJSON_CreateObject();
     char *nowhere = joined(state, "no-such-executable");
     cJSON_AddStringToObject(missing, "executable", nowhere);
-    free(nowhere);
+    spisor_memory_release(nowhere);
     answer = hold(self_pid(), missing);
     CHECK(answer.status != 0 && text_at(answer.tree, "message") != NULL && text_at(answer.tree, "fix") != NULL);
     cJSON_Delete(answer.tree);
@@ -738,8 +739,8 @@ static void it_starts_the_host_in_the_environment_and_directory_given(void) {
     const char *where = text_at(seen, "directory");
     CHECK(where != NULL && strstr(where, "work") != NULL);
     cJSON_Delete(seen);
-    free(directory);
-    free(answer_path);
+    spisor_memory_release(directory);
+    spisor_memory_release(answer_path);
     finish_case();
 }
 
@@ -756,7 +757,7 @@ static cJSON *environment_seen(const char *case_name, cJSON *environment) {
     CHECK(wait_until(answer_written, answer_path, 10000));
     pause_milliseconds(100);
     cJSON *seen = read_json_file(answer_path);
-    free(answer_path);
+    spisor_memory_release(answer_path);
     return seen;
 }
 
@@ -791,8 +792,8 @@ static void it_never_runs_a_host_whose_record_cannot_be_written(void) {
     pause_milliseconds(UNRECORDED_WAIT_MILLISECONDS);
     CHECK(!spisor_file_exists(ran));
     cJSON_Delete(answer.tree);
-    free(holders);
-    free(ran);
+    spisor_memory_release(holders);
+    spisor_memory_release(ran);
     finish_case();
 }
 
@@ -850,8 +851,8 @@ static void it_exits_without_touching_the_record_when_another_process_is_the_hos
     CHECK(prune_exits(self_pid(), runtime_now_milliseconds()) == 1);
     char *after = read_text("processes/" HOST ".json");
     check_text(after, before, "untouched record");
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
     kill_child(&holder);
     release_child(&holder);
     finish_case();
@@ -874,7 +875,7 @@ static int is_stamped_by(const void *context) {
     char *path = joined(state, "processes/" HOST ".json");
     runtime_holders_record record = runtime_no_holders();
     int read = runtime_read_holders(path, &record);
-    free(path);
+    spisor_memory_release(path);
     int stamped = read && record.pid == expected->pid && record.check_milliseconds == INTERVAL &&
                   record.count == expected->holders;
     runtime_free_holders(&record);
@@ -925,7 +926,7 @@ static double launched_host(const launcher *started, int expect_started) {
 static void end_launcher(launcher *started) {
     kill_child(&started->process);
     release_child(&started->process);
-    free(started->answer);
+    spisor_memory_release(started->answer);
 }
 
 static void hold_for(double holder) {
@@ -1105,7 +1106,7 @@ static char *recorded_path(const char *host_id, const char *run) {
     catalog_answer answer = record_run(host_id, run, NULL);
     CHECK(answer.status == 0);
     const char *path = text_at(answer.tree, "record");
-    char *copy = path == NULL ? NULL : malloc(strlen(path) + 1);
+    char *copy = path == NULL ? NULL : spisor_memory_allocate(strlen(path) + 1);
     if (copy != NULL) {
         memcpy(copy, path, strlen(path) + 1);
     }
@@ -1151,7 +1152,7 @@ static void it_records_a_run_and_stamps_the_same_record_again(void) {
     cJSON_Delete(again.tree);
     CHECK(recorded_alive_at(record) > first);
     expect_runs("[{\"a\":\"1.0.0\"}]");
-    free(record);
+    spisor_memory_release(record);
     finish_case();
 }
 
@@ -1168,8 +1169,8 @@ static void it_refuses_to_stamp_a_record_that_is_no_run_record_of_the_host(void)
     }
     CHECK(!spisor_file_exists(elsewhere));
     CHECK(!present("bundles/runs/another-loader"));
-    free(elsewhere);
-    free(record);
+    spisor_memory_release(elsewhere);
+    spisor_memory_release(record);
     finish_case();
 }
 
@@ -1225,8 +1226,8 @@ static void it_removes_one_run_record_or_every_run_of_the_host(void) {
     cJSON_Delete(every.tree);
     CHECK(!present("bundles/runs/fixture-loader"));
     expect_runs("[]");
-    free(first);
-    free(second);
+    spisor_memory_release(first);
+    spisor_memory_release(second);
     finish_case();
 }
 

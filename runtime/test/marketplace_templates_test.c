@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "marketplace_check.h"
 #include "spisor/file.h"
@@ -45,15 +46,15 @@ static char *read_text(const char *root, const char *host, const char *file) {
         check_failures++;
         return NULL;
     }
-    char *text = calloc(length + 1, 1);
+    char *text = spisor_memory_allocate_zeroed(length + 1, 1);
     if (text == NULL) {
-        free(bytes);
+        spisor_memory_release(bytes);
         fprintf(stderr, "out of memory reading %s\n", path);
         check_failures++;
         return NULL;
     }
     memcpy(text, bytes, length);
-    free(bytes);
+    spisor_memory_release(bytes);
     return text;
 }
 
@@ -92,7 +93,7 @@ static void checks_the_list(const char *root, const template_host *host) {
     }
     CHECK(list != NULL && cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(list, "entries")) >= host->minimum_entries);
     cJSON_Delete(list);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static int count_of(const char *text, const char *fragment) {
@@ -135,7 +136,7 @@ static void checks_the_pipeline(const char *root, const template_host *host, cha
         fprintf(stderr, "%s: %s does not publish (expected \"%s\")\n", host->host, host->ci_file, host->publish_marker);
         check_failures++;
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 static int count_numbered_steps(const char *text) {
@@ -168,7 +169,7 @@ static void checks_the_content(const char *root, const template_host *host) {
         fprintf(stderr, "%s CONTENT.md: no \"Documentation: https://\" line\n", host->host);
         check_failures++;
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 int main(void) {
@@ -185,7 +186,7 @@ int main(void) {
         printf("skipped: no template checkouts under %s\n", root);
         return SKIP_STATUS;
     }
-    free(bytes);
+    spisor_memory_release(bytes);
     char shared_commit[COMMIT_LENGTH + 1] = "";
     for (size_t index = 0; index < HOST_COUNT; index++) {
         checks_the_list(root, &HOSTS[index]);

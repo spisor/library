@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "marketplace_call.h"
 #include "fetch_hooks.h"
@@ -349,7 +350,7 @@ static void a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal(
     cJSON_Delete(refused.tree);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 3 && count_of(requests, "GET /repositories/") == 3);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 static http_fixture *start_server(const http_route *routes, size_t count) {
@@ -364,7 +365,7 @@ static http_fixture *start_server(const http_route *routes, size_t count) {
 static void expect_no_request(http_fixture *server) {
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && requests[0] == 0);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 static void a_token_is_refused_for_an_id_on_another_host_before_any_lookup(void) {
@@ -400,7 +401,7 @@ static void a_token_goes_to_an_instance_host_the_ids_name(void) {
     cJSON_Delete(answer.tree);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 1);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 static void a_token_without_its_host_is_refused_before_any_lookup(void) {
@@ -442,7 +443,7 @@ static const char *const FAILING_IDS[] = {"github:70", "github:71", "github:72",
 static const char *const FAILURE_NAMES[] = {"401", "403", "429", "not found", "500"};
 
 static char *list_of_one(const char *id) {
-    char *list = malloc(128);
+    char *list = spisor_memory_allocate(128);
     snprintf(list, 128, "{\"format\":1,\"entries\":[{\"id\":\"%s\"}]}", id);
     return list;
 }
@@ -464,12 +465,12 @@ static void a_list_whose_every_entry_fails_to_look_up_is_refused_naming_the_reas
         CHECK(strcmp(FAILING_IDS[index], "github:72") != 0 || contains(text_at(answer.tree, "fix"), "rate limiting"));
         CHECK(strcmp(FAILING_IDS[index], "github:70") != 0 || !contains(text_at(answer.tree, "fix"), "rate limiting"));
         cJSON_Delete(answer.tree);
-        free(list);
+        spisor_memory_release(list);
     }
     catalog_answer not_found = build("{\"format\":1,\"entries\":[{\"id\":\"github:73\"}]}");
     CHECK(expect_refusal(not_found, "not found", "an anonymous build of only a missing repo"));
     cJSON_Delete(not_found.tree);
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 static void a_list_whose_every_entry_is_lost_to_the_network_is_refused(void) {
@@ -495,7 +496,7 @@ static void a_previous_copy_holding_the_failed_entry_still_writes_it(void) {
     CHECK(carried.status == SPISOR_STATUS_SUCCESS);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(carried.tree, "copy"), "entries")) == 1);
     cJSON_Delete(carried.tree);
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 static void one_success_beside_a_refused_lookup_still_writes_and_skips(void) {
@@ -511,7 +512,7 @@ static void one_success_beside_a_refused_lookup_still_writes_and_skips(void) {
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 1);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 1);
     cJSON_Delete(answer.tree);
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 static void run_against_the_server(void) {
@@ -568,12 +569,12 @@ static void run_against_the_server(void) {
     a_list_that_breaks_the_schema_is_refused();
     a_built_time_that_is_not_rfc_3339_is_refused();
     an_empty_list_builds_an_empty_copy();
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 static char *list_of_repositories(size_t count) {
     size_t size = count * 32 + 64;
-    char *text = malloc(size);
+    char *text = spisor_memory_allocate(size);
     size_t used = (size_t)snprintf(text, size, "{\"format\":1,\"entries\":[");
     for (size_t index = 1; index <= count; index++) {
         used += (size_t)snprintf(text + used, size - used, "%s{\"id\":\"github:%zu\"}", index == 1 ? "" : ",", index);
@@ -595,10 +596,10 @@ static void a_list_over_the_limit_is_refused_before_any_lookup(void) {
     catalog_answer answer = build(list);
     CHECK(expect_refusal(answer, "list", "a list over the limit"));
     cJSON_Delete(answer.tree);
-    free(list);
+    spisor_memory_release(list);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && requests[0] == 0);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 static void a_refusal_that_needs_no_lookup_makes_none(void) {
@@ -618,7 +619,7 @@ static void a_refusal_that_needs_no_lookup_makes_none(void) {
     cJSON_Delete(duplicate.tree);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && requests[0] == 0);
-    free(requests);
+    spisor_memory_release(requests);
 }
 
 static void the_list_checker_follows_the_schema(void) {

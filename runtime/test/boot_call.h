@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "catalog_call.h"
 #include "check.h"
@@ -71,7 +72,8 @@ static inline spisor_status boot_write_call(const runtime_boot_definition *boot,
     const cJSON *versions = cJSON_GetObjectItemCaseSensitive(request, "libraries");
     runtime_boot_write_argument argument = SPISOR_INIT(runtime_boot_write_argument);
     runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
-    runtime_item_version *libraries = calloc((size_t)cJSON_GetArraySize(versions) + 1, sizeof *libraries);
+    runtime_item_version *libraries = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(versions) + 1,
+            sizeof *libraries);
     const cJSON *member;
     spisor_status status;
     CHECK(libraries != NULL);
@@ -90,7 +92,7 @@ static inline spisor_status boot_write_call(const runtime_boot_definition *boot,
         *tree = boot_hint_json(&answer);
     }
     boot->release_hint_answer(boot->context, &answer);
-    free(libraries);
+    spisor_memory_release(libraries);
     return status;
 }
 
@@ -99,7 +101,7 @@ static inline spisor_status boot_resolve_call(const runtime_boot_definition *boo
     const cJSON *given = cJSON_GetObjectItemCaseSensitive(request, "arguments");
     runtime_boot_resolve_argument argument = SPISOR_INIT(runtime_boot_resolve_argument);
     runtime_boot_resolve_answer answer = SPISOR_INIT(runtime_boot_resolve_answer);
-    const char **arguments = calloc((size_t)cJSON_GetArraySize(given) + 1, sizeof *arguments);
+    const char **arguments = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(given) + 1, sizeof *arguments);
     const cJSON *entry;
     spisor_status status;
     CHECK(arguments != NULL);
@@ -123,7 +125,7 @@ static inline spisor_status boot_resolve_call(const runtime_boot_definition *boo
         cJSON_AddItemToObject(*tree, "arguments", passed);
     }
     boot->release_resolve_answer(boot->context, &answer);
-    free((void *)arguments);
+    spisor_memory_release((void *)arguments);
     return status;
 }
 

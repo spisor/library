@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "tree_snapshot.h"
 
@@ -13,11 +14,11 @@
  */
 static char *move_into_profile(host_world *world) {
     char *profile = joined(world->base.root, PROFILE_NAME);
-    free(world->base.user);
-    free(world->base.portable);
-    free(world->base.state);
-    free(world->base.cache);
-    free(world->bin);
+    spisor_memory_release(world->base.user);
+    spisor_memory_release(world->base.portable);
+    spisor_memory_release(world->base.state);
+    spisor_memory_release(world->base.cache);
+    spisor_memory_release(world->bin);
     world->base.user = copy_text(profile);
     world->base.portable = joined(profile, "spisor/portable");
     world->base.state = joined(profile, "spisor/state");
@@ -50,7 +51,7 @@ static void launch_through_the_command(host_world *world) {
     stop_if_alive(background);
     cJSON_Delete(started);
     program_free(&launcher);
-    free(shim);
+    spisor_memory_release(shim);
 }
 
 static void remove_every_host(host_world *world) {
@@ -76,7 +77,7 @@ static void installs_launches_through_its_command_and_removes_leaving_the_profil
     CHECK(world_install(&world, NULL, NULL) == 0);
     char *installed = tree_snapshot(profile, "/spisor");
     CHECK(installed != NULL && before != NULL && strcmp(installed, before) != 0);
-    free(installed);
+    spisor_memory_release(installed);
     cJSON *registration = registration_in(&world, LOADER_ID);
     expect_contains(text_at(registration, "home"), PROFILE_NAME, "the home under the profile");
     launch_through_the_command(&world);
@@ -86,10 +87,10 @@ static void installs_launches_through_its_command_and_removes_leaving_the_profil
     if (before != NULL && after != NULL && strcmp(before, after) != 0) {
         fprintf(stderr, "before:\n%s\nafter:\n%s\n", before, after);
     }
-    free(after);
-    free(before);
+    spisor_memory_release(after);
+    spisor_memory_release(before);
     cJSON_Delete(registration);
-    free(profile);
+    spisor_memory_release(profile);
     finish_world(&world);
 }
 

@@ -16,6 +16,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "install_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
@@ -54,7 +55,7 @@ static void expect_member(const answer *result, const char *member, const char *
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(result->tree, member);
     char *actual = item == NULL ? NULL : cJSON_PrintUnformatted(item);
     check_text(actual, expected_json, label);
-    free(actual);
+    spisor_memory_release(actual);
 }
 
 static void expect_status(const answer *result, spisor_status expected, const char *fragment, const char *label) {
@@ -68,7 +69,7 @@ static void expect_status(const answer *result, spisor_status expected, const ch
         fprintf(stderr, "%s: refusal %s does not mention %s\n", label, text == NULL ? "(none)" : text, fragment);
         check_failures++;
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 static void expect_refused(const answer *result, const char *fragment, const char *label) {

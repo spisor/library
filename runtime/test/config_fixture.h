@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "json_value.h"
 #include "runtime/config.h"
@@ -81,7 +82,8 @@ static inline void config_fixture_declarations(const cJSON *request, typed_reque
     const cJSON *settings = cJSON_GetObjectItemCaseSensitive(request, "settings");
     const cJSON *declaration;
     typed->declaration_count = 0;
-    typed->declarations = malloc(((size_t)cJSON_GetArraySize(settings) + 1) * sizeof *typed->declarations);
+    typed->declarations =
+        spisor_memory_allocate(((size_t)cJSON_GetArraySize(settings) + 1) * sizeof *typed->declarations);
     cJSON_ArrayForEach(declaration, settings) {
         runtime_setting_declaration *entry = &typed->declarations[typed->declaration_count++];
         entry->key = declaration->string;
@@ -127,7 +129,7 @@ static inline void config_fixture_forget(typed_request *typed) {
     spisor_value_release(&typed->names);
     spisor_value_release(&typed->config);
     spisor_value_release(&typed->value);
-    free(typed->declarations);
+    spisor_memory_release(typed->declarations);
 }
 
 /** Adds a value under member, nothing for a value of kind NONE. */

@@ -20,6 +20,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "secret_backend.h"
 #ifdef _WIN32
 #include "secret_windows_fault.h"
@@ -56,14 +57,14 @@ static int reads_back(const char *name, const char *expected) {
     runtime_secret_answer answer = runtime_secret_store_get(entry_for(name), &value);
     int same = answer == RUNTIME_SECRET_DONE && value != NULL && strcmp(value, expected) == 0;
     CHECK(same);
-    free(value);
+    spisor_memory_release(value);
     return same;
 }
 
 static int is_absent(const char *name) {
     char *value = NULL;
     runtime_secret_answer answer = runtime_secret_store_get(entry_for(name), &value);
-    free(value);
+    spisor_memory_release(value);
     return answer == RUNTIME_SECRET_ABSENT;
 }
 
@@ -125,7 +126,7 @@ static void remove_everything_written(void) {
 
 #ifdef _WIN32
 static char *filled_value(size_t length) {
-    char *value = malloc(length + 1);
+    char *value = spisor_memory_allocate(length + 1);
     for (size_t index = 0; index < length; index++) {
         value[index] = (char)(FIRST_FILLER + (index % 23));
     }
@@ -186,8 +187,8 @@ static void an_interrupted_chunked_rewrite_keeps_the_old_value(void) {
         CHECK(stores("fault", new_value));
         reads_back("fault", new_value);
     }
-    free(old_value);
-    free(new_value);
+    spisor_memory_release(old_value);
+    spisor_memory_release(new_value);
 }
 
 static void an_unreadable_base_leaves_the_old_chunks_untouched(void) {
@@ -201,8 +202,8 @@ static void an_unreadable_base_leaves_the_old_chunks_untouched(void) {
         reads_back("unreadable", old_value);
         CHECK(chunk_root_entries(0) == before);
     }
-    free(old_value);
-    free(new_value);
+    spisor_memory_release(old_value);
+    spisor_memory_release(new_value);
 }
 
 static void an_interrupted_chunked_set_over_a_whole_value_keeps_it(void) {
@@ -211,7 +212,7 @@ static void an_interrupted_chunked_set_over_a_whole_value_keeps_it(void) {
         reads_back("whole", "small");
         CHECK(!chunk_exists("whole", 1));
     }
-    free(large);
+    spisor_memory_release(large);
 }
 
 static int chunks_of_other_tests = 0;
@@ -236,7 +237,7 @@ static void a_rewrite_after_a_failed_sweep_reads_correctly(void) {
     plant_orphans("swept");
     CHECK(runtime_secret_store_delete(entry_for("swept")) == RUNTIME_SECRET_DONE);
     CHECK(chunk_root_entries(0) == chunks_of_other_tests);
-    free(large);
+    spisor_memory_release(large);
 }
 
 static void a_value_over_the_cap_is_refused_and_the_old_one_kept(void) {
@@ -246,7 +247,7 @@ static void a_value_over_the_cap_is_refused_and_the_old_one_kept(void) {
         CHECK(runtime_secret_store_set(entry_for("capped"), huge) == RUNTIME_SECRET_FAILED);
         reads_back("capped", "kept");
     }
-    free(huge);
+    spisor_memory_release(huge);
 }
 
 static void a_value_over_one_entry_round_trips_whole(void) {
@@ -255,7 +256,7 @@ static void a_value_over_one_entry_round_trips_whole(void) {
         reads_back("large", large);
         CHECK(chunk_exists("large", 1) && chunk_exists("large", 3) && !chunk_exists("large", 4));
     }
-    free(large);
+    spisor_memory_release(large);
 }
 
 static void a_shorter_rewrite_deletes_the_surplus_chunks(void) {
@@ -269,7 +270,7 @@ static void a_shorter_rewrite_deletes_the_surplus_chunks(void) {
         reads_back("large", "short now");
         CHECK(!chunk_exists("large", 1) && !chunk_exists("large", 2));
     }
-    free(medium);
+    spisor_memory_release(medium);
 }
 
 static void a_value_of_exactly_one_entry_is_not_chunked(void) {
@@ -283,8 +284,8 @@ static void a_value_of_exactly_one_entry_is_not_chunked(void) {
         reads_back("exact", one_over);
         CHECK(chunk_exists("exact", 1) && chunk_exists("exact", 2) && !chunk_exists("exact", 3));
     }
-    free(exact);
-    free(one_over);
+    spisor_memory_release(exact);
+    spisor_memory_release(one_over);
 }
 
 static void deleting_a_logical_entry_deletes_its_chunks(void) {
@@ -295,7 +296,7 @@ static void deleting_a_logical_entry_deletes_its_chunks(void) {
         CHECK(!chunk_exists("doomed", 1) && !chunk_exists("doomed", 3));
         CHECK(is_absent("doomed"));
     }
-    free(large);
+    spisor_memory_release(large);
 }
 
 static void chunks_never_appear_in_a_listing(void) {
@@ -304,7 +305,7 @@ static void chunks_never_appear_in_a_listing(void) {
         CHECK(listing_holds("", "listed#2"));
         CHECK(listed_count("listed") == 1);
     }
-    free(large);
+    spisor_memory_release(large);
 }
 
 static void windows_only_checks(void) {

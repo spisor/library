@@ -19,6 +19,7 @@
 #endif
 
 #include "changes.h"
+#include "spisor/allocation.h"
 #include "changes_call.h"
 #include "check.h"
 #include "host_provenance.h"
@@ -113,7 +114,7 @@ static long applied_sequence(const scratch *place, const char *host, const char 
     if (recorded < 0) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "apply did not record: status %d %s\n", (int)result.status, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return recorded;
@@ -136,7 +137,7 @@ static int answered_existing(const scratch *place, const char *host, const char 
     if (!answered) {
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "expected recorded false with sequence %ld, got %s\n", expected, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return answered;
@@ -160,7 +161,7 @@ static int reverse_counts(const scratch *place, const char *host, int expected_r
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "reverse of %s: expected %d reversed and %d drifted, got status %d %s\n", host,
                 expected_reversed, expected_drifted, (int)result.status, text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return matches;
@@ -401,7 +402,7 @@ static int home_file_is(const scratch *place, const char *relative, const char *
     size_t length = 0;
     char *actual = (char *)spisor_read_file(path, &length);
     int same = check_text(actual, expected, relative);
-    free(actual);
+    spisor_memory_release(actual);
     return same;
 }
 
@@ -541,7 +542,7 @@ static int applied_in(const scratch *place, const char *host, const char *shell)
         char *text = result.tree == NULL ? NULL : cJSON_PrintUnformatted(result.tree);
         fprintf(stderr, "apply with shell %s did not record: %s\n", shell == NULL ? "(none)" : shell,
                 text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
     }
     cJSON_Delete(result.tree);
     return recorded;

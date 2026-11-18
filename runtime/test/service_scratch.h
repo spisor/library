@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "check.h"
 #include "paths.h"
 #include "scratch_directory.h"
@@ -27,7 +28,7 @@ static inline void scratch_in(char *directory, size_t size, const char *suite, c
     start_empty_directory(directory);
 }
 
-/** directory/name joined as this OS's path.join joins it, freed with free. */
+/** directory/name joined as this OS's path.join joins it, freed. */
 static inline char *joined_path(const char *directory, const char *name) {
     const char *segments[2] = {directory, name};
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
@@ -48,7 +49,7 @@ static inline char *touch_file(const char *directory, const char *name, const ch
 static inline void make_directory_in(const char *directory, const char *name) {
     char *path = joined_path(directory, name);
     CHECK(path != NULL && spisor_make_directories(path) == 1);
-    free(path);
+    spisor_memory_release(path);
 }
 
 #endif

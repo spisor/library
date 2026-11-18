@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "boot.h"
+#include "spisor/allocation.h"
 #include "cache.h"
 #include "places.h"
 #include "catalog_time.h"
@@ -40,7 +41,7 @@ typedef struct c_host {
 
 static char *narrow_of(const wchar_t *wide, int units) {
     int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, units, NULL, 0, NULL, NULL);
-    char *narrow = bytes <= 0 ? NULL : malloc((size_t)bytes + 1);
+    char *narrow = bytes <= 0 ? NULL : spisor_memory_allocate((size_t)bytes + 1);
     if (narrow != NULL) {
         WideCharToMultiByte(CP_UTF8, 0, wide, units, narrow, bytes, NULL, NULL);
         narrow[bytes] = 0;
@@ -55,8 +56,8 @@ static void add_variable(cJSON *environment, const wchar_t *entry) {
     if (name != NULL && value != NULL && !cJSON_HasObjectItem(environment, name)) {
         cJSON_AddStringToObject(environment, name, value);
     }
-    free(value);
-    free(name);
+    spisor_memory_release(value);
+    spisor_memory_release(name);
 }
 
 static cJSON *process_environment(void) {
@@ -78,13 +79,13 @@ static cJSON *process_environment(void) {
         if (equals == NULL || equals == *entry) {
             continue;
         }
-        char *name = malloc((size_t)(equals - *entry) + 1);
+        char *name = spisor_memory_allocate((size_t)(equals - *entry) + 1);
         memcpy(name, *entry, (size_t)(equals - *entry));
         name[equals - *entry] = 0;
         if (!cJSON_HasObjectItem(environment, name)) {
             cJSON_AddStringToObject(environment, name, equals + 1);
         }
-        free(name);
+        spisor_memory_release(name);
     }
     return environment;
 }
@@ -101,7 +102,7 @@ static void print_json(const cJSON *value) {
         fputs(text, stdout);
         fputs("\n", stdout);
     }
-    free(text);
+    spisor_memory_release(text);
 }
 
 /** Writes the refusal as spisor-host does and answers 1. */
@@ -262,15 +263,15 @@ static int run(int count, char **arguments) {
 #if defined(_WIN32)
 
 int wmain(int count, wchar_t **wide) {
-    char **arguments = calloc((size_t)count + 1, sizeof *arguments);
+    char **arguments = spisor_memory_allocate_zeroed((size_t)count + 1, sizeof *arguments);
     for (int index = 0; index < count; index++) {
         arguments[index] = narrow_of(wide[index], -1);
     }
     int code = run(count, arguments);
     for (int index = 0; index < count; index++) {
-        free(arguments[index]);
+        spisor_memory_release(arguments[index]);
     }
-    free(arguments);
+    spisor_memory_release(arguments);
     return code;
 }
 

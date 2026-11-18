@@ -1,4 +1,5 @@
 #include "fake_secret_backend.h"
+#include "spisor/allocation.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +20,7 @@ static int set_calls = 0;
 
 static char *copy_text(const char *text) {
     size_t size = strlen(text) + 1;
-    char *copy = malloc(size);
+    char *copy = spisor_memory_allocate(size);
     if (copy != NULL) {
         memcpy(copy, text, size);
     }
@@ -36,8 +37,8 @@ static int index_of(const char *name) {
 }
 
 static void remove_at(int index) {
-    free(entries[index].name);
-    free(entries[index].value);
+    spisor_memory_release(entries[index].name);
+    spisor_memory_release(entries[index].value);
     entries[index] = entries[--entry_count];
 }
 
@@ -45,7 +46,7 @@ static int put(const char *name, const char *value) {
     char *copy = copy_text(value);
     int index = index_of(name);
     if (copy == NULL || (index < 0 && entry_count == FAKE_STORE_CAPACITY)) {
-        free(copy);
+        spisor_memory_release(copy);
         return 0;
     }
     if (index < 0) {
@@ -53,7 +54,7 @@ static int put(const char *name, const char *value) {
         entries[index].name = copy_text(name);
         entries[index].value = NULL;
     }
-    free(entries[index].value);
+    spisor_memory_release(entries[index].value);
     entries[index].value = copy;
     return entries[index].name != NULL;
 }
@@ -164,7 +165,7 @@ runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secr
     if (refusal() != RUNTIME_SECRET_DONE) {
         return refusal();
     }
-    names->names = calloc(FAKE_STORE_CAPACITY, sizeof(char *));
+    names->names = spisor_memory_allocate_zeroed(FAKE_STORE_CAPACITY, sizeof(char *));
     if (names->names == NULL) {
         return RUNTIME_SECRET_FAILED;
     }

@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "spisor/allocation.h"
 #include "install_call.h"
 
 #if !defined(_WIN32)
@@ -39,7 +40,7 @@ static char *system_tar(void) {
     return joined(narrow, "tar.exe");
 #else
     const char *tar = spisor_file_exists("/usr/bin/tar") ? "/usr/bin/tar" : "/bin/tar";
-    char *copy = malloc(strlen(tar) + 1);
+    char *copy = spisor_memory_allocate(strlen(tar) + 1);
     strcpy(copy, tar);
     return copy;
 #endif
@@ -71,12 +72,12 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
     char *problem = NULL;
     CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
     CHECK(spisor_sha256_file(fixture->archive, fixture->archive_sha256));
-    free(problem);
-    free(tar);
+    spisor_memory_release(problem);
+    spisor_memory_release(tar);
     cJSON_Delete(arguments);
-    free(served);
-    free(stem);
-    free(packing);
+    spisor_memory_release(served);
+    spisor_memory_release(stem);
+    spisor_memory_release(packing);
 }
 
 static void start_runtime(runtime_fixture *fixture, const char *label, const char *sha256_override) {
@@ -84,12 +85,12 @@ static void start_runtime(runtime_fixture *fixture, const char *label, const cha
     pack_archive(fixture, "the node executable");
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture->archive);
     runtime_install_use_runtime_build(TEST_VERSION, url, sha256_override == NULL ? fixture->archive_sha256 : sha256_override);
-    free(url);
+    spisor_memory_release(url);
 }
 
 static void finish_runtime(runtime_fixture *fixture) {
     runtime_install_use_runtime_build(NULL, NULL, NULL);
-    free(fixture->archive);
+    spisor_memory_release(fixture->archive);
     finish_install_base(&fixture->base);
 }
 
@@ -120,7 +121,7 @@ static char *runtime_directory(const runtime_fixture *fixture) {
 static char *executable_path(const runtime_fixture *fixture) {
     char *directory = runtime_directory(fixture);
     char *path = joined(directory, STEM "/" EXECUTABLE_MEMBER);
-    free(directory);
+    spisor_memory_release(directory);
     return path;
 }
 
@@ -140,7 +141,7 @@ static void acquires_the_pinned_runtime_and_answers_its_executable(void) {
     cJSON_free(executable_json);
     cJSON_Delete(quoted);
     cJSON_Delete(answer.tree);
-    free(executable);
+    spisor_memory_release(executable);
     finish_runtime(&fixture);
 }
 
@@ -180,9 +181,9 @@ static void keeps_only_the_executable_and_the_archive_s_hash_in_place_of_the_arc
     }
     CHECK(visible == 1);
     runtime_free_directory_listing(&listing);
-    free(marker);
-    free(executable);
-    free(directory);
+    spisor_memory_release(marker);
+    spisor_memory_release(executable);
+    spisor_memory_release(directory);
     finish_runtime(&fixture);
 }
 
@@ -197,9 +198,9 @@ static void acquires_the_runtime_again_when_its_executable_s_bytes_changed(void)
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(executable, &length);
     CHECK(bytes != NULL && length == strlen("the node executable") && memcmp(bytes, "the node executable", length) == 0);
-    free(bytes);
+    spisor_memory_release(bytes);
     cJSON_Delete(answer.tree);
-    free(executable);
+    spisor_memory_release(executable);
     finish_runtime(&fixture);
 }
 
@@ -215,7 +216,7 @@ static void removes_the_runtime_versions_no_longer_pinned(void) {
     CHECK(!exists_in(fixture.base.cache, "runtimes/node/1.0.0"));
     char *executable = executable_path(&fixture);
     CHECK(spisor_file_exists(executable));
-    free(executable);
+    spisor_memory_release(executable);
     finish_runtime(&fixture);
 }
 
@@ -228,8 +229,8 @@ static void refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_exe
     char *directory = runtime_directory(&fixture);
     char *executable = executable_path(&fixture);
     CHECK(!spisor_file_exists(executable) && !exists_in(directory, ".unpacked") && !exists_in(directory, ARCHIVE_NAME));
-    free(executable);
-    free(directory);
+    spisor_memory_release(executable);
+    spisor_memory_release(directory);
     finish_runtime(&fixture);
 }
 
@@ -262,8 +263,8 @@ static char *path_node(const install_base *base, const char *version) {
 #if !defined(_WIN32)
     CHECK(chmod(node, 0755) == 0);
 #endif
-    free(node);
-    free(probe);
+    spisor_memory_release(node);
+    spisor_memory_release(probe);
     return folder;
 }
 
@@ -283,7 +284,7 @@ static void reuses_a_node_on_the_path_whose_major_is_twenty_or_more(void) {
     CHECK(record != NULL && cJSON_Compare(record, answer.tree, 1));
     cJSON_Delete(record);
     cJSON_Delete(answer.tree);
-    free(folder);
+    spisor_memory_release(folder);
     finish_runtime(&fixture);
 }
 
@@ -298,9 +299,9 @@ static void ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin(vo
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     char *executable = executable_path(&fixture);
     check_text(text_at(answer.tree, "executable"), executable, "pinned executable");
-    free(executable);
+    spisor_memory_release(executable);
     cJSON_Delete(answer.tree);
-    free(folder);
+    spisor_memory_release(folder);
     finish_runtime(&fixture);
 }
 
@@ -328,9 +329,9 @@ static void stops_a_run_that_does_not_exit_in_time_and_refuses_it(void) {
     CHECK(!runtime_run_to_exit(program, arguments, 500, &exit_code, &output, &problem));
     CHECK(runtime_now_milliseconds() - started < 10000);
     CHECK(problem != NULL && strstr(problem, "in time") != NULL);
-    free(problem);
-    free(output);
-    free(program);
+    spisor_memory_release(problem);
+    spisor_memory_release(output);
+    spisor_memory_release(program);
     cJSON_Delete(arguments);
 }
 
@@ -355,7 +356,7 @@ static void hold_staged_executable(const char *staging) {
     HANDLE thread = CreateThread(NULL, 0, release_later, NULL, 0, NULL);
     CHECK(thread != NULL);
     CloseHandle(thread);
-    free(executable);
+    spisor_memory_release(executable);
 }
 
 static void moves_the_runtime_into_place_once_a_scanner_lets_go_of_it(void) {
@@ -367,7 +368,7 @@ static void moves_the_runtime_into_place_once_a_scanner_lets_go_of_it(void) {
     CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     char *executable = executable_path(&fixture);
     CHECK(spisor_file_exists(executable));
-    free(executable);
+    spisor_memory_release(executable);
     cJSON_Delete(answer.tree);
     while (held_executable != INVALID_HANDLE_VALUE) {
         Sleep(20);
@@ -391,9 +392,9 @@ static void returns_when_the_child_exits_though_a_grandchild_holds_its_output(vo
         fprintf(stderr, "grandchild run: exit %d, %s\n", exit_code, problem == NULL ? "(no problem)" : problem);
         check_failures++;
     }
-    free(problem);
-    free(output);
-    free(program);
+    spisor_memory_release(problem);
+    spisor_memory_release(output);
+    spisor_memory_release(program);
     cJSON_Delete(arguments);
 }
 
@@ -436,9 +437,9 @@ static void sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one(void) {
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     cJSON_Delete(answer.tree);
     CHECK(!spisor_file_exists(old) && spisor_file_exists(fresh));
-    free(old_file);
-    free(fresh);
-    free(old);
+    spisor_memory_release(old_file);
+    spisor_memory_release(fresh);
+    spisor_memory_release(old);
     finish_runtime(&fixture);
 }
 
@@ -462,7 +463,7 @@ static void acquires_into_a_cache_at(const char *label, const char *cache_folder
         check_failures++;
     }
     cJSON_Delete(answer.tree);
-    free(elsewhere.cache);
+    spisor_memory_release(elsewhere.cache);
     finish_runtime(&fixture);
 }
 

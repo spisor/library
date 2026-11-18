@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "cache_call.h"
 #include "catalog_call.h"
@@ -52,7 +53,7 @@ static inline const spisor_value *catalog_request_value(catalog_request *request
 }
 
 static inline void *catalog_request_block(catalog_request *request, size_t count, size_t width) {
-    void *block = calloc(count + 1, width);
+    void *block = spisor_memory_allocate_zeroed(count + 1, width);
     CHECK(block != NULL && request->block_count < 8);
     request->blocks[request->block_count++] = block;
     return block;
@@ -63,7 +64,7 @@ static inline void catalog_request_release(catalog_request *request) {
         spisor_value_release(&request->trees[index]);
     }
     for (size_t index = 0; index < request->block_count; index++) {
-        free(request->blocks[index]);
+        spisor_memory_release(request->blocks[index]);
     }
 }
 

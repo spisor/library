@@ -14,6 +14,7 @@
 #include <wchar.h>
 #include <windows.h>
 
+#include "spisor/allocation.h"
 #include "path_entry_windows_hooks.h"
 #define fixture_process_id() _getpid()
 #else
@@ -58,20 +59,20 @@ static inline char *joined(const char *base, const char *rest) {
 static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    free(parent);
+    spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
 }
 
 static inline void write_in(const char *base, const char *rest, const char *content) {
     char *path = joined(base, rest);
     write_file(path, content);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static inline int exists_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     int exists = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return exists;
 }
 
@@ -79,20 +80,20 @@ static inline char *text_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(path, &length);
-    free(path);
-    char *text = bytes == NULL ? NULL : malloc(length + 1);
+    spisor_memory_release(path);
+    char *text = bytes == NULL ? NULL : spisor_memory_allocate(length + 1);
     if (text != NULL) {
         memcpy(text, bytes, length);
         text[length] = 0;
     }
-    free(bytes);
+    spisor_memory_release(bytes);
     return text;
 }
 
 static inline cJSON *json_in(const char *base, const char *rest) {
     char *text = text_in(base, rest);
     cJSON *tree = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
-    free(text);
+    spisor_memory_release(text);
     return tree;
 }
 
@@ -124,12 +125,12 @@ static inline void start_install_base(install_base *base, const char *suite, con
 static inline void finish_install_base(install_base *base) {
     cJSON_Delete(base->items);
     CHECK(runtime_remove_tree(base->root) == 1);
-    free(base->portable);
-    free(base->state);
-    free(base->cache);
-    free(base->user);
-    free(base->path);
-    free(base->catalog);
+    spisor_memory_release(base->portable);
+    spisor_memory_release(base->state);
+    spisor_memory_release(base->cache);
+    spisor_memory_release(base->user);
+    spisor_memory_release(base->path);
+    spisor_memory_release(base->catalog);
 }
 
 static inline cJSON *places_of(const install_base *base) {
@@ -168,12 +169,12 @@ static inline cJSON *served_reference(install_base *base, const char *id, const 
     char *path = joined(base->catalog, rest);
     write_file(path, content);
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
-    free(path);
+    spisor_memory_release(path);
     char sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);
     cJSON *reference = cJSON_CreateObject();
     cJSON_AddStringToObject(reference, "url", url);
-    free(url);
+    spisor_memory_release(url);
     cJSON_AddStringToObject(reference, "sha256", sha256);
     cJSON_AddNumberToObject(reference, "size", (double)strlen(content));
     return reference;
@@ -317,7 +318,7 @@ static inline cJSON *local_sources(const install_base *base) {
     cJSON_AddStringToObject(source, "kind", "local");
     char *path = index_path_of(base);
     cJSON_AddStringToObject(source, "path", path);
-    free(path);
+    spisor_memory_release(path);
     cJSON *sources = cJSON_CreateArray();
     cJSON_AddItemToArray(sources, source);
     return sources;
@@ -390,8 +391,8 @@ static inline cJSON *ecosystem_settings(const install_base *base, int applicatio
     CHECK(values != NULL && refusal == NULL);
     cJSON_Delete(refusal);
     cJSON_Delete(argument);
-    free(no_home);
-    free(home);
+    spisor_memory_release(no_home);
+    spisor_memory_release(home);
     return values;
 }
 
@@ -401,7 +402,7 @@ static inline void set_portable(const install_base *base, const char *key, cJSON
     CHECK(runtime_set_ecosystem_setting(home, base->portable, key, value, RUNTIME_SETTINGS_LAYER_PORTABLE, &refusal) == 1);
     cJSON_Delete(refusal);
     cJSON_Delete(value);
-    free(home);
+    spisor_memory_release(home);
 }
 
 #if defined(_WIN32)

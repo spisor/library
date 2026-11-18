@@ -5,6 +5,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include "spisor/allocation.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,20 +55,20 @@ static inline char *joined(const char *base, const char *rest) {
 static inline void write_file(const char *path, const char *content) {
     char *parent = joined(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
-    free(parent);
+    spisor_memory_release(parent);
     CHECK(spisor_replace_file(path, (const uint8_t *)content, strlen(content)) == 1);
 }
 
 static inline void write_in(const char *base, const char *rest, const char *content) {
     char *path = joined(base, rest);
     write_file(path, content);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static inline int exists_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     int exists = spisor_file_exists(path);
-    free(path);
+    spisor_memory_release(path);
     return exists;
 }
 
@@ -75,14 +76,14 @@ static inline char *text_in(const char *base, const char *rest) {
     char *path = joined(base, rest);
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
 static inline void expect_text_in(const char *base, const char *rest, const char *expected, const char *label) {
     char *text = text_in(base, rest);
     check_text(text, expected, label);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static inline void expect_json(const cJSON *actual, const char *expected_json, const char *label) {
@@ -101,7 +102,7 @@ static inline void expect_json_in(const char *base, const char *rest, const char
     cJSON *actual = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
     expect_json(actual, expected_json, label);
     cJSON_Delete(actual);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static inline void expect_member_json(const cJSON *tree, const char *slashed, const char *expected_json, const char *label) {
@@ -138,12 +139,12 @@ static inline cJSON *served_reference(const char *id, const char *version, const
     char *path = joined(catalog_folder, rest);
     write_file(path, served);
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path);
-    free(path);
+    spisor_memory_release(path);
     char sha256[RUNTIME_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);
     cJSON *reference = cJSON_CreateObject();
     cJSON_AddStringToObject(reference, "url", url);
-    free(url);
+    spisor_memory_release(url);
     cJSON_AddStringToObject(reference, "sha256", sha256);
     cJSON_AddNumberToObject(reference, "size", (double)strlen(content));
     return reference;
@@ -212,7 +213,7 @@ static inline void write_catalog(void) {
     cJSON_Delete(index);
     char *path = index_path();
     write_file(path, text);
-    free(path);
+    spisor_memory_release(path);
     cJSON_free(text);
 }
 
@@ -223,7 +224,7 @@ static inline cJSON *settings_with(const char *extra_json) {
     cJSON_AddStringToObject(source, "kind", "local");
     char *path = index_path();
     cJSON_AddStringToObject(source, "path", path);
-    free(path);
+    spisor_memory_release(path);
     cJSON *sources = cJSON_CreateArray();
     cJSON_AddItemToArray(sources, source);
     cJSON_AddItemToObject(cJSON_AddObjectToObject(settings, "catalog"), "sources", sources);
@@ -294,7 +295,7 @@ static inline void expect_hinted_versions(const char *host, const char *expected
     expect_json(versions, expected_json, label);
     cJSON_Delete(versions);
     cJSON_Delete(recorded);
-    free(text);
+    spisor_memory_release(text);
 }
 
 /** Registers host with the least a registration holds, unless it is registered or no plain file name. */
@@ -394,7 +395,7 @@ static inline void expect_executable(catalog_answer answer, const char *host, co
     snprintf(expected, sizeof expected, "/bundles/%s/%s/" PLATFORM "/%s", host, version, host);
     char *normalized = NULL;
     if (executable != NULL) {
-        normalized = malloc(strlen(executable) + 1);
+        normalized = spisor_memory_allocate(strlen(executable) + 1);
         for (size_t index = 0; executable[index] != 0; index++) {
             normalized[index] = executable[index] == '\\' ? '/' : executable[index];
         }
@@ -408,7 +409,7 @@ static inline void expect_executable(catalog_answer answer, const char *host, co
                 executable == NULL ? "(none)" : executable);
         check_failures++;
     }
-    free(normalized);
+    spisor_memory_release(normalized);
 }
 
 #endif

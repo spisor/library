@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "directory_tree.h"
 #include "fetch_hooks.h"
@@ -64,7 +65,7 @@ static void start_scratch(void) {
 }
 
 static char *http_url(const char *path) {
-    char *url = malloc(256);
+    char *url = spisor_memory_allocate(256);
     snprintf(url, 256, "http://127.0.0.1:%u%s", (unsigned)server_port, path);
     return url;
 }
@@ -79,7 +80,7 @@ static cJSON *request_for(const char *url) {
 static cJSON *request_for_path(const char *path) {
     char *url = http_url(path);
     cJSON *request = request_for(url);
-    free(url);
+    spisor_memory_release(url);
     return request;
 }
 
@@ -305,7 +306,7 @@ static void a_redirect_loop_is_refused(void) {
     expect_refused(get(request_for(url)), "redirected more than 5 times", "loop");
     char *log = http_fixture_stop(fixture);
     CHECK(log != NULL && occurrences(log, "GET /loop ") <= 6);
-    free(log);
+    spisor_memory_release(log);
     expect_nothing_stored("loop");
 }
 
@@ -478,7 +479,7 @@ static void libcurl_honours_https_proxy_and_no_proxy(void) {
     unsetenv("HTTPS_PROXY");
     char *log = http_fixture_stop(proxy);
     CHECK(log != NULL && occurrences(log, "CONNECT catalog.invalid:443 HTTP/1.1") == 1);
-    free(log);
+    spisor_memory_release(log);
     expect_nothing_stored("proxy");
 }
 
@@ -546,7 +547,7 @@ static void run_against_the_server(void) {
 #if defined(__linux__)
     a_linux_without_libcurl_is_refused_naming_the_package();
 #endif
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 int main(void) {

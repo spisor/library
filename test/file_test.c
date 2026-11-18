@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/file.h"
 #include "../src/file_presence.h"
 #include "../src/file_replacement.h"
@@ -56,7 +57,7 @@ static void a_directory_is_not_readable(void) {
     size_t length = 0;
     uint8_t *bytes = spisor_read_file(SPISOR_SCRATCH_PATH, &length);
     CHECK(bytes == NULL);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void a_non_ascii_name_round_trips(void) {
@@ -69,7 +70,7 @@ static void a_non_ascii_name_round_trips(void) {
     if (bytes != NULL) {
         check_text((const char *)bytes, CONTENT, "non-ASCII file content");
     }
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void an_empty_file_reads_as_empty(void) {
@@ -79,7 +80,7 @@ static void an_empty_file_reads_as_empty(void) {
     uint8_t *bytes = spisor_read_file(path, &length);
     CHECK(bytes != NULL);
     CHECK(length == 0);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void read_back_equals(const char *path, const char *expected) {
@@ -90,7 +91,7 @@ static void read_back_equals(const char *path, const char *expected) {
         CHECK(length == strlen(expected));
         check_text((const char *)bytes, expected, path);
     }
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static void make_directories_creates_nested(void) {
@@ -223,7 +224,7 @@ static int replacement_mode(const char *target, int owner_only) {
     int mode = mode_of(temporary);
     fclose(file);
     remove(temporary);
-    free(temporary);
+    spisor_memory_release(temporary);
     return mode;
 }
 
@@ -341,7 +342,7 @@ static void sets_two_running_images_aside_in_turn_and_removes_both_once_they_exi
     CHECK(spisor_remove_set_aside(path) == 0);
     CHECK(!spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old"));
     CHECK(!spisor_file_exists(SPISOR_SCRATCH_PATH "/running-twice/shim.exe.old-1"));
-    free(ping);
+    spisor_memory_release(ping);
 }
 
 static DWORD WINAPI close_after_a_moment(LPVOID handle) {

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "spisor/allocation.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -57,7 +58,7 @@ static char *environment_value(const char *name) {
     if (length == 0 || length >= 32768) {
         return NULL;
     }
-    char *narrow = malloc(4 * (size_t)length + 1);
+    char *narrow = spisor_memory_allocate(4 * (size_t)length + 1);
     if (narrow != NULL) {
         WideCharToMultiByte(CP_UTF8, 0, value, -1, narrow, 4 * (int)length + 1, NULL, NULL);
     }
@@ -93,7 +94,7 @@ static void pause_briefly(void) {
 
 static char *environment_value(const char *name) {
     const char *value = getenv(name);
-    char *copy = value == NULL ? NULL : malloc(strlen(value) + 1);
+    char *copy = value == NULL ? NULL : spisor_memory_allocate(strlen(value) + 1);
     if (copy != NULL) {
         strcpy(copy, value);
     }
@@ -115,7 +116,7 @@ static int exists(const char *path) {
 #endif
 
 static char *signal_file(const char *signals, const char *tag, const char *ending) {
-    char *path = malloc(strlen(signals) + strlen(tag) + strlen(ending) + 2);
+    char *path = spisor_memory_allocate(strlen(signals) + strlen(tag) + strlen(ending) + 2);
     if (path != NULL) {
         sprintf(path, "%s/%s%s", signals, tag, ending);
     }
@@ -142,7 +143,7 @@ static void record_start(const char *signals, const char *tag, int count, char *
     char *published = environment_value("SPISOR_TEST");
     if (published != NULL) {
         cJSON_AddStringToObject(started, "spisorTest", published);
-        free(published);
+        spisor_memory_release(published);
     }
     cJSON *argv = cJSON_AddArrayToObject(started, "argv");
     for (int index = 1; index < count; index++) {
@@ -158,8 +159,8 @@ static void record_start(const char *signals, const char *tag, int count, char *
         remove(path);
         rename(partial, path);
     }
-    free(path);
-    free(partial);
+    spisor_memory_release(path);
+    spisor_memory_release(partial);
     cJSON_free(text);
     cJSON_Delete(started);
 }
@@ -173,7 +174,7 @@ static int run(int count, char **arguments) {
     int code = count > 2 ? atoi(arguments[2]) : 0;
     char *signals = environment_value(SIGNALS_VARIABLE);
     if (tag[0] == 0 || signals == NULL) {
-        free(signals);
+        spisor_memory_release(signals);
         return code;
     }
     record_start(signals, tag, count, arguments);
@@ -181,8 +182,8 @@ static int run(int count, char **arguments) {
     for (int waited = 0; release != NULL && !exists(release) && waited < LONGEST_LIFE_MILLISECONDS; waited += 50) {
         pause_briefly();
     }
-    free(release);
-    free(signals);
+    spisor_memory_release(release);
+    spisor_memory_release(signals);
     return code;
 }
 

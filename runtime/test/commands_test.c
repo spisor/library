@@ -25,6 +25,7 @@
 #endif
 
 #include "changes.h"
+#include "spisor/allocation.h"
 #include "changes_call.h"
 #include "check.h"
 #include "commands_call.h"
@@ -137,12 +138,12 @@ static cJSON *naming_request(const scratch *place, const char *host, const char 
     return targeted_request(place, host, search, name, target);
 }
 
-/** The name answered, "" when none, or NULL when the call fails; freed with free. */
+/** The name answered, "" when none, or NULL when the call fails; freed. */
 static char *answered_name(answer result, const char *what) {
     char *assigned = NULL;
     if (result.status == SPISOR_OK) {
         const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(result.tree, "name"));
-        assigned = text == NULL ? calloc(1, 1) : malloc(strlen(text) + 1);
+        assigned = text == NULL ? spisor_memory_allocate_zeroed(1, 1) : spisor_memory_allocate(strlen(text) + 1);
         if (assigned != NULL && text != NULL) {
             memcpy(assigned, text, strlen(text) + 1);
         }
@@ -164,7 +165,7 @@ static int requests(const scratch *place, const char *host, const char *name, co
     default_search(place, search, sizeof search);
     char *assigned = requested_on(place, host, search, name, "tool");
     int same = check_text(assigned, expected, name);
-    free(assigned);
+    spisor_memory_release(assigned);
     return same;
 }
 
@@ -266,23 +267,23 @@ static int lacks_shim(const scratch *place, const char *name) {
     return shim_parts_present(place, name) == 0;
 }
 
-/** Every byte of every file of the shim of name, freed with free. */
+/** Every byte of every file of the shim of name, freed. */
 static char *shim_bytes(const scratch *place, const char *name) {
     size_t used = 0;
-    char *all = calloc(1, 1);
+    char *all = spisor_memory_allocate_zeroed(1, 1);
     for (size_t index = 0; index < SHIM_FILE_COUNT && all != NULL; index++) {
         char path[1400];
         shim_part(place, name, index, path, sizeof path);
         size_t length = 0;
         uint8_t *bytes = spisor_read_file(path, &length);
-        char *grown = bytes == NULL ? NULL : realloc(all, used + length + 1);
+        char *grown = bytes == NULL ? NULL : spisor_memory_reallocate(all, used + length + 1);
         if (grown != NULL) {
             memcpy(grown + used, bytes, length);
             used += length;
             grown[used] = '\0';
             all = grown;
         }
-        free(bytes);
+        spisor_memory_release(bytes);
     }
     return all;
 }
@@ -314,7 +315,7 @@ static int entry_is(const scratch *place, const char *host, const char *requeste
         char *text = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(registration, "commands"));
         fprintf(stderr, "%s: expected one entry for %s as %s/%s/%s, got %s\n", host, requested, name, owner, state,
                 text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
         check_failures++;
     }
     cJSON_Delete(registration);
@@ -338,7 +339,7 @@ static int user_entry_is(const scratch *place, const char *host, const char *nam
         char *text = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(registration, "commands"));
         fprintf(stderr, "%s: expected one user-added entry %s %s, got %s\n", host, name, state,
                 text == NULL ? "" : text);
-        free(text);
+        spisor_memory_release(text);
         check_failures++;
     }
     cJSON_Delete(registration);
@@ -404,7 +405,7 @@ static void a_program_on_path_is_never_shadowed(void) {
     if (access("/usr/bin/cc", X_OK) == 0) {
         char *assigned = requested_on(&place, "alpha", "/usr/bin", "cc", "tool");
         CHECK(check_text(assigned, "cc2", "the system cc"));
-        free(assigned);
+        spisor_memory_release(assigned);
     }
 #else
     cJSON *environment = cJSON_CreateObject();
@@ -459,8 +460,8 @@ static void a_command_the_user_added_is_never_taken_by_a_host(void) {
     CHECK(before != NULL && before[0] != '\0' && check_text(after, before, "the user's shim after the request"));
     CHECK(entry_is(&place, "alpha", "cc", "cc", "user", "deleted"));
     CHECK(user_entry_is(&place, "alpha", "cc", "active"));
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
     CHECK(reverse_host(&place, "alpha"));
 }
 
@@ -670,7 +671,7 @@ static void place_probe(const scratch *place, const char *directory, char *targe
     uint8_t *bytes = spisor_read_file(RUNTIME_PROBE_PATH, &length);
     CHECK(bytes != NULL);
     CHECK(bytes != NULL && runtime_create_new_file(target, bytes, length, 1) == RUNTIME_ENTRY_DONE);
-    free(bytes);
+    spisor_memory_release(bytes);
 }
 
 static char *request_target(const scratch *place, const char *host, const char *name, const char *target) {
@@ -696,7 +697,7 @@ static int shim_passes_through(const scratch *place, const char *name, const cha
     if (code != atoi(exit_code)) {
         fprintf(stderr, "the shim %s exited %d, expected %s\n", name, code, exit_code);
     }
-    free(received);
+    spisor_memory_release(received);
     return passed;
 }
 
@@ -710,11 +711,11 @@ static void the_shim_runs_its_target_with_the_arguments_and_exit_code(void) {
     place_probe(&place, "moved elsewhere", moved, sizeof moved);
     char *assigned = request_target(&place, "alpha", "cc", target);
     CHECK(check_text(assigned, "cc", "the first request"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(shim_passes_through(&place, "cc", "7"));
     assigned = request_target(&place, "alpha", "cc", moved);
     CHECK(check_text(assigned, "cc", "the request after the target moved"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(shim_passes_through(&place, "cc", "0"));
     CHECK(succeeds(rename_command(&place, "alpha", "cc", "renamed"), "rename"));
     CHECK(shim_passes_through(&place, "renamed", "3"));
@@ -758,7 +759,7 @@ static int shim_delivers(const scratch *place, const char *name, const char *out
     if (code != exit_code) {
         fprintf(stderr, "the shim %s exited %d, expected %d\n", name, code, exit_code);
     }
-    free(received);
+    spisor_memory_release(received);
     return delivered;
 }
 
@@ -780,7 +781,7 @@ static void fixed_arguments_reach_the_target_exactly_through_the_shim(void) {
                                  "J\xc3\xbcrgen\n" CALLER_LINES;
     char *assigned = request_argued(&place, "alpha", "cc", target, fixed, 10);
     CHECK(check_text(assigned, "cc", "the request with fixed arguments"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
     CHECK(succeeds(rename_command(&place, "alpha", "cc", "renamed"), "rename"));
     CHECK(shim_delivers(&place, "renamed", output, caller_arguments, CALLER_ARGUMENT_COUNT, 4, expected));
@@ -801,7 +802,7 @@ static void a_shim_file_without_the_format_line_is_refused_by_the_launcher(void)
     const char *const fixed[] = {output, "0"};
     char *assigned = request_argued(&place, "alpha", "cc", target, fixed, 2);
     CHECK(check_text(assigned, "cc", "the request"));
-    free(assigned);
+    spisor_memory_release(assigned);
     char shim[1400];
     char line[1500];
     snprintf(shim, sizeof shim, "%s/cc.shim", place.shims);
@@ -852,10 +853,10 @@ static char *machine_snapshot(const scratch *place) {
     char *state = tree_snapshot(place->state, "/hosts");
     char *home = tree_snapshot(place->home, NULL);
     size_t size = strlen(state) + strlen(home) + 16;
-    char *both = malloc(size);
+    char *both = spisor_memory_allocate(size);
     snprintf(both, size, "%s\n--\n%s", state, home);
-    free(state);
-    free(home);
+    spisor_memory_release(state);
+    spisor_memory_release(home);
     return both;
 }
 
@@ -873,14 +874,14 @@ static void a_rerequest_rewrites_the_held_command_and_reversal_restores_the_mach
     const char *const first_arguments[] = {output, "1", "first"};
     char *assigned = request_argued(&place, "alpha", "cc", first, first_arguments, 3);
     CHECK(check_text(assigned, "cc", "the first request"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 1, "first\n" CALLER_LINES));
     int records = file_record_count(&place, "alpha");
     output_path(&place, "second", output, sizeof output);
     const char *const second_arguments[] = {output, "2", "second", "and more"};
     assigned = request_argued(&place, "alpha", "cc", second, second_arguments, 4);
     CHECK(check_text(assigned, "cc", "the request for the next version"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(shim_delivers(&place, "cc", output, caller_arguments, CALLER_ARGUMENT_COUNT, 2,
                         "second\nand more\n" CALLER_LINES));
     CHECK(file_record_count(&place, "alpha") == records);
@@ -889,20 +890,20 @@ static void a_rerequest_rewrites_the_held_command_and_reversal_restores_the_mach
     const char *const third_arguments[] = {output, "3"};
     assigned = request_argued(&place, "alpha", "cc", first, third_arguments, 2);
     CHECK(check_text(assigned, "claude", "the request after the user renamed it"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(lacks_shim(&place, "cc"));
     CHECK(shim_delivers(&place, "claude", output, caller_arguments, CALLER_ARGUMENT_COUNT, 3, CALLER_LINES));
     CHECK(succeeds(add_command(&place, "alpha", "extra"), "add"));
     CHECK(succeeds(delete_command(&place, "alpha", "claude"), "delete"));
     assigned = request_argued(&place, "alpha", "cc", second, second_arguments, 4);
     CHECK(check_text(assigned, "", "the request after the user deleted it"));
-    free(assigned);
+    spisor_memory_release(assigned);
     CHECK(lacks_shim(&place, "cc") && lacks_shim(&place, "claude"));
     CHECK(reverse_host(&place, "alpha"));
     char *after = machine_snapshot(&place);
     CHECK(check_text(after, before, "the machine after the host's changes are reversed"));
-    free(before);
-    free(after);
+    spisor_memory_release(before);
+    spisor_memory_release(after);
 }
 
 static int path_entry_count(const scratch *place, const char *host) {
@@ -965,7 +966,7 @@ static int shims_on_path(const scratch *place) {
     size_t length = 0;
     char *text = (char *)spisor_read_file(profile, &length);
     int found = text != NULL && strstr(text, line) != NULL;
-    free(text);
+    spisor_memory_release(text);
     return found;
 }
 #endif
@@ -1015,8 +1016,8 @@ static void a_rerequest_keeps_the_held_shim_while_its_source_cannot_be_read(void
     CloseHandle(held);
     char *after = shim_bytes(&place, "oc");
     CHECK(before != NULL && after != NULL && strcmp(before, after) == 0);
-    free(after);
-    free(before);
+    spisor_memory_release(after);
+    spisor_memory_release(before);
     CHECK(reverse_host(&place, "alpha"));
 }
 #endif

@@ -7,6 +7,7 @@
 #endif
 
 #include "check.h"
+#include "spisor/allocation.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
 
@@ -20,7 +21,7 @@ static void expect_stripped(const char *input, const char *expected, const char 
         check_text(stripped, expected, label);
         CHECK(stripped_length == strlen(expected));
     }
-    free(stripped);
+    spisor_memory_release(stripped);
 }
 
 static void strips_whole_line_comments(void) {
@@ -71,7 +72,7 @@ static void strips_a_comment_holding_a_nul(void) {
     size_t stripped_length = 0;
     char *stripped = spisor_strip_comment_lines(text, sizeof(text) - 1, &stripped_length);
     CHECK(stripped != NULL && stripped_length == 3 && memcmp(stripped, "\n{}", 3) == 0);
-    free(stripped);
+    spisor_memory_release(stripped);
 }
 
 static cJSON *read_content(const char *content, size_t length, spisor_json_file_state *state) {
@@ -167,7 +168,7 @@ static void read_bom_then_comment_file(void) {
 }
 
 static char *nested_arrays_text(size_t depth) {
-    char *text = malloc(2 * depth + 1);
+    char *text = spisor_memory_allocate(2 * depth + 1);
     if (text != NULL) {
         memset(text, '[', depth);
         memset(text + depth, ']', depth);
@@ -183,7 +184,7 @@ static void reads_a_file_nested_as_deep_as_cjson_parses(void) {
     cJSON *tree = text == NULL ? NULL : read_content(text, 2000, &state);
     CHECK(state == SPISOR_JSON_FILE_PARSED && tree != NULL);
     cJSON_Delete(tree);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static void a_file_nested_past_cjson_is_unreadable_not_out_of_memory(void) {
@@ -192,7 +193,7 @@ static void a_file_nested_past_cjson_is_unreadable_not_out_of_memory(void) {
     CHECK(text != NULL);
     cJSON *tree = text == NULL ? NULL : read_content(text, 2002, &state);
     CHECK(state == SPISOR_JSON_FILE_UNREADABLE && tree == NULL);
-    free(text);
+    spisor_memory_release(text);
 }
 
 int main(void) {

@@ -211,7 +211,7 @@ static int packages_file_unchanged(void) {
     snprintf(file, sizeof file, "%s/packages.json", place.portable);
     uint8_t *bytes = spisor_read_file(file, &length);
     int unchanged = bytes != NULL && length == strlen(PACKAGES_FILE) && memcmp(bytes, PACKAGES_FILE, length) == 0;
-    free(bytes);
+    spisor_memory_release(bytes);
     return unchanged;
 }
 
@@ -486,7 +486,7 @@ static int file_unchanged(void) {
     snprintf(file, sizeof file, "%s/p.json", place.config_directory);
     uint8_t *bytes = spisor_read_file(file, &length);
     int unchanged = bytes != NULL && length == strlen(CHANGED_FILE) && memcmp(bytes, CHANGED_FILE, length) == 0;
-    free(bytes);
+    spisor_memory_release(bytes);
     return unchanged;
 }
 
@@ -790,7 +790,7 @@ static int every_profile_line_is_recorded(const cJSON *registration) {
         snprintf(profile, sizeof profile, "%s/%s", place.home, profiles[index]);
         uint8_t *bytes = spisor_read_file(profile, &length);
         int names_shims = bytes != NULL && strstr((const char *)bytes, shims) != NULL;
-        free(bytes);
+        spisor_memory_release(bytes);
         all = !names_shims || recorded(registration, "profile-line", "file", profiles[index]);
     }
     return all;
@@ -1197,8 +1197,8 @@ static int kept_no_catalog_state(void) {
     char *state = location == NULL ? NULL : runtime_catalog_state_path(cache_place, location);
     CHECK(state != NULL);
     int kept_none = state == NULL || !spisor_file_exists(state);
-    free(state);
-    free(location);
+    spisor_memory_release(state);
+    spisor_memory_release(location);
     return kept_none;
 }
 
@@ -1392,7 +1392,7 @@ static int replaced_the_old_run(void) {
     snprintf(path, sizeof path, "%s/bundles/spisor-host.json", place.state);
     uint8_t *bytes = spisor_read_file(path, &length);
     int replaced = bytes != NULL && strstr((const char *)bytes, "\"old\"") == NULL;
-    free(bytes);
+    spisor_memory_release(bytes);
     return replaced;
 }
 
@@ -1452,7 +1452,7 @@ static void every_install_operation(void) {
     failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0, 0};
     every_failure_of(&by_id);
     runtime_fetch_allow_plain_http(0);
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
     failure_case ecosystem = {"install's ecosystem", install_the_ecosystem, a_catalog_with_one_plugin, NULL,
                               recorded_the_run, 0, 1};
     every_failure_of(&ecosystem);

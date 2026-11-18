@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include "host_child.h"
 
@@ -21,7 +22,7 @@ static void on_started(double pid, void *context) {
     char name[256];
     snprintf(name, sizeof name, "%s.release", run->tag);
     write_in(signals, name, "");
-    free(signals);
+    spisor_memory_release(signals);
 }
 
 static int run_application(const host_world *world, const char *binary, const char *const *arguments, int terminate,
@@ -52,7 +53,7 @@ static void answers_the_application_s_exit_code(void) {
     const char *three[] = {"", "3", NULL};
     CHECK(run_application(&world, binary, none, 0, &refusal) == 0);
     CHECK(run_application(&world, binary, three, 0, &refusal) == 3);
-    free(binary);
+    spisor_memory_release(binary);
     finish_world(&world);
 }
 
@@ -69,7 +70,7 @@ static void passes_every_argument_through_unchanged(void) {
     CHECK(started != NULL && cJSON_Compare(cJSON_GetObjectItemCaseSensitive(started, "argv"), expected, 1));
     cJSON_Delete(expected);
     cJSON_Delete(started);
-    free(binary);
+    spisor_memory_release(binary);
     finish_world(&world);
 }
 
@@ -97,9 +98,9 @@ static void hands_a_batch_shim_each_argument_byte_identical_and_runs_nothing_an_
     CHECK(!spisor_file_exists(marker));
     cJSON_Delete(expected);
     cJSON_Delete(started);
-    free(marker);
-    free(shim);
-    free(application);
+    spisor_memory_release(marker);
+    spisor_memory_release(shim);
+    spisor_memory_release(application);
     finish_world(&world);
 }
 #else
@@ -111,7 +112,7 @@ static void passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_numb
     cJSON *refusal = NULL;
     const char *given[] = {"terminated", "0", NULL};
     CHECK(run_application(&world, binary, given, 1, &refusal) == 143);
-    free(binary);
+    spisor_memory_release(binary);
     finish_world(&world);
 }
 #endif
@@ -125,7 +126,7 @@ static void refuses_an_application_that_cannot_be_started_with_what_to_do(void) 
     CHECK(run_application(&world, missing, none, 0, &refusal) == -1);
     expect_contains(text_at(refusal, "fix"), "install", "the fix");
     cJSON_Delete(refusal);
-    free(missing);
+    spisor_memory_release(missing);
     finish_world(&world);
 }
 

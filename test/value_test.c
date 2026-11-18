@@ -151,7 +151,7 @@ static void a_broken_member_is_malformed(void) {
 }
 
 static spisor_value *chain_of_lists(size_t depth) {
-    spisor_value *nodes = calloc(depth + 1, sizeof *nodes);
+    spisor_value *nodes = spisor_memory_allocate_zeroed(depth + 1, sizeof *nodes);
     if (nodes == NULL) {
         return NULL;
     }
@@ -175,8 +175,8 @@ static void nesting_stops_at_the_limit(void) {
     loop.count = 1;
     CHECK(spisor_value_check(&loop) == SPISOR_MALFORMED);
     CHECK(!spisor_value_equal(&loop, &loop));
-    free(at_limit);
-    free(past_limit);
+    spisor_memory_release(at_limit);
+    spisor_memory_release(past_limit);
 }
 
 #define WALK_TIME_BOUND_SECONDS 1.0
@@ -232,7 +232,7 @@ typedef struct many_keys {
 } many_keys;
 
 static void a_large_record_is_checked_and_compared_quickly(void) {
-    many_keys *many = calloc(1, sizeof *many);
+    many_keys *many = spisor_memory_allocate_zeroed(1, sizeof *many);
     spisor_value record;
     spisor_value reversed;
     clock_t started;
@@ -257,7 +257,7 @@ static void a_large_record_is_checked_and_compared_quickly(void) {
     started = clock();
     CHECK(spisor_value_check(&record) == SPISOR_MALFORMED);
     within_bound(started, "finding the one key held twice among 40000");
-    free(many);
+    spisor_memory_release(many);
 }
 
 static void a_member_is_found_by_its_whole_key(void) {

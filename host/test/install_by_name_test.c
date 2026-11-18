@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "spisor/allocation.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -62,7 +63,7 @@ static void register_application(void) {
     write_in(world.base.state, "hosts/" APPLICATION_HOST ".json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    free(home);
+    spisor_memory_release(home);
 }
 
 static void start_world(const char *label) {
@@ -89,8 +90,8 @@ static void list_marketplaces(const char *const *ids, const char *const *copies,
         cJSON_AddStringToObject(entry, "id", ids[index]);
         cJSON_AddStringToObject(entry, "url", url);
         cJSON_AddItemToArray(entries, entry);
-        free(url);
-        free(path);
+        spisor_memory_release(url);
+        spisor_memory_release(path);
     }
     cJSON *settings = cJSON_CreateObject();
     cJSON_AddItemToObject(settings, "marketplaces", entries);
@@ -131,8 +132,8 @@ static void stop_capture(char **out, char **err) {
     close_descriptor(saved_err_descriptor);
     *out = text_in(saved_out_path, "");
     *err = text_in(saved_err_path, "");
-    free(saved_out_path);
-    free(saved_err_path);
+    spisor_memory_release(saved_out_path);
+    spisor_memory_release(saved_err_path);
 }
 
 typedef struct command_run {
@@ -168,8 +169,8 @@ static command_run install_name(const char *name, const char *accept) {
 }
 
 static void free_run(command_run *run) {
-    free(run->out);
-    free(run->err);
+    spisor_memory_release(run->out);
+    spisor_memory_release(run->err);
 }
 
 static void expect_nothing_installed(const char *folder) {
@@ -205,7 +206,7 @@ static void installs_by_name_and_prints_the_warnings(void) {
     CHECK(exists_in(world.base.root, "app-home/plugin/greeter.json"));
     char *remembered = remembered_text();
     expect_contains(remembered, "\"spisor/greeter\": \"github:5\"", "the name is remembered");
-    free(remembered);
+    spisor_memory_release(remembered);
     free_run(&run);
     command_run again = install_name("spisor/greeter", NULL);
     CHECK(again.code == 0);
@@ -262,7 +263,7 @@ static void a_remembered_name_that_points_elsewhere_needs_the_user(void) {
     char *remembered = remembered_text();
     expect_contains(remembered, "github:5", "still the old id");
     CHECK(strstr(remembered, "github:11") == NULL);
-    free(remembered);
+    spisor_memory_release(remembered);
     free_run(&run);
     command_run wrong = install_name("greeter", "github:99");
     CHECK(wrong.code == 1);
@@ -273,7 +274,7 @@ static void a_remembered_name_that_points_elsewhere_needs_the_user(void) {
     CHECK(exists_in(world.base.cache, "bundles/github+11/1.0.0/plugin.json"));
     remembered = remembered_text();
     expect_contains(remembered, "\"spisor/greeter\": \"github:11\"", "the accepted id replaces the old one");
-    free(remembered);
+    spisor_memory_release(remembered);
     free_run(&accepted);
     finish_world(&world);
 }
@@ -411,8 +412,8 @@ static void write_release(void) {
     char *index_path = joined(fixture_root, "release/weivel-index.json");
     char *url = runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_path);
     snprintf(release_json, sizeof release_json, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
-    free(url);
-    free(index_path);
+    spisor_memory_release(url);
+    spisor_memory_release(index_path);
 }
 
 static void printed_json_escapes_every_control_character(void) {
@@ -426,8 +427,8 @@ static void printed_json_escapes_every_control_character(void) {
     stop_capture(&out, &err);
     expect_contains(out, "\"a\\u009bb\\u007fc\\u001bd\"", "U+009B, 0x7F and 0x1B escaped");
     CHECK(strchr(out, '\x7f') == NULL && strstr(out, "\xc2\x9b") == NULL);
-    free(out);
-    free(err);
+    spisor_memory_release(out);
+    spisor_memory_release(err);
     cJSON_Delete(value);
     finish_world(&world);
 }
@@ -469,7 +470,7 @@ static void run_against_the_server(void) {
     answers_2_for_an_accept_without_a_name_and_for_a_name_with_a_catalog();
     printed_json_escapes_every_control_character();
     host_marketplace_aim_lookups(NULL);
-    free(http_fixture_stop(server));
+    spisor_memory_release(http_fixture_stop(server));
 }
 
 #if !defined(_WIN32)

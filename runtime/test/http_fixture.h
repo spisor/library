@@ -41,7 +41,7 @@ http_fixture *http_fixture_start_proxy(void);
 
 unsigned short http_fixture_port(const http_fixture *fixture);
 
-/** Stops the thread and answers every request head it received, in order, freed with free. */
+/** Stops the thread and answers every request head it received, in order, freed. */
 char *http_fixture_stop(http_fixture *fixture);
 
 #endif

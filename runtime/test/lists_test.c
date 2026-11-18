@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "definition_fixture.h"
 #include "host_provenance.h"
@@ -161,8 +162,8 @@ static void fresh(lists_scratch *place, const char *label) {
 }
 
 static void discard(lists_scratch *place) {
-    free(place->state);
-    free(place->bin);
+    spisor_memory_release(place->state);
+    spisor_memory_release(place->bin);
 }
 
 static void register_claude_host(const lists_scratch *place) {
@@ -189,8 +190,10 @@ static spisor_status applications_through(const char *state, const char *catalog
     cJSON *catalog_json = parsed(catalog);
     cJSON *detections = parsed(detections_json);
     spisor_value_tree items = SPISOR_INIT(spisor_value_tree);
-    runtime_variable *variables = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *variables);
-    runtime_list_detection *read = calloc((size_t)cJSON_GetArraySize(detections) + 1, sizeof *read);
+    runtime_variable *variables = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(environment) + 1,
+            sizeof *variables);
+    runtime_list_detection *read = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(detections) + 1,
+            sizeof *read);
     runtime_lists_applications_argument argument = SPISOR_INIT(runtime_lists_applications_argument);
     const cJSON *member;
     CHECK(spisor_vector_value(catalog_json, "items", &items));
@@ -210,8 +213,8 @@ static spisor_status applications_through(const char *state, const char *catalog
     argument.detections = read;
     spisor_status status = lists()->applications(lists()->context, &argument, answer, refusal);
     spisor_value_release(&items);
-    free(variables);
-    free(read);
+    spisor_memory_release(variables);
+    spisor_memory_release(read);
     cJSON_Delete(detections);
     cJSON_Delete(environment);
     cJSON_Delete(catalog_json);
@@ -256,7 +259,7 @@ static void lists_installed_from_the_registry_detected_from_path_or_a_method_and
     lists_scratch place;
     fresh(&place, "applications");
     register_claude_host(&place);
-    free(touch_file(place.bin, "opencode" PROGRAM_EXTENSION, "", 0755));
+    spisor_memory_release(touch_file(place.bin, "opencode" PROGRAM_EXTENSION, "", 0755));
     check_json(application_rows(&place, path_environment(place.bin), "[]"),
                "[{\"id\": \"claude\", \"label\": \"claude label\", \"state\": \"installed\"},"
                " {\"id\": \"opencode\", \"label\": \"opencode label\", \"state\": \"detected\"},"
@@ -288,12 +291,12 @@ static void detects_a_binary_on_path_without_launching_anything(void) {
     char *marker = joined_path(place.base, "ran");
     char program[2048];
     snprintf(program, sizeof program, MARKING_PROGRAM_FORMAT, marker);
-    free(touch_file(place.bin, "claude" PROGRAM_EXTENSION, program, 0755));
+    spisor_memory_release(touch_file(place.bin, "claude" PROGRAM_EXTENSION, program, 0755));
     cJSON *rows = application_rows(&place, path_environment(place.bin), "[]");
     check_text(state_of(rows, "claude"), "detected", "claude on PATH");
     CHECK(!spisor_file_exists(marker));
     cJSON_Delete(rows);
-    free(marker);
+    spisor_memory_release(marker);
     discard(&place);
 }
 

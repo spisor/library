@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "catalog_call.h"
+#include "spisor/allocation.h"
 #include "check.h"
 #include "marketplace_call.h"
 #include "marketplace_memory.h"
@@ -38,7 +39,7 @@ static char *store_text(void) {
     char *path = joined_path(scratch, "marketplace-names.json");
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
@@ -56,7 +57,7 @@ static void remembers_a_first_install(void) {
     check_text(text_at(value_at(store, "names"), "spisor/runtime"), "github:1", "the recorded id");
     CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(store, "format")) == 1);
     cJSON_Delete(store);
-    free(text);
+    spisor_memory_release(text);
     cJSON_Delete(answer.tree);
 }
 
@@ -75,7 +76,7 @@ static void one_name_in_two_marketplaces_is_two_memories(void) {
     CHECK(is_remembered(other));
     char *text = store_text();
     CHECK(text != NULL && strstr(text, "spisor/runtime") != NULL && strstr(text, "other/runtime") != NULL);
-    free(text);
+    spisor_memory_release(text);
     cJSON_Delete(other.tree);
 }
 
@@ -90,7 +91,7 @@ static void a_different_id_for_a_remembered_name_needs_the_user_naming_both(void
     check_text(text_at(answer.tree, "now"), "github:2", "the offered id");
     char *text = store_text();
     CHECK(text != NULL && strstr(text, "github:1") != NULL && strstr(text, "github:2") == NULL);
-    free(text);
+    spisor_memory_release(text);
     catalog_answer wrong = remember("spisor", "runtime", "github:2", "github:3");
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(wrong.tree, "needsUserAcceptance")));
     cJSON_Delete(wrong.tree);
@@ -104,7 +105,7 @@ static void accept_records_the_new_id(void) {
     CHECK(is_remembered(accepted));
     char *text = store_text();
     CHECK(text != NULL && strstr(text, "github:2") != NULL && strstr(text, "github:1") == NULL);
-    free(text);
+    spisor_memory_release(text);
     catalog_answer after = remember("spisor", "runtime", "github:2", NULL);
     CHECK(is_remembered(after));
     cJSON_Delete(after.tree);
@@ -114,7 +115,7 @@ static void accept_records_the_new_id(void) {
 static void write_store(const char *text) {
     char *path = joined_path(scratch, "marketplace-names.json");
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
-    free(path);
+    spisor_memory_release(path);
 }
 
 static void a_corrupt_store_is_refused_not_overwritten(void) {
@@ -127,7 +128,7 @@ static void a_corrupt_store_is_refused_not_overwritten(void) {
         CHECK(marketplace_last_status == SPISOR_REFUSED);
         char *text = store_text();
         check_text(text, corrupt[index], "the store is left as it was");
-        free(text);
+        spisor_memory_release(text);
         cJSON_Delete(answer.tree);
     }
 }
@@ -168,7 +169,7 @@ static void a_check_writes_nothing_and_still_finds_a_change(void) {
     text = store_text();
     CHECK(text != NULL && strstr(text, "github:1") != NULL && strstr(text, "github:2") == NULL);
     is_checking_only = 0;
-    free(text);
+    spisor_memory_release(text);
     cJSON_Delete(accepted.tree);
     cJSON_Delete(changed.tree);
     cJSON_Delete(first.tree);
@@ -184,7 +185,7 @@ static void a_bare_name_is_remembered_beside_the_qualified_ones(void) {
     check_text(text_at(value_at(store, "names"), "runtime"), "github:1", "the bare key");
     check_text(text_at(value_at(store, "names"), "first/runtime"), "github:1", "the qualified key");
     cJSON_Delete(store);
-    free(text);
+    spisor_memory_release(text);
     catalog_answer moved = remember(NULL, "runtime", "github:2", NULL);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(moved.tree, "needsUserAcceptance")));
     check_text(text_at(moved.tree, "was"), "github:1", "the bare name's remembered id");

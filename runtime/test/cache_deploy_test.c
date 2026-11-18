@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache_deploy.h"
+#include "spisor/allocation.h"
 #include "cache_call.h"
 #include "catalog_call.h"
 #include "check.h"
@@ -30,15 +31,15 @@ static void write_in_scratch(const char *relative, const char *text) {
     char *parent = joined_path(path, "..");
     CHECK(spisor_make_directories(parent) == 1);
     CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == 1);
-    free(parent);
-    free(path);
+    spisor_memory_release(parent);
+    spisor_memory_release(path);
 }
 
 static char *read_from_scratch(const char *relative) {
     char *path = in_scratch(relative);
     size_t length = 0;
     char *text = (char *)spisor_read_file(path, &length);
-    free(path);
+    spisor_memory_release(path);
     return text;
 }
 
@@ -61,21 +62,21 @@ static catalog_answer deploy_with(const char *identity_json, const char *replace
     if (replaces != NULL) {
         cJSON_AddStringToObject(argument, "replaces", replaces);
     }
-    free(plugin_directory);
-    free(directory);
+    spisor_memory_release(plugin_directory);
+    spisor_memory_release(directory);
     return cache_call(CACHE_DEPLOY, argument);
 }
 
 static void expect_file(const char *relative, const char *expected, const char *label) {
     char *text = read_from_scratch(relative);
     check_text(text, expected, label);
-    free(text);
+    spisor_memory_release(text);
 }
 
 static void expect_nothing_written_beside_the_bundle(const char *before_snapshot, const char *label) {
     char *after = tree_snapshot(scratch, NULL);
     check_text(after, before_snapshot, label);
-    free(after);
+    spisor_memory_release(after);
 }
 
 static void deploys_under_the_import_name(void) {
@@ -92,7 +93,7 @@ static void deploys_under_the_import_name(void) {
     check_text(text_at(identity, "id"), "github:5", "identity id");
     check_text(text_at(identity, "name"), "greeter", "identity name");
     cJSON_Delete(identity);
-    free(identity_text);
+    spisor_memory_release(identity_text);
     cJSON_Delete(answer.tree);
 }
 
@@ -103,10 +104,10 @@ static void writes_no_entry_file_for_a_plugin_without_an_entry(void) {
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     char *entry = in_scratch("plugins/quiet.js");
     CHECK(!spisor_file_exists(entry));
-    free(entry);
+    spisor_memory_release(entry);
     char *manifest = in_scratch("plugins/quiet.json");
     CHECK(spisor_file_exists(manifest));
-    free(manifest);
+    spisor_memory_release(manifest);
     cJSON_Delete(answer.tree);
 }
 
@@ -121,7 +122,7 @@ static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
     check_text(text_at(identity, "id"), "github:5", "argument id wins");
     check_text(text_at(identity, "name"), "greeter", "argument name wins");
     cJSON_Delete(identity);
-    free(identity_text);
+    spisor_memory_release(identity_text);
     cJSON_Delete(answer.tree);
 }
 
@@ -136,7 +137,7 @@ static void refuses_an_import_name_that_fails_the_grammar_and_writes_nothing(voi
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
         CHECK(expect_cache_refusal_refused(answer, "import name", refused[index]));
         expect_nothing_written_beside_the_bundle(before, refused[index]);
-        free(before);
+        spisor_memory_release(before);
         cJSON_Delete(answer.tree);
     }
 }
@@ -162,7 +163,7 @@ static void refuses_a_missing_import_name_and_writes_nothing(void) {
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(expect_cache_refusal_refused(answer, "import name", "no import name"));
     expect_nothing_written_beside_the_bundle(before, "no import name");
-    free(before);
+    spisor_memory_release(before);
     cJSON_Delete(answer.tree);
 }
 
@@ -178,7 +179,7 @@ static void refuses_an_entry_that_leaves_the_bundle_or_is_named_like_an_identity
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
         CHECK(expect_cache_refusal_refused(answer, "entry", entries[index]));
         expect_nothing_written_beside_the_bundle(before, entries[index]);
-        free(before);
+        spisor_memory_release(before);
         cJSON_Delete(answer.tree);
     }
 }
@@ -192,13 +193,13 @@ static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     char *copied = in_scratch("plugins/other_identity.json");
     CHECK(!spisor_file_exists(copied));
-    free(copied);
+    spisor_memory_release(copied);
     copied = in_scratch("plugins/third_identity.json");
     CHECK(!spisor_file_exists(copied));
-    free(copied);
+    spisor_memory_release(copied);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     CHECK(identity_text != NULL && strstr(identity_text, "github:7") == NULL);
-    free(identity_text);
+    spisor_memory_release(identity_text);
     cJSON_Delete(answer.tree);
 }
 
@@ -213,7 +214,7 @@ static void refuses_an_identity_id_outside_the_grammar_as_malformed_and_writes_n
         catalog_answer answer = deploy_with(identity, NULL);
         CHECK(answer.status == SPISOR_MALFORMED);
         expect_nothing_written_beside_the_bundle(before, ids[index]);
-        free(before);
+        spisor_memory_release(before);
         cJSON_Delete(answer.tree);
     }
 }
@@ -238,7 +239,7 @@ static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
     CHECK(expect_cache_refusal_refused(other, "github:5", "names the recorded id"));
     CHECK(text_at(other.tree, "fix") != NULL && strstr(text_at(other.tree, "fix"), "github:6") != NULL);
     expect_nothing_written_beside_the_bundle(before, "nothing changed");
-    free(before);
+    spisor_memory_release(before);
     cJSON_Delete(other.tree);
     catalog_answer again = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(again.status == SPISOR_STATUS_SUCCESS);
@@ -253,7 +254,7 @@ static void treats_code_with_no_readable_identity_as_another_plugin(void) {
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(expect_cache_refusal_refused(answer, "greeter", "orphan code"));
     expect_nothing_written_beside_the_bundle(before, "orphan untouched");
-    free(before);
+    spisor_memory_release(before);
     cJSON_Delete(answer.tree);
     write_in_scratch("plugins/greeter_identity.json", "not json");
     answer = deploy_with(IDENTITY_ARGUMENT, NULL);
@@ -273,7 +274,7 @@ static void a_new_version_with_no_entry_removes_the_old_entry_file(void) {
     catalog_answer second = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(second.status == SPISOR_STATUS_SUCCESS);
     CHECK(!spisor_file_exists(entry));
-    free(entry);
+    spisor_memory_release(entry);
     cJSON_Delete(second.tree);
 }
 
@@ -288,7 +289,7 @@ static void refuses_an_entry_that_is_empty_or_not_text(void) {
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
         CHECK(expect_cache_refusal_refused(answer, "entry", entries[index]));
         expect_nothing_written_beside_the_bundle(before, entries[index]);
-        free(before);
+        spisor_memory_release(before);
         cJSON_Delete(answer.tree);
     }
 }
@@ -308,9 +309,9 @@ static void refuses_a_plugin_directory_that_is_the_bundle_or_inside_it(void) {
         catalog_answer answer = cache_call(CACHE_DEPLOY, argument);
         CHECK(expect_cache_refusal_refused(answer, "pluginDir", directories[index]));
         expect_nothing_written_beside_the_bundle(before, directories[index]);
-        free(plugins);
-        free(bundle);
-        free(before);
+        spisor_memory_release(plugins);
+        spisor_memory_release(bundle);
+        spisor_memory_release(before);
         cJSON_Delete(answer.tree);
     }
 }
@@ -325,13 +326,13 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
     CHECK(moved.status == SPISOR_STATUS_SUCCESS);
     char *identity = read_from_scratch("plugins/greeter_identity.json");
     CHECK(identity != NULL && strstr(identity, "github:6") != NULL && strstr(identity, "moved") != NULL);
-    free(identity);
+    spisor_memory_release(identity);
     cJSON_Delete(moved.tree);
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer stale = deploy_with("{\"id\":\"github:7\",\"name\":\"other\"}", "github:5");
     CHECK(expect_cache_refusal_refused(stale, "github:6", "the recorded id is no longer github:5"));
     expect_nothing_written_beside_the_bundle(before, "stale replaces");
-    free(before);
+    spisor_memory_release(before);
     cJSON_Delete(stale.tree);
 }
 

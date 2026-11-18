@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/allocation.h"
 #include "cJSON.h"
 #include "runtime/commands.h"
 #include "spisor/status.h"
@@ -50,8 +51,10 @@ static inline void commands_parts_of(const cJSON *request, commands_parts *parts
     const cJSON *variables = cJSON_IsObject(environment) ? environment : NULL;
     const cJSON *item;
     memset(parts, 0, sizeof *parts);
-    parts->environment = calloc((size_t)cJSON_GetArraySize(environment) + 1, sizeof *parts->environment);
-    parts->arguments = calloc((size_t)cJSON_GetArraySize(arguments) + 1, sizeof *parts->arguments);
+    parts->environment = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(environment) + 1,
+            sizeof *parts->environment);
+    parts->arguments = spisor_memory_allocate_zeroed((size_t)cJSON_GetArraySize(arguments) + 1,
+            sizeof *parts->arguments);
     cJSON_ArrayForEach(item, variables) {
         if (cJSON_IsString(item)) {
             parts->environment[parts->environment_count].name = item->string;
@@ -64,8 +67,8 @@ static inline void commands_parts_of(const cJSON *request, commands_parts *parts
 }
 
 static inline void commands_release_parts(commands_parts *parts) {
-    free(parts->environment);
-    free((void *)parts->arguments);
+    spisor_memory_release(parts->environment);
+    spisor_memory_release((void *)parts->arguments);
 }
 
 static inline void commands_keep(commands_result *result, const runtime_command_answer *answer,

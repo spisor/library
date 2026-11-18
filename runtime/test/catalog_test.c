@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "catalog.h"
+#include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "catalog_service_call.h"
 #include "catalog_check.h"
@@ -40,7 +41,7 @@ static catalog_answer read_fixture(const char *name, const char *origin) {
     size_t length;
     char *text = fixture_text(name, &length);
     catalog_answer answer = read_index(text, origin);
-    free(text);
+    spisor_memory_release(text);
     return answer;
 }
 
@@ -58,7 +59,7 @@ static char *expected_message(const cJSON *expected) {
     const char *detail = text_at(expected, "detail");
     const char *path = text_at(expected, "path");
     size_t size = strlen(detail) + (path == NULL ? 0 : strlen(path)) + 8;
-    char *message = malloc(size);
+    char *message = spisor_memory_allocate(size);
     snprintf(message, size, "%s%s%s", detail, path != NULL && path[0] != 0 ? " at " : "",
              path != NULL ? path : "");
     return message;
@@ -81,7 +82,7 @@ static void expect_recorded_refusal(catalog_answer answer, const cJSON *expected
     } else {
         char *wanted = expected_message(expected);
         check_text(message, wanted, name);
-        free(wanted);
+        spisor_memory_release(wanted);
     }
     check_text(text_at(answer.tree, "fix"), fix, name);
 }
@@ -216,7 +217,7 @@ static void every_url_resolves_as_node_does(void) {
                     resolved == NULL ? "(refused)" : resolved);
             check_failures++;
         }
-        free(resolved);
+        spisor_memory_release(resolved);
     }
     cJSON_Delete(recorded);
 }
@@ -225,7 +226,7 @@ static void expect_file_urls(const cJSON *vectors, int windows) {
     for (const cJSON *vector = vectors->child; vector != NULL; vector = vector->next) {
         char *url = runtime_catalog_file_url_of_path(windows, text_at(vector, "path"));
         check_text(url, text_at(vector, "url"), text_at(vector, "path"));
-        free(url);
+        spisor_memory_release(url);
     }
 }
 
