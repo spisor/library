@@ -8,7 +8,8 @@
 #include "catalog_answer.h"
 #include "host_references.h"
 #include "registry.h"
-#include "updates_request.h"
+#include "updates.h"
+#include "updates_target.h"
 #include "version_map.h"
 
 static cJSON *no_rollback(const char *item) {
@@ -66,9 +67,17 @@ static cJSON *rolled_answer(const runtime_host_references *references) {
     return answer;
 }
 
+/** A rollback for a target, `fill` copying its answer for a consumer before anything is written, NULL for none. */
+typedef struct rollback_call {
+    const runtime_updates_target *target;
+    runtime_updates_precommit fill;
+    void *context;
+} rollback_call;
+
 /** The version the host keeps as item's rollback now, freed; NULL when it keeps none or memory runs out. */
-static char *kept_version(const runtime_updates_request *request, const char *item, int *out_of_memory) {
-    runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
+static char *kept_version(const rollback_call *request, const char *item, int *out_of_memory) {
+    const runtime_updates_target *target = request->target;
+    runtime_host_references recorded = runtime_read_host_references(target->state, target->host_id);
     const char *kept = recorded.rollback == NULL ? NULL : runtime_map_version(recorded.rollback, item);
     const char *parts[1] = {kept};
     char *version = kept == NULL ? NULL : runtime_cache_text(parts, 1);
@@ -78,18 +87,19 @@ static char *kept_version(const runtime_updates_request *request, const char *it
 }
 
 /** The answer and the undo of a rollback, both built before it is recorded; 0 with *refusal set or out of memory. */
-static int prepare_rollback(const runtime_updates_request *request, const runtime_host_references *rolled,
+static int prepare_rollback(const rollback_call *request, const runtime_host_references *rolled,
                             const runtime_host_references *before, cJSON **answer, runtime_references_draft *undo,
                             cJSON **refusal) {
     char *problem = NULL;
     *answer = rolled_answer(rolled);
-    if (*answer == NULL || !runtime_draft_host_references(request->state, request->host_id, before, undo, &problem)) {
+    const runtime_updates_target *target = request->target;
+    if (*answer == NULL || !runtime_draft_host_references(target->state, target->host_id, before, undo, &problem)) {
         *refusal = problem == NULL ? NULL : runtime_updates_unrecorded(problem);
         cJSON_Delete(*answer);
         *answer = NULL;
         return 0;
     }
-    if (request->precommit != NULL && !request->precommit(*answer, request->precommit_context)) {
+    if (request->fill != NULL && !request->fill(*answer, request->context)) {
         runtime_free_references_draft(undo);
         cJSON_Delete(*answer);
         *answer = NULL;
@@ -105,7 +115,7 @@ static int prepare_rollback(const runtime_updates_request *request, const runtim
  * @implNote The answer, the consumer's copy of it and the undo's text are all built before the references are
  * recorded, so memory running out never follows a rollback that stands, and a retry never rolls back twice.
  */
-static cJSON *record_rollback(const runtime_updates_request *request, const char *item, const char *version,
+static cJSON *record_rollback(const rollback_call *request, const char *item, const char *version,
                               const runtime_host_references *rolled, const runtime_host_references *before,
                               cJSON **refusal) {
     char *problem = NULL;
@@ -115,12 +125,12 @@ static cJSON *record_rollback(const runtime_updates_request *request, const char
     if (!prepare_rollback(request, rolled, before, &answer, &undo, refusal)) {
         return NULL;
     }
-    if (!runtime_record_host_references(request->state, request->host_id, rolled, &problem)) {
+    if (!runtime_record_host_references(request->target->state, request->target->host_id, rolled, &problem)) {
         *refusal = runtime_updates_unrecorded(problem);
         cJSON_Delete(answer);
         answer = NULL;
     } else {
-        spisor_status hinted = runtime_hint_host_version(request->cache, item, version);
+        spisor_status hinted = runtime_hint_host_version(request->target->cache, item, version);
         if (hinted != SPISOR_OK) {
             cJSON_Delete(answer);
             answer = NULL;
@@ -141,10 +151,11 @@ static cJSON *record_rollback(const runtime_updates_request *request, const char
  * @implNote Under the lock only the sizes are checked again, so the lock never waits on hashing; a kept
  * version that changed after the hashing is refused as not intact rather than hashed under the lock.
  */
-static cJSON *roll_back(const runtime_updates_request *request, const char *item, const char *verified,
+static cJSON *roll_back(const rollback_call *request, const char *item, const char *verified,
                         cJSON **refusal) {
-    runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
-    runtime_host_references before = runtime_read_host_references(request->state, request->host_id);
+    const runtime_updates_target *target = request->target;
+    runtime_host_references recorded = runtime_read_host_references(target->state, target->host_id);
+    runtime_host_references before = runtime_read_host_references(target->state, target->host_id);
     const char *kept = recorded.rollback == NULL ? NULL : runtime_map_version(recorded.rollback, item);
     const char *parts[1] = {kept};
     char *version = kept == NULL ? NULL : runtime_cache_text(parts, 1);
@@ -154,7 +165,7 @@ static cJSON *roll_back(const runtime_updates_request *request, const char *item
         *refusal = no_rollback(item);
     } else if (!out_of_memory &&
                (verified == NULL || strcmp(verified, version) != 0 ||
-                !runtime_bundle_is_sized(request->cache, item, version, &out_of_memory))) {
+                !runtime_bundle_is_sized(target->cache, item, version, &out_of_memory))) {
         *refusal = out_of_memory ? NULL : not_intact(item, version);
     } else if (!out_of_memory && swap(&recorded, item, version)) {
         answer = record_rollback(request, item, version, &recorded, &before, refusal);
@@ -165,21 +176,23 @@ static cJSON *roll_back(const runtime_updates_request *request, const char *item
     return answer;
 }
 
-cJSON *runtime_updates_rollback_for(const runtime_updates_request *request, cJSON **refusal) {
-    const char *item = runtime_catalog_text_member(request->argument, "item");
+cJSON *runtime_updates_rollback(const runtime_updates_target *target, const char *item,
+                                runtime_updates_precommit fill, void *context, cJSON **refusal) {
+    rollback_call call = {target, fill, context};
     int out_of_memory = 0;
+    *refusal = NULL;
     if (item == NULL || item[0] == 0) {
-        const char *parts[1] = {"the argument carries no item"};
+        const char *parts[1] = {"the call carries no item"};
         *refusal = runtime_cache_refusal(parts, 1, "pass item, the id of the bundle to roll back");
         return NULL;
     }
-    char *kept = kept_version(request, item, &out_of_memory);
-    if (kept != NULL && !runtime_bundle_is_intact(request->cache, item, kept, &out_of_memory)) {
+    char *kept = kept_version(&call, item, &out_of_memory);
+    if (kept != NULL && !runtime_bundle_is_intact(target->cache, item, kept, &out_of_memory)) {
         spisor_memory_release(kept);
         kept = NULL;
     }
-    spisor_lock *guard = out_of_memory ? NULL : runtime_updates_lock_registered(request, refusal);
-    cJSON *answer = guard == NULL ? NULL : roll_back(request, item, kept, refusal);
+    spisor_lock *guard = out_of_memory ? NULL : runtime_updates_lock_registered(target, refusal);
+    cJSON *answer = guard == NULL ? NULL : roll_back(&call, item, kept, refusal);
     spisor_unlock(guard);
     spisor_memory_release(kept);
     return answer;
