@@ -34,10 +34,6 @@ typedef struct known_out_of_memory_break {
 #define ECOSYSTEM_SUITE "out_of_memory_ecosystem_test"
 
 static const known_out_of_memory_break known_out_of_memory_breaks[] = {
-    {OPERATIONS_SUITE, "hosts' register_host", 0, BREAKS_ON_POSIX,
-     "measured in CI only, not yet traced: failing allocation 825 answers OK with another tree; the POSIX Path "
-     "change is a profile line, and change_kinds.c runtime_change_is_on_disk reads a failed profile read as "
-     "the line being absent"},
 };
 
 static const known_out_of_memory_break *known_out_of_memory_break_of(const char *suite, const char *label,
