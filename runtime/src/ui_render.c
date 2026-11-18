@@ -22,14 +22,6 @@ static const cJSON *nodes_of(const ui_screen *screen) {
     return cJSON_GetObjectItemCaseSensitive(screen->view, "nodes");
 }
 
-static cJSON *refuse_answers(cJSON **refusal) {
-    *refusal = runtime_refusal("the answers are no list of calls each carrying exactly one outcome",
-                               "send answers as [{\"plugin\", \"binding\": {\"service\", \"method\"}, \"arguments\": {...}} "
-                               "with one of \"answer\" and its \"checked\", \"error\": {\"detail\", \"fix\"} or \"unavailable\": "
-                               "true], one per call ui.plan asked for");
-    return NULL;
-}
-
 static cJSON *pending_call(cJSON *calls, const cJSON *call) {
     cJSON *pending;
     cJSON_ArrayForEach(pending, calls) {
@@ -84,17 +76,9 @@ static int plan_node(cJSON *calls, const char *plugin, const cJSON *node, const 
 }
 
 static cJSON *plan_answer(cJSON *calls) {
-    if (calls == NULL) {
-        return NULL;
-    }
-    cJSON *answer = cJSON_CreateObject();
-    int done = calls->child == NULL;
-    int complete = answer != NULL && (done ? cJSON_AddTrueToObject(answer, "done") != NULL
-                                           : cJSON_AddItemToObject(answer, "calls", calls));
-    if (done || !complete) {
+    cJSON *answer = calls == NULL ? NULL : cJSON_CreateObject();
+    if (answer == NULL || !cJSON_AddItemToObject(answer, "calls", calls)) {
         cJSON_Delete(calls);
-    }
-    if (!complete) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -116,9 +100,6 @@ static cJSON *planned(const ui_screen *screen, const cJSON *answers) {
 
 cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
-    if (answers != NULL && !runtime_ui_is_answer_list(answers)) {
-        return refuse_answers(refusal);
-    }
     ui_screen screen;
     if (!runtime_ui_open_screen(argument, &screen, refusal)) {
         runtime_ui_close_screen(&screen);
@@ -128,7 +109,6 @@ cJSON *runtime_ui_plan_operation(const cJSON *argument, cJSON **refusal) {
     runtime_ui_close_screen(&screen);
     return answer;
 }
-
 
 static int is_one_of(const char *text, const char *const *names, size_t count) {
     for (size_t index = 0; text != NULL && index < count; index++) {
@@ -202,10 +182,6 @@ static const cJSON *checked_for(const cJSON *answer, const cJSON *check) {
     return NULL;
 }
 
-static int is_issue(const cJSON *issue) {
-    return text_of(issue, "message") != NULL && text_of(issue, "fix") != NULL;
-}
-
 static cJSON *unchecked(const cJSON *node, const cJSON *call, const cJSON *check) {
     const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
     const cJSON *members = cJSON_GetObjectItemCaseSensitive(check, "members");
@@ -229,9 +205,7 @@ static int add_checked_answer(cJSON *rendered, const cJSON *node, const cJSON *c
     }
     const cJSON *issue = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(checked, "issues"), 0);
     if (issue != NULL) {
-        *refusal = is_issue(issue) ? NULL : runtime_refusal("a check's issue carries no message or fix",
-                                                           "pass each issue the engine answered as {\"message\", \"fix\", \"path\"?}");
-        return is_issue(issue) && add_error(rendered, issue, "message");
+        return add_error(rendered, issue, "message");
     }
     return cJSON_AddStringToObject(rendered, "state", "ready") != NULL &&
            runtime_add_owned(rendered, "data", data_of(node, cJSON_GetObjectItemCaseSensitive(answer, "answer")));
@@ -239,7 +213,7 @@ static int add_checked_answer(cJSON *rendered, const cJSON *node, const cJSON *c
 
 static cJSON *unanswered(const cJSON *node, const cJSON *call) {
     const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
-    return runtime_ui_refusal("call ui.plan until it answers done and pass every answer it asked for", "the answers carry none to ",
+    return runtime_ui_refusal("call ui.plan until it asks for no call and pass every answer it asked for", "the answers carry none to ",
                               text_of(call, "plugin"), "'s ", text_of(binding, "service"), ".", text_of(binding, "method"),
                               " that node ", text_of(node, "id"), " binds", NULL);
 }
@@ -329,9 +303,6 @@ static cJSON *rendered_screen(const ui_screen *screen, const cJSON *answers, cJS
 
 cJSON *runtime_ui_render_operation(const cJSON *argument, cJSON **refusal) {
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(argument, "answers");
-    if (!runtime_ui_is_answer_list(answers)) {
-        return refuse_answers(refusal);
-    }
     ui_screen screen;
     if (!runtime_ui_open_screen(argument, &screen, refusal)) {
         runtime_ui_close_screen(&screen);

@@ -6,9 +6,6 @@
 /** Whether description is a plugin manifest with an id. */
 int runtime_ui_is_description(const cJSON *description);
 
-/** Whether descriptions is an array of plugin manifests with an id. */
-int runtime_ui_is_description_list(const cJSON *descriptions);
-
 /** The screen a navigation entry opens: whose it is, which kind, and the view whose nodes it renders. */
 typedef struct ui_screen {
     const char *plugin;

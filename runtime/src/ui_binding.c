@@ -88,39 +88,6 @@ int runtime_ui_is_same_check(const cJSON *left, const cJSON *right) {
     return is_same_text(left, right, "against") && same_members;
 }
 
-static int is_call(const cJSON *call) {
-    const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
-    return cJSON_IsObject(call) && text_of(call, "plugin") != NULL && text_of(binding, "service") != NULL &&
-           text_of(binding, "method") != NULL && cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(call, "arguments"));
-}
-
-static int is_error(const cJSON *error) {
-    return text_of(error, "detail") != NULL && text_of(error, "fix") != NULL;
-}
-
-static int outcome_count(const cJSON *answer) {
-    const cJSON *error = cJSON_GetObjectItemCaseSensitive(answer, "error");
-    const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(answer, "unavailable");
-    int answered = cJSON_GetObjectItemCaseSensitive(answer, "answer") != NULL;
-    if ((error != NULL && !is_error(error)) || (unavailable != NULL && !cJSON_IsTrue(unavailable))) {
-        return -1;
-    }
-    return answered + (error != NULL) + (unavailable != NULL);
-}
-
-int runtime_ui_is_answer_list(const cJSON *answers) {
-    if (!cJSON_IsArray(answers)) {
-        return 0;
-    }
-    const cJSON *answer;
-    cJSON_ArrayForEach(answer, answers) {
-        if (!is_call(answer) || outcome_count(answer) != 1) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 const cJSON *runtime_ui_answer_to(const cJSON *answers, const cJSON *call) {
     const cJSON *answer;
     cJSON_ArrayForEach(answer, answers) {
