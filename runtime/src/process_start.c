@@ -444,11 +444,11 @@ int runtime_start_detached(const runtime_detached_start *start, runtime_detached
     host->failure = -1;
     char **arguments = argument_list(start->executable, start->arguments);
     char **environment = start->environment == NULL ? NULL : environment_list(start->environment);
-    int error = ENOMEM;
-    int started = arguments != NULL && (start->environment == NULL || environment != NULL) &&
-                  spawn_detached(start->directory, arguments, environment == NULL ? environ : environment, host,
-                                 &error);
-    if (!started) {
+    int listed = arguments != NULL && (start->environment == NULL || environment != NULL);
+    int error = 0;
+    int started = listed && spawn_detached(start->directory, arguments, environment == NULL ? environ : environment,
+                                           host, &error);
+    if (!started && listed) {
         *problem = problem_of(start->executable, error == 0 ? "it did not start" : strerror(error));
     }
     free_list(arguments, text_count(start->arguments) + 1);

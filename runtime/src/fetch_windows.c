@@ -262,8 +262,12 @@ typedef struct body_reading {
 static void read_body(const runtime_fetch_request *request, HINTERNET handle, const body_reading *reading,
                       runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
     uint8_t *chunk = spisor_memory_allocate(READ_CHUNK);
+    if (chunk == NULL) {
+        runtime_fetch_out_of_memory(answer);
+        return;
+    }
     DWORD read = 1;
-    int failed = chunk == NULL;
+    int failed = 0;
     while (!failed && read > 0 && !is_past(reading->deadline)) {
         failed = !WinHttpReadData(handle, chunk, READ_CHUNK, &read);
         if (!failed && read > 0 && !runtime_fetch_sink_take(sink, chunk, read)) {
