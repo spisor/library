@@ -71,10 +71,10 @@ static cJSON *warnings_of(const cJSON *manifest) {
     return answer;
 }
 
-cJSON *runtime_install_warnings_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *manifest = cJSON_GetObjectItemCaseSensitive(argument, "manifest");
+cJSON *runtime_install_warnings(const cJSON *manifest, cJSON **refusal) {
+    *refusal = NULL;
     if (!cJSON_IsObject(manifest)) {
-        *refusal = runtime_refusal("the argument carries no manifest object", "send {\"manifest\": <the plugin.json content>}");
+        *refusal = runtime_refusal("the call carries no manifest object", "pass the plugin.json content as an object");
         return NULL;
     }
     return warnings_of(manifest);

@@ -181,8 +181,20 @@ static spisor_status fill_warnings(const cJSON *answered, void *filled) {
     return SPISOR_OK;
 }
 
+/** Fills the answer from what a function answered over `call`'s members, deleting `call`. */
+static spisor_status serve_over(cJSON *call, cJSON *answered, cJSON **operation_refusal, runtime_answer_filler fill,
+                                void *answer, size_t answer_shape, spisor_refusal *refusal) {
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, *operation_refusal, fill, answer, answer_shape, refusal);
+}
+
+static const cJSON *member_of(const cJSON *call, const char *name) {
+    return cJSON_GetObjectItemCaseSensitive(call, name);
+}
+
 static spisor_status warnings(void *context, const runtime_install_warnings_argument *argument,
                               runtime_install_warnings_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -201,8 +213,8 @@ static spisor_status warnings(void *context, const runtime_install_warnings_argu
         cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? runtime_refuse_member(refusal, "manifest", HEADER) : status;
     }
-    return runtime_serve_operation(runtime_install_warnings_operation, call, fill_warnings, answer,
-                                   WARNINGS_ANSWER_SHAPE, refusal);
+    return serve_over(call, runtime_install_warnings(member_of(call, "manifest"), &operation_refusal),
+                      &operation_refusal, fill_warnings, answer, WARNINGS_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_packages(const cJSON *answered, void *filled) {
@@ -236,6 +248,8 @@ static spisor_status check_item(const char *portable, const char *item, spisor_r
 static spisor_status packages(void *context, const runtime_install_packages_argument *argument,
                               runtime_install_packages_answer *answer, spisor_refusal *refusal) {
     static const char *const names[1] = {"portable"};
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -251,9 +265,14 @@ static spisor_status packages(void *context, const runtime_install_packages_argu
         status = refuse_built(
             item_call(names, &argument->portable, 1, argument->item, argument->manifest_packages, &call), refusal);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_packages_operation, call, fill_packages,
-                                                         answer, PACKAGES_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_install_packages_request request = {argument->portable, argument->item,
+                                                cJSON_GetObjectItemCaseSensitive(call, "manifestPackages")};
+    answered = runtime_install_packages(&request, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_packages, answer, PACKAGES_ANSWER_SHAPE, refusal);
 }
 
 /** The step a plan answered, {"install-provider": entry} or {"install": {method, package?}}, in the storage. */
@@ -332,6 +351,8 @@ static spisor_status add_plan(cJSON **call, const runtime_install_plan_argument 
 static spisor_status plan(void *context, const runtime_install_plan_argument *argument,
                           runtime_install_plan_answer *answer, spisor_refusal *refusal) {
     static const char *const names[1] = {"portable"};
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -347,9 +368,18 @@ static spisor_status plan(void *context, const runtime_install_plan_argument *ar
     if (status == SPISOR_OK) {
         status = add_plan(&call, argument, refusal);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_plan_operation, call, fill_plan, answer,
-                                                         PLAN_ANSWER_SHAPE, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_install_plan_request request = {
+        {argument->portable, argument->item, cJSON_GetObjectItemCaseSensitive(call, "manifestPackages")},
+        argument->chosen,
+        cJSON_GetObjectItemCaseSensitive(call, "methods"),
+        cJSON_GetObjectItemCaseSensitive(call, "installedProviders"),
+        cJSON_GetObjectItemCaseSensitive(call, "catalog")};
+    answered = runtime_install_plan(&request, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_plan, answer, PLAN_ANSWER_SHAPE, refusal);
 }
 
 /** A detection, {method, item, package?, options?, answer?: {installed, version?}, refused?}, in the storage. */
@@ -400,6 +430,7 @@ static spisor_status detect(void *context, const runtime_install_detect_argument
                             runtime_install_detect_answer *answer, spisor_refusal *refusal) {
     static const char *const names[2] = {"portable", "cache"};
     const char *places[2];
+    cJSON *operation_refusal = NULL;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -419,9 +450,12 @@ static spisor_status detect(void *context, const runtime_install_detect_argument
     if (status == SPISOR_OK) {
         status = refuse_built(item_call(names, places, 2, argument->item, argument->manifest_packages, &call), refusal);
     }
-    return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_detect_operation, call, fill_detect, answer,
-                                                         DETECT_ANSWER_SHAPE, refusal);
+    return status != SPISOR_OK
+               ? status
+               : serve_over(call,
+                            runtime_install_detect(member_of(call, "places"), argument->item,
+                                                   member_of(call, "manifestPackages"), &operation_refusal),
+                            &operation_refusal, fill_detect, answer, DETECT_ANSWER_SHAPE, refusal);
 }
 
 /** Adds `environment` to `call` as the JSON object runtime's path rules read, MALFORMED refused as such. */
@@ -508,6 +542,7 @@ static spisor_status entry(void *context, const runtime_install_entry_argument *
                            runtime_install_entry_answer *answer, spisor_refusal *refusal) {
     static const char *const names[3] = {"state", "cache", "loader home"};
     const char *places[3];
+    cJSON *operation_refusal = NULL;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -529,8 +564,10 @@ static spisor_status entry(void *context, const runtime_install_entry_argument *
         status = entry_call(argument, &call);
     }
     return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_entry_operation, call, fill_entry, answer,
-                                                         ENTRY_ANSWER_SHAPE, refusal);
+                               : serve_over(call,
+                                            runtime_install_entry(member_of(call, "places"), member_of(call, "loader"),
+                                                                  &operation_refusal),
+                                            &operation_refusal, fill_entry, answer, ENTRY_ANSWER_SHAPE, refusal);
 }
 
 /** A JavaScript runtime as install's runtime answers it, {name, version, executable, fetched, source}. */
@@ -570,6 +607,7 @@ static spisor_status runtime_call(const runtime_install_runtime_argument *argume
 
 static spisor_status runtime(void *context, const runtime_install_runtime_argument *argument,
                              runtime_install_runtime_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -588,7 +626,10 @@ static spisor_status runtime(void *context, const runtime_install_runtime_argume
         status = runtime_call(argument, &call, refusal);
     }
     return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_runtime_operation, call, fill_runtime, answer,
+                               : serve_over(call,
+                                            runtime_install_runtime(argument->cache, argument->platform,
+                                                                    member_of(call, "environment"), &operation_refusal),
+                                            &operation_refusal, fill_runtime, answer,
                                                          RUNTIME_ANSWER_SHAPE, refusal);
 }
 
@@ -611,6 +652,7 @@ static spisor_status application(void *context, const runtime_install_applicatio
                                  runtime_install_application_answer *answer, spisor_refusal *refusal) {
     static const char *const names[3] = {"portable", "state", "cache"};
     const char *places[3];
+    cJSON *operation_refusal = NULL;
     cJSON *call;
     spisor_status status;
     (void)context;
@@ -638,8 +680,13 @@ static spisor_status application(void *context, const runtime_install_applicatio
         cJSON_Delete(call);
         call = NULL;
     }
-    return runtime_serve_operation(runtime_install_application_operation, call, fill_application, answer,
-                                   APPLICATION_ANSWER_SHAPE, refusal);
+    if (call == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return serve_over(call,
+                      runtime_install_operate_application(member_of(call, "places"), argument->loader,
+                                                  OPERATIONS[argument->operation], &operation_refusal),
+                      &operation_refusal, fill_application, answer, APPLICATION_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_refused_commands(void **storage, const cJSON *array,
@@ -699,6 +746,7 @@ static spisor_status register_loader(void *context, const runtime_install_regist
                                      runtime_install_register_loader_answer *answer, spisor_refusal *refusal) {
     static const char *const names[3] = {"portable", "state", "cache"};
     const char *places[3];
+    cJSON *operation_refusal = NULL;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -720,7 +768,12 @@ static spisor_status register_loader(void *context, const runtime_install_regist
         status = register_loader_call(argument, names, places, &call, refusal);
     }
     return status != SPISOR_OK ? status
-                               : runtime_serve_operation(runtime_install_register_loader_operation, call,
+                               : serve_over(call,
+                                            runtime_install_register_loader(member_of(call, "places"),
+                                                                            member_of(call, "environment"),
+                                                                            argument->id, argument->version,
+                                                                            &operation_refusal),
+                                            &operation_refusal,
                                                          runtime_fill_register_answer, answer,
                                                          REGISTER_LOADER_ANSWER_SHAPE, refusal);
 }

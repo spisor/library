@@ -4,20 +4,27 @@
 #include "install_support.h"
 #include "json_service.h"
 
-#define REGISTER_LOADER_FIX                                                                                       \
-    "send {\"places\": {\"portable\", \"state\", \"cache\"}, \"environment\": {<name>: <value>}, \"id\": \"<loader id>\", " \
-    "\"version\": \"<installed version>\"}"
+#define REGISTER_LOADER_FIX                                                                                  \
+    "pass the places {\"portable\", \"state\", \"cache\"} as absolute directories, the environment as "      \
+    "{<name>: <value>}, and the loader's id and installed version"
 
-cJSON *runtime_install_register_loader_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    const char *id = runtime_install_text(argument, "id");
-    const char *version = runtime_install_text(argument, "version");
-    runtime_install_run run = {places, runtime_install_place(argument, "portable"), runtime_install_place(argument, "state"),
-                               runtime_install_place(argument, "cache"), environment, NULL, NULL, NULL, NULL, NULL};
+cJSON *runtime_install_register_loader(const cJSON *places, const cJSON *environment, const char *id,
+                                       const char *version, cJSON **refusal) {
+    runtime_install_run run = {places,
+                               runtime_install_place(places, "portable"),
+                               runtime_install_place(places, "state"),
+                               runtime_install_place(places, "cache"),
+                               environment,
+                               NULL,
+                               NULL,
+                               NULL,
+                               NULL,
+                               NULL};
+    *refusal = NULL;
     if (run.portable == NULL || run.state == NULL || run.cache == NULL || !cJSON_IsObject(environment) || id == NULL ||
         id[0] == 0 || version == NULL || version[0] == 0) {
-        *refusal = runtime_refusal("the argument carries no usable places, environment, loader id or version", REGISTER_LOADER_FIX);
+        *refusal = runtime_refusal("the call carries no usable places, environment, loader id or version",
+                                   REGISTER_LOADER_FIX);
         return NULL;
     }
     run.report = cJSON_Parse("{\"applications\": []}");

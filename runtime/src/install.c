@@ -166,31 +166,36 @@ typedef struct identity {
     const char *item;
 } identity;
 
-static install_status read_identity(const cJSON *argument, identity *who, refusal *reason) {
-    const cJSON *portable = member(member(argument, "places"), "portable");
-    const cJSON *item = member(argument, "item");
-    if (!cJSON_IsString(portable) || !runtime_is_usable_home(portable->valuestring) || !is_text(item)) {
-        return refuse(reason, "the argument carries no absolute places.portable and no item id",
-                      "send places as places.resolve answers it, and item as the marketplace item's id");
+static int is_nonempty(const char *text) {
+    return text != NULL && text[0] != '\0';
+}
+
+static install_status read_identity(const runtime_install_packages_request *request, identity *who,
+                                    refusal *reason) {
+    if (request->portable == NULL || !runtime_is_usable_home(request->portable) || !is_nonempty(request->item)) {
+        return refuse(reason, "the call carries no absolute portable place and no item id",
+                      "pass the portable place as places.resolve answers it, and the marketplace item's id");
     }
-    who->portable = portable->valuestring;
-    who->item = item->valuestring;
+    who->portable = request->portable;
+    who->item = request->item;
     return INSTALL_OK;
 }
 
-static install_status merge_both(cJSON *merged, const cJSON *argument, const identity *who, refusal *reason) {
-    install_status status = merge_manifest(merged, member(argument, "manifestPackages"), reason);
+static install_status merge_both(cJSON *merged, const runtime_install_packages_request *request, const identity *who,
+                                 refusal *reason) {
+    install_status status = merge_manifest(merged, request->manifest_packages, reason);
     return status == INSTALL_OK ? merge_user(merged, who->portable, who->item, reason) : status;
 }
 
-static install_status packages_of(const cJSON *argument, cJSON **merged, refusal *reason) {
+static install_status packages_of(const runtime_install_packages_request *request, cJSON **merged,
+                                  refusal *reason) {
     identity who;
-    install_status status = read_identity(argument, &who, reason);
+    install_status status = read_identity(request, &who, reason);
     if (status != INSTALL_OK) {
         return status;
     }
     *merged = cJSON_CreateObject();
-    status = *merged == NULL ? INSTALL_OUT_OF_MEMORY : merge_both(*merged, argument, &who, reason);
+    status = *merged == NULL ? INSTALL_OUT_OF_MEMORY : merge_both(*merged, request, &who, reason);
     if (status != INSTALL_OK) {
         cJSON_Delete(*merged);
         *merged = NULL;
@@ -212,10 +217,11 @@ static cJSON *answer_of(install_status status, const char *name, cJSON *value, c
     return NULL;
 }
 
-cJSON *runtime_install_packages_operation(const cJSON *argument, cJSON **refused) {
+cJSON *runtime_install_packages(const runtime_install_packages_request *request, cJSON **refused) {
     refusal reason;
     cJSON *merged = NULL;
-    install_status status = packages_of(argument, &merged, &reason);
+    *refused = NULL;
+    install_status status = packages_of(request, &merged, &reason);
     return answer_of(status, "packages", merged, &reason, refused);
 }
 
@@ -261,26 +267,25 @@ typedef struct plan_request {
     const cJSON *catalog;
 } plan_request;
 
-static int is_plan_argument(const cJSON *argument) {
-    const cJSON *installed = member(argument, "installedProviders");
-    const cJSON *catalog = member(argument, "catalog");
-    return is_text(member(argument, "chosen")) && is_text_array(member(argument, "methods")) &&
-           (installed == NULL || is_text_array(installed)) && (catalog == NULL || cJSON_IsArray(catalog));
+static int is_usable_plan(const runtime_install_plan_request *plan) {
+    const cJSON *installed = plan->installed_providers;
+    return is_nonempty(plan->chosen) && is_text_array(plan->methods) &&
+           (installed == NULL || is_text_array(installed)) && (plan->catalog == NULL || cJSON_IsArray(plan->catalog));
 }
 
-static install_status read_plan_request(const cJSON *argument, plan_request *request, refusal *reason) {
-    if (!is_plan_argument(argument)) {
-        return refuse(reason, "the argument carries no chosen method, or methods and installedProviders that are not "
+static install_status read_plan_request(const runtime_install_plan_request *plan, plan_request *request,
+                                        refusal *reason) {
+    if (!is_usable_plan(plan)) {
+        return refuse(reason, "the call carries no chosen method, or methods and installedProviders that are not "
                               "arrays of method ids",
-                      "send chosen as a method id, methods and installedProviders as arrays of method ids, and "
+                      "pass chosen as a method id, methods and installedProviders as arrays of method ids, and "
                       "catalog as an array of catalog entries");
     }
-    const cJSON *item = member(argument, "item");
-    request->chosen = member(argument, "chosen")->valuestring;
-    request->item = is_text(item) ? item->valuestring : "";
-    request->methods = member(argument, "methods");
-    request->installed_providers = member(argument, "installedProviders");
-    request->catalog = member(argument, "catalog");
+    request->chosen = plan->chosen;
+    request->item = is_nonempty(plan->packages.item) ? plan->packages.item : "";
+    request->methods = plan->methods;
+    request->installed_providers = plan->installed_providers;
+    request->catalog = plan->catalog;
     return INSTALL_OK;
 }
 
@@ -366,10 +371,10 @@ static install_status plan_with_package(cJSON *steps, const plan_request *reques
     return status == INSTALL_OK ? add_step(steps, install_step(request->chosen, mapping)) : status;
 }
 
-static install_status plan_through_provider(const cJSON *argument, const plan_request *request, cJSON *steps,
-                                            refusal *reason) {
+static install_status plan_through_provider(const runtime_install_plan_request *plan, const plan_request *request,
+                                            cJSON *steps, refusal *reason) {
     cJSON *merged = NULL;
-    install_status status = packages_of(argument, &merged, reason);
+    install_status status = packages_of(&plan->packages, &merged, reason);
     if (status != INSTALL_OK) {
         return status;
     }
@@ -380,25 +385,27 @@ static install_status plan_through_provider(const cJSON *argument, const plan_re
     return status;
 }
 
-static install_status plan_for(const cJSON *argument, const plan_request *request, cJSON *steps, refusal *reason) {
+static install_status plan_for(const runtime_install_plan_request *plan, const plan_request *request, cJSON *steps,
+                               refusal *reason) {
     if (strcmp(request->chosen, MARKETPLACE_METHOD) == 0) {
         return add_step(steps, install_step(MARKETPLACE_METHOD, NULL));
     }
     if (!lists_text(request->methods, request->chosen)) {
         return refuse_unlisted(reason, request);
     }
-    return plan_through_provider(argument, request, steps, reason);
+    return plan_through_provider(plan, request, steps, reason);
 }
 
-static install_status plan_of(const cJSON *argument, cJSON *steps, refusal *reason) {
+static install_status plan_of(const runtime_install_plan_request *plan, cJSON *steps, refusal *reason) {
     plan_request request;
-    install_status status = read_plan_request(argument, &request, reason);
-    return status == INSTALL_OK ? plan_for(argument, &request, steps, reason) : status;
+    install_status status = read_plan_request(plan, &request, reason);
+    return status == INSTALL_OK ? plan_for(plan, &request, steps, reason) : status;
 }
 
-cJSON *runtime_install_plan_operation(const cJSON *argument, cJSON **refused) {
+cJSON *runtime_install_plan(const runtime_install_plan_request *plan, cJSON **refused) {
     refusal reason;
     cJSON *steps = cJSON_CreateArray();
-    install_status status = steps == NULL ? INSTALL_OUT_OF_MEMORY : plan_of(argument, steps, &reason);
+    *refused = NULL;
+    install_status status = steps == NULL ? INSTALL_OUT_OF_MEMORY : plan_of(plan, steps, &reason);
     return answer_of(status, "steps", steps, &reason, refused);
 }

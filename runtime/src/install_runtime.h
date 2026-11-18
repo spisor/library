@@ -35,6 +35,6 @@ char *runtime_javascript_executable(const char *cache, const cJSON *environment,
  * into place, so two installs acquiring at once never unpack into one folder; a PATH node is only looked
  * for on this machine's own platform.
  */
-cJSON *runtime_install_runtime_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_install_runtime(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal);
 
 #endif

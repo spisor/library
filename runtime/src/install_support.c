@@ -9,8 +9,8 @@ const char *runtime_install_text(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
 }
 
-const char *runtime_install_place(const cJSON *argument, const char *name) {
-    const char *place = runtime_install_text(cJSON_GetObjectItemCaseSensitive(argument, "places"), name);
+const char *runtime_install_place(const cJSON *places, const char *name) {
+    const char *place = runtime_install_text(places, name);
     return place != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place) ? place : NULL;
 }
 

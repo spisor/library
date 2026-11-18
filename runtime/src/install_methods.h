@@ -45,12 +45,14 @@ cJSON *runtime_install_detections(const cJSON *places, const char *item, const c
                                   cJSON **refusal);
 
 /**
- * install's detect: { places: { portable, cache }, item, manifestPackages? } answering { detections }, one
- * for each built-in method the merged package mapping (install's packages) names, in the table's order.
+ * install's detect: under places { portable, cache }, for item and its manifest's packages, which may be NULL,
+ * answering { detections }, one for each built-in method the merged package mapping (install's packages) names,
+ * in the table's order.
  *
  * @implNote Never launches a program and never reaches the network (shared-host spec 8): a method reads
  * its package manager's own records.
  */
-cJSON *runtime_install_detect_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_install_detect(const cJSON *places, const char *item, const cJSON *manifest_packages,
+                              cJSON **refusal);
 
 #endif

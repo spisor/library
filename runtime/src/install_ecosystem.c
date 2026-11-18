@@ -427,9 +427,9 @@ static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal
 static int read_argument(const cJSON *argument, ecosystem *install) {
     const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
     install->run.places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    install->run.portable = runtime_install_place(argument, "portable");
-    install->run.state = runtime_install_place(argument, "state");
-    install->run.cache = runtime_install_place(argument, "cache");
+    install->run.portable = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "portable");
+    install->run.state = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
+    install->run.cache = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "cache");
     install->run.environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
     install->run.choices = cJSON_GetObjectItemCaseSensitive(argument, "choices");
     install->run.platform = platform == NULL ? runtime_platform_key() : cJSON_GetStringValue(platform);
@@ -501,6 +501,3 @@ cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_e
     return ecosystem_for(argument, take, taken, refusal);
 }
 
-cJSON *runtime_install_ecosystem_operation(const cJSON *argument, cJSON **refusal) {
-    return ecosystem_for(argument, NULL, NULL, refusal);
-}
