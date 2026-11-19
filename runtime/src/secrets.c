@@ -143,6 +143,9 @@ static spisor_status get_from_store(const runtime_secret_places *place, const ch
         return SPISOR_OK;
     }
     spisor_memory_release(stored);
+    if (store == RUNTIME_SECRET_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     if (file != RUNTIME_SECRET_FILE_DONE) {
         return refuse_file(place->secrets_file, file, refusal);
     }
@@ -220,6 +223,9 @@ static spisor_status store_or_file(const runtime_secret_places *place, const cha
     if (store == RUNTIME_SECRET_DONE) {
         return settle_after_store(place, entry, location, refusal);
     }
+    if (store == RUNTIME_SECRET_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     if (store == RUNTIME_SECRET_DECLINED || store == RUNTIME_SECRET_UNAVAILABLE) {
         return put_in_file(place, entry, value, location, refusal);
     }
@@ -246,6 +252,9 @@ static spisor_status remove_from_file(const runtime_secret_places *place, const 
 static spisor_status delete_entry(const runtime_secret_places *place, const char *entry, spisor_refusal *refusal) {
     runtime_secret_answer store =
         place->force_file_store ? RUNTIME_SECRET_UNAVAILABLE : runtime_secret_store_delete(entry);
+    if (store == RUNTIME_SECRET_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     return store_kept_it(store) ? refuse_store("remove", store, refusal) : remove_from_file(place, entry, refusal);
 }
 
@@ -266,6 +275,9 @@ static runtime_secret_answer delete_store_entries_under(const char *prefix) {
 
 static spisor_status clear_under(const runtime_secret_places *place, const char *prefix, spisor_refusal *refusal) {
     runtime_secret_answer store = place->force_file_store ? RUNTIME_SECRET_DONE : delete_store_entries_under(prefix);
+    if (store == RUNTIME_SECRET_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
     runtime_secret_file_answer file = runtime_remove_file_secrets_under(place->secrets_file, prefix);
     if (store != RUNTIME_SECRET_DONE) {
         return refuse_store("remove", store, refusal);

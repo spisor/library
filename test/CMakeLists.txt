@@ -1,6 +1,7 @@
 spisor_bound_tests()
 
-foreach(name json_kind_test path_test file_test javascript_test json_write_test json_file_test lock_test)
+foreach(name json_kind_test path_test file_test javascript_test json_write_test json_file_test lock_test
+    memory_error_test)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE spisor_library spisor_allocator)
     spisor_strict_warnings(${name})
@@ -11,6 +12,8 @@ foreach(name json_kind_test path_test file_test javascript_test json_write_test 
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
+
+target_include_directories(memory_error_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 add_test(NAME public_headers_are_ascii
     COMMAND ${CMAKE_COMMAND} -DDIRECTORY=${PROJECT_SOURCE_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/ascii_check.cmake)

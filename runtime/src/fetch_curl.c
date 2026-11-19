@@ -5,12 +5,14 @@
 #include "fetch_transport.h"
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifdef SPISOR_FETCH_TEST_HOOKS
 #include "fetch_hooks.h"
+#include "memory_error.h"
 #endif
 
 #define CONNECT_MILLISECONDS 15000L
@@ -120,22 +122,35 @@ static int resolve_all(curl_api *api) {
            resolve(handle, "curl_slist_free_all", &api->slist_free_all);
 }
 
-static void *open_library(void) {
+/** dlopen of name, *out_of_memory set when it failed because memory ran out. */
+static void *open_named(const char *name, int *out_of_memory) {
+    errno = 0;
+    void *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
+    *out_of_memory = *out_of_memory || (handle == NULL && spisor_is_memory_errno(errno));
+    return handle;
+}
+
+static void *open_library(int *out_of_memory) {
     if (library_name_override != NULL) {
-        return dlopen(library_name_override, RTLD_NOW | RTLD_LOCAL);
+        return open_named(library_name_override, out_of_memory);
     }
     void *handle = NULL;
     for (size_t index = 0; handle == NULL && default_library_names[index] != NULL; index++) {
-        handle = dlopen(default_library_names[index], RTLD_NOW | RTLD_LOCAL);
+        handle = open_named(default_library_names[index], out_of_memory);
     }
     return handle;
 }
 
-static const curl_api *load_api(void) {
+/**
+ * libcurl's functions, loaded once; NULL when it cannot be loaded, with *out_of_memory set when memory ran out, which
+ * leaves the next call to try again.
+ */
+static const curl_api *load_api(int *out_of_memory) {
     pthread_mutex_lock(&api_lock);
+    *out_of_memory = 0;
     if (!load_attempted) {
-        load_attempted = 1;
-        loaded_api.handle = open_library();
+        loaded_api.handle = open_library(out_of_memory);
+        load_attempted = loaded_api.handle != NULL || !*out_of_memory;
         if (loaded_api.handle != NULL && !resolve_all(&loaded_api)) {
             dlclose(loaded_api.handle);
             memset(&loaded_api, 0, sizeof loaded_api);
@@ -365,7 +380,12 @@ static void perform(const curl_api *api, curl_handle *curl, const runtime_fetch_
 
 void runtime_fetch_over_network(const runtime_fetch_request *request, runtime_fetch_sink *sink,
                                 runtime_fetch_answer *answer) {
-    const curl_api *api = load_api();
+    int out_of_memory = 0;
+    const curl_api *api = load_api(&out_of_memory);
+    if (api == NULL && out_of_memory) {
+        answer->outcome = RUNTIME_FETCH_OUT_OF_MEMORY;
+        return;
+    }
     if (api == NULL) {
         runtime_fetch_refuse(answer, MISSING_LIBCURL_FIX, "libcurl could not be loaded, so %s cannot be fetched",
                              request->url);

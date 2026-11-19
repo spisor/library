@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 
 #include "secret_backend.h"
 #include "allocation.h"
+#include "memory_error.h"
 #ifdef SPISOR_SECRET_TEST_HOOKS
 #include "secret_linux_hooks.h"
 #endif
@@ -133,11 +135,18 @@ static void discard_api(void) {
     memset(&loaded_api, 0, sizeof loaded_api);
 }
 
-static const secret_api *load_api(void) {
+/**
+ * libsecret's functions, loaded once; NULL when they cannot be loaded, with *out_of_memory set when memory ran out,
+ * which leaves the next call to try again.
+ */
+static const secret_api *load_api(int *out_of_memory) {
     pthread_mutex_lock(&api_lock);
+    *out_of_memory = 0;
     if (!load_attempted) {
-        load_attempted = 1;
+        errno = 0;
         loaded_api.handle = dlopen(library_name_in_use, RTLD_NOW | RTLD_LOCAL);
+        *out_of_memory = loaded_api.handle == NULL && spisor_is_memory_errno(errno);
+        load_attempted = !*out_of_memory;
         if (loaded_api.handle != NULL && !(resolve_secret_functions(&loaded_api) && resolve_glib_functions(&loaded_api))) {
             discard_api();
         }
@@ -157,7 +166,8 @@ void runtime_secret_linux_use_library(const char *library_name) {
 }
 
 int runtime_secret_linux_library_is_loaded(void) {
-    return load_api() != NULL;
+    int out_of_memory = 0;
+    return load_api(&out_of_memory) != NULL;
 }
 #endif
 
@@ -185,8 +195,12 @@ static int session_bus_is_reachable(void) {
     return access(socket_path, F_OK) == 0;
 }
 
-static const secret_api *reachable_api(void) {
-    return session_bus_is_reachable() ? load_api() : NULL;
+/** The store's functions when its session bus is reachable; NULL with *missing saying why when not. */
+static const secret_api *reachable_api(runtime_secret_answer *missing) {
+    int out_of_memory = 0;
+    const secret_api *api = session_bus_is_reachable() ? load_api(&out_of_memory) : NULL;
+    *missing = out_of_memory ? RUNTIME_SECRET_OUT_OF_MEMORY : RUNTIME_SECRET_UNAVAILABLE;
+    return api;
 }
 
 /**
@@ -227,7 +241,8 @@ static void *attributes_for(const secret_api *api, const char *entry) {
 }
 
 int runtime_secret_store_available(void) {
-    const secret_api *api = reachable_api();
+    runtime_secret_answer missing = RUNTIME_SECRET_UNAVAILABLE;
+    const secret_api *api = reachable_api(&missing);
     void *attributes = api == NULL ? NULL : attributes_for(api, probe_entry);
     if (attributes == NULL) {
         return 0;
@@ -243,9 +258,10 @@ int runtime_secret_store_available(void) {
 
 runtime_secret_answer runtime_secret_store_get(const char *entry, char **value) {
     *value = NULL;
-    const secret_api *api = reachable_api();
+    runtime_secret_answer missing = RUNTIME_SECRET_UNAVAILABLE;
+    const secret_api *api = reachable_api(&missing);
     if (api == NULL) {
-        return RUNTIME_SECRET_UNAVAILABLE;
+        return missing;
     }
     void *attributes = attributes_for(api, entry);
     if (attributes == NULL) {
@@ -266,9 +282,10 @@ runtime_secret_answer runtime_secret_store_get(const char *entry, char **value) 
 }
 
 runtime_secret_answer runtime_secret_store_set(const char *entry, const char *value) {
-    const secret_api *api = reachable_api();
+    runtime_secret_answer missing = RUNTIME_SECRET_UNAVAILABLE;
+    const secret_api *api = reachable_api(&missing);
     if (api == NULL) {
-        return RUNTIME_SECRET_UNAVAILABLE;
+        return missing;
     }
     void *attributes = attributes_for(api, entry);
     if (attributes == NULL) {
@@ -284,9 +301,10 @@ runtime_secret_answer runtime_secret_store_set(const char *entry, const char *va
 }
 
 runtime_secret_answer runtime_secret_store_delete(const char *entry) {
-    const secret_api *api = reachable_api();
+    runtime_secret_answer missing = RUNTIME_SECRET_UNAVAILABLE;
+    const secret_api *api = reachable_api(&missing);
     if (api == NULL) {
-        return RUNTIME_SECRET_UNAVAILABLE;
+        return missing;
     }
     void *attributes = attributes_for(api, entry);
     if (attributes == NULL) {
@@ -345,9 +363,10 @@ static int collect_matching_names(const secret_api *api, glib_list *items, const
 runtime_secret_answer runtime_secret_store_list(const char *prefix, runtime_secret_names *names) {
     names->names = NULL;
     names->count = 0;
-    const secret_api *api = reachable_api();
+    runtime_secret_answer missing = RUNTIME_SECRET_UNAVAILABLE;
+    const secret_api *api = reachable_api(&missing);
     if (api == NULL) {
-        return RUNTIME_SECRET_UNAVAILABLE;
+        return missing;
     }
     void *attributes = attributes_for(api, NULL);
     if (attributes == NULL) {

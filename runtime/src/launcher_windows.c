@@ -31,8 +31,18 @@ static void complain(const char *message) {
     }
 }
 
+static int memory_ran_out = 0;
+
+/** HeapAlloc, noting when memory runs out so the launcher says so rather than blaming the shim. */
 static void *allocate(SIZE_T size) {
-    return HeapAlloc(GetProcessHeap(), 0, size);
+    void *block = HeapAlloc(GetProcessHeap(), 0, size);
+    memory_ran_out = memory_ran_out || block == NULL;
+    return block;
+}
+
+static int complain_of_memory(void) {
+    complain("spisor: memory ran out starting this command\n");
+    return LAUNCH_FAILED;
 }
 
 static wchar_t *own_path(void) {
@@ -231,6 +241,9 @@ int wmain(void) {
     wchar_t *shim = own == NULL ? NULL : shim_path_of(own);
     shim_lines lines = {NULL, 0};
     shim_reading reading = shim == NULL ? SHIM_UNREADABLE : read_shim(shim, &lines);
+    if (memory_ran_out) {
+        return complain_of_memory();
+    }
     if (reading == SHIM_UNREADABLE) {
         complain("spisor: this command's .shim file is missing or unreadable\n");
         return LAUNCH_FAILED;
@@ -241,5 +254,5 @@ int wmain(void) {
         return LAUNCH_FAILED;
     }
     wchar_t *line = child_command_line(&lines, arguments_after_program(GetCommandLineW()));
-    return line == NULL ? LAUNCH_FAILED : run(line);
+    return line == NULL ? complain_of_memory() : run(line);
 }

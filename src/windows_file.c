@@ -8,19 +8,23 @@
 #include <windows.h>
 
 #include "allocation.h"
+#include "memory_error.h"
 #include "wide_path.h"
 
 #define MOVE_ATTEMPTS 40
 #define MOVE_PAUSE_MILLISECONDS 25
 
-static FILE *stream_of(HANDLE handle, int writing) {
+/** The handle as a C stream, which owns it; NULL with *out_of_memory set when memory ran out making it one. */
+static FILE *stream_of(HANDLE handle, int writing, int *out_of_memory) {
     int descriptor = _open_osfhandle((intptr_t)handle, (writing ? _O_WRONLY : _O_RDONLY) | _O_BINARY);
     if (descriptor < 0) {
+        *out_of_memory = spisor_is_memory_errno(errno);
         CloseHandle(handle);
         return NULL;
     }
     FILE *file = _fdopen(descriptor, writing ? "wb" : "rb");
     if (file == NULL) {
+        *out_of_memory = spisor_is_memory_errno(errno);
         _close(descriptor);
     }
     return file;
@@ -39,8 +43,9 @@ FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory) {
     HANDLE handle = CreateFileW(wide, writing ? GENERIC_WRITE : GENERIC_READ,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                                 writing ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    *out_of_memory = handle == INVALID_HANDLE_VALUE && spisor_is_memory_windows_error(GetLastError());
     spisor_memory_release(wide);
-    return handle == INVALID_HANDLE_VALUE ? NULL : stream_of(handle, writing);
+    return handle == INVALID_HANDLE_VALUE ? NULL : stream_of(handle, writing, out_of_memory);
 }
 
 /** Whether destination can never be replaced by a rename, however long one waits: a directory or a read-only file. */
