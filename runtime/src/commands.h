@@ -26,17 +26,33 @@ typedef enum runtime_command_operation {
 #define RUNTIME_COMMAND_NAME_SIZE 80
 
 /**
- * Serves one commands operation over its JSON argument, { places: { state }, host } with what the operation reads:
- * environment, home, name, target and arguments for request and add; environment, from and to for rename; name for
- * delete. OK with `name` the name the command has, empty when there is none (a delete, or a request finding its
- * entry deleted): the caller's buffer, so nothing is allocated once the operation has written; MALFORMED or REFUSED
- * with the refusal filled; OUT_OF_MEMORY. runtime/commands.h says what each operation does.
+ * One commands call for host under the absolute state, with what its operation reads: environment, an object of
+ * variable names to values, home, name, target and arguments, an array of texts, for request and add; environment,
+ * from and to for rename; name for delete. What an operation does not read is NULL.
+ */
+typedef struct runtime_command_request {
+    const char *state;
+    const char *host;
+    const cJSON *environment;
+    const char *home;
+    const char *name;
+    const char *target;
+    const cJSON *arguments;
+    const char *from;
+    const char *to;
+} runtime_command_request;
+
+/**
+ * Serves one commands operation for request. OK with `name` the name the command has, empty when there is none (a
+ * delete, or a request finding its entry deleted): the caller's buffer, so nothing is allocated once the operation has
+ * written; MALFORMED or REFUSED with the refusal filled; OUT_OF_MEMORY. runtime/commands.h says what each operation
+ * does.
  *
  * @implNote The whole call holds runtime_hosts_lock once, and the changes it records are applied
  * with runtime_changes_apply_held, so a request racing a rename from forebay can lose neither the
  * entry nor its shim.
  */
-spisor_status runtime_commands_serve(runtime_command_operation operation, const cJSON *argument,
+spisor_status runtime_commands_serve(runtime_command_operation operation, const runtime_command_request *request,
                                      char name[RUNTIME_COMMAND_NAME_SIZE], spisor_refusal *refusal);
 
 

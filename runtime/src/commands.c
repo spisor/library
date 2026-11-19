@@ -44,7 +44,7 @@
 typedef struct command_call {
     const char *state;
     const char *host;
-    const cJSON *argument;
+    const runtime_command_request *request;
     char *shims;
     cJSON *registration;
     char name[RUNTIME_COMMAND_NAME_SIZE];
@@ -595,7 +595,7 @@ static name_hold is_name_held(const command_call *call, const char *name) {
     if (hold != NAME_FREE) {
         return hold;
     }
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
+    const cJSON *environment = call->request->environment;
     int out_of_memory;
     int held = runtime_commands_held_on_path(environment, call->shims, name, &out_of_memory);
     return out_of_memory ? NAME_HOLD_OUT_OF_MEMORY : held ? NAME_HELD : NAME_FREE;
@@ -648,7 +648,7 @@ static int apply_change(command_call *call, cJSON *change) {
 
 static cJSON *path_entry_change(const command_call *call, const char *home) {
     cJSON *change = change_of("path-entry", "directory", call->shims);
-    const char *shell = environment_value(cJSON_GetObjectItemCaseSensitive(call->argument, "environment"), "SHELL");
+    const char *shell = environment_value(call->request->environment, "SHELL");
     if (change != NULL && (cJSON_AddStringToObject(change, "home", home) == NULL ||
                            (shell != NULL && cJSON_AddStringToObject(change, "shell", shell) == NULL))) {
         cJSON_Delete(change);
@@ -658,8 +658,8 @@ static cJSON *path_entry_change(const command_call *call, const char *home) {
 }
 
 static int write_shim(command_call *call, const char *name) {
-    const char *target = text_of(call->argument, "target");
-    const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(call->argument, "arguments");
+    const char *target = call->request->target;
+    const cJSON *arguments = call->request->arguments;
     int written = 1;
     for (size_t index = 0; index < SHIM_FILE_COUNT && written; index++) {
         char *path = shim_file(call->shims, name, index);
@@ -671,7 +671,7 @@ static int write_shim(command_call *call, const char *name) {
 
 /** Records state/bin, its PATH entry and the shim itself, each a no-op when this host already has it. */
 static int make_shim(command_call *call, const char *name) {
-    const char *home = text_of(call->argument, "home");
+    const char *home = call->request->home;
     if (home == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, home)) {
         return refuse_malformed(call, "send the user's home as an absolute path", "%s",
                                 "the call carries no usable home");
@@ -810,8 +810,7 @@ static int remove_shim(command_call *call, const char *name) {
     return 1;
 }
 
-static int validated_name(command_call *call, const char *member) {
-    const char *name = text_of(call->argument, member);
+static int validated_name(command_call *call, const char *name) {
     if (!is_command_name(name)) {
         return refuse_malformed(call, "use letters, digits, - _ and ., starting with a letter or digit, at most 64",
                                 "the command name %s is not a portable file name", name == NULL ? "(none)" : name);
@@ -824,7 +823,7 @@ static int validated_name(command_call *call, const char *member) {
  * asking for cc would shadow the compiler.
  */
 static int validated_environment(command_call *call) {
-    const cJSON *environment = cJSON_GetObjectItemCaseSensitive(call->argument, "environment");
+    const cJSON *environment = call->request->environment;
     if (environment != NULL && !cJSON_IsObject(environment)) {
         return refuse_malformed(call, "send the user's environment as an object of names to strings", "%s",
                                 "the call's environment is not an object");
@@ -837,13 +836,13 @@ static int validated_environment(command_call *call) {
 }
 
 static int validated_target(command_call *call) {
-    const char *defect = target_defect(text_of(call->argument, "target"));
+    const char *defect = target_defect(call->request->target);
     return defect == NULL ||
            refuse_malformed(call, "send the absolute path of the program the command runs", "%s", defect);
 }
 
 static int validated_arguments(command_call *call) {
-    const char *defect = arguments_defect(cJSON_GetObjectItemCaseSensitive(call->argument, "arguments"));
+    const char *defect = arguments_defect(call->request->arguments);
     return defect == NULL ||
            refuse_malformed(call, "send the arguments the command always passes as strings, each without a line break",
                             "%s", defect);
@@ -869,11 +868,11 @@ static int give_new_command(command_call *call, const char *requested, const cha
 }
 
 static int request_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !validated_arguments(call) ||
+    if (!validated_name(call, call->request->name) || !validated_target(call) || !validated_arguments(call) ||
         !validated_environment(call) || !load_registration(call)) {
         return 0;
     }
-    const char *requested = text_of(call->argument, "name");
+    const char *requested = call->request->name;
     cJSON *existing = entry_for_requested(call->registration, requested);
     if (existing != NULL) {
         return answer_existing(call, existing);
@@ -882,11 +881,11 @@ static int request_step(command_call *call) {
 }
 
 static int add_step(command_call *call) {
-    if (!validated_name(call, "name") || !validated_target(call) || !validated_arguments(call) ||
+    if (!validated_name(call, call->request->name) || !validated_target(call) || !validated_arguments(call) ||
         !validated_environment(call) || !load_registration(call)) {
         return 0;
     }
-    const char *name = text_of(call->argument, "name");
+    const char *name = call->request->name;
     if (!name_is_free(call, name, "choose another name, or rename what holds it", "the command name %s is held")) {
         return 0;
     }
@@ -969,12 +968,12 @@ static int move_command(command_call *call, const char *from, const char *to) {
 }
 
 static int rename_step(command_call *call) {
-    if (!validated_name(call, "from") || !validated_name(call, "to") || !validated_environment(call) ||
-        !load_registration(call)) {
+    if (!validated_name(call, call->request->from) || !validated_name(call, call->request->to) ||
+        !validated_environment(call) || !load_registration(call)) {
         return 0;
     }
-    const char *from = text_of(call->argument, "from");
-    const char *to = text_of(call->argument, "to");
+    const char *from = call->request->from;
+    const char *to = call->request->to;
     if (active_named(call->registration, from) == NULL) {
         return refuse_unknown_command(call, from);
     }
@@ -990,10 +989,10 @@ static int rename_step(command_call *call) {
 }
 
 static int delete_step(command_call *call) {
-    if (!validated_name(call, "name") || !load_registration(call)) {
+    if (!validated_name(call, call->request->name) || !load_registration(call)) {
         return 0;
     }
-    const char *name = text_of(call->argument, "name");
+    const char *name = call->request->name;
     cJSON *entry = active_named(call->registration, name);
     if (entry == NULL) {
         return refuse_unknown_command(call, name);
@@ -1048,21 +1047,21 @@ static spisor_status run_locked(command_call *call, command_step step, spisor_re
 
 static const command_step STEPS[] = {request_step, rename_step, delete_step, add_step};
 
-spisor_status runtime_commands_serve(runtime_command_operation operation, const cJSON *argument,
+spisor_status runtime_commands_serve(runtime_command_operation operation, const runtime_command_request *request,
                                      char name[RUNTIME_COMMAND_NAME_SIZE], spisor_refusal *refusal) {
     command_call call;
     spisor_status status;
     name[0] = '\0';
     memset(&call, 0, sizeof call);
-    call.state = text_of(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
-    call.host = text_of(argument, "host");
-    call.argument = argument;
+    call.state = request->state;
+    call.host = request->host;
+    call.request = request;
     if (call.state == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, call.state)) {
         return runtime_refuse_place(refusal, "state");
     }
     if (call.host == NULL) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no host",
-                                 "send host as the id the host registered with");
+        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the call carries no host",
+                                 "pass host as the id the host registered with");
     }
     call.shims = joined(call.state, "bin");
     status = call.shims == NULL ? SPISOR_OUT_OF_MEMORY : run_locked(&call, STEPS[operation], refusal);

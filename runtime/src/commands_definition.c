@@ -9,36 +9,8 @@
 #define DELETE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_commands_delete_argument, name)
 #define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_command_answer, storage)
 
-static int add_text(cJSON *object, const char *name, const char *text) {
-    return text == NULL || cJSON_AddStringToObject(object, name, text) != NULL;
-}
-
-/** {places: {state}, host}, the argument every operation's JSON begins with; NULL when memory runs out. */
-static cJSON *call_of(const char *state, const char *host) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *places = call == NULL ? NULL : cJSON_AddObjectToObject(call, "places");
-    if (places == NULL || !add_text(places, "state", state) || !add_text(call, "host", host)) {
-        cJSON_Delete(call);
-        return NULL;
-    }
-    return call;
-}
-
-static spisor_status add_environment(cJSON *call, const runtime_variable *environment, size_t count,
-                                     spisor_refusal *refusal) {
-    cJSON *json = NULL;
-    spisor_status status = runtime_environment_json(environment, count, &json);
-    if (status == SPISOR_MALFORMED) {
-        return runtime_refuse_environment(refusal);
-    }
-    if (status == SPISOR_OK && !cJSON_AddItemToObject(call, "environment", json)) {
-        cJSON_Delete(json);
-        status = SPISOR_OUT_OF_MEMORY;
-    }
-    return status;
-}
-
-static spisor_status add_arguments(cJSON *call, const char *const *arguments, size_t count, spisor_refusal *refusal) {
+static spisor_status add_arguments(cJSON *call, const char *const *arguments, size_t count,
+                                   spisor_refusal *refusal) {
     cJSON *list;
     if (count > 0 && arguments == NULL) {
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries a count without its arguments",
@@ -60,32 +32,23 @@ static spisor_status add_arguments(cJSON *call, const char *const *arguments, si
     return list == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-static spisor_status command_call(const runtime_command_argument *argument, cJSON **call, spisor_refusal *refusal) {
-    spisor_status status;
-    *call = call_of(argument->state, argument->host);
-    if (*call == NULL || !add_text(*call, "home", argument->home) || !add_text(*call, "name", argument->name) ||
-        !add_text(*call, "target", argument->target)) {
-        status = SPISOR_OUT_OF_MEMORY;
-    } else {
-        status = add_arguments(*call, argument->arguments, argument->argument_count, refusal);
+/** {environment, arguments?}, the JSON a call reads beside its texts; NULL with the status when it is not built. */
+static spisor_status call_of(const runtime_variable *environment, size_t environment_count,
+                             const char *const *arguments, size_t argument_count, int takes_arguments, cJSON **call,
+                             spisor_refusal *refusal) {
+    cJSON *json = NULL;
+    spisor_status status = runtime_environment_json(environment, environment_count, &json);
+    if (status == SPISOR_MALFORMED) {
+        return runtime_refuse_environment(refusal);
     }
-    if (status == SPISOR_OK) {
-        status = add_environment(*call, argument->environment, argument->environment_count, refusal);
-    }
-    if (status != SPISOR_OK) {
+    *call = status == SPISOR_OK ? cJSON_CreateObject() : NULL;
+    if (*call == NULL || !cJSON_AddItemToObject(*call, "environment", json)) {
+        cJSON_Delete(json);
         cJSON_Delete(*call);
         *call = NULL;
+        return SPISOR_OUT_OF_MEMORY;
     }
-    return status;
-}
-
-static spisor_status rename_call(const runtime_commands_rename_argument *argument, cJSON **call,
-                                 spisor_refusal *refusal) {
-    spisor_status status;
-    *call = call_of(argument->state, argument->host);
-    status = *call != NULL && add_text(*call, "from", argument->from) && add_text(*call, "to", argument->to)
-                 ? add_environment(*call, argument->environment, argument->environment_count, refusal)
-                 : SPISOR_OUT_OF_MEMORY;
+    status = takes_arguments ? add_arguments(*call, arguments, argument_count, refusal) : SPISOR_OK;
     if (status != SPISOR_OK) {
         cJSON_Delete(*call);
         *call = NULL;
@@ -98,10 +61,13 @@ static spisor_status rename_call(const runtime_commands_rename_argument *argumen
  *
  * @implNote The name's block is taken before the operation runs, so once it has written nothing is left to allocate.
  */
-static spisor_status serve_named(runtime_command_operation operation, cJSON *call, runtime_command_answer *answer,
-                                 spisor_refusal *refusal) {
+static spisor_status serve_named(runtime_command_operation operation, runtime_command_request *commanded, cJSON *call,
+                                 runtime_command_answer *answer, spisor_refusal *refusal) {
     char *name = runtime_storage_take(&answer->storage, RUNTIME_COMMAND_NAME_SIZE);
-    spisor_status status = name == NULL ? SPISOR_OUT_OF_MEMORY : runtime_commands_serve(operation, call, name, refusal);
+    spisor_status status;
+    commanded->environment = cJSON_GetObjectItemCaseSensitive(call, "environment");
+    commanded->arguments = cJSON_GetObjectItemCaseSensitive(call, "arguments");
+    status = name == NULL ? SPISOR_OUT_OF_MEMORY : runtime_commands_serve(operation, commanded, name, refusal);
     cJSON_Delete(call);
     if (status == SPISOR_OK && name[0] != '\0') {
         answer->name = name;
@@ -113,6 +79,7 @@ static spisor_status serve_named(runtime_command_operation operation, cJSON *cal
 
 static spisor_status give(runtime_command_operation operation, const runtime_command_argument *argument,
                           runtime_command_answer *answer, spisor_refusal *refusal) {
+    runtime_command_request commanded;
     cJSON *call = NULL;
     spisor_status status;
     if (argument == NULL || !runtime_has_shape(argument->size, COMMAND_SHAPE) ||
@@ -122,8 +89,11 @@ static spisor_status give(runtime_command_operation operation, const runtime_com
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
     }
-    status = command_call(argument, &call, refusal);
-    return status == SPISOR_OK ? serve_named(operation, call, answer, refusal) : status;
+    status = call_of(argument->environment, argument->environment_count, argument->arguments,
+                     argument->argument_count, 1, &call, refusal);
+    commanded = (runtime_command_request){argument->state, argument->host, NULL, argument->home, argument->name,
+                                        argument->target, NULL, NULL, NULL};
+    return status == SPISOR_OK ? serve_named(operation, &commanded, call, answer, refusal) : status;
 }
 
 static spisor_status request(void *context, const runtime_command_argument *argument, runtime_command_answer *answer,
@@ -140,6 +110,7 @@ static spisor_status add(void *context, const runtime_command_argument *argument
 
 static spisor_status rename_command(void *context, const runtime_commands_rename_argument *argument,
                                     runtime_command_answer *answer, spisor_refusal *refusal) {
+    runtime_command_request commanded;
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
@@ -150,27 +121,23 @@ static spisor_status rename_command(void *context, const runtime_commands_rename
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
     }
-    status = rename_call(argument, &call, refusal);
-    return status == SPISOR_OK ? serve_named(RUNTIME_COMMAND_RENAME, call, answer, refusal) : status;
+    status = call_of(argument->environment, argument->environment_count, NULL, 0, 0, &call, refusal);
+    commanded = (runtime_command_request){argument->state, argument->host, NULL, NULL, NULL,
+                                        NULL, NULL, argument->from, argument->to};
+    return status == SPISOR_OK ? serve_named(RUNTIME_COMMAND_RENAME, &commanded, call, answer, refusal) : status;
 }
 
 static spisor_status remove_command(void *context, const runtime_commands_delete_argument *argument,
                                     spisor_refusal *refusal) {
     char name[RUNTIME_COMMAND_NAME_SIZE];
-    cJSON *call;
-    spisor_status status;
+    runtime_command_request commanded;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, DELETE_SHAPE)) {
         return runtime_refuse_shape(refusal, "commands' remove");
     }
-    call = call_of(argument->state, argument->host);
-    if (call == NULL || !add_text(call, "name", argument->name)) {
-        cJSON_Delete(call);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    status = runtime_commands_serve(RUNTIME_COMMAND_DELETE, call, name, refusal);
-    cJSON_Delete(call);
-    return status;
+    commanded = (runtime_command_request){argument->state, argument->host, NULL, NULL, argument->name,
+                                        NULL, NULL, NULL, NULL};
+    return runtime_commands_serve(RUNTIME_COMMAND_DELETE, &commanded, name, refusal);
 }
 
 static void release_answer(void *context, runtime_command_answer *answer) {

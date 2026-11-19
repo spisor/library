@@ -82,24 +82,18 @@ static cJSON *register_first(const runtime_hosts_registration_request *request, 
     return registered;
 }
 
-/** The commands request for one command, with places only when the registration names a state. */
-static cJSON *command_request(const runtime_hosts_registration_request *registration, const cJSON *identity,
-                              const cJSON *command, const char *home) {
-    cJSON *request = cJSON_CreateObject();
-    cJSON *places = request == NULL || registration->state == NULL ? NULL : cJSON_AddObjectToObject(request, "places");
-    const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(command, "arguments");
-    int complete = request != NULL &&
-                   (registration->state == NULL ||
-                    (places != NULL && cJSON_AddStringToObject(places, "state", registration->state) != NULL)) &&
-                   copy_value(request, "environment", registration->environment) &&
-                   copy_member_as(request, "host", identity, "id") &&
-                   (home == NULL || cJSON_AddStringToObject(request, "home", home) != NULL) &&
-                   copy_member(request, command, "name") && copy_member(request, command, "target") &&
-                   (arguments == NULL || copy_member(request, command, "arguments"));
-    if (!complete) {
-        cJSON_Delete(request);
-        return NULL;
-    }
+/** The commands request for one command of the host identity names, borrowing from the registration and command. */
+static runtime_command_request command_request(const runtime_hosts_registration_request *registration,
+                                               const cJSON *identity, const cJSON *command, const char *home) {
+    runtime_command_request request = {registration->state,
+                                       cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(identity, "id")),
+                                       registration->environment,
+                                       home,
+                                       cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "name")),
+                                       cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(command, "target")),
+                                       cJSON_GetObjectItemCaseSensitive(command, "arguments"),
+                                       NULL,
+                                       NULL};
     return request;
 }
 
@@ -138,13 +132,10 @@ static int request_command(const runtime_hosts_registration_request *registratio
                            const cJSON *command, const char *home, cJSON *answer, cJSON **refusal) {
     spisor_refusal refused_by = SPISOR_INIT(spisor_refusal);
     char name[RUNTIME_COMMAND_NAME_SIZE];
-    cJSON *request = command_request(registration, identity, command, home);
-    spisor_status status =
-        request == NULL ? SPISOR_OUT_OF_MEMORY
-                        : runtime_commands_serve(RUNTIME_COMMAND_REQUEST, request, name, &refused_by);
+    runtime_command_request request = command_request(registration, identity, command, home);
+    spisor_status status = runtime_commands_serve(RUNTIME_COMMAND_REQUEST, &request, name, &refused_by);
     cJSON *refused = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused_by);
     spisor_refusal_release(&refused_by);
-    cJSON_Delete(request);
     int complete = status == SPISOR_OK && add_name(cJSON_GetObjectItemCaseSensitive(answer, "commands"), name);
     if (refused != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(identity, "requiresCommand"))) {
         *refusal = refused;
