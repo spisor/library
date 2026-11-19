@@ -8,8 +8,22 @@
 typedef spisor_status (*runtime_install_by_id_taker)(const cJSON *answer, void *taken);
 
 /**
- * install's byId: {id, cache, pluginDir, version?, lastKnown?, acceptPrimary?, apiBase?} installs the plugin the repo id
- * names into cache, deploys it into pluginDir under its import name, and answers {id, name, fullName, version,
+ * What install's byId installs: the plugin id names, into cache, deployed into plugin_directory; version, last_known,
+ * accept_primary and api_base are NULL when not known, and every text given is not empty.
+ */
+typedef struct runtime_install_by_id_request {
+    const char *id;
+    const char *cache;
+    const char *plugin_directory;
+    const char *version;
+    const char *last_known;
+    const char *accept_primary;
+    const char *api_base;
+} runtime_install_by_id_request;
+
+/**
+ * install's byId: installs the plugin the repo id names into cache, deploys it into the plugin directory under its
+ * import name, and answers {id, name, fullName, version,
  * commit, sha256, ids, primary, primaryConfirmed}. id, name and fullName are those of the repo it was installed
  * from, which is the verified primary and so can differ from the id asked for. commit is the commit the index states
  * for the version ("" when it states none), sha256 the digest of the release index, ids and primary the repo's
@@ -33,7 +47,7 @@ typedef spisor_status (*runtime_install_by_id_taker)(const cJSON *answer, void *
  * Hands an installed answer to `take` before the record is written, so a caller holds what it answers before the
  * last write; NULL with no refusal when `take` runs out of memory.
  */
-cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id_taker take, void *taken,
-                                    cJSON **refusal);
+cJSON *runtime_install_by_id(const runtime_install_by_id_request *install, runtime_install_by_id_taker take,
+                             void *taken, cJSON **refusal);
 
 #endif

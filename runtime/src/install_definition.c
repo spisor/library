@@ -831,29 +831,18 @@ static int are_optional_texts(const runtime_install_by_id_argument *argument) {
     return 1;
 }
 
-static spisor_status by_id_call(const runtime_install_by_id_argument *argument, cJSON **call) {
-    *call = cJSON_CreateObject();
-    if (*call == NULL || !add_text(*call, "id", argument->id) || !add_text(*call, "cache", argument->cache) ||
-        !add_text(*call, "pluginDir", argument->plugin_directory) || !add_text(*call, "version", argument->version) ||
-        !add_text(*call, "lastKnown", argument->last_known) ||
-        !add_text(*call, "acceptPrimary", argument->accept_primary) ||
-        !add_text(*call, "apiBase", argument->api_base)) {
-        cJSON_Delete(*call);
-        *call = NULL;
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    return SPISOR_OK;
-}
-
 /**
  * Serves byId, its answer filled before the record of the primary is written whenever there is one to write, so an
  * answer that runs out of memory leaves no record; one answered without a record, a user acceptance, fills after.
  */
-static spisor_status serve_by_id(cJSON *call, runtime_install_by_id_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_by_id(const runtime_install_by_id_argument *argument, runtime_install_by_id_answer *answer,
+                                 spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = call == NULL ? NULL : runtime_install_by_id_taking(call, fill_by_id, answer, &operation_refusal);
+    runtime_install_by_id_request request = {argument->id,      argument->cache,          argument->plugin_directory,
+                                             argument->version, argument->last_known,     argument->accept_primary,
+                                             argument->api_base};
+    cJSON *answered = runtime_install_by_id(&request, fill_by_id, answer, &operation_refusal);
     spisor_status status = SPISOR_OK;
-    cJSON_Delete(call);
     if (answered == NULL) {
         runtime_release_stored_answer(answer, BY_ID_ANSWER_SHAPE);
         status = runtime_refuse_json(refusal, operation_refusal);
@@ -871,7 +860,6 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
                            runtime_install_by_id_answer *answer, spisor_refusal *refusal) {
     static const char *const names[2] = {"cache", "plugin directory"};
     const char *places[2];
-    cJSON *call = NULL;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, BY_ID_SHAPE) ||
@@ -887,10 +875,7 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
     if (status == SPISOR_OK && !are_optional_texts(argument)) {
         status = runtime_refuse_member(refusal, "version, last known name, accepted primary or api base", HEADER);
     }
-    if (status == SPISOR_OK) {
-        status = by_id_call(argument, &call);
-    }
-    return status != SPISOR_OK ? status : serve_by_id(call, answer, refusal);
+    return status != SPISOR_OK ? status : serve_by_id(argument, answer, refusal);
 }
 
 typedef spisor_status (*row_filler)(void **storage, const cJSON *json, void *row);
@@ -1137,8 +1122,7 @@ static int add_ecosystem_members(cJSON *call, const runtime_install_ecosystem_ar
     return runtime_catalog_add_sources(call, argument->sources, argument->source_count) == SPISOR_OK &&
            add_choices(call, argument->choices, argument->choice_count) &&
            add_texts(call, "defaults", argument->defaults, argument->default_count) &&
-           add_texts(call, "requested", argument->requested, argument->requested_count) &&
-           add_text(call, "platform", argument->platform);
+           add_texts(call, "requested", argument->requested, argument->requested_count);
 }
 
 /** The ecosystem's call, its environment read first so a malformed one is refused before the call is built. */
@@ -1165,9 +1149,17 @@ static spisor_status ecosystem_call(const runtime_install_ecosystem_argument *ar
 }
 
 /** Serves ecosystem, its answer filled before the running versions are recorded, the install's last write. */
-static spisor_status serve_ecosystem(cJSON *call, runtime_install_ecosystem_answer *answer, spisor_refusal *refusal) {
+static spisor_status serve_ecosystem(cJSON *call, const char *platform, runtime_install_ecosystem_answer *answer,
+                                     spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_install_ecosystem_taking(call, fill_ecosystem, answer, &operation_refusal);
+    runtime_install_ecosystem_request request = {cJSON_GetObjectItemCaseSensitive(call, "sources"),
+                                                 cJSON_GetObjectItemCaseSensitive(call, "places"),
+                                                 cJSON_GetObjectItemCaseSensitive(call, "environment"),
+                                                 cJSON_GetObjectItemCaseSensitive(call, "choices"),
+                                                 cJSON_GetObjectItemCaseSensitive(call, "defaults"),
+                                                 cJSON_GetObjectItemCaseSensitive(call, "requested"),
+                                                 platform};
+    cJSON *answered = runtime_install_ecosystem(&request, fill_ecosystem, answer, &operation_refusal);
     spisor_status status = SPISOR_OK;
     cJSON_Delete(call);
     if (answered == NULL) {
@@ -1204,7 +1196,7 @@ static spisor_status ecosystem(void *context, const runtime_install_ecosystem_ar
     if (status == SPISOR_OK) {
         status = ecosystem_call(argument, names, places, &call, refusal);
     }
-    return status != SPISOR_OK ? status : serve_ecosystem(call, answer, refusal);
+    return status != SPISOR_OK ? status : serve_ecosystem(call, argument->platform, answer, refusal);
 }
 
 static void release_warnings_answer(void *context, runtime_install_warnings_answer *answer) {
