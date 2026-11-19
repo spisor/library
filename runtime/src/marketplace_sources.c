@@ -154,10 +154,11 @@ static cJSON *answer_of(const cJSON *configured, cJSON **refusal) {
     return result;
 }
 
-cJSON *runtime_marketplace_sources_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *settings = cJSON_GetObjectItemCaseSensitive(argument, "settings");
+cJSON *runtime_marketplace_sources(const cJSON *settings, cJSON **refusal) {
+    *refusal = NULL;
     if (!cJSON_IsObject(settings)) {
-        *refusal = runtime_refusal("the argument carries no usable settings", "send settings as the merged settings object");
+        *refusal =
+            runtime_refusal("the call carries no usable settings", "pass settings as the merged settings object");
         return NULL;
     }
     return answer_of(configured_marketplaces(settings), refusal);
