@@ -533,13 +533,13 @@ static void refuses_an_answer_with_no_outcome_or_two(void) {
     cJSON *none = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "answer");
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "checked");
-    expect_render_refused(OVERVIEW, none, SPISOR_MALFORMED, "replies", "no outcome");
+    expect_render_refused(OVERVIEW, none, SPISOR_MALFORMED, "replies: reply 0: its outcome is none", "no outcome");
     cJSON *two = answers_for(OVERVIEW);
     cJSON_AddTrueToObject(cJSON_GetArrayItem(two, 0), "unavailable");
     expect_render_refused(OVERVIEW, two, SPISOR_MALFORMED, "replies", "two outcomes");
     cJSON *keyless = answers_for(OVERVIEW);
-    cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(keyless, 0), "arguments");
-    expect_render_refused(OVERVIEW, keyless, SPISOR_MALFORMED, "replies", "no arguments");
+    cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(keyless, 1), "arguments");
+    expect_render_refused(OVERVIEW, keyless, SPISOR_MALFORMED, "replies: reply 1: its target lacks", "no arguments");
 }
 
 static const char *LISTER =
