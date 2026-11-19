@@ -12,7 +12,7 @@
 #include "host_child.h"
 #include "host_service.h"
 #include "host_output.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "own_executable.h"
 #include "paths.h"
 #include "spisor/path.h"

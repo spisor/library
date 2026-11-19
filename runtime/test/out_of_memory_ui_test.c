@@ -7,7 +7,7 @@
 #include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/ui.h"
 
 #define WRONG_RUN ((spisor_status)99)
@@ -148,7 +148,8 @@ static void keep_refusal(spisor_refusal *refusal) {
 
 static spisor_status run_navigation(void) {
     runtime_ui_navigation_argument argument = SPISOR_INIT(runtime_ui_navigation_argument);
-    runtime_ui_navigation_answer answer = SPISOR_INIT(runtime_ui_navigation_answer);
+    runtime_ui_navigation_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.descriptions = inputs.viewer;
@@ -165,6 +166,7 @@ static spisor_status run_navigation(void) {
     if (status == SPISOR_OK && answer.entry_count != 3) {
         status = WRONG_RUN;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     ui->release_navigation_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -172,7 +174,8 @@ static spisor_status run_navigation(void) {
 
 static spisor_status run_settings_view(void) {
     runtime_ui_settings_view_argument argument = SPISOR_INIT(runtime_ui_settings_view_argument);
-    runtime_ui_settings_view_answer answer = SPISOR_INIT(runtime_ui_settings_view_answer);
+    runtime_ui_settings_view_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.description = &inputs.viewer->items[0];
@@ -188,6 +191,7 @@ static spisor_status run_settings_view(void) {
     if (status == SPISOR_OK && answer.node_count != 3) {
         status = WRONG_RUN;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     ui->release_settings_view_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -212,7 +216,8 @@ static void put_check(const runtime_ui_check *check) {
 
 static spisor_status run_plan(void) {
     runtime_ui_screen_argument argument = SPISOR_INIT(runtime_ui_screen_argument);
-    runtime_ui_plan_answer answer = SPISOR_INIT(runtime_ui_plan_answer);
+    runtime_ui_plan_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_ui_reply reply = {
         {NULL, NULL, NULL, NULL}, RUNTIME_UI_OUTCOME_UNAVAILABLE, NULL, NULL, 0, {NULL, NULL, NULL}};
@@ -235,6 +240,7 @@ static spisor_status run_plan(void) {
     if (status == SPISOR_OK && answer.call_count != 3) {
         status = WRONG_RUN;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     ui->release_plan_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -270,7 +276,8 @@ static spisor_status render_with(size_t reply_count) {
         {{NULL, NULL, NULL, NULL}, RUNTIME_UI_OUTCOME_FAILED, NULL, NULL, 0, {"it threw", "fix it", NULL}},
         {{NULL, NULL, NULL, NULL}, RUNTIME_UI_OUTCOME_UNAVAILABLE, NULL, NULL, 0, {NULL, NULL, NULL}}};
     runtime_ui_screen_argument argument = SPISOR_INIT(runtime_ui_screen_argument);
-    runtime_ui_screen answer = SPISOR_INIT(runtime_ui_screen);
+    runtime_ui_screen answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     replies[0].target = target_of("rows", 0);
@@ -288,6 +295,7 @@ static spisor_status render_with(size_t reply_count) {
     if (status == SPISOR_OK && answer.node_count != 5) {
         status = WRONG_RUN;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     ui->release_screen(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -303,7 +311,8 @@ static spisor_status run_render_refused(void) {
 
 static spisor_status run_plugin_list(void) {
     runtime_ui_plugin_list_argument argument = SPISOR_INIT(runtime_ui_plugin_list_argument);
-    runtime_ui_plugin_list_answer answer = SPISOR_INIT(runtime_ui_plugin_list_answer);
+    runtime_ui_plugin_list_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.installed = inputs.groups[0];
@@ -321,6 +330,7 @@ static spisor_status run_plugin_list(void) {
     if (status == SPISOR_OK && answer.row_count != 3) {
         status = WRONG_RUN;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     ui->release_plugin_list_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;

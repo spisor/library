@@ -1,6 +1,10 @@
 #ifndef SPISOR_JSON_ALLOCATION_H
 #define SPISOR_JSON_ALLOCATION_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Makes cJSON allocate through spisor_memory_allocate and spisor_memory_release, so the binary's one allocator serves
  * every cJSON tree and printed text, and a test's counting allocator fails cJSON's allocations too. A text cJSON
@@ -12,5 +16,9 @@
  * on the first line of its main.
  */
 void spisor_json_use_library_allocator(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

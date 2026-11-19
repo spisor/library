@@ -6,7 +6,7 @@
 
 #include "spisor/allocation.h"
 #include "cJSON.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/config.h"
 #include "runtime/settings.h"
 #include "spisor/status.h"

@@ -5,7 +5,7 @@
 #include "allocation_failure.h"
 #include "check.h"
 #include "spisor/json_kind.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 
 static cJSON *parsed(const char *text) {
     return spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});

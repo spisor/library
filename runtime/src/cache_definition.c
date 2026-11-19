@@ -9,7 +9,7 @@
 #include "definition_support.h"
 #include "identity.h"
 #include "json_service.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "platform_key.h"
 
 #define INSTALL_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_install_argument, platform)

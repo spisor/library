@@ -11,7 +11,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "install_settings.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/path.h"

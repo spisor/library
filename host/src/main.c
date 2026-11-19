@@ -5,7 +5,7 @@
 #include "host_commands.h"
 #include "allocation.h"
 #include "host_output.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 
 #if defined(_WIN32)
 #include "host_arguments.h"

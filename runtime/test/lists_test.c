@@ -11,7 +11,7 @@
 #include "check.h"
 #include "definition_fixture.h"
 #include "host_provenance.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "registry.h"
 #include "registry_call.h"
 #include "runtime/lists.h"

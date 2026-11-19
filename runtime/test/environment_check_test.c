@@ -4,7 +4,7 @@
 #include "allocation.h"
 #include "check.h"
 #include "definition_support.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/commands.h"
 #include "runtime/detect.h"
 #include "runtime/install.h"

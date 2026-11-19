@@ -8,7 +8,7 @@
 
 #include "allocation.h"
 #include "allocation_failure.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/install.h"
 #include "timestamp_text.h"
 
@@ -74,7 +74,8 @@ static spisor_status install_ecosystem(const install_base *base) {
     runtime_catalog_source source;
     runtime_variable environment[4];
     runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
-    runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
+    runtime_install_ecosystem_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     snprintf(index, sizeof index, "%s/catalog.json", base->catalog);
     memset(&source, 0, sizeof source);
@@ -93,6 +94,7 @@ static spisor_status install_ecosystem(const install_base *base) {
     argument.requested = REQUESTED_PLUGINS;
     argument.requested_count = 1;
     spisor_status status = install->ecosystem(install->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;

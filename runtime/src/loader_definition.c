@@ -6,7 +6,7 @@
 #include "definition_support.h"
 #include "host_references.h"
 #include "json_service.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "loader.h"
 
 #define HEADER "the loader header"
