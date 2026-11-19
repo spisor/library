@@ -108,6 +108,47 @@ int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_pre
     return from->wide != NULL && to->wide != NULL && spisor_windows_move_wide_over(from->wide, to->wide);
 }
 
+int spisor_truncate_prepared_file(const spisor_prepared_path *prepared, uint64_t length) {
+    DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    HANDLE handle = prepared->wide == NULL ? INVALID_HANDLE_VALUE
+                                           : CreateFileW(prepared->wide, GENERIC_WRITE, sharing, NULL, OPEN_EXISTING,
+                                                         FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    LARGE_INTEGER end;
+    end.QuadPart = (LONGLONG)length;
+    int truncated = SetFilePointerEx(handle, end, NULL, FILE_BEGIN) && SetEndOfFile(handle);
+    return CloseHandle(handle) && truncated;
+}
+
+int spisor_link_prepared_file(const spisor_prepared_path *existing, const spisor_prepared_path *linked) {
+    return existing->wide != NULL && linked->wide != NULL && CreateHardLinkW(linked->wide, existing->wide, NULL) != 0;
+}
+
+int spisor_read_prepared_file(const spisor_prepared_path *prepared, uint8_t *buffer, size_t capacity, size_t *length) {
+    *length = 0;
+    DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    HANDLE handle = prepared->wide == NULL ? INVALID_HANDLE_VALUE
+                                           : CreateFileW(prepared->wide, GENERIC_READ, sharing, NULL, OPEN_EXISTING,
+                                                         FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    int read = 1;
+    while (read && *length < capacity) {
+        DWORD chunk = 0;
+        DWORD wanted = capacity - *length > 0x40000000u ? 0x40000000u : (DWORD)(capacity - *length);
+        read = ReadFile(handle, buffer + *length, wanted, &chunk, NULL) != 0;
+        if (read && chunk == 0) {
+            break;
+        }
+        *length += chunk;
+    }
+    CloseHandle(handle);
+    return read;
+}
+
 void spisor_release_prepared_path(spisor_prepared_path *prepared) {
     spisor_memory_release(prepared->wide);
     spisor_memory_release(prepared->path);
@@ -166,6 +207,33 @@ static int write_temporary(const spisor_prepared_replacement *replacement, const
 
 int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_prepared_path *to) {
     return from->path != NULL && to->path != NULL && rename(from->path, to->path) == 0;
+}
+
+int spisor_truncate_prepared_file(const spisor_prepared_path *prepared, uint64_t length) {
+    return prepared->path != NULL && truncate(prepared->path, (off_t)length) == 0;
+}
+
+int spisor_link_prepared_file(const spisor_prepared_path *existing, const spisor_prepared_path *linked) {
+    return existing->path != NULL && linked->path != NULL && link(existing->path, linked->path) == 0;
+}
+
+int spisor_read_prepared_file(const spisor_prepared_path *prepared, uint8_t *buffer, size_t capacity, size_t *length) {
+    *length = 0;
+    int descriptor = prepared->path == NULL ? -1 : open(prepared->path, O_RDONLY);
+    if (descriptor < 0) {
+        return 0;
+    }
+    int read_whole = 1;
+    while (*length < capacity) {
+        ssize_t chunk = read(descriptor, buffer + *length, capacity - *length);
+        if (chunk <= 0) {
+            read_whole = chunk == 0;
+            break;
+        }
+        *length += (size_t)chunk;
+    }
+    close(descriptor);
+    return read_whole;
 }
 #endif
 

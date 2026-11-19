@@ -9,6 +9,7 @@
 #include "directory_tree.h"
 #include "hosts_lock.h"
 #include "json_service.h"
+#include "path_entry.h"
 #include "paths.h"
 #include "prepared_undo.h"
 #include "registry.h"
@@ -282,12 +283,27 @@ static void withdraw(apply_session *session, cJSON *entry, runtime_change_step s
     conclude_stored(session, store(session), answer_of_step(step), reason);
 }
 
-typedef enum undo_kind { UNDO_BY_REVERSAL, UNDO_BY_REMOVING_FILE, UNDO_BY_REMOVING_DIRECTORY } undo_kind;
+typedef enum undo_kind {
+    UNDO_BY_REVERSAL,
+    UNDO_BY_REMOVING_FILE,
+    UNDO_BY_REMOVING_DIRECTORY,
+    UNDO_BY_RESTORING_FILE,
+    UNDO_BY_TRUNCATING_FILE,
+    UNDO_BY_RESTORING_PATH
+} undo_kind;
 
-/** What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. */
+/**
+ * What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. A json-key
+ * edit is undone by writing back the bytes it replaced, a profile line by cutting its file back to the length it had,
+ * a path-entry by putting the user's PATH back; only a change no preparation covers is undone by its reversal.
+ */
 typedef struct prepared_undo {
     undo_kind kind;
     spisor_prepared_path removal;
+    spisor_prepared_replacement restoration;
+    uint8_t *previous;
+    size_t previous_length;
+    runtime_path_entry_undo path;
 } prepared_undo;
 
 static int is_created_json_file(const cJSON *entry) {
@@ -295,33 +311,88 @@ static int is_created_json_file(const cJSON *entry) {
            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "created"));
 }
 
+static void release_undo(prepared_undo *undo) {
+    spisor_release_prepared_path(&undo->removal);
+    spisor_release_prepared_replacement(&undo->restoration);
+    spisor_memory_release(undo->previous);
+    undo->previous = NULL;
+    if (undo->kind == UNDO_BY_RESTORING_PATH) {
+        runtime_path_entry_release_undo(&undo->path);
+    }
+}
+
+/** Prepares undoing an edit of the file at path, which `kind` names when the file is there, removal when it is not. */
+static spisor_status prepare_file_undo(const char *path, undo_kind kind, prepared_undo *undo) {
+    spisor_file_presence presence = spisor_probe_file(path);
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (presence != SPISOR_FILE_PRESENT) {
+        undo->kind = UNDO_BY_REMOVING_FILE;
+        return spisor_prepare_path(path, &undo->removal);
+    }
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    undo->previous = spisor_read_file_reporting(path, &undo->previous_length, &outcome);
+    if (undo->previous == NULL) {
+        return outcome == SPISOR_READ_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : SPISOR_REFUSED;
+    }
+    undo->kind = kind;
+    if (kind == UNDO_BY_RESTORING_FILE) {
+        return spisor_prepare_replacement(path, &undo->restoration);
+    }
+    spisor_memory_release(undo->previous);
+    undo->previous = NULL;
+    return spisor_prepare_path(path, &undo->removal);
+}
+
+static spisor_status prepare_kind_undo(const cJSON *entry, prepared_undo *undo) {
+    const char *kind = text_of(entry, "kind");
+    if (strcmp(kind, "file") == 0 || strcmp(kind, "directory") == 0) {
+        undo->kind = strcmp(kind, "file") == 0 ? UNDO_BY_REMOVING_FILE : UNDO_BY_REMOVING_DIRECTORY;
+        return spisor_prepare_path(text_of(entry, "path"), &undo->removal);
+    }
+    if (is_created_json_file(entry)) {
+        undo->kind = UNDO_BY_REMOVING_FILE;
+        return spisor_prepare_path(text_of(entry, "file"), &undo->removal);
+    }
+    if (strcmp(kind, "json-key") == 0 || strcmp(kind, "profile-line") == 0) {
+        undo_kind edit = strcmp(kind, "json-key") == 0 ? UNDO_BY_RESTORING_FILE : UNDO_BY_TRUNCATING_FILE;
+        return prepare_file_undo(text_of(entry, "file"), edit, undo);
+    }
+    if (strcmp(kind, "path-entry") == 0) {
+        undo->kind = UNDO_BY_RESTORING_PATH;
+        return runtime_path_entry_prepare_undo(&undo->path);
+    }
+    return SPISOR_OK;
+}
+
+/** @implNote What cannot be prepared (a target that is not UTF-8, a Path that is no string) is left to its reversal. */
 static spisor_status prepare_undo(const cJSON *entry, prepared_undo *undo) {
     memset(undo, 0, sizeof *undo);
     undo->kind = UNDO_BY_REVERSAL;
-    const char *kind = text_of(entry, "kind");
-    const char *path = NULL;
-    if (strcmp(kind, "file") == 0 || strcmp(kind, "directory") == 0) {
-        undo->kind = strcmp(kind, "file") == 0 ? UNDO_BY_REMOVING_FILE : UNDO_BY_REMOVING_DIRECTORY;
-        path = text_of(entry, "path");
-    } else if (is_created_json_file(entry)) {
-        undo->kind = UNDO_BY_REMOVING_FILE;
-        path = text_of(entry, "file");
-    }
-    spisor_status prepared = path == NULL ? SPISOR_OK : spisor_prepare_path(path, &undo->removal);
-    if (prepared == SPISOR_REFUSED) {
+    spisor_status prepared = prepare_kind_undo(entry, undo);
+    if (prepared != SPISOR_OK) {
+        release_undo(undo);
+        memset(undo, 0, sizeof *undo);
         undo->kind = UNDO_BY_REVERSAL;
-        prepared = SPISOR_OK;
     }
-    return prepared;
+    return prepared == SPISOR_REFUSED ? SPISOR_OK : prepared;
 }
 
-/** @implNote A change that edits what was there before, rather than creating it, is undone by its kind's reversal. */
 static int is_undone(const cJSON *entry, const prepared_undo *undo) {
-    if (undo->kind == UNDO_BY_REMOVING_FILE) {
+    switch (undo->kind) {
+    case UNDO_BY_REMOVING_FILE:
         return spisor_remove_prepared_file(&undo->removal);
-    }
-    if (undo->kind == UNDO_BY_REMOVING_DIRECTORY) {
+    case UNDO_BY_REMOVING_DIRECTORY:
         return spisor_remove_prepared_directory(&undo->removal);
+    case UNDO_BY_RESTORING_FILE:
+        return spisor_replace_prepared(&undo->restoration, undo->previous, undo->previous_length);
+    case UNDO_BY_TRUNCATING_FILE:
+        return spisor_truncate_prepared_file(&undo->removal, undo->previous_length);
+    case UNDO_BY_RESTORING_PATH:
+        return runtime_path_entry_restore(&undo->path);
+    default:
+        break;
     }
     runtime_change_note ignored = {""};
     return runtime_change_reverse(entry, 0, &ignored) == RUNTIME_CHANGE_REVERSED;
@@ -368,7 +439,7 @@ static void perform_recorded(apply_session *session, cJSON *entry) {
         return;
     }
     perform_prepared(session, entry, &undo);
-    spisor_release_prepared_path(&undo.removal);
+    release_undo(&undo);
 }
 
 static int set_counter(cJSON *registration, long next) {

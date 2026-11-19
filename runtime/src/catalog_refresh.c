@@ -15,7 +15,7 @@
 #include "catalog_text.h"
 #include "allocation.h"
 #include "catalog_time.h"
-#include "directory_tree.h"
+#include "prepared_undo.h"
 #include "json_service.h"
 #include "runtime/fetch.h"
 #include "paths.h"
@@ -246,7 +246,7 @@ static cJSON *settle_stored(const check_order *order, const runtime_fetch_get_an
     size_t length = 0;
     int out_of_memory;
     uint8_t *bytes = read_index(download, &length, &out_of_memory);
-    runtime_remove_file_entry(download);
+    spisor_remove_file_in_place(download);
     if (bytes == NULL) {
         return out_of_memory ? NULL
                              : answer_failed(order->location, " could not be checked: ",

@@ -12,6 +12,7 @@
 #include "cache_refusal.h"
 #include "catalog_text.h"
 #include "directory_tree.h"
+#include "prepared_undo.h"
 #include "runtime/fetch.h"
 #include "followed_entry.h"
 #include "file_times.h"
@@ -380,7 +381,7 @@ static cJSON *build_staged(const acquisition *runtime) {
         return refusal != NULL ? refusal : runtime_refusal("the runtime archive could not be fetched", AGAIN_FIX);
     }
     refusal = unpack(runtime);
-    runtime_remove_file_entry(runtime->staged.archive);
+    spisor_remove_file_in_place(runtime->staged.archive);
     if (refusal == NULL && !write_marker(runtime)) {
         refusal = refused("the runtime's marker could not be written: ", runtime->staged.marker, CACHE_FIX);
     }

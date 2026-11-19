@@ -138,6 +138,20 @@ runtime_change_presence runtime_path_entry_is_on_disk(const cJSON *record) {
     return presence;
 }
 
+spisor_status runtime_path_entry_prepare_undo(runtime_path_entry_undo *undo) {
+    undo->present = 0;
+    return SPISOR_OK;
+}
+
+int runtime_path_entry_restore(const runtime_path_entry_undo *undo) {
+    (void)undo;
+    return 1;
+}
+
+void runtime_path_entry_release_undo(runtime_path_entry_undo *undo) {
+    (void)undo;
+}
+
 /**
  * @implNote The profile lines are the children, recorded after the path-entry and so reversed before
  * it, each under its own reference count; the path-entry itself has nothing left to undo.

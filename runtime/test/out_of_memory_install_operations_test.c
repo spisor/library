@@ -675,6 +675,10 @@ static int holders_unchanged_unless_ok(void) {
     if (!kept) {
         fprintf(stderr, "processes: an answer of %d changed the holders file\n", (int)last_status);
     }
+    if (kept && exists_in(base.state, "processes/" BACKGROUND_HOST ".lock")) {
+        fprintf(stderr, "processes: an answer of %d left the holders locked\n", (int)last_status);
+        kept = 0;
+    }
     return kept;
 }
 

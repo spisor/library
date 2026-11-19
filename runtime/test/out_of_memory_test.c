@@ -366,11 +366,27 @@ static spisor_status fetch_a_file(void) {
     return status;
 }
 
-/** Whether a get left nothing at its destination. */
+/** Whether no file stands anywhere under directory, which need not exist. */
+static int holds_no_file(const char *directory) {
+    runtime_directory_listing listing;
+    if (runtime_list_directory(directory, &listing) != SPISOR_OK) {
+        return 1;
+    }
+    int none = 1;
+    for (size_t index = 0; none && index < listing.count; index++) {
+        char path[1600];
+        snprintf(path, sizeof path, "%s/%s", directory, listing.entries[index].name);
+        none = listing.entries[index].is_directory && holds_no_file(path);
+    }
+    runtime_free_directory_listing(&listing);
+    return none;
+}
+
+/** Whether a get left nothing in the destination's folder, neither the file nor its partial download. */
 static int fetched_nothing(void) {
-    char destination[1400];
-    snprintf(destination, sizeof destination, "%s/fetched/settings.json", place.base);
-    return spisor_probe_file(destination) != SPISOR_FILE_PRESENT;
+    char folder[1400];
+    snprintf(folder, sizeof folder, "%s/fetched", place.base);
+    return holds_no_file(folder);
 }
 
 static spisor_status find_on_path(void) {
@@ -471,13 +487,23 @@ static spisor_status reverse_a_change(void) {
     return status;
 }
 
-/** Whether host's registration holds at most `count` changes. */
+/**
+ * Whether host's registration holds at most `count` applied changes.
+ *
+ * @implNote A pending record may stay: an undo that memory kept from storing its withdrawal leaves one, which the next
+ * apply settles against the file.
+ */
 static int holds_at_most(const char *host, int count) {
     cJSON *registration = NULL;
     CHECK(runtime_registry_load(place.state, host, &registration) == RUNTIME_REGISTRY_OK);
-    int held = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(registration, "changes")) <= count;
+    int applied = 0;
+    const cJSON *change;
+    cJSON_ArrayForEach(change, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(change, "state"));
+        applied += state != NULL && strcmp(state, "applied") == 0;
+    }
     cJSON_Delete(registration);
-    return held;
+    return applied <= count;
 }
 
 /** Whether the file still holds what it held before the apply. */

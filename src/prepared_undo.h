@@ -37,6 +37,15 @@ int spisor_remove_prepared_directory(const spisor_prepared_path *prepared);
 /** Renames the file from over to, replacing it, allocating nothing: whether it was moved. */
 int spisor_move_prepared_file(const spisor_prepared_path *from, const spisor_prepared_path *to);
 
+/** Hard-links the file at existing to linked, never replacing one there, allocating nothing: whether it was linked. */
+int spisor_link_prepared_file(const spisor_prepared_path *existing, const spisor_prepared_path *linked);
+
+/** Reads at most capacity bytes of the prepared file, allocating nothing: whether it was read, *length the bytes. */
+int spisor_read_prepared_file(const spisor_prepared_path *prepared, uint8_t *buffer, size_t capacity, size_t *length);
+
+/** Cuts the prepared file back to its first length bytes, links followed, allocating nothing: whether it was. */
+int spisor_truncate_prepared_file(const spisor_prepared_path *prepared, uint64_t length);
+
 /** Releases what was prepared; a path never prepared, or released already, holds nothing. */
 void spisor_release_prepared_path(spisor_prepared_path *prepared);
 
