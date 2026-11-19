@@ -7,9 +7,10 @@
 #include "cJSON.h"
 
 /**
- * marketplace.sources: {settings} answers {sources, skipped} from the setting marketplaces, an array of {id, url} where
- * url is a file: or https: url, or of {id, provider} where provider names a plugin the host asks for the copy. A source
- * with a url answers {id, url} and one with a provider answers {id, provider}, which this library never fetches.
+ * marketplace.sources: answers {sources, skipped} from the marketplaces setting of the merged settings object, an array
+ * of {id, url} where url is a file: or https: url, or of {id, provider} where provider names a plugin the host asks for
+ * the copy. A source with a url answers {id, url} and one with a provider answers {id, provider}, which this library
+ * never fetches.
  *
  * An id is the "marketplace" of marketplace/name, so it must be an import name. An entry that is no object, has an id
  * that is no import name, or has not exactly one of a usable url and a provider is left out and listed in skipped as
@@ -19,6 +20,6 @@
 /** Whether url is a file: or https: url with something after the scheme, the only kinds a source may name. */
 int runtime_marketplace_is_usable_url(const char *url);
 
-cJSON *runtime_marketplace_sources_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_marketplace_sources(const cJSON *settings, cJSON **refusal);
 
 #endif

@@ -17,14 +17,6 @@
 #define STORE_FORMAT 1
 #define MESSAGE_SIZE 2048
 
-typedef struct remembered_name {
-    const char *state;
-    const char *marketplace;
-    const char *name;
-    const char *id;
-    const char *accept;
-    int is_recording;
-} remembered_name;
 
 static cJSON *refuse(cJSON **refusal, const char *fix, const char *format, ...) {
     char message[MESSAGE_SIZE];
@@ -41,20 +33,16 @@ static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_IsString(value) && value->valuestring[0] != '\0' ? value->valuestring : NULL;
 }
 
-static int reads_request(const cJSON *argument, remembered_name *request, cJSON **refusal) {
-    request->state = text_of(argument, "state");
-    request->marketplace = text_of(argument, "marketplace");
-    request->name = text_of(argument, "name");
-    request->id = text_of(argument, "id");
-    request->accept = text_of(argument, "accept");
-    const cJSON *recording = cJSON_GetObjectItemCaseSensitive(argument, "record");
-    request->is_recording = recording == NULL || cJSON_IsTrue(recording);
-    if (request->state == NULL || !runtime_is_usable_home(request->state) || request->name == NULL || request->id == NULL ||
-        (cJSON_GetObjectItemCaseSensitive(argument, "marketplace") != NULL && request->marketplace == NULL) ||
-        (cJSON_GetObjectItemCaseSensitive(argument, "accept") != NULL && request->accept == NULL) ||
-        (recording != NULL && !cJSON_IsBool(recording))) {
-        refuse(refusal, "send {state, name, id} and, when they are known, marketplace, accept and record",
-               "the argument carries no usable state, name or id, or a marketplace, accept or record that is not usable");
+static int is_text(const char *text) {
+    return text != NULL && text[0] != '\0';
+}
+
+static int is_usable_request(const runtime_marketplace_remember_request *request, cJSON **refusal) {
+    if (!is_text(request->state) || !runtime_is_usable_home(request->state) || !is_text(request->name) ||
+        !is_text(request->id) || (request->marketplace != NULL && !is_text(request->marketplace)) ||
+        (request->accept != NULL && !is_text(request->accept))) {
+        refuse(refusal, "pass state, name and id and, when they are known, marketplace and accept",
+               "the call carries no usable state, name or id, or a marketplace or accept that is not usable");
         return 0;
     }
     return 1;
@@ -131,7 +119,7 @@ static spisor_status writes_store(const cJSON *store, const char *state, const c
     return written;
 }
 
-static char *qualified_name(const remembered_name *request) {
+static char *qualified_name(const runtime_marketplace_remember_request *request) {
     if (request->marketplace == NULL) {
         size_t bare_length = strlen(request->name) + 1;
         char *bare = spisor_memory_allocate(bare_length);
@@ -182,7 +170,8 @@ static int records_id(cJSON *store, const char *key, const char *id) {
     return cJSON_AddStringToObject(names, key, id) != NULL;
 }
 
-static cJSON *settled_answer(cJSON *store, const remembered_name *request, const char *key, const char *path, cJSON **refusal) {
+static cJSON *settled_answer(cJSON *store, const runtime_marketplace_remember_request *request, const char *key,
+                             const char *path, cJSON **refusal) {
     const char *was = text_of(cJSON_GetObjectItemCaseSensitive(store, "names"), key);
     int is_remembered = was != NULL && strcmp(was, request->id) == 0;
     int is_accepted = was != NULL && request->accept != NULL && strcmp(request->accept, request->id) == 0;
@@ -209,15 +198,15 @@ static cJSON *settled_answer(cJSON *store, const remembered_name *request, const
     return answer;
 }
 
-cJSON *runtime_marketplace_remember_operation(const cJSON *argument, cJSON **refusal) {
-    remembered_name request;
-    if (!reads_request(argument, &request, refusal)) {
+cJSON *runtime_marketplace_remember(const runtime_marketplace_remember_request *request, cJSON **refusal) {
+    *refusal = NULL;
+    if (!is_usable_request(request, refusal)) {
         return NULL;
     }
-    char *path = store_path(request.state);
-    char *key = qualified_name(&request);
+    char *path = store_path(request->state);
+    char *key = qualified_name(request);
     cJSON *store = path == NULL || key == NULL ? NULL : loaded_store(path, refusal);
-    cJSON *answer = store == NULL ? NULL : settled_answer(store, &request, key, path, refusal);
+    cJSON *answer = store == NULL ? NULL : settled_answer(store, request, key, path, refusal);
     cJSON_Delete(store);
     spisor_memory_release(key);
     spisor_memory_release(path);

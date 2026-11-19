@@ -16,15 +16,6 @@
 #define MESSAGE_SIZE 1024
 #define GITHUB_HOST "github.com"
 
-typedef struct build_request {
-    const cJSON *list;
-    const char *built;
-    const char *api_base;
-    const char *token;
-    const char *token_host;
-    const cJSON *previous;
-} build_request;
-
 static void refuse_with(cJSON **refusal, const char *fix, const char *format, const char *first, const char *second,
                         const char *third) {
     char message[MESSAGE_SIZE];
@@ -37,37 +28,15 @@ static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_IsString(value) ? value->valuestring : NULL;
 }
 
-static int read_api_base(const cJSON *argument, const char **api_base, cJSON **refusal) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "apiBase");
-    if (item != NULL && !cJSON_IsString(item)) {
-        *refusal = runtime_refusal("apiBase is not text", "leave apiBase out: the host's own API address is used");
-        return 0;
-    }
-    *api_base = item == NULL ? NULL : item->valuestring;
-    return 1;
-}
-
-static int read_token(const cJSON *argument, const char **token, cJSON **refusal) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "token");
-    if (item != NULL && !cJSON_IsString(item)) {
-        *refusal = runtime_refusal("token is not text", "leave token out, or send the access token itself");
-        return 0;
-    }
-    *token = item == NULL ? NULL : item->valuestring;
-    return 1;
-}
-
-static int read_token_host(const cJSON *argument, const char **token_host, cJSON **refusal) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "tokenHost");
-    if (item != NULL && (!cJSON_IsString(item) || item->valuestring[0] == '\0')) {
+static int check_token_host(const char *token_host, cJSON **refusal) {
+    if (token_host != NULL && token_host[0] == '\0') {
         *refusal = runtime_refusal("tokenHost is not a host name", "send the host the token belongs to, such as github.com");
         return 0;
     }
-    *token_host = item == NULL ? NULL : item->valuestring;
     return 1;
 }
 
-static int check_token_is_usable(const build_request *request, cJSON **refusal) {
+static int check_token_is_usable(const runtime_marketplace_build_request *request, cJSON **refusal) {
     if (request->token == NULL) {
         return 1;
     }
@@ -83,10 +52,9 @@ static int check_token_is_usable(const build_request *request, cJSON **refusal) 
     return 1;
 }
 
-static int read_previous(const cJSON *argument, const cJSON **previous, cJSON **refusal) {
+static int check_previous(const cJSON *previous, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
-    *previous = cJSON_GetObjectItemCaseSensitive(argument, "previous");
-    if (*previous != NULL && !runtime_marketplace_check_copy(*previous, problem, sizeof problem)) {
+    if (previous != NULL && !runtime_marketplace_check_copy(previous, problem, sizeof problem)) {
         refuse_with(refusal, "send the copy this build replaces as marketplace-copy.schema.json describes it, or leave previous out",
                     "previous is not a marketplace copy: %s", problem, "", "");
         return 0;
@@ -94,13 +62,10 @@ static int read_previous(const cJSON *argument, const cJSON **previous, cJSON **
     return 1;
 }
 
-static int read_request(const cJSON *argument, build_request *request, cJSON **refusal) {
+static int is_usable_request(const runtime_marketplace_build_request *request, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
-    request->list = cJSON_GetObjectItemCaseSensitive(argument, "list");
-    request->built = text_of(argument, "built");
-    if (!read_api_base(argument, &request->api_base, refusal) || !read_token(argument, &request->token, refusal) ||
-        !read_token_host(argument, &request->token_host, refusal) || !check_token_is_usable(request, refusal) ||
-        !read_previous(argument, &request->previous, refusal)) {
+    if (!check_token_host(request->token_host, refusal) || !check_token_is_usable(request, refusal) ||
+        !check_previous(request->previous, refusal)) {
         return 0;
     }
     if (request->built == NULL || !runtime_marketplace_is_built_time(request->built)) {
@@ -191,7 +156,7 @@ static int check_ids_are_on_token_host(const cJSON *entries, const char *token_h
     return 1;
 }
 
-static cJSON *resolve_argument(const char *id, const build_request *request) {
+static cJSON *resolve_argument(const char *id, const runtime_marketplace_build_request *request) {
     cJSON *argument = cJSON_CreateObject();
     if (argument == NULL || cJSON_AddStringToObject(argument, "id", id) == NULL ||
         (request->api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", request->api_base) == NULL) ||
@@ -212,7 +177,7 @@ typedef struct lookup_result {
     long status;
 } lookup_result;
 
-static lookup_result resolved(const char *repository_id, const build_request *request) {
+static lookup_result resolved(const char *repository_id, const runtime_marketplace_build_request *request) {
     lookup_result result = {NULL, "", 0};
     cJSON *lookup_refusal = NULL;
     cJSON *argument = resolve_argument(repository_id, request);
@@ -347,7 +312,8 @@ static const cJSON *previous_entry_of(const cJSON *previous, const char *id) {
 }
 
 /** An entry whose repository could not be looked up: the previous copy's entry unchanged when it has one, otherwise skipped. */
-static entry_result left_unlooked(const build_request *request, const cJSON *entry, const char *reason, cJSON *skipped) {
+static entry_result left_unlooked(const runtime_marketplace_build_request *request, const cJSON *entry,
+                                  const char *reason, cJSON *skipped) {
     entry_result result = {ENTRY_FAILED, NULL, 0};
     const char *id = text_of(entry, "id");
     const cJSON *kept = previous_entry_of(request->previous, id);
@@ -386,7 +352,7 @@ static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *
 }
 
 /** The copy of one list entry as its repository is now; one that cannot be looked up is carried over or skipped. */
-static entry_result copied_entry(const build_request *request, const cJSON *entry, cJSON *skipped) {
+static entry_result copied_entry(const runtime_marketplace_build_request *request, const cJSON *entry, cJSON *skipped) {
     entry_result result = {ENTRY_FAILED, NULL, 0};
     char *repository_id = repository_id_of(text_of(entry, "id"));
     lookup_result found = {NULL, "", 0};
@@ -437,7 +403,8 @@ static void refuse_empty_copy(const cJSON *skipped, int is_every_entry_rate_limi
                                             : "fix the reasons named, or remove the ids that no longer resolve from the list; nothing was written");
 }
 
-static cJSON *copied_entries(const build_request *request, const cJSON *entries, cJSON *skipped, cJSON **refusal) {
+static cJSON *copied_entries(const runtime_marketplace_build_request *request, const cJSON *entries, cJSON *skipped,
+                             cJSON **refusal) {
     cJSON *copied = cJSON_CreateArray();
     int rate_limited_count = 0;
     for (const cJSON *entry = entries->child; copied != NULL && entry != NULL; entry = entry->next) {
@@ -460,7 +427,7 @@ static cJSON *copied_entries(const build_request *request, const cJSON *entries,
     return copied;
 }
 
-static cJSON *copy_of(const build_request *request, cJSON *entries) {
+static cJSON *copy_of(const runtime_marketplace_build_request *request, cJSON *entries) {
     cJSON *copy = cJSON_CreateObject();
     const cJSON *title = cJSON_GetObjectItemCaseSensitive(request->list, "title");
     if (copy == NULL || cJSON_AddNumberToObject(copy, "format", 1) == NULL ||
@@ -485,20 +452,21 @@ static cJSON *answer_of(cJSON *copy, cJSON *skipped) {
     return answer;
 }
 
-cJSON *runtime_marketplace_build_operation(const cJSON *argument, cJSON **refusal) {
-    build_request request;
-    if (!read_request(argument, &request, refusal)) {
+cJSON *runtime_marketplace_build(const runtime_marketplace_build_request *request, cJSON **refusal) {
+    *refusal = NULL;
+    if (!is_usable_request(request, refusal)) {
         return NULL;
     }
-    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(request.list, "entries");
-    if (!check_listed_ids(entries, refusal) || (request.token != NULL && !check_ids_are_on_token_host(entries, request.token_host, refusal))) {
+    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(request->list, "entries");
+    if (!check_listed_ids(entries, refusal) ||
+        (request->token != NULL && !check_ids_are_on_token_host(entries, request->token_host, refusal))) {
         return NULL;
     }
     cJSON *skipped = cJSON_CreateArray();
-    cJSON *copied = skipped == NULL ? NULL : copied_entries(&request, entries, skipped, refusal);
+    cJSON *copied = skipped == NULL ? NULL : copied_entries(request, entries, skipped, refusal);
     if (copied == NULL) {
         cJSON_Delete(skipped);
         return NULL;
     }
-    return answer_of(copy_of(&request, copied), skipped);
+    return answer_of(copy_of(request, copied), skipped);
 }

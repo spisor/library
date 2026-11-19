@@ -7,7 +7,20 @@
 #include "cJSON.h"
 
 /**
- * marketplace.build: {list, built, token?, tokenHost?, previous?, apiBase?} answers {copy, skipped}, the generated copy of a marketplace list that
+ * What marketplace.build builds: list, at the time built, replacing previous, a copy, or NULL; token, or NULL, is sent
+ * only to token_host, and api_base, or NULL, replaces each host's API root.
+ */
+typedef struct runtime_marketplace_build_request {
+    const cJSON *list;
+    const char *built;
+    const char *api_base;
+    const char *token;
+    const char *token_host;
+    const cJSON *previous;
+} runtime_marketplace_build_request;
+
+/**
+ * marketplace.build: answers {copy, skipped}, the generated copy of a marketplace list that
  * marketplace.schema.json describes. Each entry carries the fullName and lastKnown (the same) that identity.resolve
  * answers for the repo its id names, and a name: the list's alias when one is set, otherwise the repo's name, or the
  * last segment of the folder when the id names a folder below the repo, derived as an import name. The list's
@@ -35,6 +48,6 @@
  * @implNote Names are compared as written, since an import name is lowercase. A repo is looked up by the id up to its
  * folder, so a renamed repo never changes the list.
  */
-cJSON *runtime_marketplace_build_operation(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_marketplace_build(const runtime_marketplace_build_request *request, cJSON **refusal);
 
 #endif

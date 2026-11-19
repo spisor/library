@@ -14,7 +14,9 @@
 #include "host_service.h"
 #include "identity_resolve.h"
 #include "json_service.h"
-#include "marketplace_build.h"
+#include "host_definition.h"
+#include "json_value.h"
+#include "runtime/marketplace.h"
 #include "marketplace_lookup.h"
 #include "paths.h"
 #include "spisor/file.h"
@@ -54,26 +56,61 @@ typedef struct build_inputs {
     const char *token_host;
 } build_inputs;
 
-static int adds_text(cJSON *argument, const char *member, const char *text) {
-    return text == NULL || cJSON_AddStringToObject(argument, member, text) != NULL;
-}
-
-static int adds_copy_of(cJSON *argument, const char *member, const cJSON *value) {
-    return value == NULL || cJSON_AddItemToObject(argument, member, cJSON_Duplicate(value, 1));
-}
-
-static cJSON *build_argument(const build_inputs *inputs, const char *built) {
-    cJSON *argument = cJSON_CreateObject();
-    int is_built = argument != NULL && cJSON_AddStringToObject(argument, "built", built) != NULL &&
-                   adds_text(argument, "apiBase", host_marketplace_lookup_api_base()) &&
-                   adds_text(argument, "token", inputs->token) && adds_text(argument, "tokenHost", inputs->token_host) &&
-                   adds_copy_of(argument, "list", inputs->list) &&
-                   adds_copy_of(argument, "previous", inputs->previous);
-    if (!is_built) {
-        runtime_delete_secret_json(argument);
-        argument = NULL;
+/** The entries a build left out, as {id, reason} rows; NULL when memory runs out. */
+static cJSON *skipped_rows(const runtime_marketplace_build_answer *answer) {
+    cJSON *rows = cJSON_CreateArray();
+    for (size_t index = 0; rows != NULL && index < answer->skipped_count; index++) {
+        cJSON *row = cJSON_CreateObject();
+        if (row == NULL || cJSON_AddStringToObject(row, "id", answer->skipped[index].id) == NULL ||
+            cJSON_AddStringToObject(row, "reason", answer->skipped[index].reason) == NULL ||
+            !cJSON_AddItemToArray(rows, row)) {
+            cJSON_Delete(row);
+            cJSON_Delete(rows);
+            rows = NULL;
+        }
     }
-    return argument;
+    return rows;
+}
+
+/** The copy marketplace's build answered, as JSON with *skipped its rows; NULL when memory runs out. */
+static cJSON *copy_of(const runtime_marketplace_build_answer *answer, cJSON **skipped) {
+    cJSON *copy = NULL;
+    *skipped = skipped_rows(answer);
+    if (*skipped != NULL && spisor_json_of_value(answer->copy, &copy) != SPISOR_OK) {
+        cJSON_Delete(*skipped);
+        *skipped = NULL;
+    }
+    return copy;
+}
+
+/** Builds through marketplace's definition from the inputs, which hold the list and the copy it replaces as JSON. */
+static cJSON *copy_built(const build_inputs *inputs, const char *built, cJSON **skipped, cJSON **refusal) {
+    const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
+    runtime_marketplace_build_argument argument = SPISOR_INIT(runtime_marketplace_build_argument);
+    runtime_marketplace_build_answer answer = SPISOR_INIT(runtime_marketplace_build_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    spisor_value_tree list = SPISOR_INIT(spisor_value_tree);
+    spisor_value_tree previous = SPISOR_INIT(spisor_value_tree);
+    spisor_status status = spisor_value_of_json(inputs->list, &list);
+    if (status == SPISOR_OK && inputs->previous != NULL) {
+        status = spisor_value_of_json(inputs->previous, &previous);
+    }
+    argument.list = &list.root;
+    argument.built = built;
+    argument.previous = inputs->previous == NULL ? NULL : &previous.root;
+    argument.token = inputs->token;
+    argument.token_host = inputs->token_host;
+    argument.api_base = host_marketplace_lookup_api_base();
+    if (status == SPISOR_OK) {
+        status = marketplace->build(marketplace->context, &argument, &answer, &declined);
+        *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
+    }
+    cJSON *copy = status == SPISOR_OK ? copy_of(&answer, skipped) : NULL;
+    marketplace->release_build_answer(marketplace->context, &answer);
+    marketplace->release_refusal(marketplace->context, &declined);
+    spisor_value_release(&previous);
+    spisor_value_release(&list);
+    return copy;
 }
 
 static cJSON *built_copy(const build_inputs *inputs, cJSON **skipped, cJSON **refusal) {
@@ -82,14 +119,8 @@ static cJSON *built_copy(const build_inputs *inputs, cJSON **skipped, cJSON **re
         *refusal = runtime_refusal("the current time could not be read", "check the machine's clock");
         return NULL;
     }
-    cJSON *argument = build_argument(inputs, built);
     *refusal = NULL;
-    cJSON *answer = argument == NULL ? NULL : runtime_marketplace_build_operation(argument, refusal);
-    runtime_delete_secret_json(argument);
-    cJSON *copy = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "copy");
-    *skipped = answer == NULL ? NULL : cJSON_DetachItemFromObjectCaseSensitive(answer, "skipped");
-    cJSON_Delete(answer);
-    return copy;
+    return copy_built(inputs, built, skipped, refusal);
 }
 
 static int write_copy(const cJSON *copy, const char *path) {

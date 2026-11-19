@@ -4,7 +4,6 @@
 
 #include "answer_storage.h"
 #include "definition_support.h"
-#include "json_service.h"
 #include "json_value.h"
 #include "marketplace_build.h"
 #include "marketplace_memory.h"
@@ -24,9 +23,6 @@
 #define COPY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_copy_answer, storage)
 #define LOOKUP_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_lookup_answer, storage)
 #define REMEMBER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_remember_answer, storage)
-
-/** What fills a definition's answer from the JSON its operation answered; any status but OK leaves it to release. */
-typedef spisor_status (*answer_filler)(const cJSON *answered, void *answer);
 
 /** The MALFORMED refusal for an argument lacking `what`, or holding it as a value that is no well-formed record. */
 static spisor_status refuse_missing(spisor_refusal *refusal, const char *what) {
@@ -59,29 +55,12 @@ static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
 }
 
-/**
- * Serves `call`, which it deletes, filling the answer of `shape` bytes through `fill`. The call's texts are overwritten
- * before it is freed, since a build's carries an access token.
- */
-static spisor_status serve(runtime_json_operation operation, cJSON *call, answer_filler fill, void *answer,
-                           size_t shape, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = operation(call, &operation_refusal);
-    runtime_delete_secret_json(call);
-    spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal) : fill(answered, answer);
-    if (answered != NULL && status != SPISOR_OK) {
-        runtime_release_stored_answer(answer, shape);
-    }
-    cJSON_Delete(answered);
-    return status;
-}
-
 /** The call's own status once built: MALFORMED refused naming what, OUT_OF_MEMORY with the call deleted. */
 static spisor_status call_built(spisor_status status, cJSON **call, spisor_refusal *refusal, const char *what) {
     if (status == SPISOR_OK) {
         return SPISOR_OK;
     }
-    runtime_delete_secret_json(*call);
+    cJSON_Delete(*call);
     *call = NULL;
     return status == SPISOR_MALFORMED ? refuse_missing(refusal, what) : status;
 }
@@ -110,6 +89,21 @@ static spisor_status fill_build(const cJSON *answered, void *answer_space) {
     return SPISOR_OK;
 }
 
+/** Builds from the list and previous copy `call` holds, which it deletes. */
+static spisor_status serve_build(const runtime_marketplace_build_argument *argument, cJSON *call,
+                                 runtime_marketplace_build_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    runtime_marketplace_build_request request = {cJSON_GetObjectItemCaseSensitive(call, "list"),
+                                                 argument->built,
+                                                 argument->api_base,
+                                                 argument->token,
+                                                 argument->token_host,
+                                                 cJSON_GetObjectItemCaseSensitive(call, "previous")};
+    cJSON *answered = runtime_marketplace_build(&request, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_build, answer, BUILD_ANSWER_SHAPE, refusal);
+}
+
 static spisor_status build(void *context, const runtime_marketplace_build_argument *argument,
                            runtime_marketplace_build_answer *answer, spisor_refusal *refusal) {
     cJSON *call;
@@ -127,17 +121,14 @@ static spisor_status build(void *context, const runtime_marketplace_build_argume
                                  "send token_host, such as github.com, with the token, or neither");
     }
     call = cJSON_CreateObject();
-    if (call != NULL && add_text(call, "built", argument->built) && add_text(call, "token", argument->token) &&
-        add_text(call, "tokenHost", argument->token_host) && add_text(call, "apiBase", argument->api_base)) {
+    if (call != NULL) {
         status = add_record(call, "list", argument->list);
     }
     if (status == SPISOR_OK) {
         status = add_record(call, "previous", argument->previous);
     }
     status = call_built(status, &call, refusal, "list or previous copy");
-    return status == SPISOR_OK ? serve(runtime_marketplace_build_operation, call, fill_build, answer,
-                                       BUILD_ANSWER_SHAPE, refusal)
-                               : status;
+    return status == SPISOR_OK ? serve_build(argument, call, answer, refusal) : status;
 }
 
 static spisor_status fill_sources(const cJSON *answered, void *answer_space) {
@@ -176,6 +167,15 @@ static spisor_status fill_sources(const cJSON *answered, void *answer_space) {
     return SPISOR_OK;
 }
 
+/** Lists the sources of the settings `call` holds, which it deletes. */
+static spisor_status serve_sources(cJSON *call, runtime_marketplace_sources_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered = runtime_marketplace_sources(cJSON_GetObjectItemCaseSensitive(call, "settings"),
+                                                  &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
+}
+
 static spisor_status sources(void *context, const runtime_marketplace_sources_argument *argument,
                              runtime_marketplace_sources_answer *answer, spisor_refusal *refusal) {
     cJSON *call;
@@ -193,9 +193,7 @@ static spisor_status sources(void *context, const runtime_marketplace_sources_ar
         status = add_record(call, "settings", argument->settings);
     }
     status = call_built(status, &call, refusal, "settings");
-    return status == SPISOR_OK ? serve(runtime_marketplace_sources_operation, call, fill_sources, answer,
-                                       SOURCES_ANSWER_SHAPE, refusal)
-                               : status;
+    return status == SPISOR_OK ? serve_sources(call, answer, refusal) : status;
 }
 
 static spisor_status fill_copy(const cJSON *answered, void *answer_space) {
@@ -205,8 +203,9 @@ static spisor_status fill_copy(const cJSON *answered, void *answer_space) {
 
 static spisor_status read_source(void *context, const runtime_marketplace_read_argument *argument,
                                  runtime_marketplace_copy_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
-    cJSON *source;
+    runtime_marketplace_read_request request;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, READ_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, COPY_ANSWER_SHAPE)) {
@@ -226,14 +225,9 @@ static spisor_status read_source(void *context, const runtime_marketplace_read_a
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries neither text nor an absolute destination",
                                  "send text, the body already fetched, or destination, an absolute path to download into");
     }
-    call = cJSON_CreateObject();
-    source = call == NULL ? NULL : cJSON_AddObjectToObject(call, "source");
-    if (source == NULL || !add_text(source, "id", argument->id) || !add_text(source, "url", argument->url) ||
-        !add_text(call, "text", argument->text) || !add_text(call, "destination", argument->destination)) {
-        cJSON_Delete(call);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    return serve(runtime_marketplace_read_operation, call, fill_copy, answer, COPY_ANSWER_SHAPE, refusal);
+    request = (runtime_marketplace_read_request){argument->id, argument->url, argument->text, argument->destination};
+    answered = runtime_marketplace_read(&request, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_copy, answer, COPY_ANSWER_SHAPE, refusal);
 }
 
 static spisor_status fill_lookup(const cJSON *answered, void *answer_space) {
@@ -275,6 +269,16 @@ static spisor_status add_copies(cJSON *call, const runtime_marketplace_lookup_ar
     return status;
 }
 
+/** Looks name up in the copies `call` holds, which it deletes. */
+static spisor_status serve_lookup(cJSON *call, const char *name, runtime_marketplace_lookup_answer *answer,
+                                  spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered =
+        runtime_marketplace_lookup(cJSON_GetObjectItemCaseSensitive(call, "copies"), name, &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_lookup, answer, LOOKUP_ANSWER_SHAPE, refusal);
+}
+
 static spisor_status lookup(void *context, const runtime_marketplace_lookup_argument *argument,
                             runtime_marketplace_lookup_answer *answer, spisor_refusal *refusal) {
     cJSON *call;
@@ -288,13 +292,11 @@ static spisor_status lookup(void *context, const runtime_marketplace_lookup_argu
         return refuse_missing(refusal, "name");
     }
     call = cJSON_CreateObject();
-    if (call != NULL && add_text(call, "name", argument->name)) {
+    if (call != NULL) {
         status = add_copies(call, argument);
     }
     status = call_built(status, &call, refusal, "copies");
-    return status == SPISOR_OK ? serve(runtime_marketplace_lookup_operation, call, fill_lookup, answer,
-                                       LOOKUP_ANSWER_SHAPE, refusal)
-                               : status;
+    return status == SPISOR_OK ? serve_lookup(call, argument->name, answer, refusal) : status;
 }
 
 static spisor_status fill_remember(const cJSON *answered, void *answer_space) {
@@ -319,7 +321,9 @@ static spisor_status fill_remember(const cJSON *answered, void *answer_space) {
  */
 static spisor_status remember(void *context, const runtime_marketplace_remember_argument *argument,
                               runtime_marketplace_remember_answer *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    runtime_marketplace_remember_request request;
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REMEMBER_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, REMEMBER_ANSWER_SHAPE)) {
@@ -331,15 +335,10 @@ static spisor_status remember(void *context, const runtime_marketplace_remember_
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
     }
-    call = cJSON_CreateObject();
-    if (call == NULL || !add_text(call, "state", argument->state) ||
-        !add_text(call, "marketplace", argument->marketplace) || !add_text(call, "name", argument->name) ||
-        !add_text(call, "id", argument->id) || !add_text(call, "accept", argument->accept) ||
-        cJSON_AddBoolToObject(call, "record", argument->check_only == 0) == NULL) {
-        cJSON_Delete(call);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    return serve(runtime_marketplace_remember_operation, call, fill_remember, answer, REMEMBER_ANSWER_SHAPE, refusal);
+    request = (runtime_marketplace_remember_request){argument->state, argument->marketplace, argument->name,
+                                                     argument->id,    argument->accept,      argument->check_only == 0};
+    answered = runtime_marketplace_remember(&request, &operation_refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_remember, answer, REMEMBER_ANSWER_SHAPE, refusal);
 }
 
 static void release_build_answer(void *context, runtime_marketplace_build_answer *answer) {

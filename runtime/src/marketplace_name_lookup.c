@@ -184,14 +184,13 @@ static cJSON *answer_for(const match *matches, size_t count) {
     return distinct_id_count(matches, count) == 1 ? found_answer(&matches[0]) : ambiguous_answer(matches, count);
 }
 
-cJSON *runtime_marketplace_lookup_operation(const cJSON *argument, cJSON **refusal) {
-    const cJSON *copies = cJSON_GetObjectItemCaseSensitive(argument, "copies");
-    const char *name = text_of(argument, "name");
+cJSON *runtime_marketplace_lookup(const cJSON *copies, const char *name, cJSON **refusal) {
+    *refusal = NULL;
     if (!cJSON_IsArray(copies)) {
-        return refuse(refusal, "send copies as an array of {source, copy}", "the argument carries no usable copies");
+        return refuse(refusal, "pass copies as an array of {source, copy}", "the call carries no usable copies");
     }
     if (name == NULL || name[0] == '\0') {
-        return refuse(refusal, "send name as a plugin name, or marketplace/name", "the argument carries no usable name");
+        return refuse(refusal, "pass name as a plugin name, or marketplace/name", "the call carries no usable name");
     }
     wanted_name wanted = wanted_from(name);
     match *matches = NULL;
