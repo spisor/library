@@ -1,0 +1,14 @@
+{
+  "answers": [
+    {
+      "failure": {
+        "message": "the key crosses a value in the settings file that is not an object",
+        "fix": "{home}/config/p.json holds a value that is not an object on the way to \"a.b\"; edit that file by hand"
+      }
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\"a\":5}"
+  }
+}

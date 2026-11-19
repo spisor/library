@@ -1,0 +1,10 @@
+{
+  "answers": [
+    {
+      "value": 3
+    }
+  ],
+  "files": {
+    "config/p.json": "﻿// note\n{\"a\":3}"
+  }
+}

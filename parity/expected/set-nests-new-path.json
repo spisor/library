@@ -1,0 +1,9 @@
+{
+  "answers": [
+    {}
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\n  \"a\": {\n    \"c\": {\n      \"d\": true\n    }\n  }\n}\n"
+  }
+}

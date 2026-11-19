@@ -1,0 +1,13 @@
+{
+  "answers": [
+    {},
+    {
+      "value": 9
+    },
+    {},
+    {}
+  ],
+  "files": {
+    "config/p.json": "{\"list\":[9]}"
+  }
+}

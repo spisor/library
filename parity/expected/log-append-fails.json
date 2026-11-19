@@ -1,0 +1,14 @@
+{
+  "answers": [
+    {
+      "console": "\u001b[33m[p]\u001b[0m \u001b[31mm\u001b[0m"
+    },
+    {
+      "failure": {
+        "message": "the log line could not be appended",
+        "fix": "check that the home's logs directory can be created and written"
+      }
+    }
+  ],
+  "files": {}
+}

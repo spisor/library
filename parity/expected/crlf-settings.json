@@ -1,0 +1,17 @@
+{
+  "answers": [
+    {
+      "value": 2
+    },
+    {},
+    {
+      "console": "\u001b[33m[p]\u001b[0m m"
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\n  \"a\": 2,\n  \"b\": 3\n}\n",
+    "config/settings.json": "{\r\n  \"logConsole\": true\r\n}\r\n",
+    "logs/2026-10-27/p-2026-10-27T19-34-53.log": "[2026-10-27T19:34:53.123Z] [INFO] m\n"
+  }
+}

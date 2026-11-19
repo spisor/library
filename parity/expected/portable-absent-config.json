@@ -1,0 +1,31 @@
+{
+  "answers": [
+    {
+      "value": 1
+    },
+    {
+      "value": 2
+    },
+    {
+      "values": {
+        "x": 1,
+        "y": 2
+      }
+    },
+    {
+      "previous": 2
+    },
+    {},
+    {
+      "values": {
+        "x": 1,
+        "y": 3,
+        "z": true
+      }
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\n  \"y\": 3,\n  \"z\": true\n}\n"
+  }
+}

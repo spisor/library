@@ -1,0 +1,15 @@
+{
+  "answers": [
+    {
+      "previous": 1
+    },
+    {
+      "previous": 2
+    },
+    {}
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\n  \"x\": 3,\n  \"y\": 1\n}\n"
+  }
+}

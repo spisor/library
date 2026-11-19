@@ -1,0 +1,11 @@
+{
+  "answers": [
+    {
+      "console": "\u001b[33m[p]\u001b[0m m"
+    }
+  ],
+  "files": {
+    "config/settings.json": "{\n  \"logConsole\": true,\n  \"logColor\": 0\n}\n",
+    "logs/2026-10-28/p-2026-10-27T19-34-53.log": "[2026-10-28T00:00:01.500Z] [INFO] m\n"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "answers": [
+    {
+      "value": 1
+    }
+  ],
+  "files": {
+    "config/p.json": "{\"x\":1}"
+  }
+}
