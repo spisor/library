@@ -170,7 +170,7 @@ static void refuses_an_answer_without_names(void) {
 }
 
 static void refuses_a_last_known_name_that_is_not_owner_and_name(void) {
-    expect_refused_then_free(resolve("github:9", "o/n9?x=1"), "lastKnown", "unsafe last known");
+    expect_refused_then_free(resolve("github:9", "o/n9?x=1"), "last_known", "unsafe last known");
 }
 
 static void reads_a_gitea_host_through_its_api_root(void) {

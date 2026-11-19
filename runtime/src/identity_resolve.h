@@ -6,19 +6,26 @@
 
 #include "cJSON.h"
 
+/** What identity's resolve looks up: id, with last_known, token and api_base each NULL when absent. */
+typedef struct runtime_identity_lookup_request {
+    const char *id;
+    const char *last_known;
+    const char *token;
+    const char *api_base;
+} runtime_identity_lookup_request;
+
 /**
- * identity's resolve over a JSON argument {id, lastKnown?, token?, apiBase?}: {name, fullName, defaultBranch?} for the
- * repo the id names, or NULL with *refusal set to {message, fix}, or with it NULL when memory runs out. apiBase replaces
- * the host's API root and is refused unless the fetch test hook allows plain http, so only a test can aim a lookup.
- * token is sent as "Authorization: token <token>" to the host the id names and to no other, a redirect to another
- * host included. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without one.
+ * identity's resolve: {name, fullName, defaultBranch?} for the repo the request's id names, or NULL with *refusal set
+ * to {message, fix}, or with it NULL when memory runs out. api_base replaces the host's API root and is refused
+ * unless the fetch test hook allows plain http, so only a test can aim a lookup. token is sent as
+ * "Authorization: token <token>" to the host the id names and to no other, a redirect to another host included. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without one.
  *
  * @implNote A repo is looked up by its number, which survives a rename; a number the host answers with is
  * always compared, as text, with the one asked for. Only when the host cannot answer by number (404, or 401 where
- * it wants a token for that route) is lastKnown asked, and its answer is accepted only when it carries the same
+ * it wants a token for that route) is last_known asked, and its answer is accepted only when it carries the same
  * number, so a name someone else has since taken is refused. A local id has no host and answers from its own text.
  */
-cJSON *runtime_identity_lookup(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_identity_lookup(const runtime_identity_lookup_request *request, cJSON **refusal);
 
 typedef enum runtime_repo_file_status {
     RUNTIME_REPO_FILE_READ,
@@ -32,8 +39,8 @@ typedef enum runtime_repo_file_status {
  * Reads the file at path, from the root of the repo id names, at that repo's default branch, anonymously and within the
  * same body limit as a lookup. READ fills *content, freed, and *length; ABSENT is the host saying the
  * file is not there; TOO_LARGE is a body above the limit. UNAVAILABLE is anything else, a repo that cannot be
- * resolved included, and then *refusal is set to the resolve refusal when that was the cause. apiBase aims the read as it aims
- * identity.resolve.
+ * resolved included, and then *refusal is set to the resolve refusal when that was the cause. api_base aims the read as
+ * it aims identity.resolve.
  *
  * @implNote GitHub's file is read from raw.githubusercontent.com at HEAD, which is the default branch and is not
  * counted against the API's anonymous rate limit; a Gitea or Forgejo host answers the file raw from its API root, and

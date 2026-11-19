@@ -7,10 +7,10 @@
 #define RUNTIME_PRIMARIES_DISAGREE "the copies name different primaries"
 
 /**
- * identity's agree over a JSON argument {id, files}: {ids, primary, primaryConfirmed, startFileMalformed?,
- * startFileUnavailable?} for the repo id names, or NULL with *refusal set, or with it NULL when memory runs out. files
- * maps a repo id to its also-at file, to null when that copy has none, or to false when reading it failed. Pure: it
- * reads nothing, so a caller holding the files can ask it directly.
+ * identity's agree: {ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable?} for the repo id
+ * names, or NULL with *refusal set, or with it NULL when memory runs out. files is an object mapping a repo id to its
+ * also-at file, to null when that copy has none, or to false when reading it failed. Pure: it reads nothing, so a
+ * caller holding the files can ask it directly.
  *
  * @implNote This is the only place the two-sided rule lives: an id is counted only when the file of the id we
  * started from lists it and its own file lists the id we started from. Only the ids the starting file lists are
@@ -23,14 +23,14 @@
  * starting file's are refused, since the set then has no one primary; a named primary no counted copy confirms is
  * answered with primaryConfirmed false.
  */
-cJSON *runtime_identity_agree_on_files(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_identity_agree_on_files(const char *id, const cJSON *files, cJSON **refusal);
 
 /**
- * identity's also_at over a JSON argument {id, apiBase?}: reads `.weivel/also-at.json` at the default branch of the
- * id's repo and of each copy it lists, then answers what runtime_identity_agree_on_files does. A copy that cannot be
- * reached is left out, no refusal; the id itself being unresolvable is refused. apiBase is honoured only as
- * runtime_identity_lookup honours it.
+ * identity's also_at: reads `.weivel/also-at.json` at the default branch of the repo id names and of each copy it
+ * lists, then answers what runtime_identity_agree_on_files does. A copy that cannot be reached is left out, no
+ * refusal; the id itself being unresolvable is refused. api_base, or NULL, is honoured only as runtime_identity_lookup
+ * honours it.
  */
-cJSON *runtime_identity_read_also_at(const cJSON *argument, cJSON **refusal);
+cJSON *runtime_identity_read_also_at(const char *id, const char *api_base, cJSON **refusal);
 
 #endif
