@@ -10,9 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "memory_error.h"
+
 #ifdef SPISOR_FETCH_TEST_HOOKS
 #include "fetch_hooks.h"
-#include "memory_error.h"
 #endif
 
 #define CONNECT_MILLISECONDS 15000L
