@@ -128,7 +128,8 @@ static spisor_status set(void *context, const runtime_config_plugin *plugin, con
     int secret = 0;
     spisor_status status;
     (void)context;
-    if (!is_whole_plugin(plugin) || !RUNTIME_IS_EMPTY_ANSWER(answer, SET_ANSWER_SHAPE)) {
+    if (!is_whole_plugin(plugin) || !runtime_is_whole_change(change) ||
+        !RUNTIME_IS_EMPTY_ANSWER(answer, SET_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "config's set");
     }
     status = plugin_request(plugin, &request, &json, refusal);

@@ -3,3 +3,9 @@ target_include_directories(spisor_vector_reader PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(spisor_vector_reader PUBLIC spisor_library)
 set_target_properties(spisor_vector_reader PROPERTIES SPISOR_TEST_ONLY TRUE)
 spisor_strict_warnings(spisor_vector_reader)
+
+add_library(spisor_definition_calls STATIC EXCLUDE_FROM_ALL definition_calls.c)
+target_include_directories(spisor_definition_calls PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(spisor_definition_calls PUBLIC ${CMAKE_DL_LIBS})
+set_target_properties(spisor_definition_calls PROPERTIES SPISOR_TEST_ONLY TRUE)
+spisor_strict_warnings(spisor_definition_calls)

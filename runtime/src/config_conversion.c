@@ -95,11 +95,15 @@ spisor_status runtime_declarations_json(const runtime_setting_declaration *setti
     return *json == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
+int runtime_is_whole_change(const runtime_settings_change *change) {
+    return change != NULL && runtime_has_shape(change->size, CHANGE_SHAPE);
+}
+
 spisor_status runtime_change_request(const runtime_settings_change *change, runtime_config_request *request,
                                      cJSON **value, spisor_refusal *refusal) {
     spisor_status status = SPISOR_OK;
     *value = NULL;
-    if (change == NULL || !runtime_has_shape(change->size, CHANGE_SHAPE)) {
+    if (!runtime_is_whole_change(change)) {
         return runtime_refuse_shape(refusal, "a set");
     }
     if (!is_known_layer(change->layer)) {

@@ -41,6 +41,9 @@ spisor_status runtime_declarations_json(const runtime_setting_declaration *setti
  * @return OK; MALFORMED for a value of kind NONE or not well-formed, or a layer the settings do not know;
  * OUT_OF_MEMORY.
  */
+/** Whether a change is present and reaches through its first shape. */
+int runtime_is_whole_change(const runtime_settings_change *change);
+
 spisor_status runtime_change_request(const runtime_settings_change *change, runtime_config_request *request,
                                      cJSON **value, spisor_refusal *refusal);
 
