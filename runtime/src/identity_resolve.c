@@ -379,45 +379,37 @@ int runtime_identity_is_token_text(const char *text) {
     return 1;
 }
 
-static int is_token(const cJSON *token) {
-    return cJSON_IsString(token) && runtime_identity_is_token_text(token->valuestring);
-}
-
 long runtime_identity_refusal_status(const cJSON *refusal) {
     const cJSON *message = cJSON_GetObjectItemCaseSensitive(refusal, "message");
     const char *marker = cJSON_IsString(message) ? strstr(message->valuestring, RUNTIME_IDENTITY_STATUS_MARKER) : NULL;
     return marker == NULL ? 0 : strtol(marker + strlen(RUNTIME_IDENTITY_STATUS_MARKER), NULL, 10);
 }
 
-static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parsed, const char *id,
-                             const cJSON *argument, cJSON **refusal) {
-    const cJSON *api_base = cJSON_GetObjectItemCaseSensitive(argument, "apiBase");
-    const cJSON *last_known = cJSON_GetObjectItemCaseSensitive(argument, "lastKnown");
-    const cJSON *token = cJSON_GetObjectItemCaseSensitive(argument, "token");
-    if (token != NULL && !is_token(token)) {
-        return refuse(refusal, "send token as the access token itself, on one line with no spaces",
+static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parsed,
+                             const runtime_identity_lookup_request *request, cJSON **refusal) {
+    if (request->token != NULL && !runtime_identity_is_token_text(request->token)) {
+        return refuse(refusal, "pass token as the access token itself, on one line with no spaces",
                       "the token is not usable");
     }
-    if (api_base != NULL && !runtime_fetch_plain_http_is_allowed()) {
-        return refuse(refusal, "leave apiBase out: the host's own API address is used",
-                      "apiBase is only honoured by the test build");
+    if (request->api_base != NULL && !runtime_fetch_plain_http_is_allowed()) {
+        return refuse(refusal, "pass no api_base: the host's own API address is used",
+                      "api_base is only honoured by the test build");
     }
     if (!host_shape_fits(kind, parsed)) {
-        return refuse_host_shape(kind, parsed, id, refusal);
+        return refuse_host_shape(kind, parsed, request->id, refusal);
     }
-    if ((last_known != NULL && (!cJSON_IsString(last_known) || !is_owner_and_name(last_known->valuestring))) ||
-        (api_base != NULL && (!cJSON_IsString(api_base) || api_base->valuestring[0] == '\0'))) {
-        return refuse(refusal, "send lastKnown as owner/name and apiBase as a non-empty address", "lastKnown or apiBase is not usable");
+    if ((request->last_known != NULL && !is_owner_and_name(request->last_known)) ||
+        (request->api_base != NULL && request->api_base[0] == '\0')) {
+        return refuse(refusal, "pass last_known as owner/name and api_base as a non-empty address",
+                      "last_known or api_base is not usable");
     }
     char root[URL_SIZE / 2];
-    if (!build_root(kind, parsed, api_base == NULL ? NULL : api_base->valuestring, root)) {
+    if (!build_root(kind, parsed, request->api_base, root)) {
         return refuse_too_long(refusal);
     }
     strip_trailing_slashes(root);
     char *asked = copy_part(parsed->number);
-    cJSON *answer = asked == NULL ? NULL
-                                  : resolve_by_number(root, asked, last_known == NULL ? NULL : last_known->valuestring,
-                                                    token == NULL ? NULL : token->valuestring, refusal);
+    cJSON *answer = asked == NULL ? NULL : resolve_by_number(root, asked, request->last_known, request->token, refusal);
     spisor_memory_release(asked);
     return answer;
 }
@@ -428,31 +420,20 @@ static cJSON *resolve_unknown(runtime_identity_part name, cJSON **refusal) {
     return refuse(refusal, fix, "no resolver is built in for %.*s", (int)name.length, name.start);
 }
 
-cJSON *runtime_identity_lookup(const cJSON *argument, cJSON **refusal) {
-    const cJSON *id = cJSON_GetObjectItemCaseSensitive(argument, "id");
-    if (!cJSON_IsString(id)) {
-        return refuse(refusal, "send {\"id\": \"<id>\"}", "the argument carries no id");
+cJSON *runtime_identity_lookup(const runtime_identity_lookup_request *request, cJSON **refusal) {
+    *refusal = NULL;
+    if (request->id == NULL) {
+        return refuse(refusal, "pass the id to look up", "the call carries no id");
     }
     runtime_identity parsed;
-    if (!runtime_identity_parse_id(id->valuestring, &parsed)) {
-        return refuse(refusal, "send an id such as github:<number> or local:<name>", "the id is not valid");
+    if (!runtime_identity_parse_id(request->id, &parsed)) {
+        return refuse(refusal, "pass an id such as github:<number> or local:<name>", "the id is not valid");
     }
     if (is_text("local", parsed.resolver)) {
         return resolve_local(&parsed);
     }
     const resolver *kind = resolver_named(parsed.resolver);
-    return kind == NULL ? resolve_unknown(parsed.resolver, refusal)
-                        : resolve_remote(kind, &parsed, id->valuestring, argument, refusal);
-}
-
-static cJSON *repository_argument(const char *id, const char *api_base) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument == NULL || cJSON_AddStringToObject(argument, "id", id) == NULL ||
-        (api_base != NULL && cJSON_AddStringToObject(argument, "apiBase", api_base) == NULL)) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
+    return kind == NULL ? resolve_unknown(parsed.resolver, refusal) : resolve_remote(kind, &parsed, request, refusal);
 }
 
 static int file_url(const resolver *kind, const runtime_identity *parsed, const char *api_base, const char *full_name,
@@ -525,10 +506,8 @@ int runtime_identity_repo_url(const char *id, const char *api_base, const char *
 }
 
 static cJSON *resolve_repository(const char *id, const char *api_base, cJSON **refusal) {
-    cJSON *argument = repository_argument(id, api_base);
-    cJSON *repository = argument == NULL ? NULL : runtime_identity_lookup(argument, refusal);
-    cJSON_Delete(argument);
-    return repository;
+    runtime_identity_lookup_request request = {id, NULL, NULL, api_base};
+    return runtime_identity_lookup(&request, refusal);
 }
 
 static int still_names_the_same_repository(const char *id, const char *api_base, const cJSON *before) {

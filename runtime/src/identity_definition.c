@@ -113,20 +113,6 @@ static spisor_status folder(void *context, const runtime_identity_id_argument *a
     return SPISOR_OK;
 }
 
-static int add_text(cJSON *object, const char *name, const char *text) {
-    return text == NULL || cJSON_AddStringToObject(object, name, text) != NULL;
-}
-
-static cJSON *lookup_argument(const char *id, const char *last_known, const char *token, const char *api_base) {
-    cJSON *argument = cJSON_CreateObject();
-    if (argument == NULL || !add_text(argument, "id", id) || !add_text(argument, "lastKnown", last_known) ||
-        !add_text(argument, "token", token) || !add_text(argument, "apiBase", api_base)) {
-        runtime_delete_secret_json(argument);
-        return NULL;
-    }
-    return argument;
-}
-
 static const char *text_of(const cJSON *object, const char *name) {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
     return cJSON_IsString(item) ? item->valuestring : NULL;
@@ -145,7 +131,7 @@ static spisor_status fill_repository(const cJSON *found, runtime_identity_reposi
 static spisor_status resolve(void *context, const runtime_identity_resolve_argument *argument,
                              runtime_identity_repository *answer, spisor_refusal *refusal) {
     runtime_identity parsed;
-    cJSON *call;
+    runtime_identity_lookup_request request = {NULL, NULL, NULL, NULL};
     cJSON *found;
     cJSON *found_refusal = NULL;
     spisor_status status;
@@ -161,12 +147,11 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
         return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the token is not usable",
                                  "send token as the access token itself, on one line with no spaces");
     }
-    call = lookup_argument(argument->id, argument->last_known, argument->token, argument->api_base);
-    if (call == NULL) {
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    found = runtime_identity_lookup(call, &found_refusal);
-    runtime_delete_secret_json(call);
+    request.id = argument->id;
+    request.last_known = argument->last_known;
+    request.token = argument->token;
+    request.api_base = argument->api_base;
+    found = runtime_identity_lookup(&request, &found_refusal);
     status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_repository(found, answer);
     cJSON_Delete(found);
     return status;
@@ -208,23 +193,22 @@ static spisor_status add_copy(cJSON *files, const runtime_identity_copy *copy) {
     return status;
 }
 
-/** The argument runtime_identity_agree_on_files reads, NULL with `*status` saying why. */
-static cJSON *agree_json(const runtime_identity_agree_argument *argument, spisor_status *status) {
-    cJSON *call = cJSON_CreateObject();
-    cJSON *files = call == NULL ? NULL : cJSON_AddObjectToObject(call, "files");
-    *status = files != NULL && cJSON_AddStringToObject(call, "id", argument->id) != NULL ? SPISOR_OK
-                                                                                         : SPISOR_OUT_OF_MEMORY;
-    if (*status == SPISOR_OK && argument->copy_count > 0 && argument->copies == NULL) {
-        *status = SPISOR_MALFORMED;
+/** The files runtime_identity_agree_on_files reads, NULL with `*status` saying why. */
+static cJSON *agree_files(const runtime_identity_agree_argument *argument, spisor_status *status) {
+    cJSON *files = NULL;
+    *status = argument->copy_count > 0 && argument->copies == NULL ? SPISOR_MALFORMED : SPISOR_OK;
+    if (*status == SPISOR_OK) {
+        files = cJSON_CreateObject();
+        *status = files == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
     }
     for (size_t index = 0; *status == SPISOR_OK && index < argument->copy_count; index++) {
         *status = add_copy(files, &argument->copies[index]);
     }
     if (*status != SPISOR_OK) {
-        cJSON_Delete(call);
+        cJSON_Delete(files);
         return NULL;
     }
-    return call;
+    return files;
 }
 
 static spisor_status fill_agreement(const cJSON *found, runtime_identity_agreement *answer) {
@@ -241,23 +225,20 @@ static spisor_status fill_agreement(const cJSON *found, runtime_identity_agreeme
     return SPISOR_OK;
 }
 
-typedef cJSON *(*agreement_operation)(const cJSON *argument, cJSON **refusal);
-
-/** Serves `call`, which it deletes, through an operation answering agree's JSON. */
-static spisor_status agree_through(agreement_operation operation, cJSON *call, runtime_identity_agreement *answer,
-                                   spisor_refusal *refusal) {
-    cJSON *found_refusal = NULL;
-    cJSON *found = operation(call, &found_refusal);
+/** Fills answer from what agree or also_at found, which it deletes, or refuses with found_refusal. */
+static spisor_status answer_agreement(cJSON *found, cJSON *found_refusal, runtime_identity_agreement *answer,
+                                      spisor_refusal *refusal) {
     spisor_status status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_agreement(found, answer);
     cJSON_Delete(found);
-    cJSON_Delete(call);
     return status;
 }
 
 static spisor_status agree(void *context, const runtime_identity_agree_argument *argument,
                            runtime_identity_agreement *answer, spisor_refusal *refusal) {
     spisor_status status;
-    cJSON *call;
+    cJSON *files;
+    cJSON *found;
+    cJSON *found_refusal = NULL;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, AGREE_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, AGREEMENT_SHAPE)) {
@@ -266,16 +247,22 @@ static spisor_status agree(void *context, const runtime_identity_agree_argument 
     if (!runtime_identity_is_repo_id(argument->id)) {
         return refuse_repo_id(refusal, "id");
     }
-    call = agree_json(argument, &status);
+    files = agree_files(argument, &status);
     if (status == SPISOR_MALFORMED) {
         return refuse_copies(refusal);
     }
-    return call == NULL ? status : agree_through(runtime_identity_agree_on_files, call, answer, refusal);
+    if (files == NULL) {
+        return status;
+    }
+    found = runtime_identity_agree_on_files(argument->id, files, &found_refusal);
+    cJSON_Delete(files);
+    return answer_agreement(found, found_refusal, answer, refusal);
 }
 
 static spisor_status also_at(void *context, const runtime_identity_also_at_argument *argument,
                              runtime_identity_agreement *answer, spisor_refusal *refusal) {
-    cJSON *call;
+    cJSON *found;
+    cJSON *found_refusal = NULL;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ALSO_AT_SHAPE) ||
         !RUNTIME_IS_EMPTY_ANSWER(answer, AGREEMENT_SHAPE)) {
@@ -284,9 +271,8 @@ static spisor_status also_at(void *context, const runtime_identity_also_at_argum
     if (!runtime_identity_is_repo_id(argument->id)) {
         return refuse_repo_id(refusal, "id");
     }
-    call = lookup_argument(argument->id, NULL, NULL, argument->api_base);
-    return call == NULL ? SPISOR_OUT_OF_MEMORY
-                        : agree_through(runtime_identity_read_also_at, call, answer, refusal);
+    found = runtime_identity_read_also_at(argument->id, argument->api_base, &found_refusal);
+    return answer_agreement(found, found_refusal, answer, refusal);
 }
 
 static spisor_status accepts_version(void *context, const runtime_identity_version_argument *argument,

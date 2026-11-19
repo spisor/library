@@ -161,28 +161,25 @@ static cJSON *agree_on(const char *id, const cJSON *files, cJSON **refusal) {
     return answer;
 }
 
-static const cJSON *repo_id_argument(const cJSON *argument, const char *member, cJSON **refusal) {
-    const cJSON *id = cJSON_GetObjectItemCaseSensitive(argument, member);
-    if (!is_repo_id_item(id)) {
-        char message[128];
-        snprintf(message, sizeof message, "the %s is not the id of a repo", member);
-        *refusal = runtime_refusal(message, "send a repo id such as github:<number>, with no folder and not local");
-        return NULL;
+static int is_usable_repo_id(const char *id, cJSON **refusal) {
+    *refusal = NULL;
+    if (!runtime_identity_is_repo_id(id)) {
+        *refusal = runtime_refusal("the id is not the id of a repo",
+                                   "pass a repo id such as github:<number>, with no folder and not local");
+        return 0;
     }
-    return id;
+    return 1;
 }
 
-cJSON *runtime_identity_agree_on_files(const cJSON *argument, cJSON **refusal) {
-    const cJSON *id = repo_id_argument(argument, "id", refusal);
-    const cJSON *files = cJSON_GetObjectItemCaseSensitive(argument, "files");
-    if (id == NULL) {
+cJSON *runtime_identity_agree_on_files(const char *id, const cJSON *files, cJSON **refusal) {
+    if (!is_usable_repo_id(id, refusal)) {
         return NULL;
     }
     if (!cJSON_IsObject(files)) {
-        *refusal = runtime_refusal("the argument carries no files", "send {\"id\": \"<id>\", \"files\": {\"<id>\": <file or null>}}");
+        *refusal = runtime_refusal("the call carries no files", "pass files as an object mapping each id to its file");
         return NULL;
     }
-    return agree_on(id->valuestring, files, refusal);
+    return agree_on(id, files, refusal);
 }
 
 static cJSON *parsed_file(const uint8_t *content, size_t length) {
@@ -263,22 +260,6 @@ static cJSON *agree_from_hosts(const char *id, const char *api_base, cJSON **ref
     return answer;
 }
 
-/** Whether apiBase is absent or text; *api_base is NULL when absent. */
-static int read_api_base(const cJSON *argument, const char **api_base, cJSON **refusal) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, "apiBase");
-    if (item != NULL && !cJSON_IsString(item)) {
-        *refusal = runtime_refusal("apiBase is not text", "leave apiBase out: the host's own API address is used");
-        return 0;
-    }
-    *api_base = item == NULL ? NULL : item->valuestring;
-    return 1;
-}
-
-cJSON *runtime_identity_read_also_at(const cJSON *argument, cJSON **refusal) {
-    const cJSON *id = repo_id_argument(argument, "id", refusal);
-    const char *api_base = NULL;
-    if (id == NULL || !read_api_base(argument, &api_base, refusal)) {
-        return NULL;
-    }
-    return agree_from_hosts(id->valuestring, api_base, refusal);
+cJSON *runtime_identity_read_also_at(const char *id, const char *api_base, cJSON **refusal) {
+    return is_usable_repo_id(id, refusal) ? agree_from_hosts(id, api_base, refusal) : NULL;
 }

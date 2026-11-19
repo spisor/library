@@ -180,23 +180,9 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
     return body;
 }
 
-static cJSON *resolve_argument(const install_request *request) {
-    cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->repo_id) != NULL &&
-                (request->last_known == NULL || cJSON_AddStringToObject(argument, "lastKnown", request->last_known) != NULL) &&
-                (request->api_base == NULL || cJSON_AddStringToObject(argument, "apiBase", request->api_base) != NULL);
-    if (!built) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    return argument;
-}
-
 static cJSON *resolve_repository(const install_request *request, cJSON **refusal) {
-    cJSON *argument = resolve_argument(request);
-    cJSON *repository = argument == NULL ? NULL : runtime_identity_lookup(argument, refusal);
-    cJSON_Delete(argument);
-    return repository;
+    runtime_identity_lookup_request lookup = {request->repo_id, request->last_known, NULL, request->api_base};
+    return runtime_identity_lookup(&lookup, refusal);
 }
 
 static cJSON *unconfirmed_set(const char *id) {
@@ -217,17 +203,6 @@ static int has_confirmed_primary(const cJSON *set) {
            !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "startFileUnavailable"));
 }
 
-static cJSON *also_at_argument(const install_request *request) {
-    cJSON *argument = cJSON_CreateObject();
-    int built = argument != NULL && cJSON_AddStringToObject(argument, "id", request->repo_id) != NULL &&
-                (request->api_base == NULL || cJSON_AddStringToObject(argument, "apiBase", request->api_base) != NULL);
-    if (!built) {
-        cJSON_Delete(argument);
-        argument = NULL;
-    }
-    return argument;
-}
-
 /**
  * The set the repo's copies agree on. The repo alone, unconfirmed, when its also-at file is unreadable or names a
  * primary nothing confirms; any refusal, copies naming different primaries included, stops the install. NULL with a
@@ -235,9 +210,7 @@ static cJSON *also_at_argument(const install_request *request) {
  */
 static cJSON *verified_set(const install_request *request, cJSON **refusal) {
     cJSON *found_refusal = NULL;
-    cJSON *argument = also_at_argument(request);
-    cJSON *found = argument == NULL ? NULL : runtime_identity_read_also_at(argument, &found_refusal);
-    cJSON_Delete(argument);
+    cJSON *found = runtime_identity_read_also_at(request->repo_id, request->api_base, &found_refusal);
     if (found_refusal != NULL) {
         *refusal = found_refusal;
         return NULL;

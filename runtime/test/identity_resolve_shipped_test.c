@@ -18,7 +18,7 @@ static void refuses_an_api_base_in_the_shipped_library(void) {
     runtime_identity_repository answer = SPISOR_INIT(runtime_identity_repository);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     check_refused(resolve("github:7", "https://attacker.example", &answer, &refusal), SPISOR_REFUSED, &refusal,
-                  "apiBase", "shipped apiBase");
+                  "api_base", "shipped api_base");
     CHECK(answer.storage == NULL);
     identity->release_refusal(identity->context, &refusal);
 }
