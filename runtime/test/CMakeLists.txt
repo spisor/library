@@ -376,6 +376,15 @@ add_dependencies(empty_answer_test runtime)
 spisor_strict_warnings(empty_answer_test)
 add_test(NAME empty_answer_test COMMAND empty_answer_test)
 
+add_executable(parity_test parity_test.c parity_files.c parity_json.c)
+target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(parity_test PRIVATE RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>"
+    PARITY_PATH="${PROJECT_SOURCE_DIR}/parity" PARITY_WORK_PATH="${CMAKE_CURRENT_BINARY_DIR}/parity-work")
+target_link_libraries(parity_test PRIVATE spisor_vector_reader spisor_library spisor_allocator ${CMAKE_DL_LIBS})
+add_dependencies(parity_test runtime)
+spisor_strict_warnings(parity_test)
+add_test(NAME parity_test COMMAND parity_test)
+
 file(READ ${PROJECT_SOURCE_DIR}/runtime/library.json runtime_declaration)
 string(JSON runtime_release_symbol GET "${runtime_declaration}" release)
 if(MSVC)
