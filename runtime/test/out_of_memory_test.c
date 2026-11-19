@@ -1198,8 +1198,13 @@ static void a_bundle_to_deploy(void) {
 }
 
 static int deployed_nothing(void) {
-    return !exists_under_base("plugins/greeter.json") && !exists_under_base("plugins/greeter.js") &&
-           !exists_under_base("plugins/greeter_identity.json");
+    return !exists_under_base("deep/plugins/greeter.json") && !exists_under_base("deep/plugins/greeter.js") &&
+           !exists_under_base("deep/plugins/greeter_identity.json");
+}
+
+/** Whether a deploy that failed left neither its files nor the folders it made for pluginDir. */
+static int deployed_nothing_and_made_no_folder(void) {
+    return deployed_nothing() && !exists_under_base("deep");
 }
 
 static spisor_status deploy_a_bundle(void) {
@@ -1210,7 +1215,7 @@ static spisor_status deploy_a_bundle(void) {
     runtime_cache_deploy_answer answer = SPISOR_INIT(runtime_cache_deploy_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(bundle, sizeof bundle, "bundle");
-    under_base(plugins, sizeof plugins, "plugins");
+    under_base(plugins, sizeof plugins, "deep/plugins");
     argument.directory = bundle;
     argument.plugin_directory = plugins;
     argument.id = "github:5";
@@ -1478,7 +1483,7 @@ static void every_cache_and_catalog_operation(void) {
     every_checked_failure("cache's damaged", list_damaged_versions, NULL, NULL);
     every_checked_failure("cache's locate", locate_a_plugin, NULL, NULL);
     every_checked_failure("cache's platform", name_the_platform, NULL, NULL);
-    every_checked_failure("cache's deploy", deploy_a_bundle, a_bundle_to_deploy, deployed_nothing);
+    every_checked_failure("cache's deploy", deploy_a_bundle, a_bundle_to_deploy, deployed_nothing_and_made_no_folder);
     every_checked_failure("cache's install", install_a_version, a_file_to_install, installed_no_marker);
     every_checked_failure("cache's install of the wrong length", install_a_short_file, a_file_to_install,
                           stored_no_short_file);

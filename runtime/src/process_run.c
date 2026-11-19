@@ -102,9 +102,11 @@ static int prepare(windows_run *run, int capture) {
     return run->attributes != NULL;
 }
 
-static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition) {
+/** The file opened for a child to inherit, or INVALID_HANDLE_VALUE, with *out_of_memory set when memory ran out. */
+static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition, int *out_of_memory) {
     SECURITY_ATTRIBUTES inherited = {sizeof inherited, NULL, TRUE};
     wchar_t *wide = spisor_wide_path(path);
+    *out_of_memory = *out_of_memory || wide == NULL;
     HANDLE file = wide == NULL ? INVALID_HANDLE_VALUE
                                : CreateFileW(wide, access, FILE_SHARE_READ, &inherited, disposition, FILE_ATTRIBUTE_NORMAL, NULL);
     spisor_memory_release(wide);
@@ -115,8 +117,8 @@ static HANDLE inherited_file(const char *path, DWORD access, DWORD disposition) 
 static int prepare_between_files(windows_run *run, const char *input, const char *output) {
     memset(run, 0, sizeof *run);
     run->null = runtime_windows_null_device();
-    run->input = inherited_file(input, GENERIC_READ, OPEN_EXISTING);
-    run->output_write = inherited_file(output, GENERIC_WRITE, CREATE_ALWAYS);
+    run->input = inherited_file(input, GENERIC_READ, OPEN_EXISTING, &run->out_of_memory);
+    run->output_write = inherited_file(output, GENERIC_WRITE, CREATE_ALWAYS, &run->out_of_memory);
     if (run->null == INVALID_HANDLE_VALUE || run->input == INVALID_HANDLE_VALUE || run->output_write == INVALID_HANDLE_VALUE) {
         return 0;
     }

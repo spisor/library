@@ -18,12 +18,14 @@
 #include "json_allocation.h"
 #include "file_times.h"
 #include "platform_key.h"
+#include "process_run.h"
 #include "runtime/boot.h"
 #include "runtime/changes.h"
 #include "runtime/install.h"
 #include "runtime/loader.h"
 #include "runtime/processes.h"
 #include "runtime/updates.h"
+#include "sha256.h"
 #include "timestamp_text.h"
 #include "tree_snapshot.h"
 
@@ -330,6 +332,110 @@ static int acquired_nothing(void) {
         return 0;
     }
     return 1;
+}
+
+#define STAGED_VERSION "1.2.3"
+#define STAGED_STEM "node-v1.2.3-staged"
+#if defined(_WIN32)
+#define STAGED_ARCHIVE STAGED_STEM ".zip"
+#define STAGED_EXECUTABLE "node.exe"
+#else
+#define STAGED_ARCHIVE STAGED_STEM ".tar.gz"
+#define STAGED_EXECUTABLE "bin/node"
+#endif
+
+static install_base archive_base;
+static char *staged_archive_url = NULL;
+static char staged_archive_sha256[RUNTIME_SHA256_HEX_SIZE];
+
+static char *system_tar(void) {
+#if defined(_WIN32)
+    wchar_t folder[MAX_PATH];
+    UINT length = GetSystemDirectoryW(folder, MAX_PATH);
+    char narrow[4 * MAX_PATH];
+    int written = WideCharToMultiByte(CP_UTF8, 0, folder, (int)length, narrow, (int)sizeof narrow - 1, NULL, NULL);
+    narrow[written > 0 ? written : 0] = 0;
+    return joined(narrow, "tar.exe");
+#else
+    return runtime_catalog_copy(spisor_probe_file("/usr/bin/tar") == SPISOR_FILE_PRESENT ? "/usr/bin/tar" : "/bin/tar");
+#endif
+}
+
+static cJSON *packing_arguments(const char *archive, const char *packing) {
+    cJSON *arguments = cJSON_CreateArray();
+#if defined(_WIN32)
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("-a"));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("-cf"));
+#else
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("-czf"));
+#endif
+    cJSON_AddItemToArray(arguments, cJSON_CreateString(archive));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString("-C"));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString(packing));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString(STAGED_STEM));
+    return arguments;
+}
+
+/** Packs, once for every attempt, a runtime archive the staging case fetches and unpacks. */
+static void pack_staged_archive(void) {
+    start_install_base(&archive_base, "operations", "runtime-archive");
+    char *packing = joined(archive_base.root, "packing");
+    write_in(packing, STAGED_STEM "/" STAGED_EXECUTABLE, "the node executable");
+    char *archive = joined(archive_base.root, STAGED_ARCHIVE);
+    cJSON *arguments = packing_arguments(archive, packing);
+    char *tar = system_tar();
+    int exit_code = -1;
+    char *problem = NULL;
+    CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
+    CHECK(spisor_sha256_file(archive, staged_archive_sha256) == SPISOR_OK);
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive, &staged_archive_url);
+    spisor_memory_release(problem);
+    spisor_memory_release(tar);
+    cJSON_Delete(arguments);
+    spisor_memory_release(archive);
+    spisor_memory_release(packing);
+}
+
+static void release_staged_archive(void) {
+    spisor_memory_release(staged_archive_url);
+    staged_archive_url = NULL;
+    finish_install_base(&archive_base);
+}
+
+/** No node on the PATH, so the runtime is fetched, unpacked and moved into place through a staging folder. */
+static void prepare_staged_runtime(void) {
+    start_install_base(&base, "operations", "runtime-staged");
+    path_directory = joined(base.root, "path-without-node");
+    CHECK(spisor_make_directories(path_directory) == SPISOR_OK);
+    runtime_install_use_runtime_build(STAGED_VERSION, staged_archive_url, staged_archive_sha256);
+}
+
+static int holds_archive(const char *versions, const char *staging) {
+    char *folder = joined(versions, staging);
+    char *archive = joined(folder, STAGED_ARCHIVE);
+    int held = spisor_probe_file(archive) == SPISOR_FILE_PRESENT;
+    spisor_memory_release(archive);
+    spisor_memory_release(folder);
+    return held;
+}
+
+/** Whether no staging folder still holds the archive, which is removed once it is unpacked. */
+static int staged_no_archive(void) {
+    char *versions = joined(base.cache, "runtimes/node/" STAGED_VERSION);
+    runtime_directory_listing listing = {NULL, 0};
+    int none = 1;
+    if (runtime_list_directory(versions, &listing) == SPISOR_OK) {
+        for (size_t index = 0; none && index < listing.count; index++) {
+            const char *name = listing.entries[index].name;
+            none = name[0] != '.' || !holds_archive(versions, name);
+        }
+        runtime_free_directory_listing(&listing);
+    }
+    spisor_memory_release(versions);
+    if (!none) {
+        fprintf(stderr, "runtime staged: the archive was left in its staging folder\n");
+    }
+    return none;
 }
 
 static void mark_version(const char *rest) {
@@ -1426,6 +1532,7 @@ int main(int argc, char **argv) {
     static const operation_case update = {"application", prepare_fake_application, run_update, NULL};
     static const operation_case path_update = {"application on path", prepare_path_application, run_update, NULL};
     static const operation_case found = {"runtime", prepare_runtime, run_runtime, acquired_nothing};
+    static const operation_case staged = {"runtime staged", prepare_staged_runtime, run_runtime, staged_no_archive};
     static const operation_case registered = {"register_loader", prepare_path_application, run_register_loader, NULL};
     static const operation_case applied = {"updates' apply", prepare_apply, run_apply, recorded_no_run_unless_applied};
     static const operation_case rolled = {"updates' rollback", prepare_rollback, run_rollback,
@@ -1482,6 +1589,11 @@ int main(int argc, char **argv) {
     }
     if (is_selected(only, found.label)) {
         every_failure_of(&found, SPISOR_OK, first == 0 ? 1 : first, last);
+    }
+    if (is_selected(only, staged.label)) {
+        pack_staged_archive();
+        every_failure_of(&staged, SPISOR_OK, first == 0 ? 1 : first, last);
+        release_staged_archive();
     }
     if (is_selected(only, registered.label)) {
         every_failure_of(&registered, SPISOR_OK, first == 0 ? 1 : first, last);

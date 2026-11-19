@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "memory_error.h"
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
@@ -162,10 +163,12 @@ spisor_status runtime_list_directory(const char *path, runtime_directory_listing
     entry_buffer buffer = {NULL, 0, 0};
     WIN32_FIND_DATAW found;
     HANDLE handle = FindFirstFileW(wide_pattern, &found);
+    DWORD reason = handle == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
     spisor_memory_release(wide_pattern);
     if (handle == INVALID_HANDLE_VALUE) {
-        DWORD reason = GetLastError();
-        return reason == ERROR_FILE_NOT_FOUND || reason == ERROR_PATH_NOT_FOUND ? SPISOR_OK : SPISOR_REFUSED;
+        return spisor_is_memory_windows_error(reason)                                ? SPISOR_OUT_OF_MEMORY
+               : reason == ERROR_FILE_NOT_FOUND || reason == ERROR_PATH_NOT_FOUND ? SPISOR_OK
+                                                                                  : SPISOR_REFUSED;
     }
     status = read_found_entries(handle, &found, &buffer);
     FindClose(handle);
@@ -407,7 +410,9 @@ spisor_status runtime_list_directory(const char *path, runtime_directory_listing
     memset(listing, 0, sizeof(*listing));
     DIR *handle = opendir(path);
     if (handle == NULL) {
-        return errno == ENOENT || errno == ENOTDIR ? SPISOR_OK : SPISOR_REFUSED;
+        return spisor_is_memory_errno(errno)             ? SPISOR_OUT_OF_MEMORY
+               : errno == ENOENT || errno == ENOTDIR ? SPISOR_OK
+                                                     : SPISOR_REFUSED;
     }
     entry_buffer buffer = {NULL, 0, 0};
     int complete = 1;

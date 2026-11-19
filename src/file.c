@@ -7,6 +7,7 @@
 
 #include "allocation.h"
 #include "file_replacement.h"
+#include "memory_error.h"
 #include "prepared_undo.h"
 
 #include <stdio.h>
@@ -144,6 +145,7 @@ static FILE *open_for_appending(const char *path, int *out_of_memory) {
         wide[last] = separator;
     }
     FILE *file = _wfopen(wide, L"ab");
+    *out_of_memory = file == NULL && spisor_is_memory_errno(errno);
     spisor_memory_release(wide);
     return file;
 }
@@ -233,8 +235,9 @@ spisor_file_presence spisor_probe_file(const char *path) {
 }
 
 static FILE *open_for_reading(const char *path, int *out_of_memory) {
-    *out_of_memory = 0;
-    return fopen(path, "rb");
+    FILE *file = fopen(path, "rb");
+    *out_of_memory = file == NULL && spisor_is_memory_errno(errno);
+    return file;
 }
 
 static int is_directory(const char *path, int *out_of_memory) {
@@ -259,10 +262,12 @@ static FILE *create_temporary(const char *temporary, const char *target, int own
     mode_t mode = replacement_mode(target, owner_only, &exact);
     int descriptor = open(temporary, O_CREAT | O_EXCL | O_WRONLY, mode);
     if (descriptor < 0) {
+        *out_of_memory = spisor_is_memory_errno(errno);
         return NULL;
     }
     FILE *file = (!exact || fchmod(descriptor, mode) == 0) ? fdopen(descriptor, "wb") : NULL;
     if (file == NULL) {
+        *out_of_memory = spisor_is_memory_errno(errno);
         close(descriptor);
         remove(temporary);
     }
@@ -316,7 +321,9 @@ static FILE *open_for_appending(const char *path, int *out_of_memory) {
         make_directories_of(parent);
     }
     spisor_memory_release(parent);
-    return fopen(path, "ab");
+    FILE *file = fopen(path, "ab");
+    *out_of_memory = file == NULL && spisor_is_memory_errno(errno);
+    return file;
 }
 
 static int move_over(const char *from, const char *to, int *out_of_memory) {
@@ -338,6 +345,7 @@ int spisor_is_link(const char *path, int *out_of_memory) {
 static char *resolved_link(const char *path, int *out_of_memory) {
     char resolved[PATH_MAX];
     if (realpath(path, resolved) == NULL) {
+        *out_of_memory = spisor_is_memory_errno(errno);
         return NULL;
     }
     char *copy = duplicate_text(resolved);

@@ -16,10 +16,12 @@ spisor_status runtime_move_file_over(const char *from, const char *to) {
 }
 
 #else
+#include "memory_error.h"
 
 FILE *runtime_open_file(const char *path, runtime_file_mode mode, int *out_of_memory) {
-    *out_of_memory = 0;
-    return fopen(path, mode == RUNTIME_FILE_READ ? "rb" : "wb");
+    FILE *file = fopen(path, mode == RUNTIME_FILE_READ ? "rb" : "wb");
+    *out_of_memory = file == NULL && spisor_is_memory_errno(errno);
+    return file;
 }
 
 spisor_status runtime_move_file_over(const char *from, const char *to) {

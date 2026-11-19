@@ -7,14 +7,16 @@
  * What an OS credential store answered. DONE is success for every call; ABSENT only for get and
  * delete, when no entry has that name; DECLINED when the user refused a prompt or the store is
  * locked and stays locked; UNAVAILABLE when this machine has no store (a Linux without Secret
- * Service, say); FAILED when the store was there and answered with an error.
+ * Service, say); FAILED when the store was there and answered with an error; OUT_OF_MEMORY when memory ran out
+ * loading the store's library.
  */
 typedef enum runtime_secret_answer {
     RUNTIME_SECRET_DONE,
     RUNTIME_SECRET_ABSENT,
     RUNTIME_SECRET_DECLINED,
     RUNTIME_SECRET_UNAVAILABLE,
-    RUNTIME_SECRET_FAILED
+    RUNTIME_SECRET_FAILED,
+    RUNTIME_SECRET_OUT_OF_MEMORY
 } runtime_secret_answer;
 
 typedef struct runtime_secret_names {
