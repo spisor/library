@@ -71,6 +71,8 @@ host_test(c_host_proof)
 add_dependencies(c_host_proof c_host)
 host_test(hook_without_javascript)
 add_dependencies(hook_without_javascript javascript_trap)
+# Its 200 ms latency budget is measured, so it runs with no other test beside it.
+set_tests_properties(host_hook_without_javascript PROPERTIES RUN_SERIAL TRUE)
 target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
     CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
 # Windows PowerShell runs take up to 631 s on a windows-latest runner, against 28 s on a workstation.
