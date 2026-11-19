@@ -50,10 +50,13 @@ static unsigned long long address_space_bytes(void) {
     return scanned == 1 ? pages * (unsigned long long)sysconf(_SC_PAGESIZE) : 0;
 }
 
+static void *volatile taken_memory = NULL;
+
 /**
  * Caps the address space a little above what it holds and takes all of the cap, so the C library's own malloc fails.
  *
- * @implNote Runs only in a forked child, which exits without returning what it took.
+ * @implNote Runs only in a forked child, which exits without returning what it took. Each block is chained through
+ * taken_memory, since an optimiser may drop a malloc whose block is never used and take it to have succeeded.
  */
 static int exhaust_memory(void) {
     unsigned long long held = address_space_bytes();
@@ -66,7 +69,10 @@ static int exhaust_memory(void) {
         return 0;
     }
     for (size_t size = 1u << 20; size >= 16; size /= 2) {
-        while (malloc(size) != NULL) {
+        void **block;
+        while ((block = malloc(size)) != NULL) {
+            *block = taken_memory;
+            taken_memory = block;
         }
     }
     return 1;
