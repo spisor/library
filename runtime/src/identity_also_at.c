@@ -183,8 +183,9 @@ cJSON *runtime_identity_agree_on_files(const char *id, const cJSON *files, cJSON
 }
 
 static cJSON *parsed_file(const uint8_t *content, size_t length) {
-    cJSON *file = spisor_parse_json(content, length);
-    return file != NULL ? file : unparseable_file();
+    int out_of_memory = 0;
+    cJSON *file = spisor_parse_json_reporting(content, length, &out_of_memory);
+    return file != NULL || out_of_memory ? file : unparseable_file();
 }
 
 /**

@@ -88,7 +88,9 @@ static void deploys_under_the_import_name(void) {
     expect_file("plugins/greeter.json", "{\"importName\":\"greeter\",\"api\":1,\"entry\":\"dist/index.js\"}", "manifest");
     expect_file("plugins/greeter.js", "export default {};", "entry");
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
-    cJSON *identity = identity_text == NULL ? NULL : spisor_parse_json((const uint8_t *)identity_text, strlen(identity_text));
+    cJSON *identity = identity_text == NULL ? NULL
+                                            : spisor_parse_json_reporting((const uint8_t *)identity_text,
+                                                                          strlen(identity_text), &(int){0});
     CHECK(identity != NULL);
     check_text(text_at(identity, "id"), "github:5", "identity id");
     check_text(text_at(identity, "name"), "greeter", "identity name");
@@ -118,7 +120,9 @@ static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(answer.status == SPISOR_STATUS_SUCCESS);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
-    cJSON *identity = identity_text == NULL ? NULL : spisor_parse_json((const uint8_t *)identity_text, strlen(identity_text));
+    cJSON *identity = identity_text == NULL ? NULL
+                                            : spisor_parse_json_reporting((const uint8_t *)identity_text,
+                                                                          strlen(identity_text), &(int){0});
     check_text(text_at(identity, "id"), "github:5", "argument id wins");
     check_text(text_at(identity, "name"), "greeter", "argument name wins");
     cJSON_Delete(identity);

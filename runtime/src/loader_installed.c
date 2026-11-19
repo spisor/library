@@ -7,7 +7,7 @@
 
 #include "cache_folders.h"
 #include "host_references.h"
-#include "json_parse.h"
+#include "spisor/json_kind.h"
 #include "json_service.h"
 #include "paths.h"
 #include "spisor/file.h"

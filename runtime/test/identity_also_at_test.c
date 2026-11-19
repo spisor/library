@@ -59,7 +59,7 @@ static runtime_identity_copy *copies_of(const cJSON *files, spisor_value_tree *t
 }
 
 static agreement_call agree(const char *id, const char *files_json) {
-    cJSON *files = spisor_parse_json((const uint8_t *)files_json, strlen(files_json));
+    cJSON *files = spisor_parse_json_reporting((const uint8_t *)files_json, strlen(files_json), &(int){0});
     size_t file_count = (size_t)cJSON_GetArraySize(files);
     spisor_value_tree *trees = spisor_memory_allocate_zeroed(file_count + 1, sizeof *trees);
     runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);

@@ -399,7 +399,8 @@ static void it_refuses_a_host_bundle_whose_marker_records_no_sizes(void) {
     install_host("1.0.0");
     write_hint(HOST, "{\"libraries\":{},\"host\":\"1.0.0\"}");
     char *recorded = text_in(cache, "bundles/spisor-host/1.0.0/.installed.json");
-    cJSON *marker = recorded == NULL ? NULL : spisor_parse_json((const uint8_t *)recorded, strlen(recorded));
+    cJSON *marker =
+        recorded == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)recorded, strlen(recorded), &(int){0});
     spisor_memory_release(recorded);
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");

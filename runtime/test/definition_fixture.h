@@ -13,7 +13,7 @@
 /** A value tree read from JSON text, into an empty tree the caller releases; 0 when the text is no value. */
 static inline int value_of_text(const char *text, spisor_value_tree *tree) {
     cJSON *wrapper = cJSON_CreateObject();
-    cJSON *member = spisor_parse_json((const uint8_t *)text, strlen(text));
+    cJSON *member = spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
     int read = 0;
     if (wrapper != NULL && member != NULL && cJSON_AddItemToObject(wrapper, "value", member)) {
         member = NULL;
