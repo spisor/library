@@ -5,7 +5,7 @@
     {
       "failure": {
         "message": "the argument carries no usable key",
-        "fix": "send {\"key\": \"a.b\"} with one or more dot separated, non-empty segments"
+        "fix": "send key as a.b, one or more dot separated, non-empty segments"
       }
     }
   ],
