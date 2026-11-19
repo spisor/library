@@ -107,10 +107,10 @@ static install_status merge_manifest(cJSON *merged, const cJSON *manifest_packag
         return INSTALL_OK;
     }
     if (!cJSON_IsObject(manifest_packages)) {
-        return refuse(reason, "manifestPackages is not an object keyed by install method",
-                      "send manifestPackages as { \"<method>\": \"<package name>\" | { \"name\", \"options\" } }");
+        return refuse(reason, "manifest_packages is not a record keyed by install method",
+                      "pass manifest_packages as a record of a package name, or a record of name and options, per method");
     }
-    return merge_mappings(merged, manifest_packages, "manifestPackages", reason);
+    return merge_mappings(merged, manifest_packages, "manifest_packages", reason);
 }
 
 static char *packages_file_path(const char *portable) {

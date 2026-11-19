@@ -30,7 +30,8 @@ static const char *text_of(const cJSON *object, const char *member) {
 
 static int check_token_host(const char *token_host, cJSON **refusal) {
     if (token_host != NULL && token_host[0] == '\0') {
-        *refusal = runtime_refusal("tokenHost is not a host name", "send the host the token belongs to, such as github.com");
+        *refusal = runtime_refusal("token_host is not a host name",
+                                   "set token_host to the host the token belongs to, such as github.com");
         return 0;
     }
     return 1;
@@ -41,8 +42,9 @@ static int check_token_is_usable(const runtime_marketplace_build_request *reques
         return 1;
     }
     if (request->token_host == NULL) {
-        *refusal = runtime_refusal("a token was sent with no tokenHost",
-                                   "send tokenHost: github.com for github ids, or the instance host for gitea@ and forgejo@ ids");
+        *refusal = runtime_refusal("a token was sent with no token_host",
+                                   "set token_host to github.com for github ids, or to the instance host for gitea@ "
+                                   "and forgejo@ ids");
         return 0;
     }
     if (!runtime_identity_is_token_text(request->token)) {

@@ -154,7 +154,7 @@ static void bad_arguments_are_refused(void) {
     expect_malformed(&result, "item", "no item");
     finish(&result);
     result = packages("{\"item\":\"tool\",\"manifestPackages\":{\"npm\":3}}");
-    expect_refused(&result, "manifestPackages", "a bad manifest mapping");
+    expect_refused(&result, "manifest_packages", "a bad manifest mapping");
     finish(&result);
     result = packages("{\"item\":\"tool\",\"manifestPackages\":[]}");
     expect_malformed(&result, "manifest packages", "a manifest that is not an object");

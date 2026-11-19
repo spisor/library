@@ -11,9 +11,9 @@
 #include "install_hooks.h"
 #endif
 
-#define DETECT_FIX                                                                                       \
-    "send {\"places\": {\"portable\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}, " \
-    "\"item\": \"<id>\", \"manifestPackages\"?: {<method>: <package>}}"
+#define DETECT_FIX                                                                                   \
+    "pass portable and cache as absolute directories, item as the id, and manifest_packages as a record " \
+    "of a package per method, or NULL for none"
 
 static const runtime_install_method *const METHODS[] = {
 #ifdef SPISOR_INSTALL_TEST_HOOKS
@@ -124,7 +124,7 @@ cJSON *runtime_install_detect(const cJSON *places, const char *item, const cJSON
     *refusal = NULL;
     if (item == NULL || item[0] == 0 || runtime_install_place(places, "cache") == NULL ||
         (manifest_packages != NULL && !cJSON_IsObject(manifest_packages))) {
-        *refusal = runtime_refusal("the call carries no usable places, item or manifestPackages", DETECT_FIX);
+        *refusal = runtime_refusal("the argument carries no usable portable, cache, item or manifest_packages", DETECT_FIX);
         return NULL;
     }
     cJSON *detections = runtime_install_detections(places, item, manifest_packages, refusal);
