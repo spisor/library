@@ -3,8 +3,19 @@
 The C conventions every spisor and forebay library shares, as one static CMake target,
 `spisor_library`. A library written in C links it and gets, without writing any of it again:
 
+- **Status and refusal** (`spisor/status.h`): `spisor_status` (OK, NONE, MALFORMED, REFUSED, OUT_OF_MEMORY)
+  and the size-prefixed `spisor_refusal`, which every definition of a library built on this one answers, so no
+  library includes a weivel header.
+- **The value tree** (`spisor/value.h`): `spisor_value`, one typed tree (null, boolean, finite number, text,
+  list, record) for data a library only stores or hands back and whose shape belongs to someone else, such as a
+  setting's value; `spisor_value_check`, `spisor_value_build` and `spisor_value_release`. `spisor/json_value.h`
+  converts between a tree and the JSON a file on disk holds.
+- **One allocator** (`spisor/allocation.h`, `spisor/json_allocation.h`): every allocation in shipped code goes
+  through `spisor_memory_allocate` and its family, cJSON's included, so an out-of-memory test sees all of them.
+  `spisor_library` carries no allocator itself: each final binary links exactly one of `spisor_allocator` and the
+  test-only `spisor_allocator_counting`, and the configure refuses anything else.
 - **JSON reading** (`spisor/json_kind.h`): reading one whole JSON document exactly as `JSON.parse`
-  reads it, and the release function a library's own `<library>_release` calls.
+  reads it, for the files a library keeps on disk. Nothing crosses a library's boundary as JSON.
 - **Paths** (`spisor/path.h`): Node's `path.join` and `path.isAbsolute` for both platform rules,
   chosen by an argument rather than by the OS the code runs on, and basekit's `expandHome`.
 - **JavaScript semantics** (`spisor/javascript.h`): Node's lossy UTF-8 decoding, as
@@ -37,107 +48,64 @@ not a plugin service, and it holds no events and no homes. Until publishing resu
 from a local build (`cmake -S . -B build && cmake --build build --config Release` leaves it under
 `build/bin`).
 
-Every function takes the home, the places and the plugin's facts in its argument and keeps no state
+Every operation takes the home, the places and the plugin's facts in its argument and keeps no state
 between calls, so a settings file edited by hand is read afresh by the next call. The one exception is
 `secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
 Service), and that store may prompt the user.
 
-| function | takes | answers |
-|---|---|---|
-| `paths.resolve` | `home`, `names`, `places`, `plugin` | `home`, `repos`, `plugin`, `cache`, `config` directories, and with `places` the plugin's `portable` and `pluginCache` folders |
-| `identity.parse` | `id` | `{ valid }`, and for a valid id `{ resolver, host?, number?, path? }`, the parts of the id grammar; `number` is a digit string, a local id has only `resolver` and `path`; pure |
-| `identity.folder` | `id` | `{ folder }`, the id with `:` as `+` and `/` as `=`; refused for an invalid id or one whose folder would not be a portable name; pure |
-| `identity.resolve` | `id`, `lastKnown?` | `{ name, fullName, defaultBranch? }` of the repo the id names, looked up by its number, which survives a rename; `lastKnown` (an `owner/name`) is asked only when the host cannot answer by number, and accepted only with the same number; a local id answers from its own text |
-| `identity.agree` | `id`, `files` | `{ ids, primary, primaryConfirmed, startFileMalformed?, startFileUnavailable? }`, the copies of the repo id names that agree with it, from each copy's `.weivel/also-at.json` as `files` holds it (null for a copy with none, false for one that could not be read); an id counts only when the starting file lists it and its own file lists the starting id back, at most 16; copies naming different primaries are refused; pure |
-| `identity.alsoAt` | `id` | what `identity.agree` answers, after reading `.weivel/also-at.json` at the default branch of the repo and of each copy it lists; a copy that cannot be reached is left out |
-| `identity.acceptsVersion` | `recorded`, `primary` | `{ accepted, needsUserAcceptance }`; a primary that differs from the one recorded at install is accepted only by the user; pure |
-| `marketplace.build` | `list`, `built` | `{ copy, skipped }`, the generated copy of a marketplace list (`runtime/schema/marketplace.schema.json`, copied from weivel's model): each entry carries the `name`, `fullName` and `lastKnown` (the full name) `identity.resolve` answers for its id, the list's `alias` in place of the name when one is set, and its description and categories; `built`, an RFC 3339 time, comes from the caller so the same inputs build the same copy; refused, naming the ids, for a list that breaks its schema or has more than 10000 entries, a local id, an id listed twice or one that does not resolve, and two entries of one name once names are derived and aliases apply; the shape, local and duplicate refusals come before any lookup; an id may name a folder below a repo (`github:1/folder`), looked up by its repo, whose name is the folder's last segment; a name is the alias, else the repo's (or folder's) name derived as an import name (lowercased, each run of characters outside `[a-z0-9.-]` turned into one `-`, separator runs reduced to the first, `-` and `.` trimmed from both ends); an entry whose derived name is still no import name (empty, or reserved such as `con` or `package`) is left out and answered in `skipped` as `{ id, reason }` |
-| `marketplace.sources` | `settings` | `{ sources, skipped }` from the setting `marketplaces`: `{ id, url }` for a `file:` or `https:` url and `{ id, provider }` for a source only a plugin can read; an entry with no object shape, an id that is no import name, or not exactly one of a usable url and a provider is left out and listed in `skipped` as `{ index, detail }`; two sources with one id are refused, naming both |
-| `marketplace.read` | `source` (`{ id, url }`), `text` or `destination` | `{ copy }`, the marketplace copy a source served, checked against `runtime/schema/marketplace-copy.schema.json`; with `destination`, an absolute path that does not exist yet, the url is fetched there within 8 MiB and the file removed; refused, naming the source and a fix, for a body over the limit, a web page, no JSON, a marketplace list where a copy is expected (build the copy from it), a copy that breaks its schema or names two entries alike, and a source with a provider |
-| `marketplace.lookup` | `copies` (`[{ source: { id }, copy }]`), `name` | `{ id, marketplace }` for the one entry a bare name or `marketplace/name` means (the same id in several marketplaces settles on the first), `{ ambiguous: ["marketplace/name", ...] }` for a bare name found under different ids, or `{ notFound: true }`; a copy that breaks its schema and two copies from one source are refused |
-| `marketplace.remember` | `state`, `name`, `id`, `marketplace?`, `accept?`, `record?` | `{ remembered: true }` once the id given to a name is the one on record in `<state>/marketplace-names.json` (`{ format: 1, names: { "marketplace/name": id } }`, written atomically), recording it when there was none; `{ needsUserAcceptance: true, was, now }` and nothing recorded when another id is on record, unless `accept` is `now`, which replaces it; with `record: false` it only checks and answers `{ settled: true }` or the same `needsUserAcceptance`; without `marketplace` the key is the bare name; a record that is not that shape is refused, naming the file, and left as it was |
-| `places.resolve` | `home`?, `environment` | `home`, `portable`, `state`, `cache`, `secretsFile`, `forceFileStore`; `home` is the argument when given, else derived from the environment |
-| `config.all` | `home`, `names`, `portable`, `plugin`, `config`, `settings`?, `places`? | `{ values }`, the defaults, the portable file and the plugin's file deep merged in that order, leaving out every declared secret setting (and any key inside one) |
-| `config.get` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `settings`?, `places`? | `{ value }` of a dot path, or `{}` when absent; a declared secret setting reads from the secret store, absent when `places` is omitted, and a key above or inside a secret never reads it |
-| `config.set` | `home`, `names`, `portable`, `plugin`, `config`, `key`, `value`, `layer`?, `settings`?, `places`? | `{ previous }`, after writing the plugin's file in the layer `layer` names, else the one the setting declares (`portable` when its declaration names none, refused naming the key when it names neither layer), else `application` for an undeclared key; `{ secret: true }` for a declared secret setting, which goes to the secret store instead (text stores, null deletes, anything else is refused); a write to a key above or inside a secret is refused |
-| `settings.all` | `home`, `names`, `portable` | `{ values }`, the ecosystem settings merged as `config.all` merges a plugin's |
-| `settings.set` | `home`, `names`, `portable`, `key`, `value`, `layer` | `{ previous }`, after writing one key into the `application` (default) or `portable` layer, under a lock so two writers lose no update |
-| `log.write` | `home`, `names`, `portable`, `plugin`, `config`, `start`, `time`, `level`, `message`, `noColor` | `{ console }` when a console line is due |
-| `secrets.get` | `places`, `plugin`, `name` | `{ value }` from the secrets file, else the store, or `{}`; a file copy is always the newer one |
-| `secrets.set` | `places`, `plugin`, `name`, `value` | `{ place }`, `"store"` or `"file"` when the store declines or is absent |
-| `secrets.delete` | `places`, `plugin`, `name` | `{}`, after removing it from both places; a store that declines keeps its copy and the file's |
-| `secrets.clear` | `places`, `plugin` | `{}`, after removing every secret of the plugin from both places (host only) |
-| `secrets.reconcile` | `places` | `{ moved }`, the file-held secrets moved into a store that has appeared (host only, at start) |
-| `registry.register` | `places` (`state`), `registration` | `{ registration }`, after writing the host's record and keeping its stored commands and changes |
-| `registry.get` | `places` (`state`), `id` | `{ registration }`, or `{}` for an unknown host |
-| `registry.list` | `places` (`state`) | `{ hosts: [{ registration, orphan }], unreadable }`, sorted by id |
-| `registry.forget` | `places` (`state`, `cache`), `id` | `{ forgotten }`, after deleting the record and the host's folders; refused while a change is not reversed |
-| `changes.apply` | `places` (`state`), `host`, `change` | `{ recorded, sequence? }`, after making the change and appending it to the host's `changes` |
-| `changes.reverse` | `places` (`state`), `host` | `{ reversed, drifted }`, after undoing every unreversed change, newest first |
-| `commands.request` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, the name given (a fallback when the asked one is held), or `{}` for a command the user deleted |
-| `commands.rename` | `places` (`state`), `environment`, `host`, `from`, `to` | `{ name }`, after moving the shim; a held `to` is refused |
-| `commands.delete` | `places` (`state`), `host`, `name` | `{ deleted: true }`, after removing the shim; refused for a required host's last command |
-| `commands.add` | `places` (`state`), `environment`, `host`, `home`, `name`, `target`, `arguments`? | `{ name }`, after making the shim; a held name is refused |
-| `install.packages` | `places` (`portable`), `item`, `manifestPackages` | `{ packages }`, the item's package under each method, as `{ name, options? }`; pure |
-| `install.plan` | `places` (`portable`), `item`, `manifestPackages`, `methods`, `chosen`, `installedProviders`, `catalog` | `{ steps }`, each `{ "install-provider": <catalog entry> }` or `{ "install": { method, package? } }`; pure |
-| `install.detect` | `places` (`portable`, `cache`), `item`, `manifestPackages` | `{ detections }`, one per built-in method the item's package mapping names, read from each package manager's own records; launches nothing |
-| `install.entry` | `places`, `loader` | `{ written: true, sequences }` after writing the entry that starts the loader's host inside its application, every write through `changes.apply`, or `{ written: false, message, fix }` for an application it writes none for |
-| `install.runtime` | `cache`, `platform`, `environment` | `{ name, version, executable, fetched, source }`, a Node on PATH of major 20 or later (`path`), else the pinned one fetched by hash into `<cache>/runtimes` (`acquired`), recorded in `<cache>/runtimes/javascript.json` |
-| `install.ecosystem` | `places`, `sources`, `environment`, `choices`, `defaults`, `requested`, `platform` | `{ installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }`, after installing `spisor-host`, `runtime`, the plugins and every loader whose application is present or chosen; an item that cannot be installed is reported and the rest still install |
-| `install.byId` | `id`, `cache`, `pluginDir`, `version?`, `lastKnown?`, `acceptPrimary?` | `{ id, name, fullName, version, commit, sha256, ids, primary, primaryConfirmed }`, after installing the plugin a repo id names from the `weivel-index.json` of its latest release, digests checked, and deploying it; `{ ..., needsUserAcceptance: true }` and no install when the primary recorded in `<cache>/identities` differs from the verified one and `acceptPrimary` does not name it; a version comes only from the primary |
-| `install.warnings` | `manifest` | `{ warnings }`, each `{ kind, subject, detail }`: `named-dependency` for a `dependencies` entry with a `name` and no `id`, `unbound-service` for a consumed service whose id contains `:` and names no `provider`; a dependency by id and a bare (shared) service id are never reported; `detail` says why, that a rename can break it and whoever takes the name can replace it; pure, and `spisor-host install` prints each as a warning and still installs |
-| `install.application` | `places`, `loader`, `operation` | `{ operation, version? }`, after updating or removing the loader's application through the method that installed it; refused for one found on PATH or installed by no recorded method |
-| `install.registerLoader` | `places`, `environment`, `id`, `version` | what `hosts.register` answers, after registering the installed loader version as install does, with no catalog read |
-| `fetch.get` | `url`, `destination`, `sha256`, `etag`, `lastModified`, `maxBytes`, `timeoutSeconds` | `{ outcome: "stored", sha256, bytes, etag?, lastModified? }`, or `{ outcome: "not-modified" }` on a 304; the bytes reach `destination` only complete and verified, through the OS's own HTTPS stack |
-| `catalog.read` | `text`, `origin` | `{ catalog }`, the index checked against `catalog.schema.json` with every file url resolved against `origin` |
-| `catalog.sources` | `settings` | `{ sources, skipped }`, the sources the settings name under `catalog.sources` |
-| `catalog.merge` | `catalogs` | `{ catalog, shadowed }`, an earlier source winning an id |
-| `catalog.check` | `source`, `cache`, `now`, `intervalHours` | `{ kind, catalog?, detail? }`, `skipped`, `unchanged`, `changed` or `failed`; an https source is asked at most once per interval, conditionally |
-| `catalog.current` | `sources`, `cache` | `{ catalog }`, every source's current index merged, with no request |
-| `catalog.resolve` | `catalog`, `enabled`, `installed`, `kind` | `{ run, fetch }`, the installed version each enabled item runs this start and the versions to fetch for the next |
-| `cache.install` | `cache`, `id`, `item`, `version`, `platform` | `{ id, version, directory, fetched, cached }`, after storing every file of the version by hash and writing `.installed.json` last |
-| `cache.deploy` | `directory`, `pluginDir`, `identity` (`id`, `name`), `replaces?` | `{ importName }`, after writing `<importName>.json`, `<importName>.js` when the plugin names an entry, and `<importName>_identity.json` from the argument, the only place an identity file is written; an import name outside the grammar writes nothing; `replaces` is an id whose deployed plugin of that import name this one may replace, and no other identity already deployed under the name is replaced |
-| `cache.installed` | `cache`, `platform` | `{ bundles, libraries }`, each id's versions whose install completed and whose files are present |
-| `cache.check` | `directory` | `{ kind }`, `absent`, `intact`, or `damaged` with `detail`, `fix` and `file?`; local and network-free |
-| `cache.damaged` | `cache`, `platform?` | `{ damaged }`, every installed version a start would refuse on its sizes or whose files no longer carry their hashes, each with `id`, `version`, `detail`, `fix` and `file?`; hashes every installed file, so status runs it and a start does not |
-| `cache.locate` | `cache`, `plugins` | `{ located, problems }`, each plugin's installed folder, `plugin.json` and the entry it names, or why that version cannot run (a file not at its recorded size, or `plugin.json` naming another version); sizes only, so a start runs it |
-| `cache.platform` | nothing | `{ platform }`, this build's key as Node spells it, for example `linux-x64` |
-| `cache.sweep` | `cache`, `state` | `{ removed }`, after deleting every version no reference, live run record or boot hint names, keeping each id's newest installed version as the rollback |
-| `updates.check` | `places`, `hostId`, `now`, `settings`, `defaults`, `problems`, `platform` | `{ checked, fetched, refused, removed }`, after scheduling and installing the next versions and sweeping; what runs now is never changed; a host with no registration is refused |
-| `updates.apply` | `places`, `hostId`, `settings`, `defaults`, `running`, `libraries`, `platform` | `{ plugins, run, next, rollback, unrecorded, runRecord }`, the versions this start runs, a fetched one switching in, the one it replaced kept as the rollback; a host with no registration is refused |
-| `updates.run` | `places`, `now` | `{ checks, applications, refused }`, after `updates.check` for every registered host, spisor-host first lending its catalog sources, and `install.application` updating each application an install method installed |
-| `updates.rollback` | `places`, `hostId`, `item` | `{ run, next, rollback }`, after switching a host or plugin back to its kept rollback; a host with no registration is refused |
-| `updates.recorded` | `places`, `hostId` | `{ run }`, what the host's last start recorded running, empty when it recorded nothing; a references file that cannot be read is refused; nothing is switched or recorded |
-| `boot.read` | `cache`, `hostId` | `{ hint? }`, `{ libraries: { <id>: { version, directory, binary? } }, host? }`, what the next start boots; `directory` is the installed folder and `binary` is set only for a folder holding `library.json`, which must hold exactly one file with the platform's shared-library suffix |
-| `boot.write` | `cache`, `hostId`, `libraries`, `host`, `state`, `platform`? | `{ hint }`, after recording what the next start boots, each library's absolute folder on `platform` (this machine's by default) and, for a declared library, its one binary; refused naming the folder when a declared one holds no binary, more than one, or cannot be listed |
-| `boot.resolve` | `cache`, `hostId`, `arguments`, `platform` | `{ executable, arguments, version, directory }`, the native executable of the hinted version; a missing hint or damaged version is refused, never guessed |
-| `boot.place` | `cache` | `{ placed, path }`, after copying the spisor-boot the hinted spisor-host version carries to `cache/boot` when none is there; never replaces one |
-| `processes.hold` | `state`, `hostId`, `holder`, `start` | `{ pid, started, outsideJob? }`, after making `holder` hold the background host and starting it detached when none runs |
-| `processes.release` | `state`, `hostId`, `holder` | `{ holders }`, the holders left; the host stops itself at its next prune |
-| `processes.prune` | `state`, `hostId`, `self`, `now`, `checkMilliseconds` | `{ exit }`, true when no holder is alive or another process is the host |
-| `processes.ready` | `state`, `hostId`, `pid`, `environment`, `refused`, `fix` | `{}`, after publishing that the session host is ready with the environment the application starts with, or that it refuses |
-| `processes.awaitReady` | `state`, `hostId`, `pid`, `timeoutMilliseconds` | `{ environment }` from the record naming `pid`, a published refusal as it was published, or a refusal at the timeout |
-| `processes.recordRun` | `state`, `hostId`, `run`, `checkMilliseconds`, `record` | `{ record }`, the run record of the versions this process runs, stamped alive, which the sweep keeps |
-| `processes.liveRuns` | `state`, `now` | `{ runs }`, what every live start runs, after deleting the records of starts that are gone |
-| `processes.removeRuns` | `state`, `hostId`, `record` | `{}`, after deleting `record`, or every run record of `hostId` |
-| `hosts.register` | `places` (`state`), `identity`, `provenance`, `environment` | `{ provenance, commands, refusedCommands }`, after registering the host with its first start's provenance and requesting its commands |
-| `hosts.list` | `places` (`state`) | what `registry.list` answers |
-| `hosts.remove` | `places` (`state`, `cache`), `id` | `{ reversed, drifted, forgotten }`, after reversing its changes and deleting its holders, then deleting its references, run records and boot hint and forgetting it under one hold of the registry lock |
-| `hosts.start` | `environment`, `hostId`, `layer` (`{ id, version }`), `libraries`, `session` | `{ places, identity, settings, plan, reusedRecordedRun, timers?, noColor }`, a JavaScript host's whole start sequence: the places from `environment`, the user's home among them, the registration (refused when it is missing or unusable, by the check the native host uses too) with `identity.version` the version the plan runs the host at, the settings, `updates.apply` with the host, layer and `libraries` as what runs and the plan it answers, the timer values for the session start alone and whether `NO_COLOR` asks for plain output; a refused session start publishes its refusal to the ready record once its places resolve |
-| `hosts.provenance` | `origin`, `application` (`binary`), `home`, `environment`, `now`? | an application's provenance, located at its binary on PATH, else at `home` |
-| `loader.check` | `standard` | `{ issues }`, each `{ path, detail, fix }`; none means a loader standard |
-| `loader.home` | `home`, `environment` | `{ home, source }`, where the application keeps its files |
-| `loader.installed` | `places` (`cache`), `id`, `version` | `{ standard }`, the loader standard an installed host bundle carries |
-| `detect.onPath` | `binary`, `environment` | `{ path }` of the executable on PATH, or `{}`; reads directories only and launches nothing |
-| `lists.plugins` | `installed`, `detected`, `available` | `{ items }`, one row per id in its strongest state |
-| `lists.applications` | `catalog`, `places` (`state`), `environment`, `detections` | `{ items }`, each catalog application installed, detected or available |
-| `ui.navigation` | `descriptions`, `ui` | `{ entries, preferences }`, every plugin's views, settings screen and actions with the user's customisation, in one order for every host |
-| `ui.settingsView` | `description` | `{ title, nodes }`, the form that edits one plugin's settings |
-| `ui.plan` | `descriptions`, `screen`, `answers` | `{ calls }` still to answer for the screen, or `{ done: true }` |
-| `ui.render` | `descriptions`, `screen`, `answers` | `{ plugin, kind, view?, title, nodes }`, the headless screen, a failed answer marking only its own node |
-| `ui.pluginList` | `installed`, `detected`, `available` | `{ title, rows }`, the host's own Plugins screen, each row's state, unavailable and install fields beside the caller's row |
+### The definitions
 
-`places` is what `places.resolve` answers.
+Each service is a **definition**: a static C struct that begins with its `size`, then the provider's `context`,
+then one function pointer per operation and one release per kind of answer. A consumer gets it from the
+service's exported symbol, `runtime_<service>_definition_of`, a `const void *f(void)` whose struct lives until
+the library is unloaded, and calls its operations directly. An operation takes the `context` first and a
+size-prefixed argument struct, fills the caller's empty answer and, when it refuses, the caller's
+`spisor_refusal`, and answers a `spisor_status`; the caller hands each back to the release for its kind. A
+size-prefixed struct is read only up to its `size` and only ever grows at its end, so every struct's header
+comment says where its first shape ends. Text handed in is NUL-terminated UTF-8 borrowed for the call; what an
+answer points at is the provider's until its release. An empty answer has NULL storage and every count zero,
+an operation refuses an answer whose array count arrives without storage, and an out-of-memory answer is left
+empty.
+
+`runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
+function of kind `definition`, and a test keeps it complete against the headers; another loads the built
+`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. The binary exports
+its definitions and `runtime_release`, and nothing else, which `runtime_exports_only_definitions_test` holds.
+Each header documents its operations, what they take and answer, and every refusal; this file says what they
+do together. A translation of a header in another language is checked against the `layouts` test program,
+which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the
+headers (`cmake/layouts_check.cmake`). Operation names are the service's own in snake case; dotted names below,
+such as `places.resolve`, mean that service's operation.
+
+| service | header | operations |
+|---|---|---|
+| `paths` | `include/runtime/paths.h` | `resolve` |
+| `identity` | `include/runtime/identity.h` | `parse`, `folder`, `resolve`, `agree`, `also_at`, `accepts_version` |
+| `marketplace` | `include/runtime/marketplace.h` | `build`, `sources`, `read`, `lookup`, `remember` |
+| `places` | `include/runtime/places.h` | `resolve` |
+| `config` | `include/runtime/config.h` | `all`, `get`, `set` |
+| `settings` | `include/runtime/settings.h` | `all`, `set` |
+| `log` | `include/runtime/log.h` | `write` |
+| `secrets` | `include/runtime/secrets.h` | `get`, `set`, `remove`, `clear`, `reconcile` |
+| `registry` | `include/runtime/registry.h` | `register_host`, `get`, `list`, `forget` |
+| `changes` | `include/runtime/changes.h` | `apply`, `reverse` |
+| `commands` | `include/runtime/commands.h` | `request`, `rename`, `remove`, `add` |
+| `install` | `include/runtime/install.h` | `warnings`, `packages`, `plan`, `detect`, `entry`, `runtime`, `application`, `register_loader`, `by_id`, `ecosystem` |
+| `fetch` | `include/runtime/fetch.h` | `get` |
+| `catalog` | `include/runtime/catalog.h` | `read`, `sources`, `merge`, `check`, `current`, `resolve` |
+| `cache` | `include/runtime/cache.h` | `install`, `installed`, `check`, `damaged`, `locate`, `platform`, `sweep`, `deploy` |
+| `updates` | `include/runtime/updates.h` | `apply`, `check`, `rollback`, `recorded`, `run` |
+| `boot` | `include/runtime/boot.h` | `read`, `write`, `resolve`, `place` |
+| `processes` | `include/runtime/processes.h` | `hold`, `release`, `prune`, `ready`, `await_ready`, `record_run`, `live_runs`, `remove_runs` |
+| `hosts` | `include/runtime/hosts.h` | `register_host`, `list`, `remove`, `provenance`, `start` |
+| `loader` | `include/runtime/loader.h` | `check`, `home`, `installed` |
+| `detect` | `include/runtime/detect.h` | `on_path` |
+| `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
+| `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list` |
+
+23 services, 92 operations.
+
+A `places` argument is what `places.resolve` answers.
 
 ### The places
 
@@ -165,15 +133,15 @@ host's own files live in `<state>/hosts/<id>/` and `<cache>/hosts/<id>/`. A host
 segment, trimmed as it is, else the call is refused.
 
 A registration is `{ id, kind: "host", version, home, application?, provenance, requiresCommand,
-start?, commands, changes }`, `home` being an absolute path, without which `register` and
-`hosts.register` refuse it, and `start` being `{ runtime, entry }`: the language runtime the host needs
+start?, commands, changes }`, `home` being an absolute path, without which `register_host` and
+`hosts.register_host` refuse it, and `start` being `{ runtime, entry }`: the language runtime the host needs
 (`javascript`, `jvm` or `native`) and its entry, a relative path inside its installed bundle, which is
-what a launcher starts a background host through. `register` replaces `version`, `home`,
+what a launcher starts a background host through. `register_host` replaces `version`, `home`,
 `application`, `provenance`, `requiresCommand` and `start` and keeps the stored `commands` and
 `changes`, which the services that record them own, so a host may call it on every start.
-`hosts.register` is what a host calls on every start: it keeps the provenance its first start
-recorded, decided under the registry lock, then requests its commands. `get` answers `{ registration }`, or `{}` for an unknown
-host. `list` answers every host sorted by id with an `orphan` flag, true when `provenance.location` no
+`hosts.register_host` is what a host calls on every start: it keeps the provenance its first start
+recorded, decided under the registry lock, then requests its commands. `get` answers the registration, or NONE for an unknown
+host. `list` answers every host sorted by id with an `orphan` flag, set when `provenance.location` no
 longer exists, plus the ids of registrations it could not read in `unreadable`. `forget` deletes the
 registration and the host's two folders, and is refused while a change in `changes` is not marked
 `"reversed": true`. A registration that exists but cannot be read is reported and never overwritten.
@@ -237,12 +205,12 @@ home too. A directory holding `;`, `%`, `"` (Windows) or `"`, `\`, `$`, `` ` ``,
 The entry is stored with `state: "pending"` before the disk is touched and marked `"applied"`
 after; a pending entry found by the next call is completed when its effect is on the disk and
 dropped otherwise. A sequence is never handed out twice: the registration keeps a `nextSequence`
-counter, which `registry.register` carries over like `changes`. `reverse` stores `"reversed": true` (and `"drifted": true` for a drift) after
+counter, which `registry.register_host` carries over like `changes`. `reverse` stores `"reversed": true` (and `"drifted": true` for a drift) after
 each change, so an interrupted removal resumes where it stopped and reverses nothing twice.
 `reversed` counts the drifted entries too. A JSON file is rewritten as `JSON.stringify(value, null,
-2)` with its original final newline. `runtime_changes_apply` is the same operation for C callers.
+2)` with its original final newline.
 
-Every read-modify-write of a registration (`registry.register`, `registry.forget`, `changes.apply`,
+Every read-modify-write of a registration (`registry.register_host`, `registry.forget`, `changes.apply`,
 and each step of `changes.reverse`, from its holder check to its store) holds one OS file lock on
 `<state>/hosts/.lock`, so two hosts racing on a shared line or directory, or a host registering while
 another call records its change, never lose or orphan anything. The OS releases the lock when a
@@ -278,9 +246,9 @@ A host asking again for a name it requested is answered with that entry as it st
 shim is rewritten in place, under the record it already has, when the target or the arguments
 changed, but the entry itself is never changed by a host: a name
 the user renamed stays renamed, a command the user deleted stays deleted, and a command the user
-added under the same name is never matched by a host's request. `rename`, `delete` and
+added under the same name is never matched by a host's request. `rename`, `remove` and
 `add` are the user's, mark the entry `owner: "user"`, and refuse a held name rather than fall back.
-`delete` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
+`remove` refuses the last active command of a host with `requiresCommand`; renaming it is allowed.
 A name is a letter or digit followed by letters, digits, `-`, `_` or `.`, at most 64; a target is
 an absolute path with no line break, and `arguments` an array of strings with none.
 
@@ -354,10 +322,10 @@ target_link_libraries(your_library PRIVATE spisor_library)
 Both targets are built position independent, so they link into a shared library on Linux. Tests are
 built only when this repository is the top-level project.
 
-## What a call may rely on
+## Reading a JSON file
 
-Every document is read through `spisor_parse_json_reporting`, which a library also uses for any JSON it
-reads itself (a registry file, say) instead of calling cJSON directly. It reads a document as
+A library reads every JSON file it keeps (a registry file, say) through `spisor_parse_json_reporting`
+instead of calling cJSON directly, and is told whether memory or the text failed. It reads a document as
 `JSON.parse` does:
 
 - **Invalid UTF-8 is refused**, because cJSON accepts it. A library reading a file the way Node
@@ -375,9 +343,6 @@ reads itself (a registry file, say) instead of calling cJSON directly. It reads 
   before cJSON reads the text.
 - **A duplicated key keeps its first position and its last value**, so every cJSON lookup and
   iteration over the tree sees what JavaScript sees.
-- **An envelope missing `argument` or `context`, or carrying a malformed or unknown fact, is a
-  failure object naming what is wrong.** The facts are `environment` (an object of strings), `home`
-  (a string) and `arguments` (an array of strings).
 - **Environment lookups are case-sensitive, except on Windows**, where names match ignoring ASCII
   case, as the host's `process.env` matches them.
 
@@ -424,7 +389,7 @@ is printed as skipped, since only a plugin can ask it. `marketplace.lookup` sett
 each `<marketplace>/<name>` form and installs nothing, and one found nowhere says so. `marketplace.remember` checks the id
 against the one on record for that marketplace and name, and, for a bare name, for the bare name too, so a name that moves
 to another marketplace asks as a changed id does; a different one prints both ids and installs nothing until the command is
-run again with `--accept` naming the new id. `install.byId` then installs the id into the cache and deploys it, and only
+run again with `--accept` naming the new id. `install.by_id` then installs the id into the cache and deploys it, and only
 once that has succeeded are the names recorded, so a failed first install records nothing. A primary that the repo's
 copies newly name prints the recorded and new primary and installs nothing until `--accept-primary` names it; the two flags
 are never taken for each other. The JSON of what was installed is printed, then what `install.warnings` finds the plugin
