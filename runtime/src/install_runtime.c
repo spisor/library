@@ -244,21 +244,35 @@ static int lay_out(acquisition *runtime, const char *cache, const char *platform
            lay_out_in(runtime, staging_folder(cache, runtime->version, platform), &runtime->staged);
 }
 
-/** Whether layout's marker names the pinned archive and its executable still has the hash the marker names. */
-static int is_unpacked(const acquisition *runtime, const runtime_layout *layout) {
+/** Whether the executable's hash is the one `recorded` names, marking the acquisition when memory runs out. */
+static int is_recorded_executable(acquisition *runtime, const char *recorded, const char *executable) {
+    char actual[RUNTIME_SHA256_HEX_SIZE];
+    spisor_status hashed = spisor_sha256_file(executable, actual);
+    if (hashed == SPISOR_OUT_OF_MEMORY) {
+        runtime->out_of_memory = 1;
+    }
+    return hashed == SPISOR_OK && strncmp(recorded, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
+}
+
+/**
+ * Whether layout's marker names the pinned archive and its executable still has the hash the marker names; 0 with the
+ * acquisition marked out of memory when memory ran out reading either.
+ */
+static int is_unpacked(acquisition *runtime, const runtime_layout *layout) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(layout->marker, &length, &outcome);
     char recorded[2 * RUNTIME_SHA256_HEX_SIZE + 2];
-    char actual[RUNTIME_SHA256_HEX_SIZE];
     int unpacked = bytes != NULL && length == 2 * (RUNTIME_SHA256_HEX_SIZE - 1) + 2;
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        runtime->out_of_memory = 1;
+    }
     if (unpacked) {
         memcpy(recorded, bytes, length);
         recorded[length] = 0;
         unpacked = strncmp(recorded, runtime->build.sha256, RUNTIME_SHA256_HEX_SIZE - 1) == 0 &&
                    recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' &&
-                   spisor_sha256_file(layout->executable, actual) == SPISOR_OK &&
-                   strncmp(recorded + RUNTIME_SHA256_HEX_SIZE, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
+                   is_recorded_executable(runtime, recorded + RUNTIME_SHA256_HEX_SIZE, layout->executable);
     }
     spisor_memory_release(bytes);
     return unpacked;
@@ -461,12 +475,12 @@ static int rename_directory(const char *from, const char *to) {
  */
 static cJSON *publish(acquisition *runtime) {
     if (rename_directory(runtime->staged.directory, runtime->final.directory) ||
-        is_unpacked(runtime, &runtime->final)) {
+        is_unpacked(runtime, &runtime->final) || runtime->out_of_memory) {
         return NULL;
     }
     if (runtime_remove_tree(runtime->final.directory) == SPISOR_OK &&
         (rename_directory(runtime->staged.directory, runtime->final.directory) ||
-         is_unpacked(runtime, &runtime->final))) {
+         is_unpacked(runtime, &runtime->final) || runtime->out_of_memory)) {
         return NULL;
     }
     return refusal_of(runtime, refused("the runtime could not be moved into place at ", runtime->final.directory,
@@ -549,7 +563,7 @@ static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **re
     if (lay_out(&runtime, cache, platform)) {
         sweep_stale_staging(&runtime, platform);
         int unpacked = is_unpacked(&runtime, &runtime.final);
-        *refusal = unpacked ? NULL : build_staged(&runtime);
+        *refusal = unpacked || runtime.out_of_memory ? NULL : build_staged(&runtime);
         if (!unpacked && *refusal == NULL && !runtime.out_of_memory) {
             before_publish(&runtime);
             *refusal = publish(&runtime);
