@@ -10,6 +10,8 @@
 #include "spisor/allocation.h"
 #include "spisor/file.h"
 #include "../src/file_replacement.h"
+#include "../src/prepared_undo.h"
+#include "../src/wide_path.h"
 #include "links.h"
 #include "temporary_entries.h"
 
@@ -372,6 +374,35 @@ static void replaces_a_fresh_executable_held_for_a_moment_after_retrying(void) {
 }
 #endif
 
+#if defined(_WIN32)
+/** A dot segment under the extended-length prefix is taken literally, so the allocation-free form refuses one. */
+static void a_long_path_holding_a_dot_segment_is_refused(void) {
+    char base[400];
+    char kept[500];
+    char inner[500];
+    snprintf(base, sizeof base, "%s/%0250d", SPISOR_SCRATCH_PATH, 0);
+    snprintf(kept, sizeof kept, "%s/kept.txt", base);
+    snprintf(inner, sizeof inner, "%s/inner", base);
+    CHECK(spisor_make_directories(inner) == SPISOR_OK);
+    CHECK(spisor_replace_file(kept, (const uint8_t *)"kept", 4) == SPISOR_OK);
+    const char *segments[2] = {"/inner/../kept.txt", "/./kept.txt"};
+    for (size_t index = 0; index < 2; index++) {
+        char path[600];
+        wchar_t wide[1024];
+        snprintf(path, sizeof path, "%s%s", base, segments[index]);
+        CHECK(!spisor_wide_path_into(path, wide, sizeof wide / sizeof wide[0]));
+        CHECK(!spisor_remove_file_in_place(path));
+        CHECK(spisor_probe_file(kept) == SPISOR_FILE_PRESENT);
+    }
+    spisor_prepared_path removal = {NULL, NULL};
+    CHECK(spisor_remove_file_in_place(kept));
+    CHECK(spisor_prepare_path(inner, &removal) == SPISOR_OK && spisor_remove_prepared_directory(&removal));
+    spisor_release_prepared_path(&removal);
+    CHECK(spisor_prepare_path(base, &removal) == SPISOR_OK && spisor_remove_prepared_directory(&removal));
+    spisor_release_prepared_path(&removal);
+}
+#endif
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
@@ -395,6 +426,7 @@ int main(void) {
     replace_sets_a_running_image_aside_and_takes_its_place();
     sets_two_running_images_aside_in_turn_and_removes_both_once_they_exit();
     replaces_a_fresh_executable_held_for_a_moment_after_retrying();
+    a_long_path_holding_a_dot_segment_is_refused();
 #endif
     return summary_with_links("file_test");
 }
