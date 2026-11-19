@@ -10,6 +10,7 @@
 #include "answer_storage.h"
 #include "definition_support.h"
 #include "directory_tree.h"
+#include "prepared_undo.h"
 #include "fetch_transport.h"
 #include "file_stream.h"
 #include "paths.h"
@@ -240,7 +241,7 @@ static void discard_partial(fetch_files *files) {
         fclose(files->file);
     }
     if (files->partial != NULL) {
-        runtime_remove_file_entry(files->partial);
+        spisor_remove_file_in_place(files->partial);
     }
     spisor_memory_release(files->partial);
 }

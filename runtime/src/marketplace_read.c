@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "directory_tree.h"
+#include "prepared_undo.h"
 #include "runtime/fetch.h"
 #include "import_name.h"
 #include "paths.h"
@@ -123,7 +123,7 @@ static char *fetched_text(const runtime_marketplace_read_request *order, size_t 
     }
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     char *bytes = (char *)spisor_read_file_reporting(order->destination, length, &outcome);
-    runtime_remove_file_entry(order->destination);
+    spisor_remove_file_in_place(order->destination);
     if (bytes == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY) {
         refuse(refusal, "try again", "%s was fetched but the download could not be read", order->source_id);
     }

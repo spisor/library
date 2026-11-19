@@ -7,6 +7,7 @@
 #endif
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "catalog_text.h"
 #include "child_process.h"
 #include "definition_fixture.h"
@@ -674,6 +675,10 @@ static int holders_unchanged_unless_ok(void) {
     if (!kept) {
         fprintf(stderr, "processes: an answer of %d changed the holders file\n", (int)last_status);
     }
+    if (kept && exists_in(base.state, "processes/" BACKGROUND_HOST ".lock")) {
+        fprintf(stderr, "processes: an answer of %d left the holders locked\n", (int)last_status);
+        kept = 0;
+    }
     return kept;
 }
 
@@ -1313,24 +1318,15 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     return 0;
 }
 
-static int sticky_failures = 0;
+static allocation_failure_mode failure_mode = FAIL_ONE_ALLOCATION;
 static int every_failure_answered = 0;
-
-/** Fails allocation `attempt`, and with sticky failures every one after it as well. */
-static void fail_allocation(uint64_t attempt) {
-    if (sticky_failures && attempt != 0) {
-        spisor_memory_fail_from(attempt);
-    } else {
-        spisor_memory_fail_at(attempt);
-    }
-}
 
 /** Fails allocation attempt; 1 to go on, 0 after a failure the case does not allow, and *ran_whole when none failed. */
 static int fail_once(const operation_case *each, const clean_run *clean, uint64_t attempt, int *ran_whole) {
     each->prepare();
     int64_t baseline = spisor_memory_live_blocks();
     refusal_detail[0] = 0;
-    fail_allocation(attempt);
+    fail_allocation(failure_mode, attempt);
     spisor_status status = each->run();
     *ran_whole = !spisor_memory_failed();
     spisor_memory_fail_at(0);
@@ -1353,7 +1349,8 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
 }
 
 /** Fails the operation's allocations one at a time, between first and last when given, until it runs whole. */
-static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+static void every_failure_in_mode(const operation_case *each, spisor_status expected, uint64_t first,
+                                  uint64_t last) {
     int failures_before = check_failures;
     clean_run clean;
     run_clean(each, &clean);
@@ -1368,9 +1365,16 @@ static void every_failure_of(const operation_case *each, spisor_status expected,
             check_failures++;
         }
     }
-    printf("%s: %llu allocations, failures %llu to %llu checked\n", each->label,
-           (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
+    printf("%s%s: %llu allocations, failures %llu to %llu checked\n", each->label,
+           allocation_failure_mode_name(failure_mode), (unsigned long long)clean.allocations,
+           (unsigned long long)first, (unsigned long long)(attempt - 1));
     spisor_memory_release(clean.snapshot);
+}
+
+static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+    for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
+        every_failure_in_mode(each, expected, first, last);
+    }
 }
 
 static int is_selected(const char *only, const char *label) {
@@ -1450,9 +1454,6 @@ int main(int argc, char **argv) {
     if (is_selected(only, rolled.label)) {
         every_failure_answered = 1;
         every_failure_of(&rolled, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 1;
-        every_failure_of(&rolled, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 0;
         every_failure_answered = 0;
     }
     if (is_selected(only, read.label)) {
@@ -1463,9 +1464,6 @@ int main(int argc, char **argv) {
         if (is_selected(only, each->label)) {
             every_failure_answered = 1;
             every_failure_of(each, SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 1;
-            every_failure_of(each, SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 0;
             every_failure_answered = 0;
         }
     }
@@ -1481,31 +1479,19 @@ int main(int argc, char **argv) {
     }
     if (is_selected(only, hold_start.label)) {
         every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 1;
-        every_failure_of(&hold_start, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 0;
     }
     for (size_t index = 0; index < sizeof hosts_cases / sizeof hosts_cases[0]; index++) {
         if (is_selected(only, hosts_cases[index].label)) {
             every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 1;
-            every_failure_of(&hosts_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 0;
         }
     }
     for (size_t index = 0; index < 3; index++) {
         if (is_selected(only, loader_cases[index].label)) {
             every_failure_of(&loader_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 1;
-            every_failure_of(&loader_cases[index], SPISOR_OK, first == 0 ? 1 : first, last);
-            sticky_failures = 0;
         }
     }
     if (is_selected(only, created_key.label)) {
         every_failure_of(&created_key, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 1;
-        every_failure_of(&created_key, SPISOR_OK, first == 0 ? 1 : first, last);
-        sticky_failures = 0;
     }
     return check_summary("out_of_memory_install_operations_test");
 }

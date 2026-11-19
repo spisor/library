@@ -16,6 +16,7 @@
 #include "directory_tree.h"
 #include "file_stream.h"
 #include "file_times.h"
+#include "prepared_undo.h"
 #include "process_alive.h"
 #include "spisor/file.h"
 
@@ -23,7 +24,6 @@
 #include <process.h>
 #include <windows.h>
 
-#include "wide_path.h"
 #define current_process_id() _getpid()
 #else
 #include <time.h>
@@ -35,9 +35,16 @@
 #define LOCK_RETRY_MILLISECONDS 25
 #define LONGEST_WAIT_MILLISECONDS (3.0 * STALE_LOCK_MILLISECONDS)
 
+#define TOKEN_CAPACITY 64
+
+/**
+ * The lock's token, with the lock and its stale name prepared at lock time, so neither unlocking nor moving a stale
+ * lock aside and back allocates (prepared_undo.h).
+ */
 struct runtime_holders_guard {
-    char *path;
     char *token;
+    spisor_prepared_path lock;
+    spisor_prepared_path stale;
 };
 
 static volatile long token_number = 0;
@@ -61,9 +68,9 @@ static void pause_milliseconds(long milliseconds) {
 
 /** A text no other taker of any lock writes: the pid, a space, then a number and the time. */
 static char *new_token(void) {
-    char *token = spisor_memory_allocate(64);
+    char *token = spisor_memory_allocate(TOKEN_CAPACITY);
     if (token != NULL) {
-        snprintf(token, 64, "%d %lu-%.0f", (int)current_process_id(), next_token_number(),
+        snprintf(token, TOKEN_CAPACITY, "%d %lu-%.0f", (int)current_process_id(), next_token_number(),
                  floor(runtime_now_milliseconds()));
     }
     return token;
@@ -108,56 +115,57 @@ static int is_stale(const char *path, const char *held) {
     return is_old(path);
 }
 
-static int link_back(const char *moved, const char *path) {
-#if defined(_WIN32)
-    wchar_t *wide_moved = spisor_wide_path(moved);
-    wchar_t *wide_path = spisor_wide_path(path);
-    int linked = wide_moved != NULL && wide_path != NULL && CreateHardLinkW(wide_path, wide_moved, NULL) != 0;
-    spisor_memory_release(wide_moved);
-    spisor_memory_release(wide_path);
-    return linked;
-#else
-    return link(moved, path) == 0;
-#endif
+/** Whether the prepared file holds exactly text, read without allocating. */
+static int holds_text(const spisor_prepared_path *file, const char *text) {
+    uint8_t held[TOKEN_CAPACITY];
+    size_t length = 0;
+    return spisor_read_prepared_file(file, held, sizeof held, &length) && length == strlen(text) &&
+           memcmp(held, text, length) == 0;
 }
 
 /** Moves the lock judged stale away, putting it back when what was moved is not the lock judged. */
-static void remove_stale_lock(const char *path, const char *judged) {
-    char *token = new_token();
-    const char *parts[4] = {path, ".", token, ".stale"};
-    char *moved = token == NULL ? NULL : runtime_cache_text(parts, 4);
-    spisor_memory_release(token);
-    if (moved == NULL || runtime_move_file_over(path, moved) != SPISOR_OK) {
-        spisor_memory_release(moved);
+static void remove_stale_lock(const runtime_holders_guard *guard, const char *judged) {
+    if (!spisor_move_prepared_file(&guard->lock, &guard->stale)) {
         return;
     }
-    int out_of_memory = 0;
-    char *held = read_lock(moved, &out_of_memory);
-    if (held == NULL || strcmp(held, judged) != 0) {
-        link_back(moved, path);
+    if (!holds_text(&guard->stale, judged)) {
+        spisor_link_prepared_file(&guard->stale, &guard->lock);
     }
-    spisor_memory_release(held);
-    runtime_remove_file_entry(moved);
-    spisor_memory_release(moved);
+    spisor_remove_prepared_file(&guard->stale);
 }
 
 static void release_guard(runtime_holders_guard *guard) {
-    spisor_memory_release(guard->path);
+    spisor_release_prepared_path(&guard->lock);
+    spisor_release_prepared_path(&guard->stale);
     spisor_memory_release(guard->token);
     spisor_memory_release(guard);
 }
 
-static runtime_holders_guard *guard_of(const char *path, char *token) {
-    runtime_holders_guard *guard = spisor_memory_allocate(sizeof *guard);
-    char *copy = guard == NULL ? NULL : spisor_memory_allocate(strlen(path) + 1);
-    if (copy == NULL) {
-        spisor_memory_release(guard);
+static spisor_status prepare_stale_name(const char *path, runtime_holders_guard *guard) {
+    const char *parts[4] = {path, ".", guard->token, ".stale"};
+    char *stale = runtime_cache_text(parts, 4);
+    spisor_status prepared = stale == NULL ? SPISOR_OUT_OF_MEMORY : spisor_prepare_path(stale, &guard->stale);
+    spisor_memory_release(stale);
+    return prepared;
+}
+
+/** The guard for path, taking token: NULL holding nothing when memory ran out, *status saying why. */
+static runtime_holders_guard *guard_of(const char *path, char *token, spisor_status *status) {
+    runtime_holders_guard *guard = spisor_memory_allocate_zeroed(1, sizeof *guard);
+    if (guard == NULL) {
         spisor_memory_release(token);
+        *status = SPISOR_OUT_OF_MEMORY;
         return NULL;
     }
-    memcpy(copy, path, strlen(path) + 1);
-    guard->path = copy;
     guard->token = token;
+    *status = spisor_prepare_path(path, &guard->lock);
+    if (*status == SPISOR_OK) {
+        *status = prepare_stale_name(path, guard);
+    }
+    if (*status != SPISOR_OK) {
+        release_guard(guard);
+        return NULL;
+    }
     return guard;
 }
 
@@ -185,9 +193,10 @@ static spisor_status refused_creating(runtime_entry_outcome created, const char 
 spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **guard) {
     *guard = NULL;
     char *token = new_token();
-    runtime_holders_guard *made = token == NULL ? NULL : guard_of(path, token);
+    spisor_status prepared = SPISOR_OUT_OF_MEMORY;
+    runtime_holders_guard *made = token == NULL ? NULL : guard_of(path, token, &prepared);
     if (made == NULL) {
-        return SPISOR_OUT_OF_MEMORY;
+        return prepared;
     }
     double started = runtime_now_milliseconds();
     for (;;) {
@@ -209,7 +218,7 @@ spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **gua
         }
         int stale = held != NULL && is_stale(path, held);
         if (stale) {
-            remove_stale_lock(path, held);
+            remove_stale_lock(made, held);
         }
         spisor_memory_release(held);
         if (!stale) {
@@ -222,11 +231,8 @@ void runtime_unlock_holders(runtime_holders_guard *guard) {
     if (guard == NULL) {
         return;
     }
-    int out_of_memory = 0;
-    char *held = read_lock(guard->path, &out_of_memory);
-    if (held != NULL && strcmp(held, guard->token) == 0) {
-        runtime_remove_file_entry(guard->path);
+    if (holds_text(&guard->lock, guard->token)) {
+        spisor_remove_prepared_file(&guard->lock);
     }
-    spisor_memory_release(held);
     release_guard(guard);
 }

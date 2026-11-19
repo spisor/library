@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "check.h"
 #include "spisor/value.h"
 #include "value_equal.h"
@@ -359,7 +360,7 @@ static void a_build_refuses_without_allocating(void) {
     CHECK(memcmp(&before, &filled, sizeof before) == 0);
 }
 
-static void every_failed_allocation_leaves_the_tree_empty(void) {
+static void every_failed_allocation_leaves_the_tree_empty(allocation_failure_mode mode) {
     sample_tree sample;
     lay_out_sample(&sample);
     for (uint64_t attempt = 1; attempt < 1000; attempt++) {
@@ -367,7 +368,7 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
         spisor_value_tree before;
         spisor_status status;
         memcpy(&before, &tree, sizeof before);
-        spisor_memory_fail_at(attempt);
+        fail_allocation(mode, attempt);
         status = spisor_value_build(&sample.root, &tree);
         if (!spisor_memory_failed()) {
             spisor_memory_fail_at(0);
@@ -387,7 +388,7 @@ static void every_failed_allocation_leaves_the_tree_empty(void) {
 
 #define WIDE_LIST 300
 
-static void every_failed_allocation_past_the_first_growth_leaves_the_tree_empty(void) {
+static void every_failed_allocation_past_the_first_growth_leaves_the_tree_empty(allocation_failure_mode mode) {
     spisor_value items[WIDE_LIST];
     spisor_value wide;
     for (size_t index = 0; index < WIDE_LIST; index++) {
@@ -399,7 +400,7 @@ static void every_failed_allocation_past_the_first_growth_leaves_the_tree_empty(
         spisor_value_tree before;
         spisor_status status;
         memcpy(&before, &tree, sizeof before);
-        spisor_memory_fail_at(attempt);
+        fail_allocation(mode, attempt);
         status = spisor_value_build(&wide, &tree);
         if (!spisor_memory_failed()) {
             spisor_memory_fail_at(0);
@@ -431,7 +432,7 @@ int main(void) {
     a_build_outlives_its_source();
     a_scalar_builds_without_a_block();
     a_build_refuses_without_allocating();
-    every_failed_allocation_leaves_the_tree_empty();
-    every_failed_allocation_past_the_first_growth_leaves_the_tree_empty();
+    in_every_failure_mode(every_failed_allocation_leaves_the_tree_empty);
+    in_every_failure_mode(every_failed_allocation_past_the_first_growth_leaves_the_tree_empty);
     return check_summary("value_test");
 }

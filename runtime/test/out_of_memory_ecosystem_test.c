@@ -7,6 +7,7 @@
 #endif
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "json_allocation.h"
 #include "runtime/install.h"
 #include "timestamp_text.h"
@@ -249,9 +250,11 @@ static cJSON *clean_install(const install_base *base, uint64_t *allocations) {
 }
 
 /** Runs the install with allocation attempt failing; 1 when it left nothing live and answered OK or OUT_OF_MEMORY. */
+static allocation_failure_mode failure_mode = FAIL_ONE_ALLOCATION;
+
 static int fail_once(const install_base *base, uint64_t attempt, spisor_status *status) {
     int64_t baseline = spisor_memory_live_blocks();
-    spisor_memory_fail_at(attempt);
+    fail_allocation(failure_mode, attempt);
     *status = install_ecosystem(base);
     spisor_memory_fail_at(0);
     if (spisor_memory_live_blocks() != baseline) {
@@ -294,7 +297,7 @@ static int fails_as_promised(const install_base *base, const cJSON *clean, uint6
 }
 
 /** Fails the ecosystem install allocation by allocation, between first and last when given. */
-static void every_ecosystem_failure(uint64_t first, uint64_t last) {
+static void every_ecosystem_failure_in_mode(uint64_t first, uint64_t last) {
     install_base base;
     prepare_ecosystem(&base);
     uint64_t allocations = 0;
@@ -308,10 +311,17 @@ static void every_ecosystem_failure(uint64_t first, uint64_t last) {
             break;
         }
     }
-    printf("install's ecosystem: %llu allocations, failures %llu to %llu checked\n", (unsigned long long)allocations,
-           (unsigned long long)first, (unsigned long long)last);
+    printf("install's ecosystem%s: %llu allocations, failures %llu to %llu checked\n",
+           allocation_failure_mode_name(failure_mode), (unsigned long long)allocations, (unsigned long long)first,
+           (unsigned long long)last);
     cJSON_Delete(clean);
     finish_install_base(&base);
+}
+
+static void every_ecosystem_failure(uint64_t first, uint64_t last) {
+    for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
+        every_ecosystem_failure_in_mode(first, last);
+    }
 }
 
 int main(int argc, char **argv) {

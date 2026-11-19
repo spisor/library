@@ -6,7 +6,7 @@
 #include "answer_storage.h"
 #include "boot.h"
 #include "definition_support.h"
-#include "directory_tree.h"
+#include "prepared_undo.h"
 #include "host_references.h"
 #include "json_service.h"
 #include "platform_key.h"
@@ -206,7 +206,7 @@ static spisor_status serve_place(const char *cache, runtime_boot_place_answer *a
     if (answered != NULL && status != SPISOR_OK) {
         runtime_release_stored_answer(answer, PLACE_ANSWER_SHAPE);
         if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "placed"))) {
-            runtime_remove_file_entry(text_of(answered, "path"));
+            spisor_remove_file_in_place(text_of(answered, "path"));
         }
     }
     cJSON_Delete(answered);

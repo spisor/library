@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
-#include "directory_tree.h"
+#include "prepared_undo.h"
 #include "json_service.h"
 #include "runtime/fetch.h"
 #include "sha256.h"
@@ -72,7 +72,7 @@ static runtime_cache_stored settle(spisor_status status, const runtime_fetch_get
     if (answer->bytes == reference->size) {
         return RUNTIME_CACHE_FETCHED;
     }
-    runtime_remove_file_entry(destination);
+    spisor_remove_file_in_place(destination);
     *refusal = wrong_length(reference, answer->bytes);
     return *refusal == NULL ? RUNTIME_CACHE_OUT_OF_MEMORY : RUNTIME_CACHE_REFUSED;
 }

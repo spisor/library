@@ -427,6 +427,38 @@ static int remove_entry(HKEY key, const path_value *value, const cJSON *record) 
     return removed;
 }
 
+spisor_status runtime_path_entry_prepare_undo(runtime_path_entry_undo *undo) {
+    HKEY key;
+    path_value value;
+    undo->text = NULL;
+    undo->type = REG_EXPAND_SZ;
+    undo->present = 0;
+    spisor_status read = read_environment(&key, &value);
+    if (read != SPISOR_OK) {
+        return read;
+    }
+    undo->text = value.text;
+    undo->type = value.type;
+    undo->present = value.present;
+    RegCloseKey(key);
+    return SPISOR_OK;
+}
+
+int runtime_path_entry_restore(const runtime_path_entry_undo *undo) {
+    HKEY key = open_environment();
+    if (key == NULL) {
+        return 0;
+    }
+    int restored = undo->present ? store_path_text(key, undo->type, undo->text) : delete_path_value(key);
+    RegCloseKey(key);
+    return restored;
+}
+
+void runtime_path_entry_release_undo(runtime_path_entry_undo *undo) {
+    spisor_memory_release(undo->text);
+    undo->text = NULL;
+}
+
 runtime_change_reversal runtime_path_entry_reverse(const cJSON *record, int held, runtime_change_note *note) {
     if (held) {
         return RUNTIME_CHANGE_REVERSED;

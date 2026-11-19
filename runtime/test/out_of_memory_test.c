@@ -15,6 +15,7 @@
 #endif
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
@@ -365,11 +366,27 @@ static spisor_status fetch_a_file(void) {
     return status;
 }
 
-/** Whether a get left nothing at its destination. */
+/** Whether no file stands anywhere under directory, which need not exist. */
+static int holds_no_file(const char *directory) {
+    runtime_directory_listing listing;
+    if (runtime_list_directory(directory, &listing) != SPISOR_OK) {
+        return 1;
+    }
+    int none = 1;
+    for (size_t index = 0; none && index < listing.count; index++) {
+        char path[1600];
+        snprintf(path, sizeof path, "%s/%s", directory, listing.entries[index].name);
+        none = listing.entries[index].is_directory && holds_no_file(path);
+    }
+    runtime_free_directory_listing(&listing);
+    return none;
+}
+
+/** Whether a get left nothing in the destination's folder, neither the file nor its partial download. */
 static int fetched_nothing(void) {
-    char destination[1400];
-    snprintf(destination, sizeof destination, "%s/fetched/settings.json", place.base);
-    return spisor_probe_file(destination) != SPISOR_FILE_PRESENT;
+    char folder[1400];
+    snprintf(folder, sizeof folder, "%s/fetched", place.base);
+    return holds_no_file(folder);
 }
 
 static spisor_status find_on_path(void) {
@@ -470,13 +487,23 @@ static spisor_status reverse_a_change(void) {
     return status;
 }
 
-/** Whether host's registration holds at most `count` changes. */
+/**
+ * Whether host's registration holds at most `count` applied changes.
+ *
+ * @implNote A pending record may stay: an undo that memory kept from storing its withdrawal leaves one, which the next
+ * apply settles against the file.
+ */
 static int holds_at_most(const char *host, int count) {
     cJSON *registration = NULL;
     CHECK(runtime_registry_load(place.state, host, &registration) == RUNTIME_REGISTRY_OK);
-    int held = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(registration, "changes")) <= count;
+    int applied = 0;
+    const cJSON *change;
+    cJSON_ArrayForEach(change, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
+        const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(change, "state"));
+        applied += state != NULL && strcmp(state, "applied") == 0;
+    }
     cJSON_Delete(registration);
-    return held;
+    return applied <= count;
 }
 
 /** Whether the file still holds what it held before the apply. */
@@ -827,8 +854,8 @@ static int renamed_to_dd(void) {
 /**
  * One operation to fail allocation by allocation. `prepare` runs after the fresh files and before the first failure;
  * `left_alone` names what a failure must not have changed; `took_effect`, when it holds after a failure, means the
- * call completed and must answer OK; `sticky` fails every allocation after the first failure too; `answer_checked`
- * accepts OK, the operation having already turned a wrong OK answer into another status.
+ * call completed and must answer OK; `answer_checked` accepts OK, the operation having already turned a wrong OK
+ * answer into another status.
  */
 typedef struct failure_case {
     const char *label;
@@ -836,7 +863,6 @@ typedef struct failure_case {
     void (*prepare)(void);
     untouched left_alone;
     untouched took_effect;
-    int sticky;
     int answer_checked;
 } failure_case;
 
@@ -871,19 +897,20 @@ static int answered_as_required(const failure_case *each, uint64_t attempt, spis
  * Fails the operation's allocations one at a time until it runs whole, checking each failure as the file says and
  * as the case adds.
  */
-static void every_failure_of_case(const failure_case *each) {
+/** The failures a run checks, from the third and fourth arguments; a last of 0 checks until the case runs whole. */
+static uint64_t first_attempt = 1;
+static uint64_t last_attempt = 0;
+
+static void every_failure_of_case(const failure_case *each, allocation_failure_mode mode) {
     const char *label = each->label;
-    for (uint64_t attempt = 1; attempt < 100000; attempt++) {
+    uint64_t attempt = first_attempt;
+    for (; attempt < 100000 && (last_attempt == 0 || attempt <= last_attempt); attempt++) {
         fresh_files();
         if (each->prepare != NULL) {
             each->prepare();
         }
         int64_t baseline = spisor_memory_live_blocks();
-        if (each->sticky) {
-            spisor_memory_fail_from(attempt);
-        } else {
-            spisor_memory_fail_at(attempt);
-        }
+        fail_allocation(mode, attempt);
         spisor_status status = each->run();
         int failed = spisor_memory_failed();
         spisor_memory_fail_at(0);
@@ -898,14 +925,19 @@ static void every_failure_of_case(const failure_case *each) {
                 fprintf(stderr, "%s: with no failure it answered %d\n", label, (int)status);
                 check_failures++;
             }
-            printf("%s: %llu allocations, each failure answered out of memory\n", label,
-                   (unsigned long long)(attempt - 1));
+            printf("%s%s: %llu allocations, each failure answered out of memory\n", label,
+                   allocation_failure_mode_name(mode), (unsigned long long)(attempt - 1));
             return;
         }
         if (!answered_as_required(each, attempt, status)) {
             check_failures++;
             return;
         }
+    }
+    if (last_attempt != 0 && attempt > last_attempt) {
+        printf("%s%s: failures %llu to %llu answered out of memory\n", label, allocation_failure_mode_name(mode),
+               (unsigned long long)first_attempt, (unsigned long long)last_attempt);
+        return;
     }
     fprintf(stderr, "%s: never ran whole\n", label);
     check_failures++;
@@ -918,16 +950,18 @@ static void every_failure_of(const failure_case *each) {
     if (strstr(each->label, only_label) == NULL) {
         return;
     }
-    every_failure_of_case(each);
+    for (allocation_failure_mode mode = FAIL_ONE_ALLOCATION; mode < ALLOCATION_FAILURE_MODES; mode++) {
+        every_failure_of_case(each, mode);
+    }
 }
 
 static void every_failure_answers_out_of_memory(const char *label, operation run, untouched left_alone) {
-    failure_case each = {label, run, NULL, left_alone, NULL, 0, 0};
+    failure_case each = {label, run, NULL, left_alone, NULL, 0};
     every_failure_of(&each);
 }
 
-static void every_command_failure(const char *label, operation run, untouched took_effect, int sticky) {
-    failure_case each = {label, run, add_zz, kept_zz_and_recorded_all, took_effect, sticky, 0};
+static void every_command_failure(const char *label, operation run, untouched took_effect) {
+    failure_case each = {label, run, add_zz, kept_zz_and_recorded_all, took_effect, 0};
     every_failure_of(&each);
 }
 
@@ -1295,7 +1329,7 @@ static spisor_status resolve_versions(void) {
 }
 
 static void every_checked_failure(const char *label, operation run, void (*prepare)(void), untouched left_alone) {
-    failure_case each = {label, run, prepare, left_alone, NULL, 0, 1};
+    failure_case each = {label, run, prepare, left_alone, NULL, 1};
     every_failure_of(&each);
 }
 
@@ -1468,12 +1502,12 @@ static void every_install_operation(void) {
     }
     runtime_fetch_allow_plain_http(1);
     snprintf(by_id_api_base, sizeof by_id_api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
-    failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0, 0};
+    failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0};
     every_failure_of(&by_id);
     runtime_fetch_allow_plain_http(0);
     spisor_memory_release(http_fixture_stop(server));
     failure_case ecosystem = {"install's ecosystem", install_the_ecosystem, a_catalog_with_one_plugin, NULL,
-                              recorded_the_run, 0, 1};
+                              recorded_the_run, 1};
     every_failure_of(&ecosystem);
 }
 
@@ -1512,17 +1546,17 @@ static void an_unrecorded_profile_line_is_seen(void) {
 static void every_command(void) {
     an_unrecorded_profile_line_is_seen();
     every_failure_answers_out_of_memory("commands' remove", delete_a_command, deleted_nothing);
-    every_command_failure("commands' request", request_a_command, NULL, 0);
-    every_command_failure("commands' request, memory staying out", request_a_command, NULL, 1);
-    every_command_failure("commands' add", add_a_command, NULL, 0);
-    every_command_failure("commands' rename", rename_a_command, renamed_to_dd, 0);
-    every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL, 0);
+    every_command_failure("commands' request", request_a_command, NULL);
+    every_command_failure("commands' add", add_a_command, NULL);
+    every_command_failure("commands' rename", rename_a_command, renamed_to_dd);
+    every_command_failure("commands' rename onto a held name", rename_onto_a_held_name, NULL);
 }
 
 /**
  * With the argument `commands` runs only the commands service, with `cache` only the cache and catalog services, and
  * with `install` only install's by_id and ecosystem, whose cases take most of the time, each as a test of its own. Any
- * other first argument runs the remaining services; a second narrows the commands or other cases to labels holding it.
+ * other first argument runs the remaining services; a second narrows the cases to labels holding it, and a third and
+ * fourth to the failures from first to last.
  */
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
@@ -1549,16 +1583,19 @@ int main(int argc, char **argv) {
                         &whole_catalog));
     CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
     build_cache_and_catalog_values();
+    only_label = argc > 2 ? argv[2] : "";
+    first_attempt = argc > 3 ? strtoull(argv[3], NULL, 10) : 1;
+    last_attempt = argc > 4 ? strtoull(argv[4], NULL, 10) : 0;
+    if (first_attempt == 0) {
+        first_attempt = 1;
+    }
     if (argc > 1 && strcmp(argv[1], "commands") == 0) {
-        only_label = argc > 2 ? argv[2] : "";
         every_command();
     } else if (argc > 1 && strcmp(argv[1], "install") == 0) {
         every_install_operation();
     } else if (argc > 1 && strcmp(argv[1], "cache") == 0) {
-        only_label = argc > 2 ? argv[2] : "";
         every_cache_and_catalog_operation();
     } else {
-        only_label = argc > 2 ? argv[2] : "";
         every_service_but_commands();
     }
     spisor_value_release(&names);
