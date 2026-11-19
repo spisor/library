@@ -1,4 +1,5 @@
-set(SPISOR_PLAIN_ALLOCATION "(^|[^A-Za-z0-9_.>])(malloc|calloc|realloc|free|strdup|_strdup)[ \t]*\\(")
+set(SPISOR_PLAIN_ALLOCATION
+    "(^|[^A-Za-z0-9_.>])\\(?[ \t]*(malloc|calloc|realloc|free|strdup|_strdup)[ \t]*\\)?[ \t]*\\(")
 
 function(spisor_plain_allocations_in directory out_variable)
     file(GLOB_RECURSE sources "${directory}/*.c" "${directory}/*.h")
