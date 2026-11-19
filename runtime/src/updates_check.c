@@ -16,7 +16,8 @@
 #include "plugin_choices.h"
 #include "catalog.h"
 #include "updates_catalog.h"
-#include "updates_request.h"
+#include "updates.h"
+#include "updates_target.h"
 #include "version_map.h"
 
 #define DEFAULT_INTERVAL_HOURS 24.0
@@ -41,8 +42,8 @@ typedef struct check_progress {
     cJSON *refused;
 } check_progress;
 
-static const cJSON *settings_of(const runtime_updates_request *request) {
-    return cJSON_GetObjectItemCaseSensitive(request->argument, "settings");
+static const cJSON *settings_of(const runtime_updates_check_request *request) {
+    return request->settings;
 }
 
 /** updates.intervalHours from the ecosystem settings, 24 when it is absent or not a positive number. */
@@ -54,12 +55,12 @@ static double interval_hours_of(const cJSON *settings) {
                : DEFAULT_INTERVAL_HOURS;
 }
 
-static int check_sources(const runtime_updates_request *request, const cJSON *sources, const char *now,
+static int check_sources(const runtime_updates_check_request *request, const cJSON *sources, const char *now,
                          cJSON *checked, cJSON **refusal) {
     double interval_hours = interval_hours_of(settings_of(request));
     int added = 1;
     for (const cJSON *source = sources->child; added && source != NULL; source = source->next) {
-        cJSON *check = runtime_updates_check_source(source, request->cache, now, interval_hours, refusal);
+        cJSON *check = runtime_updates_check_source(source, request->target.cache, now, interval_hours, refusal);
         added = check != NULL && cJSON_AddItemToArray(checked, check);
         if (!added) {
             cJSON_Delete(check);
@@ -172,19 +173,19 @@ static int add_unstartable_targets(cJSON *targets, const char *cache, const cJSO
     return added;
 }
 
-static cJSON *kept_hosts(const runtime_updates_request *request) {
+static cJSON *kept_hosts(const runtime_updates_check_request *request) {
     cJSON *ids = cJSON_CreateArray();
-    int built = ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(request->host_id)) &&
+    int built = ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(request->target.host_id)) &&
                 cJSON_AddItemToArray(ids, cJSON_CreateString(RUNTIME_ECOSYSTEM_HOST_ID));
     cJSON *hosts = built ? runtime_pinned_candidates(ids, settings_of(request)) : NULL;
     cJSON_Delete(ids);
     return hosts;
 }
 
-static cJSON *plugin_fetches(const runtime_updates_request *request, const cJSON *catalog, cJSON **refusal) {
+static cJSON *plugin_fetches(const runtime_updates_check_request *request, const cJSON *catalog, cJSON **refusal) {
     cJSON *candidates =
-        runtime_plugin_candidates(settings_of(request), cJSON_GetObjectItemCaseSensitive(request->argument, "defaults"));
-    cJSON *installed = runtime_cache_installed_bundles(request->cache);
+        runtime_plugin_candidates(settings_of(request), request->defaults);
+    cJSON *installed = runtime_cache_installed_bundles(request->target.cache);
     cJSON *resolved = candidates == NULL || installed == NULL
                           ? NULL
                           : runtime_catalog_resolve(catalog, candidates, installed, "plugin", refusal);
@@ -195,16 +196,16 @@ static cJSON *plugin_fetches(const runtime_updates_request *request, const cJSON
     return fetch;
 }
 
-static int plan_targets(const runtime_updates_request *request, check_plan *plan, cJSON **refusal) {
-    runtime_host_references recorded = runtime_read_host_references(request->state, request->host_id);
+static int plan_targets(const runtime_updates_check_request *request, check_plan *plan, cJSON **refusal) {
+    runtime_host_references recorded = runtime_read_host_references(request->target.state, request->target.host_id);
     cJSON *fetch = plugin_fetches(request, plan->catalog, refusal);
     plan->hosts = kept_hosts(request);
     plan->targets = cJSON_CreateArray();
     plan->rolled_back_from = recorded.rolled_back_from;
     recorded.rolled_back_from = NULL;
     int planned = recorded.run != NULL && fetch != NULL && plan->hosts != NULL && plan->targets != NULL &&
-                  add_targets(plan->targets, cJSON_GetObjectItemCaseSensitive(request->argument, "problems"), NULL) &&
-                  add_unstartable_targets(plan->targets, request->cache, recorded.run) &&
+                  add_targets(plan->targets, request->problems, NULL) &&
+                  add_unstartable_targets(plan->targets, request->target.cache, recorded.run) &&
                   add_targets(plan->targets, fetch, plan->rolled_back_from) &&
                   add_host_targets(plan->targets, plan, recorded.run);
     cJSON_Delete(fetch);
@@ -248,15 +249,17 @@ static void release_rollbacks(cJSON *rolled_back_from, const cJSON *catalog) {
  * Adds the targets to next as the references hold them now, under the lock, so no concurrent write is
  * lost, and releases the rollbacks the catalog has moved past.
  */
-static int record_next(const runtime_updates_request *request, const check_plan *plan, cJSON **refusal) {
-    spisor_lock *guard = runtime_updates_lock_registered(request, refusal);
+static int record_next(const runtime_updates_check_request *request, const check_plan *plan, cJSON **refusal) {
+    const runtime_updates_target *host_target = &request->target;
+    spisor_lock *guard = runtime_updates_lock_registered(&request->target, refusal);
     runtime_host_references recorded =
         guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
-                      : runtime_read_host_references(request->state, request->host_id);
+                      : runtime_read_host_references(host_target->state, host_target->host_id);
     release_rollbacks(recorded.rolled_back_from, plan->catalog);
     int recorded_next = recorded.run != NULL && schedule(recorded.next, plan->targets, &recorded);
     char *problem = NULL;
-    if (recorded_next && !runtime_record_host_references(request->state, request->host_id, &recorded, &problem)) {
+    if (recorded_next &&
+        !runtime_record_host_references(host_target->state, host_target->host_id, &recorded, &problem)) {
         *refusal = runtime_updates_unrecorded(problem);
         recorded_next = 0;
     }
@@ -301,21 +304,23 @@ typedef enum hint_switch { HINT_UNCHANGED, HINT_SWITCHED, HINT_UNWRITTEN, HINT_O
  * a version a later rollback or sweep let go is never hinted, and every command boots what the hint names.
  * The version's files are hashed before the lock is taken and only their sizes checked again under it.
  */
-static hint_switch switch_hint(const runtime_updates_request *request, const char *id, const char *version,
+static hint_switch switch_hint(const runtime_updates_check_request *request, const char *id, const char *version,
                                cJSON **refusal) {
+    const runtime_updates_target *host_target = &request->target;
     int out_of_memory = 0;
-    if (!runtime_bundle_is_intact(request->cache, id, version, &out_of_memory)) {
+    if (!runtime_bundle_is_intact(host_target->cache, id, version, &out_of_memory)) {
         return out_of_memory ? HINT_OUT_OF_MEMORY : HINT_UNCHANGED;
     }
-    spisor_lock *guard = runtime_updates_lock(request, refusal);
-    runtime_host_references recorded = guard == NULL ? (runtime_host_references){NULL, NULL, NULL, NULL}
-                                                     : runtime_read_host_references(request->state, request->host_id);
+    spisor_lock *guard = runtime_updates_lock(host_target, refusal);
+    runtime_host_references recorded = guard == NULL
+                                           ? (runtime_host_references){NULL, NULL, NULL, NULL}
+                                           : runtime_read_host_references(host_target->state, host_target->host_id);
     int still_named = recorded.run != NULL && (names(recorded.run, id, version) || names(recorded.next, id, version));
     hint_switch outcome = (guard == NULL && *refusal == NULL) || (guard != NULL && recorded.run == NULL)
                               ? HINT_OUT_OF_MEMORY
                               : HINT_UNCHANGED;
-    if (still_named && runtime_bundle_is_sized(request->cache, id, version, &out_of_memory)) {
-        spisor_status hinted = runtime_hint_host_version(request->cache, id, version);
+    if (still_named && runtime_bundle_is_sized(host_target->cache, id, version, &out_of_memory)) {
+        spisor_status hinted = runtime_hint_host_version(host_target->cache, id, version);
         outcome = hinted == SPISOR_OK ? HINT_SWITCHED : hinted == SPISOR_REFUSED ? HINT_UNWRITTEN : HINT_OUT_OF_MEMORY;
     } else if (out_of_memory) {
         outcome = HINT_OUT_OF_MEMORY;
@@ -340,11 +345,12 @@ static int report_unwritten_hint(check_progress *progress, const char *name, con
  * @implNote The install holds no lock: record_next already named the version in next under the lock, so
  * the sweep keeps it while it arrives, and a start or a registration never waits on a download.
  */
-static int install_target(const runtime_updates_request *request, const check_plan *plan, const char *id,
+static int install_target(const runtime_updates_check_request *request, const check_plan *plan, const char *id,
                           const char *version, const char *name, check_progress *progress) {
+    const runtime_updates_target *host_target = &request->target;
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_cache_install_version(request->cache, id, runtime_updates_item(plan->catalog, id), version,
-                                                  request->platform, &refusal);
+    cJSON *answer = runtime_cache_install_version(host_target->cache, id, runtime_updates_item(plan->catalog, id),
+                                                  version, host_target->platform, &refusal);
     int done = answer != NULL ? cJSON_AddItemToArray(progress->fetched, cJSON_CreateString(name))
                : refusal != NULL ? add_refused(progress->refused, name, runtime_map_version(refusal, "message"),
                                                runtime_map_version(refusal, "fix"))
@@ -363,7 +369,7 @@ static int install_target(const runtime_updates_request *request, const check_pl
     return done;
 }
 
-static int install_one(const runtime_updates_request *request, const check_plan *plan, const cJSON *target,
+static int install_one(const runtime_updates_check_request *request, const check_plan *plan, const cJSON *target,
                        check_progress *progress) {
     const char *id = runtime_map_version(target, "id");
     const char *version = runtime_map_version(target, "version");
@@ -383,7 +389,8 @@ static int install_one(const runtime_updates_request *request, const check_plan 
     return done;
 }
 
-static int install_targets(const runtime_updates_request *request, const check_plan *plan, check_progress *progress) {
+static int install_targets(const runtime_updates_check_request *request, const check_plan *plan,
+                           check_progress *progress) {
     int installed = 1;
     for (const cJSON *target = plan->targets->child; installed && target != NULL; target = target->next) {
         installed = install_one(request, plan, target, progress);
@@ -392,18 +399,18 @@ static int install_targets(const runtime_updates_request *request, const check_p
 }
 
 /** Sweeps with the registry lock held, never through cache.sweep, which takes the lock itself. */
-static cJSON *sweep(const runtime_updates_request *request, cJSON **refusal) {
-    spisor_lock *guard = runtime_updates_lock(request, refusal);
-    cJSON *removed = guard == NULL ? NULL : runtime_cache_sweep_versions(request->cache, request->state);
+static cJSON *sweep(const runtime_updates_check_request *request, cJSON **refusal) {
+    spisor_lock *guard = runtime_updates_lock(&request->target, refusal);
+    cJSON *removed = guard == NULL ? NULL : runtime_cache_sweep_versions(request->target.cache, request->target.state);
     spisor_unlock(guard);
     return removed;
 }
 
-static int plan_check(const runtime_updates_request *request, const char *now, check_plan *plan,
+static int plan_check(const runtime_updates_check_request *request, const char *now, check_plan *plan,
                       check_progress *progress, cJSON **refusal) {
     plan->sources = runtime_updates_sources(settings_of(request), refusal);
     int checked = plan->sources != NULL && check_sources(request, plan->sources, now, progress->checked, refusal);
-    plan->catalog = checked ? runtime_catalog_current(plan->sources, request->cache, refusal) : NULL;
+    plan->catalog = checked ? runtime_catalog_current(plan->sources, request->target.cache, refusal) : NULL;
     return plan->catalog != NULL && plan_targets(request, plan, refusal);
 }
 
@@ -438,10 +445,14 @@ static void free_check(check_plan *plan, check_progress *progress) {
     cJSON_Delete(progress->refused);
 }
 
-cJSON *runtime_updates_check_for(const runtime_updates_request *request, cJSON **refusal) {
-    const char *now = runtime_catalog_text_member(request->argument, "now");
+cJSON *runtime_updates_check(const runtime_updates_check_request *request, cJSON **refusal) {
+    const char *now = request->now;
+    *refusal = NULL;
+    if (runtime_updates_refuse_platformless(&request->target, refusal)) {
+        return NULL;
+    }
     if (now == NULL || now[0] == 0) {
-        const char *parts[1] = {"the argument carries no now"};
+        const char *parts[1] = {"the call carries no now"};
         *refusal = runtime_cache_refusal(parts, 1, "pass now, the time of the check as toISOString writes it");
         return NULL;
     }

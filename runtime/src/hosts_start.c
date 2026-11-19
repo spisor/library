@@ -18,7 +18,7 @@
 #include "registry.h"
 #include "run_records.h"
 #include "spisor/json_kind.h"
-#include "updates_request.h"
+#include "updates.h"
 #include "user_home.h"
 #include "version_map.h"
 
@@ -125,39 +125,14 @@ static int prepare(start_context *context, cJSON **refusal) {
     return context->running != NULL;
 }
 
-static cJSON *apply_argument(const start_context *context) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON *places = argument == NULL ? NULL : cJSON_AddObjectToObject(argument, "places");
-    int built = places != NULL && cJSON_AddStringToObject(places, "state", context->state) != NULL &&
-                cJSON_AddStringToObject(places, "cache", context->cache) != NULL &&
-                cJSON_AddStringToObject(argument, "hostId", context->argument.host_id) != NULL &&
-                runtime_add_reference(argument, "settings", context->settings) &&
-                runtime_add_reference(argument, "running", context->running);
-    if (!built) {
-        cJSON_Delete(argument);
-        return NULL;
-    }
-    return argument;
-}
-
-static runtime_updates_request updates_request(const start_context *context, const cJSON *argument) {
-    runtime_updates_request request = {
-        argument, context->state, context->cache, context->argument.host_id, runtime_platform_key(), NULL, NULL};
-    return request;
+static runtime_updates_target updates_target(const start_context *context) {
+    runtime_updates_target target = {context->state, context->cache, context->argument.host_id, runtime_platform_key()};
+    return target;
 }
 
 static cJSON *applied(const start_context *context, cJSON **refusal) {
-    cJSON *argument = apply_argument(context);
-    runtime_updates_request request = updates_request(context, argument);
-    cJSON *plan = NULL;
-    if (argument != NULL && request.platform == NULL) {
-        *refusal = runtime_refusal("this build of the runtime has no platform key, so no version can be resolved for it",
-                                   "run a build of the runtime made for this operating system and architecture");
-    } else if (argument != NULL) {
-        plan = runtime_updates_apply_for(&request, refusal);
-    }
-    cJSON_Delete(argument);
-    return plan;
+    runtime_updates_apply_request request = {updates_target(context), context->settings, NULL, context->running, NULL};
+    return runtime_updates_apply(&request, refusal);
 }
 
 /** 1 when a live run record of any process names host_id, 0 when none does, -1 when memory runs out. */
@@ -228,8 +203,8 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
  * it_converges_two_starts_of_one_host_that_race_on_its_scheduled_version).
  */
 static cJSON *recorded_or_applied(const start_context *context, int *reused, cJSON **refusal) {
-    runtime_updates_request request = updates_request(context, NULL);
-    cJSON *recorded = runtime_updates_recorded_for(&request, refusal);
+    runtime_updates_target target = updates_target(context);
+    cJSON *recorded = runtime_updates_recorded(&target, refusal);
     const cJSON *run = cJSON_GetObjectItemCaseSensitive(recorded, "run");
     int live = run == NULL || run->child == NULL ? 0 : runs_live(context->state, context->argument.host_id);
     cJSON *plan = NULL;
