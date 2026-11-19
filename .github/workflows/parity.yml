@@ -9,10 +9,8 @@ jobs:
   parity:
     uses: intisy/workflows/.github/workflows/test.yml@main
     with:
-      toolchains: node gradle
+      toolchains: cmake
       runners: '["ubuntu-latest","windows-latest","macos-latest"]'
-      node_install: npm ci --prefix siblings/typescript && npm ci --prefix parity/typescript
-      node_build: cmake -S . -B build && cmake --build build --config Release && npm run build --prefix siblings/typescript && node parity/oracle.mjs
-      node_test: npm test --prefix parity/typescript
-      gradle_root: parity/java
-      gradle_test: test
+      cmake_configure: '-S . -B build -DCMAKE_BUILD_TYPE=Release'
+      cmake_build: '--build build --config Release --target parity_test'
+      cmake_test: 'ctest --test-dir build --output-on-failure -C Release -R "^parity_test$"'
