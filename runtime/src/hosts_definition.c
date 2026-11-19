@@ -16,14 +16,14 @@
 #include "updates_definition.h"
 
 #define HEADER "the hosts header"
-#define REGISTER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_register_argument, environment_count)
-#define REGISTER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
-#define REMOVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_forget_argument, id)
-#define REMOVE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_remove_answer, storage)
-#define PROVENANCE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_provenance_argument, now)
-#define PROVENANCE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_provenance_answer, storage)
-#define START_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_start_argument, session)
-#define START_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_hosts_start_answer, storage)
+#define REGISTER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_register_argument, environment_count)
+#define REGISTER_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
+#define REMOVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_forget_argument, id)
+#define REMOVE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_remove_answer, storage)
+#define PROVENANCE_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_provenance_argument, now)
+#define PROVENANCE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_provenance_answer, storage)
+#define START_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_start_argument, session)
+#define START_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_start_answer, storage)
 
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
@@ -110,7 +110,7 @@ static spisor_status check_register(const runtime_hosts_register_argument *argum
         return runtime_refuse_member(refusal, "commands", HEADER);
     }
     if (registration != NULL &&
-        runtime_has_shape(registration->size, RUNTIME_SHAPE_THROUGH(runtime_registration, start))) {
+        spisor_has_shape(registration->size, SPISOR_SHAPE_THROUGH(runtime_registration, start))) {
         return runtime_check_host_id(refusal, registration->id, HEADER);
     }
     return SPISOR_OK;
@@ -168,10 +168,10 @@ static spisor_status register_host(void *context, const runtime_hosts_register_a
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, REGISTER_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_ANSWER_SHAPE,
                                          answer->command_count | answer->refused_command_count)) {
-        return runtime_refuse_shape(refusal, "hosts' register_host");
+        return spisor_refuse_shape(refusal, "hosts' register_host");
     }
     status = check_register(argument, refusal);
     if (status == SPISOR_OK) {
@@ -226,9 +226,9 @@ static spisor_status remove_host(void *context, const runtime_registry_forget_ar
     cJSON *removed;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REMOVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REMOVE_ANSWER_SHAPE, answer->drifted_count)) {
-        return runtime_refuse_shape(refusal, "hosts' remove");
+    if (argument == NULL || !spisor_has_shape(argument->size, REMOVE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, REMOVE_ANSWER_SHAPE, answer->drifted_count)) {
+        return spisor_refuse_shape(refusal, "hosts' remove");
     }
     status = check_remove(argument, refusal);
     if (status != SPISOR_OK) {
@@ -317,9 +317,9 @@ static spisor_status provenance(void *context, const runtime_hosts_provenance_ar
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PROVENANCE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PROVENANCE_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "hosts' provenance");
+    if (argument == NULL || !spisor_has_shape(argument->size, PROVENANCE_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, PROVENANCE_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "hosts' provenance");
     }
     status = check_provenance(argument, refusal);
     if (status == SPISOR_OK) {
@@ -476,9 +476,9 @@ static spisor_status start(void *context, const runtime_hosts_start_argument *ar
                            runtime_hosts_start_answer *answer, spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, START_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, START_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "hosts' start");
+    if (argument == NULL || !spisor_has_shape(argument->size, START_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, START_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "hosts' start");
     }
     status = check_start(argument, refusal);
     return status != SPISOR_OK ? status : serve_start(argument, answer, refusal);
@@ -523,7 +523,7 @@ static const runtime_hosts_definition definition = {
     release_remove_answer,
     release_provenance_answer,
     release_start_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_hosts_definition_of(void) {

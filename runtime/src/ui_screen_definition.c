@@ -126,7 +126,7 @@ static spisor_status refuse_reply(spisor_refusal *refusal, reply_fault fault) {
     } else {
         snprintf(detail, sizeof detail, "the argument carries no usable replies: %s", fault.rule);
     }
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, "pass each reply as runtime_ui_reply describes it");
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, "pass each reply as runtime_ui_reply describes it");
 }
 
 static int is_screen(const runtime_ui_entry *screen) {

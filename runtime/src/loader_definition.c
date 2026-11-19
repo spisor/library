@@ -10,12 +10,12 @@
 #include "loader.h"
 
 #define HEADER "the loader header"
-#define CHECK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_check_argument, standard)
-#define CHECK_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_check_answer, storage)
-#define HOME_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_home_argument, environment_count)
-#define HOME_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_home_answer, storage)
-#define INSTALLED_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_installed_argument, loader)
-#define INSTALLED_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_loader_installed_answer, storage)
+#define CHECK_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_check_argument, standard)
+#define CHECK_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_check_answer, storage)
+#define HOME_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_home_argument, environment_count)
+#define HOME_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_home_answer, storage)
+#define INSTALLED_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_installed_argument, loader)
+#define INSTALLED_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_loader_installed_answer, storage)
 
 static const char *const HOME_SOURCES[] = {NULL, "override", "native", "xdg", "candidate", "default"};
 
@@ -64,9 +64,9 @@ static spisor_status check(void *context, const runtime_loader_check_argument *a
     cJSON *issues;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE, answer->issue_count)) {
-        return runtime_refuse_shape(refusal, "loader's check");
+    if (argument == NULL || !spisor_has_shape(argument->size, CHECK_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE, answer->issue_count)) {
+        return spisor_refuse_shape(refusal, "loader's check");
     }
     if (argument->standard == NULL) {
         return runtime_refuse_member(refusal, "standard", HEADER);
@@ -160,9 +160,9 @@ static spisor_status home(void *context, const runtime_loader_home_argument *arg
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, HOME_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, HOME_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "loader's home");
+    if (argument == NULL || !spisor_has_shape(argument->size, HOME_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, HOME_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "loader's home");
     }
     status = check_home(argument, refusal);
     if (status != SPISOR_OK) {
@@ -201,9 +201,9 @@ static spisor_status installed(void *context, const runtime_loader_installed_arg
     cJSON *answered;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, INSTALLED_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, INSTALLED_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "loader's installed");
+    if (argument == NULL || !spisor_has_shape(argument->size, INSTALLED_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, INSTALLED_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "loader's installed");
     }
     status = check_installed(argument, refusal);
     if (status != SPISOR_OK) {
@@ -239,7 +239,7 @@ static const runtime_loader_definition definition = {
     release_check_answer,
     release_home_answer,
     release_installed_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_loader_definition_of(void) {

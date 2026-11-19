@@ -66,11 +66,11 @@ int runtime_is_usable_home(const char *home) {
 }
 
 spisor_status runtime_refuse_home(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_UNUSABLE_HOME_MESSAGE, RUNTIME_UNUSABLE_HOME_FIX);
 }
 
 spisor_status runtime_refuse_portable(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the portable folder is not an absolute path",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the portable folder is not an absolute path",
                              "send portable as the portable answer of places' resolve, or leave it out when the host "
                              "has no portable layer");
 }

@@ -22,7 +22,7 @@ include(${PROJECT_SOURCE_DIR}/cmake/header_isolation.cmake)
 file(GLOB spisor_runtime_headers CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/runtime/*.h)
 spisor_refuse_name_in_headers(public_headers_without_cjson NAME cJSON INCLUDE_DIRECTORIES ${PROJECT_SOURCE_DIR}/include
     HEADERS ${spisor_runtime_headers} ${PROJECT_SOURCE_DIR}/include/spisor/status.h
-    ${PROJECT_SOURCE_DIR}/include/spisor/value.h)
+    ${PROJECT_SOURCE_DIR}/include/spisor/value.h ${PROJECT_SOURCE_DIR}/include/spisor/definition.h)
 
 foreach(name status_test value_test json_value_test file_memory_test)
     add_executable(${name} ${name}.c)

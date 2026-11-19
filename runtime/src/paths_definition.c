@@ -9,8 +9,8 @@
 #include "paths.h"
 #include "segment.h"
 
-#define ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_paths_resolve_argument, places)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_paths_answer, storage)
+#define ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_paths_resolve_argument, places)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_paths_answer, storage)
 
 typedef struct plugin_folders {
     char *portable;
@@ -18,7 +18,7 @@ typedef struct plugin_folders {
 } plugin_folders;
 
 static spisor_status refuse_places(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED,
                              "the argument carries places without usable portable and cache folders and a plugin id",
                              "send places as places' resolve answers them, with absolute portable and cache, and plugin "
                              "as the manifest id, one portable path segment such as \"my-plugin\"");
@@ -33,7 +33,7 @@ static spisor_status names_json(const spisor_value *names, cJSON **json, spisor_
     }
     status = names->kind == SPISOR_VALUE_RECORD ? spisor_json_of_value(names, json) : SPISOR_MALFORMED;
     if (status == SPISOR_MALFORMED) {
-        return runtime_refuse_as(refusal, status, "the names are not a well-formed record",
+        return spisor_refuse_as(refusal, status, "the names are not a well-formed record",
                                  "send names as the plugin's names declaration, a record of text members, or NULL");
     }
     return status;
@@ -55,7 +55,7 @@ static int read_plugin_folders(const runtime_paths_resolve_argument *argument, p
     if (places == NULL) {
         return 1;
     }
-    if (!runtime_has_shape(places->size, RUNTIME_SHAPE_THROUGH(runtime_plugin_places, cache))) {
+    if (!spisor_has_shape(places->size, SPISOR_SHAPE_THROUGH(runtime_plugin_places, cache))) {
         return 0;
     }
     if (argument->plugin == NULL || !runtime_trims_to_portable_segment(argument->plugin) ||
@@ -115,9 +115,9 @@ static spisor_status resolve(void *context, const runtime_paths_resolve_argument
     cJSON *names = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "paths' resolve");
+    if (argument == NULL || !spisor_has_shape(argument->size, ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "paths' resolve");
     }
     if (!runtime_is_usable_home(argument->home)) {
         return runtime_refuse_home(refusal);
@@ -136,7 +136,7 @@ static void release_answer(void *context, runtime_paths_answer *answer) {
 }
 
 static const runtime_paths_definition definition = {
-    sizeof(runtime_paths_definition), NULL, resolve, release_answer, runtime_release_refusal,
+    sizeof(runtime_paths_definition), NULL, resolve, release_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_paths_definition_of(void) {

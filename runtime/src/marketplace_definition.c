@@ -13,22 +13,22 @@
 #include "paths.h"
 #include "spisor/path.h"
 
-#define BUILD_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_build_argument, api_base)
-#define SOURCES_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_sources_argument, settings)
-#define READ_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_read_argument, destination)
-#define LOOKUP_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_lookup_argument, name)
-#define REMEMBER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_remember_argument, check_only)
-#define BUILD_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_build_answer, storage)
-#define SOURCES_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_sources_answer, storage)
-#define COPY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_copy_answer, storage)
-#define LOOKUP_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_lookup_answer, storage)
-#define REMEMBER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_marketplace_remember_answer, storage)
+#define BUILD_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_build_argument, api_base)
+#define SOURCES_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_sources_argument, settings)
+#define READ_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_read_argument, destination)
+#define LOOKUP_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_lookup_argument, name)
+#define REMEMBER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_remember_argument, check_only)
+#define BUILD_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_build_answer, storage)
+#define SOURCES_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_sources_answer, storage)
+#define COPY_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_copy_answer, storage)
+#define LOOKUP_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_lookup_answer, storage)
+#define REMEMBER_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_remember_answer, storage)
 
 /** The MALFORMED refusal for an argument lacking `what`, or holding it as a value that is no well-formed record. */
 static spisor_status refuse_missing(spisor_refusal *refusal, const char *what) {
     char detail[160];
     snprintf(detail, sizeof detail, "the argument carries no usable %s", what);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail,
                              "send every required text, and each document as the record its schema describes");
 }
 
@@ -109,15 +109,15 @@ static spisor_status build(void *context, const runtime_marketplace_build_argume
     cJSON *call;
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, BUILD_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, BUILD_ANSWER_SHAPE, answer->skipped_count)) {
-        return runtime_refuse_shape(refusal, "marketplace's build");
+    if (argument == NULL || !spisor_has_shape(argument->size, BUILD_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BUILD_ANSWER_SHAPE, answer->skipped_count)) {
+        return spisor_refuse_shape(refusal, "marketplace's build");
     }
     if (argument->list == NULL || argument->built == NULL) {
         return refuse_missing(refusal, "list or built");
     }
     if ((argument->token == NULL) != (argument->token_host == NULL)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries one of token and token_host alone",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries one of token and token_host alone",
                                  "send token_host, such as github.com, with the token, or neither");
     }
     call = cJSON_CreateObject();
@@ -181,9 +181,9 @@ static spisor_status sources(void *context, const runtime_marketplace_sources_ar
     cJSON *call;
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SOURCES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
-        return runtime_refuse_shape(refusal, "marketplace's sources");
+    if (argument == NULL || !spisor_has_shape(argument->size, SOURCES_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
+        return spisor_refuse_shape(refusal, "marketplace's sources");
     }
     if (argument->settings == NULL) {
         return refuse_missing(refusal, "settings");
@@ -207,9 +207,9 @@ static spisor_status read_source(void *context, const runtime_marketplace_read_a
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, READ_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, COPY_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "marketplace's read");
+    if (argument == NULL || !spisor_has_shape(argument->size, READ_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, COPY_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "marketplace's read");
     }
     if (argument->id == NULL) {
         return refuse_missing(refusal, "source id");
@@ -217,12 +217,12 @@ static spisor_status read_source(void *context, const runtime_marketplace_read_a
     if (argument->url == NULL) {
         char detail[256];
         snprintf(detail, sizeof detail, "the source %s has no url", argument->id);
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail,
                                  "ask the plugin a provider source names for its copy; this library reads urls only");
     }
     if (argument->text == NULL &&
         (argument->destination == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, argument->destination))) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries neither text nor an absolute destination",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries neither text nor an absolute destination",
                                  "send text, the body already fetched, or destination, an absolute path to download into");
     }
     request = (runtime_marketplace_read_request){argument->id, argument->url, argument->text, argument->destination};
@@ -284,9 +284,9 @@ static spisor_status lookup(void *context, const runtime_marketplace_lookup_argu
     cJSON *call;
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, LOOKUP_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LOOKUP_ANSWER_SHAPE, answer->ambiguous_count)) {
-        return runtime_refuse_shape(refusal, "marketplace's lookup");
+    if (argument == NULL || !spisor_has_shape(argument->size, LOOKUP_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LOOKUP_ANSWER_SHAPE, answer->ambiguous_count)) {
+        return spisor_refuse_shape(refusal, "marketplace's lookup");
     }
     if (argument->name == NULL) {
         return refuse_missing(refusal, "name");
@@ -325,9 +325,9 @@ static spisor_status remember(void *context, const runtime_marketplace_remember_
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REMEMBER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REMEMBER_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "marketplace's remember");
+    if (argument == NULL || !spisor_has_shape(argument->size, REMEMBER_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, REMEMBER_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "marketplace's remember");
     }
     if (argument->state == NULL || argument->name == NULL || argument->id == NULL) {
         return refuse_missing(refusal, "state, name or id");
@@ -379,7 +379,7 @@ static const runtime_marketplace_definition definition = {
     release_copy_answer,
     release_lookup_answer,
     release_remember_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_marketplace_definition_of(void) {

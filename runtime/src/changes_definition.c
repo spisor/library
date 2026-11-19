@@ -9,11 +9,11 @@
 #include "spisor/json_value.h"
 #include "paths.h"
 
-#define CHANGE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_change, shell)
-#define APPLY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_changes_apply_argument, change)
-#define REVERSE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_changes_reverse_argument, host)
-#define APPLY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_changes_apply_answer, sequence)
-#define REVERSE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_changes_reverse_answer, storage)
+#define CHANGE_SHAPE SPISOR_SHAPE_THROUGH(runtime_change, shell)
+#define APPLY_SHAPE SPISOR_SHAPE_THROUGH(runtime_changes_apply_argument, change)
+#define REVERSE_SHAPE SPISOR_SHAPE_THROUGH(runtime_changes_reverse_argument, host)
+#define APPLY_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_changes_apply_answer, sequence)
+#define REVERSE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_changes_reverse_answer, storage)
 
 #define CHANGE_FIX                                                                                                \
     "send a change of a known kind with the fields that kind names: a file's path and content, a directory's " \
@@ -22,12 +22,12 @@
 static const char *const KIND_NAMES[] = {NULL, "file", "directory", "json-key", "profile-line", "path-entry"};
 
 static spisor_status refuse_host(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no host",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no host",
                              "send host as the id the host registered with");
 }
 
 static spisor_status refuse_change(spisor_refusal *refusal, const char *detail) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, CHANGE_FIX);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, CHANGE_FIX);
 }
 
 static int add_text(cJSON *object, const char *name, const char *text) {
@@ -107,7 +107,7 @@ static spisor_status change_json(const runtime_change *change, cJSON **json) {
 static spisor_status usable_change(const runtime_change *change, cJSON **json, spisor_refusal *refusal) {
     const char *defect;
     spisor_status status;
-    if (change == NULL || !runtime_has_shape(change->size, CHANGE_SHAPE)) {
+    if (change == NULL || !spisor_has_shape(change->size, CHANGE_SHAPE)) {
         return refuse_change(refusal, "the change is absent or short of its first shape");
     }
     status = change_json(change, json);
@@ -132,9 +132,9 @@ static spisor_status status_of_outcome(const runtime_changes_outcome *outcome, r
         answer->sequence = outcome->sequence > 0 ? (uint64_t)outcome->sequence : 0;
         return SPISOR_OK;
     case RUNTIME_CHANGES_REFUSED:
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, outcome->reason, "nothing was changed or recorded");
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, outcome->reason, "nothing was changed or recorded");
     case RUNTIME_CHANGES_FAILED:
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, outcome->reason,
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, outcome->reason,
                                  "nothing was recorded; fix the cause and apply the change again");
     default:
         return SPISOR_OUT_OF_MEMORY;
@@ -147,9 +147,9 @@ static spisor_status apply(void *context, const runtime_changes_apply_argument *
     cJSON *change = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, APPLY_SHAPE) || answer == NULL ||
-        !runtime_has_shape(answer->size, APPLY_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "changes' apply");
+    if (argument == NULL || !spisor_has_shape(argument->size, APPLY_SHAPE) || answer == NULL ||
+        !spisor_has_shape(answer->size, APPLY_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "changes' apply");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
@@ -208,9 +208,9 @@ static spisor_status reverse(void *context, const runtime_changes_reverse_argume
     cJSON *reversed;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REVERSE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REVERSE_ANSWER_SHAPE, answer->drifted_count)) {
-        return runtime_refuse_shape(refusal, "changes' reverse");
+    if (argument == NULL || !spisor_has_shape(argument->size, REVERSE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, REVERSE_ANSWER_SHAPE, answer->drifted_count)) {
+        return spisor_refuse_shape(refusal, "changes' reverse");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
@@ -230,7 +230,7 @@ static void release_reverse_answer(void *context, runtime_changes_reverse_answer
 }
 
 static const runtime_changes_definition definition = {
-    sizeof(runtime_changes_definition), NULL, apply, reverse, release_reverse_answer, runtime_release_refusal,
+    sizeof(runtime_changes_definition), NULL, apply, reverse, release_reverse_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_changes_definition_of(void) {

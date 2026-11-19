@@ -12,27 +12,27 @@
 #include "spisor/json_value.h"
 #include "platform_key.h"
 
-#define INSTALL_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_install_argument, platform)
-#define INSTALL_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_install_answer, storage)
-#define PLACE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_place_argument, platform)
-#define INSTALLED_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_installed_answer, storage)
-#define CHECK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_check_argument, directory)
-#define CHECK_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_check_answer, storage)
-#define DAMAGED_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_damaged_answer, storage)
-#define LOCATE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_locate_argument, plugin_count)
-#define LOCATE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_locate_answer, storage)
-#define PLATFORM_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_platform_answer, storage)
-#define SWEEP_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_sweep_argument, state)
-#define SWEEP_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_sweep_answer, storage)
-#define DEPLOY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_deploy_argument, replaces)
-#define DEPLOY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_cache_deploy_answer, storage)
+#define INSTALL_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_install_argument, platform)
+#define INSTALL_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_install_answer, storage)
+#define PLACE_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_place_argument, platform)
+#define INSTALLED_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_installed_answer, storage)
+#define CHECK_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_check_argument, directory)
+#define CHECK_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_check_answer, storage)
+#define DAMAGED_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_damaged_answer, storage)
+#define LOCATE_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_locate_argument, plugin_count)
+#define LOCATE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_locate_answer, storage)
+#define PLATFORM_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_platform_answer, storage)
+#define SWEEP_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_sweep_argument, state)
+#define SWEEP_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_sweep_answer, storage)
+#define DEPLOY_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_deploy_argument, replaces)
+#define DEPLOY_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_cache_deploy_answer, storage)
 
 static spisor_status refuse_missing(spisor_refusal *refusal, const char *member) {
     char detail[160];
     char fix[160];
     snprintf(detail, sizeof detail, "the argument carries no %s", member);
     snprintf(fix, sizeof fix, "send %s as text that is not empty", member);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
 
@@ -106,9 +106,9 @@ static spisor_status install(void *context, const runtime_cache_install_argument
     cJSON *item = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, INSTALL_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, INSTALL_ANSWER_SHAPE, answer->fetched_count | answer->cached_count)) {
-        return runtime_refuse_shape(refusal, "cache's install");
+    if (argument == NULL || !spisor_has_shape(argument->size, INSTALL_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, INSTALL_ANSWER_SHAPE, answer->fetched_count | answer->cached_count)) {
+        return spisor_refuse_shape(refusal, "cache's install");
     }
     if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->id) || !runtime_is_text(argument->version) ||
         (argument->platform != NULL && !runtime_is_text(argument->platform))) {
@@ -119,7 +119,7 @@ static spisor_status install(void *context, const runtime_cache_install_argument
     }
     status = item_json(argument->item, &item);
     if (status == SPISOR_MALFORMED) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the item is not a well-formed record",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the item is not a well-formed record",
                                  "send the catalog item as catalog's read answered it");
     }
     if (status != SPISOR_OK) {
@@ -173,10 +173,10 @@ static spisor_status installed(void *context, const runtime_cache_place_argument
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, INSTALLED_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, PLACE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, INSTALLED_ANSWER_SHAPE,
                                          answer->bundle_count | answer->library_count)) {
-        return runtime_refuse_shape(refusal, "cache's installed");
+        return spisor_refuse_shape(refusal, "cache's installed");
     }
     if (!runtime_is_text(argument->cache)) {
         return refuse_missing(refusal, "cache");
@@ -214,9 +214,9 @@ static spisor_status check(void *context, const runtime_cache_check_argument *ar
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "cache's check");
+    if (argument == NULL || !spisor_has_shape(argument->size, CHECK_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "cache's check");
     }
     if (!runtime_is_text(argument->directory)) {
         return refuse_missing(refusal, "directory");
@@ -267,9 +267,9 @@ static spisor_status damaged(void *context, const runtime_cache_place_argument *
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, DAMAGED_ANSWER_SHAPE, answer->damaged_count)) {
-        return runtime_refuse_shape(refusal, "cache's damaged");
+    if (argument == NULL || !spisor_has_shape(argument->size, PLACE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, DAMAGED_ANSWER_SHAPE, answer->damaged_count)) {
+        return spisor_refuse_shape(refusal, "cache's damaged");
     }
     if (!runtime_is_text(argument->cache)) {
         return refuse_missing(refusal, "cache");
@@ -356,15 +356,15 @@ static spisor_status locate(void *context, const runtime_cache_locate_argument *
     cJSON *answered;
     cJSON *plugins;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, LOCATE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LOCATE_ANSWER_SHAPE, answer->located_count | answer->problem_count)) {
-        return runtime_refuse_shape(refusal, "cache's locate");
+    if (argument == NULL || !spisor_has_shape(argument->size, LOCATE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LOCATE_ANSWER_SHAPE, answer->located_count | answer->problem_count)) {
+        return spisor_refuse_shape(refusal, "cache's locate");
     }
     if (!runtime_is_text(argument->cache)) {
         return refuse_missing(refusal, "cache");
     }
     if (!are_plugins(argument)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "a plugin lacks its id or its version, or is twice",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "a plugin lacks its id or its version, or is twice",
                                  "send each plugin once, with its id and the version it runs as text");
     }
     plugins = plugins_json(argument);
@@ -379,8 +379,8 @@ static spisor_status locate(void *context, const runtime_cache_locate_argument *
 static spisor_status platform(void *context, runtime_cache_platform_answer *answer, spisor_refusal *refusal) {
     const char *key = runtime_platform_key();
     (void)context;
-    if (!RUNTIME_IS_EMPTY_ANSWER(answer, PLATFORM_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "cache's platform");
+    if (!SPISOR_IS_EMPTY_ANSWER(answer, PLATFORM_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "cache's platform");
     }
     return runtime_pack_texts(&key, &answer->platform, 1, &answer->storage) ? SPISOR_OK : SPISOR_OUT_OF_MEMORY;
 }
@@ -399,9 +399,9 @@ static spisor_status sweep(void *context, const runtime_cache_sweep_argument *ar
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SWEEP_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SWEEP_ANSWER_SHAPE, answer->removed_count)) {
-        return runtime_refuse_shape(refusal, "cache's sweep");
+    if (argument == NULL || !spisor_has_shape(argument->size, SWEEP_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SWEEP_ANSWER_SHAPE, answer->removed_count)) {
+        return spisor_refuse_shape(refusal, "cache's sweep");
     }
     if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->state)) {
         return refuse_missing(refusal, !runtime_is_text(argument->cache) ? "cache" : "state");
@@ -438,9 +438,9 @@ static spisor_status deploy(void *context, const runtime_cache_deploy_argument *
                             runtime_cache_deploy_answer *answer, spisor_refusal *refusal) {
     runtime_identity parsed;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, DEPLOY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, DEPLOY_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "cache's deploy");
+    if (argument == NULL || !spisor_has_shape(argument->size, DEPLOY_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, DEPLOY_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "cache's deploy");
     }
     if (!runtime_is_text(argument->directory) || !runtime_is_text(argument->plugin_directory) ||
         !runtime_is_text(argument->name)) {
@@ -449,7 +449,7 @@ static spisor_status deploy(void *context, const runtime_cache_deploy_argument *
                                                                                       : "name");
     }
     if (argument->id == NULL || !runtime_identity_parse_id(argument->id, &parsed)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the identity id is not a valid id",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the identity id is not a valid id",
                                  "send an id such as github:<number> or local:<name>");
     }
     return serve_deploy(argument, answer, refusal);
@@ -514,7 +514,7 @@ static const runtime_cache_definition definition = {
     release_platform_answer,
     release_sweep_answer,
     release_deploy_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_cache_definition_of(void) {

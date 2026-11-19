@@ -356,12 +356,12 @@ cJSON *runtime_read_ecosystem_settings(const char *home, const cJSON *names, con
 }
 
 static spisor_status refuse_name(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the plugin's config name is not a usable file name",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the plugin's config name is not a usable file name",
                              "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\"");
 }
 
 static spisor_status refuse_id(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED,
                              "the plugin id is not a usable folder name in the portable place",
                              "name the plugin by a manifest id that is one portable path segment such as "
                              "\"my-plugin\"; config.name does not name the portable folder");
@@ -384,7 +384,7 @@ static int has_empty_segment(const char *key) {
 }
 
 static spisor_status refuse_key(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable key",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable key",
                              "send key as a.b, one or more dot separated, non-empty segments");
 }
 
@@ -541,7 +541,7 @@ static spisor_status get_secret_setting(const runtime_config_request *request, c
     if (status == SPISOR_OK) {
         *value = cJSON_CreateString(text);
         status = *value == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-        runtime_overwrite(text, strlen(text));
+        spisor_overwrite(text, strlen(text));
     }
     spisor_memory_release(text);
     return status;
@@ -570,7 +570,7 @@ static spisor_status refuse_file(const char *file_path, spisor_refusal *refusal)
     char fix[2048];
     snprintf(fix, sizeof fix, "repair %s so it holds one JSON object, or remove it, then set again; it was left unchanged",
              file_path);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED,
+    return spisor_refuse_as(refusal, SPISOR_REFUSED,
                              "the settings file is not a readable JSON object, so setting would discard its content",
                              fix);
 }
@@ -579,7 +579,7 @@ static spisor_status refuse_path(const char *file_path, const char *key, spisor_
     char fix[2048];
     snprintf(fix, sizeof fix, "%s holds a value that is not an object on the way to \"%s\"; edit that file by hand",
              file_path, key);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the key crosses a value in the settings file that is not an object",
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the key crosses a value in the settings file that is not an object",
                              fix);
 }
 
@@ -667,7 +667,7 @@ static cJSON *writable_root(settings_file *file, int *refused) {
 static spisor_status refuse_write(const char *file_path, spisor_refusal *refusal) {
     char fix[2048];
     snprintf(fix, sizeof fix, "check that %s can be written, then set again", file_path);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings file could not be written", fix);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the settings file could not be written", fix);
 }
 
 static place_status place_request(cJSON *root, const runtime_config_request *request) {
@@ -700,7 +700,7 @@ static spisor_status store_value(const config_target *target, settings_file *fil
 }
 
 static spisor_status refuse_missing_value(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
                              "send value as the setting's value, any value but one of kind NONE");
 }
 
@@ -780,7 +780,7 @@ static spisor_status previous_tree(const runtime_config_request *request, const 
     }
     status = spisor_value_of_json(previous, request->previous_tree);
     if (status == SPISOR_MALFORMED) {
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings hold what no value tree can carry",
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, "the settings hold what no value tree can carry",
                                  "repair the settings files, then try again");
     }
     return status;
@@ -844,7 +844,7 @@ static spisor_status store_after_previous(const runtime_config_request *request,
         return SPISOR_OUT_OF_MEMORY;
     }
     if (locked != SPISOR_OK) {
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the settings folder could not be locked for writing",
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, "the settings folder could not be locked for writing",
                                  "check that the settings folder is writable, then try again");
     }
     spisor_status status = store_locked(request, targets, layer, previous, refusal);
@@ -871,7 +871,7 @@ static settings_layer layer_of(const runtime_config_request *request) {
 }
 
 static spisor_status refuse_missing_portable_layer(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "this host has no portable settings layer",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "this host has no portable settings layer",
                              "send portable as the portable answer of places' resolve, or set without the portable "
                              "layer to write the application layer");
 }
@@ -879,7 +879,7 @@ static spisor_status refuse_missing_portable_layer(spisor_refusal *refusal) {
 static spisor_status refuse_reaching_secret(const char *key, const char *secret, spisor_refusal *refusal) {
     char detail[4096];
     snprintf(detail, sizeof detail, "config.set(\"%s\"): %s is a secret setting; set it on its own", key, secret);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "set the secret setting by its own key");
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, "set the secret setting by its own key");
 }
 
 static spisor_status set_in_targets(const runtime_config_request *request, const config_targets *targets, settings_layer layer,
@@ -902,13 +902,13 @@ static spisor_status refuse_secret_without_store(const char *key, spisor_refusal
     char detail[2048];
     snprintf(detail, sizeof detail, "config.set(\"%s\"): the setting is a secret and this host has no secret store",
              key);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "start the host with a secret store");
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, "start the host with a secret store");
 }
 
 static spisor_status refuse_secret_value(const char *key, spisor_refusal *refusal) {
     char detail[2048];
     snprintf(detail, sizeof detail, "config.set(\"%s\"): a secret setting takes text or null", key);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, "send the value as text, or null to remove the secret");
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, "send the value as text, or null to remove the secret");
 }
 
 /**

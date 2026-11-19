@@ -14,20 +14,20 @@
 #include "spisor/path.h"
 
 #define HEADER "the processes header"
-#define HOLD_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_hold_argument, directory)
-#define HOLD_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_hold_answer, storage)
-#define HOLDER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_holder_argument, holder)
-#define RELEASE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_release_answer, storage)
-#define PRUNE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_prune_argument, check_milliseconds)
-#define PRUNE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_prune_answer, storage)
-#define READY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_ready_argument, fix)
-#define AWAIT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_await_argument, timeout_milliseconds)
-#define AWAIT_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_await_answer, storage)
-#define RECORD_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_record_argument, record)
-#define RECORD_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_record_answer, storage)
-#define LIVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_live_argument, now)
-#define LIVE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_live_answer, storage)
-#define REMOVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_processes_remove_argument, record)
+#define HOLD_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_hold_argument, directory)
+#define HOLD_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_hold_answer, storage)
+#define HOLDER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_holder_argument, holder)
+#define RELEASE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_release_answer, storage)
+#define PRUNE_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_prune_argument, check_milliseconds)
+#define PRUNE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_prune_answer, storage)
+#define READY_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_ready_argument, fix)
+#define AWAIT_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_await_argument, timeout_milliseconds)
+#define AWAIT_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_await_answer, storage)
+#define RECORD_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_record_argument, record)
+#define RECORD_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_record_answer, storage)
+#define LIVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_live_argument, now)
+#define LIVE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_live_answer, storage)
+#define REMOVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_remove_argument, record)
 
 /** The state and host a call is for, the host NULL for a call that takes none. */
 typedef struct process_target {
@@ -169,9 +169,9 @@ static spisor_status hold(void *context, const runtime_processes_hold_argument *
                           runtime_processes_hold_answer *answer, spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, HOLD_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, HOLD_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "processes' hold");
+    if (argument == NULL || !spisor_has_shape(argument->size, HOLD_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, HOLD_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "processes' hold");
     }
     status = check_hold(argument, refusal);
     return status != SPISOR_OK ? status : serve_hold(argument, answer, refusal);
@@ -201,9 +201,9 @@ static spisor_status release(void *context, const runtime_processes_holder_argum
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, HOLDER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RELEASE_ANSWER_SHAPE, answer->holder_count)) {
-        return runtime_refuse_shape(refusal, "processes' release");
+    if (argument == NULL || !spisor_has_shape(argument->size, HOLDER_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RELEASE_ANSWER_SHAPE, answer->holder_count)) {
+        return spisor_refuse_shape(refusal, "processes' release");
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
@@ -241,9 +241,9 @@ static spisor_status prune(void *context, const runtime_processes_prune_argument
     process_target target;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PRUNE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PRUNE_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "processes' prune");
+    if (argument == NULL || !spisor_has_shape(argument->size, PRUNE_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, PRUNE_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "processes' prune");
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
@@ -293,8 +293,8 @@ static spisor_status ready(void *context, const runtime_processes_ready_argument
                            spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, READY_SHAPE)) {
-        return runtime_refuse_shape(refusal, "processes' ready");
+    if (argument == NULL || !spisor_has_shape(argument->size, READY_SHAPE)) {
+        return spisor_refuse_shape(refusal, "processes' ready");
     }
     status = check_ready(argument, refusal);
     return status != SPISOR_OK ? status : serve_ready(argument, refusal);
@@ -328,9 +328,9 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, AWAIT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AWAIT_ANSWER_SHAPE, answer->environment_count)) {
-        return runtime_refuse_shape(refusal, "processes' await_ready");
+    if (argument == NULL || !spisor_has_shape(argument->size, AWAIT_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, AWAIT_ANSWER_SHAPE, answer->environment_count)) {
+        return spisor_refuse_shape(refusal, "processes' await_ready");
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
@@ -390,9 +390,9 @@ static spisor_status record_run(void *context, const runtime_processes_record_ar
     process_target target;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RECORD_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RECORD_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "processes' record_run");
+    if (argument == NULL || !spisor_has_shape(argument->size, RECORD_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, RECORD_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "processes' record_run");
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
@@ -452,9 +452,9 @@ static spisor_status live_runs(void *context, const runtime_processes_live_argum
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, LIVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIVE_ANSWER_SHAPE, answer->run_count)) {
-        return runtime_refuse_shape(refusal, "processes' live_runs");
+    if (argument == NULL || !spisor_has_shape(argument->size, LIVE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LIVE_ANSWER_SHAPE, answer->run_count)) {
+        return spisor_refuse_shape(refusal, "processes' live_runs");
     }
     target = (process_target){argument->state, NULL};
     status = check_target(&target, 0, refusal);
@@ -474,8 +474,8 @@ static spisor_status remove_runs(void *context, const runtime_processes_remove_a
     spisor_status status;
     cJSON *operation_refusal = NULL;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REMOVE_SHAPE)) {
-        return runtime_refuse_shape(refusal, "processes' remove_runs");
+    if (argument == NULL || !spisor_has_shape(argument->size, REMOVE_SHAPE)) {
+        return spisor_refuse_shape(refusal, "processes' remove_runs");
     }
     target = (process_target){argument->state, argument->host_id};
     status = check_target(&target, 1, refusal);
@@ -537,7 +537,7 @@ static const runtime_processes_definition definition = {
     release_await_answer,
     release_record_answer,
     release_live_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_processes_definition_of(void) {

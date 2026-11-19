@@ -149,7 +149,7 @@ static uint64_t refusal_allocations(void) {
     spisor_memory_fail_at(0);
     CHECK(runtime_refuse_environment(&refusal) == SPISOR_MALFORMED);
     uint64_t allocations = spisor_memory_attempts();
-    runtime_release_refusal(NULL, &refusal);
+    spisor_release_refusal(NULL, &refusal);
     return allocations;
 }
 
@@ -167,7 +167,7 @@ static void it_refuses_before_allocating(const char *operation, environment_call
                 (unsigned long long)allocations, (unsigned long long)allowed);
         check_failures++;
     }
-    runtime_release_refusal(NULL, &refusal);
+    spisor_release_refusal(NULL, &refusal);
 }
 
 int main(void) {

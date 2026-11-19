@@ -93,7 +93,7 @@ static int is_iso_time(const char *text) {
 }
 
 static spisor_status refuse_entry(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument is not a well formed log entry",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument is not a well formed log entry",
                              "send home, plugin, start, time and message as text, level as a runtime_log_level, and "
                              "start and time as 24 character toISOString times");
 }
@@ -189,12 +189,12 @@ static char *console_line(const runtime_log_request *entry, const char *name, in
 }
 
 static spisor_status refuse_name(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the plugin's config name is not a usable file name",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the plugin's config name is not a usable file name",
                              "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\"");
 }
 
 static spisor_status refuse_id(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED,
                              "the plugin id is not a usable folder name in the portable place",
                              "name the plugin by a manifest id that is one portable path segment such as "
                              "\"my-plugin\"");
@@ -209,7 +209,7 @@ static int is_portable_id_usable(const runtime_log_request *entry) {
 }
 
 static spisor_status refuse_append(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the log line could not be appended",
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the log line could not be appended",
                              "check that the home's logs directory can be created and written");
 }
 

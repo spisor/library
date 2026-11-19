@@ -267,7 +267,7 @@ static size_t take_body(char *bytes, size_t size, size_t count, void *context) {
 /** Overwrites the header lines in curl's list; copies libcurl makes of them during a transfer are out of reach. */
 static void overwrite_header_lines(curl_slist *headers) {
     for (curl_slist *line = headers; line != NULL; line = line->next) {
-        runtime_overwrite(line->data, strlen(line->data));
+        spisor_overwrite(line->data, strlen(line->data));
     }
 }
 
@@ -287,7 +287,7 @@ static curl_slist *request_headers(const curl_api *api, const runtime_fetch_requ
         }
         curl_slist *grown = line == NULL ? NULL : api->slist_append(headers, line);
         if (line != NULL) {
-            runtime_overwrite(line, size);
+            spisor_overwrite(line, size);
         }
         spisor_memory_release(line);
         *built = grown != NULL;

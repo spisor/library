@@ -110,7 +110,7 @@ static spisor_status refuse_argument(const char *member, const char *shape, spis
     char fix[512];
     snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
     snprintf(fix, sizeof fix, "send %s as %s", member, shape);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
 static int read_timeout(double seconds, fetch_order *order) {
@@ -190,7 +190,7 @@ static spisor_status refuse_scheme(const char *url, spisor_refusal *refusal) {
     size_t length = scheme_length(url);
     snprintf(message, sizeof message, "%s uses the scheme %.*s, which the cache does not fetch", url,
              length == 0 ? 6 : (int)length, length == 0 ? "(none)" : url);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, message,
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, message,
                              "serve the catalog's files over https or from a local directory");
 }
 
@@ -247,7 +247,7 @@ static void discard_partial(fetch_files *files) {
 }
 
 static spisor_status refuse(spisor_refusal *refusal, const char *detail, const char *fix) {
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
 }
 
 static spisor_status refuse_unwritable(const char *destination, spisor_refusal *refusal) {
@@ -286,7 +286,7 @@ static spisor_status refuse_unasked_304(const char *url, spisor_refusal *refusal
 }
 
 static void release_get_answer_storage(runtime_fetch_get_answer *answer) {
-    runtime_release_stored_answer(answer, RUNTIME_SHAPE_THROUGH(runtime_fetch_get_answer, storage));
+    runtime_release_stored_answer(answer, SPISOR_SHAPE_THROUGH(runtime_fetch_get_answer, storage));
 }
 
 /** Copies the stored answer's texts, taken before the file is moved into place so running out writes nothing. */
@@ -427,17 +427,17 @@ static spisor_status fetch(const fetch_order *order, runtime_fetch_get_answer *a
     return status;
 }
 
-#define ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_fetch_get_argument, timeout_seconds)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_fetch_get_answer, storage)
+#define ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_fetch_get_argument, timeout_seconds)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_fetch_get_answer, storage)
 
 static spisor_status get(void *context, const runtime_fetch_get_argument *argument, runtime_fetch_get_answer *answer,
                          spisor_refusal *refusal) {
     fetch_order order;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "fetch's get");
+    if (argument == NULL || !spisor_has_shape(argument->size, ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "fetch's get");
     }
     status = read_order(argument, &order, refusal);
     return status == SPISOR_OK ? fetch(&order, answer, refusal) : status;
@@ -449,7 +449,7 @@ static void release_answer(void *context, runtime_fetch_get_answer *answer) {
 }
 
 static const runtime_fetch_definition definition = {
-    sizeof(runtime_fetch_definition), NULL, get, release_answer, runtime_release_refusal,
+    sizeof(runtime_fetch_definition), NULL, get, release_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_fetch_definition_of(void) {
