@@ -100,14 +100,14 @@ static void write_text(const char *directory, const char *name, const char *text
 static void forget_test_path_value(void) {
     HKEY key = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, RUNTIME_PATH_ENTRY_TEST_VALUE);
+        RegDeleteValueW(key, runtime_path_entry_test_value());
         RegCloseKey(key);
     }
 }
 
 static int test_path_value_present(void) {
     DWORD size = 0;
-    return RegGetValueW(HKEY_CURRENT_USER, L"Environment", RUNTIME_PATH_ENTRY_TEST_VALUE, RRF_RT_ANY, NULL, NULL,
+    return RegGetValueW(HKEY_CURRENT_USER, L"Environment", runtime_path_entry_test_value(), RRF_RT_ANY, NULL, NULL,
                         &size) == ERROR_SUCCESS;
 }
 #else

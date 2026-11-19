@@ -209,14 +209,14 @@ typedef struct registry_text {
 static void delete_test_value(void) {
     HKEY key = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, ENVIRONMENT_KEY, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, RUNTIME_PATH_ENTRY_TEST_VALUE);
+        RegDeleteValueW(key, runtime_path_entry_test_value());
         RegCloseKey(key);
     }
 }
 
 static void set_test_value(DWORD type, const wchar_t *text) {
     DWORD size = (DWORD)((wcslen(text) + 1) * sizeof(wchar_t));
-    CHECK(RegSetKeyValueW(HKEY_CURRENT_USER, ENVIRONMENT_KEY, RUNTIME_PATH_ENTRY_TEST_VALUE, type, text, size) ==
+    CHECK(RegSetKeyValueW(HKEY_CURRENT_USER, ENVIRONMENT_KEY, runtime_path_entry_test_value(), type, text, size) ==
           ERROR_SUCCESS);
 }
 
@@ -233,7 +233,7 @@ static void read_value(const wchar_t *name, registry_text *value) {
 /** Whether the test value is stored as expected, unexpanded; a NULL expected means the value is absent. */
 static int test_value_is(DWORD expected_type, const wchar_t *expected) {
     registry_text value;
-    read_value(RUNTIME_PATH_ENTRY_TEST_VALUE, &value);
+    read_value(runtime_path_entry_test_value(), &value);
     int same = expected == NULL ? !value.present
                                 : value.present && value.type == expected_type && wcscmp(value.text, expected) == 0;
     if (!same) {

@@ -427,7 +427,7 @@ static inline void read_registry_value(const wchar_t *name, registry_text *value
 static inline void delete_test_path_value(void) {
     HKEY key = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, ENVIRONMENT_KEY, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, RUNTIME_PATH_ENTRY_TEST_VALUE);
+        RegDeleteValueW(key, runtime_path_entry_test_value());
         RegCloseKey(key);
     }
 }

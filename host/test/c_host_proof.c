@@ -42,7 +42,7 @@ static void append_tree(char **tree, size_t *length, const char *label, const ch
 #if defined(_WIN32)
 static void append_user_path(char **tree, size_t *length) {
     registry_text value;
-    read_registry_value(RUNTIME_PATH_ENTRY_TEST_VALUE, &value);
+    read_registry_value(runtime_path_entry_test_value(), &value);
     char line[16600];
     snprintf(line, sizeof line, "== user path %s %ls\n", value.present ? "present" : "absent", value.text);
     snapshot_append(tree, length, line, strlen(line));
