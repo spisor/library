@@ -52,9 +52,7 @@ typedef struct command_call {
     char reason[1400];
     const char *fix;
     spisor_status failure;
-    double sequence_before;
-    int sequence_known;
-    int changed;
+    runtime_changes_journal journal;
     int committed;
 } command_call;
 
@@ -634,9 +632,8 @@ static int apply_change(command_call *call, cJSON *change) {
     if (change == NULL) {
         return out_of_memory(call);
     }
-    runtime_changes_outcome outcome = runtime_changes_apply_held(call->state, call->host, change);
+    runtime_changes_outcome outcome = runtime_changes_apply_journaled(call->state, call->host, change, &call->journal);
     cJSON_Delete(change);
-    call->changed |= outcome.answer == RUNTIME_CHANGES_RECORDED;
     if (outcome.answer == RUNTIME_CHANGES_RECORDED || outcome.answer == RUNTIME_CHANGES_UNNEEDED) {
         return 1;
     }
@@ -680,18 +677,6 @@ static int make_shim(command_call *call, const char *name) {
            apply_change(call, path_entry_change(call, home)) && write_shim(call, name);
 }
 
-static double newest_sequence(const cJSON *registration) {
-    double newest = 0;
-    const cJSON *entry;
-    cJSON_ArrayForEach(entry, cJSON_GetObjectItemCaseSensitive(registration, "changes")) {
-        const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(entry, "sequence");
-        if (cJSON_IsNumber(sequence) && sequence->valuedouble > newest) {
-            newest = sequence->valuedouble;
-        }
-    }
-    return newest;
-}
-
 static int load_registration(command_call *call) {
     cJSON_Delete(call->registration);
     call->registration = NULL;
@@ -704,10 +689,6 @@ static int load_registration(command_call *call) {
     }
     if (loaded != RUNTIME_REGISTRY_OK) {
         return refuse(call, "repair or restore it", "the registration of host %s could not be read", call->host);
-    }
-    if (!call->sequence_known) {
-        call->sequence_before = newest_sequence(call->registration);
-        call->sequence_known = 1;
     }
     if (!cJSON_IsArray(commands_of(call->registration)) &&
         cJSON_AddArrayToObject(call->registration, "commands") == NULL) {
@@ -1016,14 +997,14 @@ static spisor_status refuse_failed(const command_call *call, spisor_refusal *ref
 }
 
 /**
- * Takes back the changes a call recorded before it failed, so a call the disk refused leaves it as it was.
- *
- * @implNote An undo, not a guarantee: when memory keeps running out the reversal stops too, and what it could not
- * take back stays recorded for the host's removal to reverse.
+ * Takes back the changes a call recorded before it failed, so a call the disk refused, or memory stopped, leaves it as
+ * it was; what the disk refuses to take back stays recorded for the host's removal to reverse.
  */
-static void reverse_own_changes(const command_call *call) {
-    if (call->changed && call->sequence_known && !call->committed) {
-        runtime_changes_reverse_newer_held(call->state, call->host, call->sequence_before);
+static void reverse_own_changes(command_call *call) {
+    int ran_out = 0;
+    if (!call->committed && !runtime_changes_take_back(call->state, call->host, &call->journal, &ran_out) &&
+        ran_out) {
+        out_of_memory(call);
     }
 }
 
@@ -1068,6 +1049,7 @@ spisor_status runtime_commands_serve(runtime_command_operation operation, const 
     if (status == SPISOR_OK && call.answers_name) {
         snprintf(name, RUNTIME_COMMAND_NAME_SIZE, "%s", call.name);
     }
+    runtime_changes_end_journal(&call.journal);
     cJSON_Delete(call.registration);
     spisor_memory_release(call.shims);
     return status;

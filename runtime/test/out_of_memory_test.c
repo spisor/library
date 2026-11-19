@@ -37,6 +37,7 @@
 #include "runtime/secrets.h"
 #include "runtime/settings.h"
 #include "cache_marker.h"
+#include "catalog_hooks.h"
 #include "catalog_path.h"
 #include "catalog_state.h"
 #include "directory_tree.h"
@@ -607,6 +608,37 @@ static spisor_status remember_a_name(void) {
     return status;
 }
 
+static void a_copy_to_fetch(void) {
+    write_text(place.base, "marketplace.json", MARKETPLACE_COPY);
+}
+
+/** Reads the marketplace by fetching its copy into a destination, which the read removes once it has read it. */
+static spisor_status read_a_fetched_copy(void) {
+    const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
+    runtime_marketplace_read_argument argument = SPISOR_INIT(runtime_marketplace_read_argument);
+    runtime_marketplace_copy_answer answer = SPISOR_INIT(runtime_marketplace_copy_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char source[1300];
+    char url[4200];
+    char destination[1300];
+    snprintf(source, sizeof source, "%s/marketplace.json", place.base);
+    snprintf(destination, sizeof destination, "%s/downloaded/marketplace.json", place.base);
+    file_url_of(source, url, sizeof url);
+    argument.id = "spisor";
+    argument.url = url;
+    argument.destination = destination;
+    spisor_status status = marketplace->read(marketplace->context, &argument, &answer, &refusal);
+    marketplace->release_copy_answer(marketplace->context, &answer);
+    marketplace->release_refusal(marketplace->context, &refusal);
+    return status;
+}
+
+static int left_no_download(void) {
+    char folder[1300];
+    snprintf(folder, sizeof folder, "%s/downloaded", place.base);
+    return holds_no_file(folder);
+}
+
 static spisor_status read_a_copy(void) {
     const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
     runtime_marketplace_read_argument argument = SPISOR_INIT(runtime_marketplace_read_argument);
@@ -841,8 +873,25 @@ static int every_change_is_recorded(void) {
     return all;
 }
 
+static int is_shim_of_zz(const char *file_name) {
+    return strncmp(file_name, "zz", 2) == 0 && (file_name[2] == '\0' || file_name[2] == '.');
+}
+
+/** Whether the shim folder holds zz's shim files and nothing a failed call wrote beside them. */
+static int shims_are_only_zz(void) {
+    char shims[1300];
+    runtime_directory_listing listing;
+    snprintf(shims, sizeof shims, "%s/bin", place.command_state);
+    int only = runtime_list_directory(shims, &listing) == SPISOR_OK;
+    for (size_t index = 0; only && index < listing.count; index++) {
+        only = is_shim_of_zz(listing.entries[index].name);
+    }
+    runtime_free_directory_listing(&listing);
+    return only;
+}
+
 static int kept_zz_and_recorded_all(void) {
-    return namer_holds_only("zz") && every_change_is_recorded();
+    return namer_holds_only("zz") && every_change_is_recorded() && shims_are_only_zz();
 }
 
 /** Whether a rename took effect: namer's one active command is dd. */
@@ -965,6 +1014,12 @@ static void every_command_failure(const char *label, operation run, untouched to
     every_failure_of(&each);
 }
 
+static void every_failure_after_preparing(const char *label, operation run, void (*prepare)(void),
+                                          untouched left_alone) {
+    failure_case each = {label, run, prepare, left_alone, NULL, 0};
+    every_failure_of(&each);
+}
+
 static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("paths' resolve", resolve_paths, NULL);
     every_failure_answers_out_of_memory("places' resolve", resolve_places, NULL);
@@ -984,6 +1039,8 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("lists' applications", list_applications, NULL);
     every_failure_answers_out_of_memory("marketplace's remember", remember_a_name, remembered_nothing);
     every_failure_answers_out_of_memory("marketplace's read", read_a_copy, NULL);
+    every_failure_after_preparing("marketplace's read to a destination", read_a_fetched_copy, a_copy_to_fetch,
+                                  left_no_download);
     every_failure_answers_out_of_memory("cache's installed", list_installed_versions, NULL);
     every_failure_answers_out_of_memory("catalog's merge", merge_catalogs, NULL);
     every_failure_answers_out_of_memory("install's packages", merge_packages, packages_file_unchanged);
@@ -998,6 +1055,7 @@ static void every_service_but_commands(void) {
 #define WRONG_ANSWER ((spisor_status)99)
 
 static spisor_value_tree install_item = SPISOR_INIT(spisor_value_tree);
+static spisor_value_tree short_item = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree catalog_settings = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree catalog_index = SPISOR_INIT(spisor_value_tree);
 
@@ -1196,6 +1254,29 @@ static spisor_status install_a_version(void) {
     return status;
 }
 
+/** Installs an item whose one file serves fewer bytes than the catalog says: OK when that is refused. */
+static spisor_status install_a_short_file(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char cache_place[1100];
+    runtime_cache_install_argument argument = SPISOR_INIT(runtime_cache_install_argument);
+    runtime_cache_install_answer answer = SPISOR_INIT(runtime_cache_install_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.cache = cache_place;
+    argument.id = "b";
+    argument.item = &short_item.root;
+    argument.version = "1.0.0";
+    argument.platform = "linux-x64";
+    spisor_status status = cache->install(cache->context, &argument, &answer, &refusal);
+    cache->release_install_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status == SPISOR_REFUSED ? SPISOR_OK : status == SPISOR_OK ? WRONG_ANSWER : status;
+}
+
+static int stored_no_short_file(void) {
+    return !exists_under_base("cache/bundles/b/1.0.0/p.js");
+}
+
 static int holds_one_item(const spisor_value *catalog) {
     const spisor_value *items = spisor_value_member(catalog, "items", 5);
     return items != NULL && items->count == 1;
@@ -1283,6 +1364,63 @@ static spisor_status check_a_catalog(void) {
     return status;
 }
 
+#define REMOTE_ORIGIN "https://catalog.test"
+#define REMOTE_INDEX_URL REMOTE_ORIGIN "/index.json"
+
+static char remote_redirect[4200];
+
+/** A remote index whose requests the catalog redirects to the local index, and where its check keeps state. */
+static void a_remote_shaped_index(void) {
+    char cache_place[1100];
+    write_text(place.base, "index.json", CATALOG_INDEX);
+    under_base(cache_place, sizeof cache_place, "cache");
+    file_url_of(place.base, remote_redirect, sizeof remote_redirect);
+    runtime_catalog_redirect_requests(REMOTE_ORIGIN, remote_redirect);
+    char *state = runtime_catalog_state_path(cache_place, REMOTE_INDEX_URL);
+    CHECK(state != NULL);
+    snprintf(catalog_state_place, sizeof catalog_state_place, "%s", state == NULL ? "" : state);
+    spisor_memory_release(state);
+}
+
+/** Whether a check left nothing where it keeps state, neither the state nor its download. */
+static int kept_nothing_beside_catalog_state(void) {
+    char folder[1400];
+    snprintf(folder, sizeof folder, "%s", catalog_state_place);
+    char *separator = strrchr(folder, '/');
+    char *backslash = strrchr(folder, '\\');
+    if (backslash != NULL && (separator == NULL || backslash > separator)) {
+        separator = backslash;
+    }
+    if (separator != NULL) {
+        *separator = '\0';
+    }
+    return holds_no_file(folder);
+}
+
+static spisor_status check_a_remote_shaped_catalog(void) {
+    const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
+    char cache_place[1100];
+    runtime_catalog_source source;
+    runtime_catalog_check_argument argument = SPISOR_INIT(runtime_catalog_check_argument);
+    runtime_catalog_check_answer answer = SPISOR_INIT(runtime_catalog_check_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    memset(&source, 0, sizeof source);
+    source.kind = RUNTIME_CATALOG_HTTPS;
+    source.location = REMOTE_INDEX_URL;
+    under_base(cache_place, sizeof cache_place, "cache");
+    argument.source = &source;
+    argument.cache = cache_place;
+    argument.now = "2026-11-03T08:00:00.000Z";
+    argument.interval_hours = 24;
+    spisor_status status = catalog->check(catalog->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.kind != RUNTIME_CATALOG_CHANGED || !holds_one_item(answer.catalog))) {
+        status = WRONG_ANSWER;
+    }
+    catalog->release_check_answer(catalog->context, &answer);
+    catalog->release_refusal(catalog->context, &refusal);
+    return status;
+}
+
 static spisor_status read_the_current_catalog(void) {
     const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
     char index[1300];
@@ -1342,9 +1480,14 @@ static void every_cache_and_catalog_operation(void) {
     every_checked_failure("cache's platform", name_the_platform, NULL, NULL);
     every_checked_failure("cache's deploy", deploy_a_bundle, a_bundle_to_deploy, deployed_nothing);
     every_checked_failure("cache's install", install_a_version, a_file_to_install, installed_no_marker);
+    every_checked_failure("cache's install of the wrong length", install_a_short_file, a_file_to_install,
+                          stored_no_short_file);
     every_checked_failure("catalog's read", read_a_catalog, NULL, NULL);
     every_checked_failure("catalog's sources", list_catalog_sources, NULL, NULL);
     every_checked_failure("catalog's check", check_a_catalog, a_local_index, kept_no_catalog_state);
+    every_checked_failure("catalog's check of a remote-shaped index", check_a_remote_shaped_catalog,
+                          a_remote_shaped_index, kept_nothing_beside_catalog_state);
+    runtime_catalog_redirect_requests(NULL, NULL);
     every_checked_failure("catalog's current", read_the_current_catalog, a_local_index, NULL);
     every_checked_failure("catalog's resolve", resolve_versions, NULL, NULL);
 }
@@ -1522,6 +1665,11 @@ static void build_cache_and_catalog_values(void) {
              "\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}",
              url);
     CHECK(value_of_text(text, &install_item));
+    snprintf(text, sizeof text,
+             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "\"sha256\":\"" HELLO_SHA256 "\",\"size\":6}}}}}",
+             url);
+    CHECK(value_of_text(text, &short_item));
     CHECK(value_of_text(CATALOG_INDEX, &catalog_index));
     CHECK(value_of_text("{\"catalog\":{\"sources\":[{\"kind\":\"local\",\"path\":\"/x.json\"},"
                         "{\"kind\":\"https\",\"url\":\"https://e.test/c.json\"},{\"kind\":\"nope\"}]}}",
@@ -1530,6 +1678,7 @@ static void build_cache_and_catalog_values(void) {
 
 static void release_cache_and_catalog_values(void) {
     spisor_value_release(&install_item);
+    spisor_value_release(&short_item);
     spisor_value_release(&catalog_index);
     spisor_value_release(&catalog_settings);
 }

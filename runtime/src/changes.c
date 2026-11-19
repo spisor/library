@@ -19,10 +19,40 @@
 #define REGISTRATION_SUFFIX ".json"
 #define REGISTRATION_SUFFIX_LENGTH 5
 
+typedef enum undo_kind {
+    UNDO_BY_REVERSAL,
+    UNDO_BY_REMOVING_FILE,
+    UNDO_BY_REMOVING_DIRECTORY,
+    UNDO_BY_RESTORING_FILE,
+    UNDO_BY_TRUNCATING_FILE,
+    UNDO_BY_RESTORING_PATH
+} undo_kind;
+
+/**
+ * What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. A json-key
+ * edit is undone by writing back the bytes it replaced, a profile line by cutting its file back to the length it had,
+ * a path-entry by putting the user's PATH back; only a change no preparation covers is undone by its reversal.
+ */
+typedef struct prepared_undo {
+    undo_kind kind;
+    spisor_prepared_path removal;
+    spisor_prepared_replacement restoration;
+    uint8_t *previous;
+    size_t previous_length;
+    runtime_path_entry_undo path;
+} prepared_undo;
+
+/** A change a journal keeps: its undo, and whether another record held its target, so it changed nothing shared. */
+struct runtime_changes_kept {
+    prepared_undo undo;
+    int held;
+};
+
 typedef struct prepared_child {
     const cJSON *change;
     cJSON *record;
     cJSON *entry;
+    prepared_undo undo;
     int held;
     int undo_failed;
 } prepared_child;
@@ -37,6 +67,7 @@ typedef struct apply_session {
     const char *host;
     const cJSON *change;
     cJSON *registration;
+    runtime_changes_journal *journal;
     runtime_changes_outcome outcome;
 } apply_session;
 
@@ -283,29 +314,6 @@ static void withdraw(apply_session *session, cJSON *entry, runtime_change_step s
     conclude_stored(session, store(session), answer_of_step(step), reason);
 }
 
-typedef enum undo_kind {
-    UNDO_BY_REVERSAL,
-    UNDO_BY_REMOVING_FILE,
-    UNDO_BY_REMOVING_DIRECTORY,
-    UNDO_BY_RESTORING_FILE,
-    UNDO_BY_TRUNCATING_FILE,
-    UNDO_BY_RESTORING_PATH
-} undo_kind;
-
-/**
- * What undoing a change about to be performed needs, prepared before it is performed; see prepared_undo.h. A json-key
- * edit is undone by writing back the bytes it replaced, a profile line by cutting its file back to the length it had,
- * a path-entry by putting the user's PATH back; only a change no preparation covers is undone by its reversal.
- */
-typedef struct prepared_undo {
-    undo_kind kind;
-    spisor_prepared_path removal;
-    spisor_prepared_replacement restoration;
-    uint8_t *previous;
-    size_t previous_length;
-    runtime_path_entry_undo path;
-} prepared_undo;
-
 static int is_created_json_file(const cJSON *entry) {
     return strcmp(text_of(entry, "kind"), "json-key") == 0 &&
            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "created"));
@@ -379,7 +387,7 @@ static spisor_status prepare_undo(const cJSON *entry, prepared_undo *undo) {
     return prepared == SPISOR_REFUSED ? SPISOR_OK : prepared;
 }
 
-static int is_undone(const cJSON *entry, const prepared_undo *undo) {
+static int is_undone_as_prepared(const prepared_undo *undo) {
     switch (undo->kind) {
     case UNDO_BY_REMOVING_FILE:
         return spisor_remove_prepared_file(&undo->removal);
@@ -392,39 +400,95 @@ static int is_undone(const cJSON *entry, const prepared_undo *undo) {
     case UNDO_BY_RESTORING_PATH:
         return runtime_path_entry_restore(&undo->path);
     default:
-        break;
+        return 0;
+    }
+}
+
+/** Whether entry, just performed, is undone; a change another record held changed nothing shared, so it has none. */
+static int is_undone(const cJSON *entry, const prepared_undo *undo, int held) {
+    if (held) {
+        return 1;
+    }
+    if (undo->kind != UNDO_BY_REVERSAL) {
+        return is_undone_as_prepared(undo);
     }
     runtime_change_note ignored = {""};
     return runtime_change_reverse(entry, 0, &ignored) == RUNTIME_CHANGE_REVERSED;
+}
+
+/** Marks that a change of the call stayed on the disk with a record the journal did not keep. */
+static void journal_left_a_change(runtime_changes_journal *journal) {
+    if (journal != NULL) {
+        journal->whole = 0;
+    }
+}
+
+/** Whether journal has room for more changes, so keeping them later allocates nothing; always with no journal. */
+static int journal_has_room(runtime_changes_journal *journal, size_t more) {
+    if (journal == NULL || journal->count + more <= journal->capacity) {
+        return 1;
+    }
+    size_t capacity = (journal->count + more) * 2;
+    runtime_changes_kept *kept = spisor_memory_reallocate(journal->kept, capacity * sizeof *kept);
+    if (kept == NULL) {
+        return 0;
+    }
+    journal->kept = kept;
+    double *sequences = spisor_memory_reallocate(journal->sequences, capacity * sizeof *sequences);
+    if (sequences == NULL) {
+        return 0;
+    }
+    journal->sequences = sequences;
+    journal->capacity = capacity;
+    return 1;
+}
+
+/** Moves undo into journal, which has room, leaving it empty; with no journal it stays its owner's to release. */
+static void keep_undo(runtime_changes_journal *journal, const cJSON *entry, prepared_undo *undo, int held) {
+    if (journal == NULL) {
+        return;
+    }
+    journal->kept[journal->count].undo = *undo;
+    journal->kept[journal->count].held = held;
+    journal->sequences[journal->count] = cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
+    journal->count++;
+    memset(undo, 0, sizeof *undo);
+    undo->kind = UNDO_BY_REVERSAL;
 }
 
 /**
  * Undoes a change whose applied record memory ran out storing, so the answer of out of memory changed nothing; a
  * change that cannot be undone keeps its pending record on the disk, which the next apply or reverse completes.
  */
-static void undo_unstored(apply_session *session, cJSON *entry, const prepared_undo *undo) {
-    if (is_undone(entry, undo)) {
+static void undo_unstored(apply_session *session, cJSON *entry, const prepared_undo *undo, int held) {
+    if (is_undone(entry, undo, held)) {
         cJSON_Delete(cJSON_DetachItemViaPointer(changes_of(session->registration), entry));
         store(session);
+    } else {
+        journal_left_a_change(session->journal);
     }
     conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
 }
 
-/** Performs the change and stores it applied, undoing it with what undo prepared when memory runs out storing it. */
-static void perform_prepared(apply_session *session, cJSON *entry, const prepared_undo *undo) {
+/**
+ * Performs the change and stores it applied, undoing it with what undo prepared when memory runs out storing it:
+ * whether it was recorded.
+ */
+static int performed_prepared(apply_session *session, cJSON *entry, const prepared_undo *undo, int held) {
     runtime_change_note note = {""};
     runtime_change_step step = runtime_change_perform(session->change, entry, &note);
     if (step != RUNTIME_CHANGE_DONE) {
         withdraw(session, entry, step, note.detail);
-        return;
+        return 0;
     }
     mark_applied(entry);
     if (store(session) == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
-        undo_unstored(session, entry, undo);
-        return;
+        undo_unstored(session, entry, undo, held);
+        return 0;
     }
     conclude(session, RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = (long)cJSON_GetObjectItemCaseSensitive(entry, "sequence")->valuedouble;
+    return 1;
 }
 
 /**
@@ -432,13 +496,16 @@ static void perform_prepared(apply_session *session, cJSON *entry, const prepare
  * apply or reverse completes it from the disk, so the change is answered RECORDED either way, unless
  * memory ran out storing it.
  */
-static void perform_recorded(apply_session *session, cJSON *entry) {
+static void perform_recorded(apply_session *session, cJSON *entry, int held) {
     prepared_undo undo;
-    if (prepare_undo(entry, &undo) == SPISOR_OUT_OF_MEMORY) {
+    if (prepare_undo(entry, &undo) == SPISOR_OUT_OF_MEMORY || !journal_has_room(session->journal, 1)) {
+        release_undo(&undo);
         withdraw(session, entry, RUNTIME_CHANGE_OUT_OF_MEMORY, "memory ran out");
         return;
     }
-    perform_prepared(session, entry, &undo);
+    if (performed_prepared(session, entry, &undo, held)) {
+        keep_undo(session->journal, entry, &undo, held);
+    }
     release_undo(&undo);
 }
 
@@ -451,7 +518,7 @@ static int set_counter(cJSON *registration, long next) {
     return cJSON_AddNumberToObject(registration, "nextSequence", (double)next) != NULL;
 }
 
-static void record_and_perform(apply_session *session, cJSON *record) {
+static void record_and_perform(apply_session *session, cJSON *record, int held) {
     long sequence = next_sequence(session->registration);
     cJSON *entry = pending_entry(sequence, text_of(session->change, "kind"), record);
     if (entry == NULL || !set_counter(session->registration, sequence + 1) ||
@@ -463,7 +530,7 @@ static void record_and_perform(apply_session *session, cJSON *record) {
     if (!stored(session)) {
         return;
     }
-    perform_recorded(session, entry);
+    perform_recorded(session, entry, held);
 }
 
 static int ensure_changes_list(cJSON *registration) {
@@ -502,6 +569,7 @@ static void conclude_held_already(apply_session *session, const cJSON *own) {
 static void discard_prepared(prepared_children *prepared) {
     for (size_t index = 0; index < prepared->count; index++) {
         cJSON_Delete(prepared->items[index].record);
+        release_undo(&prepared->items[index].undo);
     }
     spisor_memory_release(prepared->items);
 }
@@ -521,6 +589,8 @@ static runtime_change_step prepare_child(apply_session *session, const cJSON *ch
         item->change = child;
         item->record = record;
         item->entry = NULL;
+        memset(&item->undo, 0, sizeof item->undo);
+        item->undo.kind = UNDO_BY_REVERSAL;
         item->held = holders.holder != NULL;
         item->undo_failed = 0;
     }
@@ -580,6 +650,7 @@ static runtime_registry_answer withdraw_family(apply_session *session, cJSON *ne
         prepared_child *item = &prepared->items[index];
         if (item->entry != NULL && item->undo_failed) {
             mark_applied(item->entry);
+            journal_left_a_change(session->journal);
             kept = 1;
         } else if (item->entry != NULL) {
             cJSON_Delete(cJSON_DetachItemViaPointer(changes, item->entry));
@@ -596,14 +667,33 @@ static runtime_registry_answer withdraw_family(apply_session *session, cJSON *ne
 
 /**
  * @implNote A child that cannot be performed undoes the children performed before it, under the same
- * lock and with the holders found when they were prepared, so a failed apply leaves neither a line
- * nor a record behind; a child whose undo fails is marked, so its record is kept with its line.
+ * lock and with what was prepared for each, so a failed apply leaves neither a line nor a record
+ * behind; a child whose undo fails is marked, so its record is kept with its line.
  */
 static void undo_performed(prepared_children *prepared, size_t performed) {
     for (size_t index = performed; index > 0; index--) {
         prepared_child *item = &prepared->items[index - 1];
-        runtime_change_note ignored = {""};
-        item->undo_failed = runtime_change_reverse(item->entry, item->held, &ignored) != RUNTIME_CHANGE_REVERSED;
+        item->undo_failed = !is_undone(item->entry, &item->undo, item->held);
+    }
+}
+
+/** Prepares the undo of every child and of the new parent, and room to keep them: whether memory sufficed. */
+static int prepared_family_undos(apply_session *session, cJSON *new_parent, prepared_children *prepared,
+                                 prepared_undo *parent_undo) {
+    spisor_status status = new_parent == NULL ? SPISOR_OK : prepare_undo(new_parent, parent_undo);
+    for (size_t index = 0; index < prepared->count && status != SPISOR_OUT_OF_MEMORY; index++) {
+        status = prepare_undo(prepared->items[index].entry, &prepared->items[index].undo);
+    }
+    return status != SPISOR_OUT_OF_MEMORY && journal_has_room(session->journal, prepared->count + 1);
+}
+
+static void keep_family(runtime_changes_journal *journal, cJSON *new_parent, prepared_children *prepared,
+                        prepared_undo *parent_undo) {
+    for (size_t index = 0; index < prepared->count; index++) {
+        keep_undo(journal, prepared->items[index].entry, &prepared->items[index].undo, prepared->items[index].held);
+    }
+    if (new_parent != NULL) {
+        keep_undo(journal, new_parent, parent_undo, 0);
     }
 }
 
@@ -616,8 +706,8 @@ static void mark_family_applied(cJSON *new_parent, prepared_children *prepared) 
     }
 }
 
-static void perform_family(apply_session *session, cJSON *new_parent, long parent_sequence,
-                           prepared_children *prepared) {
+static void perform_prepared_family(apply_session *session, cJSON *new_parent, long parent_sequence,
+                                    prepared_children *prepared, prepared_undo *parent_undo) {
     runtime_change_note note = {""};
     runtime_change_step step = RUNTIME_CHANGE_DONE;
     size_t performed = 0;
@@ -638,8 +728,23 @@ static void perform_family(apply_session *session, cJSON *new_parent, long paren
         return;
     }
     mark_family_applied(new_parent, prepared);
+    keep_family(session->journal, new_parent, prepared, parent_undo);
     conclude_stored(session, store(session), RUNTIME_CHANGES_RECORDED, "");
     session->outcome.sequence = parent_sequence;
+}
+
+static void perform_family(apply_session *session, cJSON *new_parent, long parent_sequence,
+                           prepared_children *prepared) {
+    prepared_undo parent_undo;
+    memset(&parent_undo, 0, sizeof parent_undo);
+    parent_undo.kind = UNDO_BY_REVERSAL;
+    if (!prepared_family_undos(session, new_parent, prepared, &parent_undo)) {
+        conclude_stored(session, withdraw_family(session, new_parent, prepared), RUNTIME_CHANGES_OUT_OF_MEMORY,
+                        "memory ran out");
+    } else {
+        perform_prepared_family(session, new_parent, parent_sequence, prepared, &parent_undo);
+    }
+    release_undo(&parent_undo);
 }
 
 /** Records the children, under a new parent made from parent_record, or under existing_parent when it is NULL. */
@@ -751,9 +856,10 @@ static void apply_single(apply_session *session) {
     cJSON *record = NULL;
     runtime_change_note note = {""};
     runtime_change_step step = runtime_change_prepare(session->change, holders.holder, &record, &note);
+    int held = holders.holder != NULL;
     cJSON_Delete(holders.holder);
     if (step == RUNTIME_CHANGE_DONE) {
-        record_and_perform(session, record);
+        record_and_perform(session, record, held);
     } else if (step == RUNTIME_CHANGE_UNNEEDED) {
         conclude(session, RUNTIME_CHANGES_UNNEEDED, "");
     } else {
@@ -775,12 +881,37 @@ static void prepare_and_apply(apply_session *session) {
     cJSON_Delete(children);
 }
 
-static runtime_changes_outcome apply_locked(const char *state, const char *host, const cJSON *change) {
-    apply_session session = {state, host, change, NULL, {RUNTIME_CHANGES_FAILED, 0, ""}};
+/**
+ * Takes the registration as the call found it into the session's journal before the call's first write; 0 having
+ * concluded the session when memory ran out. One that cannot be taken leaves the journal unable to write it back.
+ */
+static int began_journal(apply_session *session) {
+    runtime_changes_journal *journal = session->journal;
+    if (journal == NULL || journal->begun) {
+        return 1;
+    }
+    runtime_registry_answer taken =
+        runtime_registry_take_snapshot(session->state, session->host, &journal->registration);
+    if (taken == RUNTIME_REGISTRY_OUT_OF_MEMORY) {
+        conclude(session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
+        return 0;
+    }
+    journal->begun = 1;
+    journal->whole = taken == RUNTIME_REGISTRY_OK;
+    return 1;
+}
+
+static runtime_changes_outcome apply_locked(const char *state, const char *host, const cJSON *change,
+                                            runtime_changes_journal *journal) {
+    apply_session session = {state, host, change, NULL, journal, {RUNTIME_CHANGES_FAILED, 0, ""}};
     int out_of_memory = 0;
     runtime_registry_answer loaded = runtime_registry_load(state, host, &session.registration);
     if (loaded != RUNTIME_REGISTRY_OK) {
         return refusal_of_load(loaded, host);
+    }
+    if (!began_journal(&session)) {
+        cJSON_Delete(session.registration);
+        return session.outcome;
     }
     if (!ensure_changes_list(session.registration)) {
         conclude(&session, RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
@@ -800,7 +931,8 @@ static int is_usable_state(const char *state, const char *host) {
     return state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, state) && host != NULL;
 }
 
-runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change) {
+static runtime_changes_outcome apply_normalized(const char *state, const char *host, const cJSON *change,
+                                                runtime_changes_journal *journal) {
     if (!is_usable_state(state, host)) {
         return outcome_of(RUNTIME_CHANGES_REFUSED, "the state place must be an absolute path and the host named");
     }
@@ -812,9 +944,43 @@ runtime_changes_outcome runtime_changes_apply_held(const char *state, const char
     if (normal == NULL) {
         return outcome_of(RUNTIME_CHANGES_OUT_OF_MEMORY, "memory ran out");
     }
-    runtime_changes_outcome outcome = apply_locked(state, host, normal);
+    runtime_changes_outcome outcome = apply_locked(state, host, normal, journal);
     cJSON_Delete(normal);
     return outcome;
+}
+
+runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change) {
+    return apply_normalized(state, host, change, NULL);
+}
+
+runtime_changes_outcome runtime_changes_apply_journaled(const char *state, const char *host, const cJSON *change,
+                                                        runtime_changes_journal *journal) {
+    return apply_normalized(state, host, change, journal);
+}
+
+static int is_kept_undone(const runtime_changes_kept *kept) {
+    return kept->held || is_undone_as_prepared(&kept->undo);
+}
+
+int runtime_changes_undo_journal(const runtime_changes_journal *journal) {
+    size_t left = journal->count;
+    while (left > 0 && is_kept_undone(&journal->kept[left - 1])) {
+        left--;
+    }
+    if (!journal->begun) {
+        return 1;
+    }
+    return left == 0 && journal->whole && runtime_registry_put_back(&journal->registration);
+}
+
+void runtime_changes_end_journal(runtime_changes_journal *journal) {
+    for (size_t index = 0; index < journal->count; index++) {
+        release_undo(&journal->kept[index].undo);
+    }
+    spisor_memory_release(journal->kept);
+    spisor_memory_release(journal->sequences);
+    runtime_registry_release_snapshot(&journal->registration);
+    memset(journal, 0, sizeof *journal);
 }
 
 runtime_changes_outcome runtime_changes_apply(const char *state, const char *host, const cJSON *change) {

@@ -62,6 +62,12 @@ static char refusal_detail[600];
 static spisor_value_tree updates_settings = SPISOR_INIT(spisor_value_tree);
 static spisor_status last_status;
 static const char *snapshot_left_out = NULL;
+static char *tree_before_entry = NULL;
+static size_t tree_before_entry_length = 0;
+static const char *clean_tree = NULL;
+static size_t clean_tree_length = 0;
+
+static char *base_snapshot(size_t *length);
 
 static void keep_refusal(spisor_refusal *refusal) {
     snprintf(refusal_detail, sizeof refusal_detail, "%s", refusal->detail == NULL ? "" : refusal->detail);
@@ -72,6 +78,8 @@ static void finish(void) {
     spisor_value_release(&application);
     spisor_value_release(&updates_settings);
     snapshot_left_out = NULL;
+    spisor_memory_release(tree_before_entry);
+    tree_before_entry = NULL;
     spisor_memory_release(path_directory);
     path_directory = NULL;
     runtime_install_use_runtime_build(NULL, NULL, NULL);
@@ -152,6 +160,7 @@ static void prepare_entry(void) {
     spisor_memory_release(homes);
     register_entry_loader();
     declare_hook_entry();
+    tree_before_entry = base_snapshot(&tree_before_entry_length);
 }
 
 /** As prepare_entry with the home's parent missing, so the disk refuses the home after the entry recorded changes. */
@@ -160,6 +169,7 @@ static void prepare_refused_entry(void) {
     keep_run_path(base.user, "homes/sample");
     register_entry_loader();
     declare_hook_entry();
+    tree_before_entry = base_snapshot(&tree_before_entry_length);
 }
 
 static spisor_status run_entry(void) {
@@ -171,10 +181,33 @@ static spisor_status run_entry(void) {
     argument.loader = ENTRY_LOADER;
     argument.home = run_path;
     argument.application = &application.root;
-    spisor_status status = install->entry(install->context, &argument, &answer, &refusal);
+    last_status = install->entry(install->context, &argument, &answer, &refusal);
     install->release_entry_answer(install->context, &answer);
     keep_refusal(&refusal);
-    return status;
+    return last_status;
+}
+
+static int is_tree(const char *tree, size_t length, const char *expected, size_t expected_length) {
+    return tree != NULL && expected != NULL && length == expected_length && memcmp(tree, expected, length) == 0;
+}
+
+/**
+ * Whether an entry that did not answer OK left every byte under the base as it found them, or, failing only once the
+ * entry stood written, as a clean run leaves them.
+ */
+static int entry_left_nothing_unless_written(void) {
+    if (last_status == SPISOR_OK) {
+        return 1;
+    }
+    size_t length = 0;
+    char *tree = base_snapshot(&length);
+    int kept = is_tree(tree, length, tree_before_entry, tree_before_entry_length) ||
+               is_tree(tree, length, clean_tree, clean_tree_length);
+    spisor_memory_release(tree);
+    if (!kept) {
+        fprintf(stderr, "entry: an answer of %d left something it wrote\n", (int)last_status);
+    }
+    return kept;
 }
 
 /** The catalog's claude loader installed through the ecosystem, claude found on PATH or installed through fake. */
@@ -1354,6 +1387,8 @@ static void every_failure_in_mode(const operation_case *each, spisor_status expe
     int failures_before = check_failures;
     clean_run clean;
     run_clean(each, &clean);
+    clean_tree = clean.snapshot;
+    clean_tree_length = clean.snapshot_length;
     if (clean.status != expected) {
         fprintf(stderr, "%s: a clean run answered %d \"%s\"\n", each->label, (int)clean.status, clean.refusal);
         check_failures++;
@@ -1368,6 +1403,7 @@ static void every_failure_in_mode(const operation_case *each, spisor_status expe
     printf("%s%s: %llu allocations, failures %llu to %llu checked\n", each->label,
            allocation_failure_mode_name(failure_mode), (unsigned long long)clean.allocations,
            (unsigned long long)first, (unsigned long long)(attempt - 1));
+    clean_tree = NULL;
     spisor_memory_release(clean.snapshot);
 }
 
@@ -1383,8 +1419,10 @@ static int is_selected(const char *only, const char *label) {
 
 /** With a label's start as the first argument runs only the cases it starts, failing allocations first to last. */
 int main(int argc, char **argv) {
-    static const operation_case entry = {"entry", prepare_entry, run_entry, NULL};
-    static const operation_case refused_entry = {"entry refused", prepare_refused_entry, run_entry, NULL};
+    static const operation_case entry = {"entry", prepare_entry, run_entry,
+                                         entry_left_nothing_unless_written};
+    static const operation_case refused_entry = {"entry refused", prepare_refused_entry, run_entry,
+                                                 entry_left_nothing_unless_written};
     static const operation_case update = {"application", prepare_fake_application, run_update, NULL};
     static const operation_case path_update = {"application on path", prepare_path_application, run_update, NULL};
     static const operation_case found = {"runtime", prepare_runtime, run_runtime, acquired_nothing};

@@ -6,6 +6,7 @@
 
 #include "cJSON.h"
 #include "change_kinds.h"
+#include "registry_snapshot.h"
 
 typedef enum runtime_changes_answer {
     RUNTIME_CHANGES_RECORDED,
@@ -50,18 +51,54 @@ runtime_changes_outcome runtime_changes_apply(const char *state, const char *hos
 runtime_changes_outcome runtime_changes_apply_held(const char *state, const char *host, const cJSON *change);
 
 /**
- * Reverses, newest first, every unreversed change of host whose sequence is above `above`, as the reverse request
+ * Reverses, newest first, every unreversed change of host among the count sequences listed, as the reverse request
  * does, for a caller that already holds runtime_hosts_lock. Answers 1 once none is left, 0 when one could not be
- * reversed or memory ran out, the rest then left recorded.
- */
-int runtime_changes_reverse_newer_held(const char *state, const char *host, double above);
-
-/**
- * runtime_changes_reverse_newer_held for exactly the count sequences listed, so a change host recorded between them
- * through another call stays recorded; *out_of_memory set when memory ran out before all were reversed.
+ * reversed or memory ran out, the rest then left recorded; *out_of_memory set when memory ran out.
  */
 int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count,
                                         int *out_of_memory);
+
+typedef struct runtime_changes_kept runtime_changes_kept;
+
+/**
+ * What takes back every change one call records while it holds runtime_hosts_lock from its first apply to its last:
+ * the host's registration as the call found it, and each change's undo, prepared before the change was performed, so
+ * a call that fails is taken back without allocating (prepared_undo.h). A zeroed journal is an empty one.
+ */
+typedef struct runtime_changes_journal {
+    runtime_registry_snapshot registration;
+    runtime_changes_kept *kept;
+    double *sequences;
+    size_t count;
+    size_t capacity;
+    int begun;
+    int whole;
+} runtime_changes_journal;
+
+/** runtime_changes_apply_held, keeping in journal the undo of each change it records. */
+runtime_changes_outcome runtime_changes_apply_journaled(const char *state, const char *host, const cJSON *change,
+                                                        runtime_changes_journal *journal);
+
+/**
+ * Undoes, newest first, every change journal kept, and writes the registration back as the call found it, allocating
+ * nothing, under runtime_hosts_lock still held since the call's first apply: 1 when the call left nothing.
+ *
+ * @implNote The sequences the undone changes took are handed out again, since no answer ever named them. It stops at
+ * an undo that fails, and writes nothing back when one of the call's changes stayed on the disk unkept, since that
+ * would drop the record of what stayed.
+ */
+int runtime_changes_undo_journal(const runtime_changes_journal *journal);
+
+/**
+ * runtime_changes_undo_journal, and when that leaves something, every change journal kept reversed through its
+ * record, which allocates: 1 when the call left nothing; *out_of_memory set when memory ran out, the rest then left
+ * recorded. Defined in change_reversal.c.
+ */
+int runtime_changes_take_back(const char *state, const char *host, const runtime_changes_journal *journal,
+                              int *out_of_memory);
+
+/** Releases what journal holds, the changes it kept staying as they are; it is empty again afterwards. */
+void runtime_changes_end_journal(runtime_changes_journal *journal);
 
 /**
  * Reverses entry, one unreversed record in registration of host, held when another unreversed

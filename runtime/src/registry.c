@@ -1,4 +1,5 @@
 #include "registry.h"
+#include "registry_snapshot.h"
 #include "allocation.h"
 
 #include <stdio.h>
@@ -72,6 +73,44 @@ static char *registration_path(const char *state, const char *id) {
     spisor_memory_release(hosts);
     spisor_memory_release(file_name);
     return path;
+}
+
+runtime_registry_answer runtime_registry_take_snapshot(const char *state, const char *id,
+                                                       runtime_registry_snapshot *snapshot) {
+    memset(snapshot, 0, sizeof *snapshot);
+    if (!is_host_id(id)) {
+        return RUNTIME_REGISTRY_INVALID;
+    }
+    char *path = registration_path(state, id);
+    if (path == NULL) {
+        return RUNTIME_REGISTRY_OUT_OF_MEMORY;
+    }
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    snapshot->bytes = spisor_read_file_reporting(path, &snapshot->length, &outcome);
+    spisor_status prepared = SPISOR_REFUSED;
+    if (snapshot->bytes != NULL) {
+        prepared = spisor_prepare_replacement(path, &snapshot->file);
+    } else if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+        prepared = SPISOR_OUT_OF_MEMORY;
+    }
+    spisor_memory_release(path);
+    if (prepared != SPISOR_OK) {
+        runtime_registry_release_snapshot(snapshot);
+    }
+    return prepared == SPISOR_OK              ? RUNTIME_REGISTRY_OK
+           : prepared == SPISOR_OUT_OF_MEMORY ? RUNTIME_REGISTRY_OUT_OF_MEMORY
+                                              : RUNTIME_REGISTRY_UNREADABLE;
+}
+
+int runtime_registry_put_back(const runtime_registry_snapshot *snapshot) {
+    return snapshot->bytes != NULL && spisor_replace_prepared(&snapshot->file, snapshot->bytes, snapshot->length);
+}
+
+void runtime_registry_release_snapshot(runtime_registry_snapshot *snapshot) {
+    spisor_memory_release(snapshot->bytes);
+    snapshot->bytes = NULL;
+    snapshot->length = 0;
+    spisor_release_prepared_replacement(&snapshot->file);
 }
 
 static const char *string_member(const cJSON *object, const char *member) {

@@ -236,16 +236,17 @@ static int reverse_held(reversal_session *session, int *out_of_memory) {
     return reversed;
 }
 
-int runtime_changes_reverse_newer_held(const char *state, const char *host, double above) {
-    int out_of_memory = 0;
-    reversal_session session = {state, host, NULL, NULL, above, NULL, 0, 1, 0, 0};
-    return reverse_held(&session, &out_of_memory);
-}
-
 int runtime_changes_reverse_listed_held(const char *state, const char *host, const double *sequences, size_t count,
                                         int *out_of_memory) {
     reversal_session session = {state, host, NULL, NULL, 0, sequences, count, 1, 0, 0};
     return reverse_held(&session, out_of_memory);
+}
+
+int runtime_changes_take_back(const char *state, const char *host, const runtime_changes_journal *journal,
+                              int *out_of_memory) {
+    *out_of_memory = 0;
+    return runtime_changes_undo_journal(journal) ||
+           runtime_changes_reverse_listed_held(state, host, journal->sequences, journal->count, out_of_memory);
 }
 
 cJSON *runtime_changes_reverse(const char *state, const char *host, cJSON **refusal) {

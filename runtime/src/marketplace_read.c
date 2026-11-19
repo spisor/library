@@ -78,7 +78,11 @@ static int has_way_to_read(const runtime_marketplace_read_request *order, cJSON 
                "the call carries neither text nor a usable destination for %s", order->source_id);
         return 0;
     }
-    if (order->text == NULL && spisor_probe_file(order->destination) == SPISOR_FILE_PRESENT) {
+    spisor_file_presence presence = order->text == NULL ? spisor_probe_file(order->destination) : SPISOR_FILE_MISSING;
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        return 0;
+    }
+    if (presence == SPISOR_FILE_PRESENT) {
         refuse(refusal, "send a destination that does not exist; it is deleted once read, so only a file this call wrote",
                "the destination for %s already exists", order->source_id);
         return 0;
