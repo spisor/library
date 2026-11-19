@@ -97,6 +97,7 @@ typedef struct acquisition {
     char *member;
     runtime_layout final;
     runtime_layout staged;
+    int out_of_memory;
 } acquisition;
 
 #ifdef SPISOR_INSTALL_TEST_HOOKS
@@ -167,6 +168,17 @@ static char *joined(const char *const *segments, size_t count) {
 static cJSON *refused(const char *message, const char *subject, const char *fix) {
     const char *parts[2] = {message, subject};
     return runtime_cache_refusal(parts, 2, fix);
+}
+
+/** Marks the acquisition out of memory: NULL, which with the mark is no success. */
+static cJSON *ran_out(acquisition *runtime) {
+    runtime->out_of_memory = 1;
+    return NULL;
+}
+
+/** The refusal, or NULL with the acquisition marked out of memory when memory ran out building it. */
+static cJSON *refusal_of(acquisition *runtime, cJSON *refusal) {
+    return refusal != NULL ? refusal : ran_out(runtime);
 }
 
 static void discard_layout(runtime_layout *layout) {
@@ -252,25 +264,35 @@ static int is_unpacked(const acquisition *runtime, const runtime_layout *layout)
     return unpacked;
 }
 
-/** Fetches the runtime's archive; NULL once stored, else the refusal, NULL too when memory ran out. */
-static cJSON *fetch_archive(const acquisition *runtime, int *stored) {
+/** Fetches the runtime's archive: 1 once stored, else 0 with *refusal set or the acquisition out of memory. */
+static int fetched_archive(acquisition *runtime, cJSON **refusal) {
     const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
     runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
     runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
-    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_refusal fetch_refusal = SPISOR_INIT(spisor_refusal);
     argument.url = runtime->build.url;
     argument.destination = runtime->staged.archive;
     argument.sha256 = runtime->build.sha256;
     argument.timeout_seconds = DOWNLOAD_SECONDS;
-    *stored = fetch->get(fetch->context, &argument, &answer, &refusal) == SPISOR_OK;
-    cJSON *refused = *stored ? NULL : runtime_refusal_of(&refusal);
+    spisor_status status = fetch->get(fetch->context, &argument, &answer, &fetch_refusal);
+    *refusal = NULL;
+    if (status == SPISOR_OUT_OF_MEMORY) {
+        ran_out(runtime);
+    } else if (status != SPISOR_OK) {
+        *refusal = refusal_of(runtime, fetch_refusal.detail != NULL
+                                           ? runtime_refusal_of(&fetch_refusal)
+                                           : runtime_refusal("the runtime archive could not be fetched", AGAIN_FIX));
+    }
     fetch->release_answer(fetch->context, &answer);
-    fetch->release_refusal(fetch->context, &refusal);
-    return refused;
+    fetch->release_refusal(fetch->context, &fetch_refusal);
+    return status == SPISOR_OK;
 }
 
-/** The OS's own tar: System32's bsdtar on Windows, /usr/bin/tar or /bin/tar elsewhere; NULL when there is none. */
-static char *system_tar(void) {
+/**
+ * The OS's own tar: System32's bsdtar on Windows, /usr/bin/tar or /bin/tar elsewhere; NULL when there is none, or
+ * with *out_of_memory set when memory ran out finding it.
+ */
+static char *system_tar(int *out_of_memory) {
 #if defined(_WIN32)
     wchar_t folder[MAX_PATH];
     UINT length = GetSystemDirectoryW(folder, MAX_PATH);
@@ -289,7 +311,9 @@ static char *system_tar(void) {
     int has_usr_tar = spisor_probe_file("/usr/bin/tar") == SPISOR_FILE_PRESENT;
     char *tar = runtime_catalog_copy(has_usr_tar ? "/usr/bin/tar" : "/bin/tar");
 #endif
-    if (tar != NULL && spisor_probe_file(tar) != SPISOR_FILE_PRESENT) {
+    spisor_file_presence presence = tar == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(tar);
+    *out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
+    if (presence != SPISOR_FILE_PRESENT) {
         spisor_memory_release(tar);
         return NULL;
     }
@@ -316,12 +340,37 @@ static int mark_runnable(const char *executable) {
 #endif
 }
 
-static int make_executable_folder(const acquisition *runtime) {
+static spisor_status make_executable_folder(const acquisition *runtime) {
     const char *segments[2] = {runtime->staged.executable, ".."};
     char *folder = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    int made = folder != NULL && spisor_make_directories(folder) == SPISOR_OK;
+    spisor_status made = folder == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(folder);
     spisor_memory_release(folder);
     return made;
+}
+
+/** What an unpack that ran, or did not, left: NULL when the executable is runnable, else the refusal. */
+static cJSON *unpacked_refusal(acquisition *runtime, spisor_status folder, int ran, const char *problem,
+                               int exit_code) {
+    if (folder == SPISOR_OUT_OF_MEMORY || (folder == SPISOR_OK && !ran && problem == NULL)) {
+        return ran_out(runtime);
+    }
+    if (!ran) {
+        return refusal_of(runtime, runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked"
+                                                                   : problem,
+                                                   AGAIN_FIX));
+    }
+    spisor_file_presence presence = spisor_probe_file(runtime->staged.executable);
+    if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
+        return ran_out(runtime);
+    }
+    if (exit_code != 0 || presence != SPISOR_FILE_PRESENT) {
+        return refusal_of(runtime, refused("the runtime archive holds no ", runtime->member, AGAIN_FIX));
+    }
+    if (!mark_runnable(runtime->staged.executable)) {
+        return refusal_of(runtime,
+                          refused("the runtime could not be made runnable: ", runtime->staged.executable, CACHE_FIX));
+    }
+    return NULL;
 }
 
 /**
@@ -330,62 +379,69 @@ static int make_executable_folder(const acquisition *runtime) {
  * @implNote tar reads the archive on its standard input and writes the executable on its standard output,
  * both opened here, so no cache path is ever an argument of tar (see runtime_run_between_files).
  */
-static cJSON *unpack(const acquisition *runtime) {
-    char *tar = system_tar();
+static cJSON *unpack(acquisition *runtime) {
+    int out_of_memory = 0;
+    char *tar = system_tar(&out_of_memory);
     if (tar == NULL) {
-        return refused("this system has no tar to unpack ", runtime->staged.archive,
-                       "install tar (bsdtar on Windows 10 1803 or later), then run install again");
+        return out_of_memory ? ran_out(runtime)
+                             : refusal_of(runtime, refused("this system has no tar to unpack ", runtime->staged.archive,
+                                                           "install tar (bsdtar on Windows 10 1803 or later), then "
+                                                           "run install again"));
     }
     cJSON *arguments = tar_arguments(runtime);
     int exit_code = -1;
     char *problem = NULL;
-    int ran = arguments != NULL && make_executable_folder(runtime) &&
-              runtime_run_between_files(tar, arguments, TAR_MILLISECONDS, runtime->staged.archive,
-                                        runtime->staged.executable, &exit_code, &problem);
+    spisor_status folder = arguments == NULL ? SPISOR_OUT_OF_MEMORY : make_executable_folder(runtime);
+    int ran = folder == SPISOR_OK && runtime_run_between_files(tar, arguments, TAR_MILLISECONDS,
+                                                               runtime->staged.archive, runtime->staged.executable,
+                                                               &exit_code, &problem);
     cJSON_Delete(arguments);
     spisor_memory_release(tar);
-    cJSON *refusal = NULL;
-    if (!ran) {
-        refusal = runtime_refusal(problem == NULL ? "the runtime archive could not be unpacked" : problem, AGAIN_FIX);
-    } else if (exit_code != 0 || spisor_probe_file(runtime->staged.executable) != SPISOR_FILE_PRESENT) {
-        refusal = refused("the runtime archive holds no ", runtime->member, AGAIN_FIX);
-    } else if (!mark_runnable(runtime->staged.executable)) {
-        refusal = refused("the runtime could not be made runnable: ", runtime->staged.executable, CACHE_FIX);
-    }
+    cJSON *refusal = unpacked_refusal(runtime, folder, ran, problem, exit_code);
     spisor_memory_release(problem);
     return refusal;
 }
 
-static int write_marker(const acquisition *runtime) {
+/** Writes the marker naming the archive and the executable's hash: NULL once written, else the refusal. */
+static cJSON *marker_refusal(acquisition *runtime) {
     char executable_hash[RUNTIME_SHA256_HEX_SIZE];
-    if (spisor_sha256_file(runtime->staged.executable, executable_hash) != SPISOR_OK) {
-        return 0;
+    char *text = NULL;
+    spisor_status written = spisor_sha256_file(runtime->staged.executable, executable_hash);
+    if (written == SPISOR_OK) {
+        const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
+        text = runtime_cache_text(parts, 4);
+        written = text == NULL ? SPISOR_OUT_OF_MEMORY
+                               : spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text));
     }
-    const char *parts[4] = {runtime->build.sha256, "\n", executable_hash, "\n"};
-    char *text = runtime_cache_text(parts, 4);
-    int written = text != NULL &&
-        spisor_replace_file(runtime->staged.marker, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
     spisor_memory_release(text);
-    return written;
+    if (written == SPISOR_OUT_OF_MEMORY) {
+        return ran_out(runtime);
+    }
+    return written == SPISOR_OK
+               ? NULL
+               : refusal_of(runtime, refused("the runtime's marker could not be written: ", runtime->staged.marker,
+                                             CACHE_FIX));
 }
 
 /** Fetches, unpacks and marks the runtime in the staging folder; NULL on success, else the refusal. */
-static cJSON *build_staged(const acquisition *runtime) {
-    if (runtime_remove_tree(runtime->staged.directory) != SPISOR_OK ||
-        spisor_make_directories(runtime->staged.directory) != SPISOR_OK) {
-        return refused("the runtime's staging folder could not be made: ", runtime->staged.directory, CACHE_FIX);
+static cJSON *build_staged(acquisition *runtime) {
+    spisor_status made = runtime_remove_tree(runtime->staged.directory);
+    if (made == SPISOR_OK) {
+        made = spisor_make_directories(runtime->staged.directory);
     }
-    int stored = 0;
-    cJSON *refusal = fetch_archive(runtime, &stored);
-    if (!stored) {
-        return refusal != NULL ? refusal : runtime_refusal("the runtime archive could not be fetched", AGAIN_FIX);
+    if (made != SPISOR_OK) {
+        return made == SPISOR_OUT_OF_MEMORY
+                   ? ran_out(runtime)
+                   : refusal_of(runtime, refused("the runtime's staging folder could not be made: ",
+                                                 runtime->staged.directory, CACHE_FIX));
+    }
+    cJSON *refusal = NULL;
+    if (!fetched_archive(runtime, &refusal)) {
+        return refusal;
     }
     refusal = unpack(runtime);
     spisor_remove_file_in_place(runtime->staged.archive);
-    if (refusal == NULL && !write_marker(runtime)) {
-        refusal = refused("the runtime's marker could not be written: ", runtime->staged.marker, CACHE_FIX);
-    }
-    return refusal;
+    return refusal != NULL || runtime->out_of_memory ? refusal : marker_refusal(runtime);
 }
 
 static int rename_directory(const char *from, const char *to) {
@@ -403,7 +459,7 @@ static int rename_directory(const char *from, const char *to) {
  * finds the first's intact runtime and accepts it; only a final folder that is not intact is removed
  * first. No lock is held: the staging folder is this process's alone.
  */
-static cJSON *publish(const acquisition *runtime) {
+static cJSON *publish(acquisition *runtime) {
     if (rename_directory(runtime->staged.directory, runtime->final.directory) ||
         is_unpacked(runtime, &runtime->final)) {
         return NULL;
@@ -413,8 +469,9 @@ static cJSON *publish(const acquisition *runtime) {
          is_unpacked(runtime, &runtime->final))) {
         return NULL;
     }
-    return refused("the runtime could not be moved into place at ", runtime->final.directory,
-                   "close whatever runs the JavaScript runtime from the cache, then run install again");
+    return refusal_of(runtime, refused("the runtime could not be moved into place at ", runtime->final.directory,
+                                       "close whatever runs the JavaScript runtime from the cache, then run install "
+                                       "again"));
 }
 
 /**
@@ -493,12 +550,13 @@ static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **re
         sweep_stale_staging(&runtime, platform);
         int unpacked = is_unpacked(&runtime, &runtime.final);
         *refusal = unpacked ? NULL : build_staged(&runtime);
-        if (!unpacked && *refusal == NULL) {
+        if (!unpacked && *refusal == NULL && !runtime.out_of_memory) {
             before_publish(&runtime);
             *refusal = publish(&runtime);
         }
         runtime_remove_tree(runtime.staged.directory);
-        answer = *refusal == NULL ? answer_of(runtime.version, runtime.final.executable, !unpacked, "acquired") : NULL;
+        int acquired = *refusal == NULL && !runtime.out_of_memory;
+        answer = acquired ? answer_of(runtime.version, runtime.final.executable, !unpacked, "acquired") : NULL;
         if (answer != NULL) {
             remove_other_versions(&runtime);
         }
