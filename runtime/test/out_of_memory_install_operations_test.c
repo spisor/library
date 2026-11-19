@@ -176,7 +176,8 @@ static void prepare_refused_entry(void) {
 
 static spisor_status run_entry(void) {
     runtime_install_entry_argument argument = SPISOR_INIT(runtime_install_entry_argument);
-    runtime_install_entry_answer answer = SPISOR_INIT(runtime_install_entry_answer);
+    runtime_install_entry_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
@@ -184,6 +185,7 @@ static spisor_status run_entry(void) {
     argument.home = run_path;
     argument.application = &application.root;
     last_status = install->entry(install->context, &argument, &answer, &refusal);
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     install->release_entry_answer(install->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -241,7 +243,8 @@ static void prepare_fake_application(void) {
 
 static spisor_status run_update(void) {
     runtime_install_application_argument argument = SPISOR_INIT(runtime_install_application_argument);
-    runtime_install_application_answer answer = SPISOR_INIT(runtime_install_application_answer);
+    runtime_install_application_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.portable = base.portable;
     argument.state = base.state;
@@ -249,6 +252,7 @@ static spisor_status run_update(void) {
     argument.loader = CLAUDE_LOADER;
     argument.operation = RUNTIME_INSTALL_UPDATE;
     spisor_status status = install->application(install->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_application_answer(install->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -266,7 +270,8 @@ static void environment_of_path(runtime_variable environment[3]) {
 
 static spisor_status run_register_loader(void) {
     runtime_install_register_loader_argument argument = SPISOR_INIT(runtime_install_register_loader_argument);
-    runtime_install_register_loader_answer answer = SPISOR_INIT(runtime_install_register_loader_answer);
+    runtime_install_register_loader_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[3];
     environment_of_path(environment);
@@ -278,6 +283,7 @@ static spisor_status run_register_loader(void) {
     argument.id = CLAUDE_LOADER;
     argument.version = "1.0.0";
     spisor_status status = install->register_loader(install->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_register_loader_answer(install->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -312,7 +318,8 @@ static void prepare_runtime(void) {
 
 static spisor_status run_runtime(void) {
     runtime_install_runtime_argument argument = SPISOR_INIT(runtime_install_runtime_argument);
-    runtime_install_runtime_answer answer = SPISOR_INIT(runtime_install_runtime_answer);
+    runtime_install_runtime_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[3];
     environment_of_path(environment);
@@ -320,6 +327,7 @@ static spisor_status run_runtime(void) {
     argument.environment = environment;
     argument.environment_count = 3;
     spisor_status status = install->runtime(install->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_runtime_answer(install->context, &answer);
     keep_refusal(&refusal);
     return status;
@@ -484,7 +492,8 @@ static spisor_status run_apply(void) {
     static const char *const libraries[2] = {"runtime", "koffi"};
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_apply_argument argument = SPISOR_INIT(runtime_updates_apply_argument);
-    runtime_updates_apply_answer answer = SPISOR_INIT(runtime_updates_apply_answer);
+    runtime_updates_apply_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
@@ -496,6 +505,7 @@ static spisor_status run_apply(void) {
     argument.libraries = libraries;
     argument.library_count = 2;
     last_status = updates->apply(updates->context, &argument, &answer, &refusal);
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_apply_answer(updates->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -529,13 +539,15 @@ static void prepare_rollback(void) {
 static spisor_status run_rollback(void) {
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_rollback_argument argument = SPISOR_INIT(runtime_updates_rollback_argument);
-    runtime_updates_rollback_answer answer = SPISOR_INIT(runtime_updates_rollback_answer);
+    runtime_updates_rollback_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
     argument.host_id = "spisor-host";
     argument.item = "spisor-host";
     last_status = updates->rollback(updates->context, &argument, &answer, &refusal);
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_rollback_answer(updates->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -545,7 +557,8 @@ static spisor_status run_rollback(void) {
 static spisor_status run_recorded(void) {
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_recorded_argument argument = SPISOR_INIT(runtime_updates_recorded_argument);
-    runtime_updates_recorded_answer answer = SPISOR_INIT(runtime_updates_recorded_answer);
+    runtime_updates_recorded_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
@@ -554,6 +567,7 @@ static spisor_status run_recorded(void) {
     if (last_status == SPISOR_OK && (answer.run_count != 1 || strcmp(answer.run[0].version, "2.0.0") != 0)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_recorded_answer(updates->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -613,7 +627,8 @@ static void prepare_run(void) {
 static spisor_status run_run(void) {
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_run_argument argument = SPISOR_INIT(runtime_updates_run_argument);
-    runtime_updates_run_answer answer = SPISOR_INIT(runtime_updates_run_answer);
+    runtime_updates_run_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.portable = base.portable;
     argument.state = base.state;
@@ -623,6 +638,7 @@ static spisor_status run_run(void) {
     if (last_status == SPISOR_OK && answer.check_count != 1) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_run_answer(updates->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -631,7 +647,8 @@ static spisor_status run_run(void) {
 static spisor_status run_check(void) {
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_check_argument argument = SPISOR_INIT(runtime_updates_check_argument);
-    runtime_updates_check_answer answer = SPISOR_INIT(runtime_updates_check_answer);
+    runtime_updates_check_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
@@ -642,6 +659,7 @@ static spisor_status run_check(void) {
     if (last_status == SPISOR_OK && (answer.fetched_count != 1 || answer.refused_count != 0)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_check_answer(updates->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -683,7 +701,8 @@ static void prepare_boot(void) {
 static spisor_status run_boot_read(void) {
     const runtime_boot_definition *boot = runtime_boot_definition_of();
     runtime_boot_host_argument argument = SPISOR_INIT(runtime_boot_host_argument);
-    runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
+    runtime_boot_hint_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.cache = base.cache;
     argument.host_id = "spisor-host";
@@ -691,6 +710,7 @@ static spisor_status run_boot_read(void) {
     if (last_status == SPISOR_OK && (!answer.hinted || answer.host == NULL || strcmp(answer.host, "1.0.0") != 0)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     boot->release_hint_answer(boot->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -700,7 +720,8 @@ static spisor_status run_boot_write(void) {
     static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_boot_definition *boot = runtime_boot_definition_of();
     runtime_boot_write_argument argument = SPISOR_INIT(runtime_boot_write_argument);
-    runtime_boot_hint_answer answer = SPISOR_INIT(runtime_boot_hint_answer);
+    runtime_boot_hint_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.cache = base.cache;
     argument.host_id = "spisor-host";
@@ -711,6 +732,7 @@ static spisor_status run_boot_write(void) {
     if (last_status == SPISOR_OK && (answer.library_count != 1 || answer.host == NULL)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     boot->release_hint_answer(boot->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -720,7 +742,8 @@ static spisor_status run_boot_resolve(void) {
     static const char *const arguments[1] = {"--version"};
     const runtime_boot_definition *boot = runtime_boot_definition_of();
     runtime_boot_resolve_argument argument = SPISOR_INIT(runtime_boot_resolve_argument);
-    runtime_boot_resolve_answer answer = SPISOR_INIT(runtime_boot_resolve_answer);
+    runtime_boot_resolve_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.cache = base.cache;
     argument.host_id = "spisor-host";
@@ -730,6 +753,7 @@ static spisor_status run_boot_resolve(void) {
     if (last_status == SPISOR_OK && (answer.argument_count != 1 || answer.executable == NULL)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     boot->release_resolve_answer(boot->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -738,13 +762,15 @@ static spisor_status run_boot_resolve(void) {
 static spisor_status run_boot_place(void) {
     const runtime_boot_definition *boot = runtime_boot_definition_of();
     runtime_boot_place_argument argument = SPISOR_INIT(runtime_boot_place_argument);
-    runtime_boot_place_answer answer = SPISOR_INIT(runtime_boot_place_answer);
+    runtime_boot_place_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.cache = base.cache;
     last_status = boot->place(boot->context, &argument, &answer, &refusal);
     if (last_status == SPISOR_OK && !answer.placed) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     boot->release_place_answer(boot->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -838,7 +864,8 @@ static spisor_status run_hold(void) {
     static const char *const arguments[1] = {"--background"};
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
-    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    runtime_processes_hold_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
@@ -850,6 +877,7 @@ static spisor_status run_hold(void) {
     if (last_status == SPISOR_OK && (answer.started || answer.pid != (int64_t)fixture_process_id())) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_hold_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -858,7 +886,8 @@ static spisor_status run_hold(void) {
 static spisor_status run_release(void) {
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_holder_argument argument = SPISOR_INIT(runtime_processes_holder_argument);
-    runtime_processes_release_answer answer = SPISOR_INIT(runtime_processes_release_answer);
+    runtime_processes_release_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
@@ -867,6 +896,7 @@ static spisor_status run_release(void) {
     if (last_status == SPISOR_OK && answer.holder_count != 0) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_release_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -875,7 +905,8 @@ static spisor_status run_release(void) {
 static spisor_status run_prune(void) {
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_prune_argument argument = SPISOR_INIT(runtime_processes_prune_argument);
-    runtime_processes_prune_answer answer = SPISOR_INIT(runtime_processes_prune_answer);
+    runtime_processes_prune_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
@@ -885,6 +916,7 @@ static spisor_status run_prune(void) {
     if (last_status == SPISOR_OK && answer.exit) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_prune_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -908,7 +940,8 @@ static spisor_status run_ready(void) {
 static spisor_status run_await_ready(void) {
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_await_argument argument = SPISOR_INIT(runtime_processes_await_argument);
-    runtime_processes_await_answer answer = SPISOR_INIT(runtime_processes_await_answer);
+    runtime_processes_await_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
@@ -918,6 +951,7 @@ static spisor_status run_await_ready(void) {
     if (last_status == SPISOR_OK && answer.environment_count != 1) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_await_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -927,13 +961,15 @@ static spisor_status run_record_run(void) {
     static const runtime_item_version run[1] = {{"a", "2.0.0"}};
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_record_argument argument = SPISOR_INIT(runtime_processes_record_argument);
-    runtime_processes_record_answer answer = SPISOR_INIT(runtime_processes_record_answer);
+    runtime_processes_record_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = BACKGROUND_HOST;
     argument.run = run;
     argument.run_count = 1;
     last_status = processes->record_run(processes->context, &argument, &answer, &refusal);
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_record_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -956,7 +992,8 @@ static int recorded_no_new_run_unless_ok(void) {
 static spisor_status run_live_runs(void) {
     const runtime_processes_definition *processes = processes_service();
     runtime_processes_live_argument argument = SPISOR_INIT(runtime_processes_live_argument);
-    runtime_processes_live_answer answer = SPISOR_INIT(runtime_processes_live_answer);
+    runtime_processes_live_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.now = STAMPED_AT + 1;
@@ -964,6 +1001,7 @@ static spisor_status run_live_runs(void) {
     if (last_status == SPISOR_OK && answer.run_count != 1) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_live_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1031,7 +1069,8 @@ static spisor_status run_hold_start(void) {
     const char *const arguments[3] = {"environment", start_marker, "SPISOR_FIXTURE_VALUE"};
     const runtime_processes_definition *processes = runtime_processes_definition_of();
     runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
-    runtime_processes_hold_answer answer = SPISOR_INIT(runtime_processes_hold_answer);
+    runtime_processes_hold_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.host_id = STARTED_HOST;
@@ -1047,6 +1086,7 @@ static spisor_status run_hold_start(void) {
         kill_pid((long)started_pid);
         last_status = answer.started ? SPISOR_OK : WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     processes->release_hold_answer(processes->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1110,7 +1150,8 @@ static spisor_status run_register(void) {
     runtime_registration registration = SPISOR_INIT(runtime_registration);
     runtime_hosts_command command = {"oomhost", register_target, command_arguments, 1};
     runtime_hosts_register_argument argument = SPISOR_INIT(runtime_hosts_register_argument);
-    runtime_install_register_loader_answer answer = SPISOR_INIT(runtime_install_register_loader_answer);
+    runtime_install_register_loader_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[3];
     environment_of_path(environment);
@@ -1134,6 +1175,7 @@ static spisor_status run_register(void) {
     if (last_status == SPISOR_OK && (answer.command_count != 1 || answer.provenance == NULL)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     hosts->release_register_answer(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1147,13 +1189,15 @@ static void prepare_list(void) {
 static spisor_status run_list(void) {
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_registry_list_argument argument = SPISOR_INIT(runtime_registry_list_argument);
-    runtime_registry_listing answer = SPISOR_INIT(runtime_registry_listing);
+    runtime_registry_listing answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     last_status = hosts->list(hosts->context, &argument, &answer, &refusal);
     if (last_status == SPISOR_OK && answer.host_count != 1) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     hosts->release_listing(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1168,7 +1212,8 @@ static void prepare_remove(void) {
 static spisor_status run_remove(void) {
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_registry_forget_argument argument = SPISOR_INIT(runtime_registry_forget_argument);
-    runtime_hosts_remove_answer answer = SPISOR_INIT(runtime_hosts_remove_answer);
+    runtime_hosts_remove_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.state = base.state;
     argument.cache = base.cache;
@@ -1177,6 +1222,7 @@ static spisor_status run_remove(void) {
     if (last_status == SPISOR_OK && (answer.reversed == 0 || !answer.forgotten)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     hosts->release_remove_answer(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1200,7 +1246,8 @@ static spisor_status run_provenance(void) {
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_install_origin origin = {{"npm", "oom-package", NULL}, "1.0.0"};
     runtime_hosts_provenance_argument argument = SPISOR_INIT(runtime_hosts_provenance_argument);
-    runtime_hosts_provenance_answer answer = SPISOR_INIT(runtime_hosts_provenance_answer);
+    runtime_hosts_provenance_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[3];
     environment_of_path(environment);
@@ -1214,6 +1261,7 @@ static spisor_status run_provenance(void) {
     if (last_status == SPISOR_OK && (answer.provenance == NULL || answer.provenance->location == NULL)) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     hosts->release_provenance_answer(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1258,7 +1306,8 @@ static spisor_status start_spisor_host(int session) {
     static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_hosts_start_argument argument = SPISOR_INIT(runtime_hosts_start_argument);
-    runtime_hosts_start_answer answer = SPISOR_INIT(runtime_hosts_start_answer);
+    runtime_hosts_start_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[5] = {{"HOME", base.user},
                                        {"USERPROFILE", base.user},
@@ -1277,6 +1326,7 @@ static spisor_status start_spisor_host(int session) {
     if (last_status == SPISOR_OK && !owed) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     hosts->release_start_answer(hosts->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1323,13 +1373,15 @@ static void prepare_loader_check(void) {
 static spisor_status run_loader_check(void) {
     const runtime_loader_definition *loader = loader_service();
     runtime_loader_check_argument argument = SPISOR_INIT(runtime_loader_check_argument);
-    runtime_loader_check_answer answer = SPISOR_INIT(runtime_loader_check_answer);
+    runtime_loader_check_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.standard = &application.root;
     last_status = loader->check(loader->context, &argument, &answer, &refusal);
     if (last_status == SPISOR_OK && answer.issue_count != 0) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     loader->release_check_answer(loader->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1347,7 +1399,8 @@ static spisor_status run_loader_home(void) {
     static const char *const candidates[2] = {"~/homes/absent", "~/homes/sample"};
     const runtime_loader_definition *loader = loader_service();
     runtime_loader_home_argument argument = SPISOR_INIT(runtime_loader_home_argument);
-    runtime_loader_home_answer answer = SPISOR_INIT(runtime_loader_home_answer);
+    runtime_loader_home_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     runtime_variable environment[2] = {{"HOME", base.user}, {"USERPROFILE", base.user}};
     argument.env_override = "SAMPLE_HOME";
@@ -1359,6 +1412,7 @@ static spisor_status run_loader_home(void) {
     if (last_status == SPISOR_OK && answer.source != RUNTIME_LOADER_HOME_CANDIDATE) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     loader->release_home_answer(loader->context, &answer);
     keep_refusal(&refusal);
     return last_status;
@@ -1368,7 +1422,8 @@ static spisor_status run_loader_installed(void) {
     static const runtime_item_version installed = {CLAUDE_LOADER, "1.0.0"};
     const runtime_loader_definition *loader = loader_service();
     runtime_loader_installed_argument argument = SPISOR_INIT(runtime_loader_installed_argument);
-    runtime_loader_installed_answer answer = SPISOR_INIT(runtime_loader_installed_answer);
+    runtime_loader_installed_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.cache = base.cache;
     argument.loader = &installed;
@@ -1376,6 +1431,7 @@ static spisor_status run_loader_installed(void) {
     if (last_status == SPISOR_OK && answer.standard == NULL) {
         last_status = WRONG_RUN;
     }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     loader->release_installed_answer(loader->context, &answer);
     keep_refusal(&refusal);
     return last_status;

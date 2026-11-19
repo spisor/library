@@ -51,7 +51,7 @@
 /**
  * @file
  * Fails each allocation of one operation per service in turn, cJSON's among them, and requires every failure to answer
- * OUT_OF_MEMORY and to leave no block of the binary's allocator live.
+ * OUT_OF_MEMORY with its answer empty and to leave no block of the binary's allocator live.
  */
 
 #if defined(_WIN32)
@@ -193,7 +193,8 @@ typedef spisor_status (*operation)(void);
 static spisor_status merge_packages(void) {
     const runtime_install_definition *install = runtime_install_definition_of();
     runtime_install_packages_argument argument = SPISOR_INIT(runtime_install_packages_argument);
-    runtime_install_packages_answer answer = SPISOR_INIT(runtime_install_packages_answer);
+    runtime_install_packages_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.portable = place.portable;
@@ -201,6 +202,7 @@ static spisor_status merge_packages(void) {
     argument.manifest_packages = &manifest_packages.root;
     status = install->packages(install->context, &argument, &answer, &refusal);
     CHECK(status != SPISOR_OK || (answer.package_count == 2 && answer.packages[1].options != NULL));
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_packages_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;
@@ -220,12 +222,14 @@ static int packages_file_unchanged(void) {
 static spisor_status resolve_paths(void) {
     const runtime_paths_definition *paths = runtime_paths_definition_of();
     runtime_paths_resolve_argument argument = SPISOR_INIT(runtime_paths_resolve_argument);
-    runtime_paths_answer answer = SPISOR_INIT(runtime_paths_answer);
+    runtime_paths_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.home = place.home;
     argument.names = &names.root;
     status = paths->resolve(paths->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     paths->release_answer(paths->context, &answer);
     paths->release_refusal(paths->context, &refusal);
     return status;
@@ -235,13 +239,15 @@ static spisor_status resolve_places(void) {
     const runtime_places_definition *places = runtime_places_definition_of();
     runtime_variable environment[] = {LOCAL_APP_DATA, {"SPISOR_HOME", ""}};
     runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
-    runtime_places_answer answer = SPISOR_INIT(runtime_places_answer);
+    runtime_places_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.home = place.home;
     argument.environment = environment;
     argument.environment_count = 2;
     status = places->resolve(places->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     places->release_answer(places->context, &answer);
     places->release_refusal(places->context, &refusal);
     return status;
@@ -269,7 +275,8 @@ static spisor_status set_config(void) {
     const runtime_config_definition *definition = runtime_config_definition_of();
     runtime_config_plugin plugin = SPISOR_INIT(runtime_config_plugin);
     runtime_settings_change change = SPISOR_INIT(runtime_settings_change);
-    runtime_config_set_answer answer = SPISOR_INIT(runtime_config_set_answer);
+    runtime_config_set_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     plugin.home = place.home;
@@ -279,6 +286,7 @@ static spisor_status set_config(void) {
     change.key = "a.c";
     change.value = &value.root;
     status = definition->set(definition->context, &plugin, &change, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     definition->release_set_answer(definition->context, &answer);
     definition->release_refusal(definition->context, &refusal);
     return status;
@@ -287,12 +295,14 @@ static spisor_status set_config(void) {
 static spisor_status all_settings(void) {
     const runtime_settings_definition *settings = runtime_settings_definition_of();
     runtime_settings_scope scope = SPISOR_INIT(runtime_settings_scope);
-    spisor_value_tree values = SPISOR_INIT(spisor_value_tree);
+    spisor_value_tree values;
+    start_empty(&values, sizeof values);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     scope.home = place.home;
     scope.portable = place.portable;
     status = settings->all(settings->context, &scope, &values, &refusal);
+    status = empty_unless_answered(status, &values, sizeof values);
     settings->release_tree(settings->context, &values);
     settings->release_refusal(settings->context, &refusal);
     return status;
@@ -301,7 +311,8 @@ static spisor_status all_settings(void) {
 static spisor_status write_log(void) {
     const runtime_log_definition *log = runtime_log_definition_of();
     runtime_log_entry entry = SPISOR_INIT(runtime_log_entry);
-    runtime_log_answer answer = SPISOR_INIT(runtime_log_answer);
+    runtime_log_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     entry.home = place.home;
@@ -313,6 +324,7 @@ static spisor_status write_log(void) {
     entry.level = RUNTIME_LOG_INFO;
     entry.message = "m";
     status = log->write(log->context, &entry, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     log->release_answer(log->context, &answer);
     log->release_refusal(log->context, &refusal);
     return status;
@@ -323,13 +335,15 @@ static spisor_status agree_on_copies(void) {
     runtime_identity_copy copies[3] = {{"github:1", 0, &first_file.root}, {"github:2", 0, &second_file.root},
                                        {"github:3", 1, NULL}};
     runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
-    runtime_identity_agreement answer = SPISOR_INIT(runtime_identity_agreement);
+    runtime_identity_agreement answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.id = "github:1";
     argument.copies = copies;
     argument.copy_count = 3;
     status = identity->agree(identity->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     identity->release_agreement(identity->context, &answer);
     identity->release_refusal(identity->context, &refusal);
     return status;
@@ -350,7 +364,8 @@ static void file_url_of(const char *path, char *url, size_t capacity) {
 static spisor_status fetch_a_file(void) {
     const runtime_fetch_definition *fetch = runtime_fetch_definition_of();
     runtime_fetch_get_argument argument = SPISOR_INIT(runtime_fetch_get_argument);
-    runtime_fetch_get_answer answer = SPISOR_INIT(runtime_fetch_get_answer);
+    runtime_fetch_get_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     char source[1400];
     char url[4200];
@@ -362,6 +377,7 @@ static spisor_status fetch_a_file(void) {
     argument.url = url;
     argument.destination = destination;
     status = fetch->get(fetch->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     fetch->release_answer(fetch->context, &answer);
     fetch->release_refusal(fetch->context, &refusal);
     return status;
@@ -394,13 +410,15 @@ static spisor_status find_on_path(void) {
     const runtime_detect_definition *detect = runtime_detect_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
     runtime_detect_on_path_argument argument = SPISOR_INIT(runtime_detect_on_path_argument);
-    runtime_detect_on_path_answer answer = SPISOR_INIT(runtime_detect_on_path_answer);
+    runtime_detect_on_path_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.binary = "probe";
     argument.environment = environment;
     argument.environment_count = 2;
     status = detect->on_path(detect->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     detect->release_answer(detect->context, &answer);
     detect->release_refusal(detect->context, &refusal);
     return status;
@@ -412,7 +430,8 @@ static spisor_status register_a_host(void) {
     runtime_registry_start start = SPISOR_INIT(runtime_registry_start);
     runtime_registration registration = SPISOR_INIT(runtime_registration);
     runtime_registry_register_argument argument = SPISOR_INIT(runtime_registry_register_argument);
-    runtime_registry_registration_answer answer = SPISOR_INIT(runtime_registry_registration_answer);
+    runtime_registry_registration_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     provenance.method = "npm";
@@ -433,6 +452,7 @@ static spisor_status register_a_host(void) {
     argument.state = place.state;
     argument.registration = &registration;
     status = registry->register_host(registry->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     registry->release_answer(registry->context, &answer);
     registry->release_refusal(registry->context, &refusal);
     return status;
@@ -474,7 +494,8 @@ static spisor_status apply_after_settling(void) {
 static spisor_status reverse_a_change(void) {
     const runtime_changes_definition *changes = runtime_changes_definition_of();
     runtime_changes_reverse_argument argument = SPISOR_INIT(runtime_changes_reverse_argument);
-    runtime_changes_reverse_answer answer = SPISOR_INIT(runtime_changes_reverse_answer);
+    runtime_changes_reverse_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.state = place.state;
@@ -483,6 +504,7 @@ static spisor_status reverse_a_change(void) {
     if (status == SPISOR_OK && answer.reversed != 1) {
         status = SPISOR_REFUSED;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     changes->release_reverse_answer(changes->context, &answer);
     changes->release_refusal(changes->context, &refusal);
     return status;
@@ -560,13 +582,15 @@ static int deleted_nothing(void) {
 static spisor_status list_plugins(void) {
     const runtime_lists_definition *lists = runtime_lists_definition_of();
     runtime_lists_plugins_argument argument = SPISOR_INIT(runtime_lists_plugins_argument);
-    runtime_list answer = SPISOR_INIT(runtime_list);
+    runtime_list answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.installed = &plugin_rows.root;
     argument.detected = &plugin_rows.root;
     argument.available = &plugin_rows.root;
     status = lists->plugins(lists->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     lists->release_list(lists->context, &answer);
     lists->release_refusal(lists->context, &refusal);
     return status;
@@ -577,7 +601,8 @@ static spisor_status list_applications(void) {
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
     runtime_list_detection detections[] = {{"opencode-host", 1, NULL}};
     runtime_lists_applications_argument argument = SPISOR_INIT(runtime_lists_applications_argument);
-    runtime_list answer = SPISOR_INIT(runtime_list);
+    runtime_list answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.items = &catalog_items.root;
@@ -587,6 +612,7 @@ static spisor_status list_applications(void) {
     argument.detections = detections;
     argument.detection_count = 1;
     status = lists->applications(lists->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     lists->release_list(lists->context, &answer);
     lists->release_refusal(lists->context, &refusal);
     return status;
@@ -595,7 +621,8 @@ static spisor_status list_applications(void) {
 static spisor_status remember_a_name(void) {
     const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
     runtime_marketplace_remember_argument argument = SPISOR_INIT(runtime_marketplace_remember_argument);
-    runtime_marketplace_remember_answer answer = SPISOR_INIT(runtime_marketplace_remember_answer);
+    runtime_marketplace_remember_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.state = place.state;
@@ -603,6 +630,7 @@ static spisor_status remember_a_name(void) {
     argument.name = "calendar";
     argument.id = "github:7";
     status = marketplace->remember(marketplace->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     marketplace->release_remember_answer(marketplace->context, &answer);
     marketplace->release_refusal(marketplace->context, &refusal);
     return status;
@@ -616,7 +644,8 @@ static void a_copy_to_fetch(void) {
 static spisor_status read_a_fetched_copy(void) {
     const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
     runtime_marketplace_read_argument argument = SPISOR_INIT(runtime_marketplace_read_argument);
-    runtime_marketplace_copy_answer answer = SPISOR_INIT(runtime_marketplace_copy_answer);
+    runtime_marketplace_copy_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     char source[1300];
     char url[4200];
@@ -628,6 +657,7 @@ static spisor_status read_a_fetched_copy(void) {
     argument.url = url;
     argument.destination = destination;
     spisor_status status = marketplace->read(marketplace->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     marketplace->release_copy_answer(marketplace->context, &answer);
     marketplace->release_refusal(marketplace->context, &refusal);
     return status;
@@ -642,13 +672,15 @@ static int left_no_download(void) {
 static spisor_status read_a_copy(void) {
     const runtime_marketplace_definition *marketplace = runtime_marketplace_definition_of();
     runtime_marketplace_read_argument argument = SPISOR_INIT(runtime_marketplace_read_argument);
-    runtime_marketplace_copy_answer answer = SPISOR_INIT(runtime_marketplace_copy_answer);
+    runtime_marketplace_copy_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.id = "spisor";
     argument.url = "https://example.com/marketplace.json";
     argument.text = MARKETPLACE_COPY;
     status = marketplace->read(marketplace->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     marketplace->release_copy_answer(marketplace->context, &answer);
     marketplace->release_refusal(marketplace->context, &refusal);
     return status;
@@ -665,13 +697,15 @@ static spisor_status list_installed_versions(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char cache_place[1100];
     runtime_cache_place_argument argument = SPISOR_INIT(runtime_cache_place_argument);
-    runtime_cache_installed_answer answer = SPISOR_INIT(runtime_cache_installed_answer);
+    runtime_cache_installed_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     snprintf(cache_place, sizeof cache_place, "%s/cache", place.base);
     argument.cache = cache_place;
     status = cache->installed(cache->context, &argument, &answer, &refusal);
     CHECK(status != SPISOR_OK || (answer.bundle_count == 1 && answer.bundles[0].version_count == 1));
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_installed_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -682,13 +716,15 @@ static spisor_status merge_catalogs(void) {
     runtime_catalog_reading readings[2] = {{{RUNTIME_CATALOG_LOCAL, "/first.json"}, &whole_catalog.root},
                                            {{RUNTIME_CATALOG_HTTPS, "https://example.com/c.json"}, &whole_catalog.root}};
     runtime_catalog_merge_argument argument = SPISOR_INIT(runtime_catalog_merge_argument);
-    runtime_catalog_merge_answer answer = SPISOR_INIT(runtime_catalog_merge_answer);
+    runtime_catalog_merge_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.catalogs = readings;
     argument.catalog_count = 2;
     status = catalog->merge(catalog->context, &argument, &answer, &refusal);
     CHECK(status != SPISOR_OK || answer.shadowed_count == 2);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_merge_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -725,7 +761,8 @@ static spisor_status request_a_command(void) {
     const runtime_commands_definition *commands = runtime_commands_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
     runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
-    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    runtime_command_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     char target[1300];
     spisor_status status;
@@ -734,6 +771,7 @@ static spisor_status request_a_command(void) {
     if (status == SPISOR_OK && (answer.name == NULL || strcmp(answer.name, "cc2") != 0)) {
         status = SPISOR_REFUSED;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     commands->release_answer(commands->context, &answer);
     commands->release_refusal(commands->context, &refusal);
     return status;
@@ -743,12 +781,14 @@ static spisor_status add_a_command(void) {
     const runtime_commands_definition *commands = runtime_commands_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
     runtime_command_argument argument = SPISOR_INIT(runtime_command_argument);
-    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    runtime_command_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     char target[1300];
     spisor_status status;
     command_argument_of(&argument, "dd", target, sizeof target, environment);
     status = commands->add(commands->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     commands->release_answer(commands->context, &answer);
     commands->release_refusal(commands->context, &refusal);
     return status;
@@ -772,7 +812,8 @@ static spisor_status rename_zz_to(const char *to) {
     const runtime_commands_definition *commands = runtime_commands_definition_of();
     runtime_variable environment[] = {{"PATH", place.programs}, {"PATHEXT", ".EXE"}};
     runtime_commands_rename_argument argument = SPISOR_INIT(runtime_commands_rename_argument);
-    runtime_command_answer answer = SPISOR_INIT(runtime_command_answer);
+    runtime_command_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.state = place.command_state;
@@ -782,6 +823,7 @@ static spisor_status rename_zz_to(const char *to) {
     argument.environment = environment;
     argument.environment_count = 2;
     status = commands->rename(commands->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     commands->release_answer(commands->context, &answer);
     commands->release_refusal(commands->context, &refusal);
     return status;
@@ -1107,7 +1149,8 @@ static spisor_status sweep_the_cache(void) {
     char cache_place[1100];
     char state_place[1100];
     runtime_cache_sweep_argument argument = SPISOR_INIT(runtime_cache_sweep_argument);
-    runtime_cache_sweep_answer answer = SPISOR_INIT(runtime_cache_sweep_answer);
+    runtime_cache_sweep_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     under_base(state_place, sizeof state_place, "sweep-state");
@@ -1118,6 +1161,7 @@ static spisor_status sweep_the_cache(void) {
                                 !kept_the_referenced_and_the_newest())) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_sweep_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1127,7 +1171,8 @@ static spisor_status check_a_version(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char directory[1300];
     runtime_cache_check_argument argument = SPISOR_INIT(runtime_cache_check_argument);
-    runtime_cache_check_answer answer = SPISOR_INIT(runtime_cache_check_answer);
+    runtime_cache_check_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(directory, sizeof directory, "cache/bundles/a/1.0.0");
     argument.directory = directory;
@@ -1135,6 +1180,7 @@ static spisor_status check_a_version(void) {
     if (status == SPISOR_OK && answer.verdict != RUNTIME_CACHE_INTACT) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_check_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1144,7 +1190,8 @@ static spisor_status list_damaged_versions(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char cache_place[1100];
     runtime_cache_place_argument argument = SPISOR_INIT(runtime_cache_place_argument);
-    runtime_cache_damaged_answer answer = SPISOR_INIT(runtime_cache_damaged_answer);
+    runtime_cache_damaged_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     argument.cache = cache_place;
@@ -1152,6 +1199,7 @@ static spisor_status list_damaged_versions(void) {
     if (status == SPISOR_OK && answer.damaged_count != 0) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_damaged_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1162,7 +1210,8 @@ static spisor_status locate_a_plugin(void) {
     char cache_place[1100];
     runtime_item_version plugins[1] = {{"a", "1.0.0"}};
     runtime_cache_locate_argument argument = SPISOR_INIT(runtime_cache_locate_argument);
-    runtime_cache_locate_answer answer = SPISOR_INIT(runtime_cache_locate_answer);
+    runtime_cache_locate_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     argument.cache = cache_place;
@@ -1172,6 +1221,7 @@ static spisor_status locate_a_plugin(void) {
     if (status == SPISOR_OK && (answer.located_count != 1 || answer.problem_count != 0)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_locate_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1179,12 +1229,14 @@ static spisor_status locate_a_plugin(void) {
 
 static spisor_status name_the_platform(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
-    runtime_cache_platform_answer answer = SPISOR_INIT(runtime_cache_platform_answer);
+    runtime_cache_platform_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status = cache->platform(cache->context, &answer, &refusal);
     if (status == SPISOR_OK && (answer.platform == NULL || answer.platform[0] == 0)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_platform_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1212,7 +1264,8 @@ static spisor_status deploy_a_bundle(void) {
     char bundle[1300];
     char plugins[1300];
     runtime_cache_deploy_argument argument = SPISOR_INIT(runtime_cache_deploy_argument);
-    runtime_cache_deploy_answer answer = SPISOR_INIT(runtime_cache_deploy_answer);
+    runtime_cache_deploy_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(bundle, sizeof bundle, "bundle");
     under_base(plugins, sizeof plugins, "deep/plugins");
@@ -1225,6 +1278,7 @@ static spisor_status deploy_a_bundle(void) {
                                 strcmp(answer.import_name, "greeter") != 0)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_deploy_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1242,7 +1296,8 @@ static spisor_status install_a_version(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char cache_place[1100];
     runtime_cache_install_argument argument = SPISOR_INIT(runtime_cache_install_argument);
-    runtime_cache_install_answer answer = SPISOR_INIT(runtime_cache_install_answer);
+    runtime_cache_install_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     argument.cache = cache_place;
@@ -1254,6 +1309,7 @@ static spisor_status install_a_version(void) {
     if (status == SPISOR_OK && (installed_no_marker() || answer.fetched_count != 1)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_install_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status;
@@ -1264,7 +1320,8 @@ static spisor_status install_a_short_file(void) {
     const runtime_cache_definition *cache = runtime_cache_definition_of();
     char cache_place[1100];
     runtime_cache_install_argument argument = SPISOR_INIT(runtime_cache_install_argument);
-    runtime_cache_install_answer answer = SPISOR_INIT(runtime_cache_install_answer);
+    runtime_cache_install_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     argument.cache = cache_place;
@@ -1273,6 +1330,7 @@ static spisor_status install_a_short_file(void) {
     argument.version = "1.0.0";
     argument.platform = "linux-x64";
     spisor_status status = cache->install(cache->context, &argument, &answer, &refusal);
+    status = empty_unless_answered(status, &answer, sizeof answer);
     cache->release_install_answer(cache->context, &answer);
     cache->release_refusal(cache->context, &refusal);
     return status == SPISOR_REFUSED ? SPISOR_OK : status == SPISOR_OK ? WRONG_ANSWER : status;
@@ -1290,7 +1348,8 @@ static int holds_one_item(const spisor_value *catalog) {
 static spisor_status read_a_catalog(void) {
     const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
     runtime_catalog_read_argument argument = SPISOR_INIT(runtime_catalog_read_argument);
-    runtime_catalog_answer answer = SPISOR_INIT(runtime_catalog_answer);
+    runtime_catalog_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.text = CATALOG_INDEX;
     argument.origin = "https://catalog.test/index.json";
@@ -1298,6 +1357,7 @@ static spisor_status read_a_catalog(void) {
     if (status == SPISOR_OK && !holds_one_item(answer.catalog)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1306,13 +1366,15 @@ static spisor_status read_a_catalog(void) {
 static spisor_status list_catalog_sources(void) {
     const runtime_catalog_definition *catalog = runtime_catalog_definition_of();
     runtime_catalog_sources_argument argument = SPISOR_INIT(runtime_catalog_sources_argument);
-    runtime_catalog_sources_answer answer = SPISOR_INIT(runtime_catalog_sources_answer);
+    runtime_catalog_sources_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.settings = &catalog_settings.root;
     spisor_status status = catalog->sources(catalog->context, &argument, &answer, &refusal);
     if (status == SPISOR_OK && (answer.source_count != 2 || answer.skipped_count != 1)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_sources_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1351,7 +1413,8 @@ static spisor_status check_a_catalog(void) {
     char cache_place[1100];
     runtime_catalog_source source;
     runtime_catalog_check_argument argument = SPISOR_INIT(runtime_catalog_check_argument);
-    runtime_catalog_check_answer answer = SPISOR_INIT(runtime_catalog_check_answer);
+    runtime_catalog_check_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     local_index_source(&source, index, sizeof index);
     under_base(cache_place, sizeof cache_place, "cache");
@@ -1364,6 +1427,7 @@ static spisor_status check_a_catalog(void) {
                                 kept_no_catalog_state())) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_check_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1407,7 +1471,8 @@ static spisor_status check_a_remote_shaped_catalog(void) {
     char cache_place[1100];
     runtime_catalog_source source;
     runtime_catalog_check_argument argument = SPISOR_INIT(runtime_catalog_check_argument);
-    runtime_catalog_check_answer answer = SPISOR_INIT(runtime_catalog_check_answer);
+    runtime_catalog_check_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     memset(&source, 0, sizeof source);
     source.kind = RUNTIME_CATALOG_HTTPS;
@@ -1421,6 +1486,7 @@ static spisor_status check_a_remote_shaped_catalog(void) {
     if (status == SPISOR_OK && (answer.kind != RUNTIME_CATALOG_CHANGED || !holds_one_item(answer.catalog))) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_check_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1432,7 +1498,8 @@ static spisor_status read_the_current_catalog(void) {
     char cache_place[1100];
     runtime_catalog_source source;
     runtime_catalog_current_argument argument = SPISOR_INIT(runtime_catalog_current_argument);
-    runtime_catalog_answer answer = SPISOR_INIT(runtime_catalog_answer);
+    runtime_catalog_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     local_index_source(&source, index, sizeof index);
     under_base(cache_place, sizeof cache_place, "cache");
@@ -1443,6 +1510,7 @@ static spisor_status read_the_current_catalog(void) {
     if (status == SPISOR_OK && !holds_one_item(answer.catalog)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1454,7 +1522,8 @@ static spisor_status resolve_versions(void) {
     runtime_catalog_enabled enabled[1] = {{"a", NULL}};
     runtime_catalog_installed installed[1] = {{"a", versions, 1}};
     runtime_catalog_resolve_argument argument = SPISOR_INIT(runtime_catalog_resolve_argument);
-    runtime_catalog_resolve_answer answer = SPISOR_INIT(runtime_catalog_resolve_answer);
+    runtime_catalog_resolve_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     argument.catalog = &catalog_index.root;
     argument.enabled = enabled;
@@ -1466,6 +1535,7 @@ static spisor_status resolve_versions(void) {
     if (status == SPISOR_OK && (answer.run_count != 1 || answer.fetch_count != 0)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     catalog->release_resolve_answer(catalog->context, &answer);
     catalog->release_refusal(catalog->context, &refusal);
     return status;
@@ -1525,7 +1595,8 @@ static spisor_status install_by_id(void) {
     char cache_place[1100];
     char plugins[1100];
     runtime_install_by_id_argument argument = SPISOR_INIT(runtime_install_by_id_argument);
-    runtime_install_by_id_answer answer = SPISOR_INIT(runtime_install_by_id_answer);
+    runtime_install_by_id_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     under_base(plugins, sizeof plugins, "plugins");
@@ -1537,6 +1608,7 @@ static spisor_status install_by_id(void) {
     if (status == SPISOR_OK && (!installed_by_id() || answer.version == NULL || strcmp(answer.version, "1.0.0") != 0)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_by_id_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;
@@ -1611,7 +1683,8 @@ static spisor_status install_the_ecosystem(void) {
     char index[1300];
     runtime_catalog_source source;
     runtime_install_ecosystem_argument argument = SPISOR_INIT(runtime_install_ecosystem_argument);
-    runtime_install_ecosystem_answer answer = SPISOR_INIT(runtime_install_ecosystem_answer);
+    runtime_install_ecosystem_answer answer;
+    start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     local_index_source(&source, index, sizeof index);
     under_base(cache_place, sizeof cache_place, "cache");
@@ -1627,6 +1700,7 @@ static spisor_status install_the_ecosystem(void) {
     if (status == SPISOR_OK && !installed_the_plugin(&answer)) {
         status = WRONG_ANSWER;
     }
+    status = empty_unless_answered(status, &answer, sizeof answer);
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;
