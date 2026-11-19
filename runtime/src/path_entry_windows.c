@@ -5,7 +5,7 @@
  * @implNote This file writes the user's environment, the one state runtime changes that no argument
  * names, and broadcasts WM_SETTINGCHANGE after each write so running shells read it again. A build
  * with SPISOR_PATH_ENTRY_TEST_HOOKS, which every test links and the library never does, writes
- * RUNTIME_PATH_ENTRY_TEST_VALUE instead of Path.
+ * the value runtime_path_entry_test_value names instead of Path.
  */
 #include "path_entry.h"
 #include "allocation.h"
@@ -21,9 +21,13 @@
 
 #ifdef SPISOR_PATH_ENTRY_TEST_HOOKS
 #include "path_entry_windows_hooks.h"
-static const wchar_t *const path_value_name = RUNTIME_PATH_ENTRY_TEST_VALUE;
+static const wchar_t *path_value_name(void) {
+    return runtime_path_entry_test_value();
+}
 #else
-static const wchar_t *const path_value_name = L"Path";
+static const wchar_t *path_value_name(void) {
+    return L"Path";
+}
 #endif
 
 #define READABLE_TYPES (RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND)
@@ -123,7 +127,7 @@ static spisor_status read_path_value(HKEY key, path_value *value) {
     value->text = NULL;
     for (int attempt = 0; attempt < 4; attempt++) {
         DWORD size = 0;
-        LSTATUS status = RegGetValueW(key, NULL, path_value_name, READABLE_TYPES, &value->type, NULL, &size);
+        LSTATUS status = RegGetValueW(key, NULL, path_value_name(), READABLE_TYPES, &value->type, NULL, &size);
         if (status == ERROR_FILE_NOT_FOUND) {
             return read_absent(value);
         }
@@ -134,7 +138,7 @@ static spisor_status read_path_value(HKEY key, path_value *value) {
         if (text == NULL) {
             return SPISOR_OUT_OF_MEMORY;
         }
-        status = RegGetValueW(key, NULL, path_value_name, READABLE_TYPES, &value->type, text, &size);
+        status = RegGetValueW(key, NULL, path_value_name(), READABLE_TYPES, &value->type, text, &size);
         if (status == ERROR_SUCCESS) {
             value->text = text;
             value->present = 1;
@@ -162,7 +166,7 @@ static void announce_environment_change(void) {
 
 static int store_path_text(HKEY key, DWORD type, const wchar_t *text) {
     DWORD size = (DWORD)((wcslen(text) + 1) * sizeof(wchar_t));
-    int stored = RegSetValueExW(key, path_value_name, 0, type, (const BYTE *)text, size) == ERROR_SUCCESS;
+    int stored = RegSetValueExW(key, path_value_name(), 0, type, (const BYTE *)text, size) == ERROR_SUCCESS;
     if (stored) {
         announce_environment_change();
     }
@@ -170,7 +174,7 @@ static int store_path_text(HKEY key, DWORD type, const wchar_t *text) {
 }
 
 static int delete_path_value(HKEY key) {
-    LSTATUS status = RegDeleteValueW(key, path_value_name);
+    LSTATUS status = RegDeleteValueW(key, path_value_name());
     if (status == ERROR_SUCCESS) {
         announce_environment_change();
     }

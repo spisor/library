@@ -53,7 +53,7 @@ function(host_test name)
     target_compile_definitions(${name} PRIVATE ${host_test_fixture_definitions})
     add_dependencies(${name} spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
     add_test(NAME host_${name} COMMAND ${name})
-    set_tests_properties(host_${name} PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
+    set_tests_properties(host_${name} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
 
 host_test(launch_test)
@@ -71,6 +71,8 @@ host_test(c_host_proof)
 add_dependencies(c_host_proof c_host)
 host_test(hook_without_javascript)
 add_dependencies(hook_without_javascript javascript_trap)
+# Its 200 ms latency budget is measured, so it runs with no other test beside it.
+set_tests_properties(host_hook_without_javascript PROPERTIES RUN_SERIAL TRUE)
 target_compile_definitions(install_script_test PRIVATE INSTALL_SCRIPTS_PATH="${PROJECT_SOURCE_DIR}/install"
     CATALOG_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/catalog.schema.json")
 # Windows PowerShell runs take up to 631 s on a windows-latest runner, against 28 s on a workstation.
@@ -80,7 +82,7 @@ if(WIN32)
     find_program(SPISOR_PWSH pwsh)
     if(SPISOR_PWSH)
         add_test(NAME host_install_script_test_pwsh COMMAND install_script_test)
-        set_tests_properties(host_install_script_test_pwsh PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value
+        set_tests_properties(host_install_script_test_pwsh PROPERTIES SKIP_RETURN_CODE 77
             ENVIRONMENT "INSTALL_SCRIPT_POWERSHELL=${SPISOR_PWSH}" TIMEOUT ${install_script_timeout_seconds})
     endif()
 endif()
@@ -98,7 +100,7 @@ target_link_libraries(marketplace_command_test PRIVATE spisor_vector_reader)
 target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
 add_dependencies(marketplace_command_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
-set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
+set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77)
 
 host_executable(install_by_name_test install_by_name_test install_by_name_test.c
     ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
@@ -110,4 +112,4 @@ target_link_libraries(install_by_name_test PRIVATE spisor_vector_reader)
 target_compile_definitions(install_by_name_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
 add_dependencies(install_by_name_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_install_by_name_test COMMAND install_by_name_test)
-set_tests_properties(host_install_by_name_test PROPERTIES SKIP_RETURN_CODE 77 RESOURCE_LOCK user_path_value)
+set_tests_properties(host_install_by_name_test PROPERTIES SKIP_RETURN_CODE 77)

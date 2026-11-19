@@ -732,7 +732,7 @@ static void read_value(const wchar_t *name, registry_text *value) {
 static void delete_test_value(void) {
     HKEY key = NULL;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, ENVIRONMENT_KEY, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, RUNTIME_PATH_ENTRY_TEST_VALUE);
+        RegDeleteValueW(key, runtime_path_entry_test_value());
         RegCloseKey(key);
     }
 }
@@ -740,7 +740,7 @@ static void delete_test_value(void) {
 /** Whether the redirected test value names nothing under this run's scratch place. */
 static int test_value_names_no_scratch(void) {
     registry_text value;
-    read_value(RUNTIME_PATH_ENTRY_TEST_VALUE, &value);
+    read_value(runtime_path_entry_test_value(), &value);
     return !value.present || wcsstr(value.text, L"hosts-") == NULL;
 }
 #endif
