@@ -190,7 +190,10 @@ typedef struct runtime_ui_screen_argument {
     size_t reply_count;
 } runtime_ui_screen_argument;
 
-/** Every call the screen still needs answered, each listed once, none once the replies hold them all. */
+/**
+ * Every call the screen still needs answered, each listed once, none once the replies hold them all. First shape ends
+ * at `storage`.
+ */
 typedef struct runtime_ui_plan_answer {
     uint32_t size;
     const runtime_ui_call *calls;

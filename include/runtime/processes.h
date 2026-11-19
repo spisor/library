@@ -106,7 +106,10 @@ typedef struct runtime_processes_ready_argument {
     const char *fix;
 } runtime_processes_ready_argument;
 
-/** The readiness of `host_id` running as `pid` to wait for, at most `timeout_milliseconds`. First shape ends there. */
+/**
+ * The readiness of `host_id` running as `pid` to wait for, at most `timeout_milliseconds`. First shape ends at
+ * `timeout_milliseconds`.
+ */
 typedef struct runtime_processes_await_argument {
     uint32_t size;
     const char *state;

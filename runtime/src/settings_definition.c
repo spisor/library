@@ -41,7 +41,7 @@ static spisor_status set(void *context, const runtime_settings_scope *scope, con
     int secret = 0;
     spisor_status status;
     (void)context;
-    if (!is_whole_scope(scope) || !runtime_is_empty_tree(previous)) {
+    if (!is_whole_scope(scope) || !runtime_is_whole_change(change) || !runtime_is_empty_tree(previous)) {
         return runtime_refuse_shape(refusal, "settings' set");
     }
     status = runtime_scope_request(scope, &request, &names, refusal);

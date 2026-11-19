@@ -67,6 +67,13 @@ answer points at is the provider's until its release. An empty answer has NULL s
 an operation refuses an answer whose array count arrives without storage, and an out-of-memory answer is left
 empty.
 
+`short_shape_test` calls every operation the headers declare, through the built `runtime`, with each argument
+and answer one byte short of its first shape, and `empty_answer_test` calls every operation whose answer counts an
+array with that count nonzero beside NULL storage; each requires MALFORMED with every answer untouched. Both read a
+table `cmake/definition_calls.cmake` generates from the headers and the `layouts` program, so an operation added to
+a header is checked without a test changing; `spisor_definition_operations` and `spisor_add_definition_call_test`
+build the same table and tests for another library.
+
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
 function of kind `definition`, and a test keeps it complete against the headers; another loads the built
 `runtime` through `weivel/c`'s host and calls `paths` through the registered definition. The binary exports
