@@ -175,7 +175,7 @@ static int add_error(cJSON *rendered, const cJSON *source, const char *detail_me
 static const cJSON *checked_for(const cJSON *answer, const cJSON *check) {
     const cJSON *checked;
     cJSON_ArrayForEach(checked, cJSON_GetObjectItemCaseSensitive(answer, "checked")) {
-        if (runtime_ui_is_same_check(checked, check) && cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(checked, "issues"))) {
+        if (runtime_ui_is_same_check(checked, check)) {
             return checked;
         }
     }
