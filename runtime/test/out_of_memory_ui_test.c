@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
 #include "json_allocation.h"
@@ -354,16 +355,7 @@ static int matches_clean(const clean_run *clean, spisor_status status, const cha
     return 0;
 }
 
-static int sticky_failures = 0;
-
-/** Fails allocation `attempt`, and with sticky failures every one after it as well. */
-static void fail_allocation(uint64_t attempt) {
-    if (sticky_failures && attempt != 0) {
-        spisor_memory_fail_from(attempt);
-    } else {
-        spisor_memory_fail_at(attempt);
-    }
-}
+static allocation_failure_mode failure_mode = FAIL_ONE_ALLOCATION;
 
 /** Fails allocation attempt; 1 to go on, 0 after a failure the case does not allow, and *ran_whole when none failed. */
 static int fail_once(const operation_case *each, const clean_run *clean, uint64_t attempt, int *ran_whole) {
@@ -373,7 +365,7 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
     prepare();
     baseline = spisor_memory_live_blocks();
     start_run();
-    fail_allocation(attempt);
+    fail_allocation(failure_mode, attempt);
     status = each->run();
     *ran_whole = !spisor_memory_failed();
     spisor_memory_fail_at(0);
@@ -390,7 +382,7 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
 }
 
 /** Fails the operation's allocations one at a time, between first and last when given, until it runs whole. */
-static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+static void every_failure_in_mode(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
     clean_run clean;
     uint64_t attempt = first;
     int ran_whole = 0;
@@ -404,8 +396,15 @@ static void every_failure_of(const operation_case *each, spisor_status expected,
             check_failures++;
         }
     }
-    printf("%s%s: %llu allocations, failures %llu to %llu checked\n", each->label, sticky_failures ? " sticky" : "",
-           (unsigned long long)clean.allocations, (unsigned long long)first, (unsigned long long)(attempt - 1));
+    printf("%s%s: %llu allocations, failures %llu to %llu checked\n", each->label,
+           allocation_failure_mode_name(failure_mode), (unsigned long long)clean.allocations,
+           (unsigned long long)first, (unsigned long long)(attempt - 1));
+}
+
+static void every_failure_of(const operation_case *each, spisor_status expected, uint64_t first, uint64_t last) {
+    for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
+        every_failure_in_mode(each, expected, first, last);
+    }
 }
 
 static int is_selected(const char *only, const char *label) {
@@ -429,9 +428,6 @@ int main(int argc, char **argv) {
         spisor_status expected = index == 4 ? SPISOR_REFUSED : SPISOR_OK;
         if (is_selected(only, cases[index].label) && (index != 3 || strcmp(only, cases[4].label) != 0)) {
             every_failure_of(&cases[index], expected, first == 0 ? 1 : first, last);
-            sticky_failures = 1;
-            every_failure_of(&cases[index], expected, first == 0 ? 1 : first, last);
-            sticky_failures = 0;
         }
     }
     return check_summary("out_of_memory_ui_test");

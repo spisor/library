@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "allocation.h"
+#include "allocation_failure.h"
 #include "check.h"
 #include "spisor/json_kind.h"
 #include "json_value.h"
@@ -107,12 +108,12 @@ static void a_tree_that_is_not_empty_is_refused(void) {
     CHECK(spisor_memory_live_blocks() == 0);
 }
 
-static void every_failed_allocation_leaves_the_tree_empty(void) {
+static void every_failed_allocation_leaves_the_tree_empty(allocation_failure_mode mode) {
     cJSON *json = parsed("{\"a\":[1,{\"b\":\"text\"}],\"c\":null}");
     for (uint64_t attempt = 1; attempt < 1000; attempt++) {
         spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
         spisor_status status;
-        spisor_memory_fail_at(attempt);
+        fail_allocation(mode, attempt);
         status = spisor_value_of_json(json, &tree);
         if (!spisor_memory_failed()) {
             spisor_memory_fail_at(0);
@@ -187,7 +188,7 @@ int main(void) {
     every_json_kind_becomes_its_node();
     what_a_tree_cannot_hold_is_malformed();
     a_tree_that_is_not_empty_is_refused();
-    every_failed_allocation_leaves_the_tree_empty();
+    in_every_failure_mode(every_failed_allocation_leaves_the_tree_empty);
     every_node_becomes_its_json();
     what_json_cannot_hold_is_malformed();
     a_failed_check_writes_nothing();
