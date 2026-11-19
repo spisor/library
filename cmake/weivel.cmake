@@ -9,7 +9,7 @@ function(spisor_add_weivel)
     foreach(sibling IN ITEMS core standard c)
         if(NOT EXISTS ${siblings}/${sibling}/CMakeLists.txt)
             message(FATAL_ERROR "siblings/${sibling} is missing: check out weivel/${sibling} there at the commit "
-                ".weivel/repo.json pins, as CI does")
+                "repo.json pins, as CI does")
         endif()
     endforeach()
     add_subdirectory(${siblings}/core ${PROJECT_BINARY_DIR}/weivel/core EXCLUDE_FROM_ALL)
