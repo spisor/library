@@ -53,11 +53,11 @@ spisor_status runtime_ui_check_value(const spisor_value *value, spisor_value_kin
 
 int runtime_ui_add_value(cJSON *object, const char *name, const spisor_value *value) {
     cJSON *json = NULL;
-    if (spisor_json_of_value(value, &json) != SPISOR_OK || !cJSON_AddItemToObject(object, name, json)) {
+    if (spisor_json_of_value(value, &json) != SPISOR_OK) {
         cJSON_Delete(json);
         return 0;
     }
-    return 1;
+    return runtime_add_owned(object, name, json);
 }
 
 /** {name: value} for a value already checked; NULL when memory runs out. */

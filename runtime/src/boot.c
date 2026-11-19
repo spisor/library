@@ -125,7 +125,7 @@ static char *recorded_host(const char *cache, const char *host_id, const char *g
 /** {hint: {libraries, host?}}, the hint the write records, built before it is written; NULL out of memory. */
 static cJSON *written_answer(const cJSON *libraries, const char *host) {
     cJSON *hint = cJSON_CreateObject();
-    int built = hint != NULL && runtime_catalog_attach(hint, "libraries", cJSON_Duplicate(libraries, 1)) &&
+    int built = hint != NULL && runtime_add_owned(hint, "libraries", cJSON_Duplicate(libraries, 1)) &&
                 (host == NULL || cJSON_AddStringToObject(hint, "host", host) != NULL);
     if (!built) {
         cJSON_Delete(hint);
@@ -244,7 +244,7 @@ cJSON *runtime_boot_resolve(const char *cache, const char *host_id, const char *
     }
     cJSON *answer = runtime_resolve_booted_host(cache, host_id, resolved_platform, refusal);
     cJSON *passed = answer == NULL ? NULL : passed_arguments(arguments, argument_count);
-    if (answer != NULL && !runtime_catalog_attach(answer, "arguments", passed)) {
+    if (answer != NULL && !runtime_add_owned(answer, "arguments", passed)) {
         cJSON_Delete(answer);
         answer = NULL;
     }

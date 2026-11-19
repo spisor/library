@@ -13,6 +13,7 @@
 #include "catalog_answer.h"
 #include "host_references.h"
 #include "install_run.h"
+#include "json_service.h"
 #include "plugin_choices.h"
 #include "catalog.h"
 #include "updates_catalog.h"
@@ -418,7 +419,7 @@ static int plan_check(const runtime_updates_check_request *request, const char *
 static int attach_taken(cJSON *answer, const char *name, cJSON **member) {
     cJSON *item = *member;
     *member = NULL;
-    return runtime_catalog_attach(answer, name, item);
+    return runtime_add_owned(answer, name, item);
 }
 
 static cJSON *answer_of(check_progress *progress, cJSON *removed) {

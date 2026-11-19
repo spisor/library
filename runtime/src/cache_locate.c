@@ -8,6 +8,7 @@
 #include "cache_place.h"
 #include "cache_refusal.h"
 #include "catalog_answer.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "spisor/file.h"
 
@@ -183,11 +184,11 @@ cJSON *runtime_cache_locate_plugins(const char *cache, const cJSON *plugins) {
         cJSON_Delete(answer);
         return NULL;
     }
-    int attached = runtime_catalog_attach(answer, "located", located);
+    int attached = runtime_add_owned(answer, "located", located);
     if (!attached) {
         cJSON_Delete(problems);
     }
-    if (!attached || !runtime_catalog_attach(answer, "problems", problems)) {
+    if (!attached || !runtime_add_owned(answer, "problems", problems)) {
         cJSON_Delete(answer);
         return NULL;
     }

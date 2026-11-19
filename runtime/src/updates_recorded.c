@@ -4,6 +4,7 @@
 #include "allocation.h"
 #include "catalog_answer.h"
 #include "host_references.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "spisor/file.h"
 #include "updates.h"
@@ -24,7 +25,8 @@ static cJSON *unreadable(const runtime_updates_target *target, const char *path)
 
 static cJSON *run_answer(const cJSON *run) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer != NULL && !runtime_catalog_attach(answer, "run", run == NULL ? cJSON_CreateObject() : cJSON_Duplicate(run, 1))) {
+    if (answer != NULL &&
+        !runtime_add_owned(answer, "run", run == NULL ? cJSON_CreateObject() : cJSON_Duplicate(run, 1))) {
         cJSON_Delete(answer);
         return NULL;
     }

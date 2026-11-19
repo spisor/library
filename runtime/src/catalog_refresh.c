@@ -16,6 +16,7 @@
 #include "allocation.h"
 #include "catalog_time.h"
 #include "directory_tree.h"
+#include "json_service.h"
 #include "runtime/fetch.h"
 #include "paths.h"
 #include "spisor/file.h"
@@ -114,7 +115,7 @@ static cJSON *answer_failed(const char *subject, const char *middle, const char 
 
 static cJSON *answer_changed(cJSON *catalog) {
     cJSON *result = answer_kind("changed");
-    if (!runtime_catalog_attach(result, "catalog", catalog)) {
+    if (!runtime_add_owned(result, "catalog", catalog)) {
         cJSON_Delete(result);
         return NULL;
     }

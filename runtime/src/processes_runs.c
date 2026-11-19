@@ -5,6 +5,7 @@
 #include "allocation.h"
 #include "catalog_answer.h"
 #include "file_times.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "processes.h"
 #include "processes_holders.h"
@@ -71,7 +72,7 @@ cJSON *runtime_processes_live_runs(const char *state, double now, cJSON **refusa
     cJSON *answer = cJSON_CreateObject();
     double at = now == 0 ? runtime_now_milliseconds() : now;
     *refusal = NULL;
-    if (answer == NULL || !runtime_catalog_attach(answer, "runs", runtime_live_runs(state, at))) {
+    if (answer == NULL || !runtime_add_owned(answer, "runs", runtime_live_runs(state, at))) {
         cJSON_Delete(answer);
         return NULL;
     }

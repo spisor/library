@@ -12,6 +12,7 @@
 #include "cache_refusal.h"
 #include "directory_tree.h"
 #include "host_references.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "process_alive.h"
 #include "spisor/file.h"
@@ -101,22 +102,14 @@ static cJSON *number_or_null(double value) {
     return isnan(value) ? cJSON_CreateNull() : cJSON_CreateNumber(value);
 }
 
-static int attach(cJSON *object, const char *name, cJSON *item) {
-    if (item == NULL || !cJSON_AddItemToObject(object, name, item)) {
-        cJSON_Delete(item);
-        return 0;
-    }
-    return 1;
-}
-
 static cJSON *record_tree(const runtime_holders_record *record) {
     cJSON *object = cJSON_CreateObject();
     cJSON *holders = cJSON_CreateArray();
-    int built = object != NULL && attach(object, "pid", number_or_null(record->pid)) &&
-                attach(object, "aliveAt", number_or_null(record->alive_at)) &&
-                attach(object, "checkMilliseconds", number_or_null(record->check_milliseconds));
+    int built = object != NULL && runtime_add_owned(object, "pid", number_or_null(record->pid)) &&
+                runtime_add_owned(object, "aliveAt", number_or_null(record->alive_at)) &&
+                runtime_add_owned(object, "checkMilliseconds", number_or_null(record->check_milliseconds));
     if (built) {
-        built = attach(object, "holders", holders);
+        built = runtime_add_owned(object, "holders", holders);
     } else {
         cJSON_Delete(holders);
     }

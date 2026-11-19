@@ -57,8 +57,8 @@ cJSON *runtime_cache_installed(const char *cache, const char *platform, cJSON **
         return runtime_catalog_refuse_member("cache", CACHE_SHAPE, refusal);
     }
     answer = cJSON_CreateObject();
-    if (!runtime_catalog_attach(answer, "bundles", runtime_cache_installed_bundles(cache)) ||
-        !runtime_catalog_attach(answer, "libraries", runtime_cache_installed_libraries(cache, own_platform))) {
+    if (!runtime_add_owned(answer, "bundles", runtime_cache_installed_bundles(cache)) ||
+        !runtime_add_owned(answer, "libraries", runtime_cache_installed_libraries(cache, own_platform))) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -80,7 +80,7 @@ static cJSON *answer_of(const char *name, cJSON *item) {
         cJSON_Delete(item);
         return NULL;
     }
-    if (!runtime_catalog_attach(answer, name, item)) {
+    if (!runtime_add_owned(answer, name, item)) {
         cJSON_Delete(answer);
         return NULL;
     }

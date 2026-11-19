@@ -88,7 +88,7 @@ static cJSON *check_settings(const update_run *run, const cJSON *registration, c
     }
     cJSON_DeleteItemFromObjectCaseSensitive(settings, "catalog");
     const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(ecosystem, "catalog");
-    if (catalog != NULL && !runtime_catalog_attach(settings, "catalog", cJSON_Duplicate(catalog, 1))) {
+    if (catalog != NULL && !runtime_add_owned(settings, "catalog", cJSON_Duplicate(catalog, 1))) {
         cJSON_Delete(settings);
         return NULL;
     }

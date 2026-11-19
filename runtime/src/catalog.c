@@ -33,7 +33,7 @@ cJSON *runtime_catalog_read(const char *text, const char *origin, cJSON **refusa
         return NULL;
     }
     cJSON *result = cJSON_CreateObject();
-    if (!runtime_catalog_attach(result, "catalog", catalog)) {
+    if (!runtime_add_owned(result, "catalog", catalog)) {
         cJSON_Delete(result);
         return NULL;
     }

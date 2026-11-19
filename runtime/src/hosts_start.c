@@ -79,7 +79,7 @@ static cJSON *identity_of(const cJSON *registration) {
                 cJSON_AddBoolToObject(identity, "requiresCommand",
                                       cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(registration, "requiresCommand"))) != NULL &&
                 (!cJSON_IsObject(application) ||
-                 runtime_catalog_attach(identity, "application", cJSON_Duplicate(application, 1)));
+                 runtime_add_owned(identity, "application", cJSON_Duplicate(application, 1)));
     if (!built) {
         cJSON_Delete(identity);
         return NULL;
@@ -176,9 +176,9 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
         return NULL;
     }
     cJSON *plan = cJSON_CreateObject();
-    int built = plan != NULL && runtime_catalog_attach(plan, "plugins", plugins_beside(run, context->running)) &&
-                runtime_catalog_attach(plan, "run", cJSON_Duplicate(run, 1)) &&
-                runtime_catalog_attach(plan, "unrecorded", cJSON_CreateArray()) &&
+    int built = plan != NULL && runtime_add_owned(plan, "plugins", plugins_beside(run, context->running)) &&
+                runtime_add_owned(plan, "run", cJSON_Duplicate(run, 1)) &&
+                runtime_add_owned(plan, "unrecorded", cJSON_CreateArray()) &&
                 cJSON_AddStringToObject(plan, "runRecord", record) != NULL;
     if (!built) {
         spisor_remove_prepared_file(&removal);
@@ -263,11 +263,11 @@ static cJSON *running_identity(const start_context *context, const cJSON *plan) 
  */
 static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
     cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && runtime_catalog_attach(answer, "places", cJSON_Duplicate(context->places, 1)) &&
-                runtime_catalog_attach(answer, "identity", running_identity(context, plan)) &&
-                runtime_catalog_attach(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
+    int built = answer != NULL && runtime_add_owned(answer, "places", cJSON_Duplicate(context->places, 1)) &&
+                runtime_add_owned(answer, "identity", running_identity(context, plan)) &&
+                runtime_add_owned(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
-                (!context->argument.session || runtime_catalog_attach(answer, "timers", timers())) &&
+                (!context->argument.session || runtime_add_owned(answer, "timers", timers())) &&
                 cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL &&
                 cJSON_AddItemToObjectCS(answer, "plan", plan);
     if (!built) {
