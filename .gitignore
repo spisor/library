@@ -5,7 +5,6 @@ build/
 README.md
 siblings/
 parity/work/
-parity/expected/
 parity/typescript/node_modules/
 parity/java/build/
 parity/java/.gradle/

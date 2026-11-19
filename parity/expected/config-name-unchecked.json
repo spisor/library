@@ -1,0 +1,11 @@
+{
+  "answers": [
+    {
+      "failure": {
+        "message": "the plugin's config name is not a usable file name",
+        "fix": "name the plugin, or set config.name, to one portable path segment such as \"my-plugin\""
+      }
+    }
+  ],
+  "files": {}
+}

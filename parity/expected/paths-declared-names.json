@@ -1,0 +1,12 @@
+{
+  "answers": [
+    {
+      "home": "{home}",
+      "repos": "{home}/r",
+      "plugin": "{home}/plugin",
+      "cache": "{home}/cache",
+      "config": "{home}/settings"
+    }
+  ],
+  "files": {}
+}

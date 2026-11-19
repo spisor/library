@@ -1,0 +1,22 @@
+{
+  "answers": [
+    {
+      "value": 1
+    },
+    {
+      "values": {
+        "x": 1
+      }
+    },
+    {},
+    {},
+    {
+      "console": "\u001b[95m[antigravity]\u001b[0m \u001b[31mm\u001b[0m"
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/antigravity.json": "{\n  \"x\": 1,\n  \"y\": 2\n}\n",
+    "logs/2026-10-28/antigravity-2026-10-27T19-34-53.log": "[2026-10-28T00:00:01.500Z] [INFO] m\n[2026-10-28T00:00:02.250Z] [ERROR] m\n"
+  }
+}

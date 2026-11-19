@@ -1,0 +1,12 @@
+{
+  "answers": [
+    {},
+    {
+      "value": 1
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\n  \"k\": 1\n}\n"
+  }
+}

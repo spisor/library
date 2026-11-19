@@ -1,0 +1,14 @@
+{
+  "answers": [
+    {
+      "failure": {
+        "message": "the settings file is not a readable JSON object, so setting would discard its content",
+        "fix": "repair {home}/config/p.json so it holds one JSON object, or remove it, then set again; it was left unchanged"
+      }
+    }
+  ],
+  "files": {
+    "config/.settings.lock": "",
+    "config/p.json": "{\"a\":"
+  }
+}

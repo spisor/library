@@ -1,0 +1,16 @@
+{
+  "answers": [
+    {
+      "home": "{home}",
+      "repos": "{home}/repos",
+      "plugin": "{home}/plugin",
+      "cache": "{home}/cache",
+      "config": "{home}/settings"
+    },
+    {}
+  ],
+  "files": {
+    "settings/.settings.lock": "",
+    "settings/p.json": "{\n  \"k\": 1\n}\n"
+  }
+}
