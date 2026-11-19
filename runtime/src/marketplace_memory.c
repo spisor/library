@@ -89,9 +89,10 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    cJSON *store = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
+    int out_of_memory = 0;
+    cJSON *store = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
     spisor_memory_release(bytes);
-    if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
+    if (outcome == SPISOR_READ_OUT_OF_MEMORY || out_of_memory) {
         return NULL;
     }
     if (!is_store(store)) {

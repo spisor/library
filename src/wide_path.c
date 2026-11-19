@@ -85,9 +85,31 @@ static wchar_t *after_extended_prefix(wchar_t *buffer, const wchar_t **text) {
     return buffer + length;
 }
 
+static int is_separator(char character) {
+    return character == '/' || character == '\\';
+}
+
+/** Whether a segment of path is . or .., which the extended-length prefix would pass to the file system as names. */
+static int has_dot_segment(const char *path) {
+    const char *segment = path;
+    for (const char *cursor = path;; cursor++) {
+        if (*cursor != '\0' && !is_separator(*cursor)) {
+            continue;
+        }
+        size_t length = (size_t)(cursor - segment);
+        if ((length == 1 || length == 2) && strncmp(segment, "..", length) == 0) {
+            return 1;
+        }
+        if (*cursor == '\0') {
+            return 0;
+        }
+        segment = cursor + 1;
+    }
+}
+
 int spisor_wide_path_into(const char *path, wchar_t *buffer, size_t capacity) {
     const size_t reserved = 8;
-    if (capacity <= reserved) {
+    if (capacity <= reserved || has_dot_segment(path)) {
         return 0;
     }
     wchar_t *text = buffer + reserved;

@@ -449,7 +449,7 @@ static void it_refetches_a_damaged_version_the_start_reported_even_one_the_lates
 
 static void strip_marker_sizes(const char *rest) {
     char *text = text_in(cache, rest);
-    cJSON *marker = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    cJSON *marker = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_DeleteItemFromObjectCaseSensitive(marker, "sizes");
     char *stripped = cJSON_PrintUnformatted(marker);
@@ -469,7 +469,7 @@ static void it_reinstalls_a_version_whose_marker_records_no_sizes(void) {
     strip_marker_sizes("bundles/a/1.0.0/.installed.json");
     cJSON_Delete(check_with(TEST_HOST, settings_with("{\"plugins\":{\"a\":{\"enabled\":true}}}"), "{}").tree);
     char *text = text_in(cache, "bundles/a/1.0.0/.installed.json");
-    cJSON *marker = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    cJSON *marker = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
     CHECK(cJSON_HasObjectItem(marker, "sizes"));
     cJSON_Delete(marker);
     spisor_memory_release(text);

@@ -29,7 +29,7 @@ static void check_vector(const cJSON *vector, int index) {
     if (input == NULL || expected == NULL) {
         return;
     }
-    cJSON *parsed = spisor_parse_json((const uint8_t *)input, strlen(input));
+    cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)input, strlen(input), &(int){0});
     CHECK(parsed != NULL);
     if (parsed == NULL) {
         fprintf(stderr, "%s: cannot parse \"%s\"\n", label, input);

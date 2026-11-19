@@ -11,8 +11,8 @@ extern "C" {
 /**
  * Builds a tree from a cJSON tree into an empty one, every node and text copied into one allocation, so the tree
  * outlives `json`. For the JSON a library reads from its own files and a test reads from its vectors, never for a
- * value crossing a definition. The tree must come from spisor_parse_json, which refuses a string holding a NUL: cJSON
- * keeps no length, so a string with an escaped NUL from any other parse would be read short.
+ * value crossing a definition. The tree must come from spisor_parse_json_reporting, which refuses a string holding a
+ * NUL: cJSON keeps no length, so a string with an escaped NUL from any other parse would be read short.
  *
  * @param tree the caller's empty tree. Required.
  * @return OK; MALFORMED, with `tree` left as it was, for a NULL or raw cJSON item, a string that is not well-formed

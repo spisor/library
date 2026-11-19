@@ -262,7 +262,7 @@
         "typescript",
         "java"
       ],
-      "because": "spec 3: an escaped lone surrogate in a settings file is read as U+FFFD, spisor_parse_json's documented reading, so get answers U+FFFD, where basekit answered the lone surrogate itself"
+      "because": "spec 3: an escaped lone surrogate in a settings file is read as U+FFFD, spisor_parse_json_reporting's documented reading, so get answers U+FFFD, where basekit answered the lone surrogate itself"
     },
     {
       "case": "lone-surrogate",

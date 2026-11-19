@@ -7,7 +7,6 @@
 #include "catalog_path.h"
 #include "catalog_text.h"
 #include "catalog_url.h"
-#include "json_parse.h"
 #include "paths.h"
 #include "sha256.h"
 #include "spisor/file.h"

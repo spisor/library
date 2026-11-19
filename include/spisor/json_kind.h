@@ -15,8 +15,9 @@ extern "C" {
 #define SPISOR_STATUS_OUT_OF_MEMORY 2
 
 /**
- * Reads one whole JSON document exactly as JSON.parse would, or answers NULL. Refuses invalid
- * UTF-8, anything after the value, and a string (key or value, at any depth) holding a NUL.
+ * Reads one whole JSON document exactly as JSON.parse would, or answers NULL, with *out_of_memory set when memory
+ * ran out rather than for the text. Refuses invalid UTF-8, anything after the value, and a string (key or value, at
+ * any depth) holding a NUL.
  *
  * @implNote cJSON departs from JSON.parse in these ways, each closed here without touching the
  * vendored file: it accepts invalid UTF-8, so the bytes are validated first; its grammar is laxer
@@ -29,7 +30,7 @@ extern "C" {
  * A duplicated key keeps its FIRST position and its LAST value, as JSON.parse does, so every cJSON
  * lookup and iteration over the tree sees what JavaScript sees.
  */
-cJSON *spisor_parse_json(const uint8_t *bytes, size_t length);
+cJSON *spisor_parse_json_reporting(const uint8_t *bytes, size_t length, int *out_of_memory);
 
 /** Frees a buffer this library wrote to out; a library's own release function calls it. */
 void spisor_release(uint8_t *buffer);

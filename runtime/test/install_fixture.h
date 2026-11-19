@@ -92,7 +92,7 @@ static inline char *text_in(const char *base, const char *rest) {
 
 static inline cJSON *json_in(const char *base, const char *rest) {
     char *text = text_in(base, rest);
-    cJSON *tree = text == NULL ? NULL : spisor_parse_json((const uint8_t *)text, strlen(text));
+    cJSON *tree = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
     spisor_memory_release(text);
     return tree;
 }
