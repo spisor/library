@@ -67,41 +67,46 @@ static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
-/** Reads an optional text member into *value, NULL when absent; 0 with a refusal when it is present and not usable text. */
-static int read_optional_text(const cJSON *argument, const char *member, const char **value, cJSON **refusal) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(argument, member);
-    *value = cJSON_IsString(item) && item->valuestring[0] != '\0' ? item->valuestring : NULL;
-    if (item != NULL && *value == NULL) {
-        refuse(refusal, "send each text member as a non-empty string, or leave it out", "%s is not usable text", member);
+/** 1 for a text that is NULL or not empty; 0 with a refusal naming member for an empty one. */
+static int check_optional_text(const char *text, const char *member, cJSON **refusal) {
+    if (text != NULL && text[0] == '\0') {
+        refuse(refusal, "pass each text as a non-empty string, or none", "%s is not usable text", member);
         return 0;
     }
     return 1;
 }
 
-static int read_required_text(const cJSON *argument, const char *member, const char **value, cJSON **refusal) {
-    if (!read_optional_text(argument, member, value, refusal)) {
+static int check_required_text(const char *text, const char *member, cJSON **refusal) {
+    if (!check_optional_text(text, member, refusal)) {
         return 0;
     }
-    if (*value == NULL) {
-        refuse(refusal, "send {id, cache, pluginDir} and, when they are known, version, lastKnown and apiBase",
-               "the argument carries no %s", member);
+    if (text == NULL) {
+        refuse(refusal,
+               "pass id, cache and plugin_directory and, when they are known, version, last_known and api_base",
+               "the call carries no %s", member);
         return 0;
     }
     return 1;
 }
 
-static int read_request(const cJSON *argument, install_request *request, cJSON **refusal) {
+static int read_request(const runtime_install_by_id_request *install, install_request *request, cJSON **refusal) {
     memset(request, 0, sizeof *request);
     runtime_identity parsed;
-    if (!read_required_text(argument, "id", &request->id, refusal) ||
-        !read_required_text(argument, "cache", &request->cache, refusal) ||
-        !read_required_text(argument, "pluginDir", &request->plugin_directory, refusal) ||
-        !read_optional_text(argument, "version", &request->version, refusal) ||
-        !read_optional_text(argument, "lastKnown", &request->last_known, refusal) ||
-        !read_optional_text(argument, "apiBase", &request->api_base, refusal) ||
-        !read_optional_text(argument, "acceptPrimary", &request->accept_primary, refusal)) {
+    if (!check_required_text(install->id, "id", refusal) || !check_required_text(install->cache, "cache", refusal) ||
+        !check_required_text(install->plugin_directory, "plugin_directory", refusal) ||
+        !check_optional_text(install->version, "version", refusal) ||
+        !check_optional_text(install->last_known, "last_known", refusal) ||
+        !check_optional_text(install->api_base, "api_base", refusal) ||
+        !check_optional_text(install->accept_primary, "accept_primary", refusal)) {
         return 0;
     }
+    request->id = install->id;
+    request->cache = install->cache;
+    request->plugin_directory = install->plugin_directory;
+    request->version = install->version;
+    request->last_known = install->last_known;
+    request->api_base = install->api_base;
+    request->accept_primary = install->accept_primary;
     if (!runtime_identity_parse_id(request->id, &parsed)) {
         refuse(refusal, "send an id such as github:<number>", "the id is not valid");
         return 0;
@@ -621,10 +626,12 @@ static cJSON *install_from_set(const install_request *request, const cJSON *repo
 }
 
 
-cJSON *runtime_install_by_id_taking(const cJSON *argument, runtime_install_by_id_taker take, void *taken,
-                                    cJSON **refusal) {
+cJSON *runtime_install_by_id(const runtime_install_by_id_request *install, runtime_install_by_id_taker take,
+                             void *taken, cJSON **refusal) {
     install_request request;
-    int read = read_request(argument, &request, refusal);
+    int read;
+    *refusal = NULL;
+    read = read_request(install, &request, refusal);
     request.take = take;
     request.taken = taken;
     if (!read || !read_recorded_primary(&request, refusal)) {

@@ -424,17 +424,16 @@ static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal
     return done;
 }
 
-static int read_argument(const cJSON *argument, ecosystem *install) {
-    const cJSON *platform = cJSON_GetObjectItemCaseSensitive(argument, "platform");
-    install->run.places = cJSON_GetObjectItemCaseSensitive(argument, "places");
-    install->run.portable = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "portable");
-    install->run.state = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "state");
-    install->run.cache = runtime_install_place(cJSON_GetObjectItemCaseSensitive(argument, "places"), "cache");
-    install->run.environment = cJSON_GetObjectItemCaseSensitive(argument, "environment");
-    install->run.choices = cJSON_GetObjectItemCaseSensitive(argument, "choices");
-    install->run.platform = platform == NULL ? runtime_platform_key() : cJSON_GetStringValue(platform);
-    install->defaults = cJSON_GetObjectItemCaseSensitive(argument, "defaults");
-    install->requested = cJSON_GetObjectItemCaseSensitive(argument, "requested");
+static int read_request(const runtime_install_ecosystem_request *request, ecosystem *install) {
+    install->run.places = request->places;
+    install->run.portable = runtime_install_place(request->places, "portable");
+    install->run.state = runtime_install_place(request->places, "state");
+    install->run.cache = runtime_install_place(request->places, "cache");
+    install->run.environment = request->environment;
+    install->run.choices = request->choices;
+    install->run.platform = request->platform == NULL ? runtime_platform_key() : request->platform;
+    install->defaults = request->defaults;
+    install->requested = request->requested;
     return install->run.portable != NULL && install->run.state != NULL && install->run.cache != NULL &&
            cJSON_IsObject(install->run.environment) && is_choice_map(install->run.choices) &&
            (install->defaults == NULL || is_text_array(install->defaults)) &&
@@ -462,16 +461,18 @@ static int are_sources(const cJSON *sources, cJSON **refusal) {
     return usable;
 }
 
-static cJSON *ecosystem_for(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken, cJSON **refusal) {
-    if (!are_sources(cJSON_GetObjectItemCaseSensitive(argument, "sources"), refusal)) {
+cJSON *runtime_install_ecosystem(const runtime_install_ecosystem_request *request,
+                                 runtime_install_ecosystem_taker take, void *taken, cJSON **refusal) {
+    *refusal = NULL;
+    if (!are_sources(request->sources, refusal)) {
         return NULL;
     }
     ecosystem install;
     memset(&install, 0, sizeof install);
     install.take = take;
     install.taken = taken;
-    if (!read_argument(argument, &install)) {
-        *refusal = runtime_refusal("the argument carries no usable sources, places, environment or choices", ECOSYSTEM_FIX);
+    if (!read_request(request, &install)) {
+        *refusal = runtime_refusal("the call carries no usable sources, places, environment or choices", ECOSYSTEM_FIX);
         return NULL;
     }
     install.home = runtime_install_own_home(install.run.state, RUNTIME_ECOSYSTEM_HOST_ID);
@@ -483,7 +484,7 @@ static cJSON *ecosystem_for(const cJSON *argument, runtime_install_ecosystem_tak
     install.run.required_plugins = cJSON_CreateObject();
     int done = install.home != NULL && install.run.report != NULL && install.running != NULL &&
                install.run.required_plugins != NULL &&
-               install_all(&install, cJSON_GetObjectItemCaseSensitive(argument, "sources"), refusal);
+               install_all(&install, request->sources, refusal);
     cJSON *report = done ? install.run.report : NULL;
     if (!done) {
         cJSON_Delete(install.run.report);
@@ -494,10 +495,5 @@ static cJSON *ecosystem_for(const cJSON *argument, runtime_install_ecosystem_tak
     cJSON_Delete(install.run.catalog);
     spisor_memory_release(install.home);
     return report;
-}
-
-cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken,
-                                        cJSON **refusal) {
-    return ecosystem_for(argument, take, taken, refusal);
 }
 

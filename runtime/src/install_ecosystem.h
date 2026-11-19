@@ -11,8 +11,22 @@
 typedef spisor_status (*runtime_install_ecosystem_taker)(const cJSON *report, void *taken);
 
 /**
- * install's ecosystem: { sources, places: { portable, state, cache }, environment, choices?, defaults?,
- * requested?, platform? } installs the ecosystem from catalog sources and answers the report
+ * What install's ecosystem installs from: sources, an array of catalog sources; places, { portable, state, cache };
+ * environment, an object of variable names to values; choices, an object of application to method; defaults and
+ * requested, arrays of plugin ids, or NULL; platform, a platform key, or NULL for this build's.
+ */
+typedef struct runtime_install_ecosystem_request {
+    const cJSON *sources;
+    const cJSON *places;
+    const cJSON *environment;
+    const cJSON *choices;
+    const cJSON *defaults;
+    const cJSON *requested;
+    const char *platform;
+} runtime_install_ecosystem_request;
+
+/**
+ * install's ecosystem: installs the ecosystem from catalog sources and answers the report
  * { installed, cached, unavailable, enabled, applications, loaders, missing, javascript? }.
  *
  * Every source is checked now. Each catalog application is settled into applications: installed or
@@ -41,8 +55,8 @@ typedef spisor_status (*runtime_install_ecosystem_taker)(const cJSON *report, vo
  * Hands the finished report to `take` before the running versions are recorded, and again when that record's
  * refusal adds to it; NULL with no refusal when `take` runs out of memory.
  */
-cJSON *runtime_install_ecosystem_taking(const cJSON *argument, runtime_install_ecosystem_taker take, void *taken,
-                                        cJSON **refusal);
+cJSON *runtime_install_ecosystem(const runtime_install_ecosystem_request *request,
+                                 runtime_install_ecosystem_taker take, void *taken, cJSON **refusal);
 
 /**
  * install's application: under places { portable, state, cache }, operation "update" or "remove"
