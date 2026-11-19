@@ -333,9 +333,10 @@ written through: the set is refused and names `SPISOR_SECRETS`, which is how the
   instead of failing to load. Items carry the attributes `entry` and `owner` = `spisor`, and `list`
   searches by `owner`. A session bus of `autolaunch:` counts as no bus.
 
-It is held to basekit in its own CI, through the TypeScript and the Java binding, case by case; the
-places it departs from basekit are recorded one by one in `parity/divergences.json`, each with the
-section of the spec that rules it.
+It is held to recorded answers in its own CI: `parity_test` lays out each case under `parity/cases`,
+calls the built runtime through its definitions as a host does, and compares every answer and the
+files it left with `parity/expected`, which holds basekit's answers with the rulings that depart from
+basekit folded in.
 
 ## Using it
 
