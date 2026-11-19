@@ -538,7 +538,7 @@ static void it_reports_each_installed_version_a_start_would_refuse_or_whose_hash
     expect_one_damaged("has SHA-256", "same size");
     write_in(cache, "bundles/a/1.0.0/dist/index.js", original);
     char *marker = read_text_in("bundles/a/1.0.0/.installed.json");
-    cJSON *parsed_marker = spisor_parse_json((const uint8_t *)marker, strlen(marker));
+    cJSON *parsed_marker = spisor_parse_json_reporting((const uint8_t *)marker, strlen(marker), &(int){0});
     cJSON_DeleteItemFromObjectCaseSensitive(parsed_marker, "sizes");
     char *stripped = cJSON_PrintUnformatted(parsed_marker);
     write_in(cache, "bundles/a/1.0.0/.installed.json", stripped);

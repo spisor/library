@@ -90,11 +90,13 @@ static int locate_plugins(const host_context *context, const cJSON *plugins, run
     return located;
 }
 
-static cJSON *manifest_at(const char *path) {
+/** The manifest at path, or NULL when it cannot be read as JSON, with *out_of_memory set when memory ran out. */
+static cJSON *manifest_at(const char *path, int *out_of_memory) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
+    cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, out_of_memory);
+    *out_of_memory = *out_of_memory || outcome == SPISOR_READ_OUT_OF_MEMORY;
     spisor_memory_release(bytes);
     return manifest;
 }
@@ -143,7 +145,11 @@ void host_print_install_warnings(const host_context *context, const cJSON *repor
     if (plugins != NULL && locate_plugins(context, plugins, &located)) {
         for (size_t index = 0; index < located.located_count; index++) {
             const runtime_cache_located *item = &located.located[index];
-            cJSON *manifest = item->manifest == NULL ? NULL : manifest_at(item->manifest);
+            int out_of_memory = 0;
+            cJSON *manifest = item->manifest == NULL ? NULL : manifest_at(item->manifest, &out_of_memory);
+            if (out_of_memory) {
+                break;
+            }
             if (manifest == NULL) {
                 print_unchecked(item->id);
             } else {

@@ -16,7 +16,7 @@ typedef struct member_place {
     int has_next;
 } member_place;
 
-typedef enum place_answer { PLACE_FOUND, PLACE_ABSENT, PLACE_MALFORMED } place_answer;
+typedef enum place_answer { PLACE_FOUND, PLACE_ABSENT, PLACE_MALFORMED, PLACE_OUT_OF_MEMORY } place_answer;
 
 static const char *segment_at(const cJSON *key, int depth) {
     return cJSON_GetArrayItem(key, depth)->valuestring;
@@ -50,7 +50,7 @@ static place_answer locate_member(const char *text, json_span object, const char
         }
         int named = json_span_key_is(text, member.key, name);
         if (named < 0) {
-            return PLACE_MALFORMED;
+            return named == JSON_SPAN_KEY_OUT_OF_MEMORY ? PLACE_OUT_OF_MEMORY : PLACE_MALFORMED;
         }
         if (named) {
             place->found = member;
@@ -212,8 +212,8 @@ json_edit_outcome json_edit_set(const char *text, size_t length, const cJSON *ke
     for (int depth = 0; depth <= last_depth(key); depth++) {
         member_place place = {0};
         place_answer answer = locate_member(text, object, segment_at(key, depth), &place);
-        if (answer == PLACE_MALFORMED) {
-            return JSON_EDIT_MALFORMED;
+        if (answer == PLACE_MALFORMED || answer == PLACE_OUT_OF_MEMORY) {
+            return answer == PLACE_MALFORMED ? JSON_EDIT_MALFORMED : JSON_EDIT_OUT_OF_MEMORY;
         }
         if (answer == PLACE_ABSENT) {
             cJSON *nested = nested_value(key, depth, value);
@@ -285,8 +285,8 @@ static removal remove_one(const json_edit_text *current, const cJSON *key, int d
     member_place place = {0};
     place_answer answer =
         reached == PLACE_FOUND ? locate_member(current->bytes, object, segment_at(key, depth), &place) : reached;
-    if (answer == PLACE_MALFORMED) {
-        return REMOVAL_MALFORMED;
+    if (answer == PLACE_MALFORMED || answer == PLACE_OUT_OF_MEMORY) {
+        return answer == PLACE_MALFORMED ? REMOVAL_MALFORMED : REMOVAL_OUT_OF_MEMORY;
     }
     if (answer == PLACE_ABSENT) {
         return REMOVAL_ABSENT;

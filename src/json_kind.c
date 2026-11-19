@@ -1,7 +1,6 @@
 #include "spisor/json_kind.h"
 
 #include "allocation.h"
-#include "json_parse.h"
 
 #include "json_grammar.h"
 #include "utf8.h"
@@ -173,12 +172,6 @@ static document_refusal parse_document(const uint8_t *bytes, size_t length, cJSO
         keep_last_of_each_key(*root);
     }
     return refusal;
-}
-
-cJSON *spisor_parse_json(const uint8_t *bytes, size_t length) {
-    cJSON *root = NULL;
-    parse_document(bytes, length, &root);
-    return root;
 }
 
 cJSON *spisor_parse_json_reporting(const uint8_t *bytes, size_t length, int *out_of_memory) {

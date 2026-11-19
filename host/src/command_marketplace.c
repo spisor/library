@@ -34,9 +34,10 @@ static cJSON *read_list(const char *path, cJSON **refusal) {
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     int was_read = bytes != NULL;
-    cJSON *list = was_read ? spisor_parse_json(bytes, length) : NULL;
+    int out_of_memory = 0;
+    cJSON *list = was_read ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
     spisor_memory_release(bytes);
-    if (list == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY) {
+    if (list == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY && !out_of_memory) {
         *refusal = refusal_naming(was_read ? "the list is not JSON: " : "the list could not be read: ", path,
                                   "check that --list names a readable marketplace list");
     }
@@ -197,13 +198,17 @@ static const char *token_from(const char *variable, cJSON **refusal) {
     return token;
 }
 
-/** The copy already at path, or NULL when there is none or, with *refusal set, when it is not JSON. */
-static cJSON *read_previous(const char *path, cJSON **refusal) {
+/**
+ * The copy already at path, or NULL when there is none, with *out_of_memory set when memory ran out reading it, or
+ * with *refusal set when it is not JSON.
+ */
+static cJSON *read_previous(const char *path, int *out_of_memory, cJSON **refusal) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    cJSON *previous = bytes == NULL ? NULL : spisor_parse_json(bytes, length);
-    if (bytes != NULL && previous == NULL) {
+    cJSON *previous = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, out_of_memory);
+    *out_of_memory = *out_of_memory || outcome == SPISOR_READ_OUT_OF_MEMORY;
+    if (bytes != NULL && previous == NULL && !*out_of_memory) {
         *refusal = refusal_naming("the copy already at --out is not JSON: ", path,
                                   "remove it, or point --out at a path that holds a generated copy or nothing");
     }
@@ -236,10 +241,12 @@ static cJSON *built_and_written(const build_paths *paths, cJSON **skipped, cJSON
     inputs.token_host = paths->token_host;
     int has_token = paths->token_variable == NULL || inputs.token != NULL;
     cJSON *list = has_token ? read_list(paths->list, refusal) : NULL;
-    cJSON *previous = list == NULL ? NULL : read_previous(absolute == NULL ? paths->out : absolute, refusal);
+    int out_of_memory = 0;
+    cJSON *previous =
+        list == NULL ? NULL : read_previous(absolute == NULL ? paths->out : absolute, &out_of_memory, refusal);
     inputs.list = list;
     inputs.previous = previous;
-    cJSON *copy = list == NULL || *refusal != NULL ? NULL : built_copy(&inputs, skipped, refusal);
+    cJSON *copy = list == NULL || out_of_memory || *refusal != NULL ? NULL : built_copy(&inputs, skipped, refusal);
     if (copy != NULL && !write_or_refuse(copy, paths->out, refusal)) {
         cJSON_Delete(copy);
         copy = NULL;

@@ -50,7 +50,7 @@ const inputs = [
   '[{"a":[{"b":[{"c":[null,true,false,"s",1.25]}]}]}]',
 ];
 
-// spisor_parse_json reads an unpaired surrogate escape as U+FFFD, so that is the value written back.
+// spisor_parse_json_reporting reads an unpaired surrogate escape as U+FFFD, so that is the value written back.
 const asParsedByTheLibrary = (text) => text.replace(loneSurrogateEscape, "\\ufffd");
 
 const vectors = {

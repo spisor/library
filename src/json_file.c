@@ -8,7 +8,6 @@
 #include "spisor/json_kind.h"
 
 #include "allocation.h"
-#include "json_parse.h"
 
 /** True when the code point ending just before index is a JavaScript LineTerminator, which is where a multiline ^ holds. */
 static int follows_line_terminator(const unsigned char *text, size_t index) {

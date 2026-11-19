@@ -169,9 +169,11 @@ int json_span_key_is(const char *text, json_span key, const char *name) {
     if (!has_escape(text, key)) {
         return strlen(name) == inner && memcmp(text + key.start + 1, name, inner) == 0;
     }
-    cJSON *decoded = spisor_parse_json((const uint8_t *)text + key.start, key.end - key.start);
+    int out_of_memory = 0;
+    cJSON *decoded = spisor_parse_json_reporting((const uint8_t *)text + key.start, key.end - key.start,
+                                                 &out_of_memory);
     if (decoded == NULL) {
-        return -1;
+        return out_of_memory ? JSON_SPAN_KEY_OUT_OF_MEMORY : JSON_SPAN_KEY_UNDECODABLE;
     }
     const char *decoded_name = cJSON_GetStringValue(decoded);
     int same = decoded_name != NULL && strcmp(decoded_name, name) == 0;

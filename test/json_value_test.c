@@ -8,7 +8,7 @@
 #include "json_value.h"
 
 static cJSON *parsed(const char *text) {
-    return spisor_parse_json((const uint8_t *)text, strlen(text));
+    return spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
 }
 
 static void every_json_kind_becomes_its_node(void) {

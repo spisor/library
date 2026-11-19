@@ -41,7 +41,10 @@ void json_members_start(json_members *walk, const char *text, size_t length, jso
 /** 1 with the next member, 0 past the last one, -1 when the text is malformed. */
 int json_members_next(json_members *walk, json_member *member);
 
-/** Whether the key token at key, quotes included, decodes to name; -1 when it cannot be decoded. */
+#define JSON_SPAN_KEY_UNDECODABLE (-1)
+#define JSON_SPAN_KEY_OUT_OF_MEMORY (-2)
+
+/** Whether the key token at key, quotes included, decodes to name, or why it could not be decoded. */
 int json_span_key_is(const char *text, json_span key, const char *name);
 
 #endif

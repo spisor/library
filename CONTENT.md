@@ -355,7 +355,7 @@ built only when this repository is the top-level project.
 
 ## What a call may rely on
 
-Every document is read through `spisor_parse_json`, which a library also uses for any JSON it
+Every document is read through `spisor_parse_json_reporting`, which a library also uses for any JSON it
 reads itself (a registry file, say) instead of calling cJSON directly. It reads a document as
 `JSON.parse` does:
 

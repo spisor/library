@@ -35,10 +35,11 @@ cJSON *spisor_vector_read(const char *path) {
         fprintf(stderr, "vector %s cannot be read\n", path);
         return NULL;
     }
-    vector = spisor_parse_json(bytes, length);
+    int out_of_memory = 0;
+    vector = spisor_parse_json_reporting(bytes, length, &out_of_memory);
     spisor_memory_release(bytes);
     if (vector == NULL) {
-        fprintf(stderr, "vector %s is not JSON\n", path);
+        fprintf(stderr, "vector %s %s\n", path, out_of_memory ? "ran out of memory parsing" : "is not JSON");
     }
     return vector;
 }

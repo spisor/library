@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include "catalog_check.h"
-#include "json_parse.h"
 #include "catalog_fold.h"
 #include "spisor/json_write.h"
 #include "catalog_text.h"
