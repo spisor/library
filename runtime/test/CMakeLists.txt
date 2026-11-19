@@ -64,6 +64,14 @@ target_compile_definitions(commands_test PRIVATE RUNTIME_PROBE_PATH="$<TARGET_FI
 add_dependencies(commands_test command_probe)
 if(WIN32)
     add_dependencies(commands_test runtime_launcher)
+    # It holds and moves away the runtime-launcher.exe beside it, so it gets a copy no other test copies shims from.
+    set(commands_test_directory ${CMAKE_BINARY_DIR}/bin/commands_test/$<CONFIG>)
+    set_target_properties(commands_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${commands_test_directory})
+    add_custom_command(OUTPUT ${commands_test_directory}/runtime-launcher.exe DEPENDS runtime_launcher
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:runtime_launcher>
+        ${commands_test_directory}/runtime-launcher.exe)
+    add_custom_target(commands_test_launcher DEPENDS ${commands_test_directory}/runtime-launcher.exe)
+    add_dependencies(commands_test commands_test_launcher)
 endif()
 runtime_test(lifecycle_test $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>)
 if(WIN32)
