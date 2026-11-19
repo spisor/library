@@ -241,7 +241,7 @@ static spisor_status agree(void *context, const runtime_identity_agree_argument 
     cJSON *found_refusal = NULL;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, AGREE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, AGREEMENT_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
         return runtime_refuse_shape(refusal, "identity's agree");
     }
     if (!runtime_identity_is_repo_id(argument->id)) {
@@ -265,7 +265,7 @@ static spisor_status also_at(void *context, const runtime_identity_also_at_argum
     cJSON *found_refusal = NULL;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ALSO_AT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, AGREEMENT_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
         return runtime_refuse_shape(refusal, "identity's also_at");
     }
     if (!runtime_identity_is_repo_id(argument->id)) {

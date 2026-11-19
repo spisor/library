@@ -310,7 +310,9 @@ static spisor_status apply(void *context, const runtime_updates_apply_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, APPLY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, APPLY_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, APPLY_ANSWER_SHAPE,
+                                         answer->plugin_count | answer->run_count | answer->next_count |
+                                         answer->rollback_count | answer->unrecorded_count)) {
         return runtime_refuse_shape(refusal, "updates' apply");
     }
     status = check_apply(argument, refusal);
@@ -391,7 +393,9 @@ static spisor_status check(void *context, const runtime_updates_check_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE,
+                                         answer->source_count | answer->fetched_count | answer->refused_count |
+                                         answer->removed_count)) {
         return runtime_refuse_shape(refusal, "updates' check");
     }
     status = check_check(argument, refusal);
@@ -432,7 +436,8 @@ static spisor_status rollback(void *context, const runtime_updates_rollback_argu
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ROLLBACK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ROLLBACK_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ROLLBACK_ANSWER_SHAPE,
+                                         answer->run_count | answer->next_count | answer->rollback_count)) {
         return runtime_refuse_shape(refusal, "updates' rollback");
     }
     target = (runtime_updates_target){argument->state, argument->cache, argument->host_id, NULL};
@@ -463,7 +468,7 @@ static spisor_status recorded(void *context, const runtime_updates_recorded_argu
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, RECORDED_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RECORDED_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RECORDED_ANSWER_SHAPE, answer->run_count)) {
         return runtime_refuse_shape(refusal, "updates' recorded");
     }
     target = (runtime_updates_target){argument->state, argument->cache, argument->host_id, NULL};
@@ -548,7 +553,8 @@ static spisor_status run(void *context, const runtime_updates_run_argument *argu
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, RUN_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RUN_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RUN_ANSWER_SHAPE,
+                                         answer->check_count | answer->application_count | answer->refused_count)) {
         return runtime_refuse_shape(refusal, "updates' run");
     }
     if (!runtime_is_place(argument->portable) || !runtime_is_place(argument->state) ||

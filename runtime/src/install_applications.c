@@ -66,10 +66,10 @@ static cJSON *states_of(const runtime_install_run *run, const cJSON *detections,
 }
 
 static const char *state_of(const cJSON *states, const char *id) {
-    for (const cJSON *row = states->child; row != NULL; row = row->next) {
-        const char *row_id = runtime_install_text(row, "id");
+    for (const cJSON *entry = states->child; entry != NULL; entry = entry->next) {
+        const char *row_id = runtime_install_text(cJSON_GetObjectItemCaseSensitive(entry, "row"), "id");
         if (row_id != NULL && strcmp(row_id, id) == 0) {
-            return runtime_install_text(row, "state");
+            return runtime_install_text(entry, "state");
         }
     }
     return NULL;
@@ -227,7 +227,7 @@ static cJSON *detected_origin(const char *id, const cJSON *detections) {
 static cJSON *settled_row(const char *id, const char *state, const cJSON *detections) {
     cJSON *row = row_head(id, state);
     if (row != NULL && strcmp(state, "detected") == 0 &&
-        !runtime_install_move_into(row, "origin", detected_origin(id, detections))) {
+        !runtime_add_owned(row, "origin", detected_origin(id, detections))) {
         cJSON_Delete(row);
         return NULL;
     }

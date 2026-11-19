@@ -80,7 +80,7 @@ static spisor_status read_hint(void *context, const runtime_boot_host_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, HINT_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, HINT_ANSWER_SHAPE, answer->library_count)) {
         return runtime_refuse_shape(refusal, "boot's read");
     }
     status = check_host(argument->cache, argument->host_id, NULL, refusal);
@@ -132,7 +132,7 @@ static spisor_status write_hint(void *context, const runtime_boot_write_argument
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, WRITE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, HINT_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, HINT_ANSWER_SHAPE, answer->library_count)) {
         return runtime_refuse_shape(refusal, "boot's write");
     }
     status = check_host(argument->cache, argument->host_id, argument->platform, refusal);
@@ -176,7 +176,7 @@ static spisor_status resolve_host(void *context, const runtime_boot_resolve_argu
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RESOLVE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RESOLVE_ANSWER_SHAPE, answer->argument_count)) {
         return runtime_refuse_shape(refusal, "boot's resolve");
     }
     status = check_host(argument->cache, argument->host_id, argument->platform, refusal);

@@ -10,6 +10,7 @@
 #include "catalog_answer.h"
 #include "file_times.h"
 #include "holders_lock.h"
+#include "json_service.h"
 #include "paths.h"
 #include "processes_holders.h"
 #include "run_records.h"
@@ -125,7 +126,7 @@ static cJSON *release_step(const void *context, const char *path, runtime_holder
     runtime_keep_live_holders(record, *holder);
     cJSON *answer = cJSON_CreateObject();
     if (answer != NULL &&
-        !runtime_catalog_attach(answer, "holders", runtime_processes_holders_array(record->holders, record->count))) {
+        !runtime_add_owned(answer, "holders", runtime_processes_holders_array(record->holders, record->count))) {
         cJSON_Delete(answer);
         answer = NULL;
     }

@@ -29,11 +29,4 @@ cJSON *runtime_ui_plan(const cJSON *descriptions, const cJSON *entry, const cJSO
  */
 cJSON *runtime_ui_render(const cJSON *descriptions, const cJSON *entry, const cJSON *answers, cJSON **refusal);
 
-/**
- * ui's plugin_list: installed, detected and available, as lists' plugins takes them, answering the host's own
- * Plugins screen { kind: "host", title, nodes }: one ready table of the three-state list.
- */
-cJSON *runtime_ui_plugin_list(const cJSON *installed, const cJSON *detected, const cJSON *available,
-                              cJSON **refusal);
-
 #endif

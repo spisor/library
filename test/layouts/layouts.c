@@ -1663,6 +1663,18 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_plugin_list_argument, detected);
     FIELD(runtime_ui_plugin_list_argument, available);
     SIZE(runtime_ui_plugin_list_argument);
+    FIELD(runtime_ui_plugin_row, id);
+    FIELD(runtime_ui_plugin_row, state);
+    FIELD(runtime_ui_plugin_row, unavailable);
+    FIELD(runtime_ui_plugin_row, install);
+    FIELD(runtime_ui_plugin_row, row);
+    SIZE(runtime_ui_plugin_row);
+    FIELD(runtime_ui_plugin_list_answer, size);
+    FIELD(runtime_ui_plugin_list_answer, title);
+    FIELD(runtime_ui_plugin_list_answer, rows);
+    FIELD(runtime_ui_plugin_list_answer, row_count);
+    FIELD(runtime_ui_plugin_list_answer, storage);
+    SIZE(runtime_ui_plugin_list_answer);
     FIELD(runtime_ui_definition, size);
     FIELD(runtime_ui_definition, context);
     FIELD(runtime_ui_definition, navigation);
@@ -1674,6 +1686,7 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_definition, release_settings_view_answer);
     FIELD(runtime_ui_definition, release_plan_answer);
     FIELD(runtime_ui_definition, release_screen);
+    FIELD(runtime_ui_definition, release_plugin_list_answer);
     FIELD(runtime_ui_definition, release_refusal);
     SIZE(runtime_ui_definition);
 }

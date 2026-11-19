@@ -1,12 +1,15 @@
 #ifndef RUNTIME_LISTS_H
 #define RUNTIME_LISTS_H
 
+#include <stdint.h>
+
 #include "cJSON.h"
 
 /**
  * One list of three groups of rows, each an object with an id: installed, then detected, then available,
- * each group sorted by id and each row given its group's state. An id appears once, in the strongest
- * group that holds it, carrying the members of its first occurrence there. NULL when memory runs out.
+ * each group sorted by id, each entry {state, row}: its group's state and a copy of the row as the caller gave it. An
+ * id appears once, in the strongest group that holds it, its row its first occurrence there. NULL when memory runs
+ * out.
  */
 cJSON *runtime_three_state_list(const cJSON *installed, const cJSON *detected, const cJSON *available);
 
@@ -18,9 +21,12 @@ cJSON *runtime_three_state_list(const cJSON *installed, const cJSON *detected, c
 cJSON *runtime_lists_plugins(const cJSON *installed, const cJSON *detected, const cJSON *available,
                              cJSON **refusal);
 
+/** The runtime_list_state a three-state list's state names, 0 for none. */
+uint32_t runtime_list_state_of(const char *name);
+
 /**
- * lists' applications over the catalog's items, the state place, an environment and detections: a list of rows
- * { id, label, state }, one for the application of every host item: installed when a registered
+ * lists' applications over the catalog's items, the state place, an environment and detections: a three-state list
+ * of rows { id, label }, one for the application of every host item: installed when a registered
  * host carries its id, detected when its binary is on the PATH of environment or a detection
  * { method, item, package, answer: { installed: true } } names it, available otherwise. NULL with *refusal set, or
  * with it NULL when memory runs out.

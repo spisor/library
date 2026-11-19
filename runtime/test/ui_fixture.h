@@ -58,13 +58,20 @@ static inline cJSON *successful(ui_operation operation, cJSON *argument, const c
 }
 
 /** Fails unless the answer, whose tree it frees, is `status` with a refusal whose message holds `fragment`. */
+/** Whether a fix still speaks the retired JSON boundary: a JSON shape, an operation as ui.<name>, or "send". */
+static inline int speaks_json(const char *fix) {
+    return strchr(fix, '{') != NULL || strstr(fix, "ui.") != NULL || strstr(fix, "send ") != NULL;
+}
+
 static inline void expect_ui_refusal(catalog_answer answer, spisor_status status, const char *fragment,
                                      const char *label) {
     const char *message = text_at(answer.tree, "message");
-    if (answer.status != (int32_t)status || message == NULL || text_at(answer.tree, "fix") == NULL ||
+    const char *fix = text_at(answer.tree, "fix");
+    if (answer.status != (int32_t)status || message == NULL || fix == NULL || speaks_json(fix) ||
         strstr(message, fragment) == NULL) {
-        fprintf(stderr, "%s: expected status %d refusing with \"%s\", got status %d and \"%s\"\n", label,
-                (int)status, fragment, (int)answer.status, message == NULL ? "(none)" : message);
+        fprintf(stderr, "%s: expected status %d refusing with \"%s\", got status %d and \"%s\", fixed by \"%s\"\n",
+                label, (int)status, fragment, (int)answer.status, message == NULL ? "(none)" : message,
+                fix == NULL ? "(none)" : fix);
         check_failures++;
     }
     cJSON_Delete(answer.tree);

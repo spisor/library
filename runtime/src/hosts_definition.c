@@ -136,15 +136,6 @@ static int add_commands(cJSON *identity, const runtime_hosts_register_argument *
     return built;
 }
 
-/** Moves `item` into `object` under `name`; 0, `item` deleted, when memory runs out. */
-static int move_into(cJSON *object, const char *name, cJSON *item) {
-    if (object == NULL || item == NULL || !cJSON_AddItemToObject(object, name, item)) {
-        cJSON_Delete(item);
-        return 0;
-    }
-    return 1;
-}
-
 /** {places: {state}, identity, provenance, environment}, `*call` NULL unless the answer is OK. */
 static spisor_status register_call(const runtime_hosts_register_argument *argument, cJSON **call,
                                    spisor_refusal *refusal) {
@@ -160,8 +151,8 @@ static spisor_status register_call(const runtime_hosts_register_argument *argume
     *call = places_call(argument->state, NULL);
     built = *call != NULL && add_commands(identity, argument) &&
             add_environment(*call, argument->environment, argument->environment_count);
-    built = move_into(built ? *call : NULL, "provenance", provenance) && built;
-    built = move_into(built ? *call : NULL, "identity", identity) && built;
+    built = runtime_add_owned(built ? *call : NULL, "provenance", provenance) && built;
+    built = runtime_add_owned(built ? *call : NULL, "identity", identity) && built;
     if (!built) {
         cJSON_Delete(*call);
         *call = NULL;
@@ -178,7 +169,8 @@ static spisor_status register_host(void *context, const runtime_hosts_register_a
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REGISTER_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_ANSWER_SHAPE,
+                                         answer->command_count | answer->refused_command_count)) {
         return runtime_refuse_shape(refusal, "hosts' register_host");
     }
     status = check_register(argument, refusal);
@@ -235,7 +227,7 @@ static spisor_status remove_host(void *context, const runtime_registry_forget_ar
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REMOVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REMOVE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REMOVE_ANSWER_SHAPE, answer->drifted_count)) {
         return runtime_refuse_shape(refusal, "hosts' remove");
     }
     status = check_remove(argument, refusal);
@@ -285,7 +277,7 @@ static cJSON *origin_json(const runtime_install_origin *origin, spisor_status *s
     built = *status == SPISOR_OK && json != NULL && add_text(json, "method", origin->package.method) &&
             add_text(json, "package", origin->package.name) && add_text(json, "version", origin->version);
     if (options != NULL) {
-        built = move_into(built ? json : NULL, "options", options) && built;
+        built = runtime_add_owned(built ? json : NULL, "options", options) && built;
     }
     if (*status == SPISOR_OK && !built) {
         *status = SPISOR_OUT_OF_MEMORY;
@@ -304,7 +296,7 @@ static spisor_status provenance_call(const runtime_hosts_provenance_argument *ar
     }
     *call = cJSON_CreateObject();
     application = *call == NULL ? NULL : cJSON_AddObjectToObject(*call, "application");
-    built = move_into(application != NULL ? *call : NULL, "origin", origin) &&
+    built = runtime_add_owned(application != NULL ? *call : NULL, "origin", origin) &&
             add_text(application, "binary", argument->binary) && add_text(*call, "home", argument->home) &&
             add_environment(*call, argument->environment, argument->environment_count) &&
             (argument->now == 0 || cJSON_AddNumberToObject(*call, "now", argument->now) != NULL);

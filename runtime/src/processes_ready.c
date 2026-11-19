@@ -13,6 +13,7 @@
 #include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "file_times.h"
+#include "json_service.h"
 #include "node_json_file.h"
 #include "processes_holders.h"
 #include "spisor/status.h"
@@ -59,7 +60,7 @@ static int add_environment(cJSON *record, const runtime_processes_publication *p
     }
     cJSON *environment = publication->environment == NULL ? cJSON_CreateObject()
                                                           : cJSON_Duplicate(publication->environment, 1);
-    return runtime_catalog_attach(record, "environment", environment);
+    return runtime_add_owned(record, "environment", environment);
 }
 
 static cJSON *record_of(const runtime_processes_publication *publication) {
@@ -122,7 +123,7 @@ static cJSON *environment_answer(const cJSON *record) {
     const cJSON *environment = cJSON_GetObjectItemCaseSensitive(record, "environment");
     cJSON *answer = cJSON_CreateObject();
     cJSON *copy = runtime_processes_is_environment(environment) ? cJSON_Duplicate(environment, 1) : cJSON_CreateObject();
-    if (!runtime_catalog_attach(answer, "environment", copy)) {
+    if (!runtime_add_owned(answer, "environment", copy)) {
         cJSON_Delete(answer);
         return NULL;
     }

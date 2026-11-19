@@ -49,7 +49,7 @@ static int open_view(const cJSON *description, const cJSON *entry, ui_screen *sc
     screen->view_id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "id"));
     if (screen->view_id == NULL) {
         return refuse(refusal, runtime_refusal("the screen names no view to open",
-                                               "send the navigation entry {\"plugin\", \"kind\": \"view\", \"id\": \"<view id>\"}"));
+                                               "pass a screen of kind RUNTIME_UI_KIND_VIEW whose id names the view"));
     }
     screen->view = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(description, "views"), screen->view_id);
     if (!is_view(screen->view)) {
@@ -79,7 +79,8 @@ static int open_entry(const cJSON *description, const cJSON *entry, ui_screen *s
         return refuse(refusal, runtime_ui_refusal("run the action through the layer's engine; only a view or settings entry opens a screen",
                                                   screen->plugin, " action ", id == NULL ? "" : id, " is run, not rendered", NULL));
     }
-    return refuse(refusal, runtime_ui_refusal("send a navigation entry whose kind is view or settings", "the screen's kind ",
+    return refuse(refusal, runtime_ui_refusal("pass a screen of kind RUNTIME_UI_KIND_VIEW or RUNTIME_UI_KIND_SETTINGS",
+                                              "the screen's kind ",
                                               screen->kind, " is none of view or settings", NULL));
 }
 

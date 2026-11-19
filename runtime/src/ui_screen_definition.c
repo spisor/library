@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 
 #include "answer_storage.h"
@@ -57,73 +58,108 @@ static int are_issues(const runtime_ui_issue *issues, size_t count) {
     return 1;
 }
 
-static int are_checked(const runtime_ui_checked *checked, size_t count) {
+/** The first reply that breaks a rule, `index` meaningless when `has_index` is 0, and the `rule` it breaks. */
+typedef struct reply_fault {
+    int has_index;
+    size_t index;
+    const char *rule;
+} reply_fault;
+
+/** The rule an answered reply's checked breaks, NULL for none. */
+static const char *checked_fault(const runtime_ui_checked *checked, size_t count) {
     if (!is_array_of(checked, count)) {
-        return 0;
+        return "its checked is NULL while checked_count is not zero";
     }
     for (size_t index = 0; index < count; index++) {
-        if (!is_check(&checked[index].check) || !are_issues(checked[index].issues, checked[index].issue_count)) {
-            return 0;
+        if (!is_check(&checked[index].check)) {
+            return "a check names no component, has_members outside 0 and 1, or a NULL member";
+        }
+        if (!are_issues(checked[index].issues, checked[index].issue_count)) {
+            return "an issue carries no message or fix, or issues is NULL while issue_count is not zero";
         }
     }
-    return 1;
+    return NULL;
 }
 
 static int is_target(const runtime_ui_target *target) {
     return target->plugin != NULL && target->service != NULL && target->method != NULL && target->arguments != NULL;
 }
 
-static int is_reply(const runtime_ui_reply *reply) {
+/** The rule a reply breaks, NULL for none. */
+static const char *rule_broken_by(const runtime_ui_reply *reply) {
     if (!is_target(&reply->target)) {
-        return 0;
+        return "its target lacks a plugin, service, method or arguments";
     }
     switch (reply->outcome) {
     case RUNTIME_UI_OUTCOME_ANSWERED:
-        return reply->answer != NULL && are_checked(reply->checked, reply->checked_count);
+        return reply->answer == NULL ? "an answered reply carries no answer"
+                                     : checked_fault(reply->checked, reply->checked_count);
     case RUNTIME_UI_OUTCOME_FAILED:
-        return reply->error.detail != NULL && reply->error.fix != NULL;
+        return reply->error.detail != NULL && reply->error.fix != NULL ? NULL
+                                                                       : "a failed reply's error lacks a detail or fix";
     case RUNTIME_UI_OUTCOME_UNAVAILABLE:
-        return 1;
+        return NULL;
     default:
-        return 0;
+        return "its outcome is none of ANSWERED, FAILED and UNAVAILABLE";
     }
 }
 
-static int are_replies(const runtime_ui_reply *replies, size_t count) {
+static reply_fault first_reply_fault(const runtime_ui_reply *replies, size_t count) {
+    reply_fault fault = {0, 0, NULL};
     if (!is_array_of(replies, count)) {
-        return 0;
+        fault.rule = "replies is NULL while reply_count is not zero";
+        return fault;
     }
-    for (size_t index = 0; index < count; index++) {
-        if (!is_reply(&replies[index])) {
-            return 0;
-        }
+    for (size_t index = 0; index < count && fault.rule == NULL; index++) {
+        fault.rule = rule_broken_by(&replies[index]);
+        fault.index = index;
+        fault.has_index = fault.rule != NULL;
     }
-    return 1;
+    return fault;
+}
+
+static spisor_status refuse_reply(spisor_refusal *refusal, reply_fault fault) {
+    char detail[256];
+    if (fault.has_index) {
+        snprintf(detail, sizeof detail, "the argument carries no usable replies: reply %zu: %s", fault.index,
+                 fault.rule);
+    } else {
+        snprintf(detail, sizeof detail, "the argument carries no usable replies: %s", fault.rule);
+    }
+    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, "pass each reply as runtime_ui_reply describes it");
 }
 
 static int is_screen(const runtime_ui_entry *screen) {
     return screen != NULL && screen->plugin != NULL && runtime_ui_kind_name(screen->kind) != NULL;
 }
 
-/** The value checks of every reply, each walking its tree, after every check that allocates nothing has passed. */
-static spisor_status check_reply_values(const runtime_ui_reply *replies, size_t count) {
+/**
+ * The value checks of every reply, each walking its tree, after every check that allocates nothing has passed; a
+ * MALFORMED one names its reply in `fault`.
+ */
+static spisor_status check_reply_values(const runtime_ui_reply *replies, size_t count, reply_fault *fault) {
     spisor_status status = SPISOR_OK;
     for (size_t index = 0; status == SPISOR_OK && index < count; index++) {
+        fault->index = index;
+        fault->rule = "its arguments are not a well-formed record";
         status = runtime_ui_check_value(replies[index].target.arguments, SPISOR_VALUE_RECORD);
         if (status == SPISOR_OK && replies[index].outcome == RUNTIME_UI_OUTCOME_ANSWERED) {
+            fault->rule = "its answer is not a well-formed value";
             status = runtime_ui_check_value(replies[index].answer, SPISOR_VALUE_NONE);
         }
     }
+    fault->has_index = status == SPISOR_MALFORMED;
     return status;
 }
 
 spisor_status runtime_ui_check_screen_argument(const runtime_ui_screen_argument *argument, spisor_refusal *refusal) {
     spisor_status status;
+    reply_fault fault = first_reply_fault(argument->replies, argument->reply_count);
     if (!is_screen(argument->screen)) {
         return runtime_refuse_member(refusal, "screen", RUNTIME_UI_HEADER);
     }
-    if (!are_replies(argument->replies, argument->reply_count)) {
-        return runtime_refuse_member(refusal, "replies", RUNTIME_UI_HEADER);
+    if (fault.rule != NULL) {
+        return refuse_reply(refusal, fault);
     }
     if (argument->descriptions == NULL) {
         return runtime_refuse_member(refusal, "descriptions", RUNTIME_UI_HEADER);
@@ -135,8 +171,8 @@ spisor_status runtime_ui_check_screen_argument(const runtime_ui_screen_argument 
     if (status == SPISOR_MALFORMED) {
         return runtime_refuse_member(refusal, "descriptions", RUNTIME_UI_HEADER);
     }
-    status = status == SPISOR_OK ? check_reply_values(argument->replies, argument->reply_count) : status;
-    return status == SPISOR_MALFORMED ? runtime_refuse_member(refusal, "replies", RUNTIME_UI_HEADER) : status;
+    status = status == SPISOR_OK ? check_reply_values(argument->replies, argument->reply_count, &fault) : status;
+    return status == SPISOR_MALFORMED ? refuse_reply(refusal, fault) : status;
 }
 
 static int add_texts(cJSON *object, const char *name, const char *const *texts, size_t count) {

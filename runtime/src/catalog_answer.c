@@ -18,13 +18,3 @@ const char *runtime_catalog_text_member(const cJSON *argument, const char *name)
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
-int runtime_catalog_attach(cJSON *object, const char *name, cJSON *item) {
-    if (item == NULL) {
-        return 0;
-    }
-    if (object == NULL || !cJSON_AddItemToObject(object, name, item)) {
-        cJSON_Delete(item);
-        return 0;
-    }
-    return 1;
-}

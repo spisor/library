@@ -60,7 +60,8 @@ spisor_status runtime_refuse_json(spisor_refusal *refusal, cJSON *json_refusal) 
 
 spisor_status runtime_refuse_shape(spisor_refusal *refusal, const char *operation) {
     char detail[160];
-    snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape", operation);
+    snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape, or the "
+             "answer is not empty", operation);
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
                              "pass the argument and an empty answer, each with its size set as SPISOR_INIT sets it");
 }
@@ -172,7 +173,7 @@ spisor_status runtime_refuse_member(spisor_refusal *refusal, const char *member,
     char detail[160];
     char fix[200];
     snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
-    snprintf(fix, sizeof fix, "send %s as %s describes it", member, header);
+    snprintf(fix, sizeof fix, "pass %s as %s describes it", member, header);
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
@@ -210,14 +211,14 @@ spisor_status runtime_refuse_place(spisor_refusal *refusal, const char *place) {
     char detail[128];
     char fix[192];
     snprintf(detail, sizeof detail, "the %s place is empty or not an absolute directory", place);
-    snprintf(fix, sizeof fix, "send %s as places' resolve answers it, an absolute directory", place);
+    snprintf(fix, sizeof fix, "pass %s as places' resolve answers it, an absolute directory", place);
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
 spisor_status runtime_refuse_environment(spisor_refusal *refusal) {
     return runtime_refuse_as(refusal, SPISOR_MALFORMED,
                              "an environment variable has no name or no value, a name holding =, or a name given twice",
-                             "send every variable once with its name and its value, and environment_count no larger "
+                             "pass every variable once with its name and its value, and environment_count no larger "
                              "than the variables sent");
 }
 

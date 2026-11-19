@@ -5,6 +5,7 @@
 #include "allocation.h"
 #include "catalog_answer.h"
 #include "catalog_merge.h"
+#include "json_service.h"
 #include "spisor/json_write.h"
 #include "catalog_source.h"
 
@@ -65,7 +66,7 @@ cJSON *runtime_catalog_sources(const cJSON *settings) {
 static int add_shadowed(cJSON *shadowed, const char *id, const runtime_catalog_location *source) {
     cJSON *entry = cJSON_CreateObject();
     int added = entry != NULL && cJSON_AddStringToObject(entry, "id", id) != NULL &&
-                runtime_catalog_attach(entry, "source", runtime_catalog_source_json(source));
+                runtime_add_owned(entry, "source", runtime_catalog_source_json(source));
     if (!added || !cJSON_AddItemToArray(shadowed, entry)) {
         cJSON_Delete(entry);
         return 0;
@@ -153,8 +154,8 @@ static cJSON *merge(const cJSON *catalogs, cJSON **refusal) {
     cJSON *shadowed = cJSON_CreateArray();
     cJSON *catalog = shadowed == NULL ? NULL : runtime_catalog_merge_readings(readings, count, shadowed);
     spisor_memory_release(readings);
-    int built = runtime_catalog_attach(result, "catalog", catalog);
-    if (!(built && runtime_catalog_attach(result, "shadowed", shadowed))) {
+    int built = runtime_add_owned(result, "catalog", catalog);
+    if (!(built && runtime_add_owned(result, "shadowed", shadowed))) {
         if (!built) {
             cJSON_Delete(shadowed);
         }

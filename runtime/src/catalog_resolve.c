@@ -3,6 +3,7 @@
 #include "catalog.h"
 #include "catalog_answer.h"
 #include "catalog_semver.h"
+#include "json_service.h"
 
 static const char *const KINDS[] = {"plugin", "host", "library"};
 
@@ -58,7 +59,7 @@ static int set_run(cJSON *run, const char *id, const char *version) {
     if (cJSON_GetObjectItemCaseSensitive(run, id) != NULL) {
         return cJSON_ReplaceItemInObjectCaseSensitive(run, id, value);
     }
-    return runtime_catalog_attach(run, id, value);
+    return runtime_add_owned(run, id, value);
 }
 
 static int add_fetch(cJSON *fetch, const char *id, const char *version) {

@@ -7,6 +7,7 @@
 #include "cache_refusal.h"
 #include "catalog_answer.h"
 #include "host_references.h"
+#include "json_service.h"
 #include "registry.h"
 #include "updates.h"
 #include "updates_target.h"
@@ -57,9 +58,9 @@ static int swap(runtime_host_references *references, const char *item, const cha
 
 static cJSON *rolled_answer(const runtime_host_references *references) {
     cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && runtime_catalog_attach(answer, "run", cJSON_Duplicate(references->run, 1)) &&
-                runtime_catalog_attach(answer, "next", cJSON_Duplicate(references->next, 1)) &&
-                runtime_catalog_attach(answer, "rollback", cJSON_Duplicate(references->rollback, 1));
+    int built = answer != NULL && runtime_add_owned(answer, "run", cJSON_Duplicate(references->run, 1)) &&
+                runtime_add_owned(answer, "next", cJSON_Duplicate(references->next, 1)) &&
+                runtime_add_owned(answer, "rollback", cJSON_Duplicate(references->rollback, 1));
     if (!built) {
         cJSON_Delete(answer);
         return NULL;

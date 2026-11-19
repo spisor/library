@@ -107,7 +107,7 @@ static spisor_status install(void *context, const runtime_cache_install_argument
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, INSTALL_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, INSTALL_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, INSTALL_ANSWER_SHAPE, answer->fetched_count | answer->cached_count)) {
         return runtime_refuse_shape(refusal, "cache's install");
     }
     if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->id) || !runtime_is_text(argument->version) ||
@@ -174,7 +174,8 @@ static spisor_status installed(void *context, const runtime_cache_place_argument
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, INSTALLED_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, INSTALLED_ANSWER_SHAPE,
+                                         answer->bundle_count | answer->library_count)) {
         return runtime_refuse_shape(refusal, "cache's installed");
     }
     if (!runtime_is_text(argument->cache)) {
@@ -267,7 +268,7 @@ static spisor_status damaged(void *context, const runtime_cache_place_argument *
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLACE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, DAMAGED_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, DAMAGED_ANSWER_SHAPE, answer->damaged_count)) {
         return runtime_refuse_shape(refusal, "cache's damaged");
     }
     if (!runtime_is_text(argument->cache)) {
@@ -356,7 +357,7 @@ static spisor_status locate(void *context, const runtime_cache_locate_argument *
     cJSON *plugins;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LOCATE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LOCATE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LOCATE_ANSWER_SHAPE, answer->located_count | answer->problem_count)) {
         return runtime_refuse_shape(refusal, "cache's locate");
     }
     if (!runtime_is_text(argument->cache)) {
@@ -399,7 +400,7 @@ static spisor_status sweep(void *context, const runtime_cache_sweep_argument *ar
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SWEEP_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SWEEP_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SWEEP_ANSWER_SHAPE, answer->removed_count)) {
         return runtime_refuse_shape(refusal, "cache's sweep");
     }
     if (!runtime_is_text(argument->cache) || !runtime_is_text(argument->state)) {
