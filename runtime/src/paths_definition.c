@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "definition_support.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "paths.h"
 #include "segment.h"
 

@@ -9,7 +9,7 @@
 #include "cache_call.h"
 #include "catalog_call.h"
 #include "check.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/catalog.h"
 #include "spisor/status.h"
 #include "spisor/value.h"

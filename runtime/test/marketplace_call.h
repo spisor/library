@@ -7,7 +7,7 @@
 #include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "check.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/marketplace.h"
 #include "vector_reader.h"
 

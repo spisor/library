@@ -6,7 +6,7 @@
 
 #include "cJSON.h"
 #include "check.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/registry.h"
 #include "spisor/status.h"
 #include "spisor/value.h"

@@ -10,7 +10,7 @@
 #include "identity.h"
 #include "identity_also_at.h"
 #include "identity_resolve.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 
 #define ID_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_id_argument, id)
 #define RESOLVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_resolve_argument, api_base)

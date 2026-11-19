@@ -8,7 +8,7 @@
 
 #include "allocation.h"
 #include "allocation_failure.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/install.h"
 #include "timestamp_text.h"
 

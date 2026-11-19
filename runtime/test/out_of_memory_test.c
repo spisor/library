@@ -18,7 +18,7 @@
 #include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/cache.h"
 #include "runtime/catalog.h"
 #include "runtime/changes.h"

@@ -6,7 +6,7 @@
 
 #include "allocation.h"
 #include "answer_storage.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "paths.h"
 #include "spisor/path.h"
 

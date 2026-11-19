@@ -11,7 +11,7 @@
 #include "hosts_start.h"
 #include "install_definition.h"
 #include "json_service.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "registry_definition.h"
 #include "updates_definition.h"
 

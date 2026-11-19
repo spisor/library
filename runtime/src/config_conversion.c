@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #include "definition_support.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 
 #define CHANGE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_settings_change, layer)
 

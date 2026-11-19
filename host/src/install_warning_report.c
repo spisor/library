@@ -8,7 +8,7 @@
 #include "host_output.h"
 #include "host_service.h"
 #include "install_warnings.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/cache.h"
 #include "runtime/install.h"
 #include "spisor/file.h"

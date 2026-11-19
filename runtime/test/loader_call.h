@@ -10,7 +10,7 @@
 #include "catalog_service_call.h"
 #include "check.h"
 #include "definition_support.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/loader.h"
 #include "spisor/status.h"
 

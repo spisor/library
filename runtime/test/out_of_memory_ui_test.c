@@ -7,7 +7,7 @@
 #include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "runtime/ui.h"
 
 #define WRONG_RUN ((spisor_status)99)

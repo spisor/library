@@ -6,7 +6,7 @@
 #include "definition_support.h"
 #include "changes_definition.h"
 #include "json_service.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "paths.h"
 
 #define CHANGE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_change, shell)

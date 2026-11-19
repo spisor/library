@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "allocation.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 
 static const char *const START_RUNTIMES[] = {NULL, "javascript", "jvm", "native"};
 static const char *const SOURCE_OUTCOMES[] = {NULL, "skipped", "unchanged", "changed", "failed"};

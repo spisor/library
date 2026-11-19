@@ -6,7 +6,7 @@
 
 #include "host_definition.h"
 #include "host_output.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/install.h"
 #include "runtime/loader.h"
 #include "runtime/processes.h"

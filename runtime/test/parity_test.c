@@ -11,7 +11,7 @@
 
 #include "cJSON.h"
 #include "check.h"
-#include "json_allocation.h"
+#include "spisor/json_allocation.h"
 #include "parity_files.h"
 #include "parity_json.h"
 #include "runtime/config.h"

@@ -15,7 +15,7 @@
 #include "identity_resolve.h"
 #include "json_service.h"
 #include "host_definition.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "runtime/marketplace.h"
 #include "marketplace_lookup.h"
 #include "paths.h"

@@ -12,7 +12,7 @@
 
 #include "definition_support.h"
 #include "hosts_lock.h"
-#include "json_value.h"
+#include "spisor/json_value.h"
 #include "json_service.h"
 #include "merge.h"
 #include "paths.h"
