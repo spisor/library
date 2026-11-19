@@ -1,8 +1,237 @@
 {
-  "$schema": "https://weivel.github.io/model/library.schema.json",
-  "id": "runtime",
-  "version": "0.1.0",
-  "binary": "runtime",
+  "importName": "runtime",
+  "version": "0.2.0",
   "release": "runtime_release",
-  "services": []
+  "services": [
+    {
+      "id": "paths",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_paths_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "identity",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_identity_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "marketplace",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_marketplace_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "places",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_places_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_config_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_settings_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "log",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_log_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "secrets",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_secrets_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "registry",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_registry_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "changes",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_changes_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "commands",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_commands_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "install",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_install_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "fetch",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_fetch_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "catalog",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_catalog_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "cache",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_cache_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "updates",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_updates_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "boot",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_boot_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "processes",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_processes_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "hosts",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_hosts_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "loader",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_loader_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "detect",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_detect_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "lists",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_lists_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_ui_definition_of",
+          "kind": "definition"
+        }
+      ]
+    }
+  ]
 }
