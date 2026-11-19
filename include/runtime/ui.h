@@ -146,7 +146,10 @@ typedef struct runtime_ui_checked {
     size_t issue_count;
 } runtime_ui_checked;
 
-/** Why a node is in error: its `detail`, its `fix` and the `path` at fault, NULL for none. Embedded, so no size. */
+/**
+ * Why a node or a failed reply is in error: its `detail`, its `fix` and the `path` at fault, NULL for none. A node
+ * points to one and a reply embeds one, so it has no size.
+ */
 typedef struct runtime_ui_error {
     const char *detail;
     const char *fix;

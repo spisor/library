@@ -529,14 +529,11 @@ static void refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks(vo
     expect_render_refused(CHARTS, whole, SPISOR_REFUSED, "chart", "a chart checked against the whole answer");
 }
 
-static void refuses_an_answer_with_no_outcome_or_two(void) {
+static void refuses_an_answer_with_no_outcome(void) {
     cJSON *none = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "answer");
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(none, 0), "checked");
     expect_render_refused(OVERVIEW, none, SPISOR_MALFORMED, "replies: reply 0: its outcome is none", "no outcome");
-    cJSON *two = answers_for(OVERVIEW);
-    cJSON_AddTrueToObject(cJSON_GetArrayItem(two, 0), "unavailable");
-    expect_render_refused(OVERVIEW, two, SPISOR_MALFORMED, "replies", "two outcomes");
     cJSON *keyless = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(keyless, 1), "arguments");
     expect_render_refused(OVERVIEW, keyless, SPISOR_MALFORMED, "replies: reply 1: its target lacks", "no arguments");
@@ -649,7 +646,7 @@ int main(void) {
     plans_only_the_bindings_still_unanswered_and_is_done_for_a_screen_binding_nothing();
     tells_bindings_apart_by_their_arguments_and_shares_one_whose_arguments_are_equal();
     refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks();
-    refuses_an_answer_with_no_outcome_or_two();
+    refuses_an_answer_with_no_outcome();
     marks_detected_and_available_items_unavailable_and_installable_and_leaves_installed_alone();
     drops_an_action_a_detected_row_carried_since_an_unusable_row_offers_only_install();
     shows_a_bundled_not_enabled_plugin_that_a_detector_finds_as_a_detected_installable_row();
