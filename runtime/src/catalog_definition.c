@@ -150,7 +150,7 @@ static spisor_status fill_sources(const cJSON *answered, void *filled) {
 
 static spisor_status sources(void *context, const runtime_catalog_sources_argument *argument,
                              runtime_catalog_sources_answer *answer, spisor_refusal *refusal) {
-    cJSON *settings = NULL;
+    cJSON *call;
     cJSON *answered;
     spisor_status status;
     (void)context;
@@ -158,12 +158,15 @@ static spisor_status sources(void *context, const runtime_catalog_sources_argume
         !RUNTIME_IS_EMPTY_ANSWER(answer, SOURCES_ANSWER_SHAPE)) {
         return runtime_refuse_shape(refusal, "catalog's sources");
     }
-    status = runtime_value_json(argument->settings, SPISOR_VALUE_RECORD, &settings);
+    call = cJSON_CreateObject();
+    status = call == NULL ? SPISOR_OUT_OF_MEMORY
+                          : runtime_add_value_json(call, "settings", argument->settings, SPISOR_VALUE_RECORD);
     if (status != SPISOR_OK) {
+        cJSON_Delete(call);
         return status == SPISOR_MALFORMED ? runtime_refuse_member(refusal, "settings record", HEADER) : status;
     }
-    answered = runtime_catalog_sources(settings);
-    cJSON_Delete(settings);
+    answered = runtime_catalog_sources(cJSON_GetObjectItemCaseSensitive(call, "settings"));
+    cJSON_Delete(call);
     return runtime_serve_answered(answered, NULL, fill_sources, answer, SOURCES_ANSWER_SHAPE, refusal);
 }
 

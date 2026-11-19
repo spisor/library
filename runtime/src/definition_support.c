@@ -10,13 +10,6 @@
 #include "paths.h"
 #include "spisor/path.h"
 
-spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *call, runtime_answer_filler fill,
-                                      void *answer, size_t answer_shape, spisor_refusal *refusal) {
-    cJSON *operation_refusal = NULL;
-    cJSON *answered = runtime_call_operation(operation, call, &operation_refusal);
-    return runtime_serve_answered(answered, operation_refusal, fill, answer, answer_shape, refusal);
-}
-
 spisor_status runtime_serve_answered(cJSON *answered, cJSON *json_refusal, runtime_answer_filler fill, void *answer,
                                      size_t answer_shape, spisor_refusal *refusal) {
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, json_refusal) : fill(answered, answer);
@@ -27,7 +20,7 @@ spisor_status runtime_serve_answered(cJSON *answered, cJSON *json_refusal, runti
     return status;
 }
 
-spisor_status runtime_value_json(const spisor_value *value, spisor_value_kind kind, cJSON **json) {
+static spisor_status value_json(const spisor_value *value, spisor_value_kind kind, cJSON **json) {
     spisor_status status = value == NULL ? SPISOR_MALFORMED : spisor_value_check(value);
     *json = NULL;
     if (status == SPISOR_OK && value->kind != (uint32_t)kind) {
@@ -38,7 +31,7 @@ spisor_status runtime_value_json(const spisor_value *value, spisor_value_kind ki
 
 spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor_value *value, spisor_value_kind kind) {
     cJSON *json = NULL;
-    spisor_status status = runtime_value_json(value, kind, &json);
+    spisor_status status = value_json(value, kind, &json);
     if (status == SPISOR_OK && !cJSON_AddItemToObject(call, name, json)) {
         cJSON_Delete(json);
         status = SPISOR_OUT_OF_MEMORY;
