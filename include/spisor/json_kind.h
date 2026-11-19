@@ -10,10 +10,6 @@
 extern "C" {
 #endif
 
-#define SPISOR_STATUS_SUCCESS 0
-#define SPISOR_STATUS_FAILURE 1
-#define SPISOR_STATUS_OUT_OF_MEMORY 2
-
 /**
  * Reads one whole JSON document exactly as JSON.parse would, or answers NULL, with *out_of_memory set when memory
  * ran out rather than for the text. Refuses invalid UTF-8, anything after the value, and a string (key or value, at
@@ -31,9 +27,6 @@ extern "C" {
  * lookup and iteration over the tree sees what JavaScript sees.
  */
 cJSON *spisor_parse_json_reporting(const uint8_t *bytes, size_t length, int *out_of_memory);
-
-/** Frees a buffer this library wrote to out; a library's own release function calls it. */
-void spisor_release(uint8_t *buffer);
 
 #ifdef __cplusplus
 }

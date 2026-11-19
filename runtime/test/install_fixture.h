@@ -337,7 +337,7 @@ static inline catalog_answer install_with(const install_base *base, const char *
 }
 
 static inline cJSON *expect_report(catalog_answer answer, const char *label) {
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
+    if (answer.status != SPISOR_OK) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);
         fprintf(stderr, "%s: install refused: %s\n", label, printed == NULL ? "(nothing)" : printed);
         cJSON_free(printed);

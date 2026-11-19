@@ -76,8 +76,9 @@ build the same table and tests for another library.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
 function of kind `definition`, and a test keeps it complete against the headers; another loads the built
-`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. The binary exports
-its definitions and `runtime_release`, and nothing else, which `runtime_exports_only_definitions_test` holds.
+`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. It declares no
+`release`, since every definition releases its own answers, and the binary exports its definitions and nothing
+else, which `runtime_exports_only_definitions_test` holds.
 Each header documents its operations, what they take and answer, and every refusal; this file says what they
 do together. A translation of a header in another language is checked against the `layouts` test program,
 which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the

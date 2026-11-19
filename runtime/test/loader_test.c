@@ -47,7 +47,7 @@ static cJSON *issues_of(cJSON *standard) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "standard", standard);
     catalog_answer answer = loader_call(LOADER_CHECK, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON *issues = cJSON_DetachItemFromObject(answer.tree, "issues");
     cJSON_Delete(answer.tree);
     CHECK(cJSON_IsArray(issues));
@@ -243,7 +243,7 @@ static catalog_answer home_answer(const char *home, cJSON *environment) {
 
 static void check_home(const char *home, cJSON *environment, const char *expected, const char *source) {
     catalog_answer answer = home_answer(home, environment);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "home")), expected, source);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "source")), source, "the source");
     cJSON_Delete(answer.tree);
@@ -427,7 +427,7 @@ static void reads_the_standard_an_installed_bundle_carries(void) {
     scratch_in(cache, sizeof cache, "loader", "installed");
     write_manifest(cache, VALID_STANDARD);
     catalog_answer answer = installed_answer(cache, "claude-loader", "1.0.0");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *standard = cJSON_GetObjectItemCaseSensitive(answer.tree, "standard");
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(
                    cJSON_GetObjectItemCaseSensitive(standard, "application"), "binary")),

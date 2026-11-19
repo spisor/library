@@ -386,7 +386,6 @@ spisor_strict_warnings(parity_test)
 add_test(NAME parity_test COMMAND parity_test)
 
 file(READ ${PROJECT_SOURCE_DIR}/runtime/library.json runtime_declaration)
-string(JSON runtime_release_symbol GET "${runtime_declaration}" release)
 if(MSVC)
     set(runtime_export_lister ${CMAKE_LINKER})
     set(runtime_export_format pe)
@@ -397,7 +396,7 @@ else()
     set(runtime_export_lister ${CMAKE_NM})
     set(runtime_export_format elf)
 endif()
-string(JOIN "," runtime_expected_exports ${runtime_definition_symbols} ${runtime_release_symbol})
+string(JOIN "," runtime_expected_exports ${runtime_definition_symbols})
 add_test(NAME runtime_exports_only_definitions_test
     COMMAND ${CMAKE_COMMAND} -DLIBRARY=$<TARGET_FILE:runtime> -DLISTER=${runtime_export_lister}
         -DFORMAT=${runtime_export_format} -DEXPECTED=${runtime_expected_exports}

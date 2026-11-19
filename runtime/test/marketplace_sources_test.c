@@ -113,7 +113,7 @@ static catalog_answer lookup_three(const char *middle_copy, const char *name) {
 }
 
 static int is_not_found(const catalog_answer answer) {
-    return answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "notFound"));
+    return answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "notFound"));
 }
 
 static int message_names(const catalog_answer answer, const char *fragment) {
@@ -125,7 +125,7 @@ static void sources_answers_each_source(void) {
     catalog_answer answer = sources_of("[{\"id\":\"spisor\",\"url\":\"https://example.com/m.json\"},"
                                        "{\"id\":\"local\",\"url\":\"file:///C:/m/copy.json\"},"
                                        "{\"id\":\"private\",\"provider\":\"corp-marketplace\"}]");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *sources = value_at(answer.tree, "sources");
     CHECK(cJSON_GetArraySize(sources) == 3);
     check_text(text_at(cJSON_GetArrayItem(sources, 0), "id"), "spisor", "first id");
@@ -139,7 +139,7 @@ static void sources_answers_each_source(void) {
 
 static void sources_without_the_setting_answers_none(void) {
     catalog_answer answer = marketplace_call(MARKETPLACE_SOURCES, parsed("{\"settings\":{}}"));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(value_at(answer.tree, "sources")) == 0);
     cJSON_Delete(answer.tree);
 }
@@ -148,7 +148,7 @@ static void a_source_id_that_is_not_an_import_name_is_skipped_and_reported(void)
     catalog_answer answer = sources_of("[{\"id\":\"Not A Name\",\"url\":\"https://example.com/a.json\"},"
                                        "{\"id\":\"package\",\"url\":\"https://example.com/p.json\"},"
                                        "{\"id\":\"fine\",\"url\":\"https://example.com/f.json\"}]");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *sources = value_at(answer.tree, "sources");
     CHECK(cJSON_GetArraySize(sources) == 1);
     check_text(text_at(cJSON_GetArrayItem(sources, 0), "id"), "fine", "kept id");
@@ -167,7 +167,7 @@ static void a_source_without_one_usable_location_is_skipped(void) {
                                        "{\"id\":\"both\",\"url\":\"https://example.com/m.json\",\"provider\":\"corp\"},"
                                        "7,"
                                        "{\"id\":\"ok\",\"url\":\"https://example.com/m.json\"}]");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(value_at(answer.tree, "sources")) == 1);
     CHECK(cJSON_GetArraySize(value_at(answer.tree, "skipped")) == 5);
     cJSON_Delete(answer.tree);
@@ -191,7 +191,7 @@ static void sources_refuses_a_call_without_settings(void) {
 
 static void reads_a_copy(void) {
     catalog_answer answer = read_text("spisor", COPY_ONE);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 2);
     check_text(text_at(entry_of(answer, 1), "name"), "weivel", "second name");
     cJSON_Delete(answer.tree);
@@ -199,7 +199,7 @@ static void reads_a_copy(void) {
 
 static void reads_a_copy_with_a_byte_order_mark(void) {
     catalog_answer answer = read_text("spisor", "\xEF\xBB\xBF" COPY_ONE);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -207,7 +207,7 @@ static void reads_a_copy_fetched_over_the_network(void) {
     char url[256];
     url_on_server("/copy.json", url, sizeof url);
     catalog_answer answer = read_fetched("spisor", url);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(entry_of(answer, 0), "name"), "runtime", "fetched name");
     cJSON_Delete(answer.tree);
 }
@@ -219,7 +219,7 @@ static void reads_a_copy_from_a_file_url(void) {
     CHECK(spisor_replace_file(path, (const uint8_t *)COPY_ONE, sizeof COPY_ONE - 1) == SPISOR_OK);
     snprintf(url, sizeof url, path[0] == '/' ? "file://%s" : "file:///%s", path);
     catalog_answer answer = read_fetched("spisor", url);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -320,10 +320,10 @@ static void one_bad_source_does_not_stop_the_others(void) {
     catalog_answer second = read_fetched("good", good_url);
     catalog_answer third = read_fetched("huge", huge_url);
     catalog_answer fourth = read_fetched("good", good_url);
-    CHECK(first.status == SPISOR_STATUS_FAILURE);
-    CHECK(second.status == SPISOR_STATUS_SUCCESS);
-    CHECK(third.status == SPISOR_STATUS_FAILURE);
-    CHECK(fourth.status == SPISOR_STATUS_SUCCESS);
+    CHECK(is_refusal_status(first.status));
+    CHECK(second.status == SPISOR_OK);
+    CHECK(is_refusal_status(third.status));
+    CHECK(fourth.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     cJSON_Delete(second.tree);
     cJSON_Delete(third.tree);
@@ -332,7 +332,7 @@ static void one_bad_source_does_not_stop_the_others(void) {
 
 static void a_bare_name_in_one_marketplace_settles(void) {
     catalog_answer answer = lookup_in("weivel");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "id"), "github:2", "id");
     check_text(text_at(answer.tree, "marketplace"), "spisor", "marketplace");
     cJSON_Delete(answer.tree);
@@ -340,7 +340,7 @@ static void a_bare_name_in_one_marketplace_settles(void) {
 
 static void a_bare_name_in_two_marketplaces_is_ambiguous(void) {
     catalog_answer answer = lookup_in("runtime");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *ambiguous = value_at(answer.tree, "ambiguous");
     CHECK(cJSON_GetArraySize(ambiguous) == 2);
     check_text(cJSON_GetArrayItem(ambiguous, 0)->valuestring, "spisor/runtime", "first form");
@@ -356,7 +356,7 @@ static void the_same_id_in_two_marketplaces_settles_on_the_first(void) {
     cJSON_AddItemToArray(copies, copy_pair("mirror", COPY_MIRROR));
     cJSON_AddStringToObject(argument, "name", "runtime");
     catalog_answer answer = marketplace_call(MARKETPLACE_LOOKUP, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "id"), "github:1", "id");
     check_text(text_at(answer.tree, "marketplace"), "spisor", "first marketplace in source order");
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "ambiguous") == NULL);
@@ -365,7 +365,7 @@ static void the_same_id_in_two_marketplaces_settles_on_the_first(void) {
 
 static void two_copies_sharing_an_id_and_a_third_with_another_are_ambiguous(void) {
     catalog_answer answer = lookup_three(COPY_MIRROR, "runtime");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *ambiguous = value_at(answer.tree, "ambiguous");
     CHECK(cJSON_GetArraySize(ambiguous) == 3);
     check_text(cJSON_GetArrayItem(ambiguous, 0)->valuestring, "spisor/runtime", "first form");

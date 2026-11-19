@@ -163,7 +163,7 @@ static cJSON *current_of(cJSON *sources) {
     cJSON_AddItemToObject(argument, "sources", sources);
     cJSON_AddStringToObject(argument, "cache", cache);
     catalog_answer answer = catalog_service_call(CATALOG_CURRENT, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON *catalog = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "catalog");
     cJSON_Delete(answer.tree);
     return catalog;

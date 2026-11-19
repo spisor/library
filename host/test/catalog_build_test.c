@@ -48,7 +48,7 @@ static cJSON *read_back(const char *path) {
     cJSON_AddStringToObject(argument, "text", text == NULL ? "" : text);
     cJSON_AddStringToObject(argument, "origin", origin);
     catalog_answer read = catalog_service_call(CATALOG_READ, argument);
-    if (read.status != SPISOR_STATUS_SUCCESS) {
+    if (read.status != SPISOR_OK) {
         char *printed = cJSON_PrintUnformatted(read.tree);
         fprintf(stderr, "the catalog was not read back: %s\n", printed);
         cJSON_free(printed);
@@ -228,7 +228,7 @@ static void installs_from_the_index_into_a_bundle_with_every_file(void) {
     cJSON_AddItemToObject(argument, "item", cJSON_Duplicate(item_of(catalog, "greeter"), 1));
     cJSON_AddStringToObject(argument, "version", "1.0.0");
     catalog_answer installed = cache_call(CACHE_INSTALL, argument);
-    CHECK(installed.status == SPISOR_STATUS_SUCCESS);
+    CHECK(installed.status == SPISOR_OK);
     expect_json(cJSON_GetObjectItemCaseSensitive(installed.tree, "fetched"), "[\"index.js\",\"package.json\",\"plugin.json\"]",
                 "every file fetched");
     CHECK(exists_in(cache, "bundles/greeter/1.0.0/index.js"));

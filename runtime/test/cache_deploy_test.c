@@ -84,7 +84,7 @@ static void deploys_under_the_import_name(void) {
     start_case("deploys");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"dist/index.js\"}", "dist/index.js", "export default {};");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "importName"), "greeter", "answered import name");
     expect_file("plugins/greeter.json", "{\"importName\":\"greeter\",\"api\":1,\"entry\":\"dist/index.js\"}", "manifest");
     expect_file("plugins/greeter.js", "export default {};", "entry");
@@ -104,7 +104,7 @@ static void writes_no_entry_file_for_a_plugin_without_an_entry(void) {
     start_case("no-entry");
     write_bundle("{\"importName\":\"quiet\",\"api\":1}", NULL, NULL);
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     char *entry = in_scratch("plugins/quiet.js");
     CHECK(spisor_probe_file(entry) != SPISOR_FILE_PRESENT);
     spisor_memory_release(entry);
@@ -119,7 +119,7 @@ static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
     write_bundle("{\"importName\":\"greeter\",\"id\":\"github:999\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
     write_in_scratch("bundle/greeter_identity.json", "{\"id\":\"github:999\",\"name\":\"stolen\"}");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     cJSON *identity = identity_text == NULL ? NULL
                                             : spisor_parse_json_reporting((const uint8_t *)identity_text,
@@ -155,7 +155,7 @@ static void accepts_the_import_names_the_grammar_allows(void) {
         snprintf(manifest, sizeof manifest, "{\"importName\":\"%s\",\"api\":1}", accepted[index]);
         write_bundle(manifest, NULL, NULL);
         catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-        CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+        CHECK(answer.status == SPISOR_OK);
         check_text(text_at(answer.tree, "importName"), accepted[index], accepted[index]);
         cJSON_Delete(answer.tree);
     }
@@ -195,7 +195,7 @@ static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     write_in_scratch("bundle/other_identity.json", "{\"id\":\"github:7\",\"name\":\"other\"}");
     write_in_scratch("bundle/dist/third_identity.json", "{\"id\":\"github:8\",\"name\":\"third\"}");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     char *copied = in_scratch("plugins/other_identity.json");
     CHECK(spisor_probe_file(copied) != SPISOR_FILE_PRESENT);
     spisor_memory_release(copied);
@@ -228,7 +228,7 @@ static void writes_the_module_marker_beside_the_plugins(void) {
     start_case("marker");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_file("plugins/package.json", "{\"type\":\"module\"}\n", "module marker");
     cJSON_Delete(answer.tree);
 }
@@ -237,7 +237,7 @@ static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
     start_case("replace");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
     catalog_answer first = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     char *before = tree_snapshot(scratch, NULL);
     catalog_answer other = deploy_with("{\"id\":\"github:6\",\"name\":\"intruder\"}", NULL);
@@ -247,7 +247,7 @@ static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
     spisor_memory_release(before);
     cJSON_Delete(other.tree);
     catalog_answer again = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(again.status == SPISOR_STATUS_SUCCESS);
+    CHECK(again.status == SPISOR_OK);
     cJSON_Delete(again.tree);
 }
 
@@ -271,13 +271,13 @@ static void a_new_version_with_no_entry_removes_the_old_entry_file(void) {
     start_case("drop-entry");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
     catalog_answer first = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     char *entry = in_scratch("plugins/greeter.js");
     CHECK(spisor_probe_file(entry) == SPISOR_FILE_PRESENT);
     write_bundle("{\"importName\":\"greeter\",\"api\":1}", NULL, NULL);
     catalog_answer second = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(second.status == SPISOR_OK);
     CHECK(spisor_probe_file(entry) != SPISOR_FILE_PRESENT);
     spisor_memory_release(entry);
     cJSON_Delete(second.tree);
@@ -325,10 +325,10 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
     start_case("replaces");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
     catalog_answer first = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     catalog_answer moved = deploy_with("{\"id\":\"github:6\",\"name\":\"moved\"}", "github:5");
-    CHECK(moved.status == SPISOR_STATUS_SUCCESS);
+    CHECK(moved.status == SPISOR_OK);
     char *identity = read_from_scratch("plugins/greeter_identity.json");
     CHECK(identity != NULL && strstr(identity, "github:6") != NULL && strstr(identity, "moved") != NULL);
     spisor_memory_release(identity);
@@ -345,10 +345,10 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
 #define LAST_MOVE 5
 
 static void expect_deployed(catalog_answer answer, const char *label) {
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
+    if (answer.status != SPISOR_OK) {
         fprintf(stderr, "%s: the deploy answered %d\n", label, (int)answer.status);
     }
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -399,7 +399,7 @@ static void finishes_a_deploy_stopped_after_any_move(int with_entry) {
         runtime_cache_stop_deploys_after(moves);
         catalog_answer stopped = deploy_with(IDENTITY_ARGUMENT, NULL);
         runtime_cache_stop_deploys_after(-1);
-        CHECK(stopped.status != SPISOR_STATUS_SUCCESS);
+        CHECK(stopped.status != SPISOR_OK);
         cJSON_Delete(stopped.tree);
         expect_deployed(deploy_with(IDENTITY_ARGUMENT, NULL), label);
         char *tree = plugin_directory_tree();

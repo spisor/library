@@ -101,7 +101,7 @@ static catalog_answer acquire_on(const install_base *base, const char *path) {
     cJSON_AddStringToObject(argument, "cache", base->cache);
     cJSON_AddItemToObject(argument, "environment", environment_with_path(base, path));
     catalog_answer answer = install_call(INSTALL_RUNTIME, argument);
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
+    if (answer.status != SPISOR_OK) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);
         fprintf(stderr, "install.runtime answered %d: %s\n", (int)answer.status, printed == NULL ? "(nothing)" : printed);
         cJSON_free(printed);
@@ -130,7 +130,7 @@ static void acquires_the_pinned_runtime_and_answers_its_executable(void) {
     runtime_fixture fixture;
     start_runtime(&fixture, "acquires", NULL);
     catalog_answer answer = acquire(&fixture);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     char *executable = executable_path(&fixture);
     char expected[2048];
     cJSON *quoted = cJSON_CreateString(executable);
@@ -152,7 +152,7 @@ static void fetches_nothing_on_a_second_run(void) {
     cJSON_Delete(acquire(&fixture).tree);
     CHECK(runtime_remove_file_entry(fixture.archive) == RUNTIME_ENTRY_DONE);
     catalog_answer answer = acquire(&fixture);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    CHECK(answer.status == SPISOR_OK && cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     cJSON_Delete(answer.tree);
     finish_runtime(&fixture);
 }
@@ -195,7 +195,7 @@ static void acquires_the_runtime_again_when_its_executable_s_bytes_changed(void)
     char *executable = executable_path(&fixture);
     write_file(executable, "altered bytes");
     catalog_answer answer = acquire(&fixture);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    CHECK(answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     size_t length = 0;
     uint8_t *bytes = spisor_read_file_reporting(executable, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     CHECK(bytes != NULL && length == strlen("the node executable") && memcmp(bytes, "the node executable", length) == 0);
@@ -212,7 +212,7 @@ static void removes_the_runtime_versions_no_longer_pinned(void) {
     snprintf(rest, sizeof rest, "runtimes/node/1.0.0/%s/node", runtime_platform_key());
     write_in(fixture.base.cache, rest, "an older pin");
     catalog_answer answer = acquire(&fixture);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(fixture.base.cache, "runtimes/node/1.0.0"));
     char *executable = executable_path(&fixture);
@@ -276,7 +276,7 @@ static void reuses_a_node_on_the_path_whose_major_is_twenty_or_more(void) {
     start_runtime(&fixture, "path-node", NULL);
     char *folder = path_node(&fixture.base, "22.1.0");
     catalog_answer answer = acquire_on(&fixture.base, folder);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "version"), "22.1.0", "path version");
     check_text(text_at(answer.tree, "source"), "path", "path source");
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
@@ -296,7 +296,7 @@ static void ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin(vo
     start_runtime(&fixture, "old-path-node", NULL);
     char *folder = path_node(&fixture.base, "18.0.0");
     catalog_answer answer = acquire_on(&fixture.base, folder);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "version"), TEST_VERSION, "pinned version");
     check_text(text_at(answer.tree, "source"), "acquired", "acquired source");
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
@@ -368,7 +368,7 @@ static void moves_the_runtime_into_place_once_a_scanner_lets_go_of_it(void) {
     runtime_install_before_publish(hold_staged_executable);
     catalog_answer answer = acquire(&fixture);
     runtime_install_before_publish(NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
+    CHECK(answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     char *executable = executable_path(&fixture);
     CHECK(spisor_probe_file(executable) == SPISOR_FILE_PRESENT);
     spisor_memory_release(executable);
@@ -437,7 +437,7 @@ static void sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one(void) {
     set_modified(old_file, two_days_ago);
     set_modified(old, two_days_ago);
     catalog_answer answer = acquire(&fixture);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     CHECK(spisor_probe_file(old) != SPISOR_FILE_PRESENT && spisor_probe_file(fresh) == SPISOR_FILE_PRESENT);
     spisor_memory_release(old_file);
@@ -459,7 +459,7 @@ static void acquires_into_a_cache_at(const char *label, const char *cache_folder
     install_base elsewhere = fixture.base;
     elsewhere.cache = joined(fixture.base.root, cache_folder);
     catalog_answer answer = acquire_on(&elsewhere, elsewhere.path);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const char *executable = text_at(answer.tree, "executable");
     if (executable == NULL || spisor_probe_file(executable) != SPISOR_FILE_PRESENT) {
         fprintf(stderr, "%s: no runtime executable under %s\n", label, elsewhere.cache);

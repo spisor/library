@@ -211,7 +211,7 @@ static void expect_tree(const cJSON *actual, const char *expected_json, const ch
 }
 
 static void expect_answer(catalog_answer answer, const char *expected_json, const char *label) {
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
+    if (answer.status != SPISOR_OK) {
         fprintf(stderr, "%s: refused: %s\n", label, answer.tree == NULL ? "(none)" : text_at(answer.tree, "message"));
         check_failures++;
     } else {
@@ -280,7 +280,7 @@ static void finish_cache(void) {
 static void it_fetches_into_a_fresh_store_then_answers_cached_without_fetching(void) {
     start_cache("fresh");
     catalog_answer first = install("a", plugin_item(), "1.0.0", "linux-x64");
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK);
     expect_member(first.tree, "fetched", "[\"plugin.json\",\"dist/index.js\"]", "fresh fetched");
     cJSON_Delete(first.tree);
     expect_file_text(cache, "bundles/a/1.0.0/dist/index.js", INDEX_JS, "fresh content");
@@ -288,7 +288,7 @@ static void it_fetches_into_a_fresh_store_then_answers_cached_without_fetching(v
     remove_source("plugin.json");
     remove_source("index.js");
     catalog_answer again = install("a", item, "1.0.0", "linux-x64");
-    CHECK(again.status == SPISOR_STATUS_SUCCESS);
+    CHECK(again.status == SPISOR_OK);
     expect_member(again.tree, "fetched", "[]", "cached fetched");
     expect_member(again.tree, "cached", "[\"plugin.json\",\"dist/index.js\"]", "cached cached");
     cJSON_Delete(again.tree);
@@ -316,7 +316,7 @@ static void it_refetches_a_cached_file_whose_hash_no_longer_matches(void) {
     start_cache("corrupted");
     write_in(cache, "bundles/a/1.0.0/p.js", "corrupted");
     catalog_answer answer = install("a", single_file_item(reference_to("p.js", INDEX_JS)), "1.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_member(answer.tree, "fetched", "[\"p.js\"]", "refetched");
     cJSON_Delete(answer.tree);
     expect_file_text(cache, "bundles/a/1.0.0/p.js", INDEX_JS, "refetched content");
@@ -391,8 +391,8 @@ static void it_lets_two_concurrent_stores_of_one_path_both_succeed(void) {
     pthread_join(threads[0], NULL);
     pthread_join(threads[1], NULL);
 #endif
-    CHECK(jobs[0].answer.status == SPISOR_STATUS_SUCCESS);
-    CHECK(jobs[1].answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(jobs[0].answer.status == SPISOR_OK);
+    CHECK(jobs[1].answer.status == SPISOR_OK);
     cJSON_Delete(jobs[0].answer.tree);
     cJSON_Delete(jobs[1].answer.tree);
     expect_file_text(cache, "bundles/a/1.0.0/p.js", INDEX_JS, "concurrent content");
@@ -464,7 +464,7 @@ static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_
     sha256_of_text(PLUGIN_JSON, plugin_sha256);
     sha256_of_text(INDEX_JS, index_sha256);
     catalog_answer answer = install("a", item, "1.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     char expected[768];
     snprintf(expected, sizeof expected,
@@ -500,7 +500,7 @@ static cJSON *damaged_in_cache(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     catalog_answer answer = cache_call(CACHE_DAMAGED, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON *damaged = cJSON_DetachItemFromObjectCaseSensitive(answer.tree, "damaged");
     cJSON_Delete(answer.tree);
     return damaged;
@@ -525,7 +525,7 @@ static void expect_one_damaged(const char *part, const char *label) {
 static void it_reports_each_installed_version_a_start_would_refuse_or_whose_hash_changed(void) {
     start_cache("damaged");
     catalog_answer answer = install("a", plugin_item(), "1.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     cJSON *none = damaged_in_cache();
     CHECK(cJSON_IsArray(none) && cJSON_GetArraySize(none) == 0);
@@ -562,7 +562,7 @@ static void it_stores_files_in_the_order_javascript_enumerates_their_keys(void) 
     cJSON_AddItemToObject(own, "a.js", reference_to("a.js", "a"));
     cJSON_AddItemToObject(own, "0", reference_to("zero", "0"));
     catalog_answer answer = install("liba", item_of("library", "2.0.0", entry), "2.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_member(answer.tree, "fetched", "[\"0\",\"1\",\"b.js\",\"a.js\"]", "key order");
     cJSON_Delete(answer.tree);
     finish_cache();
@@ -617,7 +617,7 @@ static void it_marks_a_version_of_no_files_complete_making_its_directory(void) {
     start_cache("no-files");
     catalog_answer answer = install("a", item_of("plugin", "1.0.0", version_with_files(cJSON_CreateObject())), "1.0.0",
                                     "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     expect_file_text(cache, "bundles/a/1.0.0/.installed.json", "{\n  \"files\": {},\n  \"sizes\": {}\n}\n", "no files marker");
     finish_cache();
@@ -626,10 +626,10 @@ static void it_marks_a_version_of_no_files_complete_making_its_directory(void) {
 static void it_answers_cached_for_every_file_on_a_second_install(void) {
     start_cache("second-install");
     catalog_answer first = install("a", plugin_item(), "1.0.0", "linux-x64");
-    CHECK(first.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     catalog_answer again = install("a", plugin_item(), "1.0.0", "linux-x64");
-    CHECK(again.status == SPISOR_STATUS_SUCCESS);
+    CHECK(again.status == SPISOR_OK);
     expect_member(again.tree, "fetched", "[]", "second install fetched");
     expect_member(again.tree, "cached", "[\"plugin.json\",\"dist/index.js\"]", "second install cached");
     cJSON_Delete(again.tree);
@@ -639,7 +639,7 @@ static void it_answers_cached_for_every_file_on_a_second_install(void) {
 static void it_installs_a_library_s_files_for_the_platform_into_its_library_directory(void) {
     start_cache("library");
     catalog_answer answer = install("liba", linux_only_library(), "2.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     expect_listing("libraries/liba/2.0.0/linux-x64", "[\".installed.json\",\"liba.so\"]", "library listing");
     finish_cache();
@@ -713,7 +713,7 @@ static void it_completes_an_interrupted_install_on_the_next_install(void) {
     char *directory = in_cache("bundles/a/1.0.0");
     expect_answer(check_directory(directory), "{\"kind\":\"absent\"}", "interrupted before");
     catalog_answer answer = install("a", plugin_item(), "1.0.0", "linux-x64");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_member(answer.tree, "cached", "[\"plugin.json\"]", "interrupted cached");
     expect_member(answer.tree, "fetched", "[\"dist/index.js\"]", "interrupted fetched");
     cJSON_Delete(answer.tree);
@@ -747,7 +747,7 @@ static char *marked_bundle(const char *id, const char *version, int marked) {
 }
 
 static void expect_damaged(catalog_answer answer, const char *file, const char *fragment, const char *label) {
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "kind"), "damaged", label);
     CHECK(text_at(answer.tree, "fix") != NULL);
     if (file != NULL) {
@@ -1347,7 +1347,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     snprintf(cache, sizeof cache, "%s/cache", deep);
     CHECK(strlen(cache) > 300);
     catalog_answer first = install("a", plugin_item(), "1.0.0", "linux-x64");
-    if (first.status != SPISOR_STATUS_SUCCESS) {
+    if (first.status != SPISOR_OK) {
         fprintf(stderr, "deep install refused: %s\n", text_at(first.tree, "message"));
         check_failures++;
     }
@@ -1356,7 +1356,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
     cJSON *versions = cJSON_GetObjectItemCaseSensitive(newer, "versions");
     cJSON_AddItemToObject(versions, "2.0.0", cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(versions, "1.0.0"), 1));
     catalog_answer second = install("a", newer, "2.0.0", "linux-x64");
-    CHECK(second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(second.status == SPISOR_OK);
     cJSON_Delete(second.tree);
     char *directory = in_cache("bundles/a/1.0.0");
     expect_answer(check_directory(directory), "{\"kind\":\"intact\"}", "deep check");
@@ -1373,7 +1373,7 @@ static void it_stores_checks_and_sweeps_under_a_path_over_260_characters(void) {
 
 static void it_answers_this_build_s_platform_key_as_node_spells_it(void) {
     catalog_answer answer = cache_call(CACHE_PLATFORM, cJSON_CreateObject());
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const char *platform = text_at(answer.tree, "platform");
 #if defined(_WIN32) && defined(_M_X64)
     check_text(platform, "win32-x64", "platform");
@@ -1397,7 +1397,7 @@ static void it_installs_for_this_machine_s_platform_when_none_is_given(void) {
     cJSON *files = cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(entry, "platforms"), platform), "files");
     cJSON_AddItemToObject(files, "liba.so", reference_to("liba.so", LIBRARY_SO));
     catalog_answer answer = install("liba", item_of("library", "2.0.0", entry), "2.0.0", NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     char rest[256];
     snprintf(rest, sizeof rest, "libraries/liba/2.0.0/%s/liba.so", platform);

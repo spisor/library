@@ -44,7 +44,7 @@ static char *store_text(void) {
 }
 
 static int is_remembered(const catalog_answer answer) {
-    return answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "remembered"));
+    return answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "remembered"));
 }
 
 static void remembers_a_first_install(void) {
@@ -84,7 +84,7 @@ static void a_different_id_for_a_remembered_name_needs_the_user_naming_both(void
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "different");
     cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
     catalog_answer answer = remember("spisor", "runtime", "github:2", NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "needsUserAcceptance")));
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "remembered") == NULL);
     check_text(text_at(answer.tree, "was"), "github:1", "the remembered id");
@@ -149,7 +149,7 @@ static void refuses_an_argument_without_what_it_needs(void) {
 }
 
 static int is_settled(const catalog_answer answer) {
-    return answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "settled"));
+    return answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "settled"));
 }
 
 static void a_check_writes_nothing_and_still_finds_a_change(void) {
