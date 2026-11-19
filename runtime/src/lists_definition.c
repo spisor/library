@@ -115,7 +115,7 @@ static spisor_status plugins(void *context, const runtime_lists_plugins_argument
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLUGINS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LIST_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
         return runtime_refuse_shape(refusal, "lists' plugins");
     }
     call = cJSON_CreateObject();
@@ -217,7 +217,7 @@ static spisor_status applications(void *context, const runtime_lists_application
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, APPLICATIONS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LIST_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
         return runtime_refuse_shape(refusal, "lists' applications");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {

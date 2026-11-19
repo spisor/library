@@ -65,7 +65,7 @@ static spisor_status check(void *context, const runtime_loader_check_argument *a
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE, answer->issue_count)) {
         return runtime_refuse_shape(refusal, "loader's check");
     }
     if (argument->standard == NULL) {

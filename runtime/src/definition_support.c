@@ -60,7 +60,8 @@ spisor_status runtime_refuse_json(spisor_refusal *refusal, cJSON *json_refusal) 
 
 spisor_status runtime_refuse_shape(spisor_refusal *refusal, const char *operation) {
     char detail[160];
-    snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape", operation);
+    snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape, or the "
+             "answer is not empty", operation);
     return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
                              "pass the argument and an empty answer, each with its size set as SPISOR_INIT sets it");
 }

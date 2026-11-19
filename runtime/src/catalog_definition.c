@@ -155,7 +155,7 @@ static spisor_status sources(void *context, const runtime_catalog_sources_argume
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SOURCES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SOURCES_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
         return runtime_refuse_shape(refusal, "catalog's sources");
     }
     call = cJSON_CreateObject();
@@ -230,7 +230,7 @@ static spisor_status merge(void *context, const runtime_catalog_merge_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, MERGE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, MERGE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, MERGE_ANSWER_SHAPE, answer->shadowed_count)) {
         return runtime_refuse_shape(refusal, "catalog's merge");
     }
     status = check_readings(argument);
@@ -476,7 +476,7 @@ static spisor_status resolve(void *context, const runtime_catalog_resolve_argume
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RESOLVE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RESOLVE_ANSWER_SHAPE, answer->run_count | answer->fetch_count)) {
         return runtime_refuse_shape(refusal, "catalog's resolve");
     }
     if (argument->kind < RUNTIME_CATALOG_PLUGIN || argument->kind > RUNTIME_CATALOG_LIBRARY) {

@@ -21,6 +21,14 @@ int runtime_has_shape(uint32_t size, size_t shape);
 #define RUNTIME_IS_EMPTY_ANSWER(answer, shape) \
     ((answer) != NULL && runtime_has_shape((answer)->size, (shape)) && (answer)->storage == NULL)
 
+/**
+ * RUNTIME_IS_EMPTY_ANSWER for an answer holding arrays, whose counts, joined with `|`, must all be zero too.
+ *
+ * @implNote A fill appends at its array's count, so a nonzero count beside NULL storage would write past the array.
+ */
+#define RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, shape, counts) \
+    (RUNTIME_IS_EMPTY_ANSWER(answer, shape) && (counts) == 0)
+
 /** Zeroes every field of an answer after its `size`, through its first shape of `shape` bytes. */
 #define RUNTIME_CLEAR_ANSWER(answer, shape) \
     memset((char *)(answer) + sizeof((answer)->size), 0, (shape) - sizeof((answer)->size))

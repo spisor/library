@@ -178,7 +178,8 @@ static spisor_status register_host(void *context, const runtime_hosts_register_a
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REGISTER_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_ANSWER_SHAPE,
+                                         answer->command_count | answer->refused_command_count)) {
         return runtime_refuse_shape(refusal, "hosts' register_host");
     }
     status = check_register(argument, refusal);
@@ -235,7 +236,7 @@ static spisor_status remove_host(void *context, const runtime_registry_forget_ar
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REMOVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REMOVE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REMOVE_ANSWER_SHAPE, answer->drifted_count)) {
         return runtime_refuse_shape(refusal, "hosts' remove");
     }
     status = check_remove(argument, refusal);

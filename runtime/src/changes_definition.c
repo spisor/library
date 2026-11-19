@@ -209,7 +209,7 @@ static spisor_status reverse(void *context, const runtime_changes_reverse_argume
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REVERSE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REVERSE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REVERSE_ANSWER_SHAPE, answer->drifted_count)) {
         return runtime_refuse_shape(refusal, "changes' reverse");
     }
     if (!runtime_is_usable_home(argument->state)) {

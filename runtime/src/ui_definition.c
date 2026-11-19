@@ -118,7 +118,7 @@ static spisor_status navigation(void *context, const runtime_ui_navigation_argum
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, NAVIGATION_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, NAVIGATION_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, NAVIGATION_ANSWER_SHAPE, answer->entry_count)) {
         return runtime_refuse_shape(refusal, "ui's navigation");
     }
     if (argument->descriptions == NULL || argument->ui == NULL) {
@@ -185,7 +185,7 @@ static spisor_status settings_view(void *context, const runtime_ui_settings_view
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SETTINGS_VIEW_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE, answer->node_count)) {
         return runtime_refuse_shape(refusal, "ui's settings_view");
     }
     status = check_member(refusal, argument->description, SPISOR_VALUE_RECORD, runtime_ui_is_manifest,
@@ -222,7 +222,7 @@ static spisor_status plan(void *context, const runtime_ui_screen_argument *argum
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PLAN_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->call_count)) {
         return runtime_refuse_shape(refusal, "ui's plan");
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
@@ -236,7 +236,7 @@ static spisor_status render(void *context, const runtime_ui_screen_argument *arg
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SCREEN_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SCREEN_SHAPE, answer->node_count)) {
         return runtime_refuse_shape(refusal, "ui's render");
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
@@ -278,7 +278,7 @@ static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_arg
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLUGIN_LIST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SCREEN_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SCREEN_SHAPE, answer->node_count)) {
         return runtime_refuse_shape(refusal, "ui's plugin_list");
     }
     status = check_groups(argument, refusal);

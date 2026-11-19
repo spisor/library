@@ -110,7 +110,7 @@ static spisor_status build(void *context, const runtime_marketplace_build_argume
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, BUILD_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, BUILD_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, BUILD_ANSWER_SHAPE, answer->skipped_count)) {
         return runtime_refuse_shape(refusal, "marketplace's build");
     }
     if (argument->list == NULL || argument->built == NULL) {
@@ -182,7 +182,7 @@ static spisor_status sources(void *context, const runtime_marketplace_sources_ar
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, SOURCES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, SOURCES_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
         return runtime_refuse_shape(refusal, "marketplace's sources");
     }
     if (argument->settings == NULL) {
@@ -285,7 +285,7 @@ static spisor_status lookup(void *context, const runtime_marketplace_lookup_argu
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LOOKUP_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LOOKUP_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LOOKUP_ANSWER_SHAPE, answer->ambiguous_count)) {
         return runtime_refuse_shape(refusal, "marketplace's lookup");
     }
     if (argument->name == NULL) {

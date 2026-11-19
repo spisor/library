@@ -302,7 +302,7 @@ static spisor_status list(void *context, const runtime_registry_list_argument *a
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LIST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LISTING_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LISTING_SHAPE, answer->host_count | answer->unreadable_count)) {
         return runtime_refuse_shape(refusal, "registry's list");
     }
     if (!runtime_is_usable_home(argument->state)) {

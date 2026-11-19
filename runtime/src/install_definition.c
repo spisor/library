@@ -199,7 +199,7 @@ static spisor_status warnings(void *context, const runtime_install_warnings_argu
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, WARNINGS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, WARNINGS_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, WARNINGS_ANSWER_SHAPE, answer->warning_count)) {
         return runtime_refuse_shape(refusal, "install's warnings");
     }
     status = check_value(argument->manifest, SPISOR_VALUE_RECORD, 0, "manifest", refusal);
@@ -254,7 +254,7 @@ static spisor_status packages(void *context, const runtime_install_packages_argu
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PACKAGES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PACKAGES_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PACKAGES_ANSWER_SHAPE, answer->package_count)) {
         return runtime_refuse_shape(refusal, "install's packages");
     }
     status = check_item(argument->portable, argument->item, refusal);
@@ -357,7 +357,7 @@ static spisor_status plan(void *context, const runtime_install_plan_argument *ar
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLAN_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PLAN_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->step_count)) {
         return runtime_refuse_shape(refusal, "install's plan");
     }
     status = check_plan(argument, refusal);
@@ -435,7 +435,7 @@ static spisor_status detect(void *context, const runtime_install_detect_argument
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, DETECT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, DETECT_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, DETECT_ANSWER_SHAPE, answer->detection_count)) {
         return runtime_refuse_shape(refusal, "install's detect");
     }
     status = check_item(argument->portable, argument->item, refusal);
@@ -547,7 +547,7 @@ static spisor_status entry(void *context, const runtime_install_entry_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ENTRY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ENTRY_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ENTRY_ANSWER_SHAPE, answer->sequence_count)) {
         return runtime_refuse_shape(refusal, "install's entry");
     }
     places[0] = argument->state;
@@ -751,7 +751,8 @@ static spisor_status register_loader(void *context, const runtime_install_regist
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_LOADER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REGISTER_LOADER_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_LOADER_ANSWER_SHAPE,
+                                         answer->command_count | answer->refused_command_count)) {
         return runtime_refuse_shape(refusal, "install's register_loader");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
@@ -863,7 +864,7 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, BY_ID_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, BY_ID_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->id_count)) {
         return runtime_refuse_shape(refusal, "install's by_id");
     }
     places[0] = argument->cache;
@@ -1183,7 +1184,10 @@ static spisor_status ecosystem(void *context, const runtime_install_ecosystem_ar
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, ECOSYSTEM_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ECOSYSTEM_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ECOSYSTEM_ANSWER_SHAPE,
+                                         answer->installed_count | answer->cached_count | answer->unavailable_count |
+                                         answer->enabled_count | answer->application_count | answer->loader_count |
+                                         answer->missing_count)) {
         return runtime_refuse_shape(refusal, "install's ecosystem");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {

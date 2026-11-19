@@ -202,7 +202,7 @@ static spisor_status release(void *context, const runtime_processes_holder_argum
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, HOLDER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RELEASE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RELEASE_ANSWER_SHAPE, answer->holder_count)) {
         return runtime_refuse_shape(refusal, "processes' release");
     }
     target = (process_target){argument->state, argument->host_id};
@@ -329,7 +329,7 @@ static spisor_status await_ready(void *context, const runtime_processes_await_ar
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, AWAIT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, AWAIT_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AWAIT_ANSWER_SHAPE, answer->environment_count)) {
         return runtime_refuse_shape(refusal, "processes' await_ready");
     }
     target = (process_target){argument->state, argument->host_id};
@@ -453,7 +453,7 @@ static spisor_status live_runs(void *context, const runtime_processes_live_argum
     cJSON *answered;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, LIVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, LIVE_ANSWER_SHAPE)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIVE_ANSWER_SHAPE, answer->run_count)) {
         return runtime_refuse_shape(refusal, "processes' live_runs");
     }
     target = (process_target){argument->state, NULL};
