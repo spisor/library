@@ -83,7 +83,10 @@ Each header documents its operations, what they take and answer, and every refus
 do together. A translation of a header in another language is checked against the `layouts` test program,
 which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the
 headers (`cmake/layouts_check.cmake`). Operation names are the service's own in snake case; dotted names below,
-such as `places.resolve`, mean that service's operation.
+such as `places.resolve`, mean that service's operation. No header a consumer reads names cJSON, though
+`spisor_library` links it publicly: every build compiles `public_headers_without_cjson`, which includes each
+`include/runtime` header, `spisor/status.h` and `spisor/value.h` with cJSON poisoned and off the include path.
+`spisor_refuse_name_in_headers` (`cmake/header_isolation.cmake`) builds the same check for another library.
 
 | service | header | operations |
 |---|---|---|

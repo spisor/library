@@ -18,6 +18,12 @@ target_include_directories(memory_error_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_test(NAME public_headers_are_ascii
     COMMAND ${CMAKE_COMMAND} -DDIRECTORY=${PROJECT_SOURCE_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/ascii_check.cmake)
 
+include(${PROJECT_SOURCE_DIR}/cmake/header_isolation.cmake)
+file(GLOB spisor_runtime_headers CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/runtime/*.h)
+spisor_refuse_name_in_headers(public_headers_without_cjson NAME cJSON INCLUDE_DIRECTORIES ${PROJECT_SOURCE_DIR}/include
+    HEADERS ${spisor_runtime_headers} ${PROJECT_SOURCE_DIR}/include/spisor/status.h
+    ${PROJECT_SOURCE_DIR}/include/spisor/value.h)
+
 foreach(name status_test value_test json_value_test file_memory_test)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE spisor_library spisor_allocator_counting spisor_vector_reader)
