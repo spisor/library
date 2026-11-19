@@ -242,84 +242,25 @@ static int add_declared_changes(const entry_loader *loader, cJSON *changes) {
     return built;
 }
 
-#ifdef SPISOR_INSTALL_TEST_HOOKS
-#include "install_hooks.h"
-
-static void (*after_recorded)(void) = NULL;
-
-void runtime_install_after_entry_change(void (*hook)(void)) {
-    after_recorded = hook;
-}
-
-static void run_after_recorded(void) {
-    if (after_recorded != NULL) {
-        after_recorded();
-    }
-}
-#else
-static void run_after_recorded(void) {
-}
-#endif
-
-/** The sequences one entry call recorded, held apart from its answer so a refusal can always name them. */
-typedef struct recorded_sequences {
-    double *values;
-    size_t count;
-} recorded_sequences;
-
-/**
- * Takes back exactly the changes this entry recorded before one was refused, so a refused entry leaves the loader as
- * it was, and a change another call recorded for the loader meanwhile stays. Answers 0 when memory ran out first,
- * the rest then left recorded for the loader's removal to reverse; what the disk stops stays recorded the same way.
- */
-static int reverse_recorded(const entry_loader *loader, const recorded_sequences *recorded) {
-    int out_of_memory = 0;
-    spisor_lock *guard = NULL;
-    if (recorded->count != 0 && runtime_hosts_lock(loader->state, &guard) == SPISOR_OUT_OF_MEMORY) {
-        return 0;
-    }
-    if (guard != NULL) {
-        runtime_changes_reverse_listed_held(loader->state, loader->id, recorded->values, recorded->count,
-                                            &out_of_memory);
-        spisor_unlock(guard);
-    }
-    return !out_of_memory;
-}
-
 /** Applies one change, keeping its sequence when it was recorded; 0 with *refusal set, or NULL for memory. */
-static int apply_one(const entry_loader *loader, const cJSON *change, recorded_sequences *recorded, cJSON *sequences,
-                     cJSON **refusal) {
-    runtime_changes_outcome outcome = runtime_changes_apply(loader->state, loader->id, change);
+static int apply_one(const entry_loader *loader, const cJSON *change, runtime_changes_journal *journal,
+                     cJSON *sequences, cJSON **refusal) {
+    runtime_changes_outcome outcome = runtime_changes_apply_journaled(loader->state, loader->id, change, journal);
     int applied = outcome.answer == RUNTIME_CHANGES_RECORDED || outcome.answer == RUNTIME_CHANGES_UNNEEDED;
     int is_new = outcome.answer == RUNTIME_CHANGES_RECORDED && outcome.sequence > 0;
     *refusal = applied ? NULL : runtime_changes_refusal(&outcome);
-    if (is_new) {
-        recorded->values[recorded->count++] = (double)outcome.sequence;
-    }
-    int kept = applied && (!is_new || cJSON_AddItemToArray(sequences, cJSON_CreateNumber((double)outcome.sequence)));
-    if (kept && is_new) {
-        run_after_recorded();
-    }
-    return kept;
+    return applied && (!is_new || cJSON_AddItemToArray(sequences, cJSON_CreateNumber((double)outcome.sequence)));
 }
 
-static cJSON *applied(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
-    int change_count = cJSON_GetArraySize(changes);
-    size_t capacity = change_count > 0 ? (size_t)change_count : 1;
-    recorded_sequences recorded = {spisor_memory_allocate(sizeof(double) * capacity), 0};
-    cJSON *sequences = recorded.values == NULL ? NULL : cJSON_CreateArray();
+static cJSON *applied(const entry_loader *loader, const cJSON *changes, runtime_changes_journal *journal,
+                      cJSON **refusal) {
+    cJSON *sequences = cJSON_CreateArray();
     for (const cJSON *change = sequences == NULL ? NULL : changes->child; change != NULL; change = change->next) {
-        if (!apply_one(loader, change, &recorded, sequences, refusal)) {
-            if (*refusal != NULL && !reverse_recorded(loader, &recorded)) {
-                cJSON_Delete(*refusal);
-                *refusal = NULL;
-            }
+        if (!apply_one(loader, change, journal, sequences, refusal)) {
             cJSON_Delete(sequences);
-            sequences = NULL;
-            break;
+            return NULL;
         }
     }
-    spisor_memory_release(recorded.values);
     return sequences;
 }
 
@@ -333,6 +274,45 @@ static cJSON *written(cJSON *sequences, const cJSON *entry) {
         cJSON_Delete(answer);
         return NULL;
     }
+    return answer;
+}
+
+/**
+ * Takes back every change the entry recorded, so an entry refused or stopped by memory leaves the loader as it was;
+ * what the disk refuses to take back stays recorded for the loader's removal to reverse.
+ */
+static void take_back(const entry_loader *loader, runtime_changes_journal *journal, cJSON **refusal) {
+    int out_of_memory = 0;
+    if (!runtime_changes_take_back(loader->state, loader->id, journal, &out_of_memory) && out_of_memory) {
+        cJSON_Delete(*refusal);
+        *refusal = NULL;
+    }
+}
+
+/**
+ * Applies the entry's changes and builds its answer, or takes every change back.
+ *
+ * @implNote The hosts lock is held from the first change to the answer, so no other call records for the loader in
+ * between and each change's undo, prepared before it, still holds when the entry fails.
+ */
+static cJSON *written_locked(const entry_loader *loader, const cJSON *changes, cJSON **refusal) {
+    spisor_lock *guard = NULL;
+    spisor_status locked = runtime_hosts_lock(loader->state, &guard);
+    if (locked != SPISOR_OK) {
+        *refusal = locked == SPISOR_OUT_OF_MEMORY
+                       ? NULL
+                       : runtime_refusal("the registry lock under the state place could not be taken",
+                                         "check that the hosts directory under the state place can be written");
+        return NULL;
+    }
+    runtime_changes_journal journal;
+    memset(&journal, 0, sizeof journal);
+    cJSON *answer = written(applied(loader, changes, &journal, refusal), loader->entry);
+    if (answer == NULL) {
+        take_back(loader, &journal, refusal);
+    }
+    runtime_changes_end_journal(&journal);
+    spisor_unlock(guard);
     return answer;
 }
 
@@ -424,9 +404,8 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
         return not_written(&read);
     }
     cJSON *changes = cJSON_CreateArray();
-    cJSON *answer = changes != NULL && add_declared_changes(&read, changes)
-                        ? written(applied(&read, changes, refusal), read.entry)
-                        : NULL;
+    cJSON *answer = changes != NULL && add_declared_changes(&read, changes) ? written_locked(&read, changes, refusal)
+                                                                            : NULL;
     cJSON_Delete(changes);
     return answer;
 }

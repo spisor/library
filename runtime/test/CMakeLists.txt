@@ -266,8 +266,12 @@ add_test(NAME settings_lock_test COMMAND settings_lock_test)
 
 set(runtime_marketplace_test_objects $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading>)
 set(runtime_definition_test_objects ${runtime_marketplace_test_objects} ${runtime_install_test_objects})
-runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting http_fixture.c ${runtime_marketplace_test_objects}
-    ${runtime_install_plain_http_test_objects})
+# Its catalog check of a remote index reaches a local file through the catalog's request redirect, a test hook.
+set(runtime_out_of_memory_test_objects ${runtime_install_plain_http_test_objects})
+list(TRANSFORM runtime_out_of_memory_test_objects REPLACE "runtime_catalog_refresh>$"
+    "runtime_catalog_refresh_test_hooks>")
+runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting http_fixture.c
+    ${runtime_marketplace_test_objects} ${runtime_out_of_memory_test_objects})
 target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(out_of_memory_test PRIVATE Ws2_32)

@@ -26,7 +26,4 @@ void runtime_install_use_runtime_build(const char *version, const char *url, con
  */
 void runtime_install_before_publish(void (*hook)(const char *staging));
 
-/** Calls hook after each change an entry call records, so a test can record another for the loader in between. */
-void runtime_install_after_entry_change(void (*hook)(void));
-
 #endif

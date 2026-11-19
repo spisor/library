@@ -3,11 +3,9 @@
 #include "install_call.h"
 
 #include "boot_stub.h"
-#include "changes.h"
 #include "hosts.h"
 #include "hosts_call.h"
 #include "install_entries.h"
-#include "install_hooks.h"
 #include "tree_snapshot.h"
 
 #define LOADER_ID "entry-loader"
@@ -418,48 +416,6 @@ static void takes_back_what_it_wrote_when_a_later_change_is_refused(void) {
     finish_install_base(&base);
 }
 
-static const install_base *foreign_base = NULL;
-static char *foreign_directory = NULL;
-
-/** Records a directory for the loader once the entry recorded its first change, as a second writer would. */
-static void record_a_foreign_change(void) {
-    if (foreign_directory != NULL) {
-        return;
-    }
-    foreign_directory = joined(foreign_base->user, "foreign");
-    cJSON *change = cJSON_CreateObject();
-    cJSON_AddStringToObject(change, "kind", "directory");
-    cJSON_AddStringToObject(change, "path", foreign_directory);
-    runtime_changes_outcome outcome = runtime_changes_apply(foreign_base->state, LOADER_ID, change);
-    CHECK(outcome.answer == RUNTIME_CHANGES_RECORDED);
-    cJSON_Delete(change);
-}
-
-static void keeps_a_change_another_call_recorded_when_a_later_change_is_refused(void) {
-    install_base base;
-    start_install_base(&base, "entries", "foreign-kept");
-    char *home = home_of(&base, "sample");
-    register_loader(&base, "sample", home);
-    CHECK(spisor_make_directories(home) == SPISOR_OK);
-    char *root = entry_root(&base);
-    char blocked[2048];
-    snprintf(blocked, sizeof blocked, "%s/hooks/hooks.json", root);
-    CHECK(spisor_make_directories(blocked) == SPISOR_OK);
-    foreign_base = &base;
-    runtime_install_after_entry_change(record_a_foreign_change);
-    catalog_answer answer = write_entry(&base, "sample", home);
-    runtime_install_after_entry_change(NULL);
-    CHECK(answer.status == SPISOR_REFUSED);
-    cJSON_Delete(answer.tree);
-    CHECK(foreign_directory != NULL && spisor_probe_file(foreign_directory) == SPISOR_FILE_PRESENT);
-    expect_tree(root, "[\"hooks\",\"hooks/hooks.json\"]", "only what was there before");
-    spisor_memory_release(foreign_directory);
-    foreign_directory = NULL;
-    spisor_memory_release(root);
-    spisor_memory_release(home);
-    finish_install_base(&base);
-}
-
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
@@ -474,6 +430,5 @@ int main(void) {
     refuses_an_entry_whose_application_facts_were_never_checked();
     expect_user_path_unchanged(&guard);
     takes_back_what_it_wrote_when_a_later_change_is_refused();
-    keeps_a_change_another_call_recorded_when_a_later_change_is_refused();
     return check_summary("install_entries_test");
 }

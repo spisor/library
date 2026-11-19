@@ -8,7 +8,8 @@
  * references under state/bundles, and the cache sweep hold, waiting until no other thread or process
  * holds it, and creates state/hosts/.lock when it is missing, in *guard: SPISOR_REFUSED when the lock
  * file cannot be made, opened or locked, SPISOR_OUT_OF_MEMORY when memory runs out, *guard NULL for both.
- * Release with spisor_unlock. Hold it around one check-act-store step, never around
+ * Release with spisor_unlock. Hold it around one check-act-store step, or around the changes of
+ * one call a runtime_changes_journal can take back (a command, an entry), never around
  * an unbounded operation: no install or download is ever done while it is held. An install records the
  * version it is about to store as a reference first, under the lock, so a sweep keeps that version while
  * its files arrive unlocked; installing never makes a start or a registration wait.
