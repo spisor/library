@@ -50,7 +50,7 @@ static void expect_json(const cJSON *actual, const char *expected_json, const ch
 static void it_reads_local_and_https_sources_in_order(void) {
     catalog_answer answer = sources_of("{\"catalog\":{\"sources\":[{\"kind\":\"local\",\"path\":\"C:/out\"},"
                                        "{\"kind\":\"https\",\"url\":\"https://e.com/index.json\"}]}}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     expect_json(value_at(answer.tree, "sources"),
                 "[{\"kind\":\"local\",\"path\":\"C:/out\"},{\"kind\":\"https\",\"url\":\"https://e.com/index.json\"}]",
                 "in order");
@@ -124,7 +124,7 @@ static void it_keeps_the_earlier_source_s_item_and_reports_the_later_one_shadowe
     catalog_answer answer = merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1,\"items\":{\"x\":" ITEM_ONE
                                    ",\"y\":" ITEM_ONE "}}},{\"source\":" SECOND
                                    ",\"catalog\":{\"format\":1,\"items\":{\"x\":" ITEM_TWO ",\"z\":" ITEM_TWO "}}}]");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *items = value_at(answer.tree, "catalog/items");
     check_text(text_at(value_at(items, "x"), "latest"), "1", "earlier wins");
     CHECK(cJSON_GetArraySize(items) == 3 && value_at(items, "y") != NULL && value_at(items, "z") != NULL);

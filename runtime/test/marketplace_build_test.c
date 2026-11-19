@@ -50,7 +50,7 @@ static void builds_a_copy_with_current_names(void) {
     catalog_answer answer = build("{\"format\":1,\"title\":\"Spisor\",\"entries\":["
                                   "{\"id\":\"github:1\",\"description\":\"The runtime.\",\"categories\":[\"core\"]},"
                                   "{\"id\":\"github:2\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *copy = value_at(answer.tree, "copy");
     CHECK(cJSON_GetObjectItemCaseSensitive(copy, "format")->valueint == 1);
     check_text(text_at(copy, "title"), "Spisor", "title");
@@ -73,7 +73,7 @@ static void a_renamed_repo_gets_its_new_name_with_no_change_to_the_list(void) {
     const char *list = "{\"format\":1,\"entries\":[{\"id\":\"github:3\"}]}";
     catalog_answer before = build(list);
     catalog_answer after = build(list);
-    CHECK(before.status == SPISOR_STATUS_SUCCESS && after.status == SPISOR_STATUS_SUCCESS);
+    CHECK(before.status == SPISOR_OK && after.status == SPISOR_OK);
     entry_member_is(before, 0, "name", "old-name");
     entry_member_is(before, 0, "fullName", "spisor/old-name");
     entry_member_is(after, 0, "name", "new-name");
@@ -85,7 +85,7 @@ static void a_renamed_repo_gets_its_new_name_with_no_change_to_the_list(void) {
 
 static void an_alias_replaces_the_name(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"core\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "core");
     entry_member_is(answer, 0, "fullName", "spisor/runtime");
     cJSON_Delete(answer.tree);
@@ -103,7 +103,7 @@ static void two_entries_with_one_name_and_no_alias_are_refused_naming_both_ids(v
 static void an_alias_settles_a_clash(void) {
     catalog_answer answer =
         build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:4\",\"alias\":\"other-runtime\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "runtime");
     entry_member_is(answer, 1, "name", "other-runtime");
     cJSON_Delete(answer.tree);
@@ -116,7 +116,7 @@ static void a_clash_is_checked_after_aliases_apply(void) {
     cJSON_Delete(clash.tree);
     catalog_answer freed =
         build("{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"core\"},{\"id\":\"github:4\"}]}");
-    CHECK(freed.status == SPISOR_STATUS_SUCCESS);
+    CHECK(freed.status == SPISOR_OK);
     cJSON_Delete(freed.tree);
 }
 
@@ -136,7 +136,7 @@ static void a_local_id_is_refused(void) {
 
 static void a_folder_id_builds_with_the_last_segment_as_its_name(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/tools/config_ledger\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "id", "github:1/tools/config_ledger");
     entry_member_is(answer, 0, "name", "config-ledger");
     entry_member_is(answer, 0, "fullName", "spisor/runtime");
@@ -147,7 +147,7 @@ static void a_folder_id_builds_with_the_last_segment_as_its_name(void) {
 static void two_folders_of_one_repo_build(void) {
     catalog_answer answer = build(
         "{\"format\":1,\"entries\":[{\"id\":\"github:1/first\"},{\"id\":\"github:1/second\"},{\"id\":\"github:1\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "first");
     entry_member_is(answer, 1, "name", "second");
     entry_member_is(answer, 2, "name", "runtime");
@@ -156,7 +156,7 @@ static void two_folders_of_one_repo_build(void) {
 
 static void an_alias_replaces_a_folders_name(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/first\",\"alias\":\"chosen\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "chosen");
     cJSON_Delete(answer.tree);
 }
@@ -176,7 +176,7 @@ static void a_local_folder_id_is_still_refused(void) {
 
 static void a_host_name_is_derived_into_an_import_name(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"},{\"id\":\"github:9\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "my-runtime");
     entry_member_is(answer, 0, "fullName", "spisor/My_Runtime");
     entry_member_is(answer, 1, "name", "a.b-c");
@@ -189,7 +189,7 @@ static void a_host_name_is_derived_into_an_import_name(void) {
 static void an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built(void) {
     catalog_answer answer =
         build("{\"format\":1,\"entries\":[{\"id\":\"github:2\"},{\"id\":\"github:6\"},{\"id\":\"github:10\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *entries = cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries");
     CHECK(cJSON_GetArraySize(entries) == 1);
     entry_member_is(answer, 0, "id", "github:2");
@@ -203,7 +203,7 @@ static void an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built(
 
 static void an_alias_lists_an_entry_whose_name_cannot_be_derived(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:6\",\"alias\":\"console\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     entry_member_is(answer, 0, "name", "console");
     cJSON_Delete(answer.tree);
 }
@@ -237,7 +237,7 @@ static void a_built_time_that_is_not_rfc_3339_is_refused(void) {
 
 static void an_empty_list_builds_an_empty_copy(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 0);
     cJSON_Delete(answer.tree);
 }
@@ -281,7 +281,7 @@ static int contains(const char *text, const char *fragment) {
 
 static void an_id_that_does_not_resolve_is_skipped_and_the_rest_built(void) {
     catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\"},{\"id\":\"github:2\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     const cJSON *entries = cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries");
     CHECK(cJSON_GetArraySize(entries) == 2);
     entry_member_is(answer, 0, "id", "github:1");
@@ -298,7 +298,7 @@ static void an_id_that_does_not_resolve_is_carried_over_from_the_previous_copy(v
     catalog_answer answer = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\",\"description\":\"New.\"}]}", NULL, NULL,
         PREVIOUS_COPY(KEPT_ENTRY));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 2);
     entry_member_is(answer, 0, "name", "runtime");
     entry_member_is(answer, 1, "id", "github:60");
@@ -336,7 +336,7 @@ static void a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal(
     server_port = http_fixture_port(server);
     catalog_answer built = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\"},{\"id\":\"github:60\"}]}", TOKEN, "github.com", NULL);
-    CHECK(built.status == SPISOR_STATUS_SUCCESS);
+    CHECK(built.status == SPISOR_OK);
     char *printed = cJSON_PrintUnformatted(built.tree);
     CHECK(strstr(printed, TOKEN) == NULL);
     cJSON_free(printed);
@@ -397,7 +397,7 @@ static void a_token_goes_to_an_instance_host_the_ids_name(void) {
     }
     catalog_answer answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"}]}", TOKEN,
                                                "codeberg.org", NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     char *requests = http_fixture_stop(server);
     CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 1);
@@ -493,7 +493,7 @@ static void a_previous_copy_holding_the_failed_entry_still_writes_it(void) {
     catalog_answer carried = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:70\"}]}", TOKEN, "github.com",
         PREVIOUS_COPY("{\"id\":\"github:70\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\"}"));
-    CHECK(carried.status == SPISOR_STATUS_SUCCESS);
+    CHECK(carried.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(carried.tree, "copy"), "entries")) == 1);
     cJSON_Delete(carried.tree);
     spisor_memory_release(http_fixture_stop(server));
@@ -508,7 +508,7 @@ static void one_success_beside_a_refused_lookup_still_writes_and_skips(void) {
     }
     catalog_answer answer = build_with_options(
         "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:70\"}]}", TOKEN, "github.com", NULL);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 1);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 1);
     cJSON_Delete(answer.tree);

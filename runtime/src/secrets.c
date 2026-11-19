@@ -33,25 +33,25 @@ static spisor_status refuse_file(const char *file_path, runtime_secret_file_answ
     if (answer == RUNTIME_SECRET_FILE_UNREADABLE) {
         snprintf(fix, sizeof fix, "repair %s so it holds one JSON object of strings, or remove it; it was left unchanged",
                  file_path);
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the secrets file is not a readable JSON object", fix);
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, "the secrets file is not a readable JSON object", fix);
     }
     if (answer == RUNTIME_SECRET_FILE_LINKED) {
         snprintf(fix, sizeof fix,
                  "replace the link at %s with a regular file, or set SPISOR_SECRETS to a private directory to keep "
                  "the secrets file elsewhere; it was left unchanged",
                  file_path);
-        return runtime_refuse_as(refusal, SPISOR_REFUSED,
+        return spisor_refuse_as(refusal, SPISOR_REFUSED,
                                  "the secrets file is a symbolic link, and a secret is never written through one", fix);
     }
     snprintf(fix, sizeof fix, "check that %s and its directory can be written", file_path);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the secrets file could not be written", fix);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the secrets file could not be written", fix);
 }
 
 static spisor_status refuse_store(const char *action, runtime_secret_answer answer, spisor_refusal *refusal) {
     char detail[256];
     snprintf(detail, sizeof detail, "the OS credential store %s while asked to %s the secret",
              answer == RUNTIME_SECRET_DECLINED ? "declined" : "failed", action);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail,
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail,
                              "unlock the credential store or allow this program to use it, then try again");
 }
 
@@ -69,12 +69,12 @@ static char *entry_name(const char *plugin, const char *name) {
 }
 
 static spisor_status refuse_plugin(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable plugin",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable plugin",
                              "send plugin as the manifest id, a non-empty id without a slash");
 }
 
 static spisor_status refuse_name(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable name",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable name",
                              "send name as the secret's name, a non-empty string");
 }
 
@@ -180,7 +180,7 @@ static spisor_status refuse_stale_copy(const char *file_path, spisor_refusal *re
     char fix[2048];
     snprintf(fix, sizeof fix, "the new value is in the store; remove the entry from %s by hand, then set again",
              file_path);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED,
+    return spisor_refuse_as(refusal, SPISOR_REFUSED,
                              "the secret was stored, but its older copy in the secrets file could not be removed", fix);
 }
 
@@ -236,7 +236,7 @@ static spisor_status refuse_over_cap(spisor_refusal *refusal) {
     char detail[160];
     snprintf(detail, sizeof detail, "the value is longer than the %u bytes a secret may hold",
              RUNTIME_SECRET_VALUE_CAP_BYTES);
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, detail,
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail,
                              "store a value of at most that many bytes of UTF-8; nothing was written");
 }
 
@@ -286,12 +286,12 @@ static spisor_status clear_under(const runtime_secret_places *place, const char 
 }
 
 int runtime_is_usable_secret_place(const runtime_secret_places *place) {
-    return place != NULL && runtime_has_shape(place->size, RUNTIME_SHAPE_THROUGH(runtime_secret_places, force_file_store)) &&
+    return place != NULL && spisor_has_shape(place->size, SPISOR_SHAPE_THROUGH(runtime_secret_places, force_file_store)) &&
            place->secrets_file != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place->secrets_file);
 }
 
 spisor_status runtime_refuse_secret_place(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable places",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable places",
                              "send places with secrets_file and force_file_store as places' resolve answers them, the "
                              "secrets file an absolute path");
 }
@@ -317,7 +317,7 @@ spisor_status runtime_set_secret(const runtime_secret_places *place, const char 
         return status;
     }
     if (value == NULL) {
-        status = runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
+        status = spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
                                    "send value as the secret, a UTF-8 string");
     } else {
         status = is_over_cap(value) ? refuse_over_cap(refusal) : store_or_file(place, entry, value, location, refusal);

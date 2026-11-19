@@ -993,7 +993,7 @@ static spisor_status refuse_failed(const command_call *call, spisor_refusal *ref
         return SPISOR_OUT_OF_MEMORY;
     }
     spisor_status failure = call->failure == SPISOR_OK ? SPISOR_REFUSED : call->failure;
-    return runtime_refuse_as(refusal, failure, call->reason, call->fix == NULL ? "try again" : call->fix);
+    return spisor_refuse_as(refusal, failure, call->reason, call->fix == NULL ? "try again" : call->fix);
 }
 
 /**
@@ -1015,7 +1015,7 @@ static spisor_status run_locked(command_call *call, command_step step, spisor_re
         return SPISOR_OUT_OF_MEMORY;
     }
     if (locked != SPISOR_OK) {
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the registry lock could not be taken; nothing was changed",
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, "the registry lock could not be taken; nothing was changed",
                                  "check that the hosts directory under the state place can be written");
     }
     int done = step(call);
@@ -1041,7 +1041,7 @@ spisor_status runtime_commands_serve(runtime_command_operation operation, const 
         return runtime_refuse_place(refusal, "state");
     }
     if (call.host == NULL) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the call carries no host",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the call carries no host",
                                  "pass host as the id the host registered with");
     }
     call.shims = joined(call.state, "bin");

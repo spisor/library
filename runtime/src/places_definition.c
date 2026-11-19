@@ -10,8 +10,8 @@
 #include "places.h"
 #include "user_home.h"
 
-#define ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_places_resolve_argument, environment_count)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_places_answer, storage)
+#define ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_places_resolve_argument, environment_count)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_places_answer, storage)
 
 static spisor_status fill_answer(const char *home, const runtime_places *places, runtime_places_answer *answer) {
     const char *texts[5] = {home, places->portable, places->state, places->cache, places->secrets_file};
@@ -34,7 +34,7 @@ static spisor_status resolve_under(const char *home, const cJSON *environment, r
     spisor_status status;
     int resolved = runtime_resolve_places(RUNTIME_HOST_IS_WINDOWS, RUNTIME_HOST_IS_MACOS, home, environment, &places);
     if (resolved == RUNTIME_PLACES_NO_LOCAL_APP_DATA) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_NO_LOCAL_APP_DATA_MESSAGE,
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_NO_LOCAL_APP_DATA_MESSAGE,
                                  RUNTIME_NO_LOCAL_APP_DATA_FIX);
     }
     if (resolved != RUNTIME_PLACES_OK) {
@@ -49,7 +49,7 @@ static spisor_status resolve_in(const runtime_places_resolve_argument *argument,
                                 runtime_places_answer *answer, spisor_refusal *refusal) {
     const char *home = argument->home != NULL ? argument->home : runtime_user_home_of(environment);
     if (home == NULL) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, RUNTIME_NO_USER_HOME_MESSAGE, RUNTIME_NO_USER_HOME_FIX);
     }
     if (!runtime_is_usable_home(home)) {
         return runtime_refuse_home(refusal);
@@ -62,9 +62,9 @@ static spisor_status resolve(void *context, const runtime_places_resolve_argumen
     cJSON *environment = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "places' resolve");
+    if (argument == NULL || !spisor_has_shape(argument->size, ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "places' resolve");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -86,7 +86,7 @@ static void release_answer(void *context, runtime_places_answer *answer) {
 }
 
 static const runtime_places_definition definition = {
-    sizeof(runtime_places_definition), NULL, resolve, release_answer, runtime_release_refusal,
+    sizeof(runtime_places_definition), NULL, resolve, release_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_places_definition_of(void) {
@@ -103,7 +103,7 @@ int runtime_resolve_places_answer(const cJSON *environment, runtime_places_answe
         status = definition.resolve(definition.context, &argument, answer, &refused);
     }
     *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
-    runtime_release_refusal(NULL, &refused);
+    spisor_release_refusal(NULL, &refused);
     spisor_memory_release(variables);
     return status == SPISOR_OK;
 }

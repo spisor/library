@@ -130,7 +130,7 @@ static catalog_answer register_with(const hosts_scratch *place, cJSON *identity,
 static void register_existing(const hosts_scratch *place, const char *id, const char *location) {
     catalog_answer answer =
         register_with(place, identity_of(id), provenance_at(location, "2026-01-01T00:00:00Z"), environment_of(place));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -216,7 +216,7 @@ static void records_the_provenance_of_the_first_start(void) {
     char *location = joined_path(place.base, "install");
     cJSON *first = provenance_at(location, "2026-01-01T00:00:00Z");
     catalog_answer answer = register_with(&place, identity_of(HOST_ID), cJSON_Duplicate(first, 1), environment_of(&place));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_same(cJSON_GetObjectItemCaseSensitive(answer.tree, "provenance"), first, "the answered provenance");
     cJSON *registration = stored_registration(&place, HOST_ID);
     check_same(cJSON_GetObjectItemCaseSensitive(registration, "provenance"), first, "the stored provenance");
@@ -236,7 +236,7 @@ static void keeps_the_first_provenance_when_a_later_start_gives_a_later_installe
     cJSON_Delete(answer.tree);
     answer = register_with(&place, identity_of(HOST_ID), provenance_at(location, "2026-02-02T00:00:00Z"),
                            environment_of(&place));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_same(cJSON_GetObjectItemCaseSensitive(answer.tree, "provenance"), first, "the answered provenance");
     cJSON *registration = stored_registration(&place, HOST_ID);
     check_same(cJSON_GetObjectItemCaseSensitive(registration, "provenance"), first, "the stored provenance");
@@ -257,7 +257,7 @@ static void answers_the_same_command_name_on_a_second_start_and_requests_nothing
                                          environment_of(&place));
     catalog_answer second = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"),
                                           environment_of(&place));
-    CHECK(first.status == SPISOR_STATUS_SUCCESS && second.status == SPISOR_STATUS_SUCCESS);
+    CHECK(first.status == SPISOR_OK && second.status == SPISOR_OK);
     const cJSON *first_commands = cJSON_GetObjectItemCaseSensitive(first.tree, "commands");
     CHECK(cJSON_GetArraySize(first_commands) == 1);
     check_same(cJSON_GetObjectItemCaseSensitive(second.tree, "commands"), first_commands, "the second start's commands");
@@ -280,7 +280,7 @@ static void records_how_a_launcher_starts_the_host(void) {
     cJSON_AddStringToObject(start, "entry", "dist/host.js");
     catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"),
                                           environment_of(&place));
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     cJSON *registration = stored_registration(&place, HOST_ID);
     cJSON *expected = parsed("{\"runtime\": \"javascript\", \"entry\": \"dist/host.js\"}");
@@ -325,7 +325,7 @@ static void reports_a_refused_command_for_a_host_that_can_run_without_one(void) 
     cJSON *environment = environment_of(&place);
     cJSON_DeleteItemFromObject(environment, "PATH");
     catalog_answer answer = register_with(&place, identity, provenance_at(location, "2026-01-01T00:00:00Z"), environment);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "commands")) == 0);
     const cJSON *refused = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(answer.tree, "refusedCommands"), 0);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(refused, "name")), "thost", "the refused name");
@@ -367,7 +367,7 @@ static cJSON *listed(const hosts_scratch *place) {
     cJSON *request = cJSON_CreateObject();
     cJSON_AddItemToObject(request, "places", places_of(place));
     catalog_answer answer = hosts_call(HOSTS_LIST, request);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON *hosts = cJSON_DetachItemFromObject(answer.tree, "hosts");
     cJSON_Delete(answer.tree);
     return hosts;
@@ -401,7 +401,7 @@ static void removes_a_host_by_reversing_its_changes_and_then_forgetting_it(void)
     apply_file_change(&place, changed);
     CHECK(spisor_probe_file(changed) == SPISOR_FILE_PRESENT);
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON *expected = parsed("{\"reversed\": 1, \"drifted\": [], \"forgotten\": true}");
     check_same(answer.tree, expected, "the removal");
     cJSON_Delete(expected);
@@ -545,7 +545,7 @@ static void deletes_the_references_file_and_leaves_another_hosts(void) {
     record_references(&place, HOST_ID);
     record_references(&place, "other-host");
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "forgotten")));
+    CHECK(answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "forgotten")));
     cJSON_Delete(answer.tree);
     CHECK(!references_recorded(&place, HOST_ID));
     CHECK(references_recorded(&place, "other-host"));
@@ -563,7 +563,7 @@ static void deletes_every_run_record_of_the_host_with_its_references(void) {
     CHECK(cJSON_GetArraySize(runs) == 1);
     cJSON_Delete(runs);
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     runs = runtime_live_runs(place.state, runtime_now_milliseconds());
     CHECK(runs != NULL && cJSON_GetArraySize(runs) == 0);
@@ -590,7 +590,7 @@ static void deletes_the_holders_file_of_the_host(void) {
     CHECK(runtime_write_holders(holders, &record) == SPISOR_OK && runtime_write_holders(other, &record) == SPISOR_OK);
     runtime_free_holders(&record);
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     CHECK(spisor_probe_file(holders) != SPISOR_FILE_PRESENT);
     CHECK(spisor_probe_file(other) == SPISOR_FILE_PRESENT);
@@ -617,7 +617,7 @@ static void deletes_the_boot_hint_of_the_host_and_leaves_another_hosts(void) {
     char *other = runtime_boot_hint_path(place.cache, "other-host", &problem);
     CHECK(hint != NULL && spisor_probe_file(hint) == SPISOR_FILE_PRESENT && other != NULL);
     catalog_answer answer = remove_host(&place, HOST_ID);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     CHECK(spisor_probe_file(hint) != SPISOR_FILE_PRESENT);
     CHECK(spisor_probe_file(other) == SPISOR_FILE_PRESENT);
@@ -671,7 +671,7 @@ static void locates_an_application_at_its_binary_on_path(void) {
     catalog_answer answer = provenance_answer(
         &place, "{\"method\": \"npm\", \"package\": \"@x/claude\", \"options\": {\"global\": true}, \"version\": \"2.0.0\"}",
         environment, 1);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "location")), binary, "the location");
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "method")), "npm", "the method");
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "package")), "@x/claude", "the package");
@@ -692,7 +692,7 @@ static void locates_an_application_off_path_at_its_home_and_leaves_out_what_its_
     fresh(&place, "provenancehome");
     double before = runtime_now_milliseconds();
     catalog_answer answer = provenance_answer(&place, "{\"method\": \"path\"}", environment_of(&place), 0);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(answer.tree, "location")), place.user, "the home");
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "package") == NULL);
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "options") == NULL);

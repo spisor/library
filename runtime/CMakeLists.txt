@@ -265,7 +265,7 @@ foreach(library IN LISTS runtime_shipped_object_libraries)
     target_compile_definitions(${library} PRIVATE RUNTIME_BUILDING)
     list(APPEND runtime_shipped_objects $<TARGET_OBJECTS:${library}>)
 endforeach()
-add_library(runtime SHARED src/release.c src/library_load.c ${runtime_shipped_objects})
+add_library(runtime SHARED src/library_load.c ${runtime_shipped_objects})
 target_compile_definitions(runtime PRIVATE RUNTIME_BUILDING)
 target_include_directories(runtime PRIVATE src ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}

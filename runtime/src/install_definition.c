@@ -20,26 +20,26 @@
 #include "spisor/path.h"
 
 #define HEADER "install.h"
-#define WARNINGS_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_warnings_argument, manifest)
-#define WARNINGS_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_warnings_answer, storage)
-#define PACKAGES_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_packages_argument, manifest_packages)
-#define PACKAGES_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_packages_answer, storage)
-#define PLAN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_plan_argument, catalog)
-#define PLAN_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_plan_answer, storage)
-#define DETECT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_detect_argument, manifest_packages)
-#define DETECT_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_detect_answer, storage)
-#define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_entry_argument, application)
-#define ENTRY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_entry_answer, storage)
-#define RUNTIME_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_runtime_argument, environment_count)
-#define RUNTIME_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_runtime_answer, storage)
-#define APPLICATION_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_application_argument, operation)
-#define APPLICATION_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_application_answer, storage)
-#define REGISTER_LOADER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_argument, version)
-#define REGISTER_LOADER_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
-#define BY_ID_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_by_id_argument, api_base)
-#define BY_ID_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_by_id_answer, storage)
-#define ECOSYSTEM_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_ecosystem_argument, platform)
-#define ECOSYSTEM_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_install_ecosystem_answer, storage)
+#define WARNINGS_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_warnings_argument, manifest)
+#define WARNINGS_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_warnings_answer, storage)
+#define PACKAGES_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_packages_argument, manifest_packages)
+#define PACKAGES_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_packages_answer, storage)
+#define PLAN_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_plan_argument, catalog)
+#define PLAN_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_plan_answer, storage)
+#define DETECT_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_detect_argument, manifest_packages)
+#define DETECT_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_detect_answer, storage)
+#define ENTRY_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_entry_argument, application)
+#define ENTRY_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_entry_answer, storage)
+#define RUNTIME_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_runtime_argument, environment_count)
+#define RUNTIME_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_runtime_answer, storage)
+#define APPLICATION_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_application_argument, operation)
+#define APPLICATION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_application_answer, storage)
+#define REGISTER_LOADER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_register_loader_argument, version)
+#define REGISTER_LOADER_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
+#define BY_ID_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_argument, api_base)
+#define BY_ID_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_answer, storage)
+#define ECOSYSTEM_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_argument, platform)
+#define ECOSYSTEM_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_answer, storage)
 
 static const char *const WARNING_KINDS[] = {NULL, "named-dependency", "unbound-service"};
 static const char *const SOURCES[] = {NULL, "path", "acquired"};
@@ -198,9 +198,9 @@ static spisor_status warnings(void *context, const runtime_install_warnings_argu
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, WARNINGS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, WARNINGS_ANSWER_SHAPE, answer->warning_count)) {
-        return runtime_refuse_shape(refusal, "install's warnings");
+    if (argument == NULL || !spisor_has_shape(argument->size, WARNINGS_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, WARNINGS_ANSWER_SHAPE, answer->warning_count)) {
+        return spisor_refuse_shape(refusal, "install's warnings");
     }
     status = check_value(argument->manifest, SPISOR_VALUE_RECORD, 0, "manifest", refusal);
     if (status != SPISOR_OK) {
@@ -253,9 +253,9 @@ static spisor_status packages(void *context, const runtime_install_packages_argu
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PACKAGES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PACKAGES_ANSWER_SHAPE, answer->package_count)) {
-        return runtime_refuse_shape(refusal, "install's packages");
+    if (argument == NULL || !spisor_has_shape(argument->size, PACKAGES_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, PACKAGES_ANSWER_SHAPE, answer->package_count)) {
+        return spisor_refuse_shape(refusal, "install's packages");
     }
     status = check_item(argument->portable, argument->item, refusal);
     if (status == SPISOR_OK) {
@@ -356,9 +356,9 @@ static spisor_status plan(void *context, const runtime_install_plan_argument *ar
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PLAN_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->step_count)) {
-        return runtime_refuse_shape(refusal, "install's plan");
+    if (argument == NULL || !spisor_has_shape(argument->size, PLAN_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->step_count)) {
+        return spisor_refuse_shape(refusal, "install's plan");
     }
     status = check_plan(argument, refusal);
     if (status == SPISOR_OK) {
@@ -434,9 +434,9 @@ static spisor_status detect(void *context, const runtime_install_detect_argument
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, DETECT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, DETECT_ANSWER_SHAPE, answer->detection_count)) {
-        return runtime_refuse_shape(refusal, "install's detect");
+    if (argument == NULL || !spisor_has_shape(argument->size, DETECT_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, DETECT_ANSWER_SHAPE, answer->detection_count)) {
+        return spisor_refuse_shape(refusal, "install's detect");
     }
     status = check_item(argument->portable, argument->item, refusal);
     if (status == SPISOR_OK && !runtime_is_place(argument->cache)) {
@@ -546,9 +546,9 @@ static spisor_status entry(void *context, const runtime_install_entry_argument *
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ENTRY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ENTRY_ANSWER_SHAPE, answer->sequence_count)) {
-        return runtime_refuse_shape(refusal, "install's entry");
+    if (argument == NULL || !spisor_has_shape(argument->size, ENTRY_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, ENTRY_ANSWER_SHAPE, answer->sequence_count)) {
+        return spisor_refuse_shape(refusal, "install's entry");
     }
     places[0] = argument->state;
     places[1] = argument->cache;
@@ -611,9 +611,9 @@ static spisor_status runtime(void *context, const runtime_install_runtime_argume
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RUNTIME_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, RUNTIME_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "install's runtime");
+    if (argument == NULL || !spisor_has_shape(argument->size, RUNTIME_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, RUNTIME_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "install's runtime");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -656,9 +656,9 @@ static spisor_status application(void *context, const runtime_install_applicatio
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, APPLICATION_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, APPLICATION_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "install's application");
+    if (argument == NULL || !spisor_has_shape(argument->size, APPLICATION_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, APPLICATION_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "install's application");
     }
     places[0] = argument->portable;
     places[1] = argument->state;
@@ -750,10 +750,10 @@ static spisor_status register_loader(void *context, const runtime_install_regist
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_LOADER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_LOADER_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, REGISTER_LOADER_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, REGISTER_LOADER_ANSWER_SHAPE,
                                          answer->command_count | answer->refused_command_count)) {
-        return runtime_refuse_shape(refusal, "install's register_loader");
+        return spisor_refuse_shape(refusal, "install's register_loader");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -863,9 +863,9 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
     const char *places[2];
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, BY_ID_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->id_count)) {
-        return runtime_refuse_shape(refusal, "install's by_id");
+    if (argument == NULL || !spisor_has_shape(argument->size, BY_ID_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->id_count)) {
+        return spisor_refuse_shape(refusal, "install's by_id");
     }
     places[0] = argument->cache;
     places[1] = argument->plugin_directory;
@@ -1183,12 +1183,12 @@ static spisor_status ecosystem(void *context, const runtime_install_ecosystem_ar
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ECOSYSTEM_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ECOSYSTEM_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, ECOSYSTEM_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, ECOSYSTEM_ANSWER_SHAPE,
                                          answer->installed_count | answer->cached_count | answer->unavailable_count |
                                          answer->enabled_count | answer->application_count | answer->loader_count |
                                          answer->missing_count)) {
-        return runtime_refuse_shape(refusal, "install's ecosystem");
+        return spisor_refuse_shape(refusal, "install's ecosystem");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -1276,7 +1276,7 @@ static const runtime_install_definition definition = {
     release_register_loader_answer,
     release_by_id_answer,
     release_ecosystem_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_install_definition_of(void) {

@@ -22,7 +22,7 @@ endfunction()
 expect_check("void f(void *block) { spisor_memory_release(block); LocalFree(block); cJSON_free(block); }" "")
 expect_check("void f(const char *text) { char *copy = spisor_memory_duplicate_text(text); }" "")
 foreach(call IN ITEMS "malloc(8)" "calloc(1, 8)" "realloc(block, 8)" "free(block)" "free (block)" "strdup(text)"
-                      "_strdup(text)")
+                      "_strdup(text)" "(malloc)(8)" "( free ) (block)" "(_strdup)(text)")
     expect_check("void f(void) { ${call}; }" "probe.c: void f(void) { ${call}; }")
 endforeach()
 file(WRITE "${WORK}/src/allocation.c" "void *spisor_memory_allocate(unsigned bytes) { return malloc(bytes); }\n")

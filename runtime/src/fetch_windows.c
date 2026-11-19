@@ -193,7 +193,7 @@ static wchar_t *request_headers(const runtime_fetch_request *request, int is_aut
     }
     int out_of_memory;
     wchar_t *wide = to_wide_reporting(headers, &out_of_memory);
-    runtime_overwrite(headers, size);
+    spisor_overwrite(headers, size);
     spisor_memory_release(headers);
     return wide;
 }
@@ -207,7 +207,7 @@ static int send_request(const runtime_fetch_request *request, HINTERNET handle, 
     int sent = WinHttpSendRequest(handle, headers[0] == 0 ? WINHTTP_NO_ADDITIONAL_HEADERS : headers,
                                   headers[0] == 0 ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
                WinHttpReceiveResponse(handle, NULL);
-    runtime_overwrite(headers, wcslen(headers) * sizeof *headers);
+    spisor_overwrite(headers, wcslen(headers) * sizeof *headers);
     spisor_memory_release(headers);
     return sent;
 }

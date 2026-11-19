@@ -47,7 +47,7 @@ static catalog_answer read_fixture(const char *name, const char *origin) {
 
 static const cJSON *catalog_of(catalog_answer answer, const char *label) {
     const cJSON *catalog = cJSON_GetObjectItemCaseSensitive(answer.tree, "catalog");
-    if (answer.status != SPISOR_STATUS_SUCCESS || catalog == NULL) {
+    if (answer.status != SPISOR_OK || catalog == NULL) {
         fprintf(stderr, "%s: expected a catalog, got status %d and \"%s\"\n", label, (int)answer.status,
                 text_at(answer.tree, "message") == NULL ? "(none)" : text_at(answer.tree, "message"));
         check_failures++;

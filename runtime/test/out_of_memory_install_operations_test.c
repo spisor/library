@@ -131,7 +131,7 @@ static void register_entry_loader(void) {
     cJSON_AddItemToObject(argument, "provenance", catalog_provenance());
     cJSON_AddItemToObject(argument, "environment", environment_of(&base));
     catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     spisor_memory_release(home);
 }

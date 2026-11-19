@@ -31,7 +31,7 @@ static void expect_resolved(const char *items, const char *enabled, const char *
                             const char *label) {
     catalog_answer answer = resolved(items, enabled, installed, NULL);
     cJSON *expected = parsed(expected_json);
-    if (answer.status != SPISOR_STATUS_SUCCESS || !cJSON_Compare(answer.tree, expected, 1)) {
+    if (answer.status != SPISOR_OK || !cJSON_Compare(answer.tree, expected, 1)) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);
         fprintf(stderr, "%s: expected %s, got %s\n", label, expected_json, printed == NULL ? "(none)" : printed);
         cJSON_free(printed);
@@ -87,7 +87,7 @@ static void it_resolves_the_kind_asked_for(void) {
         resolved("{\"runtime\":{\"kind\":\"library\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}}}}}",
                  "[{\"id\":\"runtime\"}]", "{}", "library");
     cJSON *expected = parsed("{\"run\":{},\"fetch\":[{\"id\":\"runtime\",\"version\":\"1.0.0\"}]}");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_Compare(answer.tree, expected, 1));
+    CHECK(answer.status == SPISOR_OK && cJSON_Compare(answer.tree, expected, 1));
     cJSON_Delete(expected);
     cJSON_Delete(answer.tree);
 }

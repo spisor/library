@@ -39,36 +39,15 @@ spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor
     return status;
 }
 
-int runtime_has_shape(uint32_t size, size_t shape) {
-    return size >= shape;
-}
-
-spisor_status runtime_refuse_as(spisor_refusal *refusal, spisor_status status, const char *detail, const char *fix) {
-    return spisor_refuse(refusal, detail, fix) == SPISOR_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : status;
-}
-
 spisor_status runtime_refuse_json(spisor_refusal *refusal, cJSON *json_refusal) {
     const cJSON *message = cJSON_GetObjectItemCaseSensitive(json_refusal, "message");
     const cJSON *fix = cJSON_GetObjectItemCaseSensitive(json_refusal, "fix");
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     if (cJSON_IsString(message) && cJSON_IsString(fix)) {
-        status = runtime_refuse_as(refusal, SPISOR_REFUSED, message->valuestring, fix->valuestring);
+        status = spisor_refuse_as(refusal, SPISOR_REFUSED, message->valuestring, fix->valuestring);
     }
     cJSON_Delete(json_refusal);
     return status;
-}
-
-spisor_status runtime_refuse_shape(spisor_refusal *refusal, const char *operation) {
-    char detail[160];
-    snprintf(detail, sizeof detail, "the argument or the answer of %s is absent or short of its first shape, or the "
-             "answer is not empty", operation);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail,
-                             "pass the argument and an empty answer, each with its size set as SPISOR_INIT sets it");
-}
-
-void runtime_release_refusal(void *context, spisor_refusal *refusal) {
-    (void)context;
-    spisor_refusal_release(refusal);
 }
 
 int runtime_pack_texts(const char *const *texts, const char **packed, size_t count, void **storage) {
@@ -174,7 +153,7 @@ spisor_status runtime_refuse_member(spisor_refusal *refusal, const char *member,
     char fix[200];
     snprintf(detail, sizeof detail, "the argument carries no usable %s", member);
     snprintf(fix, sizeof fix, "pass %s as %s describes it", member, header);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
 spisor_status runtime_environment_json(const runtime_variable *environment, size_t count, cJSON **json) {
@@ -212,11 +191,11 @@ spisor_status runtime_refuse_place(spisor_refusal *refusal, const char *place) {
     char fix[192];
     snprintf(detail, sizeof detail, "the %s place is empty or not an absolute directory", place);
     snprintf(fix, sizeof fix, "pass %s as places' resolve answers it, an absolute directory", place);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, fix);
 }
 
 spisor_status runtime_refuse_environment(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED,
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED,
                              "an environment variable has no name or no value, a name holding =, or a name given twice",
                              "pass every variable once with its name and its value, and environment_count no larger "
                              "than the variables sent");
@@ -229,7 +208,7 @@ void runtime_release_packed_answer(void *answer, size_t shape) {
         return;
     }
     memcpy(&size, answer, sizeof size);
-    if (!runtime_has_shape(size, shape)) {
+    if (!spisor_has_shape(size, shape)) {
         return;
     }
     memcpy(&storage, (char *)answer + shape - sizeof storage, sizeof storage);
@@ -237,23 +216,16 @@ void runtime_release_packed_answer(void *answer, size_t shape) {
     memset((char *)answer + sizeof size, 0, shape - sizeof size);
 }
 
-void runtime_overwrite(void *bytes, size_t length) {
-    volatile unsigned char *cursor = bytes;
-    while (length-- > 0) {
-        *cursor++ = 0;
-    }
-}
-
 void runtime_overwrite_texts(const spisor_value *value) {
     size_t index;
     if (value->kind == SPISOR_VALUE_TEXT) {
-        runtime_overwrite((char *)value->text, value->length);
+        spisor_overwrite((char *)value->text, value->length);
     }
     for (index = 0; value->kind == SPISOR_VALUE_LIST && index < value->count; index++) {
         runtime_overwrite_texts(&value->items[index]);
     }
     for (index = 0; value->kind == SPISOR_VALUE_RECORD && index < value->count; index++) {
-        runtime_overwrite((char *)value->entries[index].key, value->entries[index].key_length);
+        spisor_overwrite((char *)value->entries[index].key, value->entries[index].key_length);
         runtime_overwrite_texts(&value->entries[index].value);
     }
 }
@@ -261,11 +233,11 @@ void runtime_overwrite_texts(const spisor_value *value) {
 void runtime_overwrite_json_texts(const cJSON *json) {
     const cJSON *child;
     if (cJSON_IsString(json)) {
-        runtime_overwrite(json->valuestring, strlen(json->valuestring));
+        spisor_overwrite(json->valuestring, strlen(json->valuestring));
     }
     cJSON_ArrayForEach(child, json) {
         if (child->string != NULL) {
-            runtime_overwrite(child->string, strlen(child->string));
+            spisor_overwrite(child->string, strlen(child->string));
         }
         runtime_overwrite_json_texts(child);
     }

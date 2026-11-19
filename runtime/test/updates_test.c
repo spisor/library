@@ -578,7 +578,7 @@ static void it_loses_no_next_write_when_two_checks_of_one_host_run_at_once(void)
         write_catalog();
         concurrent_check jobs[2] = {{"a", {0, NULL}}, {"b", {0, NULL}}};
         run_two_checks(jobs);
-        CHECK(jobs[0].answer.status == SPISOR_STATUS_SUCCESS && jobs[1].answer.status == SPISOR_STATUS_SUCCESS);
+        CHECK(jobs[0].answer.status == SPISOR_OK && jobs[1].answer.status == SPISOR_OK);
         cJSON_Delete(jobs[0].answer.tree);
         cJSON_Delete(jobs[1].answer.tree);
         runtime_host_references recorded = runtime_read_host_references(state, TEST_HOST);

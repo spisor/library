@@ -12,28 +12,28 @@
 #include "identity_resolve.h"
 #include "spisor/json_value.h"
 
-#define ID_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_id_argument, id)
-#define RESOLVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_resolve_argument, api_base)
-#define AGREE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_agree_argument, copy_count)
-#define ALSO_AT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_also_at_argument, api_base)
-#define VERSION_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_version_argument, primary)
-#define PARTS_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_parts, storage)
-#define FOLDER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_folder_answer, storage)
-#define REPOSITORY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_repository, storage)
-#define AGREEMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_agreement, storage)
-#define VERSION_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_identity_version_answer, accepted)
+#define ID_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_id_argument, id)
+#define RESOLVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_resolve_argument, api_base)
+#define AGREE_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_agree_argument, copy_count)
+#define ALSO_AT_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_also_at_argument, api_base)
+#define VERSION_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_version_argument, primary)
+#define PARTS_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_parts, storage)
+#define FOLDER_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_folder_answer, storage)
+#define REPOSITORY_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_repository, storage)
+#define AGREEMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_agreement, storage)
+#define VERSION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_version_answer, accepted)
 
 #define ID_FIX "send an id such as github:<number>[/<path>] or local:<name>"
 #define REPO_ID_FIX "send a repo id such as github:<number>, with no folder and not local"
 
 static spisor_status refuse_id(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the id is not valid", ID_FIX);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the id is not valid", ID_FIX);
 }
 
 static spisor_status refuse_repo_id(spisor_refusal *refusal, const char *what) {
     char detail[96];
     snprintf(detail, sizeof detail, "the %s is not the id of a repo", what);
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, detail, REPO_ID_FIX);
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, REPO_ID_FIX);
 }
 
 static int copy_part(void **storage, runtime_identity_part part, const char **copy) {
@@ -55,12 +55,12 @@ static spisor_status parse(void *context, const runtime_identity_id_argument *ar
                            runtime_identity_parts *answer, spisor_refusal *refusal) {
     runtime_identity parsed;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ID_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, PARTS_SHAPE)) {
-        return runtime_refuse_shape(refusal, "identity's parse");
+    if (argument == NULL || !spisor_has_shape(argument->size, ID_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, PARTS_SHAPE)) {
+        return spisor_refuse_shape(refusal, "identity's parse");
     }
     if (argument->id == NULL) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no id", ID_FIX);
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no id", ID_FIX);
     }
     if (!runtime_identity_parse_id(argument->id, &parsed)) {
         return SPISOR_NONE;
@@ -77,10 +77,10 @@ static spisor_status parse(void *context, const runtime_identity_id_argument *ar
 
 static spisor_status refuse_folder(runtime_identity_folder_status status, spisor_refusal *refusal) {
     if (status == RUNTIME_IDENTITY_FOLDER_AMBIGUOUS) {
-        return runtime_refuse_as(refusal, SPISOR_REFUSED, "the local id would share a folder with another id",
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, "the local id would share a folder with another id",
                                  "use the plugin's import name: lowercase, without +, = or :");
     }
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "the id cannot name a folder",
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the id cannot name a folder",
                              "use a local name without path separators, wildcards or a trailing dot");
 }
 
@@ -90,9 +90,9 @@ static spisor_status folder(void *context, const runtime_identity_id_argument *a
     runtime_identity_folder_status status;
     int copied;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ID_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, FOLDER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "identity's folder");
+    if (argument == NULL || !spisor_has_shape(argument->size, ID_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, FOLDER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "identity's folder");
     }
     status = argument->id == NULL ? RUNTIME_IDENTITY_FOLDER_INVALID : runtime_identity_folder_name(argument->id, &name);
     if (status == RUNTIME_IDENTITY_FOLDER_INVALID) {
@@ -136,15 +136,15 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
     cJSON *found_refusal = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, REPOSITORY_SHAPE)) {
-        return runtime_refuse_shape(refusal, "identity's resolve");
+    if (argument == NULL || !spisor_has_shape(argument->size, RESOLVE_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, REPOSITORY_SHAPE)) {
+        return spisor_refuse_shape(refusal, "identity's resolve");
     }
     if (argument->id == NULL || !runtime_identity_parse_id(argument->id, &parsed)) {
         return refuse_id(refusal);
     }
     if (argument->token != NULL && !runtime_identity_is_token_text(argument->token)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the token is not usable",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the token is not usable",
                                  "send token as the access token itself, on one line with no spaces");
     }
     request.id = argument->id;
@@ -158,7 +158,7 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
 }
 
 static spisor_status refuse_copies(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "a copy carries no id, is listed twice, or holds a file that "
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "a copy carries no id, is listed twice, or holds a file that "
                              "is not a well-formed value",
                              "send each copy once with its id, and its file as read or NULL");
 }
@@ -240,9 +240,9 @@ static spisor_status agree(void *context, const runtime_identity_agree_argument 
     cJSON *found;
     cJSON *found_refusal = NULL;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, AGREE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
-        return runtime_refuse_shape(refusal, "identity's agree");
+    if (argument == NULL || !spisor_has_shape(argument->size, AGREE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
+        return spisor_refuse_shape(refusal, "identity's agree");
     }
     if (!runtime_identity_is_repo_id(argument->id)) {
         return refuse_repo_id(refusal, "id");
@@ -264,9 +264,9 @@ static spisor_status also_at(void *context, const runtime_identity_also_at_argum
     cJSON *found;
     cJSON *found_refusal = NULL;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ALSO_AT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
-        return runtime_refuse_shape(refusal, "identity's also_at");
+    if (argument == NULL || !spisor_has_shape(argument->size, ALSO_AT_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
+        return spisor_refuse_shape(refusal, "identity's also_at");
     }
     if (!runtime_identity_is_repo_id(argument->id)) {
         return refuse_repo_id(refusal, "id");
@@ -278,9 +278,9 @@ static spisor_status also_at(void *context, const runtime_identity_also_at_argum
 static spisor_status accepts_version(void *context, const runtime_identity_version_argument *argument,
                                      runtime_identity_version_answer *answer, spisor_refusal *refusal) {
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, VERSION_SHAPE) || answer == NULL ||
-        !runtime_has_shape(answer->size, VERSION_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "identity's accepts_version");
+    if (argument == NULL || !spisor_has_shape(argument->size, VERSION_SHAPE) || answer == NULL ||
+        !spisor_has_shape(answer->size, VERSION_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "identity's accepts_version");
     }
     if (!runtime_identity_is_repo_id(argument->recorded)) {
         return refuse_repo_id(refusal, "recorded");
@@ -325,7 +325,7 @@ static const runtime_identity_definition definition = {
     release_folder_answer,
     release_repository,
     release_agreement,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_identity_definition_of(void) {

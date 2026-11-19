@@ -14,16 +14,16 @@
 #include "updates.h"
 
 #define HEADER "the updates header"
-#define APPLY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_apply_argument, platform)
-#define APPLY_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_apply_answer, storage)
-#define CHECK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_check_argument, platform)
-#define CHECK_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_check_answer, storage)
-#define ROLLBACK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_rollback_argument, item)
-#define ROLLBACK_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_rollback_answer, storage)
-#define RECORDED_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_recorded_argument, host_id)
-#define RECORDED_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_recorded_answer, storage)
-#define RUN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_run_argument, now)
-#define RUN_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_updates_run_answer, storage)
+#define APPLY_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_apply_argument, platform)
+#define APPLY_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_apply_answer, storage)
+#define CHECK_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_check_argument, platform)
+#define CHECK_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_check_answer, storage)
+#define ROLLBACK_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_rollback_argument, item)
+#define ROLLBACK_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_rollback_answer, storage)
+#define RECORDED_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_recorded_argument, host_id)
+#define RECORDED_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_recorded_answer, storage)
+#define RUN_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_run_argument, now)
+#define RUN_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_updates_run_answer, storage)
 
 static const char *const OUTCOMES[] = {NULL, "skipped", "unchanged", "changed", "failed"};
 static const char *const OPERATIONS[] = {NULL, "update", "remove"};
@@ -309,11 +309,11 @@ static spisor_status apply(void *context, const runtime_updates_apply_argument *
                            runtime_updates_apply_answer *answer, spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, APPLY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, APPLY_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, APPLY_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, APPLY_ANSWER_SHAPE,
                                          answer->plugin_count | answer->run_count | answer->next_count |
                                          answer->rollback_count | answer->unrecorded_count)) {
-        return runtime_refuse_shape(refusal, "updates' apply");
+        return spisor_refuse_shape(refusal, "updates' apply");
     }
     status = check_apply(argument, refusal);
     return status != SPISOR_OK ? status : serve_apply(argument, answer, refusal);
@@ -392,11 +392,11 @@ static spisor_status check(void *context, const runtime_updates_check_argument *
                            runtime_updates_check_answer *answer, spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, CHECK_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, CHECK_ANSWER_SHAPE,
                                          answer->source_count | answer->fetched_count | answer->refused_count |
                                          answer->removed_count)) {
-        return runtime_refuse_shape(refusal, "updates' check");
+        return spisor_refuse_shape(refusal, "updates' check");
     }
     status = check_check(argument, refusal);
     return status != SPISOR_OK ? status : serve_check(argument, answer, refusal);
@@ -435,10 +435,10 @@ static spisor_status rollback(void *context, const runtime_updates_rollback_argu
     runtime_updates_target target;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ROLLBACK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, ROLLBACK_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, ROLLBACK_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, ROLLBACK_ANSWER_SHAPE,
                                          answer->run_count | answer->next_count | answer->rollback_count)) {
-        return runtime_refuse_shape(refusal, "updates' rollback");
+        return spisor_refuse_shape(refusal, "updates' rollback");
     }
     target = (runtime_updates_target){argument->state, argument->cache, argument->host_id, NULL};
     status = check_target(&target, refusal);
@@ -467,9 +467,9 @@ static spisor_status recorded(void *context, const runtime_updates_recorded_argu
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RECORDED_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RECORDED_ANSWER_SHAPE, answer->run_count)) {
-        return runtime_refuse_shape(refusal, "updates' recorded");
+    if (argument == NULL || !spisor_has_shape(argument->size, RECORDED_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RECORDED_ANSWER_SHAPE, answer->run_count)) {
+        return spisor_refuse_shape(refusal, "updates' recorded");
     }
     target = (runtime_updates_target){argument->state, argument->cache, argument->host_id, NULL};
     status = check_target(&target, refusal);
@@ -552,10 +552,10 @@ static spisor_status run(void *context, const runtime_updates_run_argument *argu
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RUN_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RUN_ANSWER_SHAPE,
+    if (argument == NULL || !spisor_has_shape(argument->size, RUN_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RUN_ANSWER_SHAPE,
                                          answer->check_count | answer->application_count | answer->refused_count)) {
-        return runtime_refuse_shape(refusal, "updates' run");
+        return spisor_refuse_shape(refusal, "updates' run");
     }
     if (!runtime_is_place(argument->portable) || !runtime_is_place(argument->state) ||
         !runtime_is_place(argument->cache)) {
@@ -609,7 +609,7 @@ static const runtime_updates_definition definition = {
     release_rollback_answer,
     release_recorded_answer,
     release_run_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_updates_definition_of(void) {

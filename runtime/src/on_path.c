@@ -141,8 +141,8 @@ runtime_on_path_status runtime_find_on_path(int windows, const char *binary, con
     return *found == NULL ? RUNTIME_ON_PATH_ABSENT : RUNTIME_ON_PATH_FOUND;
 }
 
-#define ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_detect_on_path_argument, environment_count)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_detect_on_path_answer, storage)
+#define ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_detect_on_path_argument, environment_count)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_detect_on_path_answer, storage)
 
 static spisor_status answer_found(char *found, runtime_detect_on_path_answer *answer) {
     int copied = runtime_storage_copy(&answer->storage, found, &answer->path);
@@ -168,15 +168,15 @@ static spisor_status on_path(void *context, const runtime_detect_on_path_argumen
     cJSON *environment = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "detect's on_path");
+    if (argument == NULL || !spisor_has_shape(argument->size, ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "detect's on_path");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
     }
     if (argument->binary == NULL || argument->binary[0] == '\0') {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no binary",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no binary",
                                  "send binary as a command name, such as \"claude\"");
     }
     status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
@@ -196,7 +196,7 @@ static void release_answer(void *context, runtime_detect_on_path_answer *answer)
 }
 
 static const runtime_detect_definition definition = {
-    sizeof(runtime_detect_definition), NULL, on_path, release_answer, runtime_release_refusal,
+    sizeof(runtime_detect_definition), NULL, on_path, release_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_detect_definition_of(void) {

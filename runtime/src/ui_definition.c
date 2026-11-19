@@ -11,15 +11,15 @@
 #include "ui.h"
 #include "ui_definition.h"
 
-#define NAVIGATION_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_navigation_argument, ui)
-#define NAVIGATION_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_navigation_answer, storage)
-#define SETTINGS_VIEW_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_settings_view_argument, description)
-#define SETTINGS_VIEW_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_settings_view_answer, storage)
-#define SCREEN_ARGUMENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_screen_argument, reply_count)
-#define PLAN_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plan_answer, storage)
-#define SCREEN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_screen, storage)
-#define PLUGIN_LIST_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plugin_list_argument, available)
-#define PLUGIN_LIST_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plugin_list_answer, storage)
+#define NAVIGATION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_argument, ui)
+#define NAVIGATION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_answer, storage)
+#define SETTINGS_VIEW_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_settings_view_argument, description)
+#define SETTINGS_VIEW_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_settings_view_answer, storage)
+#define SCREEN_ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen_argument, reply_count)
+#define PLAN_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plan_answer, storage)
+#define SCREEN_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen, storage)
+#define PLUGIN_LIST_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plugin_list_argument, available)
+#define PLUGIN_LIST_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plugin_list_answer, storage)
 
 static const char *const COMPONENT_NAMES[] = {NULL, "form", "field"};
 
@@ -120,9 +120,9 @@ static spisor_status navigation(void *context, const runtime_ui_navigation_argum
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, NAVIGATION_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, NAVIGATION_ANSWER_SHAPE, answer->entry_count)) {
-        return runtime_refuse_shape(refusal, "ui's navigation");
+    if (argument == NULL || !spisor_has_shape(argument->size, NAVIGATION_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, NAVIGATION_ANSWER_SHAPE, answer->entry_count)) {
+        return spisor_refuse_shape(refusal, "ui's navigation");
     }
     if (argument->descriptions == NULL || argument->ui == NULL) {
         return runtime_refuse_member(refusal, argument->ui == NULL ? "ui" : "descriptions", RUNTIME_UI_HEADER);
@@ -187,9 +187,9 @@ static spisor_status settings_view(void *context, const runtime_ui_settings_view
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SETTINGS_VIEW_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE, answer->node_count)) {
-        return runtime_refuse_shape(refusal, "ui's settings_view");
+    if (argument == NULL || !spisor_has_shape(argument->size, SETTINGS_VIEW_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE, answer->node_count)) {
+        return spisor_refuse_shape(refusal, "ui's settings_view");
     }
     status = check_member(refusal, argument->description, SPISOR_VALUE_RECORD, runtime_ui_is_manifest,
                           "description");
@@ -224,9 +224,9 @@ static spisor_status plan(void *context, const runtime_ui_screen_argument *argum
                           spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->call_count)) {
-        return runtime_refuse_shape(refusal, "ui's plan");
+    if (argument == NULL || !spisor_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, PLAN_ANSWER_SHAPE, answer->call_count)) {
+        return spisor_refuse_shape(refusal, "ui's plan");
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
     return status != SPISOR_OK ? status
@@ -238,9 +238,9 @@ static spisor_status render(void *context, const runtime_ui_screen_argument *arg
                             spisor_refusal *refusal) {
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SCREEN_SHAPE, answer->node_count)) {
-        return runtime_refuse_shape(refusal, "ui's render");
+    if (argument == NULL || !spisor_has_shape(argument->size, SCREEN_ARGUMENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SCREEN_SHAPE, answer->node_count)) {
+        return spisor_refuse_shape(refusal, "ui's render");
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
     return status != SPISOR_OK ? status
@@ -310,9 +310,9 @@ static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_arg
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PLUGIN_LIST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLUGIN_LIST_ANSWER_SHAPE, answer->row_count)) {
-        return runtime_refuse_shape(refusal, "ui's plugin_list");
+    if (argument == NULL || !spisor_has_shape(argument->size, PLUGIN_LIST_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, PLUGIN_LIST_ANSWER_SHAPE, answer->row_count)) {
+        return spisor_refuse_shape(refusal, "ui's plugin_list");
     }
     status = check_groups(argument, refusal);
     if (status != SPISOR_OK) {
@@ -367,7 +367,7 @@ static const runtime_ui_definition definition = {
     release_plan_answer,
     release_screen,
     release_plugin_list_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_ui_definition_of(void) {

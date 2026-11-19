@@ -224,15 +224,21 @@ static char *destination_of(const char *out, const catalog_input *input, const c
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, input->platform == NULL ? 5 : 6);
 }
 
-/** The bytes of a files value: the file at its path, or its generated text. */
-static uint8_t *bytes_of(const cJSON *file, size_t *length) {
+/**
+ * The bytes of a files value: the file at its path, or its generated text; NULL with *out_of_memory set when memory
+ * ran out.
+ */
+static uint8_t *bytes_of(const cJSON *file, size_t *length, int *out_of_memory) {
     const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(file, HOST_GENERATED_TEXT));
     if (!cJSON_IsObject(file)) {
         spisor_read_outcome outcome = SPISOR_READ_FAILED;
-        return spisor_read_file_reporting(file->valuestring, length, &outcome);
+        uint8_t *read = spisor_read_file_reporting(file->valuestring, length, &outcome);
+        *out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
+        return read;
     }
     *length = text == NULL ? 0 : strlen(text);
     uint8_t *bytes = text == NULL ? NULL : spisor_memory_allocate(*length + 1);
+    *out_of_memory = text != NULL && bytes == NULL;
     if (bytes != NULL) {
         memcpy(bytes, text, *length + 1);
     }
@@ -248,7 +254,8 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
     const char *parent_segments[2] = {destination, ".."};
     char *parent = destination == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, parent_segments, 2);
     size_t length = 0;
-    uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length);
+    int out_of_memory = 0;
+    uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length, &out_of_memory);
     char hash[RUNTIME_SHA256_HEX_SIZE];
     int copied = bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
         spisor_replace_file(destination, bytes, length) == SPISOR_OK;
@@ -265,7 +272,7 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
             cJSON_Delete(reference);
             reference = NULL;
         }
-    } else if (parent != NULL) {
+    } else if (parent != NULL && !out_of_memory) {
         const char *parts[4] = {source, " could not be copied to ", destination == NULL ? out : destination, ""};
         *refusal = runtime_cache_refusal(parts, 4, "check that the file is readable and --out names a writable folder");
     }

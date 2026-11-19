@@ -8,10 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void spisor_release(uint8_t *buffer) {
-    spisor_memory_release(buffer);
-}
-
 typedef enum document_refusal {
     DOCUMENT_ACCEPTED,
     DOCUMENT_NOT_UTF8,

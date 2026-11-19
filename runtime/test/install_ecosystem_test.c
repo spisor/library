@@ -309,7 +309,7 @@ static void installs_beside_a_cache_laid_out_under_the_old_names(void) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", base.cache);
     catalog_answer placed = boot_call(BOOT_PLACE, argument);
-    CHECK(placed.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(placed.tree, "placed")));
+    CHECK(placed.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(placed.tree, "placed")));
     char *stub = text_in(base.cache, "boot/spisor-boot" EXECUTABLE_SUFFIX);
     check_text(stub, "stub", "spisor-boot placed");
     cJSON *registration = json_in(base.state, "hosts/spisor-host.json");
@@ -532,7 +532,7 @@ static int run_child_install(const char *root, const char *requested, const char
     cJSON_Delete(argument);
     catalog_answer answer = install_with(&base, extra, NULL);
     cJSON_free(extra);
-    int succeeded = answer.status == SPISOR_STATUS_SUCCESS &&
+    int succeeded = answer.status == SPISOR_OK &&
                     cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "unavailable")) == 0;
     if (!succeeded) {
         char *printed = answer.tree == NULL ? NULL : cJSON_PrintUnformatted(answer.tree);

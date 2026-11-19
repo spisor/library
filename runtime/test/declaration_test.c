@@ -117,7 +117,7 @@ static void the_declaration_reads_in_the_standards_format(void) {
     }
     check_text(library.import_name, "runtime", "importName");
     check_text(library.version, "0.2.0", "version");
-    check_text(library.release, "runtime_release", "release");
+    CHECK(library.release == NULL);
     every_header_definition_is_declared_and_nothing_else(&library);
     weivel_standard_library_release(&library);
 }

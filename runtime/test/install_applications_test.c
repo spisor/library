@@ -101,7 +101,7 @@ static void remove_host_id(const install_base *base, const char *id) {
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "id", id);
     catalog_answer answer = hosts_call(HOSTS_REMOVE, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -637,7 +637,7 @@ static void reports_an_update_done_noting_a_version_that_could_not_be_recorded(v
     cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
     make_registration_unrewritable(&base);
     catalog_answer answer = through_record(&base, "update");
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "operation"), "update", "update done");
     check_text(text_at(answer.tree, "version"), "2.0.0", "version reported");
     const cJSON *unrecorded = cJSON_GetObjectItemCaseSensitive(answer.tree, "unrecorded");
@@ -679,7 +679,7 @@ static void registers_an_installed_loader_again_keeping_its_provenance_and_reque
     cJSON_Delete(install_choosing(&base, "{\"claude\": \"fake\"}", NULL));
     cJSON *installed = recorded_provenance(&base);
     catalog_answer registered = register_loader(&base, "1.0.0", base.path);
-    if (registered.status != SPISOR_STATUS_SUCCESS) {
+    if (registered.status != SPISOR_OK) {
         char *printed = registered.tree == NULL ? NULL : cJSON_PrintUnformatted(registered.tree);
         fprintf(stderr, "install.registerLoader answered %d: %s\n", (int)registered.status, printed == NULL ? "(nothing)" : printed);
         cJSON_free(printed);

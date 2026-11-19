@@ -4,10 +4,10 @@
 #include "config_conversion.h"
 #include "definition_support.h"
 
-#define SCOPE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_settings_scope, portable)
+#define SCOPE_SHAPE SPISOR_SHAPE_THROUGH(runtime_settings_scope, portable)
 
 static int is_whole_scope(const runtime_settings_scope *scope) {
-    return scope != NULL && runtime_has_shape(scope->size, SCOPE_SHAPE);
+    return scope != NULL && spisor_has_shape(scope->size, SCOPE_SHAPE);
 }
 
 static spisor_status all(void *context, const runtime_settings_scope *scope, spisor_value_tree *values,
@@ -18,7 +18,7 @@ static spisor_status all(void *context, const runtime_settings_scope *scope, spi
     spisor_status status;
     (void)context;
     if (!is_whole_scope(scope) || !runtime_is_empty_tree(values)) {
-        return runtime_refuse_shape(refusal, "settings' all");
+        return spisor_refuse_shape(refusal, "settings' all");
     }
     status = runtime_scope_request(scope, &request, &names, refusal);
     if (status == SPISOR_OK) {
@@ -42,7 +42,7 @@ static spisor_status set(void *context, const runtime_settings_scope *scope, con
     spisor_status status;
     (void)context;
     if (!is_whole_scope(scope) || !runtime_is_whole_change(change) || !runtime_is_empty_tree(previous)) {
-        return runtime_refuse_shape(refusal, "settings' set");
+        return spisor_refuse_shape(refusal, "settings' set");
     }
     status = runtime_scope_request(scope, &request, &names, refusal);
     if (status == SPISOR_OK) {
@@ -59,7 +59,7 @@ static spisor_status set(void *context, const runtime_settings_scope *scope, con
 }
 
 static const runtime_settings_definition definition = {
-    sizeof(runtime_settings_definition), NULL, all, set, runtime_release_tree, runtime_release_refusal,
+    sizeof(runtime_settings_definition), NULL, all, set, runtime_release_tree, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_settings_definition_of(void) {

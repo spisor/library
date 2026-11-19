@@ -14,17 +14,17 @@
 #include "spisor/path.h"
 
 #define HEADER "catalog.h"
-#define READ_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_read_argument, origin)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_answer, storage)
-#define SOURCES_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_sources_argument, settings)
-#define SOURCES_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_sources_answer, storage)
-#define MERGE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_merge_argument, catalog_count)
-#define MERGE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_merge_answer, storage)
-#define CHECK_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_check_argument, interval_hours)
-#define CHECK_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_check_answer, storage)
-#define CURRENT_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_current_argument, cache)
-#define RESOLVE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_resolve_argument, kind)
-#define RESOLVE_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_catalog_resolve_answer, storage)
+#define READ_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_read_argument, origin)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_answer, storage)
+#define SOURCES_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_sources_argument, settings)
+#define SOURCES_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_sources_answer, storage)
+#define MERGE_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_merge_argument, catalog_count)
+#define MERGE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_merge_answer, storage)
+#define CHECK_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_check_argument, interval_hours)
+#define CHECK_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_check_answer, storage)
+#define CURRENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_current_argument, cache)
+#define RESOLVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_resolve_argument, kind)
+#define RESOLVE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_catalog_resolve_answer, storage)
 
 static const char *const SOURCE_KINDS[] = {NULL, "local", "https"};
 static const char *const CHECK_KINDS[] = {NULL, "skipped", "unchanged", "changed", "failed"};
@@ -97,9 +97,9 @@ static spisor_status read_catalog(void *context, const runtime_catalog_read_argu
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, READ_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "catalog's read");
+    if (argument == NULL || !spisor_has_shape(argument->size, READ_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "catalog's read");
     }
     if (argument->text == NULL || !runtime_is_text(argument->origin)) {
         return runtime_refuse_member(refusal, argument->text == NULL ? "text" : "origin", HEADER);
@@ -145,9 +145,9 @@ static spisor_status sources(void *context, const runtime_catalog_sources_argume
     cJSON *answered;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, SOURCES_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
-        return runtime_refuse_shape(refusal, "catalog's sources");
+    if (argument == NULL || !spisor_has_shape(argument->size, SOURCES_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SOURCES_ANSWER_SHAPE, answer->source_count | answer->skipped_count)) {
+        return spisor_refuse_shape(refusal, "catalog's sources");
     }
     call = cJSON_CreateObject();
     status = call == NULL ? SPISOR_OUT_OF_MEMORY
@@ -221,9 +221,9 @@ static spisor_status merge(void *context, const runtime_catalog_merge_argument *
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, MERGE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, MERGE_ANSWER_SHAPE, answer->shadowed_count)) {
-        return runtime_refuse_shape(refusal, "catalog's merge");
+    if (argument == NULL || !spisor_has_shape(argument->size, MERGE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, MERGE_ANSWER_SHAPE, answer->shadowed_count)) {
+        return spisor_refuse_shape(refusal, "catalog's merge");
     }
     status = check_readings(argument);
     if (status != SPISOR_OK) {
@@ -288,9 +288,9 @@ static spisor_status check(void *context, const runtime_catalog_check_argument *
     cJSON *source;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, CHECK_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "catalog's check");
+    if (argument == NULL || !spisor_has_shape(argument->size, CHECK_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, CHECK_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "catalog's check");
     }
     if (!runtime_catalog_are_sources(argument->source, 1) || !runtime_is_place(argument->cache) ||
         !is_time(argument->now)) {
@@ -322,9 +322,9 @@ static spisor_status current(void *context, const runtime_catalog_current_argume
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, CURRENT_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "catalog's current");
+    if (argument == NULL || !spisor_has_shape(argument->size, CURRENT_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "catalog's current");
     }
     if (!runtime_is_place(argument->cache) || !runtime_catalog_are_sources(argument->sources, argument->source_count)) {
         return runtime_refuse_member(refusal, !runtime_is_place(argument->cache) ? "cache" : "sources", HEADER);
@@ -467,9 +467,9 @@ static spisor_status resolve(void *context, const runtime_catalog_resolve_argume
     cJSON *call;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, RESOLVE_ANSWER_SHAPE, answer->run_count | answer->fetch_count)) {
-        return runtime_refuse_shape(refusal, "catalog's resolve");
+    if (argument == NULL || !spisor_has_shape(argument->size, RESOLVE_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RESOLVE_ANSWER_SHAPE, answer->run_count | answer->fetch_count)) {
+        return spisor_refuse_shape(refusal, "catalog's resolve");
     }
     if (argument->kind < RUNTIME_CATALOG_PLUGIN || argument->kind > RUNTIME_CATALOG_LIBRARY) {
         return runtime_refuse_member(refusal, "kind", HEADER);
@@ -533,7 +533,7 @@ static const runtime_catalog_definition definition = {
     release_merge_answer,
     release_check_answer,
     release_resolve_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_catalog_definition_of(void) {

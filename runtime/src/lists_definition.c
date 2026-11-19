@@ -9,9 +9,9 @@
 #include "lists.h"
 #include "paths.h"
 
-#define PLUGINS_SHAPE RUNTIME_SHAPE_THROUGH(runtime_lists_plugins_argument, available)
-#define APPLICATIONS_SHAPE RUNTIME_SHAPE_THROUGH(runtime_lists_applications_argument, detection_count)
-#define LIST_SHAPE RUNTIME_SHAPE_THROUGH(runtime_list, storage)
+#define PLUGINS_SHAPE SPISOR_SHAPE_THROUGH(runtime_lists_plugins_argument, available)
+#define APPLICATIONS_SHAPE SPISOR_SHAPE_THROUGH(runtime_lists_applications_argument, detection_count)
+#define LIST_SHAPE SPISOR_SHAPE_THROUGH(runtime_list, storage)
 
 #define UNUSABLE_GROUP "a group is not a well-formed list of rows with a text id"
 #define UNUSABLE_GROUP_FIX "send installed, detected and available each as a list of records, each with its id as text"
@@ -102,9 +102,9 @@ static spisor_status plugins(void *context, const runtime_lists_plugins_argument
     cJSON *call;
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, PLUGINS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
-        return runtime_refuse_shape(refusal, "lists' plugins");
+    if (argument == NULL || !spisor_has_shape(argument->size, PLUGINS_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
+        return spisor_refuse_shape(refusal, "lists' plugins");
     }
     call = cJSON_CreateObject();
     if (call != NULL) {
@@ -118,7 +118,7 @@ static spisor_status plugins(void *context, const runtime_lists_plugins_argument
     }
     if (status != SPISOR_OK) {
         cJSON_Delete(call);
-        return status != SPISOR_MALFORMED ? status : runtime_refuse_as(refusal, SPISOR_MALFORMED, UNUSABLE_GROUP,
+        return status != SPISOR_MALFORMED ? status : spisor_refuse_as(refusal, SPISOR_MALFORMED, UNUSABLE_GROUP,
                                                                        UNUSABLE_GROUP_FIX);
     }
     answered = runtime_lists_plugins(cJSON_GetObjectItemCaseSensitive(call, "installed"),
@@ -192,7 +192,7 @@ static spisor_status applications_call(const runtime_lists_applications_argument
         *call = NULL;
     }
     return status == SPISOR_MALFORMED
-               ? runtime_refuse_as(refusal, SPISOR_MALFORMED, "the catalog's items or a detection is unusable",
+               ? spisor_refuse_as(refusal, SPISOR_MALFORMED, "the catalog's items or a detection is unusable",
                                    "send items as the catalog's items record and every detection with its item")
                : status;
 }
@@ -204,15 +204,15 @@ static spisor_status applications(void *context, const runtime_lists_application
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, APPLICATIONS_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
-        return runtime_refuse_shape(refusal, "lists' applications");
+    if (argument == NULL || !spisor_has_shape(argument->size, APPLICATIONS_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LIST_SHAPE, answer->item_count)) {
+        return spisor_refuse_shape(refusal, "lists' applications");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
     }
     if (argument->items == NULL || argument->items->kind != SPISOR_VALUE_RECORD) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the catalog's items are not a record",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the catalog's items are not a record",
                                  "send items as the catalog's items record, as catalog's read answers it");
     }
     if (!runtime_is_usable_home(argument->state)) {
@@ -236,7 +236,7 @@ static void release_list(void *context, runtime_list *answer) {
 }
 
 static const runtime_lists_definition definition = {
-    sizeof(runtime_lists_definition), NULL, plugins, applications, release_list, runtime_release_refusal,
+    sizeof(runtime_lists_definition), NULL, plugins, applications, release_list, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_lists_definition_of(void) {

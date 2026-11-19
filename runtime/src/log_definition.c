@@ -7,8 +7,8 @@
 #include "definition_support.h"
 #include "log.h"
 
-#define ENTRY_SHAPE RUNTIME_SHAPE_THROUGH(runtime_log_entry, no_color)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_log_answer, storage)
+#define ENTRY_SHAPE SPISOR_SHAPE_THROUGH(runtime_log_entry, no_color)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_log_answer, storage)
 
 static void fill_request(const runtime_log_entry *entry, const cJSON *names, const cJSON *config,
                          runtime_log_request *request) {
@@ -32,9 +32,9 @@ static spisor_status write_line(void *context, const runtime_log_entry *entry, r
     runtime_log_console console = {NULL, NULL};
     spisor_status status;
     (void)context;
-    if (entry == NULL || !runtime_has_shape(entry->size, ENTRY_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "log's write");
+    if (entry == NULL || !spisor_has_shape(entry->size, ENTRY_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "log's write");
     }
     status = runtime_record_json(entry->names, "names", &names, refusal);
     if (status == SPISOR_OK) {
@@ -59,7 +59,7 @@ static void release_answer(void *context, runtime_log_answer *answer) {
 }
 
 static const runtime_log_definition definition = {
-    sizeof(runtime_log_definition), NULL, write_line, release_answer, runtime_release_refusal,
+    sizeof(runtime_log_definition), NULL, write_line, release_answer, spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_log_definition_of(void) {

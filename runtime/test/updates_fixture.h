@@ -247,7 +247,7 @@ static inline void install_listed(const char *id, const char *version) {
     cJSON_AddStringToObject(argument, "version", version);
     cJSON_AddStringToObject(argument, "platform", PLATFORM);
     catalog_answer answer = cache_call(CACHE_INSTALL, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -376,7 +376,7 @@ static inline catalog_answer resolve_boot(const char *host, const char *argument
 }
 
 static inline int expect_success(catalog_answer answer, const char *label) {
-    if (answer.status == SPISOR_STATUS_SUCCESS) {
+    if (answer.status == SPISOR_OK) {
         return 1;
     }
     fprintf(stderr, "%s: expected success, got status %d: %s\n", label, (int)answer.status,

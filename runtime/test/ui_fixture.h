@@ -46,7 +46,7 @@ static inline void check_json_at(const cJSON *tree, const char *slashed, const c
 /** Answers the successful tree of operation called with argument, which it frees; NULL after a failed check. */
 static inline cJSON *successful(ui_operation operation, cJSON *argument, const char *label) {
     catalog_answer answer = ui_call(operation, argument);
-    if (answer.status != SPISOR_STATUS_SUCCESS) {
+    if (answer.status != SPISOR_OK) {
         const char *message = text_at(answer.tree, "message");
         fprintf(stderr, "%s: expected success, got status %d: %s\n", label, (int)answer.status,
                 message == NULL ? "(no message)" : message);

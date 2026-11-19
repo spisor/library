@@ -10,6 +10,11 @@ The C conventions every spisor and forebay library shares, as one static CMake t
   list, record) for data a library only stores or hands back and whose shape belongs to someone else, such as a
   setting's value; `spisor_value_check`, `spisor_value_build` and `spisor_value_release`. `spisor/json_value.h`
   converts between a tree and the JSON a file on disk holds.
+- **Definition helpers** (`spisor/definition.h`): what every library's definitions share, so none keeps its own
+  copy: `SPISOR_SHAPE_THROUGH` and `spisor_has_shape` for reading a size-prefixed struct only through its first
+  shape, `SPISOR_IS_EMPTY_ANSWER`, `SPISOR_IS_EMPTY_COUNTED_ANSWER` and `SPISOR_CLEAR_ANSWER` for the empty answer
+  an operation fills, `spisor_refuse_as`, `spisor_refuse_shape` and `spisor_release_refusal` for refusing, and
+  `spisor_overwrite` for a secret's bytes before they are freed.
 - **One allocator** (`spisor/allocation.h`, `spisor/json_allocation.h`): every allocation in shipped code goes
   through `spisor_memory_allocate` and its family, cJSON's included, so an out-of-memory test sees all of them.
   `spisor_library` carries no allocator itself: each final binary links exactly one of `spisor_allocator` and the
@@ -76,13 +81,18 @@ build the same table and tests for another library.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
 function of kind `definition`, and a test keeps it complete against the headers; another loads the built
-`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. The binary exports
-its definitions and `runtime_release`, and nothing else, which `runtime_exports_only_definitions_test` holds.
+`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. It declares no
+`release`, since every definition releases its own answers, and the binary exports its definitions and nothing
+else, which `runtime_exports_only_definitions_test` holds.
 Each header documents its operations, what they take and answer, and every refusal; this file says what they
 do together. A translation of a header in another language is checked against the `layouts` test program,
 which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the
 headers (`cmake/layouts_check.cmake`). Operation names are the service's own in snake case; dotted names below,
-such as `places.resolve`, mean that service's operation.
+such as `places.resolve`, mean that service's operation. No header a consumer reads names cJSON, though
+`spisor_library` links it publicly: every build compiles `public_headers_without_cjson`, which includes each
+`include/runtime` header, `spisor/status.h`, `spisor/value.h` and `spisor/definition.h` with cJSON poisoned and
+off the include path.
+`spisor_refuse_name_in_headers` (`cmake/header_isolation.cmake`) builds the same check for another library.
 
 | service | header | operations |
 |---|---|---|

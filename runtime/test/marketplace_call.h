@@ -229,11 +229,8 @@ static inline catalog_answer marketplace_call(marketplace_operation operation, c
         answer.tree = marketplace_remember_tree(argument, &refusal);
         break;
     }
-    answer.status = SPISOR_STATUS_SUCCESS;
-    if (marketplace_last_status == SPISOR_OUT_OF_MEMORY) {
-        answer.status = SPISOR_STATUS_OUT_OF_MEMORY;
-    } else if (marketplace_last_status == SPISOR_MALFORMED || marketplace_last_status == SPISOR_REFUSED) {
-        answer.status = SPISOR_STATUS_FAILURE;
+    answer.status = marketplace_last_status == SPISOR_NONE ? SPISOR_OK : (int32_t)marketplace_last_status;
+    if (marketplace_last_status == SPISOR_MALFORMED || marketplace_last_status == SPISOR_REFUSED) {
         answer.tree = cJSON_CreateObject();
         marketplace_add_text(answer.tree, "message", refusal.detail);
         marketplace_add_text(answer.tree, "fix", refusal.fix);

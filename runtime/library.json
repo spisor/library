@@ -1,7 +1,6 @@
 {
   "importName": "runtime",
   "version": "0.2.0",
-  "release": "runtime_release",
   "services": [
     {
       "id": "paths",

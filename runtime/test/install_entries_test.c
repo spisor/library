@@ -99,7 +99,7 @@ static void register_loader(const install_base *base, const char *application, c
     cJSON_AddStringToObject(provenance, "installedAt", "2026-11-03T00:00:00.000Z");
     cJSON_AddItemToObject(argument, "environment", environment_of(base));
     catalog_answer answer = hosts_call(HOSTS_REGISTER, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
 }
 
@@ -124,7 +124,7 @@ static cJSON *removed(const install_base *base) {
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON_AddStringToObject(argument, "id", LOADER_ID);
     catalog_answer answer = hosts_call(HOSTS_REMOVE, argument);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     return answer.tree;
 }
 
@@ -166,7 +166,7 @@ static void adds_only_its_two_members_to_a_hand_written_settings_json_and_gives_
     write_in(home, "settings.json", HAND_WRITTEN_SETTINGS);
     char *before = tree_snapshot(base.user, NULL);
     catalog_answer answer = write_entry(&base, "sample", home);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "written")));
+    CHECK(answer.status == SPISOR_OK && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "written")));
     cJSON_Delete(answer.tree);
     char *root = entry_root(&base);
     char *member = marketplace_member(root);
@@ -318,7 +318,7 @@ static void writes_one_declared_text_file_gone_with_the_directory_it_created(voi
     register_loader(&base, "inprocess", home);
     write_in(home, "sample.json", "{}\n");
     catalog_answer answer = write_entry(&base, "inprocess", home);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
     expect_tree(home, "[\"plugins\",\"plugins/spisor-" LOADER_ID ".js\",\"sample.json\"]", "inprocess tree");
     char *source = text_in(home, "plugins/spisor-" LOADER_ID ".js");
@@ -360,7 +360,7 @@ static void answers_not_written_for_an_application_declaring_no_entry(void) {
     char *home = home_of(&base, "elsewhere");
     register_loader(&base, "elsewhere", home);
     catalog_answer answer = write_entry(&base, "elsewhere", home);
-    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "written")));
     CHECK(strstr(text_at(answer.tree, "message"), "elsewhere") != NULL && strstr(text_at(answer.tree, "fix"), "command") != NULL);
     cJSON_Delete(answer.tree);

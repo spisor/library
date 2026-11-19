@@ -10,16 +10,16 @@
 #include "paths.h"
 #include "registry.h"
 
-#define PROVENANCE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_provenance, options)
-#define START_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_start, entry)
-#define REGISTRATION_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registration, start)
-#define REGISTER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_register_argument, registration)
-#define HOST_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_host_argument, id)
-#define LIST_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_list_argument, state)
-#define FORGET_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_forget_argument, id)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_registration_answer, storage)
-#define LISTING_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_listing, storage)
-#define FORGET_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_registry_forget_answer, forgotten)
+#define PROVENANCE_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_provenance, options)
+#define START_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_start, entry)
+#define REGISTRATION_SHAPE SPISOR_SHAPE_THROUGH(runtime_registration, start)
+#define REGISTER_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_register_argument, registration)
+#define HOST_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_host_argument, id)
+#define LIST_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_list_argument, state)
+#define FORGET_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_forget_argument, id)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_registration_answer, storage)
+#define LISTING_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_listing, storage)
+#define FORGET_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_registry_forget_answer, forgotten)
 
 #define REGISTRATION_FIX                                                                                         \
     "send a registration with a host id, a non-empty version, an absolute home, an application record or NULL, " \
@@ -31,7 +31,7 @@
 static const char *const START_RUNTIMES[] = {NULL, "javascript", "jvm", "native"};
 
 static spisor_status refuse_id(spisor_refusal *refusal) {
-    return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable host id",
+    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no usable host id",
                              "send id as the host id, one portable path segment with no surrounding whitespace");
 }
 
@@ -52,7 +52,7 @@ static spisor_status add_value(cJSON *object, const char *name, const spisor_val
 
 static spisor_status add_provenance(cJSON *registration, const runtime_registry_provenance *provenance) {
     cJSON *json;
-    if (provenance == NULL || !runtime_has_shape(provenance->size, PROVENANCE_SHAPE)) {
+    if (provenance == NULL || !spisor_has_shape(provenance->size, PROVENANCE_SHAPE)) {
         return SPISOR_MALFORMED;
     }
     json = cJSON_AddObjectToObject(registration, "provenance");
@@ -72,7 +72,7 @@ static spisor_status add_start(cJSON *registration, const runtime_registry_start
     if (start == NULL) {
         return SPISOR_OK;
     }
-    if (!runtime_has_shape(start->size, START_SHAPE)) {
+    if (!spisor_has_shape(start->size, START_SHAPE)) {
         return SPISOR_MALFORMED;
     }
     known = start->runtime >= RUNTIME_REGISTRY_START_JAVASCRIPT && start->runtime <= RUNTIME_REGISTRY_START_NATIVE;
@@ -165,7 +165,7 @@ static spisor_status refuse_unfilled(spisor_status status, spisor_refusal *refus
     if (status != SPISOR_MALFORMED) {
         return status;
     }
-    return runtime_refuse_as(refusal, SPISOR_REFUSED, "a host's record holds a value no value tree carries",
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "a host's record holds a value no value tree carries",
                              "repair the host's record under the state place's hosts folder, or register it again");
 }
 
@@ -174,8 +174,8 @@ spisor_status runtime_registration_record_json(const runtime_registration *regis
     const char *defect;
     spisor_status status;
     *json = NULL;
-    if (registration == NULL || !runtime_has_shape(registration->size, REGISTRATION_SHAPE)) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the registration is absent or short of its first shape",
+    if (registration == NULL || !spisor_has_shape(registration->size, REGISTRATION_SHAPE)) {
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the registration is absent or short of its first shape",
                                  REGISTRATION_FIX);
     }
     status = registration_json(registration, json);
@@ -183,7 +183,7 @@ spisor_status runtime_registration_record_json(const runtime_registration *regis
     if (status == SPISOR_MALFORMED || defect != NULL) {
         cJSON_Delete(*json);
         *json = NULL;
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, defect != NULL ? defect : UNUSABLE_PARTS, REGISTRATION_FIX);
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, defect != NULL ? defect : UNUSABLE_PARTS, REGISTRATION_FIX);
     }
     return status;
 }
@@ -215,9 +215,9 @@ static spisor_status register_host(void *context, const runtime_registry_registe
     cJSON *record = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, REGISTER_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "registry's register_host");
+    if (argument == NULL || !spisor_has_shape(argument->size, REGISTER_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "registry's register_host");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
@@ -236,9 +236,9 @@ static spisor_status get(void *context, const runtime_registry_host_argument *ar
     cJSON *registration = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, HOST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "registry's get");
+    if (argument == NULL || !spisor_has_shape(argument->size, HOST_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "registry's get");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
@@ -301,9 +301,9 @@ static spisor_status list(void *context, const runtime_registry_list_argument *a
     cJSON *listed;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, LIST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, LISTING_SHAPE, answer->host_count | answer->unreadable_count)) {
-        return runtime_refuse_shape(refusal, "registry's list");
+    if (argument == NULL || !spisor_has_shape(argument->size, LIST_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LISTING_SHAPE, answer->host_count | answer->unreadable_count)) {
+        return spisor_refuse_shape(refusal, "registry's list");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
@@ -319,9 +319,9 @@ static spisor_status forget(void *context, const runtime_registry_forget_argumen
     cJSON *operation_refusal = NULL;
     int forgotten;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, FORGET_SHAPE) || answer == NULL ||
-        !runtime_has_shape(answer->size, FORGET_ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "registry's forget");
+    if (argument == NULL || !spisor_has_shape(argument->size, FORGET_SHAPE) || answer == NULL ||
+        !spisor_has_shape(answer->size, FORGET_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "registry's forget");
     }
     if (!runtime_is_usable_home(argument->state) || !runtime_is_usable_home(argument->cache)) {
         return runtime_refuse_place(refusal, runtime_is_usable_home(argument->state) ? "cache" : "state");
@@ -349,7 +349,7 @@ static void release_listing(void *context, runtime_registry_listing *answer) {
 
 static const runtime_registry_definition definition = {
     sizeof(runtime_registry_definition), NULL, register_host, get, list, forget, release_answer, release_listing,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_registry_definition_of(void) {

@@ -10,27 +10,12 @@
 #include "check.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
-
-typedef int32_t (*catalog_function)(const uint8_t *in, size_t in_len, uint8_t **out, size_t *out_len);
+#include "spisor/status.h"
 
 typedef struct catalog_answer {
     int32_t status;
     cJSON *tree;
 } catalog_answer;
-
-/** Calls function with argument, which it frees, and answers the status and the parsed answer. */
-static inline catalog_answer call_catalog(catalog_function function, cJSON *argument) {
-    char *text = cJSON_PrintUnformatted(argument);
-    cJSON_Delete(argument);
-    uint8_t *out = NULL;
-    size_t out_len = 0;
-    catalog_answer answer;
-    answer.status = function((const uint8_t *)text, strlen(text), &out, &out_len);
-    cJSON_free(text);
-    answer.tree = out == NULL ? NULL : spisor_parse_json_reporting(out, out_len, &(int){0});
-    spisor_release(out);
-    return answer;
-}
 
 static inline cJSON *parsed(const char *json) {
     cJSON *tree = spisor_parse_json_reporting((const uint8_t *)json, strlen(json), &(int){0});
@@ -75,9 +60,14 @@ static inline const cJSON *value_at(const cJSON *tree, const char *slashed) {
     return at;
 }
 
+/** Whether a status is a definition's refusal: MALFORMED or REFUSED. */
+static inline int is_refusal_status(int32_t status) {
+    return status == SPISOR_MALFORMED || status == SPISOR_REFUSED;
+}
+
 static inline int expect_refusal(catalog_answer answer, const char *fragment, const char *label) {
     const char *message = text_at(answer.tree, "message");
-    int matched = answer.status == SPISOR_STATUS_FAILURE && message != NULL && text_at(answer.tree, "fix") != NULL &&
+    int matched = is_refusal_status(answer.status) && message != NULL && text_at(answer.tree, "fix") != NULL &&
                   (fragment == NULL || strstr(message, fragment) != NULL);
     if (!matched) {
         fprintf(stderr, "%s: expected a refusal naming \"%s\", got status %d and \"%s\"\n", label,

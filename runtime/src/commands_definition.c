@@ -4,23 +4,23 @@
 #include "commands.h"
 #include "definition_support.h"
 
-#define COMMAND_SHAPE RUNTIME_SHAPE_THROUGH(runtime_command_argument, environment_count)
-#define RENAME_SHAPE RUNTIME_SHAPE_THROUGH(runtime_commands_rename_argument, environment_count)
-#define DELETE_SHAPE RUNTIME_SHAPE_THROUGH(runtime_commands_delete_argument, name)
-#define ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_command_answer, storage)
+#define COMMAND_SHAPE SPISOR_SHAPE_THROUGH(runtime_command_argument, environment_count)
+#define RENAME_SHAPE SPISOR_SHAPE_THROUGH(runtime_commands_rename_argument, environment_count)
+#define DELETE_SHAPE SPISOR_SHAPE_THROUGH(runtime_commands_delete_argument, name)
+#define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_command_answer, storage)
 
 static spisor_status add_arguments(cJSON *call, const char *const *arguments, size_t count,
                                    spisor_refusal *refusal) {
     cJSON *list;
     if (count > 0 && arguments == NULL) {
-        return runtime_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries a count without its arguments",
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries a count without its arguments",
                                  "send argument_count no larger than the arguments sent");
     }
     list = cJSON_AddArrayToObject(call, "arguments");
     for (size_t index = 0; list != NULL && index < count; index++) {
         cJSON *argument;
         if (arguments[index] == NULL) {
-            return runtime_refuse_as(refusal, SPISOR_MALFORMED, "an argument of the command is NULL",
+            return spisor_refuse_as(refusal, SPISOR_MALFORMED, "an argument of the command is NULL",
                                      "send each argument as text");
         }
         argument = cJSON_CreateString(arguments[index]);
@@ -82,9 +82,9 @@ static spisor_status give(runtime_command_operation operation, const runtime_com
     runtime_command_request commanded;
     cJSON *call = NULL;
     spisor_status status;
-    if (argument == NULL || !runtime_has_shape(argument->size, COMMAND_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, operation == RUNTIME_COMMAND_ADD ? "commands' add" : "commands' request");
+    if (argument == NULL || !spisor_has_shape(argument->size, COMMAND_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, operation == RUNTIME_COMMAND_ADD ? "commands' add" : "commands' request");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -114,9 +114,9 @@ static spisor_status rename_command(void *context, const runtime_commands_rename
     cJSON *call = NULL;
     spisor_status status;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, RENAME_SHAPE) ||
-        !RUNTIME_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
-        return runtime_refuse_shape(refusal, "commands' rename");
+    if (argument == NULL || !spisor_has_shape(argument->size, RENAME_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "commands' rename");
     }
     if (!runtime_is_environment(argument->environment, argument->environment_count)) {
         return runtime_refuse_environment(refusal);
@@ -132,8 +132,8 @@ static spisor_status remove_command(void *context, const runtime_commands_delete
     char name[RUNTIME_COMMAND_NAME_SIZE];
     runtime_command_request commanded;
     (void)context;
-    if (argument == NULL || !runtime_has_shape(argument->size, DELETE_SHAPE)) {
-        return runtime_refuse_shape(refusal, "commands' remove");
+    if (argument == NULL || !spisor_has_shape(argument->size, DELETE_SHAPE)) {
+        return spisor_refuse_shape(refusal, "commands' remove");
     }
     commanded = (runtime_command_request){argument->state, argument->host, NULL, NULL, argument->name,
                                         NULL, NULL, NULL, NULL};
@@ -147,7 +147,7 @@ static void release_answer(void *context, runtime_command_answer *answer) {
 
 static const runtime_commands_definition definition = {
     sizeof(runtime_commands_definition), NULL, request, rename_command, remove_command, add, release_answer,
-    runtime_release_refusal,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_commands_definition_of(void) {
