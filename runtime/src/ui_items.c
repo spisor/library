@@ -3,8 +3,6 @@
 #include <string.h>
 
 #include "json_service.h"
-#include "lists.h"
-#include "ui.h"
 
 static int is_unusable(const cJSON *row) {
     const char *state = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(row, "state"));
@@ -39,45 +37,4 @@ cJSON *runtime_ui_presented_items(const cJSON *items) {
         }
     }
     return presented;
-}
-
-static cJSON *table_node(cJSON *items) {
-    cJSON *node = cJSON_CreateObject();
-    cJSON *data = node == NULL || cJSON_AddStringToObject(node, "id", "plugins") == NULL ||
-                          cJSON_AddStringToObject(node, "component", "table") == NULL ||
-                          cJSON_AddStringToObject(node, "state", "ready") == NULL
-                      ? NULL
-                      : cJSON_AddObjectToObject(node, "data");
-    if (data == NULL || !cJSON_AddItemToObject(data, "items", items)) {
-        cJSON_Delete(items);
-        cJSON_Delete(node);
-        return NULL;
-    }
-    if (cJSON_AddObjectToObject(node, "props") == NULL) {
-        cJSON_Delete(node);
-        return NULL;
-    }
-    return node;
-}
-
-static cJSON *host_screen(cJSON *node) {
-    cJSON *screen = node == NULL ? NULL : cJSON_CreateObject();
-    cJSON *nodes = screen == NULL || cJSON_AddStringToObject(screen, "kind", "host") == NULL ||
-                           cJSON_AddStringToObject(screen, "title", "Plugins") == NULL
-                       ? NULL
-                       : cJSON_AddArrayToObject(screen, "nodes");
-    if (nodes == NULL || !cJSON_AddItemToArray(nodes, node)) {
-        cJSON_Delete(node);
-        cJSON_Delete(screen);
-        return NULL;
-    }
-    return screen;
-}
-
-cJSON *runtime_ui_plugin_list(const cJSON *installed, const cJSON *detected, const cJSON *available,
-                              cJSON **refusal) {
-    cJSON *listed = runtime_lists_plugins(installed, detected, available, refusal);
-    cJSON *items = listed == NULL ? NULL : runtime_ui_presented_items(listed);
-    cJSON_Delete(listed);
-    return items == NULL ? NULL : host_screen(table_node(items));
 }

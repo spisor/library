@@ -244,6 +244,31 @@ typedef struct runtime_ui_plugin_list_argument {
 } runtime_ui_plugin_list_argument;
 
 /**
+ * One row of the host's Plugins screen, each fact the library decides a field: the plugin's `id`, its `state`, a
+ * runtime_list_state, `unavailable` 1 for a row that cannot be used and `install` 1 for one that can be installed,
+ * and the caller's `row` as it was first given, a record. An element of an array, so it has no size.
+ */
+typedef struct runtime_ui_plugin_row {
+    const char *id;
+    uint32_t state;
+    uint32_t unavailable;
+    uint32_t install;
+    const spisor_value *row;
+} runtime_ui_plugin_row;
+
+/**
+ * The host's own Plugins screen: its `title` and its rows, installed, then detected, then available. First shape ends
+ * at `storage`.
+ */
+typedef struct runtime_ui_plugin_list_answer {
+    uint32_t size;
+    const char *title;
+    const runtime_ui_plugin_row *rows;
+    size_t row_count;
+    void *storage;
+} runtime_ui_plugin_list_answer;
+
+/**
  * The ui service. It reads no file and writes nothing. Every operation answers MALFORMED for an argument short of its
  * first shape, an answer that is not empty, a manifest list that is not a list of records each with its id as text, a
  * value that is not well-formed or not of the kind its field names, a count whose array is NULL, a required text that
@@ -292,19 +317,20 @@ typedef struct runtime_ui_definition {
     spisor_status (*render)(void *context, const runtime_ui_screen_argument *argument, runtime_ui_screen *answer,
                             spisor_refusal *refusal);
     /**
-     * The host's own Plugins screen: one ready table of the three groups, each row that cannot be used marked
-     * unavailable and installable.
+     * The host's own Plugins screen: the three groups as one list, each row that cannot be used marked unavailable
+     * and installable.
      *
      * @return OK; MALFORMED; OUT_OF_MEMORY.
-     * @implNote Answered as render's screen, its table's data a value tree, so a host draws its own screen through the
-     * same path as a plugin's; a plugin view cannot bind a host list, which is why this is a host screen.
+     * @implNote Each fact the library decides is a field and the caller's row comes back untouched, so a host keeps
+     * every member it put in a row; a plugin view cannot bind a host list, which is why this is a host screen.
      */
     spisor_status (*plugin_list)(void *context, const runtime_ui_plugin_list_argument *argument,
-                                 runtime_ui_screen *answer, spisor_refusal *refusal);
+                                 runtime_ui_plugin_list_answer *answer, spisor_refusal *refusal);
     void (*release_navigation_answer)(void *context, runtime_ui_navigation_answer *answer);
     void (*release_settings_view_answer)(void *context, runtime_ui_settings_view_answer *answer);
     void (*release_plan_answer)(void *context, runtime_ui_plan_answer *answer);
     void (*release_screen)(void *context, runtime_ui_screen *answer);
+    void (*release_plugin_list_answer)(void *context, runtime_ui_plugin_list_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
 } runtime_ui_definition;
 

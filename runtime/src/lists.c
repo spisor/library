@@ -28,10 +28,20 @@ static int is_row_list(const cJSON *rows) {
     return 1;
 }
 
-static int is_listed(const cJSON *list, const char *id) {
+static int is_listed(const cJSON *rows, const char *id) {
     const cJSON *row;
-    cJSON_ArrayForEach(row, list) {
+    cJSON_ArrayForEach(row, rows) {
         if (strcmp(id_of(row), id) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int is_entry_listed(const cJSON *list, const char *id) {
+    const cJSON *entry;
+    cJSON_ArrayForEach(entry, list) {
+        if (strcmp(id_of(cJSON_GetObjectItemCaseSensitive(entry, "row")), id) == 0) {
             return 1;
         }
     }
@@ -50,7 +60,7 @@ static const cJSON **fresh_rows(const cJSON *group, const cJSON *list, size_t *c
     const cJSON *source = rows == NULL ? NULL : group;
     const cJSON *row;
     cJSON_ArrayForEach(row, source) {
-        int seen = is_listed(list, id_of(row));
+        int seen = is_entry_listed(list, id_of(row));
         for (size_t index = 0; !seen && index < *count; index++) {
             seen = strcmp(id_of(rows[index]), id_of(row)) == 0;
         }
@@ -62,13 +72,27 @@ static const cJSON **fresh_rows(const cJSON *group, const cJSON *list, size_t *c
 }
 
 static int add_with_state(cJSON *list, const cJSON *row, const char *state) {
-    cJSON *copy = cJSON_Duplicate(row, 1);
-    cJSON_DeleteItemFromObjectCaseSensitive(copy, "state");
-    if (copy == NULL || cJSON_AddStringToObject(copy, "state", state) == NULL || !cJSON_AddItemToArray(list, copy)) {
+    cJSON *entry = cJSON_CreateObject();
+    cJSON *copy = entry == NULL ? NULL : cJSON_Duplicate(row, 1);
+    if (copy == NULL || !cJSON_AddItemToObject(entry, "row", copy)) {
         cJSON_Delete(copy);
+        cJSON_Delete(entry);
+        return 0;
+    }
+    if (cJSON_AddStringToObject(entry, "state", state) == NULL || !cJSON_AddItemToArray(list, entry)) {
+        cJSON_Delete(entry);
         return 0;
     }
     return 1;
+}
+
+uint32_t runtime_list_state_of(const char *name) {
+    for (uint32_t index = 0; name != NULL && index < 3; index++) {
+        if (strcmp(name, STATES[index]) == 0) {
+            return index + 1;
+        }
+    }
+    return 0;
 }
 
 static int add_group(cJSON *list, const cJSON *group, const char *state) {

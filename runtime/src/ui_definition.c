@@ -6,6 +6,8 @@
 #include "definition_support.h"
 #include "json_service.h"
 #include "json_value.h"
+#include "lists.h"
+#include "runtime/lists.h"
 #include "ui.h"
 #include "ui_definition.h"
 
@@ -17,6 +19,7 @@
 #define PLAN_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plan_answer, storage)
 #define SCREEN_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_screen, storage)
 #define PLUGIN_LIST_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plugin_list_argument, available)
+#define PLUGIN_LIST_ANSWER_SHAPE RUNTIME_SHAPE_THROUGH(runtime_ui_plugin_list_answer, storage)
 
 static const char *const COMPONENT_NAMES[] = {NULL, "form", "field"};
 
@@ -270,15 +273,45 @@ static cJSON *groups_call(const runtime_ui_plugin_list_argument *argument) {
     return call;
 }
 
+static spisor_status fill_plugin_row(void **storage, const cJSON *entry, runtime_ui_plugin_row *row) {
+    const cJSON *given = cJSON_GetObjectItemCaseSensitive(entry, "row");
+    row->state = runtime_list_state_of(text_of(entry, "state"));
+    row->unavailable = row->state == RUNTIME_LIST_INSTALLED ? 0 : 1;
+    row->install = row->unavailable;
+    if (!runtime_storage_copy(storage, text_of(given, "id"), &row->id)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return runtime_storage_value(storage, given, &row->row);
+}
+
+static spisor_status fill_plugin_list(const cJSON *answered, void *filled) {
+    runtime_ui_plugin_list_answer *answer = filled;
+    const cJSON *entry;
+    runtime_ui_plugin_row *rows;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    if (status != SPISOR_OK || !runtime_storage_copy(&answer->storage, "Plugins", &answer->title) ||
+        !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(answered), sizeof *rows,
+                                    (void **)&rows)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    answer->rows = rows;
+    cJSON_ArrayForEach(entry, answered) {
+        if (status == SPISOR_OK) {
+            status = fill_plugin_row(&answer->storage, entry, &rows[answer->row_count++]);
+        }
+    }
+    return status;
+}
+
 static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_argument *argument,
-                                 runtime_ui_screen *answer, spisor_refusal *refusal) {
+                                 runtime_ui_plugin_list_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     cJSON *answered;
     cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !runtime_has_shape(argument->size, PLUGIN_LIST_SHAPE) ||
-        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, SCREEN_SHAPE, answer->node_count)) {
+        !RUNTIME_IS_EMPTY_COUNTED_ANSWER(answer, PLUGIN_LIST_ANSWER_SHAPE, answer->row_count)) {
         return runtime_refuse_shape(refusal, "ui's plugin_list");
     }
     status = check_groups(argument, refusal);
@@ -287,12 +320,13 @@ static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_arg
     }
     call = groups_call(argument);
     answered = call == NULL ? NULL
-                            : runtime_ui_plugin_list(cJSON_GetObjectItemCaseSensitive(call, "installed"),
-                                                     cJSON_GetObjectItemCaseSensitive(call, "detected"),
-                                                     cJSON_GetObjectItemCaseSensitive(call, "available"),
-                                                     &operation_refusal);
+                            : runtime_lists_plugins(cJSON_GetObjectItemCaseSensitive(call, "installed"),
+                                                    cJSON_GetObjectItemCaseSensitive(call, "detected"),
+                                                    cJSON_GetObjectItemCaseSensitive(call, "available"),
+                                                    &operation_refusal);
     cJSON_Delete(call);
-    return runtime_serve_answered(answered, operation_refusal, runtime_ui_fill_screen, answer, SCREEN_SHAPE, refusal);
+    return runtime_serve_answered(answered, operation_refusal, fill_plugin_list, answer, PLUGIN_LIST_ANSWER_SHAPE,
+                                  refusal);
 }
 
 static void release_navigation_answer(void *context, runtime_ui_navigation_answer *answer) {
@@ -315,6 +349,11 @@ static void release_screen(void *context, runtime_ui_screen *answer) {
     runtime_release_stored_answer(answer, SCREEN_SHAPE);
 }
 
+static void release_plugin_list_answer(void *context, runtime_ui_plugin_list_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, PLUGIN_LIST_ANSWER_SHAPE);
+}
+
 static const runtime_ui_definition definition = {
     sizeof(runtime_ui_definition),
     NULL,
@@ -327,6 +366,7 @@ static const runtime_ui_definition definition = {
     release_settings_view_answer,
     release_plan_answer,
     release_screen,
+    release_plugin_list_answer,
     runtime_release_refusal,
 };
 

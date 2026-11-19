@@ -9,6 +9,7 @@
 #include "catalog_call.h"
 #include "check.h"
 #include "json_value.h"
+#include "runtime/lists.h"
 #include "runtime/ui.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -292,6 +293,25 @@ static inline cJSON *ui_screen_json(const runtime_ui_screen *answer) {
     return tree;
 }
 
+static inline cJSON *ui_plugin_list_json(const runtime_ui_plugin_list_answer *answer) {
+    static const char *const states[] = {NULL, "installed", "detected", "available"};
+    cJSON *tree = cJSON_CreateObject();
+    cJSON *rows;
+    ui_add_text(tree, "title", answer->title);
+    rows = cJSON_AddArrayToObject(tree, "rows");
+    for (size_t index = 0; index < answer->row_count; index++) {
+        const runtime_ui_plugin_row *row = &answer->rows[index];
+        cJSON *json = cJSON_CreateObject();
+        ui_add_text(json, "id", row->id);
+        ui_add_text(json, "state", row->state <= RUNTIME_LIST_AVAILABLE ? states[row->state] : NULL);
+        CHECK(cJSON_AddBoolToObject(json, "unavailable", row->unavailable != 0) != NULL);
+        CHECK(cJSON_AddBoolToObject(json, "install", row->install != 0) != NULL);
+        ui_add_value(json, "row", row->row);
+        CHECK(cJSON_AddItemToArray(rows, json));
+    }
+    return tree;
+}
+
 static inline spisor_status ui_navigation_call(const runtime_ui_definition *ui, const cJSON *request,
                                                ui_request *held, cJSON **tree, spisor_refusal *refusal) {
     runtime_ui_navigation_argument argument = SPISOR_INIT(runtime_ui_navigation_argument);
@@ -344,14 +364,14 @@ static inline spisor_status ui_render_call(const runtime_ui_definition *ui, cons
 static inline spisor_status ui_plugin_list_call(const runtime_ui_definition *ui, const cJSON *request,
                                                 ui_request *held, cJSON **tree, spisor_refusal *refusal) {
     runtime_ui_plugin_list_argument argument = SPISOR_INIT(runtime_ui_plugin_list_argument);
-    runtime_ui_screen answer = SPISOR_INIT(runtime_ui_screen);
+    runtime_ui_plugin_list_answer answer = SPISOR_INIT(runtime_ui_plugin_list_answer);
     spisor_status status;
     argument.installed = ui_request_value(held, request, "installed");
     argument.detected = ui_request_value(held, request, "detected");
     argument.available = ui_request_value(held, request, "available");
     status = ui->plugin_list(ui->context, &argument, &answer, refusal);
-    *tree = status == SPISOR_OK ? ui_screen_json(&answer) : NULL;
-    ui->release_screen(ui->context, &answer);
+    *tree = status == SPISOR_OK ? ui_plugin_list_json(&answer) : NULL;
+    ui->release_plugin_list_answer(ui->context, &answer);
     return status;
 }
 

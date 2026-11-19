@@ -246,7 +246,7 @@ static void ui_refuses_a_counted_answer(library_handle library) {
     EXPECT_COUNT_REFUSED(ui, settings_view, ui_settings_view_argument, ui_settings_view_answer, node_count);
     EXPECT_COUNT_REFUSED(ui, plan, ui_screen_argument, ui_plan_answer, call_count);
     EXPECT_COUNT_REFUSED(ui, render, ui_screen_argument, ui_screen, node_count);
-    EXPECT_COUNT_REFUSED(ui, plugin_list, ui_plugin_list_argument, ui_screen, node_count);
+    EXPECT_COUNT_REFUSED(ui, plugin_list, ui_plugin_list_argument, ui_plugin_list_answer, row_count);
 }
 
 static void updates_refuses_a_counted_answer(library_handle library) {

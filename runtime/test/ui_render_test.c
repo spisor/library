@@ -577,7 +577,8 @@ static void drops_an_action_a_detected_row_carried_since_an_unusable_row_offers_
 
 static cJSON *plugin_list_screen(const char *detected) {
     cJSON *request = cJSON_CreateObject();
-    cJSON_AddItemToObject(request, "installed", parsed("[{\"id\": \"viewer\"}]"));
+    cJSON_AddItemToObject(request, "installed", parsed("[{\"id\": \"viewer\", \"state\": \"mine\", "
+                                                       "\"install\": \"kept\", \"action\": \"open\"}]"));
     cJSON_AddItemToObject(request, "detected", parsed(detected));
     cJSON_AddItemToObject(request, "available", parsed("[{\"id\": \"viewer\"}, {\"id\": \"greeter\"}, {\"id\": \"rival\"}]"));
     return successful(UI_PLUGIN_LIST, request, "ui.pluginList");
@@ -585,7 +586,7 @@ static cJSON *plugin_list_screen(const char *detected) {
 
 static const cJSON *row_of(const cJSON *screen, const char *id) {
     const cJSON *row;
-    cJSON_ArrayForEach(row, value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(screen, "nodes"), 0), "data/items")) {
+    cJSON_ArrayForEach(row, cJSON_GetObjectItemCaseSensitive(screen, "rows")) {
         if (strcmp(text_at(row, "id"), id) == 0) {
             return row;
         }
@@ -595,26 +596,25 @@ static const cJSON *row_of(const cJSON *screen, const char *id) {
 
 static void shows_a_bundled_not_enabled_plugin_that_a_detector_finds_as_a_detected_installable_row(void) {
     cJSON *screen = plugin_list_screen("[{\"id\": \"greeter\"}]");
-    check_text(text_at(screen, "kind"), "host", "the kind");
     check_text(text_at(screen, "title"), "Plugins", "the title");
-    CHECK(cJSON_GetObjectItemCaseSensitive(screen, "plugin") == NULL);
-    const cJSON *nodes = cJSON_GetObjectItemCaseSensitive(screen, "nodes");
-    CHECK(cJSON_GetArraySize(nodes) == 1);
-    const cJSON *table = cJSON_GetArrayItem(nodes, 0);
-    check_text(text_at(table, "id"), "plugins", "the node id");
-    check_text(text_at(table, "component"), "table", "the component");
-    check_text(text_at(table, "state"), "ready", "the state");
-    check_json_at(table, "props", "{}", "the props");
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(screen, "rows")) == 3);
     check_json(cJSON_Duplicate(row_of(screen, "greeter"), 1),
-               "{\"id\": \"greeter\", \"state\": \"detected\", \"unavailable\": true, \"install\": true}", "the greeter row");
-    check_json(cJSON_Duplicate(row_of(screen, "viewer"), 1), "{\"id\": \"viewer\", \"state\": \"installed\"}", "the viewer row");
+               "{\"id\": \"greeter\", \"state\": \"detected\", \"unavailable\": true, \"install\": true, "
+               "\"row\": {\"id\": \"greeter\"}}",
+               "the greeter row");
+    check_json(cJSON_Duplicate(row_of(screen, "viewer"), 1),
+               "{\"id\": \"viewer\", \"state\": \"installed\", \"unavailable\": false, \"install\": false, "
+               "\"row\": {\"id\": \"viewer\", \"state\": \"mine\", \"install\": \"kept\", \"action\": \"open\"}}",
+               "the viewer row, every member the caller gave it kept");
     cJSON_Delete(screen);
 }
 
 static void shows_the_same_plugin_as_available_when_no_detector_finds_it(void) {
     cJSON *screen = plugin_list_screen("[]");
     check_json(cJSON_Duplicate(row_of(screen, "greeter"), 1),
-               "{\"id\": \"greeter\", \"state\": \"available\", \"unavailable\": true, \"install\": true}", "the greeter row");
+               "{\"id\": \"greeter\", \"state\": \"available\", \"unavailable\": true, \"install\": true, "
+               "\"row\": {\"id\": \"greeter\"}}",
+               "the greeter row");
     cJSON_Delete(screen);
 }
 

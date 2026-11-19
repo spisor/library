@@ -135,7 +135,7 @@ Service), and that store may prompt the user.
 | `ui.settingsView` | `description` | `{ title, nodes }`, the form that edits one plugin's settings |
 | `ui.plan` | `descriptions`, `screen`, `answers` | `{ calls }` still to answer for the screen, or `{ done: true }` |
 | `ui.render` | `descriptions`, `screen`, `answers` | `{ plugin, kind, view?, title, nodes }`, the headless screen, a failed answer marking only its own node |
-| `ui.pluginList` | `installed`, `detected`, `available` | `{ kind: "host", title, nodes }`, the host's own Plugins screen |
+| `ui.pluginList` | `installed`, `detected`, `available` | `{ title, rows }`, the host's own Plugins screen, each row's state, unavailable and install fields beside the caller's row |
 
 `places` is what `places.resolve` answers.
 

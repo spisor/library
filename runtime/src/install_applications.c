@@ -66,10 +66,10 @@ static cJSON *states_of(const runtime_install_run *run, const cJSON *detections,
 }
 
 static const char *state_of(const cJSON *states, const char *id) {
-    for (const cJSON *row = states->child; row != NULL; row = row->next) {
-        const char *row_id = runtime_install_text(row, "id");
+    for (const cJSON *entry = states->child; entry != NULL; entry = entry->next) {
+        const char *row_id = runtime_install_text(cJSON_GetObjectItemCaseSensitive(entry, "row"), "id");
         if (row_id != NULL && strcmp(row_id, id) == 0) {
-            return runtime_install_text(row, "state");
+            return runtime_install_text(entry, "state");
         }
     }
     return NULL;

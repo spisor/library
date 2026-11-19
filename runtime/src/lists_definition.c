@@ -16,8 +16,6 @@
 #define UNUSABLE_GROUP "a group is not a well-formed list of rows with a text id"
 #define UNUSABLE_GROUP_FIX "send installed, detected and available each as a list of records, each with its id as text"
 
-static const char *const STATE_NAMES[] = {NULL, "installed", "detected", "available"};
-
 static int is_row(const spisor_value *row) {
     const spisor_value *id = spisor_value_member(row, "id", 2);
     return row->kind == SPISOR_VALUE_RECORD && id != NULL && id->kind == SPISOR_VALUE_TEXT;
@@ -52,21 +50,11 @@ static spisor_status add_group(cJSON *call, const char *name, const spisor_value
     return status;
 }
 
-static uint32_t state_of(const char *name) {
-    for (uint32_t state = RUNTIME_LIST_INSTALLED; name != NULL && state <= RUNTIME_LIST_AVAILABLE; state++) {
-        if (strcmp(name, STATE_NAMES[state]) == 0) {
-            return state;
-        }
-    }
-    return 0;
-}
-
-/** One answered row into `item`, its caller's row kept, without the state the list gave it, when `keeps_rows`. */
-static spisor_status fill_item(cJSON *row, int keeps_rows, void **storage, runtime_list_item *item) {
-    cJSON *state = cJSON_DetachItemFromObjectCaseSensitive(row, "state");
+/** One entry of a three-state list into `item`, the caller's row kept as given when `keeps_rows`. */
+static spisor_status fill_item(const cJSON *entry, int keeps_rows, void **storage, runtime_list_item *item) {
+    const cJSON *row = cJSON_GetObjectItemCaseSensitive(entry, "row");
     spisor_status status = SPISOR_OUT_OF_MEMORY;
-    item->state = state_of(cJSON_GetStringValue(state));
-    cJSON_Delete(state);
+    item->state = runtime_list_state_of(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(entry, "state")));
     const char *id = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(row, "id"));
     const char *label = keeps_rows ? NULL : cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(row, "label"));
     if (runtime_storage_copy(storage, id, &item->id) && runtime_storage_copy(storage, label, &item->label)) {

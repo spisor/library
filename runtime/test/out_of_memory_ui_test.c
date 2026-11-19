@@ -302,18 +302,25 @@ static spisor_status run_render_refused(void) {
 
 static spisor_status run_plugin_list(void) {
     runtime_ui_plugin_list_argument argument = SPISOR_INIT(runtime_ui_plugin_list_argument);
-    runtime_ui_screen answer = SPISOR_INIT(runtime_ui_screen);
+    runtime_ui_plugin_list_answer answer = SPISOR_INIT(runtime_ui_plugin_list_answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     spisor_status status;
     argument.installed = inputs.groups[0];
     argument.detected = inputs.groups[1];
     argument.available = inputs.groups[2];
     status = ui->plugin_list(ui->context, &argument, &answer, &refusal);
-    put_screen(&answer);
-    if (status == SPISOR_OK && answer.node_count != 1) {
+    put_text(answer.title);
+    for (size_t index = 0; index < answer.row_count; index++) {
+        put_text(answer.rows[index].id);
+        put_count(answer.rows[index].state);
+        put_count(answer.rows[index].unavailable);
+        put_count(answer.rows[index].install);
+        put_value(answer.rows[index].row);
+    }
+    if (status == SPISOR_OK && answer.row_count != 3) {
         status = WRONG_RUN;
     }
-    ui->release_screen(ui->context, &answer);
+    ui->release_plugin_list_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
 }
