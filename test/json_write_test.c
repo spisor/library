@@ -20,13 +20,21 @@ static cJSON *load_vectors(void) {
     return vectors;
 }
 
+static void check_form(char *actual, const cJSON *vector, const char *form, const char *label, const char *input) {
+    const char *expected = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(vector, form));
+    CHECK(expected != NULL);
+    if (!check_text(actual, expected, label)) {
+        fprintf(stderr, "  %s form, for input %s\n", form, input);
+    }
+    spisor_memory_release(actual);
+}
+
 static void check_vector(const cJSON *vector, int index) {
     char label[32];
     snprintf(label, sizeof(label), "vector %d", index);
     const char *input = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(vector, "input"));
-    const char *expected = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(vector, "expected"));
-    CHECK(input != NULL && expected != NULL);
-    if (input == NULL || expected == NULL) {
+    CHECK(input != NULL);
+    if (input == NULL) {
         return;
     }
     cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)input, strlen(input), &(int){0});
@@ -35,11 +43,8 @@ static void check_vector(const cJSON *vector, int index) {
         fprintf(stderr, "%s: cannot parse \"%s\"\n", label, input);
         return;
     }
-    char *actual = spisor_json_stringify_pretty(parsed);
-    if (!check_text(actual, expected, label)) {
-        fprintf(stderr, "  for input %s\n", input);
-    }
-    spisor_memory_release(actual);
+    check_form(spisor_json_stringify_pretty(parsed), vector, "expected", label, input);
+    check_form(spisor_json_stringify(parsed), vector, "compact", label, input);
     cJSON_Delete(parsed);
 }
 

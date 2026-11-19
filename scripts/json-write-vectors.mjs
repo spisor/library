@@ -55,10 +55,10 @@ const asParsedByTheLibrary = (text) => text.replace(loneSurrogateEscape, "\\ufff
 
 const vectors = {
   generator: `node ${process.version}`,
-  stringify: inputs.map((input) => ({
-    input,
-    expected: JSON.stringify(JSON.parse(asParsedByTheLibrary(input)), null, 2),
-  })),
+  stringify: inputs.map((input) => {
+    const value = JSON.parse(asParsedByTheLibrary(input));
+    return { input, expected: JSON.stringify(value, null, 2), compact: JSON.stringify(value) };
+  }),
 };
 
 process.stdout.write(`${JSON.stringify(vectors, null, 2)}\n`);
