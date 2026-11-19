@@ -514,7 +514,7 @@ static void refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks(vo
     cJSON *missing = answers_for(OVERVIEW);
     cJSON_DeleteItemFromArray(missing, 1);
     expect_render_refused(OVERVIEW, missing, SPISOR_REFUSED, "viewer:status.greeting", "a missing answer");
-    expect_render_refused(OVERVIEW, NULL, SPISOR_REFUSED, "answers", "no answers at all");
+    expect_render_refused(OVERVIEW, NULL, SPISOR_REFUSED, "replies", "no answers at all");
     cJSON *unchecked = answers_for(OVERVIEW);
     cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetArrayItem(unchecked, 0), "checked");
     expect_render_refused(OVERVIEW, unchecked, SPISOR_REFUSED, "table", "an answer never checked");

@@ -93,7 +93,7 @@ cJSON *runtime_ui_settings_view(const cJSON *description, cJSON **refusal) {
     *refusal = NULL;
     if (!runtime_ui_is_description(description)) {
         *refusal = runtime_refusal("the call carries no usable description",
-                                   "pass the plugin's manifest {\"id\": \"<plugin id>\", \"settings\": {...}}");
+                                   "pass the plugin's manifest as description, a record with its id as text");
         return NULL;
     }
     return runtime_ui_settings_view_of(description);

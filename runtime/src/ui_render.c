@@ -185,8 +185,8 @@ static const cJSON *checked_for(const cJSON *answer, const cJSON *check) {
 static cJSON *unchecked(const cJSON *node, const cJSON *call, const cJSON *check) {
     const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
     const cJSON *members = cJSON_GetObjectItemCaseSensitive(check, "members");
-    return runtime_ui_refusal("check every answer against each check ui.plan named for its call and pass each result under "
-                              "checked as {\"against\", \"members\"?, \"issues\": [{\"message\", \"fix\", \"path\"?}]}",
+    return runtime_ui_refusal("check every answer against each check plan named for its call and pass each in the "
+                              "reply's checked, with the check as plan named it and the issues found",
                               "the answer to ", text_of(binding, "service"), ".", text_of(binding, "method"), " that node ",
                               text_of(node, "id"), " binds carries no check against ", text_of(check, "against"),
                               members == NULL ? "" : " over the members its node reads", NULL);
@@ -213,7 +213,8 @@ static int add_checked_answer(cJSON *rendered, const cJSON *node, const cJSON *c
 
 static cJSON *unanswered(const cJSON *node, const cJSON *call) {
     const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
-    return runtime_ui_refusal("call ui.plan until it asks for no call and pass every answer it asked for", "the answers carry none to ",
+    return runtime_ui_refusal("call plan until its answer holds no call, and pass a reply to every call it asked for",
+                              "the replies carry none to ",
                               text_of(call, "plugin"), "'s ", text_of(binding, "service"), ".", text_of(binding, "method"),
                               " that node ", text_of(node, "id"), " binds", NULL);
 }
