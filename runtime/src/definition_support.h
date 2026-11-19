@@ -29,23 +29,12 @@ int runtime_has_shape(uint32_t size, size_t shape);
 typedef spisor_status (*runtime_answer_filler)(const cJSON *answered, void *answer);
 
 /**
- * Serves `call`, which it deletes, through `operation`, filling with `fill` an answer whose first shape of
- * `answer_shape` bytes ends at its `storage`. A refusal answers as runtime_refuse_json answers it, and a failed fill
- * releases what it took, so a failed answer holds nothing.
- */
-spisor_status runtime_serve_operation(runtime_json_operation operation, cJSON *call, runtime_answer_filler fill,
-                                      void *answer, size_t answer_shape, spisor_refusal *refusal);
-
-/**
  * Fills, with `fill`, an answer whose first shape of `answer_shape` bytes ends at its `storage` from `answered`, which
  * it deletes, or refuses as runtime_refuse_json does with `json_refusal` when `answered` is NULL. A failed fill
  * releases what it took, so a failed answer holds nothing.
  */
 spisor_status runtime_serve_answered(cJSON *answered, cJSON *json_refusal, runtime_answer_filler fill, void *answer,
                                      size_t answer_shape, spisor_refusal *refusal);
-
-/** `value`, a well-formed tree of `kind`, as JSON in *json; MALFORMED for NULL or any other value, *json then NULL. */
-spisor_status runtime_value_json(const spisor_value *value, spisor_value_kind kind, cJSON **json);
 
 /** Adds `value`, a well-formed tree of `kind`, to `call` as JSON under `name`; MALFORMED for NULL or any other value. */
 spisor_status runtime_add_value_json(cJSON *call, const char *name, const spisor_value *value, spisor_value_kind kind);

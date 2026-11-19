@@ -20,16 +20,6 @@ int runtime_is_refusal(const cJSON *refusal) {
            cJSON_IsString(cJSON_GetObjectItemCaseSensitive(refusal, "fix"));
 }
 
-cJSON *runtime_call_operation(runtime_json_operation operation, cJSON *argument, cJSON **refusal) {
-    cJSON *answer = NULL;
-    *refusal = NULL;
-    if (argument != NULL) {
-        answer = operation(argument, refusal);
-    }
-    cJSON_Delete(argument);
-    return answer;
-}
-
 int runtime_add_owned(cJSON *object, const char *name, cJSON *item) {
     if (item == NULL || !cJSON_AddItemToObject(object, name, item)) {
         cJSON_Delete(item);
