@@ -184,6 +184,13 @@ target_include_directories(runtime_cache PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_cache PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_cache)
 
+add_library(runtime_cache_test_hooks OBJECT ${runtime_cache_sources})
+target_link_libraries(runtime_cache_test_hooks PUBLIC runtime_objects)
+target_include_directories(runtime_cache_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(runtime_cache_test_hooks PRIVATE SPISOR_CACHE_TEST_HOOKS)
+spisor_strict_warnings(runtime_cache_test_hooks)
+set_target_properties(runtime_cache_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
+
 set(runtime_updates_sources src/boot.c src/boot_resolve.c src/hosts_start.c src/plugin_choices.c src/updates.c
     src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_recorded.c src/updates_rollback.c src/version_map.c)
 add_library(runtime_updates OBJECT ${runtime_updates_sources})

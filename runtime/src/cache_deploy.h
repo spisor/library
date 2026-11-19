@@ -24,7 +24,9 @@ typedef struct runtime_cache_deploy_request {
  * states is read as who the plugin is, and a bundle file named like an identity file is never copied, since only the
  * manifest and the entry are. importName comes from the bundle's own plugin.json, so it is checked against the
  * import name grammar of plugin.schema.json, Windows reserved names included, before any path is formed, and
- * everything is checked before the first file is written, so a refusal writes nothing.
+ * everything is checked before the first file is written, so a refusal writes nothing, except that a deploy of the
+ * same import name a stopped process left part way, found by its staging folder in pluginDir, is first finished, or
+ * its staging folder removed when its moves never began. A failed deploy removes the folders it made for pluginDir.
  */
 int runtime_cache_deploy(const runtime_cache_deploy_request *request, cJSON **refusal);
 

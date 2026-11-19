@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache_deploy.h"
+#include "cache_deploy_hooks.h"
 #include "spisor/allocation.h"
 #include "cache_call.h"
 #include "catalog_call.h"
@@ -340,6 +341,88 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
     cJSON_Delete(stale.tree);
 }
 
+#define OTHER_IDENTITY "{\"id\":\"github:9\",\"name\":\"other\"}"
+#define LAST_MOVE 5
+
+static void expect_deployed(catalog_answer answer, const char *label) {
+    if (answer.status != SPISOR_STATUS_SUCCESS) {
+        fprintf(stderr, "%s: the deploy answered %d\n", label, (int)answer.status);
+    }
+    CHECK(answer.status == SPISOR_STATUS_SUCCESS);
+    cJSON_Delete(answer.tree);
+}
+
+/** Another plugin, then greeter's first version, deployed into this case's pluginDir. */
+static void deploy_another_then_the_first_greeter(void) {
+    write_bundle("{\"importName\":\"other\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default 'other';");
+    expect_deployed(deploy_with(OTHER_IDENTITY, NULL), "the other plugin");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default 'one';");
+    expect_deployed(deploy_with(IDENTITY_ARGUMENT, NULL), "the first greeter");
+}
+
+static void write_the_second_greeter(int with_entry) {
+    if (with_entry) {
+        write_bundle("{\"importName\":\"greeter\",\"api\":2,\"entry\":\"main.js\"}", "main.js", "export default 2;");
+    } else {
+        write_bundle("{\"importName\":\"greeter\",\"api\":2}", NULL, NULL);
+    }
+}
+
+static char *plugin_directory_tree(void) {
+    char *plugins = in_scratch("plugins");
+    char *tree = tree_snapshot(plugins, NULL);
+    spisor_memory_release(plugins);
+    return tree;
+}
+
+/** pluginDir as a deploy of greeter's second version over its first leaves it when nothing stops it, freed. */
+static char *cleanly_deployed_tree(int with_entry) {
+    start_case(with_entry ? "clean-entry" : "clean-no-entry");
+    deploy_another_then_the_first_greeter();
+    write_the_second_greeter(with_entry);
+    expect_deployed(deploy_with(IDENTITY_ARGUMENT, NULL), "the clean second greeter");
+    return plugin_directory_tree();
+}
+
+/**
+ * Stops the second version's deploy after each number of moves, as a crash would, then deploys it again: pluginDir
+ * must end exactly as a clean deploy leaves it, the other plugin's files with it.
+ */
+static void finishes_a_deploy_stopped_after_any_move(int with_entry) {
+    char *clean = cleanly_deployed_tree(with_entry);
+    for (long moves = 0; moves <= LAST_MOVE; moves++) {
+        char label[64];
+        snprintf(label, sizeof label, "stopped-%s-after-%ld", with_entry ? "entry" : "no-entry", moves);
+        start_case(label);
+        deploy_another_then_the_first_greeter();
+        write_the_second_greeter(with_entry);
+        runtime_cache_stop_deploys_after(moves);
+        catalog_answer stopped = deploy_with(IDENTITY_ARGUMENT, NULL);
+        runtime_cache_stop_deploys_after(-1);
+        CHECK(stopped.status != SPISOR_STATUS_SUCCESS);
+        cJSON_Delete(stopped.tree);
+        expect_deployed(deploy_with(IDENTITY_ARGUMENT, NULL), label);
+        char *tree = plugin_directory_tree();
+        check_text(tree, clean, label);
+        spisor_memory_release(tree);
+    }
+    spisor_memory_release(clean);
+}
+
+/** A deploy stopped part way through a first deploy of another identity is finished, and then refused as that one. */
+static void finishes_a_stopped_deploy_of_another_identity_before_refusing_it(void) {
+    start_case("stopped-other-identity");
+    write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default 'one';");
+    runtime_cache_stop_deploys_after(2);
+    catalog_answer stopped = deploy_with(OTHER_IDENTITY, NULL);
+    runtime_cache_stop_deploys_after(-1);
+    cJSON_Delete(stopped.tree);
+    catalog_answer refused = deploy_with(IDENTITY_ARGUMENT, NULL);
+    CHECK(expect_cache_refusal_refused(refused, "github:9", "the finished deploy's identity"));
+    cJSON_Delete(refused.tree);
+    expect_file("plugins/greeter_identity.json", "{\n\t\"id\":\t\"github:9\",\n\t\"name\":\t\"other\"\n}", "finished");
+}
+
 int main(void) {
     deploys_under_the_import_name();
     writes_no_entry_file_for_a_plugin_without_an_entry();
@@ -357,5 +440,8 @@ int main(void) {
     refuses_an_entry_that_is_empty_or_not_text();
     refuses_a_plugin_directory_that_is_the_bundle_or_inside_it();
     replaces_the_plugin_of_the_id_it_is_told_to_and_no_other();
+    finishes_a_deploy_stopped_after_any_move(1);
+    finishes_a_deploy_stopped_after_any_move(0);
+    finishes_a_stopped_deploy_of_another_identity_before_refusing_it();
     return check_summary("cache_deploy_test");
 }
