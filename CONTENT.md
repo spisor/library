@@ -33,8 +33,8 @@ The C conventions every spisor and forebay library shares, as one static CMake t
   manager's), and refuses a dangling one; `spisor_replace_private_file` refuses any symlink instead
   of following it, and keeps the temporary file and the result owner-only (0600) from creation.
   `spisor_is_link` tells a link apart. UTF-8 paths on every OS.
-- **JSON out** (`spisor/json_write.h`): `spisor_json_stringify_pretty`, exactly what
-  `JSON.stringify(value, null, 2)` returns, down to JavaScript's key order.
+- **JSON out** (`spisor/json_write.h`): `spisor_json_stringify_pretty` and `spisor_json_stringify`, exactly what
+  `JSON.stringify(value, null, 2)` and `JSON.stringify(value)` return, down to JavaScript's key order.
 - **JSON files** (`spisor/json_file.h`): `spisor_read_json_file`, basekit's `readJson` without the
   fallback (decode like Node, strip whole-line `//` comments, then `JSON.parse`), answering absent,
   unreadable or parsed; and `spisor_strip_comment_lines` on its own.

@@ -10,6 +10,12 @@ extern "C" {
 #endif
 
 /**
+ * Exactly what JSON.stringify(value) returns for the same parsed value: spisor_json_stringify_pretty with no
+ * whitespace at all. Freed; NULL only when memory runs out.
+ */
+char *spisor_json_stringify(const cJSON *value);
+
+/**
  * Exactly what JSON.stringify(value, null, 2) returns for the same parsed value, without a
  * trailing newline. Freed; NULL only when memory runs out.
  *

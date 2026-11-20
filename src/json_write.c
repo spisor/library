@@ -8,7 +8,7 @@
 
 #include "spisor/javascript.h"
 
-#define INDENT_WIDTH 2
+#define PRETTY_INDENT_WIDTH 2
 #define MAX_ARRAY_INDEX 4294967294ULL
 #define MAX_ARRAY_INDEX_DIGITS 10
 
@@ -18,6 +18,7 @@ typedef struct text_buffer {
     size_t capacity;
     int out_of_memory;
     int escapes_terminal_controls;
+    int indent_width;
 } text_buffer;
 
 static void append_bytes(text_buffer *buffer, const char *bytes, size_t count) {
@@ -46,8 +47,12 @@ static void append_text(text_buffer *buffer, const char *text) {
     append_bytes(buffer, text, strlen(text));
 }
 
-static void append_indent(text_buffer *buffer, int depth) {
-    for (int step = 0; step < depth * INDENT_WIDTH; step++) {
+static void append_line_break(text_buffer *buffer, int depth) {
+    if (buffer->indent_width == 0) {
+        return;
+    }
+    append_bytes(buffer, "\n", 1);
+    for (int step = 0; step < depth * buffer->indent_width; step++) {
         append_bytes(buffer, " ", 1);
     }
 }
@@ -158,20 +163,20 @@ const cJSON **spisor_json_members_in_javascript_order(const cJSON *object, size_
 static void append_value(text_buffer *buffer, const cJSON *value, int depth);
 
 static void append_array(text_buffer *buffer, const cJSON *array, int depth) {
-    int count = cJSON_GetArraySize(array);
-    if (count == 0) {
+    if (cJSON_GetArraySize(array) == 0) {
         append_text(buffer, "[]");
         return;
     }
-    append_text(buffer, "[\n");
+    append_bytes(buffer, "[", 1);
     const cJSON *element = NULL;
-    int position = 0;
     cJSON_ArrayForEach(element, array) {
-        append_indent(buffer, depth + 1);
+        if (element != array->child) {
+            append_bytes(buffer, ",", 1);
+        }
+        append_line_break(buffer, depth + 1);
         append_value(buffer, element, depth + 1);
-        append_text(buffer, ++position < count ? ",\n" : "\n");
     }
-    append_indent(buffer, depth);
+    append_line_break(buffer, depth);
     append_bytes(buffer, "]", 1);
 }
 
@@ -186,15 +191,17 @@ static void append_object(text_buffer *buffer, const cJSON *object, int depth) {
         buffer->out_of_memory = 1;
         return;
     }
-    append_text(buffer, "{\n");
+    append_bytes(buffer, "{", 1);
     for (size_t position = 0; position < count; position++) {
-        append_indent(buffer, depth + 1);
+        if (position > 0) {
+            append_bytes(buffer, ",", 1);
+        }
+        append_line_break(buffer, depth + 1);
         append_quoted(buffer, ordered[position]->string);
-        append_text(buffer, ": ");
+        append_text(buffer, buffer->indent_width == 0 ? ":" : ": ");
         append_value(buffer, ordered[position], depth + 1);
-        append_text(buffer, position + 1 < count ? ",\n" : "\n");
     }
-    append_indent(buffer, depth);
+    append_line_break(buffer, depth);
     append_bytes(buffer, "}", 1);
     spisor_memory_release(ordered);
 }
@@ -217,8 +224,8 @@ static void append_value(text_buffer *buffer, const cJSON *value, int depth) {
     }
 }
 
-static char *stringified(const cJSON *value, int escapes_terminal_controls) {
-    text_buffer buffer = {NULL, 0, 0, 0, escapes_terminal_controls};
+static char *stringified(const cJSON *value, int indent_width, int escapes_terminal_controls) {
+    text_buffer buffer = {.escapes_terminal_controls = escapes_terminal_controls, .indent_width = indent_width};
     append_value(&buffer, value, 0);
     if (buffer.out_of_memory) {
         spisor_memory_release(buffer.data);
@@ -227,10 +234,14 @@ static char *stringified(const cJSON *value, int escapes_terminal_controls) {
     return buffer.data;
 }
 
+char *spisor_json_stringify(const cJSON *value) {
+    return stringified(value, 0, 0);
+}
+
 char *spisor_json_stringify_pretty(const cJSON *value) {
-    return stringified(value, 0);
+    return stringified(value, PRETTY_INDENT_WIDTH, 0);
 }
 
 char *spisor_json_stringify_for_terminal(const cJSON *value) {
-    return stringified(value, 1);
+    return stringified(value, PRETTY_INDENT_WIDTH, 1);
 }
