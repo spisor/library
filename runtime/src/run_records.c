@@ -18,6 +18,7 @@
 #include "spisor/javascript.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
+#include "thread.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -28,14 +29,9 @@
 #define current_process_id() getpid()
 #endif
 
-static volatile long record_number = 0;
-
 static unsigned long next_record_number(void) {
-#if defined(_WIN32)
-    return (unsigned long)InterlockedIncrement(&record_number);
-#else
-    return (unsigned long)__atomic_add_fetch(&record_number, 1, __ATOMIC_RELAXED);
-#endif
+    static volatile long record_number = 0;
+    return (unsigned long)runtime_atomic_increment(&record_number);
 }
 
 static char *runs_folder(const char *state, const char *host_id) {

@@ -67,13 +67,17 @@ else()
 endif()
 set(host_boot_runtime_sources alive_stamp.c boot.c boot_hint.c boot_resolve.c cache_folders.c cache_marker.c cache_place.c cache_refusal.c
     catalog_answer.c catalog_path.c catalog_text.c directory_tree.c file_stream.c file_times.c process_alive.c host_references.c hosts_lock.c
-    identity_parse.c json_service.c node_json_file.c platform_key.c run_records.c segment.c sha256.c)
+    identity_parse.c json_service.c node_json_file.c platform_key.c run_records.c segment.c sha256.c thread.c)
 list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/src/)
 
 # spisor-boot changes almost never once published, so it carries only what boot.resolve needs.
 add_executable(spisor_boot src/boot_main.c src/host_output.c src/host_service.c src/own_executable.c src/windows_command.c
     ${host_boot_platform_sources} ${host_boot_runtime_sources})
 target_link_libraries(spisor_boot PRIVATE spisor_library spisor_allocator)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(spisor_boot PRIVATE Threads::Threads)
+endif()
 target_include_directories(spisor_boot PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
     ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(spisor_boot PROPERTIES OUTPUT_NAME spisor-boot)
