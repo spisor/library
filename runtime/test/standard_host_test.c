@@ -215,6 +215,18 @@ static void an_action_of_a_plugin_the_plan_does_not_run_is_refused(void) {
     finish_base();
 }
 
+static void a_located_plugin_with_no_entry_is_refused(void) {
+    const char *arguments[1] = {LOADER};
+    started_run run;
+    start_host_world("no-entry");
+    write_in(cache, "bundles/a/1.0.0/plugin.json", "{\"id\": \"a\", \"version\": \"1.0.0\"}");
+    run = start_with(arguments, 1);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, "names no entry installed beside it", "a plugin with no entry");
+    release_run(&run);
+    CHECK(run_record_count() == 0);
+    finish_base();
+}
+
 static void an_undeclared_action_is_refused(void) {
     const char *arguments[5] = {LOADER, "action", "a", "wave", "{}"};
     started_run run;
@@ -290,6 +302,7 @@ int main(void) {
     arguments_that_name_no_run_are_refused();
     a_null_argument_is_malformed();
     an_action_of_a_plugin_the_plan_does_not_run_is_refused();
+    a_located_plugin_with_no_entry_is_refused();
     an_undeclared_action_is_refused();
     a_layer_with_no_hinted_version_is_refused_and_published();
     an_unregistered_loader_is_refused();

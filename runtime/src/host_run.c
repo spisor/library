@@ -215,6 +215,26 @@ static void free_run(runtime_host_run *run) {
     spisor_memory_release(run);
 }
 
+/**
+ * 1 when every plugin located has an entry; 0 with `*refusal` set naming the first that has none, since the host
+ * program activates a plugin only through its entry and a plan has no plugin without one.
+ */
+static int has_every_entry(const cJSON *located, cJSON **refusal) {
+    const cJSON *found;
+    cJSON_ArrayForEach(found, cJSON_GetObjectItemCaseSensitive(located, "located")) {
+        if (text_of(found, "entry") == NULL) {
+            const char *parts[5] = {text_of(found, "id"), "@", text_of(found, "version"), "'s manifest ",
+                                    text_of(found, "manifest")};
+            char *start = runtime_cache_text(parts, 5);
+            const char *message[2] = {start, " names no entry installed beside it, so the host cannot activate it"};
+            *refusal = start == NULL ? NULL : refused(message, 2, RUNTIME_REINSTALL_FIX);
+            spisor_memory_release(start);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /** Fills everything the run plans past hosts.start; 0 with `*refusal` as start says, the scopes then not begun. */
 static int planned(runtime_host_run *run, const host_request *request, const cJSON *hint, cJSON **refusal) {
     const char *cache = text_of(cJSON_GetObjectItemCaseSensitive(run->started, "places"), "cache");
@@ -222,10 +242,11 @@ static int planned(runtime_host_run *run, const host_request *request, const cJS
     run->libraries = planned_libraries(hint);
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(plan, "plugins");
     run->located = run->libraries == NULL ? NULL : runtime_cache_locate_plugins(cache, plugins);
-    if (run->located != NULL && request->mode == WEIVEL_STANDARD_HOST_ACTION) {
+    int located = run->located != NULL && has_every_entry(run->located, refusal);
+    if (located && request->mode == WEIVEL_STANDARD_HOST_ACTION) {
         run->action = planned_action(request, run->located, refusal);
     }
-    return run->located != NULL && (request->mode != WEIVEL_STANDARD_HOST_ACTION || run->action != NULL) &&
+    return located && (request->mode != WEIVEL_STANDARD_HOST_ACTION || run->action != NULL) &&
            scopes_began(request, run->started, refusal);
 }
 

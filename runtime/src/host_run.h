@@ -32,9 +32,9 @@ typedef struct runtime_host_run {
  * last, over the loader's home and the places.
  *
  * @return the run, freed with runtime_host_run_end; NULL with `*refusal` set to {message, fix} for arguments that name
- * no run, a layer with no hinted version, a refused hosts.start, a plugin the plan does not run, a manifest that cannot
- * be read, an action ui.action refuses, or scopes that cannot begin, or with it NULL when memory runs out. A run that
- * is not answered leaves no run record of its own and no scopes begun, and a refused SERVE run publishes its refusal
+ * no run, a layer with no hinted version, a refused hosts.start, a located plugin with no entry, a plugin the plan does
+ * not run, a manifest that cannot be read, an action ui.action refuses, or scopes that cannot begin, or with it NULL
+ * when memory runs out. A run that is not answered leaves no run record of its own and no scopes begun, and a refused SERVE run publishes its refusal
  * to the loader's ready record once its places resolved.
  */
 runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t argument_count,

@@ -61,10 +61,8 @@ static spisor_status fill_libraries(void **storage, const cJSON *libraries, weiv
     return SPISOR_OK;
 }
 
-/** The text `member` of `object`, or "" when it holds none, as a plugin whose manifest names no entry that is there. */
-static const char *text_or_empty(const cJSON *object, const char *member) {
-    const char *text = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
-    return text == NULL ? "" : text;
+static const char *text_of(const cJSON *object, const char *member) {
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
 }
 
 static spisor_status fill_plugins(void **storage, const cJSON *located, weivel_standard_host_plan *plan) {
@@ -76,9 +74,9 @@ static spisor_status fill_plugins(void **storage, const cJSON *located, weivel_s
     plan->plugins = filled;
     cJSON_ArrayForEach(plugin, located) {
         weivel_standard_host_plugin *each = &filled[plan->plugin_count++];
-        if (!runtime_storage_copy(storage, text_or_empty(plugin, "directory"), &each->directory) ||
-            !runtime_storage_copy(storage, text_or_empty(plugin, "manifest"), &each->manifest) ||
-            !runtime_storage_copy(storage, text_or_empty(plugin, "entry"), &each->entry)) {
+        if (!runtime_storage_copy(storage, text_of(plugin, "directory"), &each->directory) ||
+            !runtime_storage_copy(storage, text_of(plugin, "manifest"), &each->manifest) ||
+            !runtime_storage_copy(storage, text_of(plugin, "entry"), &each->entry)) {
             return SPISOR_OUT_OF_MEMORY;
         }
     }

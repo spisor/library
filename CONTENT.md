@@ -163,10 +163,10 @@ at the version its boot hint names, beside every library the hint names, and `ho
 run as the loader's session start. The plan loads every hinted library with a binary but runtime itself, which the
 program was started with, and activates every plugin of that plan `cache.locate` finds installed. An ACTION plan
 names its plugin by that plugin's manifest path, the very text the plan's plugin carries, since the program matches
-it exactly, and its arguments are what `ui.action` merges from that manifest. A plugin the plan does not run, an
-undeclared action, arguments naming no run, a layer with no hinted version and a second start before a stop are
-refused at start, which then leaves no run record and no scopes begun; a refused SERVE start publishes its refusal
-to the loader's ready record. The start begins the scopes last, over the loader's home and the places, and `stop`
+it exactly, and its arguments are what `ui.action` merges from that manifest. A located plugin whose manifest names no
+entry installed beside it, a plugin the plan does not run, an undeclared action, arguments naming no run, a layer
+with no hinted version and a second start before a stop are refused at start, which then leaves no run record and
+no scopes begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the scopes last, over the loader's home and the places, and `stop`
 ends them, removes the run record and answers exit code 0; `started`, `tick` and `finished` answer OK while a run is
 started, `tick` naming no next tick. `standard_host_test` holds each argument form and refusal, and
 `out_of_memory_host_test` fails every allocation of a start and of the stop after it.
