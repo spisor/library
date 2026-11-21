@@ -80,24 +80,36 @@ static void started_with_its_plugin(const started_run *run) {
     CHECK(host->started(host->context, &outcome, 1, NULL) == WEIVEL_STATUS_OK);
 }
 
+/**
+ * Reads the config until the tick returns, requiring every read to finish while the tick still waits: the slowest read
+ * far below the stall, so no read waited for the tick, and reads made in the middle of the stall.
+ */
 static void reads_while(const weivel_standard_config *config, blocking_tick *blocked) {
     long reads = 0;
     long failed_reads = 0;
+    long reads_mid_stall = 0;
+    double slowest = 0;
     double began = runtime_now_milliseconds();
     double took;
     runtime_thread ticker;
     CHECK(runtime_thread_start(&ticker, tick_once, blocked));
     while (!has_finished(blocked)) {
-        if (reads_theme(config)) {
-            reads++;
-        } else {
-            failed_reads++;
-        }
+        double read_began = runtime_now_milliseconds();
+        int read = reads_theme(config);
+        double read_took = runtime_now_milliseconds() - read_began;
+        slowest = read_took > slowest ? read_took : slowest;
+        reads += read;
+        failed_reads += !read;
+        reads_mid_stall += read && read_began - began >= STALL_MILLISECONDS / 3 &&
+                           read_began - began <= 2 * STALL_MILLISECONDS / 3;
     }
     runtime_thread_join(&ticker);
     took = runtime_now_milliseconds() - began;
-    printf("%ld reads of config.get while a tick blocked for %.0f ms, %ld failed\n", reads, took, failed_reads);
-    CHECK(reads > 0 && failed_reads == 0 && blocked->status == WEIVEL_STATUS_OK && took >= STALL_MILLISECONDS / 2);
+    printf("%ld reads of config.get while a tick blocked for %.0f ms, %ld of them mid-stall, the slowest %.0f ms, "
+           "%ld failed\n",
+           reads, took, reads_mid_stall, slowest, failed_reads);
+    CHECK(failed_reads == 0 && blocked->status == WEIVEL_STATUS_OK && took >= STALL_MILLISECONDS / 2);
+    CHECK(reads_mid_stall > 0 && slowest < STALL_MILLISECONDS / 4);
 }
 
 static void config_reads_while_a_tick_blocks(void) {
