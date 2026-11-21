@@ -1286,12 +1286,14 @@ static spisor_status deploy_a_bundle(void) {
 
 #define OTHER_IDENTITY "{\"id\":\"github:9\",\"name\":\"greeter\"}"
 
-/** A bundle to deploy where another plugin, github:9, is already deployed under the same name. */
+/**
+ * A bundle to deploy where another plugin, github:9, left its identity under the same name and no code, so the
+ * identity's probe alone tells deploy the name is taken.
+ */
 static void another_plugin_deployed(void) {
     char plugins[1300];
     a_bundle_to_deploy();
     under_base(plugins, sizeof plugins, "deep/plugins");
-    write_text(plugins, "greeter.json", "{\"importName\":\"greeter\"}");
     write_text(plugins, "greeter_identity.json", OTHER_IDENTITY);
 }
 
