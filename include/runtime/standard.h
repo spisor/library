@@ -51,10 +51,10 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * run as the loader's session start. The plan loads every hinted library that has a binary but runtime itself, which
  * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
  * plan that cache's locate finds installed, in id order, a plugin whose manifest names no entry that is there planned
- * with an empty entry. An ACTION plan's `action_plugin` is the manifest path of the plan's plugin of that id, the
- * very text its plugin carries, `action_name` the action's id, and `action_arguments` what ui's action merges from
- * that manifest: the declared argument, then the input. The scopes then begin, over the loader's home and the places,
- * so `weivel.scope` opens the plan's plugins' scopes until `stop`.
+ * with an empty entry. An ACTION plan's `action_plugin` is the `manifest` of the plan's plugin of that id, the very
+ * text, since the program matches it exactly; `action_name` is the action's id, and `action_arguments` what ui's
+ * action merges from that manifest: the declared argument, then the input. The scopes then begin, over the loader's
+ * home and the places, so `weivel.scope` opens the plan's plugins' scopes until `stop`.
  *
  * `start` answers MALFORMED for a refusal or plan short of its first shape, a plan that is not empty, and arguments
  * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a second start before
