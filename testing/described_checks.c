@@ -99,8 +99,7 @@ static const weivel_standard_described_member *member_named(const weivel_standar
 static int is_sized(const weivel_standard_described_type *type) {
     const weivel_standard_described_member *first = type->member_count == 0 ? NULL : &type->members[0];
     return first != NULL && strcmp(first->name, "size") == 0 && first->offset == 0 &&
-           first->kind == WEIVEL_STANDARD_DESCRIBED_U32 && first->size == sizeof(uint32_t) &&
-           type->first_shape > sizeof(uint32_t);
+           first->kind == WEIVEL_STANDARD_DESCRIBED_U32 && first->size == sizeof(uint32_t);
 }
 
 static int is_counted_array(uint32_t kind) {
