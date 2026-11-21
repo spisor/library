@@ -378,13 +378,7 @@ add_dependencies(weivel_host_load_test runtime weivel_core_shared)
 spisor_strict_warnings(weivel_host_load_test)
 add_test(NAME weivel_host_load_test COMMAND weivel_host_load_test)
 
-include(${PROJECT_SOURCE_DIR}/cmake/definition_calls.cmake)
-set(runtime_definition_operations ${CMAKE_CURRENT_BINARY_DIR}/generated/definition_operations.c)
-spisor_definition_operations(${runtime_definition_operations} DEFINITIONS ${PROJECT_SOURCE_DIR}/include/runtime
-    INCLUDE_ROOT ${PROJECT_SOURCE_DIR}/include PREFIX runtime_ LAYOUTS layouts SHAPES ${PROJECT_SOURCE_DIR}/include)
-foreach(name IN ITEMS short_shape_test empty_answer_test)
-    spisor_add_definition_call_test(${name} SOURCE ${name}.c LIBRARY runtime OPERATIONS ${runtime_definition_operations})
-endforeach()
+spisor_add_described_checks(LIBRARY runtime DECLARATION ${PROJECT_SOURCE_DIR}/runtime/library.json)
 
 add_executable(parity_test parity_test.c parity_files.c parity_json.c)
 target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
