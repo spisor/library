@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -426,24 +425,37 @@ static int write_and_close(FILE *file, const uint8_t *bytes, size_t length) {
     return fclose(file) == 0 && written;
 }
 
-static void seed_once(void) {
-    static int seeded = 0;
-    if (!seeded) {
-        int local = 0;
-        srand((unsigned)time(NULL) ^ (unsigned)(size_t)&local);
-        seeded = 1;
-    }
+/**
+ * A number no other temporary name of this process has had, from any thread.
+ *
+ * @implNote Not rand(): the Windows CRT keeps its state per thread and seeds each new thread alike, so two threads
+ * named the same temporary file and the second exclusive create refused a write that should have succeeded.
+ */
+static unsigned long next_temporary_number(void) {
+#if defined(_WIN32)
+    static volatile LONG temporary_number = 0;
+    return (unsigned long)InterlockedIncrement(&temporary_number);
+#else
+    static volatile unsigned long temporary_number = 0;
+    return __atomic_add_fetch(&temporary_number, 1, __ATOMIC_RELAXED);
+#endif
+}
+
+static unsigned long current_process_number(void) {
+#if defined(_WIN32)
+    return (unsigned long)GetCurrentProcessId();
+#else
+    return (unsigned long)getpid();
+#endif
 }
 
 char *spisor_temporary_path_for(const char *path) {
-    seed_once();
     size_t path_length = strlen(path);
     char *temporary = spisor_memory_allocate(path_length + 1 + 16 + 4 + 1);
     spisor_file_presence presence = SPISOR_FILE_PRESENT;
     while (temporary != NULL && presence == SPISOR_FILE_PRESENT) {
-        snprintf(temporary, path_length + 1 + 16 + 4 + 1, "%s.%04x%04x%04x%04x.tmp", path,
-                 (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu, (unsigned)rand() & 0xffffu,
-                 (unsigned)rand() & 0xffffu);
+        snprintf(temporary, path_length + 1 + 16 + 4 + 1, "%s.%08lx%08lx.tmp", path,
+                 current_process_number() & 0xffffffffUL, next_temporary_number() & 0xffffffffUL);
         presence = spisor_probe_file(temporary);
     }
     if (presence == SPISOR_FILE_OUT_OF_MEMORY) {
