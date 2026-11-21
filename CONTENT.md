@@ -83,8 +83,8 @@ build the same table and tests for another library.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
 function of kind `definition` and its `description`, `runtime_<service>_definition_description`, and a test keeps
-it complete against the headers; another loads the built `runtime` through `weivel/c`'s host and calls `paths`
-through the registered definition. Each description is generated at build time by the weivel standard's
+it complete against the headers; another loads the built `runtime` through `weivel/c`'s host, which checks every
+description with the standard's check, and calls `paths` through the registered definition. Each description is generated at build time by the weivel standard's
 `weivel_describe` from `spisor/status.h` and every `include/runtime` header, so a language that cannot read a C
 header binds the definition from it, and `description_test` loads each one from the built `runtime` and runs the
 standard's own check on it. The symbol is the definition's name with `_description`, which is the name another

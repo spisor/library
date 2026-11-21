@@ -373,7 +373,7 @@ target_include_directories(weivel_host_load_test PRIVATE ${PROJECT_SOURCE_DIR}/t
 target_compile_definitions(weivel_host_load_test PRIVATE
     RUNTIME_DECLARATION_PATH="${PROJECT_SOURCE_DIR}/runtime/library.json"
     RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>" WEIVEL_CORE_PATH="$<TARGET_FILE:weivel_core_shared>")
-target_link_libraries(weivel_host_load_test PRIVATE weivel_c weivel_standard)
+target_link_libraries(weivel_host_load_test PRIVATE weivel_c_standard)
 add_dependencies(weivel_host_load_test runtime weivel_core_shared)
 spisor_strict_warnings(weivel_host_load_test)
 add_test(NAME weivel_host_load_test COMMAND weivel_host_load_test)
