@@ -124,6 +124,37 @@ static double holders_alive_at(void) {
     return alive_at;
 }
 
+/**
+ * When the loader's one run record says its run was last alive, which a tick's turn stamps with its now.
+ *
+ * @implNote Read only after a tick that ran no update check: the check's sweep reads the clock, and deletes a record
+ * stamped years before it, as NOW is, until the next turn stamps it again.
+ */
+static double run_record_alive_at(void) {
+    runtime_directory_listing listing = {NULL, 0};
+    char *directory = joined(state, "bundles/runs/" LOADER);
+    char *path = NULL;
+    char *text = NULL;
+    cJSON *record = NULL;
+    double alive_at = -1;
+    size_t length = 0;
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK && listing.count == 1);
+    path = listing.count == 1 ? joined(directory, listing.entries[0].name) : NULL;
+    text = path == NULL ? NULL
+                        : (char *)spisor_read_file_reporting(path, &length,
+                                                             &(spisor_read_outcome){SPISOR_READ_FAILED});
+    record = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, length, &(int){0});
+    if (cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(record, "aliveAt"))) {
+        alive_at = cJSON_GetObjectItemCaseSensitive(record, "aliveAt")->valuedouble;
+    }
+    cJSON_Delete(record);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    runtime_free_directory_listing(&listing);
+    return alive_at;
+}
+
 /** A SERVE run told its one plugin was activated, with this process holding the loader. */
 static started_run serving(const char *label) {
     weivel_standard_host_outcome outcome;
@@ -307,6 +338,7 @@ static void a_tick_acts_on_each_timer_when_it_is_due(void) {
     CHECK(holders_alive_at() == (double)NOW);
     expect_tick(NOW + TURN, NOW + 2 * TURN, "the second turn");
     CHECK(holders_alive_at() == (double)(NOW + TURN));
+    CHECK(run_record_alive_at() == (double)(NOW + TURN));
     CHECK(!is_installed("1.2.0"));
     expect_tick(NOW + CHECK_INTERVAL, NOW + CHECK_INTERVAL + TURN, "the second check");
     CHECK(holders_alive_at() == (double)(NOW + CHECK_INTERVAL));
@@ -320,6 +352,7 @@ static void a_late_tick_runs_each_timer_once(void) {
     started_run run = serving("late");
     expect_tick(NOW, NOW + TURN, "the first tick");
     expect_tick(NOW + 7 * TURN + 1, NOW + 8 * TURN + 1, "a tick seven turns late");
+    CHECK(run_record_alive_at() == (double)(NOW + 7 * TURN + 1));
     release_run(&run);
     stop_expecting(0, "a serve run ticked late");
     finish_base();

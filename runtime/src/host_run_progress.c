@@ -199,7 +199,7 @@ static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, i
                                      cJSON **failure) {
     const cJSON *plan = plan_of(run);
     runtime_processes_record_request record = {state_of(run), run->host_id, member(plan, "run"), (double)interval,
-                                               text_of(plan, "runRecord")};
+                                               text_of(plan, "runRecord"), (double)now};
     runtime_processes_prune_request prune = {state_of(run), run->host_id, (double)current_process_id(),
                                              (double)now, (double)interval};
     cJSON *stamped = runtime_processes_record_run(&record, failure);

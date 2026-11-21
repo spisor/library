@@ -35,8 +35,9 @@ spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_stand
                                        size_t outcome_count, spisor_refusal *refusal);
 
 /**
- * Acts on `now` at the run's timers, which hosts.start answered a SERVE run: the run record's stamp and the holders'
- * prune every `recordRunMilliseconds`, and updates.check every `updateCheckMilliseconds`, the first tick taking both.
+ * Acts on `now` at the run's timers, which hosts.start answered a SERVE run, reading no clock: the run record
+ * stamped alive at `now` and the holders' prune at `now` every `recordRunMilliseconds`, and updates.check every
+ * `updateCheckMilliseconds`, the first tick taking both.
  * A timer's next due time is `now` plus its interval, so a late tick never runs a timer twice to catch up. `next` is
  * the earlier of the two due times, or none when hosts.start answered no timers.
  *

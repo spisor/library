@@ -70,8 +70,9 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * and a refused SERVE `started` publishes its refusal there instead.
  *
  * `tick` is a SERVE run's alone, after its `started` answered OK, and REFUSED otherwise, since an ACTION run never
- * ticks. It acts only through its `now`: every `recordRunMilliseconds` of hosts' start's timers it stamps the run
- * record and runs processes' prune for this process, and every `updateCheckMilliseconds` it runs updates' check at
+ * ticks. It acts only through its `now` and reads no clock: every `recordRunMilliseconds` of hosts' start's timers
+ * it stamps the run record alive at `now` and runs processes' prune for this process at `now`, and every
+ * `updateCheckMilliseconds` it runs updates' check at
  * `now`, its damaged versions those cache's locate could not run, the first tick taking both. Each timer is next due
  * at `now` plus its interval, so a late tick runs it once, and `next` is the earlier of the two. A prune that answers
  * that no holder is alive, or another process runs the loader, ends the run with a REFUSED tick, as do

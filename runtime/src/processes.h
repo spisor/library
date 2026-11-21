@@ -55,7 +55,8 @@ cJSON *runtime_processes_prune(const runtime_processes_prune_request *request, c
 
 /**
  * A run of host_id to record: run, an object of item ids to versions; check_milliseconds, 0 for 5000; record, a path
- * an earlier recording answered, or NULL for a new record.
+ * an earlier recording answered, or NULL for a new record; now, the time a stamp of record is alive at, 0 for the
+ * current time, which a new record always takes.
  */
 typedef struct runtime_processes_record_request {
     const char *state;
@@ -63,6 +64,7 @@ typedef struct runtime_processes_record_request {
     const cJSON *run;
     double check_milliseconds;
     const char *record;
+    double now;
 } runtime_processes_record_request;
 
 /**
