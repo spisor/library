@@ -42,10 +42,10 @@ static char *runs_folder(const char *state, const char *host_id) {
     return runtime_cache_joined(segments, 4);
 }
 
-/** The record's text, stamped alive at `now`, or at the current time when `now` is 0. */
-static char *record_text(const cJSON *run, double check_milliseconds, double now) {
+/** The record's text, stamped alive at `*now`, or at the current time when `now` is NULL. */
+static char *record_text(const cJSON *run, double check_milliseconds, const double *now) {
     cJSON *record = cJSON_CreateObject();
-    double alive_at = floor(now == 0 ? runtime_now_milliseconds() : now);
+    double alive_at = floor(now == NULL ? runtime_now_milliseconds() : *now);
     int built = record != NULL && cJSON_AddNumberToObject(record, "pid", (double)current_process_id()) != NULL &&
                 cJSON_AddNumberToObject(record, "aliveAt", alive_at) != NULL &&
                 cJSON_AddNumberToObject(record, "checkMilliseconds", check_milliseconds) != NULL &&
@@ -69,7 +69,7 @@ static char *record_path(const char *folder) {
 }
 
 /** Writes the record; 0 with *out_of_memory set to 1 when memory ran out building its text. */
-static int write_record(const char *path, const cJSON *run, double check_milliseconds, double now,
+static int write_record(const char *path, const cJSON *run, double check_milliseconds, const double *now,
                         int *out_of_memory) {
     char *text = record_text(run, check_milliseconds, now);
     spisor_status status = text == NULL ? SPISOR_OUT_OF_MEMORY
@@ -87,7 +87,7 @@ char *runtime_record_run(const char *state, const char *host_id, const cJSON *ru
     spisor_status prepared = path == NULL ? SPISOR_REFUSED : spisor_prepare_path(path, removal);
     *out_of_memory = (folder == NULL && runtime_is_plain_host_id(host_id)) || made == SPISOR_OUT_OF_MEMORY ||
                      (made == SPISOR_OK && path == NULL) || prepared == SPISOR_OUT_OF_MEMORY;
-    int written = prepared == SPISOR_OK && write_record(path, run, check_milliseconds, 0, out_of_memory);
+    int written = prepared == SPISOR_OK && write_record(path, run, check_milliseconds, NULL, out_of_memory);
     spisor_memory_release(folder);
     if (!written) {
         if (prepared == SPISOR_OK) {
@@ -120,7 +120,7 @@ int runtime_is_run_record_of(const char *state, const char *host_id, const char 
 }
 
 runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
-                                    double check_milliseconds, double now) {
+                                    double check_milliseconds, const double *now) {
     int out_of_memory = 0;
     if (!runtime_is_run_record_of(state, host_id, record, &out_of_memory)) {
         return out_of_memory ? RUNTIME_RUN_OUT_OF_MEMORY : RUNTIME_RUN_NOT_A_RECORD;

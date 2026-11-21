@@ -40,12 +40,12 @@ typedef enum runtime_run_stamp {
 } runtime_run_stamp;
 
 /**
- * Stamps the run record at record alive again at now, 0 for the current time, as runtime_record_run wrote it,
+ * Stamps the run record at record alive again at `*now`, NULL for the current time, as runtime_record_run wrote it,
  * making its folder again when a removal took it. NOT_A_RECORD, writing nothing, when record is no run record of
  * host_id.
  */
 runtime_run_stamp runtime_stamp_run(const char *state, const char *host_id, const char *record, const cJSON *run,
-                                    double check_milliseconds, double now);
+                                    double check_milliseconds, const double *now);
 
 /**
  * What every live start of any host runs, as an array of id-to-version objects in host and file name

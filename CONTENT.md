@@ -169,15 +169,18 @@ with no hinted version and a second start before a stop are refused at start, wh
 no scopes begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the
 scopes last, over the loader's home and the places.
 
-`started` takes every plugin's outcome and refuses the run for a plugin that was refused or failed; a SERVE run then
-publishes to the loader's ready record that it is ready, with an empty environment, or why it is refused. `tick` is a
+`started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries
+on with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
+`finished` as a failure by the program. A SERVE run then publishes to the loader's ready record that it is ready,
+with an empty environment, or, when an enabled front door did not activate, a refusal naming it. `tick` is a
 SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's
 timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
 `cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due time as
-its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. `finished` records how
-an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code, as the
-archived host's were: 0 for a SERVE run that ends on a stop request or its holders' word and for an action that
-answered, 1 for an action that threw or never ran and for a run a call of which failed.
+its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. Each failed turn, a
+refused check and each version a check refused are written as a warning to the loader's own log. `finished` records how
+an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code: 0 for
+a SERVE run that ends on a stop request or its holders' word and for an action that answered, 1 for an action that
+threw or never ran and for a run a call of which failed before it ended.
 
 `standard_host_test` holds each argument form and refusal of a start, `host_progress_test` the ready record, the
 timers, the exit codes and every call out of its order, `host_tick_threads_test` a plugin's `config.get` through

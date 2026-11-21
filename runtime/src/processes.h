@@ -34,19 +34,22 @@ cJSON *runtime_processes_hold(const runtime_processes_hold_request *request, cJS
  */
 cJSON *runtime_processes_release(const char *state, const char *host_id, double holder, cJSON **refusal);
 
-/** One prune of background host host_id, whose process is self; a now or check_milliseconds of 0 takes its default. */
+/**
+ * One prune of background host host_id, whose process is self: at `*now`, or at the current time when `now` is NULL,
+ * so a caller passing its own time never has the clock read; a check_milliseconds of 0 takes its default.
+ */
 typedef struct runtime_processes_prune_request {
     const char *state;
     const char *host_id;
     double self;
-    double now;
+    const double *now;
     double check_milliseconds;
 } runtime_processes_prune_request;
 
 /**
  * processes' prune, one check of the background host its language layer makes every check_milliseconds (5000 by
  * default): answers {exit: true} when another process is recorded as the host, or no holder is alive; otherwise
- * drops the dead holders, stamps self alive at now (the current time by default) and answers {exit: false}.
+ * drops the dead holders, stamps self alive at the request's time and answers {exit: false}.
  *
  * @implNote With no holder left the record is removed before the lock is released, so a holder
  * arriving next starts a new host rather than holding one that is about to exit.
@@ -55,7 +58,7 @@ cJSON *runtime_processes_prune(const runtime_processes_prune_request *request, c
 
 /**
  * A run of host_id to record: run, an object of item ids to versions; check_milliseconds, 0 for 5000; record, a path
- * an earlier recording answered, or NULL for a new record; now, the time a stamp of record is alive at, 0 for the
+ * an earlier recording answered, or NULL for a new record; now, the time a stamp of record is alive at, NULL for the
  * current time, which a new record always takes.
  */
 typedef struct runtime_processes_record_request {
@@ -64,7 +67,7 @@ typedef struct runtime_processes_record_request {
     const cJSON *run;
     double check_milliseconds;
     const char *record;
-    double now;
+    const double *now;
 } runtime_processes_record_request;
 
 /**

@@ -12,8 +12,9 @@
 /**
  * @file
  * What `weivel.host` does with a run between its start and its stop: `started`, `tick` and `finished` on the run the
- * caller holds under the run lock. Each answers OK or refuses into `refusal`; every answer but OK fails the run, its
- * exit code becoming RUNTIME_HOST_EXIT_FAILED, except a tick that ends a SERVE run its holders left.
+ * caller holds under the run lock. Each answers OK or refuses into `refusal`; every answer but OK fails a run that has
+ * not ended, its exit code becoming RUNTIME_HOST_EXIT_FAILED, and leaves the exit code of one that has as it was, so a
+ * call out of its order after a run ended on its holders' word or with its action's result changes nothing.
  */
 
 /** When the program ticks next: at `next`, milliseconds since the Unix epoch, when `has_next` is 1. */
@@ -23,13 +24,14 @@ typedef struct runtime_host_next_tick {
 } runtime_host_next_tick;
 
 /**
- * Takes every plugin's outcome, one per plugin of the plan in its order. A SERVE run whose plugins were all activated
- * publishes to the loader's ready record that it is ready, with an empty environment.
+ * Takes every plugin's outcome, one per plugin of the plan in its order. A plugin that was refused or failed refuses
+ * that plugin alone, as the archived host quarantined it: the run carries on with the plugins that activated. A SERVE
+ * run then publishes to the loader's ready record that it is ready, with an empty environment, unless a plugin whose
+ * manifest declares the `front-door` capability was not activated: then it publishes a refusal naming that front door.
  *
  * @return OK; MALFORMED for outcomes other than one per plugin of the plan, a manifest that is not the plan's in its
- * place, or a state that is no weivel_standard_host_plugin_state; REFUSED when it is not the run's first started, when
- * a plugin was refused or failed, which a SERVE run also publishes to its ready record, or when the ready record could
- * not be written; OUT_OF_MEMORY.
+ * place, or a state that is no weivel_standard_host_plugin_state; REFUSED when it is not the run's first started, or
+ * when the ready record could not be written; OUT_OF_MEMORY.
  */
 spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_standard_host_outcome *outcomes,
                                        size_t outcome_count, spisor_refusal *refusal);
@@ -43,7 +45,8 @@ spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_stand
  *
  * A turn whose stamp or prune is refused counts towards `pruneFailuresBeforeExit` turns in a row, and one that
  * succeeds starts the count again; an updates.check that is refused leaves the run as it was, since what runs now is
- * never changed by a check.
+ * never changed by a check. Each failed turn, a refused check and each version a check refused are written as a
+ * warning to the loader's own log at `now`, under the loader's id.
  *
  * @return OK; REFUSED for an ACTION run, which never ticks, a run whose started has not answered OK, and a now outside
  * the years 0 to 9999 when a check is due; REFUSED with the run ended and its exit code 0 when the prune answers that
@@ -65,7 +68,10 @@ spisor_status runtime_host_run_tick(runtime_host_run *run, int64_t now, runtime_
  */
 spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failure, spisor_refusal *refusal);
 
-/** Fails the run: its exit code becomes RUNTIME_HOST_EXIT_FAILED and no further call acts on it. */
+/**
+ * Ends the run, so no further call acts on it: a run that had not ended fails, its exit code becoming
+ * RUNTIME_HOST_EXIT_FAILED, and one that had keeps the exit code it ended with.
+ */
 void runtime_host_run_fail(runtime_host_run *run);
 
 #endif

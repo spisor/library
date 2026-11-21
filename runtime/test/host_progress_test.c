@@ -179,26 +179,70 @@ static void a_serve_run_started_publishes_that_it_is_ready(void) {
     finish_base();
 }
 
-static void a_plugin_not_activated_refuses_the_run_and_is_published(uint32_t plugin_state, const char *detail,
-                                                                     const char *expected, const char *label) {
-    weivel_standard_service_refusal refusal;
-    weivel_standard_host_outcome outcome;
+#define SECOND_MANIFEST "{\"id\": \"b\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}"
+#define FRONT_DOOR_MANIFEST                                                                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"capabilities\": [\"front-door\"]}"
+
+/** A loader whose settings enable plugins `a` and `b`, both installed, `a` with `a_manifest`. */
+static void start_two_plugin_world(const char *label, const char *a_manifest) {
+    cJSON *settings;
+    char *text;
+    start_host_world(label);
+    write_in(cache, "bundles/a/1.0.0/plugin.json", a_manifest);
+    install_plugin("b", SECOND_MANIFEST);
+    settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}}}");
+    text = cJSON_PrintUnformatted(settings);
+    write_in(application_home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+}
+
+/** Starts the two-plugin run the arguments name and tells it `a` and `b` ended as `a_state` and `b_state`. */
+static started_run started_with_states(const char *const *arguments, size_t count, uint32_t a_state,
+                                       uint32_t b_state, const char *detail) {
+    weivel_standard_host_outcome outcomes[2];
+    started_run run = start_with(arguments, count);
+    CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 2);
+    if (run.plan.plugin_count == 2) {
+        weivel_standard_host_outcome a = {run.plan.plugins[0].manifest, a_state, detail};
+        weivel_standard_host_outcome b = {run.plan.plugins[1].manifest, b_state, detail};
+        outcomes[0] = a;
+        outcomes[1] = b;
+        CHECK(tell_started(outcomes, 2, NULL) == WEIVEL_STATUS_OK);
+    }
+    return run;
+}
+
+static void a_plugin_not_activated_is_left_out_and_the_run_serves_on(uint32_t a_state, const char *detail,
+                                                                      const char *label) {
     started_run run;
     cJSON *record;
-    start_host_world(label);
-    run = start_one(serve_arguments, 1);
-    outcome = outcome_of(&run, plugin_state, detail);
-    CHECK(tell_started(&outcome, 1, &refusal) == WEIVEL_STATUS_REFUSED);
-    expect_detail(&refusal, expected, label);
+    start_two_plugin_world(label, PLUGIN_MANIFEST);
+    hold_the_loader();
+    run = started_with_states(serve_arguments, 1, a_state, WEIVEL_STANDARD_HOST_ACTIVATED, detail);
     record = ready_record();
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")), refusal.detail,
-               "the published refusal");
+    expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"), "{}", label);
+    CHECK(cJSON_GetObjectItemCaseSensitive(record, "refused") == NULL);
+    cJSON_Delete(record);
+    expect_tick(NOW, NOW + TURN, label);
+    release_run(&run);
+    stop_expecting(0, label);
+    finish_base();
+}
+
+static void a_front_door_not_activated_publishes_a_refusal_naming_it(uint32_t a_state, const char *detail,
+                                                                     const char *expected, const char *label) {
+    started_run run;
+    cJSON *record;
+    start_two_plugin_world(label, FRONT_DOOR_MANIFEST);
+    run = started_with_states(serve_arguments, 1, a_state, WEIVEL_STANDARD_HOST_ACTIVATED, detail);
+    record = ready_record();
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")), expected, label);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "fix")), "fix or disable a", label);
     CHECK(cJSON_GetObjectItemCaseSensitive(record, "environment") == NULL);
     cJSON_Delete(record);
-    release_refusal(&refusal);
-    expect_tick_refused(NOW, "before started answered OK", "a tick after a refused started");
     release_run(&run);
-    stop_expecting(RUNTIME_HOST_EXIT_FAILED, label);
+    stop_expecting(0, label);
     finish_base();
 }
 
@@ -290,7 +334,7 @@ static void an_action_answers_its_exit_code_as_it_ended(void) {
     expect_detail(&refusal, "or a second time", "a second finished");
     release_refusal(&refusal);
     release_run(&run);
-    stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action told finished twice");
+    stop_expecting(0, "an action that answered, told finished twice");
     finish_base();
 }
 
@@ -327,6 +371,18 @@ static void publish_plugin(const char *version) {
     write_catalog();
 }
 
+static void an_action_runs_on_when_another_plugin_was_not_activated(void) {
+    weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    started_run run;
+    start_two_plugin_world("action-beside-a-failed-plugin", PLUGIN_MANIFEST);
+    run = started_with_states(action_arguments, 5, WEIVEL_STANDARD_HOST_ACTIVATED, WEIVEL_STANDARD_HOST_FAILED,
+                              "it threw");
+    CHECK(tell_finished(&answered, NULL, NULL) == WEIVEL_STATUS_OK);
+    release_run(&run);
+    stop_expecting(0, "an action whose plugin activated beside one that failed");
+    finish_base();
+}
+
 static void a_tick_acts_on_each_timer_when_it_is_due(void) {
     started_run run = serving("timers");
     publish_plugin("1.1.0");
@@ -358,6 +414,18 @@ static void a_late_tick_runs_each_timer_once(void) {
     finish_base();
 }
 
+static void a_tick_at_the_epoch_reads_no_clock(void) {
+    started_run run = serving("epoch");
+    expect_tick(-TURN, 0, "a tick before the epoch");
+    CHECK(holders_alive_at() == (double)-TURN);
+    expect_tick(0, TURN, "a tick at the epoch");
+    CHECK(holders_alive_at() == 0);
+    CHECK(run_record_alive_at() == 0);
+    release_run(&run);
+    stop_expecting(0, "a serve run ticked at the epoch");
+    finish_base();
+}
+
 static void a_serve_run_no_holder_keeps_ends_with_exit_code_zero(void) {
     weivel_standard_host_outcome outcome;
     started_run run;
@@ -366,6 +434,8 @@ static void a_serve_run_no_holder_keeps_ends_with_exit_code_zero(void) {
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     expect_tick_refused(NOW, "no holder of " LOADER " is alive", "a tick no holder keeps");
+    expect_tick_refused(NOW + TURN, "after the run ended", "a tick after the run ended");
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_REFUSED);
     release_run(&run);
     stop_expecting(0, "a serve run its holders left");
     finish_base();
@@ -383,13 +453,36 @@ static void break_the_prune(int broken) {
     spisor_memory_release(folder);
 }
 
+/** The loader's one log file of the day NOW falls on, or NULL when there is none. */
+static char *loader_log_of_now(void) {
+    runtime_directory_listing listing = {NULL, 0};
+    char *directory = joined(application_home, "logs/2023-11-14");
+    char *path = NULL;
+    char *text = NULL;
+    size_t length = 0;
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK && listing.count == 1);
+    path = listing.count == 1 ? joined(directory, listing.entries[0].name) : NULL;
+    if (path != NULL) {
+        text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    }
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    runtime_free_directory_listing(&listing);
+    return text;
+}
+
 static void failed_prunes_end_the_run_only_once_enough_fail_in_a_row(void) {
     started_run run = serving("prune-failures");
     int64_t now = NOW;
+    char *log;
     break_the_prune(1);
     for (int turn = 1; turn < FAILURES_BEFORE_EXIT; turn++, now += TURN) {
         expect_tick(now, now + TURN, "a failed turn");
     }
+    log = loader_log_of_now();
+    CHECK(log != NULL && strstr(log, "[2023-11-14T22:13:20.000Z] [WARN] spisor could not check the holders of " LOADER
+                                     ": the processes folder") != NULL);
+    spisor_memory_release(log);
     break_the_prune(0);
     expect_tick(now, now + TURN, "a turn that succeeds again");
     now += TURN;
@@ -414,19 +507,23 @@ static void a_now_no_check_can_carry_fails_the_run(void) {
 int main(void) {
     spisor_json_use_library_allocator();
     a_serve_run_started_publishes_that_it_is_ready();
-    a_plugin_not_activated_refuses_the_run_and_is_published(WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
-                                                            "the plugin a of " LOADER
-                                                            " was refused: its scope was refused",
-                                                            "a refused plugin");
-    a_plugin_not_activated_refuses_the_run_and_is_published(WEIVEL_STANDARD_HOST_FAILED, NULL,
-                                                            "the plugin a of " LOADER " failed to activate",
-                                                            "a failed plugin");
+    a_plugin_not_activated_is_left_out_and_the_run_serves_on(WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
+                                                             "a refused plugin");
+    a_plugin_not_activated_is_left_out_and_the_run_serves_on(WEIVEL_STANDARD_HOST_FAILED, NULL, "a failed plugin");
+    a_front_door_not_activated_publishes_a_refusal_naming_it(
+        WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
+        "the front door a is enabled but did not start: its scope was refused", "a refused front door");
+    a_front_door_not_activated_publishes_a_refusal_naming_it(
+        WEIVEL_STANDARD_HOST_FAILED, NULL, "the front door a is enabled but did not start: it is not running",
+        "a front door that failed with no detail");
+    an_action_runs_on_when_another_plugin_was_not_activated();
     outcomes_that_are_not_the_plans_are_malformed();
     a_second_started_is_refused_and_fails_the_run();
     an_action_answers_its_exit_code_as_it_ended();
     finished_is_refused_in_a_serve_run_and_before_started();
     a_tick_acts_on_each_timer_when_it_is_due();
     a_late_tick_runs_each_timer_once();
+    a_tick_at_the_epoch_reads_no_clock();
     a_serve_run_no_holder_keeps_ends_with_exit_code_zero();
     failed_prunes_end_the_run_only_once_enough_fail_in_a_row();
     a_now_no_check_can_carry_fails_the_run();
