@@ -159,7 +159,8 @@ one. Its `secrets` are runtime's `secrets` under the plugin's id alone, in the h
 UTF-8 text without a NUL byte, as every place runtime keeps one holds, and other bytes are refused. Its `paths`
 answer folders that are the plugin's alone, named by its id: `cache` its folder in the cache place, and `config` and
 `plugin` its own folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder in the
-application's plugin folder for a host with no portable layer; each is resolved once at open. Its `log` hands each entry, its fields appended as compact JSON, to one
+application's plugin folder for a host with no portable layer; each is resolved once at open.
+Its `log` hands each entry, its fields appended as compact JSON, to one
 writer thread the started host owns, which appends it through runtime's `log`, so a write never waits on a file;
 the writer holds at most 1024 entries, a write beyond them is refused, and the host's end writes every entry handed
 over before it returns, after which a write is refused until the next begin. A TRACE entry is dropped, since
