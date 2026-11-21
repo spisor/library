@@ -16,6 +16,9 @@
  */
 FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory);
 
+/** Creates the UTF-8 path as spisor_windows_open does for writing, but only when nothing stands there yet. */
+FILE *spisor_windows_create_new(const char *path, int *out_of_memory);
+
 /**
  * Renames from over to, replacing it, as one step. 1 on success; 0 otherwise, with *out_of_memory set when
  * memory ran out converting the paths.

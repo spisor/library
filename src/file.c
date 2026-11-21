@@ -76,7 +76,7 @@ static int is_directory(const char *path, int *out_of_memory) {
 static FILE *create_temporary(const char *temporary, const char *target, int owner_only, int *out_of_memory) {
     (void)target;
     (void)owner_only;
-    return spisor_windows_open(temporary, 1, out_of_memory);
+    return spisor_windows_create_new(temporary, out_of_memory);
 }
 
 static int is_wide_directory(const wchar_t *wide) {
