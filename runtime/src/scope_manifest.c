@@ -23,9 +23,21 @@ static spisor_status refuse_setting(spisor_refusal *refusal, const char *path, c
     return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
 }
 
+static spisor_status refuse_layer(spisor_refusal *refusal, const char *path, const char *key, const cJSON *layer) {
+    static const char fix[] =
+        "declare its layer as application or portable, or leave the layer out to keep it in the portable layer";
+    char detail[DETAIL_BYTES];
+    if (!cJSON_IsString(layer)) {
+        return refuse_setting(refusal, path, key, "with a layer that is not text", fix);
+    }
+    snprintf(detail, sizeof detail,
+             "the manifest at %s declares the setting \"%s\" in the layer \"%s\", which runtime does not know", path,
+             key, layer->valuestring);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
+}
+
 static spisor_status check_declaration(const cJSON *declaration, const char *path, spisor_refusal *refusal) {
     const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
-    char problem[DETAIL_BYTES];
     if (!cJSON_IsObject(declaration)) {
         return refuse_setting(refusal, path, declaration->string, "as something other than a record",
                               "declare each setting as a record, such as {\"type\": \"text\"}");
@@ -33,14 +45,7 @@ static spisor_status check_declaration(const cJSON *declaration, const char *pat
     if (layer == NULL || (cJSON_IsString(layer) && runtime_is_settings_layer_name(layer->valuestring))) {
         return SPISOR_OK;
     }
-    if (cJSON_IsString(layer)) {
-        snprintf(problem, sizeof problem, "in the layer \"%s\", which runtime does not know", layer->valuestring);
-    } else {
-        snprintf(problem, sizeof problem, "with a layer that is not text");
-    }
-    return refuse_setting(refusal, path, declaration->string, problem,
-                          "declare its layer as application or portable, or leave the layer out to keep it in the "
-                          "portable layer");
+    return refuse_layer(refusal, path, declaration->string, layer);
 }
 
 static spisor_status check_settings(const cJSON *settings, const char *path, spisor_refusal *refusal) {
