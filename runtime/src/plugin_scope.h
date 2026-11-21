@@ -69,10 +69,13 @@ void runtime_scope_config_fill(runtime_plugin_scope *scope);
 void runtime_scope_secrets_fill(runtime_plugin_scope *scope);
 
 /**
- * Resolves the scope's directories. @return OK; REFUSED when the plugin's id is no portable path segment, so no folder
- * can carry it; OUT_OF_MEMORY. None is resolved unless the answer is OK.
+ * Resolves the scope's directories, each the plugin's own. @return OK; REFUSED when the plugin's id is no portable
+ * path segment, so no folder can carry it; OUT_OF_MEMORY. None is resolved unless the answer is OK.
  */
 spisor_status runtime_scope_paths_resolve(runtime_plugin_scope *scope, spisor_refusal *refusal);
+
+/** Frees the directories and leaves them empty. */
+void runtime_scope_directories_free(runtime_scope_directories *directories);
 
 /** The scope's `paths`, answering the directories runtime_scope_paths_resolve resolved. */
 void runtime_scope_paths_fill(runtime_plugin_scope *scope);

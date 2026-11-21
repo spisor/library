@@ -143,22 +143,45 @@ static void check_directory(const weivel_standard_paths *paths,
     CHECK(operation(paths->context, NULL) == WEIVEL_STATUS_MALFORMED);
 }
 
-static void paths_answer_the_plugin_directories(void) {
+/** A plugin's folder `id` under `base`/`within`, freed. */
+static char *folder_under(const char *base, const char *within, const char *id) {
+    char *parent = joined_path(base, within);
+    char *folder = parent == NULL ? NULL : joined_path(parent, id);
+    spisor_memory_release(parent);
+    return folder;
+}
+
+/** Requires the scope of `manifest` to answer `id`'s own folders: its cache folder, and its own folder twice. */
+static void check_plugin_directories(const char *manifest, const char *id, const char *own_place,
+                                     const char *own_within) {
     weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
-    char *plugins = joined_path(place.cache, "plugins");
-    char *cache = joined_path(plugins, "viewer");
-    char *plugin = joined_path(place.home, "plugin");
-    if (open_scope(place.manifest, &scope) == WEIVEL_STATUS_OK) {
+    char *cache = folder_under(place.cache, "plugins", id);
+    char *own = folder_under(own_place, own_within, id);
+    if (open_scope(manifest, &scope) == WEIVEL_STATUS_OK) {
         check_directory(scope.paths, scope.paths->cache, cache);
-        check_directory(scope.paths, scope.paths->config, place.config);
-        check_directory(scope.paths, scope.paths->plugin, plugin);
+        check_directory(scope.paths, scope.paths->config, own);
+        check_directory(scope.paths, scope.paths->plugin, own);
     } else {
         check_failures++;
     }
     release_scope(&scope);
-    spisor_memory_release(plugins);
     spisor_memory_release(cache);
-    spisor_memory_release(plugin);
+    spisor_memory_release(own);
+}
+
+/** Two plugins answer two sets of folders, none of them shared, with a portable layer and without one. */
+static void paths_answer_the_plugins_own_folders(void) {
+    char *other = write_manifest(&place, "other-paths.json", "{\"id\": \"other\"}");
+    runtime_scope_host host = scope_host_of(&place);
+    check_plugin_directories(place.manifest, "viewer", place.portable, "plugins");
+    check_plugin_directories(other, "other", place.portable, "plugins");
+    host.portable = NULL;
+    CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
+    check_plugin_directories(place.manifest, "viewer", place.home, "plugin");
+    check_plugin_directories(other, "other", place.home, "plugin");
+    host = scope_host_of(&place);
+    CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
+    spisor_memory_release(other);
 }
 
 static weivel_status write_log(const weivel_standard_log *log, uint32_t level, const char *message,
@@ -273,7 +296,7 @@ static void a_scope_refuses_an_id_no_cache_folder_can_carry(void) {
     host.portable = NULL;
     CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
     CHECK(scopes->open(scopes->context, manifest, &scope, &refusal) == WEIVEL_STATUS_REFUSED);
-    CHECK(holds(refusal.detail, "not a usable folder name in the cache place") && scope.storage == NULL);
+    CHECK(holds(refusal.detail, "not a usable folder name") && scope.storage == NULL);
     scopes->release_refusal(scopes->context, &refusal);
     host = scope_host_of(&place);
     CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
@@ -285,7 +308,7 @@ int main(void) {
     start_scope_place(&place, "scope-services", "secrets");
     secrets_round_trip_for_the_plugin_alone();
     secrets_refuse_what_runtime_cannot_keep();
-    paths_answer_the_plugin_directories();
+    paths_answer_the_plugins_own_folders();
     a_scope_refuses_an_id_no_cache_folder_can_carry();
     runtime_scopes_end();
     scope_place_free(&place);

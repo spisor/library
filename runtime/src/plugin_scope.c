@@ -23,13 +23,6 @@ runtime_secret_places runtime_plugin_scope_secret_places(const runtime_plugin_sc
     return places;
 }
 
-static void free_directories(runtime_scope_directories *directories) {
-    spisor_memory_release(directories->cache);
-    spisor_memory_release(directories->config);
-    spisor_memory_release(directories->plugin);
-    directories->cache = directories->config = directories->plugin = NULL;
-}
-
 void runtime_plugin_scope_hold(runtime_plugin_scope *scope) {
     runtime_atomic_increment(&scope->references);
 }
@@ -40,7 +33,7 @@ void runtime_plugin_scope_release(runtime_plugin_scope *scope) {
     }
     runtime_scope_host_free(&scope->host);
     runtime_scope_manifest_free(&scope->manifest);
-    free_directories(&scope->directories);
+    runtime_scope_directories_free(&scope->directories);
     spisor_memory_release(scope);
 }
 

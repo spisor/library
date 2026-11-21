@@ -31,8 +31,9 @@ extern "C" {
  * portable one when it declares none, and any other key to the application layer; what runtime's `config` would
  * refuse as malformed there, such as a key with an empty segment, the scope refuses. The scope's `secrets` are
  * runtime's `secrets` under the manifest's id alone, refusing bytes that are not UTF-8 text without a NUL byte. Its
- * `paths` answer the plugin's folder in the cache place for `cache` and the application's config and plugin folders,
- * as runtime's `paths` names them. Its `log` hands each entry to a writer thread of the started host and never waits
+ * `paths` answer folders that are the plugin's alone, each named by its id: `cache` its folder in the cache place, and
+ * `config` and `plugin` its own folder, `<portable>/plugins/<id>` where its portable settings file lives, or its
+ * folder in the application's plugin folder for a host with no portable layer. Its `log` hands each entry to a writer thread of the started host and never waits
  * on a file: a write is refused when the writer already holds 1024 entries or no host is started, a TRACE entry is
  * dropped, and the host's end writes every entry handed over before it returns. A manifest whose id no folder can
  * carry is refused at open.
