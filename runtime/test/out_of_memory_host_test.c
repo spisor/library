@@ -55,6 +55,8 @@ static void put_plan(const weivel_standard_host_plan *plan) {
     }
     put(plan->action_plugin);
     put(plan->action_name);
+    put(plan->action_service);
+    put(plan->action_method);
 }
 
 /** Starts the case's run, and stops it when the start answered OK, so every run ends with no run started. */

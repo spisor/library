@@ -145,9 +145,12 @@ static const char *located_manifest(const cJSON *located, const char *plugin) {
 }
 
 static cJSON *action_of(const char *manifest, const cJSON *call, const char *name) {
+    const cJSON *binding = cJSON_GetObjectItemCaseSensitive(call, "binding");
     cJSON *action = cJSON_CreateObject();
     int built = action != NULL && cJSON_AddStringToObject(action, "plugin", manifest) != NULL &&
                 cJSON_AddStringToObject(action, "name", name) != NULL &&
+                cJSON_AddStringToObject(action, "service", text_of(binding, "service")) != NULL &&
+                cJSON_AddStringToObject(action, "method", text_of(binding, "method")) != NULL &&
                 runtime_add_owned(action, "arguments",
                                   cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(call, "arguments"), 1));
     if (!built) {

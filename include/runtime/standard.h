@@ -52,17 +52,19 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
  * plan that cache's locate finds installed, in id order. An ACTION plan's `action_plugin` is the `manifest` of the
  * plan's plugin of that id, the very text, since the program matches it exactly; `action_name` is the action's id,
- * and `action_arguments` what ui's action merges from that manifest: the declared argument, then the input. The
- * scopes then begin, over the loader's home and the places, so `weivel.scope` opens the plan's plugins' scopes until
- * `stop`.
+ * `action_service` and `action_method` the service and method its declared `call` names, so the program calls that
+ * method of the service the plugin registered, and `action_arguments` what ui's action merges from that manifest: the
+ * declared argument, then the input. A SERVE plan leaves every member naming the action NULL. The scopes then begin,
+ * over the loader's home and the places, so `weivel.scope` opens the plan's plugins' scopes until `stop`.
  *
  * `start` answers MALFORMED for a refusal or plan short of its first shape, a plan that is not empty, and arguments
  * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a second start before
  * a `stop`, a layer with no hinted version, a start hosts' start refuses, a located plugin whose manifest names no
  * entry installed beside it, a plugin the plan does not run, a manifest that cannot be read, an action ui's action
- * refuses, as one the manifest does not declare, and scopes that cannot begin; and OUT_OF_MEMORY. A start that does
- * not answer OK leaves no run record of its own and no scopes begun, and a refused SERVE start publishes its refusal
- * to the loader's ready record once the places resolved.
+ * refuses, as one the manifest does not declare, an ACTION run whose plan's `size` cannot hold `action_service` and
+ * `action_method`, the program too old for the run, and nothing written past that size, and scopes that cannot
+ * begin; and OUT_OF_MEMORY. A start that does not answer OK leaves no run record of its own and no scopes begun, and
+ * a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
  *
  * `started`, `tick`, `finished` and `stop` refuse when no run is started. `started` takes one outcome per plugin of
  * the plan, in its order, each naming the manifest the plan named, and answers MALFORMED for any other, and REFUSED

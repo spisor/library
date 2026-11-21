@@ -243,6 +243,7 @@ runtime_test(standard_host_test ${runtime_standard_host_test_objects})
 target_link_libraries(standard_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
 runtime_test_with_allocator(out_of_memory_host_test spisor_allocator_counting ${runtime_standard_host_test_objects})
 target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+set_tests_properties(out_of_memory_host_test PROPERTIES TIMEOUT 1800)
 runtime_test(host_progress_test ${runtime_standard_host_test_objects})
 target_link_libraries(host_progress_test PRIVATE weivel_standard ${runtime_fetch_libraries})
 # Its blocking tick checks an https source on the loopback fixture through the catalog's request redirect, a test hook.

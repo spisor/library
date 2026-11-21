@@ -163,11 +163,13 @@ at the version its boot hint names, beside every library the hint names, and `ho
 run as the loader's session start. The plan loads every hinted library with a binary but runtime itself, which the
 program was started with, and activates every plugin of that plan `cache.locate` finds installed. An ACTION plan
 names its plugin by that plugin's manifest path, the very text the plan's plugin carries, since the program matches
-it exactly, and its arguments are what `ui.action` merges from that manifest. A located plugin whose manifest names no
-entry installed beside it, a plugin the plan does not run, an undeclared action, arguments naming no run, a layer
-with no hinted version and a second start before a stop are refused at start, which then leaves no run record and
-no scopes begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the
-scopes last, over the loader's home and the places.
+it exactly; it names the service and method the action's declared `call` names, which the program calls on the
+service the plugin registered, and its arguments are what `ui.action` merges from that manifest. A located plugin
+whose manifest names no entry installed beside it, a plugin the plan does not run, an undeclared action, arguments
+naming no run, a layer with no hinted version, an ACTION run from a program too old for its plan to hold the service
+and method, and a second start before a stop are refused at start, which then leaves no run record and no scopes
+begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the scopes last,
+over the loader's home and the places.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries
 on with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
