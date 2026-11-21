@@ -60,8 +60,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a second start before
  * a `stop`, a layer with no hinted version, a start hosts' start refuses, a located plugin whose manifest names no
  * entry installed beside it, a plugin the plan does not run, a manifest that cannot be read, an action ui's action
- * refuses, as one the manifest does not declare, and scopes that cannot begin; and OUT_OF_MEMORY. A start that does not answer OK leaves no run record of its own and no scopes begun, and
- * a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
+ * refuses, as one the manifest does not declare, and scopes that cannot begin; and OUT_OF_MEMORY. A start that does
+ * not answer OK leaves no run record of its own and no scopes begun, and a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
  *
  * `started`, `tick`, `finished` and `stop` refuse when no run is started. `started` takes one outcome per plugin of
  * the plan, in its order, each naming the manifest the plan named, and answers MALFORMED for any other, and REFUSED
@@ -79,6 +79,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * at `now` plus its interval, so a late tick runs it once, and `next` is the earlier of the two. A prune that answers
  * that no holder is alive, or another process runs the loader, ends the run with a REFUSED tick, as do
  * `pruneFailuresBeforeExit` turns in a row whose stamp or prune was refused; a refused update check changes nothing.
+ * Each failed turn, a refused check and each version a check refused are written as a warning to the loader's own
+ * log, under the loader's id at `now`, as the archived host wrote them to stderr.
  * A tick holds the run's lock while it waits on the network, and a scope's operations never take that lock.
  *
  * `finished` is an ACTION run's alone, once, after its `started` answered OK. `stop` ends the scopes, removes the run

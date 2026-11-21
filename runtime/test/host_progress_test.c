@@ -453,13 +453,36 @@ static void break_the_prune(int broken) {
     spisor_memory_release(folder);
 }
 
+/** The loader's one log file of the day NOW falls on, or NULL when there is none. */
+static char *loader_log_of_now(void) {
+    runtime_directory_listing listing = {NULL, 0};
+    char *directory = joined(application_home, "logs/2023-11-14");
+    char *path = NULL;
+    char *text = NULL;
+    size_t length = 0;
+    CHECK(runtime_list_directory(directory, &listing) == SPISOR_OK && listing.count == 1);
+    path = listing.count == 1 ? joined(directory, listing.entries[0].name) : NULL;
+    if (path != NULL) {
+        text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    }
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    runtime_free_directory_listing(&listing);
+    return text;
+}
+
 static void failed_prunes_end_the_run_only_once_enough_fail_in_a_row(void) {
     started_run run = serving("prune-failures");
     int64_t now = NOW;
+    char *log;
     break_the_prune(1);
     for (int turn = 1; turn < FAILURES_BEFORE_EXIT; turn++, now += TURN) {
         expect_tick(now, now + TURN, "a failed turn");
     }
+    log = loader_log_of_now();
+    CHECK(log != NULL && strstr(log, "[2023-11-14T22:13:20.000Z] [WARN] spisor could not check the holders of " LOADER
+                                     ": the processes folder") != NULL);
+    spisor_memory_release(log);
     break_the_prune(0);
     expect_tick(now, now + TURN, "a turn that succeeds again");
     now += TURN;

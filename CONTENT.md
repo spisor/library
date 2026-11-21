@@ -176,7 +176,8 @@ with an empty environment, or, when an enabled front door did not activate, a re
 SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's
 timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
 `cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due time as
-its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. `finished` records how
+its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. Each failed turn, a
+refused check and each version a check refused are written as a warning to the loader's own log. `finished` records how
 an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code: 0 for
 a SERVE run that ends on a stop request or its holders' word and for an action that answered, 1 for an action that
 threw or never ran and for a run a call of which failed before it ended.

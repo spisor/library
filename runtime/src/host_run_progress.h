@@ -45,7 +45,8 @@ spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_stand
  *
  * A turn whose stamp or prune is refused counts towards `pruneFailuresBeforeExit` turns in a row, and one that
  * succeeds starts the count again; an updates.check that is refused leaves the run as it was, since what runs now is
- * never changed by a check.
+ * never changed by a check. Each failed turn, a refused check and each version a check refused are written as a
+ * warning to the loader's own log at `now`, under the loader's id.
  *
  * @return OK; REFUSED for an ACTION run, which never ticks, a run whose started has not answered OK, and a now outside
  * the years 0 to 9999 when a check is due; REFUSED with the run ended and its exit code 0 when the prune answers that

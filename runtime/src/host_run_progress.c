@@ -6,15 +6,18 @@
 #include "allocation.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cache_refusal.h"
 #include "catalog_time.h"
 #include "definition_support.h"
+#include "log.h"
 #include "node_json_file.h"
 #include "platform_key.h"
 #include "processes.h"
 #include "processes_ready.h"
+#include "scope_host.h"
 #include "spisor/definition.h"
 #include "updates.h"
 
@@ -253,6 +256,42 @@ static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, i
     return status;
 }
 
+/**
+ * Writes a warning about the run to the loader's own log, under the loader's id at `now`, as the archived host wrote
+ * one to stderr, printing the console line runtime's log answers.
+ *
+ * @implNote Best effort, and synchronous, so it costs the tick what one log write costs: a line that cannot be written,
+ * memory running out included, leaves the tick's answer as it was, since what it reports already happened.
+ */
+static void log_warning(const runtime_host_run *run, int64_t now, const char *const *parts, size_t count) {
+    runtime_owned_scope_host host;
+    runtime_log_request entry;
+    runtime_log_console console = {NULL, NULL};
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    char at[RUNTIME_CATALOG_TIME_SIZE];
+    char *message;
+    if (!runtime_catalog_format_time((double)now, at) || runtime_scopes_host(&host) != SPISOR_OK) {
+        return;
+    }
+    message = runtime_cache_text(parts, count);
+    memset(&entry, 0, sizeof entry);
+    entry.home = text_of(member(run->started, "identity"), "home");
+    entry.portable = text_of(member(run->started, "places"), "portable");
+    entry.plugin = run->host_id;
+    entry.start = host.start;
+    entry.time = at;
+    entry.message = message;
+    entry.level = RUNTIME_LOG_WARN;
+    entry.no_color = cJSON_IsTrue(member(run->started, "noColor"));
+    if (message != NULL && runtime_write_log(&entry, &console, &refusal) == SPISOR_OK && console.line != NULL) {
+        fprintf(stderr, "%s\n", console.line);
+    }
+    runtime_release_storage(console.storage);
+    spisor_refusal_release(&refusal);
+    spisor_memory_release(message);
+    runtime_scope_host_free(&host);
+}
+
 /** One turn: the run record stamped and the holders pruned, ending the run when they say so. */
 static spisor_status take_turn(runtime_host_run *run, int64_t now, int64_t interval, spisor_refusal *refusal) {
     cJSON *failure = NULL;
@@ -260,6 +299,11 @@ static spisor_status take_turn(runtime_host_run *run, int64_t now, int64_t inter
     spisor_status status = stamp_and_prune(run, now, interval, &unheld, &failure);
     int64_t allowed = timer_number(run, "pruneFailuresBeforeExit");
     const char *message = text_of(failure, "message");
+    const char *warning[4] = {"spisor could not check the holders of ", run->host_id, ": ",
+                              message == NULL ? "its holders file could not be used" : message};
+    if (failure != NULL) {
+        log_warning(run, now, warning, 4);
+    }
     if (status == SPISOR_OK && failure != NULL && ++run->timers.failed_turns >= (uint64_t)(allowed < 1 ? 1 : allowed)) {
         const char *parts[4] = {"the holders of ", run->host_id, " could not be checked, so its run ends: ",
                                 message == NULL ? "" : message};
@@ -273,7 +317,30 @@ static spisor_status take_turn(runtime_host_run *run, int64_t now, int64_t inter
     return status;
 }
 
-/** One updates.check at `now`, its problems the versions the run could not locate; a refused check changes nothing. */
+static const char *text_or_empty(const cJSON *object, const char *name) {
+    const char *text = text_of(object, name);
+    return text == NULL ? "" : text;
+}
+
+/** Logs the check's refusal, or each version its answer says it refused. */
+static void log_check(const runtime_host_run *run, int64_t now, const cJSON *checked, const cJSON *failure) {
+    const cJSON *refused;
+    if (failure != NULL) {
+        const char *parts[4] = {"spisor could not check for updates of ", run->host_id, ": ",
+                                text_or_empty(failure, "message")};
+        log_warning(run, now, parts, 4);
+    }
+    cJSON_ArrayForEach(refused, member(checked, "refused")) {
+        const char *parts[6] = {"spisor could not update ", text_or_empty(refused, "id"), ": ",
+                                text_or_empty(refused, "message"), "; fix: ", text_or_empty(refused, "fix")};
+        log_warning(run, now, parts, 6);
+    }
+}
+
+/**
+ * One updates.check at `now`, its problems the versions the run could not locate; a refused check changes nothing but
+ * the loader's log, which it and each version it refused are written to.
+ */
 static spisor_status check_updates(const runtime_host_run *run, int64_t now, spisor_refusal *refusal) {
     char at[RUNTIME_CATALOG_TIME_SIZE];
     const cJSON *places = member(run->started, "places");
@@ -290,6 +357,7 @@ static spisor_status check_updates(const runtime_host_run *run, int64_t now, spi
     }
     checked = runtime_updates_check(&request, &failure);
     status = checked == NULL && failure == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    log_check(run, now, checked, failure);
     cJSON_Delete(failure);
     cJSON_Delete(checked);
     return status;
