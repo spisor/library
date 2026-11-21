@@ -27,6 +27,11 @@ endforeach()
 
 runtime_test(secrets_test fake_secret_backend.c)
 runtime_test(config_test fake_secret_backend.c)
+runtime_test(scope_test $<TARGET_OBJECTS:runtime_standard> $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(scope_test PRIVATE weivel_standard spisor_described_checks)
+runtime_test_with_allocator(out_of_memory_scope_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_standard>
+    $<TARGET_OBJECTS:runtime_secret_store>)
+target_link_libraries(out_of_memory_scope_test PRIVATE weivel_standard)
 
 runtime_test(json_edit_test $<TARGET_OBJECTS:runtime_secret_store>)
 runtime_test(json_key_change_test $<TARGET_OBJECTS:runtime_secret_store>)
@@ -321,38 +326,13 @@ if(NOT WIN32)
     target_link_libraries(json_hooks_race_test PRIVATE Threads::Threads)
 endif()
 
-file(GLOB runtime_public_headers CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/runtime/*.h)
-set(runtime_definition_symbols "")
-set(runtime_definition_header_count 0)
-set(runtime_definition_bodies "")
-set(runtime_definition_getters "")
-foreach(header IN LISTS runtime_public_headers)
-    file(READ ${header} header_text)
-    get_filename_component(header_name ${header} NAME)
-    string(REGEX MATCHALL "typedef[ \t\r\n]+struct[ \t\r\n]+runtime_[a-z_]+_definition[ \t\r\n]*{" bodies
-        "${header_text}")
-    foreach(body IN LISTS bodies)
-        string(REGEX MATCH "runtime_[a-z_]+_definition" struct "${body}")
-        list(APPEND runtime_definition_bodies "${header_name} ${struct}")
-    endforeach()
-    if(header_text MATCHES "#include \"runtime/definition.h\"")
-        math(EXPR runtime_definition_header_count "${runtime_definition_header_count} + 1")
-    endif()
-    string(REGEX MATCHALL "runtime_[a-z_]+_definition_of[ \t\r\n]*[(][ \t\r\n]*void[ \t\r\n]*[)]" declarations
-        "${header_text}")
-    foreach(declaration IN LISTS declarations)
-        string(REGEX MATCH "runtime_[a-z_]+_definition_of" symbol "${declaration}")
-        list(APPEND runtime_definition_symbols ${symbol})
-        list(APPEND runtime_definition_getters "${header_name} ${symbol}")
-    endforeach()
-endforeach()
-list(REMOVE_DUPLICATES runtime_definition_symbols)
 string(JOIN [[", "]] runtime_definition_symbol_list ${runtime_definition_symbols})
 string(JOIN [[", "]] runtime_definition_body_list ${runtime_definition_bodies})
 string(JOIN [[", "]] runtime_definition_getter_list ${runtime_definition_getters})
 file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/definition_symbols.h
     CONTENT [[#define RUNTIME_DEFINITION_SYMBOLS "@runtime_definition_symbol_list@"
 #define RUNTIME_DEFINITION_HEADER_COUNT @runtime_definition_header_count@
+#define RUNTIME_DEFINITION_GETTER_HEADER_COUNT @runtime_definition_getter_header_count@
 #define RUNTIME_DEFINITION_BODIES "@runtime_definition_body_list@"
 #define RUNTIME_DEFINITION_GETTERS "@runtime_definition_getter_list@"
 ]])
@@ -414,12 +394,7 @@ else()
     set(runtime_export_lister ${CMAKE_NM})
     set(runtime_export_format elf)
 endif()
-set(runtime_description_symbols "")
-foreach(symbol IN LISTS runtime_definition_symbols)
-    string(REGEX REPLACE "_of$" "_description" description_symbol "${symbol}")
-    list(APPEND runtime_description_symbols ${description_symbol})
-endforeach()
-string(JOIN "," runtime_expected_exports ${runtime_definition_symbols} ${runtime_description_symbols})
+string(JOIN "," runtime_expected_exports ${runtime_exported_symbols})
 add_test(NAME runtime_exports_only_definitions_test
     COMMAND ${CMAKE_COMMAND} -DLIBRARY=$<TARGET_FILE:runtime> -DLISTER=${runtime_export_lister}
         -DFORMAT=${runtime_export_format} -DEXPECTED=${runtime_expected_exports}

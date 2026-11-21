@@ -71,6 +71,17 @@ typedef struct runtime_config_request {
 /** A request for the settings of home over portable, every other field NULL or the default layer. */
 runtime_config_request runtime_config_request_of(const char *home, const char *portable);
 
+/** Whether the plugin of `request` declares `key` of type `secret`. */
+int runtime_config_is_secret_setting(const runtime_config_request *request, const char *key);
+
+/**
+ * The checks every operation of `request` makes before it reads or writes a file, made alone: the home and portable
+ * place, the plugin's config name and its id.
+ *
+ * @return OK; MALFORMED with the refusal the operations answer; OUT_OF_MEMORY.
+ */
+spisor_status runtime_config_check_request(const runtime_config_request *request, spisor_refusal *refusal);
+
 /**
  * The config and settings operations with the rules, statuses and refusals include/runtime/config.h and settings.h
  * document, answering their JSON: `values` a new object, `value` and `previous` a new tree or NULL for none, `secret`

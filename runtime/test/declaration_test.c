@@ -12,9 +12,11 @@
  * @file
  * Reads `runtime/library.json` with the weivel standard's own reader and requires it to declare runtime 0.2.0 with its
  * release, and exactly one service per `runtime_*_definition_of` a header under `include/runtime` declares: named by
- * the symbol's middle, holding that symbol as its one function of the definition kind and declaring
- * `runtime_<id>_definition_description` as its description. The symbols come from the headers at configure time, so a
- * service added to a header and left out of the declaration fails here. Each header must also declare exactly one
+ * the symbol's middle, or `weivel.<name>` for the middle `standard_<name>` of a standard service, holding that symbol
+ * as its one function of the definition kind and declaring the `_description` beside it as its description. The
+ * symbols come from the headers at configure time, so a service added to a header and left out of the declaration
+ * fails here, and every header including `runtime/definition.h` must declare a getter, so a declaration the configure
+ * step failed to read fails too. Each header must also declare exactly one
  * `<struct>_of` getter per `runtime_*_definition` struct it defines, so a second definition added beside a getter's
  * is not left out of everything the getters reach.
  */
@@ -23,6 +25,7 @@ static const char *const header_symbols[] = {RUNTIME_DEFINITION_SYMBOLS};
 static const size_t header_symbol_count = sizeof header_symbols / sizeof header_symbols[0];
 
 static const char *const header_bodies[] = {RUNTIME_DEFINITION_BODIES};
+static const int getter_header_count = RUNTIME_DEFINITION_GETTER_HEADER_COUNT;
 static const char *const header_getters[] = {RUNTIME_DEFINITION_GETTERS};
 static const size_t header_body_count = sizeof header_bodies / sizeof header_bodies[0];
 static const size_t header_getter_count = sizeof header_getters / sizeof header_getters[0];
@@ -30,6 +33,7 @@ static const size_t header_getter_count = sizeof header_getters / sizeof header_
 static const char definition_prefix[] = "runtime_";
 static const char definition_suffix[] = "_definition_of";
 static const char description_suffix[] = "_definition_description";
+static const char standard_prefix[] = "weivel.";
 
 static int read_library(weivel_standard_library *library) {
     size_t length = 0;
@@ -53,20 +57,30 @@ static int read_library(weivel_standard_library *library) {
     return 1;
 }
 
+/** The symbols' middle for a service id: the id itself, or `standard_<name>` for the standard's `weivel.<name>`. */
+static void middle_of(const char *service_id, char *middle, size_t capacity) {
+    size_t prefix_length = sizeof standard_prefix - 1;
+    if (strncmp(service_id, standard_prefix, prefix_length) == 0) {
+        snprintf(middle, capacity, "standard_%s", service_id + prefix_length);
+    } else {
+        snprintf(middle, capacity, "%s", service_id);
+    }
+}
+
 static int is_symbol_of(const char *symbol, const char *service_id, const char *suffix) {
-    size_t prefix_length = sizeof definition_prefix - 1;
-    size_t suffix_length = strlen(suffix);
-    size_t id_length = strlen(service_id);
-    return symbol != NULL && strlen(symbol) == prefix_length + id_length + suffix_length &&
-           strncmp(symbol, definition_prefix, prefix_length) == 0 &&
-           strncmp(symbol + prefix_length, service_id, id_length) == 0 &&
-           strcmp(symbol + prefix_length + id_length, suffix) == 0;
+    char middle[128];
+    char expected[192];
+    middle_of(service_id, middle, sizeof middle);
+    snprintf(expected, sizeof expected, "%s%s%s", definition_prefix, middle, suffix);
+    return symbol != NULL && strcmp(symbol, expected) == 0;
 }
 
 static void check_description(const char *description, const char *service_id) {
+    char middle[128];
     if (!is_symbol_of(description, service_id, description_suffix)) {
+        middle_of(service_id, middle, sizeof middle);
         fprintf(stderr, "service %s declares the description %s, not runtime_%s_definition_description\n", service_id,
-                description == NULL ? "(none)" : description, service_id);
+                description == NULL ? "(none)" : description, middle);
         check_failures++;
     }
 }
@@ -82,8 +96,10 @@ static void check_service(const weivel_standard_library_service *service) {
     check_text(function->name, "definition", service->id);
     CHECK(function->kind == WEIVEL_STANDARD_FUNCTION_DEFINITION && function->context == 0);
     if (!is_symbol_of(function->symbol, service->id, definition_suffix)) {
+        char middle[128];
+        middle_of(service->id, middle, sizeof middle);
         fprintf(stderr, "service %s names the symbol %s, not runtime_%s_definition_of\n", service->id,
-                function->symbol, service->id);
+                function->symbol, middle);
         check_failures++;
     }
 }
@@ -108,7 +124,7 @@ static int is_header_symbol(const char *symbol) {
 }
 
 static void every_header_definition_is_declared_and_nothing_else(const weivel_standard_library *library) {
-    CHECK(header_symbol_count == RUNTIME_DEFINITION_HEADER_COUNT);
+    CHECK(getter_header_count == RUNTIME_DEFINITION_HEADER_COUNT);
     for (size_t index = 0; index < header_symbol_count; index++) {
         if (!declares_symbol(library, header_symbols[index])) {
             fprintf(stderr, "%s is declared by a header but not by runtime/library.json\n", header_symbols[index]);
@@ -137,9 +153,21 @@ static int lists(const char *const *entries, size_t count, const char *entry) {
     return 0;
 }
 
-/** Each entry is `<header> <name>`, so the getter of a struct in the same header is that entry plus `_of`. */
+/** Whether a getter entry is a standard service's, whose struct is the standard's and defined in no header here. */
+static int is_standard_getter(const char *entry) {
+    return strstr(entry, " runtime_standard_") != NULL;
+}
+
+/**
+ * Each entry is `<header> <name>`, so the getter of a struct in the same header is that entry plus `_of`; every getter
+ * but a standard service's has its struct.
+ */
 static void every_definition_struct_has_its_getter_beside_it(void) {
-    CHECK(header_body_count == header_getter_count);
+    size_t standard_getters = 0;
+    for (size_t index = 0; index < header_getter_count; index++) {
+        standard_getters += is_standard_getter(header_getters[index]) ? 1 : 0;
+    }
+    CHECK(header_body_count + standard_getters == header_getter_count);
     for (size_t index = 0; index < header_body_count; index++) {
         char getter[192];
         int written = snprintf(getter, sizeof getter, "%s_of", header_bodies[index]);

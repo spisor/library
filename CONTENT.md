@@ -56,9 +56,9 @@ from a local build (`cmake -S . -B build && cmake --build build --config Release
 `build/bin`).
 
 Every operation takes the home, the places and the plugin's facts in its argument and keeps no state
-between calls, so a settings file edited by hand is read afresh by the next call. The one exception is
+between calls, so a settings file edited by hand is read afresh by the next call. The exceptions are
 `secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
-Service), and that store may prompt the user.
+Service), and that store may prompt the user, and `weivel.scope`, which opens scopes in the host its start began.
 
 ### The definitions
 
@@ -77,23 +77,26 @@ empty.
 `runtime_short_shape_test` calls every operation of every definition `runtime/library.json` declares, through the
 built `runtime`, with each argument and answer one byte short of its first shape, and `runtime_empty_answer_test`
 calls every operation whose answer counts an array with that count nonzero beside NULL storage; each requires
-MALFORMED with every answer untouched. Both walk the description each definition answers, its operations'
+MALFORMED with every answer untouched, a text or unsized struct input passed NULL. Both walk the description each
+definition answers, its operations'
 parameters, its types' first shapes and the members its arrays name as their counts, so an operation added to a
 header is checked without a test changing. The walk is `testing/described_checks.c`, test-only, and
 `spisor_add_described_checks(LIBRARY <target> DECLARATION <library.json>)` adds the same two tests, named after the
 library, for another one. `declaration_test` holds every header to one getter per definition struct it defines.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
-function of kind `definition` and its `description`, `runtime_<service>_definition_description`, and a test keeps
+function of kind `definition` and its `description`, `runtime_<service>_definition_description`, or for a standard
+service `weivel.<name>` the getter `runtime_standard_<name>_definition_of` and its `_description`, and a test keeps
 it complete against the headers; another loads the built `runtime` through `weivel/c`'s host, which checks every
-description with the standard's check, and calls `paths` through the registered definition. Each description is
+description with the standard's check, and calls `paths` and `weivel.scope` through the registered definitions. Each description is
 generated at build time by the weivel standard's `weivel_describe` from `spisor/status.h` and every
 `include/runtime` header, so a language that cannot read a C header binds the definition from it, and
 `description_test` loads each one from the built `runtime` and runs the standard's own check on it. The symbol is
 the definition's name with `_description`, which is the name another library nesting a runtime definition looks
 for. `runtime` links `weivel_standard` statically, and no other weivel library. It declares no `release`, since
 every definition releases its own answers, and the binary exports its definitions and their descriptions and
-nothing else, which `runtime_exports_only_definitions_test` holds.
+nothing else, which `runtime_exports_only_definitions_test` holds: what it links statically is hidden by
+`--exclude-libs` on Linux and by an exported symbols list on macOS, generated from the same headers the test reads.
 Each header documents its operations, what they take and answer, and every refusal; this file says what they
 do together. A translation of a header in another language is checked against the `layouts` test program,
 which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the
@@ -129,10 +132,30 @@ off the include path.
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
 | `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
+| `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set` |
 
-23 services, 93 operations.
+24 services, 97 operations.
 
 A `places` argument is what `places.resolve` answers.
+
+### The standard services
+
+`include/runtime/standard.h` serves the weivel standard's own definitions under the standard's ids, with the
+standard's structs (`weivel/scope.h`) and its descriptions, each exported through a one-line forwarder such as
+`runtime_standard_scope_definition_description`, so runtime describes none of them again. runtime serves
+`weivel.scope` and declares none of `weivel.config`, `weivel.secrets`, `weivel.paths` and `weivel.log`, which a
+plugin reaches only through its own scope. A scope opens only once the host is started, and its `open` reads the
+plugin's manifest: the `id`, the `config` record and the `settings`, each declaration a record whose `layer` is
+`application` or `portable` when it has one, and refuses at open a manifest one typo breaks, an unknown layer, a
+declaration or `config` that is no record, no `id`, or a config name or id no settings file can be named by, so one
+typo refuses that plugin rather than every later read. The scope's `config` answers `config.all`, `get` and `set`
+for that plugin alone, flattened: a record's members become dotted keys, a text, number or boolean is offered as
+the standard's kind, and a null, a list, a member whose name is empty or holds a dot, and a declared secret are not
+offered, so a get answers NONE for them; a set of a declared secret is refused, since only `weivel.secrets` reaches
+one. Its `secrets`, `paths` and `log` are NULL until runtime serves them. A scope keeps its own copy of the host and
+the manifest, so it outlives the host's end, and releasing it frees everything it holds. `scope_test` and
+`out_of_memory_scope_test` hold it, the second failing every allocation of the open, the release and each config
+operation.
 
 A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and
 `ui.render` once a plan names none; `ui.plan` refuses a seventeenth round, so a screen whose bindings chain deeper

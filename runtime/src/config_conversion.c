@@ -1,6 +1,7 @@
 #include "config_conversion.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "definition_support.h"
 #include "spisor/json_value.h"
@@ -16,6 +17,15 @@ int runtime_is_empty_tree(const spisor_value_tree *tree) {
 
 static int is_known_layer(uint32_t layer) {
     return layer <= RUNTIME_SETTINGS_LAYER_PORTABLE;
+}
+
+int runtime_is_settings_layer_name(const char *name) {
+    for (size_t layer = RUNTIME_SETTINGS_LAYER_APPLICATION; layer <= RUNTIME_SETTINGS_LAYER_PORTABLE; layer++) {
+        if (strcmp(LAYER_NAMES[layer], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static spisor_status refuse_layer(spisor_refusal *refusal) {

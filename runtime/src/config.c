@@ -475,6 +475,22 @@ static spisor_status check_places(const runtime_config_request *request, spisor_
     return SPISOR_OK;
 }
 
+int runtime_config_is_secret_setting(const runtime_config_request *request, const char *key) {
+    return is_secret_setting(request, key);
+}
+
+spisor_status runtime_config_check_request(const runtime_config_request *request, spisor_refusal *refusal) {
+    config_targets targets;
+    spisor_status status = check_places(request, refusal);
+    if (status == SPISOR_OK) {
+        status = locate_or_refuse(request, &targets, refusal);
+    }
+    if (status == SPISOR_OK) {
+        free_targets(&targets);
+    }
+    return status;
+}
+
 spisor_status runtime_config_all_values(const runtime_config_request *request, cJSON **values, spisor_refusal *refusal) {
     config_targets targets;
     spisor_status status = check_places(request, refusal);
