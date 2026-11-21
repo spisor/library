@@ -194,7 +194,7 @@ foreach(name loader_test entry_template_test detect_test lists_test)
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
 
-foreach(name ui_navigation_test ui_settings_view_test ui_render_test)
+foreach(name ui_navigation_test ui_settings_view_test ui_render_test ui_action_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)

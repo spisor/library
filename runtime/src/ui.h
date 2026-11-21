@@ -29,4 +29,12 @@ cJSON *runtime_ui_plan(const cJSON *descriptions, const cJSON *entry, const cJSO
  */
 cJSON *runtime_ui_render(const cJSON *descriptions, const cJSON *entry, const cJSON *answers, cJSON **refusal);
 
+/**
+ * ui's action: over one plugin manifest, the action's id, the `input`, an object or NULL, and the `row`, an object of
+ * `item` and `items` alone, answering the call { plugin, binding: { service, method }, arguments } with arguments the
+ * declared argument, then input, then row, each later member replacing an earlier one of its name.
+ */
+cJSON *runtime_ui_action(const cJSON *description, const char *action, const cJSON *input, const cJSON *row,
+                         cJSON **refusal);
+
 #endif

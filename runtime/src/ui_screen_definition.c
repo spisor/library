@@ -295,7 +295,7 @@ static int fill_check(void **storage, const cJSON *json, runtime_ui_check *check
            runtime_storage_texts(storage, members, &check->members, &check->member_count);
 }
 
-static spisor_status fill_target(void **storage, const cJSON *json, runtime_ui_target *target) {
+spisor_status runtime_ui_fill_target(void **storage, const cJSON *json, runtime_ui_target *target) {
     const cJSON *binding = cJSON_GetObjectItemCaseSensitive(json, "binding");
     if (!runtime_storage_copy(storage, text_of(json, "plugin"), &target->plugin) ||
         !runtime_storage_copy(storage, text_of(binding, "service"), &target->service) ||
@@ -309,7 +309,7 @@ static spisor_status fill_call(void **storage, const cJSON *json, runtime_ui_cal
     const cJSON *checks = cJSON_GetObjectItemCaseSensitive(json, "checks");
     const cJSON *check;
     runtime_ui_check *copies;
-    spisor_status status = fill_target(storage, json, &call->target);
+    spisor_status status = runtime_ui_fill_target(storage, json, &call->target);
     if (status != SPISOR_OK || !runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(checks),
                                                            sizeof *copies, (void **)&copies)) {
         return status != SPISOR_OK ? status : SPISOR_OUT_OF_MEMORY;

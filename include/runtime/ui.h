@@ -179,8 +179,9 @@ typedef struct runtime_ui_reply {
 
 /**
  * The plugin manifests as navigation takes them, the `screen` to open, a navigation entry of which only its plugin,
- * kind and id are read, the id NULL for none, and the `replies` so far, none for a first plan. First shape ends at
- * `reply_count`.
+ * kind and id are read, the id NULL for none, the `replies` so far, none for a first plan, and the `round`, how many
+ * plans of this screen came before this one, 0 for a first plan and for an argument that ends before it; render does
+ * not read it. First shape ends at `reply_count`.
  */
 typedef struct runtime_ui_screen_argument {
     uint32_t size;
@@ -188,6 +189,7 @@ typedef struct runtime_ui_screen_argument {
     const runtime_ui_entry *screen;
     const runtime_ui_reply *replies;
     size_t reply_count;
+    uint32_t round;
 } runtime_ui_screen_argument;
 
 /**
@@ -276,6 +278,30 @@ typedef struct runtime_ui_plugin_list_answer {
 } runtime_ui_plugin_list_answer;
 
 /**
+ * One action to run: the `description` of the plugin that declares it, a manifest as settings_view takes it, the
+ * `action`'s id, the `input` laid over its declared argument, a record, NULL for none, and the row it runs on: the
+ * row's `item`, NULL for none, and when `has_items` is 1 its `items`, which may be none; when `has_items` is 0 `items`
+ * is not read. First shape ends at `item_count`.
+ */
+typedef struct runtime_ui_action_argument {
+    uint32_t size;
+    const spisor_value *description;
+    const char *action;
+    const spisor_value *input;
+    const char *item;
+    uint32_t has_items;
+    const char *const *items;
+    size_t item_count;
+} runtime_ui_action_argument;
+
+/** The call the action makes, its arguments merged as action merges them. First shape ends at `storage`. */
+typedef struct runtime_ui_action_answer {
+    uint32_t size;
+    runtime_ui_target target;
+    void *storage;
+} runtime_ui_action_answer;
+
+/**
  * The ui service. It reads no file and writes nothing. Every operation answers MALFORMED for an argument short of its
  * first shape, an answer that is not empty, a manifest list that is not a list of records each with its id as text, a
  * value that is not well-formed or not of the kind its field names, a count whose array is NULL, a required text that
@@ -307,9 +333,11 @@ typedef struct runtime_ui_definition {
      * Every call the screen's bindings still need answered, given the replies so far.
      *
      * @return OK; MALFORMED; REFUSED for a screen of a plugin no manifest describes, a view it does not declare, an
-     * action, or a screen of no view or settings; OUT_OF_MEMORY.
+     * action, or a screen of no view or settings, and for a `round` of 16 or more, since a screen still naming calls
+     * after 16 rounds is never rendered; OUT_OF_MEMORY.
      * @implNote C may not call back, so the caller answers each call through its own engine, checks the answer against
-     * every check (the engine's job, never C's) and plans again with the replies so far.
+     * every check (the engine's job, never C's) and plans again with the replies so far and the round counted up. A
+     * binding whose arguments depend on another's answer takes one more round, and no screen nests deeper than 16.
      */
     spisor_status (*plan)(void *context, const runtime_ui_screen_argument *argument, runtime_ui_plan_answer *answer,
                           spisor_refusal *refusal);
@@ -339,6 +367,19 @@ typedef struct runtime_ui_definition {
     void (*release_screen)(void *context, runtime_ui_screen *answer);
     void (*release_plugin_list_answer)(void *context, runtime_ui_plugin_list_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
+    /**
+     * The call one of a plugin's declared actions makes: the plugin, the service and method its `call` names, and as
+     * arguments its declared `argument`, then the input laid over it, then the row's item and items laid over both,
+     * each later one replacing a member of the same name.
+     *
+     * @return OK; MALFORMED; REFUSED for an action the manifest does not declare under its `actions`, and for one whose
+     * `call` names no service or method as text; OUT_OF_MEMORY.
+     * @implNote A row may set only `item` and `items`, and no input overrides them, so a row always runs on the row it
+     * was clicked on. A declared argument that is not a record reads as none, as a bound node's does.
+     */
+    spisor_status (*action)(void *context, const runtime_ui_action_argument *argument,
+                            runtime_ui_action_answer *answer, spisor_refusal *refusal);
+    void (*release_action_answer)(void *context, runtime_ui_action_answer *answer);
 } runtime_ui_definition;
 
 /** The static runtime_ui_definition, living until the library is unloaded. */

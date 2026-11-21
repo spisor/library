@@ -10,6 +10,7 @@
 #include "runtime/lists.h"
 #include "ui.h"
 #include "ui_definition.h"
+#include "ui_refusal.h"
 
 #define NAVIGATION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_argument, ui)
 #define NAVIGATION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_answer, storage)
@@ -20,6 +21,12 @@
 #define SCREEN_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen, storage)
 #define PLUGIN_LIST_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plugin_list_argument, available)
 #define PLUGIN_LIST_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plugin_list_answer, storage)
+#define ROUND_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen_argument, round)
+#define ACTION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_action_argument, item_count)
+#define ACTION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_action_answer, storage)
+#define MOST_PLAN_ROUNDS 16
+#define UI_ROUNDS_SPELLED(number) #number
+#define UI_ROUNDS_TEXT(number) UI_ROUNDS_SPELLED(number)
 
 static const char *const COMPONENT_NAMES[] = {NULL, "form", "field"};
 
@@ -220,6 +227,19 @@ static spisor_status serve_screen(cJSON *(*screen_function)(const cJSON *, const
     return runtime_serve_answered(answered, operation_refusal, fill, answer, answer_shape, refusal);
 }
 
+static uint32_t round_of(const runtime_ui_screen_argument *argument) {
+    return spisor_has_shape(argument->size, ROUND_SHAPE) ? argument->round : 0;
+}
+
+static spisor_status refuse_past_rounds(const runtime_ui_screen_argument *argument, spisor_refusal *refusal) {
+    return runtime_refuse_json(
+        refusal, runtime_ui_refusal("bind no node to an answer that only a deeper chain of bindings can give",
+                                    argument->screen->plugin,
+                                    "'s screen still names bindings to call after " UI_ROUNDS_TEXT(MOST_PLAN_ROUNDS)
+                                    " rounds of plan",
+                                    NULL));
+}
+
 static spisor_status plan(void *context, const runtime_ui_screen_argument *argument, runtime_ui_plan_answer *answer,
                           spisor_refusal *refusal) {
     spisor_status status;
@@ -229,6 +249,9 @@ static spisor_status plan(void *context, const runtime_ui_screen_argument *argum
         return spisor_refuse_shape(refusal, "ui's plan");
     }
     status = runtime_ui_check_screen_argument(argument, refusal);
+    if (status == SPISOR_OK && round_of(argument) >= MOST_PLAN_ROUNDS) {
+        return refuse_past_rounds(argument, refusal);
+    }
     return status != SPISOR_OK ? status
                                : serve_screen(runtime_ui_plan, argument, runtime_ui_fill_plan, answer,
                                               PLAN_ANSWER_SHAPE, refusal);
@@ -329,6 +352,71 @@ static spisor_status plugin_list(void *context, const runtime_ui_plugin_list_arg
                                   refusal);
 }
 
+static spisor_status check_action_argument(const runtime_ui_action_argument *argument, spisor_refusal *refusal) {
+    int are_items = !argument->has_items || argument->item_count == 0 ||
+                    (argument->items != NULL && runtime_are_arguments(argument->items, argument->item_count));
+    spisor_status status;
+    if (argument->action == NULL || argument->has_items > 1 || !are_items) {
+        return runtime_refuse_member(refusal, argument->action == NULL ? "action" : "items", RUNTIME_UI_HEADER);
+    }
+    status = check_member(refusal, argument->description, SPISOR_VALUE_RECORD, runtime_ui_is_manifest, "description");
+    return status == SPISOR_OK && argument->input != NULL
+               ? check_member(refusal, argument->input, SPISOR_VALUE_RECORD, NULL, "input")
+               : status;
+}
+
+/** The description, the input when given and the row as { item?, items? }, as action takes them; NULL out of memory. */
+static cJSON *action_call(const runtime_ui_action_argument *argument) {
+    cJSON *call = value_call("description", argument->description);
+    cJSON *row = call == NULL ? NULL : cJSON_AddObjectToObject(call, "row");
+    cJSON *items = row == NULL || !argument->has_items ? NULL : cJSON_AddArrayToObject(row, "items");
+    int built = row != NULL && (!argument->has_items || items != NULL) &&
+                (argument->item == NULL || cJSON_AddStringToObject(row, "item", argument->item) != NULL) &&
+                (argument->input == NULL || runtime_ui_add_value(call, "input", argument->input));
+    for (size_t index = 0; built && items != NULL && index < argument->item_count; index++) {
+        cJSON *item = cJSON_CreateString(argument->items[index]);
+        built = item != NULL && cJSON_AddItemToArray(items, item);
+        if (!built) {
+            cJSON_Delete(item);
+        }
+    }
+    if (!built) {
+        cJSON_Delete(call);
+        return NULL;
+    }
+    return call;
+}
+
+static spisor_status fill_action(const cJSON *answered, void *filled) {
+    runtime_ui_action_answer *answer = filled;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    return status == SPISOR_OK ? runtime_ui_fill_target(&answer->storage, answered, &answer->target) : status;
+}
+
+static spisor_status action(void *context, const runtime_ui_action_argument *argument,
+                            runtime_ui_action_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *answered;
+    cJSON *call;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !spisor_has_shape(argument->size, ACTION_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, ACTION_ANSWER_SHAPE)) {
+        return spisor_refuse_shape(refusal, "ui's action");
+    }
+    status = check_action_argument(argument, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = action_call(argument);
+    answered = call == NULL ? NULL
+                            : runtime_ui_action(cJSON_GetObjectItemCaseSensitive(call, "description"),
+                                                argument->action, cJSON_GetObjectItemCaseSensitive(call, "input"),
+                                                cJSON_GetObjectItemCaseSensitive(call, "row"), &operation_refusal);
+    cJSON_Delete(call);
+    return runtime_serve_answered(answered, operation_refusal, fill_action, answer, ACTION_ANSWER_SHAPE, refusal);
+}
+
 static void release_navigation_answer(void *context, runtime_ui_navigation_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, NAVIGATION_ANSWER_SHAPE);
@@ -354,6 +442,11 @@ static void release_plugin_list_answer(void *context, runtime_ui_plugin_list_ans
     runtime_release_stored_answer(answer, PLUGIN_LIST_ANSWER_SHAPE);
 }
 
+static void release_action_answer(void *context, runtime_ui_action_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, ACTION_ANSWER_SHAPE);
+}
+
 static const runtime_ui_definition definition = {
     sizeof(runtime_ui_definition),
     NULL,
@@ -368,6 +461,8 @@ static const runtime_ui_definition definition = {
     release_screen,
     release_plugin_list_answer,
     spisor_release_refusal,
+    action,
+    release_action_answer,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_ui_definition_of(void) {

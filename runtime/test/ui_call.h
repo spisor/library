@@ -28,7 +28,8 @@ typedef enum ui_operation {
     UI_SETTINGS_VIEW,
     UI_PLAN,
     UI_RENDER,
-    UI_PLUGIN_LIST
+    UI_PLUGIN_LIST,
+    UI_ACTION
 } ui_operation;
 
 #define UI_REQUEST_CAPACITY 128
@@ -156,7 +157,9 @@ static inline void ui_read_screen_argument(ui_request *held, const cJSON *reques
     const cJSON *answers = cJSON_GetObjectItemCaseSensitive(request, "answers");
     runtime_ui_reply *replies = ui_request_block(held, (size_t)cJSON_GetArraySize(answers), sizeof *replies);
     const cJSON *answer;
+    const cJSON *round = cJSON_GetObjectItemCaseSensitive(request, "round");
     argument->descriptions = ui_request_value(held, request, "descriptions");
+    argument->round = cJSON_IsNumber(round) ? (uint32_t)round->valuedouble : 0;
     if (screen != NULL) {
         runtime_ui_entry *entry = ui_request_block(held, 1, sizeof *entry);
         entry->plugin = ui_text(screen, "plugin");
@@ -375,13 +378,37 @@ static inline spisor_status ui_plugin_list_call(const runtime_ui_definition *ui,
     return status;
 }
 
+static inline spisor_status ui_action_call(const runtime_ui_definition *ui, const cJSON *request, ui_request *held,
+                                           cJSON **tree, spisor_refusal *refusal) {
+    runtime_ui_action_argument argument = SPISOR_INIT(runtime_ui_action_argument);
+    runtime_ui_action_answer answer = SPISOR_INIT(runtime_ui_action_answer);
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(request, "items");
+    spisor_status status;
+    argument.description = ui_request_value(held, request, "description");
+    argument.action = ui_text(request, "action");
+    argument.input = ui_request_value(held, request, "input");
+    argument.item = ui_text(request, "item");
+    argument.has_items = items != NULL;
+    argument.items = items == NULL ? NULL : ui_request_texts(held, items, &argument.item_count);
+    status = ui->action(ui->context, &argument, &answer, refusal);
+    if (status == SPISOR_OK) {
+        *tree = cJSON_CreateObject();
+        ui_add_text(*tree, "plugin", answer.target.plugin);
+        ui_add_text(*tree, "service", answer.target.service);
+        ui_add_text(*tree, "method", answer.target.method);
+        ui_add_value(*tree, "arguments", answer.target.arguments);
+    }
+    ui->release_action_answer(ui->context, &answer);
+    return status;
+}
+
 typedef spisor_status (*ui_caller)(const runtime_ui_definition *ui, const cJSON *request, ui_request *held,
                                    cJSON **tree, spisor_refusal *refusal);
 
 /** Calls `operation` with `request`, which it frees, answering the definition's status and the answer as JSON. */
 static inline catalog_answer ui_call(ui_operation operation, cJSON *request) {
     static const ui_caller callers[] = {ui_navigation_call, ui_settings_view_call, ui_plan_call, ui_render_call,
-                                        ui_plugin_list_call};
+                                        ui_plugin_list_call, ui_action_call};
     const runtime_ui_definition *ui = runtime_ui_definition_of();
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     ui_request *held = spisor_memory_allocate_zeroed(1, sizeof *held);
