@@ -12,8 +12,9 @@
  * @file
  * Reads `runtime/library.json` with the weivel standard's own reader and requires it to declare runtime 0.2.0 with its
  * release, and exactly one service per `runtime_*_definition_of` a header under `include/runtime` declares: named by
- * the symbol's middle, holding that symbol as its one function of the definition kind. The symbols come from the
- * headers at configure time, so a service added to a header and left out of the declaration fails here.
+ * the symbol's middle, holding that symbol as its one function of the definition kind and declaring
+ * `runtime_<id>_definition_description` as its description. The symbols come from the headers at configure time, so a
+ * service added to a header and left out of the declaration fails here.
  */
 
 static const char *const header_symbols[] = {RUNTIME_DEFINITION_SYMBOLS};
@@ -21,6 +22,7 @@ static const size_t header_symbol_count = sizeof header_symbols / sizeof header_
 
 static const char definition_prefix[] = "runtime_";
 static const char definition_suffix[] = "_definition_of";
+static const char description_suffix[] = "_definition_description";
 
 static int read_library(weivel_standard_library *library) {
     size_t length = 0;
@@ -44,14 +46,22 @@ static int read_library(weivel_standard_library *library) {
     return 1;
 }
 
-static int is_symbol_of(const char *symbol, const char *service_id) {
+static int is_symbol_of(const char *symbol, const char *service_id, const char *suffix) {
     size_t prefix_length = sizeof definition_prefix - 1;
-    size_t suffix_length = sizeof definition_suffix - 1;
+    size_t suffix_length = strlen(suffix);
     size_t id_length = strlen(service_id);
-    return strlen(symbol) == prefix_length + id_length + suffix_length &&
+    return symbol != NULL && strlen(symbol) == prefix_length + id_length + suffix_length &&
            strncmp(symbol, definition_prefix, prefix_length) == 0 &&
            strncmp(symbol + prefix_length, service_id, id_length) == 0 &&
-           strcmp(symbol + prefix_length + id_length, definition_suffix) == 0;
+           strcmp(symbol + prefix_length + id_length, suffix) == 0;
+}
+
+static void check_description(const char *description, const char *service_id) {
+    if (!is_symbol_of(description, service_id, description_suffix)) {
+        fprintf(stderr, "service %s declares the description %s, not runtime_%s_definition_description\n", service_id,
+                description == NULL ? "(none)" : description, service_id);
+        check_failures++;
+    }
 }
 
 static void check_service(const weivel_standard_library_service *service) {
@@ -64,7 +74,7 @@ static void check_service(const weivel_standard_library_service *service) {
     }
     check_text(function->name, "definition", service->id);
     CHECK(function->kind == WEIVEL_STANDARD_FUNCTION_DEFINITION && function->context == 0);
-    if (!is_symbol_of(function->symbol, service->id)) {
+    if (!is_symbol_of(function->symbol, service->id, definition_suffix)) {
         fprintf(stderr, "service %s names the symbol %s, not runtime_%s_definition_of\n", service->id,
                 function->symbol, service->id);
         check_failures++;
@@ -101,6 +111,7 @@ static void every_header_definition_is_declared_and_nothing_else(const weivel_st
     for (size_t index = 0; index < library->service_count; index++) {
         const weivel_standard_library_service *service = &library->services[index];
         check_service(service);
+        check_description(library->descriptions[index], service->id);
         if (service->function_count == 1 && !is_header_symbol(service->functions[0].symbol)) {
             fprintf(stderr, "%s is declared but no header under include/runtime declares it\n",
                     service->functions[0].symbol);

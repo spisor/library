@@ -358,6 +358,16 @@ target_link_libraries(declaration_test PRIVATE weivel_standard)
 spisor_strict_warnings(declaration_test)
 add_test(NAME declaration_test COMMAND declaration_test)
 
+add_executable(description_test description_test.c)
+target_include_directories(description_test PRIVATE ${PROJECT_SOURCE_DIR}/test)
+target_compile_definitions(description_test PRIVATE
+    RUNTIME_DECLARATION_PATH="${PROJECT_SOURCE_DIR}/runtime/library.json"
+    RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>")
+target_link_libraries(description_test PRIVATE weivel_standard ${CMAKE_DL_LIBS})
+add_dependencies(description_test runtime)
+spisor_strict_warnings(description_test)
+add_test(NAME description_test COMMAND description_test)
+
 add_executable(weivel_host_load_test weivel_host_load_test.c)
 target_include_directories(weivel_host_load_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/include)
 target_compile_definitions(weivel_host_load_test PRIVATE
@@ -396,7 +406,12 @@ else()
     set(runtime_export_lister ${CMAKE_NM})
     set(runtime_export_format elf)
 endif()
-string(JOIN "," runtime_expected_exports ${runtime_definition_symbols})
+set(runtime_description_symbols "")
+foreach(symbol IN LISTS runtime_definition_symbols)
+    string(REGEX REPLACE "_of$" "_description" description_symbol "${symbol}")
+    list(APPEND runtime_description_symbols ${description_symbol})
+endforeach()
+string(JOIN "," runtime_expected_exports ${runtime_definition_symbols} ${runtime_description_symbols})
 add_test(NAME runtime_exports_only_definitions_test
     COMMAND ${CMAKE_COMMAND} -DLIBRARY=$<TARGET_FILE:runtime> -DLISTER=${runtime_export_lister}
         -DFORMAT=${runtime_export_format} -DEXPECTED=${runtime_expected_exports}
