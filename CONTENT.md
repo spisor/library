@@ -80,12 +80,14 @@ empty.
 `runtime_short_shape_test` calls every operation of every definition `runtime/library.json` declares, through the
 built `runtime`, with each argument and answer one byte short of its first shape, and `runtime_empty_answer_test`
 calls every operation whose answer counts an array with that count nonzero beside NULL storage; each requires
-MALFORMED with every answer untouched, a text or unsized struct input passed NULL, so every operation checks its
-argument and answer shapes before a required input. Both walk the description each definition answers, its
-operations' parameters, its types' first shapes and the members its arrays name as their counts, so an operation
-added to a header is checked without a test changing. The walk is `testing/described_checks.c`, test-only, and
-`spisor_add_described_checks(LIBRARY <target> DECLARATION <library.json>)` adds the same two tests, named after the
-library, for another one. `declaration_test` holds every header to one getter per definition struct it defines.
+MALFORMED with every answer untouched, every other input passed empty (an unsized pointer NULL with its count 0, an
+enum its first value that is not 0, any other scalar 0), and an operation taking no refusal held to its status alone,
+so every operation checks its argument and answer shapes before a required input. Both walk the description each
+definition answers, its operations' parameters, its types' first shapes and the members its arrays name as their
+counts, so an operation added to a header is checked without a test changing. The walk is
+`testing/described_checks.c`, test-only, and `spisor_add_described_checks(LIBRARY <target> DECLARATION
+<library.json>)` adds the same two tests, named after the library, for another one. `declaration_test` holds every
+header to one getter per definition struct it defines.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
 function of kind `definition` and its `description`, `runtime_<service>_definition_description`, or for a standard
@@ -166,7 +168,8 @@ the writer holds at most 1024 entries, a write beyond them is refused, and the h
 over before it returns, after which a write is refused until the next begin. A TRACE entry is dropped, since
 runtime's log keeps no such level. A scope keeps its own copy of the host and the manifest, so it outlives the
 host's end, and releasing it frees everything it holds once the writer has written every entry it handed over.
-`scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the last failing every allocation of
+`scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the first also running the described
+checks over all four definitions an opened scope answers, the last failing every allocation of
 the open, the release and each operation; `scope_threads_test` calls a scope from two threads at once.
 
 A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and

@@ -18,8 +18,9 @@
 /**
  * @file
  * `weivel.scope` as runtime serves it: a plugin's scope opened from its manifest, refused at open for a manifest one
- * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds. Its
- * `secrets`, `paths` and `log` are scope_services_test's.
+ * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds; every
+ * definition it answers passes the described checks. Its `secrets`, `paths` and `log` are otherwise
+ * scope_services_test's.
  */
 
 static scope_place place;
@@ -436,22 +437,19 @@ static void the_host_refuses_to_start_somewhere_unusable(void) {
     cJSON_Delete(names);
 }
 
-/**
- * The described checks read config alone: they call an operation only through pointer parameters and a refusal last,
- * so secrets' set (bytes and a length), paths' three (no refusal) and log's write (a level) are beyond them, and
- * scope_services_test checks those shapes by hand.
- */
-static void the_scope_config_passes_the_described_checks(void) {
+static void every_definition_of_the_scope_passes_the_described_checks(void) {
     weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
-    spisor_described_definition described = {NULL, NULL};
-    const weivel_standard_config *config = open_viewer(&scope);
-    if (config == NULL) {
+    spisor_described_definition described[4];
+    size_t count = sizeof described / sizeof described[0];
+    if (open_viewer(&scope) == NULL) {
         return;
     }
-    described.description = weivel_standard_config_description();
-    described.definition = config;
-    CHECK(spisor_check_described(&described, 1, spisor_check_short_shapes) == 0);
-    CHECK(spisor_check_described(&described, 1, spisor_check_counted_answers) == 0);
+    described[0] = (spisor_described_definition){weivel_standard_config_description(), scope.config};
+    described[1] = (spisor_described_definition){weivel_standard_secrets_description(), scope.secrets};
+    described[2] = (spisor_described_definition){weivel_standard_paths_description(), scope.paths};
+    described[3] = (spisor_described_definition){weivel_standard_log_description(), scope.log};
+    CHECK(spisor_check_described(described, count, spisor_check_short_shapes) == 0);
+    CHECK(spisor_check_described(described, count, spisor_check_counted_answers) == 0);
     release(&scope, NULL);
 }
 
@@ -472,7 +470,7 @@ int main(void) {
     a_later_consumer_has_its_answers_and_refusal_zeroed_beyond();
     a_scope_outlives_the_host_and_release_empties_it();
     the_host_refuses_to_start_somewhere_unusable();
-    the_scope_config_passes_the_described_checks();
+    every_definition_of_the_scope_passes_the_described_checks();
     runtime_scopes_end();
     scope_place_free(&place);
     return check_summary("scope_test");

@@ -114,12 +114,6 @@ static void secrets_refuse_what_runtime_cannot_keep(void) {
     secrets->release_refusal(secrets->context, &refusal);
     CHECK(secrets->get(secrets->context, NULL, &secret, NULL) == WEIVEL_STATUS_MALFORMED);
     CHECK(secrets->remove(secrets->context, NULL, NULL) == WEIVEL_STATUS_MALFORMED);
-    secret.size = (uint32_t)offsetof(weivel_standard_secret, storage);
-    CHECK(secrets->get(secrets->context, "token", &secret, NULL) == WEIVEL_STATUS_MALFORMED);
-    secret.size = (uint32_t)sizeof secret;
-    secret.length = 1;
-    CHECK(secrets->get(secrets->context, "token", &secret, NULL) == WEIVEL_STATUS_MALFORMED);
-    secret.length = 0;
     refusal.storage = &refusal;
     CHECK(secrets->get(secrets->context, "token", &secret, &refusal) == WEIVEL_STATUS_MALFORMED);
     CHECK(set_text(secrets, "unset", "x", &refusal) == WEIVEL_STATUS_MALFORMED);
