@@ -77,12 +77,15 @@ answer points at is the provider's until its release. An empty answer has NULL s
 an operation refuses an answer whose array count arrives without storage, and an out-of-memory answer is left
 empty.
 
-`runtime_short_shape_test` calls every operation of every definition `runtime/library.json` declares, through the
-built `runtime`, with each argument and answer one byte short of its first shape, and `runtime_empty_answer_test`
-calls every operation whose answer counts an array with that count nonzero beside NULL storage; each requires
+`runtime_short_shape_test` calls every operation of every definition `runtime/library.json` declares that takes a
+size-prefixed struct other than its refusal, through the built `runtime`, with each such argument and answer one byte
+short of its first shape, and `runtime_empty_answer_test` calls every operation whose answer counts an array with that
+count nonzero beside NULL storage; an operation taking no such struct is read and never called. Each call requires
 MALFORMED with every answer untouched, every other input passed empty (an unsized pointer NULL with its count 0, an
-enum its first value that is not 0, any other scalar 0), and an operation taking no refusal held to its status alone,
-so every operation checks its argument and answer shapes before a required input. Both walk the description each
+enum its first value that is not 0, any other scalar 0), and an operation taking no refusal has every other input
+passed a valid value and is held to its status alone, so every operation checks its argument and answer shapes before
+a required input. A definition the first makes no call of fails, unless its caller names it as having no shape to
+shorten. Both walk the description each
 definition answers, its operations' parameters, its types' first shapes and the members its arrays name as their
 counts, so an operation added to a header is checked without a test changing. The walk is
 `testing/described_checks.c`, test-only, and `spisor_add_described_checks(LIBRARY <target> DECLARATION
@@ -169,7 +172,8 @@ over before it returns, after which a write is refused until the next begin. A T
 runtime's log keeps no such level. A scope keeps its own copy of the host and the manifest, so it outlives the
 host's end, and releasing it frees everything it holds once the writer has written every entry it handed over.
 `scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the first also running the described
-checks over all four definitions an opened scope answers, the last failing every allocation of
+checks over all four definitions an opened scope answers, which call config's operations and secrets' `get` and read
+paths, log's `write` and secrets' `set` and `remove` without calling them, and the last failing every allocation of
 the open, the release and each operation; `scope_threads_test` calls a scope from two threads at once.
 
 A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and
