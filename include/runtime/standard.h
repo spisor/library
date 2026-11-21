@@ -61,7 +61,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * a `stop`, a layer with no hinted version, a start hosts' start refuses, a located plugin whose manifest names no
  * entry installed beside it, a plugin the plan does not run, a manifest that cannot be read, an action ui's action
  * refuses, as one the manifest does not declare, and scopes that cannot begin; and OUT_OF_MEMORY. A start that does
- * not answer OK leaves no run record of its own and no scopes begun, and a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
+ * not answer OK leaves no run record of its own and no scopes begun, and a refused SERVE start publishes its refusal
+ * to the loader's ready record once the places resolved.
  *
  * `started`, `tick`, `finished` and `stop` refuse when no run is started. `started` takes one outcome per plugin of
  * the plan, in its order, each naming the manifest the plan named, and answers MALFORMED for any other, and REFUSED
