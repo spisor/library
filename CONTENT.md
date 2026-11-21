@@ -5,8 +5,10 @@ The C conventions every spisor and forebay library shares, as one static CMake t
 
 - **Status and refusal** (`spisor/status.h`): `spisor_status` (OK, NONE, MALFORMED, REFUSED, OUT_OF_MEMORY)
   and the size-prefixed `spisor_refusal`, which every definition of a library built on this one answers, so no
-  library includes a weivel header.
-- **The value tree** (`spisor/value.h`): `spisor_value`, one typed tree (null, boolean, finite number, text,
+  public header of a library includes a weivel header. They restate weivel's `weivel_status` and
+  `weivel_standard_service_refusal`, and `restatement_test` holds every size, offset and number to weivel's.
+- **The value tree** (`spisor/value.h`): `spisor_value`, weivel's `weivel_standard_value` restated and held to it by
+  the same test, one typed tree (null, boolean, finite number, text,
   list, record) for data a library only stores or hands back and whose shape belongs to someone else, such as a
   setting's value; `spisor_value_check`, `spisor_value_build` and `spisor_value_release`. `spisor/json_value.h`
   converts between a tree and the JSON a file on disk holds.
@@ -80,10 +82,16 @@ a header is checked without a test changing; `spisor_definition_operations` and 
 build the same table and tests for another library.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
-function of kind `definition`, and a test keeps it complete against the headers; another loads the built
-`runtime` through `weivel/c`'s host and calls `paths` through the registered definition. It declares no
-`release`, since every definition releases its own answers, and the binary exports its definitions and nothing
-else, which `runtime_exports_only_definitions_test` holds.
+function of kind `definition` and its `description`, `runtime_<service>_definition_description`, and a test keeps
+it complete against the headers; another loads the built `runtime` through `weivel/c`'s host, which checks every
+description with the standard's check, and calls `paths` through the registered definition. Each description is
+generated at build time by the weivel standard's `weivel_describe` from `spisor/status.h` and every
+`include/runtime` header, so a language that cannot read a C header binds the definition from it, and
+`description_test` loads each one from the built `runtime` and runs the standard's own check on it. The symbol is
+the definition's name with `_description`, which is the name another library nesting a runtime definition looks
+for. `runtime` links `weivel_standard` statically, and no other weivel library. It declares no `release`, since
+every definition releases its own answers, and the binary exports its definitions and their descriptions and
+nothing else, which `runtime_exports_only_definitions_test` holds.
 Each header documents its operations, what they take and answer, and every refusal; this file says what they
 do together. A translation of a header in another language is checked against the `layouts` test program,
 which prints every public struct's fields with offset, size and `sizeof`, and which the configure holds to the
@@ -325,19 +333,17 @@ basekit folded in.
 
 ## Using it
 
-Reach it through CMake `FetchContent`, pinned to a full commit SHA:
+Check it out at `siblings/library` beside weivel's `core` and `standard` at `siblings/core` and `siblings/standard`,
+each at the commit your `repo.json` pins, as CI's dependency checkout does, and add it as a subdirectory:
 
 ```cmake
-include(FetchContent)
-FetchContent_Declare(spisor_library
-    GIT_REPOSITORY https://github.com/spisor/library.git
-    GIT_TAG <full commit sha>)
-FetchContent_MakeAvailable(spisor_library)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/siblings/library ${PROJECT_BINARY_DIR}/siblings/library)
 target_link_libraries(your_library PRIVATE spisor_library)
 ```
 
-Both targets are built position independent, so they link into a shared library on Linux. Tests are
-built only when this repository is the top-level project.
+The library reads weivel from the TOP-LEVEL project's `siblings/`, so the consumer's pins are the ones built, and
+it stops with an error naming the missing checkout otherwise. Both targets are built position independent, so they
+link into a shared library on Linux. Tests are built only when this repository is the top-level project.
 
 ## Reading a JSON file
 

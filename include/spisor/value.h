@@ -5,7 +5,7 @@
  * @file
  * One typed value tree, for data a library only stores or hands back and whose shape belongs to someone else: a
  * setting's value, a catalog item, ui props. A field whose shape the library decides is typed by its own struct, never
- * by this.
+ * by this. It restates weivel/standard's value.h number for number and field for field, which restatement_test holds.
  */
 
 #include <stddef.h>
@@ -22,7 +22,10 @@ extern "C" {
 
 /** The kinds are append-only: a published kind keeps its number, and none is reused. */
 typedef enum spisor_value_kind {
-    /** No value at all, as an answer that has none holds: only ever a tree's root, never a member or an item. */
+    /**
+     * No value at all, as an answer or a struct's VALUE member that has none holds: a tree's root or such a member,
+     * never a record's entry or a list's item.
+     */
     SPISOR_VALUE_NONE = 0,
     SPISOR_VALUE_NULL = 1,
     SPISOR_VALUE_BOOLEAN = 2,
@@ -51,7 +54,7 @@ typedef struct spisor_value {
     size_t count;
 } spisor_value;
 
-/** One member of a record: a key under the same rules as a text, and its value. */
+/** One member of a record: a key under the same rules as a text, and its value, never of kind NONE. */
 struct spisor_entry {
     const char *key;
     size_t key_length;

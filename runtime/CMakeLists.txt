@@ -276,6 +276,43 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 spisor_strict_warnings(runtime)
 
+# Each symbol is its definition's name with `_description`, the name weivel_describe's DESCRIBED_ELSEWHERE expects, so
+# a library nesting one of runtime's definitions finds its description without being told the symbol.
+file(GLOB runtime_described_headers CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/runtime/*.h)
+list(SORT runtime_described_headers)
+weivel_describe(runtime
+    HEADERS ${PROJECT_SOURCE_DIR}/include/spisor/status.h ${runtime_described_headers}
+    PREFIX runtime_described_
+    EXPORT RUNTIME_DEFINITION_API
+    STATUS spisor_status
+    REFUSAL spisor_refusal
+    VALUE spisor_value
+    TREE spisor_value_tree
+    SERVICE runtime_paths_definition SYMBOL runtime_paths_definition_description
+    SERVICE runtime_identity_definition SYMBOL runtime_identity_definition_description
+    SERVICE runtime_marketplace_definition SYMBOL runtime_marketplace_definition_description
+    SERVICE runtime_places_definition SYMBOL runtime_places_definition_description
+    SERVICE runtime_config_definition SYMBOL runtime_config_definition_description
+    SERVICE runtime_settings_definition SYMBOL runtime_settings_definition_description
+    SERVICE runtime_log_definition SYMBOL runtime_log_definition_description
+    SERVICE runtime_secrets_definition SYMBOL runtime_secrets_definition_description
+    SERVICE runtime_registry_definition SYMBOL runtime_registry_definition_description
+    SERVICE runtime_changes_definition SYMBOL runtime_changes_definition_description
+    SERVICE runtime_commands_definition SYMBOL runtime_commands_definition_description
+    SERVICE runtime_install_definition SYMBOL runtime_install_definition_description
+    SERVICE runtime_fetch_definition SYMBOL runtime_fetch_definition_description
+    SERVICE runtime_catalog_definition SYMBOL runtime_catalog_definition_description
+    SERVICE runtime_cache_definition SYMBOL runtime_cache_definition_description
+    SERVICE runtime_updates_definition SYMBOL runtime_updates_definition_description
+    SERVICE runtime_boot_definition SYMBOL runtime_boot_definition_description
+    SERVICE runtime_processes_definition SYMBOL runtime_processes_definition_description
+    SERVICE runtime_hosts_definition SYMBOL runtime_hosts_definition_description
+    SERVICE runtime_loader_definition SYMBOL runtime_loader_definition_description
+    SERVICE runtime_detect_definition SYMBOL runtime_detect_definition_description
+    SERVICE runtime_lists_definition SYMBOL runtime_lists_definition_description
+    SERVICE runtime_ui_definition SYMBOL runtime_ui_definition_description)
+target_link_libraries(runtime PRIVATE weivel_standard)
+
 if(WIN32)
     add_executable(runtime_launcher src/launcher_windows.c src/command_line_windows.c)
     set_target_properties(runtime_launcher PROPERTIES OUTPUT_NAME runtime-launcher)

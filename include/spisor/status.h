@@ -4,7 +4,8 @@
 /**
  * @file
  * The status and the refusal every library definition answers with. The numbers and the refusal's shape are
- * weivel/standard's services.h convention, restated here because a library depends on nothing above it.
+ * weivel's `weivel_status` and weivel/standard's `weivel_standard_service_refusal`, restated here and held to them
+ * by restatement_test.
  */
 
 #include <stdint.h>
