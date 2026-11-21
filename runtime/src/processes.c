@@ -158,7 +158,7 @@ static cJSON *prune_step(const void *context, const char *path, runtime_holders_
         record->pid = NAN;
     } else {
         record->pid = request->self;
-        record->alive_at = floor(request->now == 0 ? runtime_now_milliseconds() : request->now);
+        record->alive_at = floor(request->now == NULL ? runtime_now_milliseconds() : *request->now);
         record->check_milliseconds =
             request->check_milliseconds == 0 ? RUNTIME_DEFAULT_CHECK_MILLISECONDS : request->check_milliseconds;
     }

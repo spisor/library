@@ -358,6 +358,18 @@ static void a_late_tick_runs_each_timer_once(void) {
     finish_base();
 }
 
+static void a_tick_at_the_epoch_reads_no_clock(void) {
+    started_run run = serving("epoch");
+    expect_tick(-TURN, 0, "a tick before the epoch");
+    CHECK(holders_alive_at() == (double)-TURN);
+    expect_tick(0, TURN, "a tick at the epoch");
+    CHECK(holders_alive_at() == 0);
+    CHECK(run_record_alive_at() == 0);
+    release_run(&run);
+    stop_expecting(0, "a serve run ticked at the epoch");
+    finish_base();
+}
+
 static void a_serve_run_no_holder_keeps_ends_with_exit_code_zero(void) {
     weivel_standard_host_outcome outcome;
     started_run run;
@@ -427,6 +439,7 @@ int main(void) {
     finished_is_refused_in_a_serve_run_and_before_started();
     a_tick_acts_on_each_timer_when_it_is_due();
     a_late_tick_runs_each_timer_once();
+    a_tick_at_the_epoch_reads_no_clock();
     a_serve_run_no_holder_keeps_ends_with_exit_code_zero();
     failed_prunes_end_the_run_only_once_enough_fail_in_a_row();
     a_now_no_check_can_carry_fails_the_run();

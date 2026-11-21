@@ -227,7 +227,8 @@ static spisor_status serve_prune(const runtime_processes_prune_argument *argumen
                                  runtime_processes_prune_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
     runtime_processes_prune_request request = {argument->state, argument->host_id, (double)argument->self,
-                                               argument->now, argument->check_milliseconds};
+                                               argument->now == 0 ? NULL : &argument->now,
+                                               argument->check_milliseconds};
     cJSON *answered;
     if (runtime_start_storage(&answer->storage) != SPISOR_OK) {
         return SPISOR_OUT_OF_MEMORY;
@@ -370,7 +371,7 @@ static spisor_status serve_record(const runtime_processes_record_argument *argum
     cJSON *operation_refusal = NULL;
     cJSON *run = run_of(argument);
     runtime_processes_record_request request = {argument->state, argument->host_id, run,
-                                                argument->check_milliseconds, argument->record, 0};
+                                                argument->check_milliseconds, argument->record, NULL};
     cJSON *answered = run == NULL ? NULL : runtime_processes_record_run(&request, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_record(answered, answer);

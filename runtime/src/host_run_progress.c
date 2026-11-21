@@ -198,10 +198,11 @@ static spisor_status end_unheld(runtime_host_run *run, const char *const *parts,
 static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, int64_t interval, int *unheld,
                                      cJSON **failure) {
     const cJSON *plan = plan_of(run);
+    double at = (double)now;
     runtime_processes_record_request record = {state_of(run), run->host_id, member(plan, "run"), (double)interval,
-                                               text_of(plan, "runRecord"), (double)now};
-    runtime_processes_prune_request prune = {state_of(run), run->host_id, (double)current_process_id(),
-                                             (double)now, (double)interval};
+                                               text_of(plan, "runRecord"), &at};
+    runtime_processes_prune_request prune = {state_of(run), run->host_id, (double)current_process_id(), &at,
+                                             (double)interval};
     cJSON *stamped = runtime_processes_record_run(&record, failure);
     cJSON *pruned = stamped == NULL ? NULL : runtime_processes_prune(&prune, failure);
     spisor_status status = pruned == NULL && *failure == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
