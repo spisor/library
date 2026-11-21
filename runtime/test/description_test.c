@@ -18,8 +18,8 @@
  * @file
  * Loads the built shared runtime as a binding would: reads `runtime/library.json` with the standard's reader, and for
  * every service calls the `description` symbol it declares and requires the description to pass the standard's own
- * check and to name `runtime_<id>_definition`, so a description that is declared but not linked, or not generated from
- * the service's own struct, fails here.
+ * check and to name `runtime_<id>_definition`, or for a standard service the standard's own struct, so a description
+ * that is declared but not linked, or not generated from the service's own struct, fails here.
  */
 
 typedef const weivel_standard_description *(*describe_function)(void);
@@ -74,10 +74,23 @@ static int read_library(weivel_standard_library *library) {
     return status == WEIVEL_STATUS_OK;
 }
 
+/** A standard service's id beside the standard's struct its description must name. */
+typedef struct standard_service {
+    const char *id;
+    const char *definition;
+} standard_service;
+
+static const standard_service standard_services[] = {{"weivel.scope", "weivel_standard_scopes"}};
+
 static void check_definition_name(const char *definition, const char *service_id) {
     char expected[128];
     int written = snprintf(expected, sizeof expected, "runtime_%s_definition", service_id);
     CHECK(written > 0 && (size_t)written < sizeof expected);
+    for (size_t index = 0; index < sizeof standard_services / sizeof standard_services[0]; index++) {
+        if (strcmp(service_id, standard_services[index].id) == 0) {
+            snprintf(expected, sizeof expected, "%s", standard_services[index].definition);
+        }
+    }
     check_text(definition, expected, service_id);
 }
 

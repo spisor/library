@@ -252,6 +252,14 @@ target_compile_definitions(runtime_install_test_hooks PRIVATE SPISOR_INSTALL_TES
 spisor_strict_warnings(runtime_install_test_hooks)
 set_target_properties(runtime_install_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
+set(runtime_standard_sources src/standard_refusal.c src/scope_host.c src/scope_manifest.c src/plugin_scope.c
+    src/scope_config.c src/standard_scope.c)
+add_library(runtime_standard OBJECT ${runtime_standard_sources})
+target_link_libraries(runtime_standard PUBLIC runtime_objects weivel_standard)
+target_include_directories(runtime_standard PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_standard PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_standard)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -259,12 +267,51 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_commands runtime_path_entry runtime_secret_store
     runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
     runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
-    runtime_hosts runtime_hosts_definition runtime_ui runtime_install)
+    runtime_hosts runtime_hosts_definition runtime_ui runtime_install runtime_standard)
 set(runtime_shipped_objects "")
 foreach(library IN LISTS runtime_shipped_object_libraries)
     target_compile_definitions(${library} PRIVATE RUNTIME_BUILDING)
     list(APPEND runtime_shipped_objects $<TARGET_OBJECTS:${library}>)
 endforeach()
+
+# The headers name every symbol runtime exports, a definition's getter and its description, for the tests that check
+# the exports and for the macOS linker, which exports only these.
+file(GLOB runtime_public_headers CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/runtime/*.h)
+set(runtime_definition_symbols "")
+set(runtime_definition_header_count 0)
+set(runtime_definition_getter_header_count 0)
+set(runtime_definition_bodies "")
+set(runtime_definition_getters "")
+foreach(header IN LISTS runtime_public_headers)
+    file(READ ${header} header_text)
+    get_filename_component(header_name ${header} NAME)
+    string(REGEX MATCHALL "typedef[ \t\r\n]+struct[ \t\r\n]+runtime_[a-z_]+_definition[ \t\r\n]*{" bodies
+        "${header_text}")
+    foreach(body IN LISTS bodies)
+        string(REGEX MATCH "runtime_[a-z_]+_definition" struct "${body}")
+        list(APPEND runtime_definition_bodies "${header_name} ${struct}")
+    endforeach()
+    if(header_text MATCHES "#include \"runtime/definition.h\"")
+        math(EXPR runtime_definition_header_count "${runtime_definition_header_count} + 1")
+    endif()
+    string(REGEX MATCHALL "runtime_[a-z_]+_definition_of[ \t\r\n]*[(][ \t\r\n]*void[ \t\r\n]*[)]" declarations
+        "${header_text}")
+    foreach(declaration IN LISTS declarations)
+        string(REGEX MATCH "runtime_[a-z_]+_definition_of" symbol "${declaration}")
+        list(APPEND runtime_definition_symbols ${symbol})
+        list(APPEND runtime_definition_getters "${header_name} ${symbol}")
+    endforeach()
+    if(declarations)
+        math(EXPR runtime_definition_getter_header_count "${runtime_definition_getter_header_count} + 1")
+    endif()
+endforeach()
+list(REMOVE_DUPLICATES runtime_definition_symbols)
+set(runtime_exported_symbols ${runtime_definition_symbols})
+foreach(symbol IN LISTS runtime_definition_symbols)
+    string(REGEX REPLACE "_of$" "_description" description_symbol "${symbol}")
+    list(APPEND runtime_exported_symbols ${description_symbol})
+endforeach()
+
 add_library(runtime SHARED src/library_load.c ${runtime_shipped_objects})
 target_compile_definitions(runtime PRIVATE RUNTIME_BUILDING)
 target_include_directories(runtime PRIVATE src ${PROJECT_SOURCE_DIR}/src)
@@ -273,6 +320,15 @@ target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(runtime PRIVATE -Wl,--exclude-libs,ALL)
+elseif(APPLE)
+    # ld64 has no --exclude-libs, and weivel/standard's archive gives its API default visibility, so only a list keeps
+    # what runtime links statically out of its exports.
+    list(TRANSFORM runtime_exported_symbols PREPEND "_" OUTPUT_VARIABLE runtime_macho_exports)
+    string(JOIN "\n" runtime_macho_export_lines ${runtime_macho_exports})
+    set(runtime_export_list ${CMAKE_CURRENT_BINARY_DIR}/runtime_exports.txt)
+    file(CONFIGURE OUTPUT ${runtime_export_list} CONTENT "${runtime_macho_export_lines}\n")
+    target_link_options(runtime PRIVATE "LINKER:-exported_symbols_list,${runtime_export_list}")
+    set_property(TARGET runtime APPEND PROPERTY LINK_DEPENDS ${runtime_export_list})
 endif()
 spisor_strict_warnings(runtime)
 

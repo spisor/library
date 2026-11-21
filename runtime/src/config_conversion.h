@@ -25,6 +25,9 @@ spisor_status runtime_scope_request(const runtime_settings_scope *scope, runtime
 /** The JSON a plugin's own record holds, NULL for none; MALFORMED, refusing with `what`, for any other kind. */
 spisor_status runtime_record_json(const spisor_value *value, const char *what, cJSON **json, spisor_refusal *refusal);
 
+/** Whether `name` names a layer a declaration may carry as its `layer`: `application` or `portable`. */
+int runtime_is_settings_layer_name(const char *name);
+
 /**
  * The declarations as the object runtime_config_request's `settings` holds, NULL for none.
  *

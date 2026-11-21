@@ -140,15 +140,11 @@ static parameter_rule rule_of(const weivel_standard_described_parameter *paramet
         parameter->element == WEIVEL_STANDARD_DESCRIBED_STRUCT) {
         return struct_rule_of(parameter->role);
     }
-    if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_HANDLE && parameter->role == WEIVEL_STANDARD_DESCRIBED_INPUT) {
+    if ((parameter->kind == WEIVEL_STANDARD_DESCRIBED_HANDLE || parameter->kind == WEIVEL_STANDARD_DESCRIBED_TEXT) &&
+        parameter->role == WEIVEL_STANDARD_DESCRIBED_INPUT) {
         return RULE_NULL_INPUT;
     }
     return parameter->role == WEIVEL_STANDARD_DESCRIBED_ANSWER ? answer_rule_of(parameter->kind) : RULE_UNREADABLE;
-}
-
-static int takes_struct(const weivel_standard_described_parameter *parameter) {
-    parameter_rule rule = rule_of(parameter);
-    return rule == RULE_STRUCT_INPUT || rule == RULE_STRUCT_ANSWER || rule == RULE_TREE_ANSWER || rule == RULE_REFUSAL;
 }
 
 /** A VALUE answer is weivel/value.h's tree, which no description lists among its types. */
@@ -164,6 +160,19 @@ static parameter_shape shape_of(const weivel_standard_description *description,
         shape.first_shape = type->first_shape;
     }
     return shape;
+}
+
+/** rule_of, with an input struct that carries no `size` passed NULL, since no shape of it can be shortened. */
+static parameter_rule rule_in(const weivel_standard_description *description,
+                              const weivel_standard_described_parameter *parameter) {
+    parameter_rule rule = rule_of(parameter);
+    return rule == RULE_STRUCT_INPUT && shape_of(description, parameter).size == 0 ? RULE_NULL_INPUT : rule;
+}
+
+static int takes_struct(const weivel_standard_description *description,
+                        const weivel_standard_described_parameter *parameter) {
+    parameter_rule rule = rule_in(description, parameter);
+    return rule == RULE_STRUCT_INPUT || rule == RULE_STRUCT_ANSWER || rule == RULE_TREE_ANSWER || rule == RULE_REFUSAL;
 }
 
 static erased_function function_at(const definition_view *view, size_t offset) {
@@ -205,7 +214,7 @@ static int is_callable(const definition_view *view, const weivel_standard_descri
             report(view, operation, "takes a parameter no rule here reads:", parameter->name, tally);
             return 0;
         }
-        if (takes_struct(parameter) && shape_of(view->description, parameter).size == 0) {
+        if (takes_struct(view->description, parameter) && shape_of(view->description, parameter).size == 0) {
             report(view, operation, "takes a struct that carries no `size`:", parameter->name, tally);
             return 0;
         }
@@ -227,7 +236,7 @@ static void discard(prepared_call *call) {
 }
 
 static size_t buffer_size_of(const definition_view *view, const weivel_standard_described_parameter *parameter) {
-    parameter_rule rule = rule_of(parameter);
+    parameter_rule rule = rule_in(view->description, parameter);
     if (rule == RULE_SLOT_ANSWER) {
         return sizeof(void *);
     }
@@ -277,7 +286,7 @@ static int prepare(const definition_view *view, const weivel_standard_described_
             discard(call);
             return 0;
         }
-        if (takes_struct(parameter)) {
+        if (takes_struct(view->description, parameter)) {
             set_size(call->buffers[index], size);
             set_nested_sizes(view->description, type_named(view->description, parameter->type), call->buffers[index]);
         }
@@ -380,7 +389,7 @@ static void short_shapes_of(const definition_view *view, const weivel_standard_d
                             spisor_check_tally *tally) {
     for (size_t index = 1; index + 1 < operation->parameter_count; index++) {
         const weivel_standard_described_parameter *parameter = &operation->parameters[index];
-        if (takes_struct(parameter)) {
+        if (takes_struct(view->description, parameter)) {
             parameter_change change = {index, 0, 1, "short of its first shape", parameter->name};
             refuses_untouched(view, operation, &change, tally);
         }

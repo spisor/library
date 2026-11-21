@@ -6,6 +6,7 @@
 #include <weivel/c/host/library.h>
 #include <weivel/c/standard.h>
 #include <weivel/library.h>
+#include <weivel/scope.h>
 
 #include "check.h"
 #include "declaration_file.h"
@@ -16,7 +17,7 @@
  * Loads the built shared runtime as a weivel host loads a C library: reads `runtime/library.json` with the standard,
  * hands it to `weivel/c`'s host on the pinned core, which runs the standard's check on every description the
  * declaration names before it registers anything, resolves `paths` as that host's own context gets a service, and
- * calls `resolve` through the very definition the host registered.
+ * calls `resolve` through the very definition the host registered, then `weivel.scope`'s `open` the same way.
  */
 
 #if defined(_WIN32)
@@ -69,12 +70,23 @@ static int load_runtime(weivel_c_host *host, const weivel_standard_library *decl
     return status == WEIVEL_C_STATUS_OK;
 }
 
-static const runtime_paths_definition *paths_of(weivel_c_host *host) {
+static void *service_of(weivel_c_host *host, const char *id) {
     weivel_c_context *context = NULL;
     void *service = NULL;
     CHECK(weivel_c_host_context(host, &context) == WEIVEL_C_STATUS_OK);
-    CHECK(weivel_c_context_get_service(context, "paths", &service, NULL) == WEIVEL_C_STATUS_OK);
+    CHECK(weivel_c_context_get_service(context, id, &service, NULL) == WEIVEL_C_STATUS_OK);
     return service;
+}
+
+/** No host program started runtime's host, so the scope the host registered refuses, as its own rules say. */
+static void open_through(const weivel_standard_scopes *scopes) {
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    CHECK(scopes->size >= sizeof(weivel_standard_scopes));
+    CHECK(scopes->open(scopes->context, RUNTIME_DECLARATION_PATH, &scope, &refusal) == WEIVEL_STATUS_REFUSED);
+    CHECK(refusal.detail != NULL && strstr(refusal.detail, "no host is started") != NULL && scope.storage == NULL);
+    scopes->release_refusal(scopes->context, &refusal);
+    CHECK(refusal.storage == NULL);
 }
 
 static void resolve_through(const runtime_paths_definition *paths) {
@@ -99,19 +111,25 @@ static void destroy_host(weivel_c_host *host) {
     CHECK(weivel_c_host_free(host) == WEIVEL_C_STATUS_OK);
 }
 
-static void paths_resolves_through_the_definition_the_host_registered(void) {
+static void runtime_answers_through_the_definitions_the_host_registered(void) {
     weivel_standard_library declaration = WEIVEL_INIT(weivel_standard_library);
     weivel_c_host *host;
     const runtime_paths_definition *paths;
+    const weivel_standard_scopes *scopes;
     if (!read_library(&declaration)) {
         return;
     }
     host = create_host();
     if (host != NULL && load_runtime(host, &declaration)) {
-        paths = paths_of(host);
+        paths = service_of(host, "paths");
         CHECK(paths != NULL);
         if (paths != NULL) {
             resolve_through(paths);
+        }
+        scopes = service_of(host, WEIVEL_STANDARD_SERVICE_SCOPE);
+        CHECK(scopes != NULL);
+        if (scopes != NULL) {
+            open_through(scopes);
         }
     }
     if (host != NULL) {
@@ -121,6 +139,6 @@ static void paths_resolves_through_the_definition_the_host_registered(void) {
 }
 
 int main(void) {
-    paths_resolves_through_the_definition_the_host_registered();
+    runtime_answers_through_the_definitions_the_host_registered();
     return check_summary("weivel_host_load_test");
 }
