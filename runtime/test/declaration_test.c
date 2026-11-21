@@ -14,11 +14,18 @@
  * release, and exactly one service per `runtime_*_definition_of` a header under `include/runtime` declares: named by
  * the symbol's middle, holding that symbol as its one function of the definition kind and declaring
  * `runtime_<id>_definition_description` as its description. The symbols come from the headers at configure time, so a
- * service added to a header and left out of the declaration fails here.
+ * service added to a header and left out of the declaration fails here. Each header must also declare exactly one
+ * `<struct>_of` getter per `runtime_*_definition` struct it defines, so a second definition added beside a getter's
+ * is not left out of everything the getters reach.
  */
 
 static const char *const header_symbols[] = {RUNTIME_DEFINITION_SYMBOLS};
 static const size_t header_symbol_count = sizeof header_symbols / sizeof header_symbols[0];
+
+static const char *const header_bodies[] = {RUNTIME_DEFINITION_BODIES};
+static const char *const header_getters[] = {RUNTIME_DEFINITION_GETTERS};
+static const size_t header_body_count = sizeof header_bodies / sizeof header_bodies[0];
+static const size_t header_getter_count = sizeof header_getters / sizeof header_getters[0];
 
 static const char definition_prefix[] = "runtime_";
 static const char definition_suffix[] = "_definition_of";
@@ -121,6 +128,30 @@ static void every_header_definition_is_declared_and_nothing_else(const weivel_st
     CHECK(library->service_count == header_symbol_count);
 }
 
+static int lists(const char *const *entries, size_t count, const char *entry) {
+    for (size_t index = 0; index < count; index++) {
+        if (strcmp(entries[index], entry) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** Each entry is `<header> <name>`, so the getter of a struct in the same header is that entry plus `_of`. */
+static void every_definition_struct_has_its_getter_beside_it(void) {
+    CHECK(header_body_count == header_getter_count);
+    for (size_t index = 0; index < header_body_count; index++) {
+        char getter[192];
+        int written = snprintf(getter, sizeof getter, "%s_of", header_bodies[index]);
+        CHECK(written > 0 && (size_t)written < sizeof getter);
+        if (!lists(header_getters, header_getter_count, getter)) {
+            fprintf(stderr, "%s defines a definition and declares no %s getter beside it\n", header_bodies[index],
+                    getter);
+            check_failures++;
+        }
+    }
+}
+
 static void the_declaration_reads_in_the_standards_format(void) {
     weivel_standard_library library = WEIVEL_INIT(weivel_standard_library);
     if (!read_library(&library)) {
@@ -135,5 +166,6 @@ static void the_declaration_reads_in_the_standards_format(void) {
 
 int main(void) {
     the_declaration_reads_in_the_standards_format();
+    every_definition_struct_has_its_getter_beside_it();
     return check_summary("declaration_test");
 }
