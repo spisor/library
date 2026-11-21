@@ -112,11 +112,12 @@ typedef enum runtime_install_step_kind {
 } runtime_install_step_kind;
 
 /**
- * A runtime_install_step_kind: a provider step installs the catalog entry `provider`; a package step installs
- * `package` through its method, its name NULL for the marketplace method, which needs none. An element of an array,
- * so it has no size.
+ * One step, by its kind: a provider step installs the catalog entry `provider`; a package step installs `package`
+ * through its method, its name NULL for the marketplace method, which needs none. An element of an array, so it has
+ * no size.
  */
 typedef struct runtime_install_step {
+    /** A runtime_install_step_kind. */
     uint32_t kind;
     const spisor_value *provider;
     runtime_install_package package;

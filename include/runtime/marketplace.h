@@ -70,11 +70,12 @@ typedef enum runtime_marketplace_source_kind {
 } runtime_marketplace_source_kind;
 
 /**
- * One source: its id, an import name, and per its runtime_marketplace_source_kind either `url` or `provider`, the
- * other NULL. An element of an array, so it has no size.
+ * One source: its id, an import name, and per its kind either `url` or `provider`, the other NULL. An element of an
+ * array, so it has no size.
  */
 typedef struct runtime_marketplace_source {
     const char *id;
+    /** A runtime_marketplace_source_kind. */
     uint32_t kind;
     const char *url;
     const char *provider;
@@ -178,11 +179,11 @@ typedef enum runtime_marketplace_memory {
 } runtime_marketplace_memory;
 
 /**
- * What remembering found, a runtime_marketplace_memory, with `was` and `now` for NEEDS_USER_ACCEPTANCE. First shape
- * ends at `storage`.
+ * What remembering found, with `was` and `now` for NEEDS_USER_ACCEPTANCE. First shape ends at `storage`.
  */
 typedef struct runtime_marketplace_remember_answer {
     uint32_t size;
+    /** A runtime_marketplace_memory. */
     uint32_t memory;
     const char *was;
     const char *now;
