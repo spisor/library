@@ -7,9 +7,9 @@
  * added to a header is checked without a test changing, in any library whose definitions describe themselves.
  *
  * Each check calls an operation answering a status once per change it makes to otherwise empty parameters: every
- * size-prefixed struct its full `size` and zero beyond it, a handle or definition answer a NULL slot, a handle input
- * NULL, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names what was changed,
- * and leave every answer byte as it was. An operation taking a parameter no rule here reads, a struct that carries no
+ * size-prefixed struct its full `size` and zero beyond it, a handle or definition answer a NULL slot, a handle, text or
+ * unsized struct input NULL, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names
+ * what was changed, and leave every answer byte as it was. An operation taking a parameter no rule here reads, a struct that carries no
  * `size`, or a refusal its description names no release for, is a failure rather than unchecked.
  */
 
