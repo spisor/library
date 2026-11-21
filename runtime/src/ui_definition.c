@@ -25,8 +25,8 @@
 #define ACTION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_action_argument, item_count)
 #define ACTION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_action_answer, storage)
 #define MOST_PLAN_ROUNDS 16
-#define TEXT_OF(number) #number
-#define TEXT(number) TEXT_OF(number)
+#define UI_ROUNDS_SPELLED(number) #number
+#define UI_ROUNDS_TEXT(number) UI_ROUNDS_SPELLED(number)
 
 static const char *const COMPONENT_NAMES[] = {NULL, "form", "field"};
 
@@ -235,7 +235,7 @@ static spisor_status refuse_past_rounds(const runtime_ui_screen_argument *argume
     return runtime_refuse_json(
         refusal, runtime_ui_refusal("bind no node to an answer that only a deeper chain of bindings can give",
                                     argument->screen->plugin,
-                                    "'s screen still names bindings to call after " TEXT(MOST_PLAN_ROUNDS)
+                                    "'s screen still names bindings to call after " UI_ROUNDS_TEXT(MOST_PLAN_ROUNDS)
                                     " rounds of plan",
                                     NULL));
 }

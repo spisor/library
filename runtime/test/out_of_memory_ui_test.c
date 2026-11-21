@@ -26,7 +26,8 @@ static const char *const VIEWER =
     "{\"id\": \"quiet\", \"component\": \"text\","
     " \"bind\": {\"service\": \"viewer:status\", \"method\": \"sleeps\"}}"
     "]}}, \"settings\": {\"depth\": {\"type\": \"number\", \"label\": \"Depth\"}, \"name\": {\"type\": \"string\"}},"
-    " \"actions\": {\"sync\": {\"label\": \"Sync\", \"call\": {\"service\": \"viewer:main\", \"method\": \"sync\"}}}}]";
+    " \"actions\": {\"sync\": {\"label\": \"Sync\", \"call\": {\"service\": \"viewer:main\", \"method\": \"sync\","
+    " \"argument\": {\"force\": true, \"note\": \"declared\"}}}}}]";
 
 /** One ui operation to fail allocation by allocation: `run` calls it over the inputs, printing what it answered. */
 typedef struct operation_case {
@@ -366,7 +367,7 @@ static spisor_status run_action(void) {
     put_text(answer.target.service);
     put_text(answer.target.method);
     put_value(answer.target.arguments);
-    if (status == SPISOR_OK && (answer.target.arguments == NULL || answer.target.arguments->count != 3)) {
+    if (status == SPISOR_OK && (answer.target.arguments == NULL || answer.target.arguments->count != 4)) {
         status = WRONG_RUN;
     }
     status = empty_unless_answered(status, &answer, sizeof answer);
@@ -469,7 +470,7 @@ int main(int argc, char **argv) {
                                             {"ui's render refused", run_render_refused},
                                             {"ui's plugin_list", run_plugin_list},
                                             {"ui's action", run_action},
-                                            {"ui's plan past its rounds", run_plan_past_its_rounds}};
+                                            {"ui's rounds refused", run_plan_past_its_rounds}};
     const char *only = argc > 1 ? argv[1] : "";
     uint64_t first = argc > 2 ? strtoull(argv[2], NULL, 10) : 1;
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
