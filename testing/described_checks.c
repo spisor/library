@@ -15,13 +15,24 @@
 #define NONEMPTY_COUNT 3
 
 /**
- * @implNote Every argument but a double is passed as a 64-bit word, which every ABI CI builds for (x86-64 System V,
- * Windows x64, AAPCS64 with Apple's variant) passes exactly as it passes a pointer or a 64-bit integer, and as it
- * passes a narrower integer, whose callee reads the low bytes: one general register or one 8-byte stack slot. Only
- * a double takes another register file, so a call is typed by which of its positions hold doubles.
+ * @implNote Every argument but a double is passed as a 64-bit word. x86-64 System V and Windows x64 pass a word as
+ * they pass a pointer, a 64-bit integer or a narrower integer, whose callee reads the low bytes: one general register
+ * or one 8-byte stack slot. AAPCS64 does the same in a register, but Apple's arm64 packs stack arguments at their
+ * natural size, so a uint32_t there takes 4 bytes and a word in its place would misplace what follows; a call here
+ * stays in x0 to x7 because ARGUMENT_LIMIT keeps the context and its arguments to eight. Only a double takes another
+ * register file, so a call is typed by which of its positions hold doubles.
  */
 _Static_assert(sizeof(void *) == sizeof(uint64_t) && sizeof(size_t) == sizeof(uint64_t),
                "the described checks pass a pointer or a size_t as a 64-bit word, so they build for 64-bit targets");
+_Static_assert(ARGUMENT_LIMIT + 1 <= 8, "the context and every argument must fit x0 to x7, since Apple's arm64 packs "
+                                        "stack arguments at their natural size and a word would misplace them");
+
+/** What invoke answers for an argument count it has no call for, which no operation answers. */
+#define UNCALLED_STATUS ((weivel_status)255)
+
+static const char valid_text[] = "x";
+static const uint8_t valid_bytes[] = {'x'};
+static const char *const valid_texts[] = {valid_text};
 
 typedef void (*erased_function)(void);
 typedef void (*release_function)(void *, void *);
@@ -287,6 +298,16 @@ static int takes_refusal(const weivel_standard_described_operation *operation) {
     return rule_of(&operation->parameters[operation->parameter_count - 1]) == RULE_REFUSAL;
 }
 
+static int takes_handle_input(const weivel_standard_described_operation *operation) {
+    for (size_t index = 1; index < operation->parameter_count; index++) {
+        if (operation->parameters[index].kind == WEIVEL_STANDARD_DESCRIBED_HANDLE &&
+            operation->parameters[index].role == WEIVEL_STANDARD_DESCRIBED_INPUT) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /**
  * Whether every parameter is one a rule here reads, so the operation can be called; reports the first that is not.
  *
@@ -317,6 +338,10 @@ static int is_callable(const definition_view *view, const weivel_standard_descri
     if (takes_refusal(operation) && (member_named(type_named(view->description, last->type), "detail") == NULL ||
                                      operation_named(view->description, last->release) == NULL)) {
         report(view, operation, "takes a refusal that names no detail or no release", NULL, tally);
+        return 0;
+    }
+    if (!takes_refusal(operation) && takes_handle_input(operation)) {
+        report(view, operation, "takes no refusal and a handle input, which has no valid value to pass", NULL, tally);
         return 0;
     }
     return 1;
@@ -357,6 +382,80 @@ static void set_nested_sizes(const weivel_standard_description *description, con
     }
 }
 
+/** The bytes one element of an array, or the one a pointer input points at, holds; 0 for no such input. */
+static size_t element_size_of(const weivel_standard_description *description,
+                              const weivel_standard_described_parameter *parameter) {
+    const weivel_standard_described_type *type = type_named(description, parameter->type);
+    if (parameter->kind != WEIVEL_STANDARD_DESCRIBED_POINTER && parameter->kind != WEIVEL_STANDARD_DESCRIBED_ARRAY) {
+        return 0;
+    }
+    if (parameter->element == WEIVEL_STANDARD_DESCRIBED_VALUE) {
+        return sizeof(weivel_standard_value);
+    }
+    if (parameter->element == WEIVEL_STANDARD_DESCRIBED_STRUCT) {
+        return type == NULL ? 0 : type->size;
+    }
+    return slot_size_of(parameter->element);
+}
+
+/**
+ * Gives an input an operation taking no refusal would otherwise be passed NULL a valid value, so a MALFORMED it
+ * answers can only be the change's: a text "x", one byte 'x', one text "x", and one zeroed element of an array or
+ * behind a pointer, a value node being an empty RECORD. A handle has none, and is_callable refuses the operation.
+ */
+static int pass_valid_input(const definition_view *view, const weivel_standard_described_parameter *parameter,
+                            size_t index, prepared_call *call) {
+    size_t size = element_size_of(view->description, parameter);
+    uint32_t record = WEIVEL_STANDARD_VALUE_RECORD;
+    switch (parameter->kind) {
+    case WEIVEL_STANDARD_DESCRIBED_TEXT:
+        call->words[index] = (uint64_t)(uintptr_t)valid_text;
+        return 1;
+    case WEIVEL_STANDARD_DESCRIBED_BYTES:
+        call->words[index] = (uint64_t)(uintptr_t)valid_bytes;
+        return 1;
+    case WEIVEL_STANDARD_DESCRIBED_TEXTS:
+        call->words[index] = (uint64_t)(uintptr_t)valid_texts;
+        return 1;
+    default:
+        break;
+    }
+    if (size == 0) {
+        return 1;
+    }
+    call->sizes[index] = size;
+    call->buffers[index] = calloc(1, size);
+    call->before[index] = calloc(1, size);
+    if (call->buffers[index] == NULL || call->before[index] == NULL) {
+        return 0;
+    }
+    if (parameter->element == WEIVEL_STANDARD_DESCRIBED_VALUE) {
+        memcpy(call->buffers[index] + offsetof(weivel_standard_value, kind), &record, sizeof record);
+    }
+    call->words[index] = (uint64_t)(uintptr_t)call->buffers[index];
+    return 1;
+}
+
+static size_t parameter_index_named(const weivel_standard_described_operation *operation, const char *name) {
+    for (size_t index = 1; index < operation->parameter_count; index++) {
+        if (strcmp(operation->parameters[index].name, name) == 0) {
+            return index;
+        }
+    }
+    return 0;
+}
+
+/** Counts each input pass_valid_input gave one element as holding that one. */
+static void count_valid_inputs(const weivel_standard_described_operation *operation, prepared_call *call) {
+    for (size_t index = 0; index < call->argument_count; index++) {
+        const char *count = operation->parameters[index + 1].count;
+        size_t counted = count == NULL ? 0 : parameter_index_named(operation, count);
+        if (counted != 0 && call->words[index] != 0) {
+            call->words[counted - 1] = 1;
+        }
+    }
+}
+
 static void pass_scalar(const definition_view *view, const weivel_standard_described_parameter *parameter,
                         size_t index, prepared_call *call) {
     if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_F64) {
@@ -369,7 +468,8 @@ static void pass_scalar(const definition_view *view, const weivel_standard_descr
 
 /**
  * Zeroed buffers for every pointer parameter after the context, each size-prefixed one, and each it holds by value,
- * with its `size` set in full; NULL for an input passed NULL, and its default for a scalar.
+ * with its `size` set in full; its default for a scalar; and NULL for any other input, or, for an operation taking
+ * no refusal, pass_valid_input's value.
  */
 static int prepare(const definition_view *view, const weivel_standard_described_operation *operation,
                    prepared_call *call) {
@@ -383,6 +483,13 @@ static int prepare(const definition_view *view, const weivel_standard_described_
         call->answers[index] = parameter->role == WEIVEL_STANDARD_DESCRIBED_ANSWER;
         if (rule_in(view->description, parameter) == RULE_SCALAR_INPUT) {
             pass_scalar(view, parameter, index, call);
+            continue;
+        }
+        if (!call->refuses && rule_in(view->description, parameter) == RULE_NULL_INPUT) {
+            if (!pass_valid_input(view, parameter, index, call)) {
+                discard(call);
+                return 0;
+            }
             continue;
         }
         if (size == 0) {
@@ -399,6 +506,9 @@ static int prepare(const definition_view *view, const weivel_standard_described_
             set_nested_sizes(view->description, type_named(view->description, parameter->type), call->buffers[index]);
         }
         call->words[index] = (uint64_t)(uintptr_t)call->buffers[index];
+    }
+    if (!call->refuses) {
+        count_valid_inputs(operation, call);
     }
     return 1;
 }
@@ -421,12 +531,6 @@ static void apply(const definition_view *view, const weivel_standard_described_o
     }
 }
 
-/*
- * CHOOSE_<n>(index, doubles, types, values) expands to one `case` per way the n arguments from `index` on can each be
- * a word or a double, the case being the `doubles` bits, and each calls the operation through the type those slots
- * make, `types` and `values` the parameter types and arguments chosen before it. No variadic list is forwarded to
- * another macro, which MSVC's traditional preprocessor would pass as a single argument.
- */
 #define SLOT_TYPE_0 uint64_t
 #define SLOT_TYPE_1 double
 #define SLOT_VALUE_0(index) call->words[index]
@@ -440,6 +544,12 @@ static void apply(const definition_view *view, const weivel_standard_described_o
 #define WORD_OF(index, values) (UNPACK values, SLOT_VALUE_0(index))
 #define DOUBLE_OF(index, values) (UNPACK values, SLOT_VALUE_1(index))
 #define AS_DOUBLE(index, doubles) ((doubles) | 1u << (index))
+/**
+ * CHOOSE_<n> expands to one `case` per way the n arguments from `index` on can each be a word or a double, the case
+ * being the `doubles` bits, each calling through the type its slots make after the `types` and `values` before it.
+ *
+ * @implNote No variadic list is forwarded to another macro, which MSVC's traditional preprocessor would pass whole.
+ */
 #define CHOOSE_0(index, doubles, types, values) CALL_SHAPE(doubles, types, values)
 #define CHOOSE_1(index, doubles, types, values)                                                \
     CHOOSE_0((index) + 1, doubles, WORD_AT(types), WORD_OF(index, values))              \
@@ -476,7 +586,7 @@ static weivel_status invoke(erased_function function, void *context, const prepa
         CALLS_OF(5)
         CALLS_OF(6)
     }
-    return WEIVEL_STATUS_OK;
+    return UNCALLED_STATUS;
 }
 
 SPISOR_CALLS_THROUGH_ERASED_TYPES
@@ -645,27 +755,22 @@ static void check_every_operation(const weivel_standard_description *description
     }
 }
 
-static int answers_a_status(const weivel_standard_description *description) {
-    for (size_t index = 0; index < description->operation_count; index++) {
-        if (description->operations[index].returns == WEIVEL_STANDARD_DESCRIBED_STATUS) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-void spisor_check_short_shapes(const weivel_standard_description *description, const void *definition,
-                               spisor_check_tally *tally) {
-    check_every_operation(description, definition, short_shapes_of, tally);
-    if (!answers_a_status(description)) {
-        fprintf(stderr, "%s: no operation answers a status, so nothing was checked\n", description->definition);
+void spisor_check_short_shapes(const spisor_described_definition *definition, spisor_check_tally *tally) {
+    size_t calls_before = tally->calls;
+    const char *name = definition->description->definition;
+    check_every_operation(definition->description, definition->definition, short_shapes_of, tally);
+    if (definition->has_no_shape && tally->calls != calls_before) {
+        fprintf(stderr, "%s: named as having no shape to shorten, yet %zu calls were made\n", name,
+                tally->calls - calls_before);
+        tally->failures++;
+    } else if (!definition->has_no_shape && tally->calls == calls_before) {
+        fprintf(stderr, "%s: no call was made, so nothing was checked\n", name);
         tally->failures++;
     }
 }
 
-void spisor_check_counted_answers(const weivel_standard_description *description, const void *definition,
-                                  spisor_check_tally *tally) {
-    check_every_operation(description, definition, counted_answers_of, tally);
+void spisor_check_counted_answers(const spisor_described_definition *definition, spisor_check_tally *tally) {
+    check_every_operation(definition->description, definition->definition, counted_answers_of, tally);
 }
 
 size_t spisor_check_described(const spisor_described_definition *definitions, size_t definition_count,
@@ -680,7 +785,7 @@ size_t spisor_check_described(const spisor_described_definition *definitions, si
             tally.failures++;
             continue;
         }
-        check(definitions[index].description, definitions[index].definition, &tally);
+        check(&definitions[index], &tally);
     }
     if (tally.calls == 0) {
         fprintf(stderr, "no operation of %zu definitions was called, so nothing was checked\n", definition_count);

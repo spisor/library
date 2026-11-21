@@ -42,6 +42,11 @@ typedef struct probe_options {
     uint32_t size;
 } probe_options;
 
+/** An input struct carrying no `size`, as an array element or a pointer input. */
+typedef struct probe_flags {
+    uint32_t flags;
+} probe_flags;
+
 typedef struct probe_list {
     uint32_t size;
     const char *const *names;
@@ -74,6 +79,13 @@ typedef struct probe_definition {
     weivel_status (*name)(void *context, const probe_argument *argument, const char **label, uint64_t *serial,
                           probe_refusal *refusal);
     weivel_status (*locate)(void *context, const probe_argument *argument, const char **place);
+    weivel_status (*find)(void *context, const char *key, const char *const *names, size_t name_count,
+                          const probe_argument *argument, const char **place);
+    weivel_status (*seek)(void *context, const uint8_t *bytes, size_t length, const weivel_standard_value *fields,
+                          const probe_argument *argument, const char **place);
+    weivel_status (*pick)(void *context, const probe_flags *items, size_t item_count, const probe_flags *options,
+                          const probe_argument *argument, const char **place);
+    weivel_status (*peek)(void *context, probe_handle *handle, const probe_argument *argument, const char **place);
     weivel_status (*crowd)(void *context, uint32_t first, uint32_t second, uint32_t third, uint32_t fourth,
                            uint32_t fifth, uint32_t sixth, probe_refusal *refusal);
     void (*forget)(void *context, probe_answer *answer, probe_answer *other);
@@ -88,7 +100,8 @@ typedef enum probe_behaviour {
     PROBE_FILLS_A_SHORT_ANSWER,
     PROBE_WRITES_AS_IT_REFUSES,
     PROBE_IGNORES_THE_HELD_COUNT,
-    PROBE_ACCEPTS_A_SHORT_ARGUMENT
+    PROBE_ACCEPTS_A_SHORT_ARGUMENT,
+    PROBE_CHECKS_ONLY_ITS_INPUTS
 } probe_behaviour;
 
 /** What the probe operations taking scalars or counted inputs were last passed, and how often they were called. */
@@ -245,6 +258,69 @@ static weivel_status probe_locate(void *context, const probe_argument *argument,
     return WEIVEL_STATUS_OK;
 }
 
+/** What the no-refusal probes taking inputs were last passed. */
+typedef struct probe_valid_inputs {
+    const char *key;
+    const char *first_name;
+    size_t name_count;
+    uint8_t first_byte;
+    size_t length;
+    uint32_t fields_kind;
+    size_t item_count;
+    int options_set;
+    size_t calls;
+} probe_valid_inputs;
+
+static probe_valid_inputs valid_seen;
+
+/**
+ * Answers MALFORMED for a short argument without writing `place`; checking only its inputs, it refuses one that is
+ * not a valid value and accepts a short argument.
+ */
+static weivel_status refuse_unless_shaped(int inputs_valid, const probe_argument *argument, const char **place) {
+    valid_seen.calls++;
+    if (behaviour == PROBE_CHECKS_ONLY_ITS_INPUTS) {
+        return inputs_valid ? WEIVEL_STATUS_OK : WEIVEL_STATUS_MALFORMED;
+    }
+    if (argument->size < offsetof(probe_argument, label) + sizeof argument->label || !inputs_valid) {
+        return WEIVEL_STATUS_MALFORMED;
+    }
+    *place = probe_label;
+    return WEIVEL_STATUS_OK;
+}
+
+static weivel_status probe_find(void *context, const char *key, const char *const *names, size_t name_count,
+                                const probe_argument *argument, const char **place) {
+    (void)context;
+    valid_seen.key = key;
+    valid_seen.first_name = names == NULL || name_count == 0 ? NULL : names[0];
+    valid_seen.name_count = name_count;
+    return refuse_unless_shaped(key != NULL && names != NULL && name_count == 1, argument, place);
+}
+
+static weivel_status probe_seek(void *context, const uint8_t *bytes, size_t length, const weivel_standard_value *fields,
+                                const probe_argument *argument, const char **place) {
+    (void)context;
+    valid_seen.first_byte = bytes == NULL || length == 0 ? 0 : bytes[0];
+    valid_seen.length = length;
+    valid_seen.fields_kind = fields == NULL ? WEIVEL_STANDARD_VALUE_NONE : fields->kind;
+    return refuse_unless_shaped(bytes != NULL && length == 1 && fields != NULL, argument, place);
+}
+
+static weivel_status probe_pick(void *context, const probe_flags *items, size_t item_count,
+                                const probe_flags *options, const probe_argument *argument, const char **place) {
+    (void)context;
+    valid_seen.item_count = item_count;
+    valid_seen.options_set = options != NULL;
+    return refuse_unless_shaped(items != NULL && item_count == 1 && options != NULL, argument, place);
+}
+
+static weivel_status probe_peek(void *context, probe_handle *handle, const probe_argument *argument,
+                                const char **place) {
+    (void)context;
+    return refuse_unless_shaped(handle != NULL, argument, place);
+}
+
 static weivel_status probe_crowd(void *context, uint32_t first, uint32_t second, uint32_t third, uint32_t fourth,
                                  uint32_t fifth, uint32_t sixth, probe_refusal *refusal) {
     (void)context;
@@ -297,7 +373,9 @@ static const probe_definition probe = {sizeof(probe_definition), NULL,
                                        probe_take_number, probe_configure,
                                        probe_measure, probe_store,
                                        probe_annotate, probe_name,
-                                       probe_locate, probe_crowd,
+                                       probe_locate, probe_find,
+                                       probe_seek, probe_pick,
+                                       probe_peek, probe_crowd,
                                        probe_forget,
                                        probe_release_answer, probe_release_nested,
                                        probe_release_handle, probe_release_refusal};
@@ -324,6 +402,9 @@ static const weivel_standard_described_member argument_members[] = {
 
 static const weivel_standard_described_member options_members[] = {
     MEMBER(probe_options, size, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL)};
+
+static const weivel_standard_described_member flags_members[] = {
+    MEMBER(probe_flags, flags, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL)};
 
 static const weivel_standard_described_member list_members[] = {
     MEMBER(probe_list, size, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL),
@@ -356,6 +437,23 @@ static const weivel_standard_described_type probe_types[] = {
     TYPE(probe_answer, answer_members, storage),
     TYPE(probe_argument, argument_members, label),
     TYPE(probe_options, options_members, size),
+    TYPE(probe_flags, flags_members, flags),
+    TYPE(probe_list, list_members, name_count),
+    TYPE(probe_nested_answer, nested_answer_members, storage),
+    TYPE(probe_definition, definition_members, release_refusal)};
+
+static const weivel_standard_described_member unsized_options_members[] = {
+    {.name = "flags", .offset = 0, .size = sizeof(uint32_t), .kind = WEIVEL_STANDARD_DESCRIBED_U32,
+     .element = WEIVEL_STANDARD_DESCRIBED_NONE, .type = NULL, .count = NULL, .release = NULL}};
+
+/** probe_types, with probe_options described as carrying no `size`, as a description losing it would. */
+static const weivel_standard_described_type unsized_options_types[] = {
+    TYPE(probe_refusal, refusal_members, storage),
+    TYPE(probe_answer, answer_members, storage),
+    TYPE(probe_argument, argument_members, label),
+    {.name = "probe_options", .size = sizeof(probe_options), .first_shape = sizeof(probe_options),
+     .members = unsized_options_members, .member_count = 1},
+    TYPE(probe_flags, flags_members, flags),
     TYPE(probe_list, list_members, name_count),
     TYPE(probe_nested_answer, nested_answer_members, storage),
     TYPE(probe_definition, definition_members, release_refusal)};
@@ -446,6 +544,36 @@ static const weivel_standard_described_parameter name_parameters[] = {
 static const weivel_standard_described_parameter locate_parameters[] = {
     CONTEXT_PARAMETER, ARGUMENT_PARAMETER, SLOT_PARAMETER("place", WEIVEL_STANDARD_DESCRIBED_TEXT)};
 
+static const weivel_standard_described_parameter find_parameters[] = {
+    CONTEXT_PARAMETER,
+    SCALAR_PARAMETER("key", WEIVEL_STANDARD_DESCRIBED_TEXT, NULL),
+    COUNTED_PARAMETER("names", WEIVEL_STANDARD_DESCRIBED_TEXTS, WEIVEL_STANDARD_DESCRIBED_NONE, NULL, "name_count"),
+    SCALAR_PARAMETER("name_count", WEIVEL_STANDARD_DESCRIBED_SIZE, NULL),
+    ARGUMENT_PARAMETER,
+    SLOT_PARAMETER("place", WEIVEL_STANDARD_DESCRIBED_TEXT)};
+
+static const weivel_standard_described_parameter seek_parameters[] = {
+    CONTEXT_PARAMETER,
+    COUNTED_PARAMETER("bytes", WEIVEL_STANDARD_DESCRIBED_BYTES, WEIVEL_STANDARD_DESCRIBED_NONE, NULL, "length"),
+    SCALAR_PARAMETER("length", WEIVEL_STANDARD_DESCRIBED_SIZE, NULL),
+    COUNTED_PARAMETER("fields", WEIVEL_STANDARD_DESCRIBED_POINTER, WEIVEL_STANDARD_DESCRIBED_VALUE, NULL, NULL),
+    ARGUMENT_PARAMETER,
+    SLOT_PARAMETER("place", WEIVEL_STANDARD_DESCRIBED_TEXT)};
+
+static const weivel_standard_described_parameter pick_parameters[] = {
+    CONTEXT_PARAMETER,
+    COUNTED_PARAMETER("items", WEIVEL_STANDARD_DESCRIBED_ARRAY, WEIVEL_STANDARD_DESCRIBED_STRUCT, "probe_flags",
+                      "item_count"),
+    SCALAR_PARAMETER("item_count", WEIVEL_STANDARD_DESCRIBED_SIZE, NULL),
+    COUNTED_PARAMETER("options", WEIVEL_STANDARD_DESCRIBED_POINTER, WEIVEL_STANDARD_DESCRIBED_STRUCT, "probe_flags",
+                      NULL),
+    ARGUMENT_PARAMETER,
+    SLOT_PARAMETER("place", WEIVEL_STANDARD_DESCRIBED_TEXT)};
+
+static const weivel_standard_described_parameter peek_parameters[] = {
+    CONTEXT_PARAMETER, HANDLE_PARAMETER(INPUT), ARGUMENT_PARAMETER,
+    SLOT_PARAMETER("place", WEIVEL_STANDARD_DESCRIBED_TEXT)};
+
 static const weivel_standard_described_parameter crowd_parameters[] = {
     CONTEXT_PARAMETER,
     SCALAR_PARAMETER("first", WEIVEL_STANDARD_DESCRIBED_U32, NULL),
@@ -514,6 +642,12 @@ static const weivel_standard_described_operation slot_answer_operations[] = {
 
 static const weivel_standard_described_operation unrefused_operations[] = {STATUS_OPERATION(locate)};
 
+static const weivel_standard_described_operation unrefused_input_operations[] = {
+    STATUS_OPERATION(find), STATUS_OPERATION(seek), STATUS_OPERATION(pick)};
+
+static const weivel_standard_described_operation unrefused_handle_operations[] = {
+    STATUS_OPERATION(peek), STATUS_OPERATION(locate), RELEASE_OPERATION(release_handle)};
+
 static const weivel_standard_described_operation stray_operations[] = {
     STATUS_OPERATION(fill), RELEASE_OPERATION(forget), RELEASE_OPERATION(release_answer),
     RELEASE_OPERATION(release_refusal)};
@@ -548,18 +682,24 @@ static int passes_the_standards_check(const weivel_standard_description *descrip
     return status == WEIVEL_STATUS_OK;
 }
 
-static spisor_check_tally run(const weivel_standard_description *description, spisor_described_check check,
-                              probe_behaviour chosen) {
+static spisor_check_tally run_named(const weivel_standard_description *description, int has_no_shape,
+                                    spisor_described_check check, probe_behaviour chosen) {
     spisor_check_tally tally = {0, 0};
+    spisor_described_definition definition = {description, &probe, has_no_shape};
     behaviour = chosen;
-    check(description, &probe, &tally);
+    check(&definition, &tally);
     behaviour = PROBE_KEEPS_THE_RULES;
     return tally;
 }
 
+static spisor_check_tally run(const weivel_standard_description *description, spisor_described_check check,
+                              probe_behaviour chosen) {
+    return run_named(description, 0, check, chosen);
+}
+
 static void a_definition_keeping_the_rules_passes_both_checks(void) {
     weivel_standard_description description = SCENARIO(plain_operations);
-    spisor_described_definition definition = {&description, &probe};
+    spisor_described_definition definition = {&description, &probe, 0};
     spisor_check_tally shapes = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
     spisor_check_tally counts = run(&description, spisor_check_counted_answers, PROBE_KEEPS_THE_RULES);
     CHECK(passes_the_standards_check(&description));
@@ -637,11 +777,55 @@ static void an_operation_taking_more_parameters_than_a_call_passes_is_a_failure(
 
 static void an_operation_taking_no_struct_but_its_refusal_is_read_and_not_called(void) {
     weivel_standard_description description = SCENARIO(unshaped_operations);
-    spisor_check_tally shapes = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    spisor_check_tally named = run_named(&description, 1, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    spisor_check_tally unnamed = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
     spisor_check_tally counts = run(&description, spisor_check_counted_answers, PROBE_KEEPS_THE_RULES);
     CHECK(passes_the_standards_check(&description));
-    CHECK(shapes.calls == 0 && shapes.failures == 0);
+    CHECK(named.calls == 0 && named.failures == 0);
+    CHECK(unnamed.calls == 0 && unnamed.failures == 1);
     CHECK(counts.calls == 0 && counts.failures == 0);
+}
+
+static void a_definition_named_shapeless_that_is_called_is_a_failure(void) {
+    weivel_standard_description description = SCENARIO(plain_operations);
+    spisor_check_tally named = run_named(&description, 1, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    CHECK(named.calls == 1 && named.failures == 1);
+}
+
+static void a_definition_whose_only_struct_loses_its_size_is_a_failure(void) {
+    weivel_standard_description description = SCENARIO(size_only_operations);
+    spisor_check_tally kept;
+    spisor_check_tally unsized;
+    kept = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    description.types = unsized_options_types;
+    unsized = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    CHECK(passes_the_standards_check(&description));
+    CHECK(kept.calls == 1 && kept.failures == 0);
+    CHECK(unsized.calls == 0 && unsized.failures == 1);
+}
+
+static void an_operation_taking_no_refusal_is_passed_valid_inputs(void) {
+    weivel_standard_description description = SCENARIO(unrefused_input_operations);
+    spisor_check_tally kept;
+    spisor_check_tally inputs_only;
+    valid_seen = (probe_valid_inputs){NULL, NULL, 0, 0, 0, WEIVEL_STANDARD_VALUE_NONE, 0, 0, 0};
+    kept = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    inputs_only = run(&description, spisor_check_short_shapes, PROBE_CHECKS_ONLY_ITS_INPUTS);
+    CHECK(passes_the_standards_check(&description));
+    CHECK(kept.calls == 3 && kept.failures == 0);
+    CHECK(inputs_only.calls == 3 && inputs_only.failures == 3);
+    CHECK(valid_seen.calls == 6 && valid_seen.key != NULL && strcmp(valid_seen.key, "x") == 0);
+    CHECK(valid_seen.first_name != NULL && strcmp(valid_seen.first_name, "x") == 0 && valid_seen.name_count == 1);
+    CHECK(valid_seen.first_byte == 'x' && valid_seen.length == 1);
+    CHECK(valid_seen.fields_kind == WEIVEL_STANDARD_VALUE_RECORD);
+    CHECK(valid_seen.item_count == 1 && valid_seen.options_set);
+}
+
+static void an_operation_taking_no_refusal_and_a_handle_is_a_failure(void) {
+    weivel_standard_description description = SCENARIO(unrefused_handle_operations);
+    spisor_check_tally tally = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    CHECK(passes_the_standards_check(&description));
+    CHECK(tally.calls == 1 && tally.failures == 1);
 }
 
 static void scalar_inputs_are_passed_their_defaults_by_value(void) {
@@ -699,9 +883,9 @@ static void an_operation_answering_no_status_that_is_no_release_is_a_failure(voi
 
 static void a_description_yielding_no_operation_fails_rather_than_passes(void) {
     weivel_standard_description description = described(plain_operations, 0);
-    spisor_described_definition definition = {&description, &probe};
+    spisor_described_definition definition = {&description, &probe, 0};
     spisor_check_tally tally = {0, 0};
-    spisor_check_short_shapes(&description, &probe, &tally);
+    spisor_check_short_shapes(&definition, &tally);
     CHECK(tally.calls == 0 && tally.failures == 1);
     CHECK(spisor_check_described(&definition, 1, spisor_check_counted_answers) == 1);
     CHECK(spisor_check_described(NULL, 0, spisor_check_short_shapes) == 1);
@@ -718,6 +902,10 @@ int main(void) {
     a_struct_whose_first_shape_is_its_size_alone_is_shortened();
     an_operation_taking_more_parameters_than_a_call_passes_is_a_failure();
     an_operation_taking_no_struct_but_its_refusal_is_read_and_not_called();
+    a_definition_named_shapeless_that_is_called_is_a_failure();
+    a_definition_whose_only_struct_loses_its_size_is_a_failure();
+    an_operation_taking_no_refusal_is_passed_valid_inputs();
+    an_operation_taking_no_refusal_and_a_handle_is_a_failure();
     scalar_inputs_are_passed_their_defaults_by_value();
     counted_inputs_are_passed_null_with_their_counts_zero();
     a_text_or_scalar_answer_written_while_refusing_fails();
