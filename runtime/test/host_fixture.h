@@ -5,6 +5,8 @@
 #include <weivel/scope.h>
 
 #include "directory_tree.h"
+#include "holders.h"
+#include "host_run.h"
 #include "runtime/standard.h"
 #include "updates_fixture.h"
 
@@ -99,6 +101,59 @@ static inline void start_host_world(const char *label) {
 
 static inline const weivel_standard_host *host_definition(void) {
     return runtime_standard_host_definition_of();
+}
+
+/** A start's answer: its status, its plan and its refusal, released with release_run. */
+typedef struct started_run {
+    weivel_status status;
+    weivel_standard_host_plan plan;
+    weivel_standard_service_refusal refusal;
+} started_run;
+
+static inline started_run start_with(const char *const *arguments, size_t count) {
+    const weivel_standard_host *host = host_definition();
+    started_run run;
+    memset(&run, 0, sizeof run);
+    run.plan.size = sizeof run.plan;
+    run.refusal.size = sizeof run.refusal;
+    run.status = host->start(host->context, arguments, count, &run.plan, &run.refusal);
+    return run;
+}
+
+static inline void release_run(started_run *run) {
+    const weivel_standard_host *host = host_definition();
+    host->release_plan(host->context, &run->plan);
+    host->release_refusal(host->context, &run->refusal);
+}
+
+/** Stops the run, requiring the stop to answer OK with `expected` as the exit code. */
+static inline void stop_expecting(uint32_t expected, const char *label) {
+    const weivel_standard_host *host = host_definition();
+    uint32_t exit_code = 999;
+    weivel_status status = host->stop(host->context, &exit_code, NULL);
+    if (status != WEIVEL_STATUS_OK || exit_code != expected) {
+        fprintf(stderr, "%s: expected a stop with exit code %u, got status %d and exit code %u\n", label,
+                (unsigned)expected, (int)status, (unsigned)exit_code);
+        check_failures++;
+    }
+}
+
+/** The path of the loader's `extension` file in the processes folder, as its holders and ready record are named. */
+static inline char *processes_file(const char *extension) {
+    char *problem = NULL;
+    char *path = runtime_holders_path(state, LOADER, extension, &problem);
+    spisor_memory_release(problem);
+    return path;
+}
+
+/** Makes this process the loader's one holder, so a prune finds it held. */
+static inline void hold_the_loader(void) {
+    char record[160];
+    char *path = processes_file(".json");
+    snprintf(record, sizeof record, "{\"pid\":null,\"aliveAt\":null,\"checkMilliseconds\":null,\"holders\":[%d]}\n",
+             (int)current_process_id());
+    write_file(path, record);
+    spisor_memory_release(path);
 }
 
 /** How many run records the loader has, which a start writes and its stop removes. */

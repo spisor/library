@@ -9,6 +9,7 @@
 #include "answer_storage.h"
 #include "definition_support.h"
 #include "host_run.h"
+#include "host_run_progress.h"
 #include "process_environment.h"
 #include "spisor/definition.h"
 #include "standard_refusal.h"
@@ -33,12 +34,18 @@ static spisor_status refuse_without_run(spisor_refusal *refusal, const char *ope
     return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, NO_RUN_FIX);
 }
 
-static int has_run(void) {
-    int running;
+/** Fails the run, when one is started, for a call it answers MALFORMED before reading the run. */
+static void fail_current_run(void) {
     runtime_mutex_lock(&run_lock);
-    running = current_run != NULL;
+    if (current_run != NULL) {
+        runtime_host_run_fail(current_run);
+    }
     runtime_mutex_unlock(&run_lock);
-    return running;
+}
+
+static spisor_status refuse_malformed_call(spisor_refusal *refusal, const char *detail, const char *fix) {
+    fail_current_run();
+    return refuse_malformed(refusal, detail, fix);
 }
 
 static spisor_status fill_libraries(void **storage, const cJSON *libraries, weivel_standard_host_plan *plan) {
@@ -174,36 +181,54 @@ static weivel_status start(void *context, const char *const *arguments, size_t a
 static weivel_status started(void *context, const weivel_standard_host_outcome *outcomes, size_t outcome_count,
                              weivel_standard_service_refusal *refusal) {
     spisor_refusal filled = SPISOR_INIT(spisor_refusal);
-    spisor_status status = SPISOR_OK;
+    spisor_status status;
     (void)context;
     if (!runtime_is_usable_service_refusal(refusal)) {
+        fail_current_run();
         return WEIVEL_STATUS_MALFORMED;
     }
     if (outcomes == NULL && outcome_count != 0) {
-        status = refuse_malformed(&filled, "host's started was called with no outcomes beside a count",
-                                  "pass one outcome per plugin of the plan, and NULL only for none");
-    } else if (!has_run()) {
-        status = refuse_without_run(&filled, "started");
+        status = refuse_malformed_call(&filled, "host's started was called with no outcomes beside a count",
+                                       "pass one outcome per plugin of the plan, and NULL only for none");
+        return runtime_answer_service(status, &filled, refusal);
     }
+    runtime_mutex_lock(&run_lock);
+    status = current_run == NULL ? refuse_without_run(&filled, "started")
+                                 : runtime_host_run_started(current_run, outcomes, outcome_count, &filled);
+    runtime_mutex_unlock(&run_lock);
     return runtime_answer_service(status, &filled, refusal);
+}
+
+static spisor_status tick_run(int64_t now, weivel_standard_host_next *next, spisor_refusal *refusal) {
+    runtime_host_next_tick answered = {0, 0};
+    spisor_status status;
+    runtime_mutex_lock(&run_lock);
+    status = current_run == NULL ? refuse_without_run(refusal, "tick")
+                                 : runtime_host_run_tick(current_run, now, &answered, refusal);
+    runtime_mutex_unlock(&run_lock);
+    if (status == SPISOR_OK) {
+        SPISOR_CLEAR_ANSWER(next, NEXT_SHAPE);
+        next->has_next = answered.has_next;
+        next->next = answered.next;
+        runtime_zero_beyond(next, sizeof *next);
+    }
+    return status;
 }
 
 static weivel_status tick(void *context, int64_t now, weivel_standard_host_next *next,
                           weivel_standard_service_refusal *refusal) {
     spisor_refusal filled = SPISOR_INIT(spisor_refusal);
-    spisor_status status = SPISOR_OK;
+    spisor_status status;
     (void)context;
-    (void)now;
     if (!runtime_is_usable_service_refusal(refusal)) {
+        fail_current_run();
         return WEIVEL_STATUS_MALFORMED;
     }
     if (!SPISOR_IS_EMPTY_ANSWER(next, NEXT_SHAPE)) {
+        fail_current_run();
         status = spisor_refuse_shape(&filled, "host's tick");
-    } else if (!has_run()) {
-        status = refuse_without_run(&filled, "tick");
     } else {
-        SPISOR_CLEAR_ANSWER(next, NEXT_SHAPE);
-        runtime_zero_beyond(next, sizeof *next);
+        status = tick_run(now, next, &filled);
     }
     return runtime_answer_service(status, &filled, refusal);
 }
@@ -211,17 +236,22 @@ static weivel_status tick(void *context, int64_t now, weivel_standard_host_next 
 static weivel_status finished(void *context, const weivel_standard_value *result, const char *failure,
                               weivel_standard_service_refusal *refusal) {
     spisor_refusal filled = SPISOR_INIT(spisor_refusal);
-    spisor_status status = SPISOR_OK;
+    spisor_status status;
     (void)context;
     if (!runtime_is_usable_service_refusal(refusal)) {
+        fail_current_run();
         return WEIVEL_STATUS_MALFORMED;
     }
     if ((result == NULL) == (failure == NULL)) {
-        status = refuse_malformed(&filled, "host's finished was called with both or neither of a result and a failure",
-                                  "pass the action's result, or why it threw, and NULL for the other");
-    } else if (!has_run()) {
-        status = refuse_without_run(&filled, "finished");
+        status = refuse_malformed_call(&filled,
+                                       "host's finished was called with both or neither of a result and a failure",
+                                       "pass the action's result, or why it threw, and NULL for the other");
+        return runtime_answer_service(status, &filled, refusal);
     }
+    runtime_mutex_lock(&run_lock);
+    status = current_run == NULL ? refuse_without_run(&filled, "finished")
+                                 : runtime_host_run_finished(current_run, failure, &filled);
+    runtime_mutex_unlock(&run_lock);
     return runtime_answer_service(status, &filled, refusal);
 }
 
@@ -244,8 +274,8 @@ static weivel_status stop(void *context, uint32_t *exit_code, weivel_standard_se
     if (run == NULL) {
         status = refuse_without_run(&filled, "stop");
     } else {
+        *exit_code = run->exit_code;
         runtime_host_run_end(run);
-        *exit_code = 0;
     }
     runtime_mutex_unlock(&run_lock);
     return runtime_answer_service(status, &filled, refusal);

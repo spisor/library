@@ -35,7 +35,7 @@ static cJSON *unwritable(const char *host_id) {
 
 static cJSON *stamp_again(const runtime_processes_record_request *request, double check, cJSON **refusal) {
     runtime_run_stamp stamped =
-        runtime_stamp_run(request->state, request->host_id, request->record, request->run, check);
+        runtime_stamp_run(request->state, request->host_id, request->record, request->run, check, request->now);
     if (stamped != RUNTIME_RUN_STAMPED) {
         *refusal = stamped == RUNTIME_RUN_NOT_A_RECORD ? not_a_record(request->record)
                    : stamped == RUNTIME_RUN_UNWRITABLE ? unwritable(request->host_id)

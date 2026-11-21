@@ -370,7 +370,7 @@ static spisor_status serve_record(const runtime_processes_record_argument *argum
     cJSON *operation_refusal = NULL;
     cJSON *run = run_of(argument);
     runtime_processes_record_request request = {argument->state, argument->host_id, run,
-                                                argument->check_milliseconds, argument->record};
+                                                argument->check_milliseconds, argument->record, 0};
     cJSON *answered = run == NULL ? NULL : runtime_processes_record_run(&request, &operation_refusal);
     spisor_status status = answered == NULL ? runtime_refuse_json(refusal, operation_refusal)
                                             : fill_record(answered, answer);

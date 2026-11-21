@@ -6,12 +6,31 @@
 
 #include "cJSON.h"
 
+/** The exit code of a run that failed: a plugin not activated, an action that threw or never ran, or a failed call. */
+#define RUNTIME_HOST_EXIT_FAILED 1u
+
+/** How far a run has come: planned by its start, running once its started answered OK, then ended. */
+typedef enum runtime_host_phase { RUNTIME_HOST_PLANNED, RUNTIME_HOST_RUNNING, RUNTIME_HOST_ENDED } runtime_host_phase;
+
+/**
+ * A SERVE run's timers: when its next turn (the run record's stamp and the holders' prune) and its next update check
+ * are due, both due before its first tick, and how many turns in a row have failed.
+ */
+typedef struct runtime_host_timers {
+    uint32_t ticked;
+    int64_t next_turn;
+    int64_t next_check;
+    uint32_t failed_turns;
+} runtime_host_timers;
+
 /**
  * One run of a loader's plugins as `weivel.host`'s start decided it, held until its stop: the `mode`, a
  * weivel_standard_host_mode; the loader's `host_id`; `started`, what hosts.start answered, whose plan names the run
  * record; `located`, cache.locate's answer over that plan's plugins, its problems the versions it could not run;
- * `libraries`, the plan's libraries as [{binary, declaration}]; and for an ACTION run `action`, {plugin, name,
- * arguments}, the plugin's manifest path, the action's id and the arguments ui.action merged, else NULL.
+ * `libraries`, the plan's libraries as [{binary, declaration}]; for an ACTION run `action`, {plugin, name,
+ * arguments}, the plugin's manifest path, the action's id and the arguments ui.action merged, else NULL; its `phase`, a
+ * runtime_host_phase; the `exit_code` its stop answers, 0 for a SERVE run and RUNTIME_HOST_EXIT_FAILED for an ACTION
+ * run until its action answered; and its `timers`.
  */
 typedef struct runtime_host_run {
     uint32_t mode;
@@ -20,6 +39,9 @@ typedef struct runtime_host_run {
     cJSON *located;
     cJSON *libraries;
     cJSON *action;
+    uint32_t phase;
+    uint32_t exit_code;
+    runtime_host_timers timers;
 } runtime_host_run;
 
 /**
@@ -34,8 +56,8 @@ typedef struct runtime_host_run {
  * @return the run, freed with runtime_host_run_end; NULL with `*refusal` set to {message, fix} for arguments that name
  * no run, a layer with no hinted version, a refused hosts.start, a located plugin with no entry, a plugin the plan does
  * not run, a manifest that cannot be read, an action ui.action refuses, or scopes that cannot begin, or with it NULL
- * when memory runs out. A run that is not answered leaves no run record of its own and no scopes begun, and a refused SERVE run publishes its refusal
- * to the loader's ready record once its places resolved.
+ * when memory runs out. A run that is not answered leaves no run record of its own and no scopes begun, and a refused
+ * SERVE run publishes its refusal to the loader's ready record once its places resolved.
  */
 runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t argument_count,
                                          const cJSON *environment, cJSON **refusal);

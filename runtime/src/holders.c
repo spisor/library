@@ -156,7 +156,10 @@ static spisor_status make_parent(const char *path) {
 
 spisor_status runtime_write_holders(const char *path, const runtime_holders_record *record) {
     if (isnan(record->pid) && record->count == 0) {
-        return runtime_remove_file_entry(path) == RUNTIME_ENTRY_DONE ? SPISOR_OK : SPISOR_REFUSED;
+        runtime_entry_outcome removed = runtime_remove_file_entry(path);
+        return removed == RUNTIME_ENTRY_DONE            ? SPISOR_OK
+               : removed == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                                                        : SPISOR_REFUSED;
     }
     spisor_status made = make_parent(path);
     if (made != SPISOR_OK) {

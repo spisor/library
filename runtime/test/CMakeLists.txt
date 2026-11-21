@@ -243,6 +243,17 @@ runtime_test(standard_host_test ${runtime_standard_host_test_objects})
 target_link_libraries(standard_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
 runtime_test_with_allocator(out_of_memory_host_test spisor_allocator_counting ${runtime_standard_host_test_objects})
 target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+runtime_test(host_progress_test ${runtime_standard_host_test_objects})
+target_link_libraries(host_progress_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+# Its blocking tick checks an https source on the loopback fixture through the catalog's request redirect, a test hook.
+set(runtime_host_tick_threads_test_objects ${runtime_standard_host_test_objects})
+list(TRANSFORM runtime_host_tick_threads_test_objects REPLACE "runtime_catalog_refresh>$"
+    "runtime_catalog_refresh_test_hooks>")
+runtime_test(host_tick_threads_test http_fixture.c ${runtime_host_tick_threads_test_objects})
+target_link_libraries(host_tick_threads_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+if(WIN32)
+    target_link_libraries(host_tick_threads_test PRIVATE Ws2_32)
+endif()
 foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
         install_ecosystem_test install_applications_test hosts_test)
     runtime_test(${name} ${runtime_install_test_objects})
