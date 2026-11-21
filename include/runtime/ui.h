@@ -41,12 +41,12 @@ typedef struct runtime_ui_navigation_argument {
 } runtime_ui_navigation_argument;
 
 /**
- * One navigation entry: the `plugin` it belongs to, its `kind`, a runtime_ui_kind, the `id` of its view, settings or
- * action, its `title`, NULL for none, and whether the user `pinned` it, 0 or 1. An element of an array, so it has no
- * size.
+ * One navigation entry: the `plugin` it belongs to, its `kind`, the `id` of its view, settings or action, its
+ * `title`, NULL for none, and whether the user `pinned` it, 0 or 1. An element of an array, so it has no size.
  */
 typedef struct runtime_ui_entry {
     const char *plugin;
+    /** A runtime_ui_kind. */
     uint32_t kind;
     const char *id;
     const char *title;
@@ -250,12 +250,13 @@ typedef struct runtime_ui_plugin_list_argument {
 } runtime_ui_plugin_list_argument;
 
 /**
- * One row of the host's Plugins screen, each fact the library decides a field: the plugin's `id`, its `state`, a
- * runtime_list_state, `unavailable` 1 for a row that cannot be used and `install` 1 for one that can be installed,
- * and the caller's `row` as it was first given, a record. An element of an array, so it has no size.
+ * One row of the host's Plugins screen, each fact the library decides a field: the plugin's `id`, its `state`,
+ * `unavailable` 1 for a row that cannot be used and `install` 1 for one that can be installed, and the caller's `row`
+ * as it was first given, a record. An element of an array, so it has no size.
  */
 typedef struct runtime_ui_plugin_row {
     const char *id;
+    /** A runtime_list_state. */
     uint32_t state;
     uint32_t unavailable;
     uint32_t install;
