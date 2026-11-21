@@ -7,16 +7,24 @@
  * added to a header is checked without a test changing, in any library whose definitions describe themselves.
  *
  * Each check calls an operation answering a status once per change it makes to otherwise empty parameters: every
- * size-prefixed struct its full `size` and zero beyond it, a handle or definition answer a NULL slot, a handle, text or
- * unsized struct input NULL, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names
- * what was changed, and leave every answer byte as it was.
+ * size-prefixed struct its full `size` and zero beyond it, a scalar, text, handle or definition answer a zeroed slot,
+ * a handle, text, texts, bytes, array, value or unsized struct input NULL with its count 0, a scalar input its
+ * default, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names what was
+ * changed, and leave every answer byte as it was; an operation taking no refusal must answer MALFORMED with every
+ * answer untouched, since it has no detail to name the change in.
+ *
+ * A scalar input's default is the first value its enum lists that is not 0, as the standard keeps 0 for none, or 0
+ * when the enum lists no other; any other scalar is passed 0, as a count of nothing, no flag or zero.
  *
  * So a provider checks shapes before required inputs, which is spisor's rule for every definition: first the refusal,
  * then the `size` and emptiness of each argument and answer, and only then a required input left NULL. A provider that
  * refuses the NULL input first answers a detail naming that input, and the check fails it.
  *
- * An operation taking a parameter no rule here reads, an answer or refusal that carries no `size`, or a refusal its
- * description names no release for, is a failure rather than unchecked; an input struct needs no `size`.
+ * An operation taking a parameter no rule here reads, more parameters than ARGUMENT_LIMIT in `described_checks.c`,
+ * an answer or refusal that carries no `size`, or a refusal its description names no release for, is a failure
+ * rather than unchecked; an input struct needs no `size`. An operation taking no size-prefixed struct but its refusal,
+ * as `weivel.paths`' operations and `weivel.log`'s `write` do, has no shape to shorten and no count to fill, so neither
+ * check calls it.
  */
 
 #include <stddef.h>
@@ -44,8 +52,8 @@ typedef void (*spisor_described_check)(const weivel_standard_description *descri
 
 /**
  * Calls every operation once per size-prefixed struct it takes, argument or answer, with that struct's `size` one
- * below its first shape, and requires MALFORMED naming a short shape. A description yielding no such call is a
- * failure, since it would check nothing.
+ * below its first shape, and requires MALFORMED naming a short shape. A description with no operation answering a
+ * status is a failure, since it would check nothing.
  */
 void spisor_check_short_shapes(const weivel_standard_description *description, const void *definition,
                                spisor_check_tally *tally);
