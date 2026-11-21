@@ -19,6 +19,7 @@
 #include "prepared_undo.h"
 #include "process_alive.h"
 #include "spisor/file.h"
+#include "atomic.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -47,14 +48,9 @@ struct runtime_holders_guard {
     spisor_prepared_path stale;
 };
 
-static volatile long token_number = 0;
-
 static unsigned long next_token_number(void) {
-#if defined(_WIN32)
-    return (unsigned long)InterlockedIncrement(&token_number);
-#else
-    return (unsigned long)__atomic_add_fetch(&token_number, 1, __ATOMIC_RELAXED);
-#endif
+    static volatile long token_number = 0;
+    return (unsigned long)runtime_atomic_increment(&token_number);
 }
 
 static void pause_milliseconds(long milliseconds) {

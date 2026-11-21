@@ -1,7 +1,7 @@
 spisor_bound_tests()
 
 foreach(name json_kind_test path_test file_test javascript_test json_write_test json_file_test lock_test
-    memory_error_test)
+    memory_error_test temporary_name_test)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE spisor_library spisor_allocator)
     spisor_strict_warnings(${name})
@@ -14,6 +14,10 @@ foreach(name json_kind_test path_test file_test javascript_test json_write_test 
 endforeach()
 
 target_include_directories(memory_error_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(temporary_name_test PRIVATE Threads::Threads)
+endif()
 
 add_test(NAME public_headers_are_ascii
     COMMAND ${CMAKE_COMMAND} -DDIRECTORY=${PROJECT_SOURCE_DIR}/include -P ${CMAKE_CURRENT_SOURCE_DIR}/ascii_check.cmake)

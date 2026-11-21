@@ -34,9 +34,9 @@ static weivel_status open_scope(void *context, const char *manifest_path, weivel
     status = runtime_plugin_scope_open(manifest_path, &opened, &filled);
     if (status == SPISOR_OK) {
         scope->config = &opened->config;
-        scope->secrets = NULL;
-        scope->paths = NULL;
-        scope->log = NULL;
+        scope->secrets = &opened->secrets;
+        scope->paths = &opened->paths;
+        scope->log = &opened->log;
         scope->storage = opened;
         runtime_zero_beyond(scope, sizeof *scope);
     }
@@ -48,7 +48,7 @@ static void release_scope(void *context, weivel_standard_scope *scope) {
     if (scope == NULL || !spisor_has_shape(scope->size, SCOPE_SHAPE)) {
         return;
     }
-    runtime_plugin_scope_free(scope->storage);
+    runtime_plugin_scope_release(scope->storage);
     SPISOR_CLEAR_ANSWER(scope, SCOPE_SHAPE);
 }
 

@@ -40,6 +40,8 @@
 #define current_process_id() getpid()
 #endif
 
+#include "atomic.h"
+
 #ifdef SPISOR_INSTALL_TEST_HOOKS
 #include "install_hooks.h"
 #endif
@@ -209,13 +211,8 @@ static int lay_out_in(const acquisition *runtime, char *directory, runtime_layou
 }
 
 static unsigned long next_acquisition_number(void) {
-#if defined(_WIN32)
-    static volatile LONG acquisitions = 0;
-    return (unsigned long)InterlockedIncrement(&acquisitions);
-#else
-    static unsigned long acquisitions = 0;
-    return __atomic_add_fetch(&acquisitions, 1, __ATOMIC_RELAXED);
-#endif
+    static volatile long acquisitions = 0;
+    return (unsigned long)runtime_atomic_increment(&acquisitions);
 }
 
 /**

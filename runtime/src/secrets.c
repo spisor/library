@@ -232,6 +232,28 @@ static spisor_status store_or_file(const runtime_secret_places *place, const cha
     return refuse_store("store", RUNTIME_SECRET_FAILED, refusal);
 }
 
+/** The secrets file's lock (runtime_lock_secret_file) in *guard, or the refusal of one that cannot be taken. */
+static spisor_status lock_secrets(const runtime_secret_places *place, spisor_lock **guard, spisor_refusal *refusal) {
+    char fix[2048];
+    spisor_status locked = runtime_lock_secret_file(place->secrets_file, guard);
+    if (locked != SPISOR_REFUSED) {
+        return locked;
+    }
+    snprintf(fix, sizeof fix, "check that the folder of %s can be written, then try again", place->secrets_file);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, "the secrets file could not be locked for writing", fix);
+}
+
+static spisor_status store_or_file_locked(const runtime_secret_places *place, const char *entry, const char *value,
+                                          runtime_secret_location *location, spisor_refusal *refusal) {
+    spisor_lock *guard;
+    spisor_status status = lock_secrets(place, &guard, refusal);
+    if (status == SPISOR_OK) {
+        status = store_or_file(place, entry, value, location, refusal);
+        spisor_unlock(guard);
+    }
+    return status;
+}
+
 static spisor_status refuse_over_cap(spisor_refusal *refusal) {
     char detail[160];
     snprintf(detail, sizeof detail, "the value is longer than the %u bytes a secret may hold",
@@ -285,6 +307,28 @@ static spisor_status clear_under(const runtime_secret_places *place, const char 
     return file == RUNTIME_SECRET_FILE_DONE ? SPISOR_OK : refuse_file(place->secrets_file, file, refusal);
 }
 
+static spisor_status delete_entry_locked(const runtime_secret_places *place, const char *entry,
+                                         spisor_refusal *refusal) {
+    spisor_lock *guard;
+    spisor_status status = lock_secrets(place, &guard, refusal);
+    if (status == SPISOR_OK) {
+        status = delete_entry(place, entry, refusal);
+        spisor_unlock(guard);
+    }
+    return status;
+}
+
+static spisor_status clear_under_locked(const runtime_secret_places *place, const char *prefix,
+                                        spisor_refusal *refusal) {
+    spisor_lock *guard;
+    spisor_status status = lock_secrets(place, &guard, refusal);
+    if (status == SPISOR_OK) {
+        status = clear_under(place, prefix, refusal);
+        spisor_unlock(guard);
+    }
+    return status;
+}
+
 int runtime_is_usable_secret_place(const runtime_secret_places *place) {
     return place != NULL && spisor_has_shape(place->size, SPISOR_SHAPE_THROUGH(runtime_secret_places, force_file_store)) &&
            place->secrets_file != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, place->secrets_file);
@@ -320,7 +364,8 @@ spisor_status runtime_set_secret(const runtime_secret_places *place, const char 
         status = spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
                                    "send value as the secret, a UTF-8 string");
     } else {
-        status = is_over_cap(value) ? refuse_over_cap(refusal) : store_or_file(place, entry, value, location, refusal);
+        status = is_over_cap(value) ? refuse_over_cap(refusal)
+                                    : store_or_file_locked(place, entry, value, location, refusal);
     }
     spisor_memory_release(entry);
     return status;
@@ -333,7 +378,7 @@ spisor_status runtime_delete_secret(const runtime_secret_places *place, const ch
     if (entry == NULL) {
         return status;
     }
-    status = delete_entry(place, entry, refusal);
+    status = delete_entry_locked(place, entry, refusal);
     spisor_memory_release(entry);
     return status;
 }
@@ -348,18 +393,25 @@ spisor_status runtime_clear_secrets(const runtime_secret_places *place, const ch
     if (prefix == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    status = clear_under(place, prefix, refusal);
+    status = clear_under_locked(place, prefix, refusal);
     spisor_memory_release(prefix);
     return status;
 }
 
 spisor_status runtime_reconcile_secrets(const runtime_secret_places *place, uint64_t *moved, spisor_refusal *refusal) {
     move_result result;
+    spisor_lock *guard;
+    spisor_status status;
     *moved = 0;
     if (place->force_file_store || !runtime_secret_store_available()) {
         return SPISOR_OK;
     }
+    status = lock_secrets(place, &guard, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
     result = move_file_secrets(place->secrets_file);
+    spisor_unlock(guard);
     if (result.file != RUNTIME_SECRET_FILE_DONE) {
         return refuse_file(place->secrets_file, result.file, refusal);
     }

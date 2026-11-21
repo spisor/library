@@ -12,6 +12,7 @@
 #include "../src/file_replacement.h"
 #include "../src/prepared_undo.h"
 #include "../src/wide_path.h"
+#include "../src/windows_file.h"
 #include "links.h"
 #include "temporary_entries.h"
 
@@ -403,6 +404,23 @@ static void a_long_path_holding_a_dot_segment_is_refused(void) {
 }
 #endif
 
+#if defined(_WIN32)
+/** A temporary file is created only where nothing stands, so a second writer naming it is refused, never truncating. */
+static void a_temporary_is_never_created_over_an_existing_file(void) {
+    int out_of_memory = 0;
+    const char *path = SPISOR_SCRATCH_PATH "/created-new.tmp";
+    FILE *file;
+    CHECK(write_fixture(path, "kept"));
+    file = spisor_windows_create_new(path, &out_of_memory);
+    CHECK(file == NULL && !out_of_memory);
+    if (file != NULL) {
+        fclose(file);
+    }
+    read_back_equals(path, "kept");
+    remove(path);
+}
+#endif
+
 int main(void) {
     a_directory_exists();
     a_missing_file_does_not();
@@ -427,6 +445,7 @@ int main(void) {
     sets_two_running_images_aside_in_turn_and_removes_both_once_they_exit();
     replaces_a_fresh_executable_held_for_a_moment_after_retrying();
     a_long_path_holding_a_dot_segment_is_refused();
+    a_temporary_is_never_created_over_an_existing_file();
 #endif
     return summary_with_links("file_test");
 }

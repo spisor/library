@@ -58,7 +58,10 @@ from a local build (`cmake -S . -B build && cmake --build build --config Release
 Every operation takes the home, the places and the plugin's facts in its argument and keeps no state
 between calls, so a settings file edited by hand is read afresh by the next call. The exceptions are
 `secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
-Service), and that store may prompt the user, and `weivel.scope`, which opens scopes in the host its start began.
+Service), and that store may prompt the user, and `weivel.scope`, which opens scopes in the host its start began
+and keeps that host's log writer. Every operation is safe from two threads at once: `secrets` serialises its rewrites
+of the secrets file under a lock file beside it, which keeps processes apart as well, and a replaced file's temporary
+name is unique to its process and call and created only where nothing stands.
 
 ### The definitions
 
@@ -132,9 +135,9 @@ off the include path.
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
 | `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
-| `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set` |
+| `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
-24 services, 97 operations.
+24 services, 104 operations.
 
 A `places` argument is what `places.resolve` answers.
 
@@ -152,10 +155,19 @@ typo refuses that plugin rather than every later read. The scope's `config` answ
 for that plugin alone, flattened: a record's members become dotted keys, a text, number or boolean is offered as
 the standard's kind, and a null, a list, a member whose name is empty or holds a dot, and a declared secret are not
 offered, so a get answers NONE for them; a set of a declared secret is refused, since only `weivel.secrets` reaches
-one. Its `secrets`, `paths` and `log` are NULL until runtime serves them. A scope keeps its own copy of the host and
-the manifest, so it outlives the host's end, and releasing it frees everything it holds. `scope_test` and
-`out_of_memory_scope_test` hold it, the second failing every allocation of the open, the release and each config
-operation.
+one. Its `secrets` are runtime's `secrets` under the plugin's id alone, in the host's secret places; a secret is
+UTF-8 text without a NUL byte, as every place runtime keeps one holds, and other bytes are refused. Its `paths`
+answer folders that are the plugin's alone, named by its id: `cache` its folder in the cache place, and `config` and
+`plugin` its own folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder in the
+application's plugin folder for a host with no portable layer; each is resolved once at open.
+Its `log` hands each entry, its fields appended as compact JSON, to one
+writer thread the started host owns, which appends it through runtime's `log`, so a write never waits on a file;
+the writer holds at most 1024 entries, a write beyond them is refused, and the host's end writes every entry handed
+over before it returns, after which a write is refused until the next begin. A TRACE entry is dropped, since
+runtime's log keeps no such level. A scope keeps its own copy of the host and the manifest, so it outlives the
+host's end, and releasing it frees everything it holds once the writer has written every entry it handed over.
+`scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the last failing every allocation of
+the open, the release and each operation; `scope_threads_test` calls a scope from two threads at once.
 
 A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and
 `ui.render` once a plan names none; `ui.plan` refuses a seventeenth round, so a screen whose bindings chain deeper

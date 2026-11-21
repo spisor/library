@@ -17,6 +17,7 @@
 #include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
+#include "atomic.h"
 #ifdef SPISOR_FETCH_TEST_HOOKS
 #include "fetch_hooks.h"
 #endif
@@ -56,13 +57,8 @@ void runtime_fetch_use_deadline(unsigned milliseconds) {
  * the process id: two fetches of one destination in one process never write into one partial file.
  */
 static unsigned long next_partial_number(void) {
-#if defined(_WIN32)
-    static volatile LONG partial_number = 0;
-    return (unsigned long)InterlockedIncrement(&partial_number);
-#else
-    static unsigned long partial_number = 0;
-    return __atomic_add_fetch(&partial_number, 1, __ATOMIC_RELAXED);
-#endif
+    static volatile long partial_number = 0;
+    return (unsigned long)runtime_atomic_increment(&partial_number);
 }
 
 typedef struct fetch_order {

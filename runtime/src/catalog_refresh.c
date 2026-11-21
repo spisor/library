@@ -22,6 +22,7 @@
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
+#include "atomic.h"
 #ifdef SPISOR_CATALOG_TEST_HOOKS
 #include "catalog_hooks.h"
 #endif
@@ -65,13 +66,8 @@ static char *requested_url(const char *url) {
 }
 
 static unsigned long next_download_number(void) {
-#if defined(_WIN32)
-    static volatile LONG download_number = 0;
-    return (unsigned long)InterlockedIncrement(&download_number);
-#else
-    static unsigned long download_number = 0;
-    return __atomic_add_fetch(&download_number, 1, __ATOMIC_RELAXED);
-#endif
+    static volatile long download_number = 0;
+    return (unsigned long)runtime_atomic_increment(&download_number);
 }
 
 /** Everything one check of one source works with. */

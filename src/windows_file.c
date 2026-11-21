@@ -30,7 +30,7 @@ static FILE *stream_of(HANDLE handle, int writing, int *out_of_memory) {
     return file;
 }
 
-FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory) {
+static FILE *open_with(const char *path, int writing, DWORD disposition, int *out_of_memory) {
     *out_of_memory = 0;
     if (!spisor_is_convertible_path(path)) {
         return NULL;
@@ -41,11 +41,19 @@ FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory) {
         return NULL;
     }
     HANDLE handle = CreateFileW(wide, writing ? GENERIC_WRITE : GENERIC_READ,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                                writing ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, disposition,
+                                FILE_ATTRIBUTE_NORMAL, NULL);
     *out_of_memory = handle == INVALID_HANDLE_VALUE && spisor_is_memory_windows_error(GetLastError());
     spisor_memory_release(wide);
     return handle == INVALID_HANDLE_VALUE ? NULL : stream_of(handle, writing, out_of_memory);
+}
+
+FILE *spisor_windows_open(const char *path, int writing, int *out_of_memory) {
+    return open_with(path, writing, writing ? CREATE_ALWAYS : OPEN_EXISTING, out_of_memory);
+}
+
+FILE *spisor_windows_create_new(const char *path, int *out_of_memory) {
+    return open_with(path, 1, CREATE_NEW, out_of_memory);
 }
 
 /** Whether destination can never be replaced by a rename, however long one waits: a directory or a read-only file. */
