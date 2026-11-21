@@ -5,8 +5,10 @@ The C conventions every spisor and forebay library shares, as one static CMake t
 
 - **Status and refusal** (`spisor/status.h`): `spisor_status` (OK, NONE, MALFORMED, REFUSED, OUT_OF_MEMORY)
   and the size-prefixed `spisor_refusal`, which every definition of a library built on this one answers, so no
-  public header of a library includes a weivel header.
-- **The value tree** (`spisor/value.h`): `spisor_value`, one typed tree (null, boolean, finite number, text,
+  public header of a library includes a weivel header. They restate weivel's `weivel_status` and
+  `weivel_standard_service_refusal`, and `restatement_test` holds every size, offset and number to weivel's.
+- **The value tree** (`spisor/value.h`): `spisor_value`, weivel's `weivel_standard_value` restated and held to it by
+  the same test, one typed tree (null, boolean, finite number, text,
   list, record) for data a library only stores or hands back and whose shape belongs to someone else, such as a
   setting's value; `spisor_value_check`, `spisor_value_build` and `spisor_value_release`. `spisor/json_value.h`
   converts between a tree and the JSON a file on disk holds.

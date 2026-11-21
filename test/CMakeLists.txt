@@ -33,6 +33,12 @@ foreach(name status_test value_test json_value_test file_memory_test)
 endforeach()
 target_compile_definitions(file_memory_test PRIVATE SPISOR_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
 
+add_executable(restatement_test restatement_test.c)
+target_include_directories(restatement_test PRIVATE ${PROJECT_SOURCE_DIR}/include
+    $<TARGET_PROPERTY:weivel_standard,INTERFACE_INCLUDE_DIRECTORIES>)
+spisor_strict_warnings(restatement_test)
+add_test(NAME restatement_test COMMAND restatement_test)
+
 add_executable(vector_reader_test vector_reader_test.c)
 target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting)
 spisor_strict_warnings(vector_reader_test)
