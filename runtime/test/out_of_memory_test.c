@@ -1284,6 +1284,58 @@ static spisor_status deploy_a_bundle(void) {
     return status;
 }
 
+#define OTHER_IDENTITY "{\"id\":\"github:9\",\"name\":\"greeter\"}"
+
+/** A bundle to deploy where another plugin, github:9, is already deployed under the same name. */
+static void another_plugin_deployed(void) {
+    char plugins[1300];
+    a_bundle_to_deploy();
+    under_base(plugins, sizeof plugins, "deep/plugins");
+    write_text(plugins, "greeter.json", "{\"importName\":\"greeter\"}");
+    write_text(plugins, "greeter_identity.json", OTHER_IDENTITY);
+}
+
+/** Whether the other plugin's identity is still there as it was. */
+static int kept_the_other_plugin(void) {
+    char path[1400];
+    size_t length = 0;
+    under_base(path, sizeof path, "deep/plugins/greeter_identity.json");
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    int kept = text != NULL && length == strlen(OTHER_IDENTITY) && memcmp(text, OTHER_IDENTITY, length) == 0;
+    spisor_memory_release(text);
+    return kept;
+}
+
+/**
+ * Deploys github:5 over github:9's plugin of the same name, which deploy refuses, answering OK for that refusal and
+ * WRONG_ANSWER for a deploy that went over it; the case checks the other plugin is kept once failures are off.
+ */
+static spisor_status deploy_over_another_plugin(void) {
+    const runtime_cache_definition *cache = runtime_cache_definition_of();
+    char bundle[1300];
+    char plugins[1300];
+    runtime_cache_deploy_argument argument = SPISOR_INIT(runtime_cache_deploy_argument);
+    runtime_cache_deploy_answer answer;
+    start_empty(&answer, sizeof answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    under_base(bundle, sizeof bundle, "bundle");
+    under_base(plugins, sizeof plugins, "deep/plugins");
+    argument.directory = bundle;
+    argument.plugin_directory = plugins;
+    argument.id = "github:5";
+    argument.name = "greeter";
+    spisor_status status = cache->deploy(cache->context, &argument, &answer, &refusal);
+    if (status == SPISOR_REFUSED) {
+        status = SPISOR_OK;
+    } else if (status == SPISOR_OK) {
+        status = WRONG_ANSWER;
+    }
+    status = empty_unless_answered(status, &answer, sizeof answer);
+    cache->release_deploy_answer(cache->context, &answer);
+    cache->release_refusal(cache->context, &refusal);
+    return status;
+}
+
 static void a_file_to_install(void) {
     write_text(place.base, "source.txt", "hello");
 }
@@ -1554,6 +1606,8 @@ static void every_cache_and_catalog_operation(void) {
     every_checked_failure("cache's locate", locate_a_plugin, NULL, NULL);
     every_checked_failure("cache's platform", name_the_platform, NULL, NULL);
     every_checked_failure("cache's deploy", deploy_a_bundle, a_bundle_to_deploy, deployed_nothing_and_made_no_folder);
+    every_checked_failure("cache's deploy over another plugin", deploy_over_another_plugin, another_plugin_deployed,
+                          kept_the_other_plugin);
     every_checked_failure("cache's install", install_a_version, a_file_to_install, installed_no_marker);
     every_checked_failure("cache's install of the wrong length", install_a_short_file, a_file_to_install,
                           stored_no_short_file);

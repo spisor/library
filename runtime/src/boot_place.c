@@ -87,9 +87,9 @@ cJSON *runtime_boot_place(const char *cache, cJSON **refusal) {
     }
     int out_of_memory = 0;
     char *stub = runtime_boot_stub_path(cache);
-    char *carried = stub == NULL || spisor_probe_file(stub) == SPISOR_FILE_PRESENT
-                        ? NULL
-                        : carried_stub(cache, &out_of_memory);
+    spisor_file_presence presence = stub == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(stub);
+    out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
+    char *carried = out_of_memory || presence == SPISOR_FILE_PRESENT ? NULL : carried_stub(cache, &out_of_memory);
     cJSON *answer = stub == NULL || out_of_memory ? NULL : placement(stub, carried != NULL);
     spisor_status copied = answer != NULL && carried != NULL ? copy_runnable(carried, stub) : SPISOR_OK;
     if (copied != SPISOR_OK) {
