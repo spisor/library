@@ -65,9 +65,11 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  *
  * `started`, `tick`, `finished` and `stop` refuse when no run is started. `started` takes one outcome per plugin of
  * the plan, in its order, each naming the manifest the plan named, and answers MALFORMED for any other, and REFUSED
- * for a second `started`. A plugin that was refused or failed refuses the run, naming the plugin and the outcome's
- * detail; otherwise a SERVE run publishes to the loader's ready record that it is ready, with an empty environment,
- * and a refused SERVE `started` publishes its refusal there instead.
+ * for a second `started`. A plugin that was refused or failed leaves the run running with the plugins that
+ * activated, as the archived host quarantined one: an ACTION run's program tells `finished` a failure when the
+ * action's own plugin was not activated. A SERVE run then publishes to the loader's ready record that it is ready,
+ * with an empty environment, unless a plugin whose manifest declares the `front-door` capability was not activated:
+ * then it publishes a refusal naming that front door, never an empty environment, as DECISIONS rules.
  *
  * `tick` is a SERVE run's alone, after its `started` answered OK, and REFUSED otherwise, since an ACTION run never
  * ticks. It acts only through its `now` and reads no clock: every `recordRunMilliseconds` of hosts' start's timers

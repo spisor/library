@@ -179,26 +179,70 @@ static void a_serve_run_started_publishes_that_it_is_ready(void) {
     finish_base();
 }
 
-static void a_plugin_not_activated_refuses_the_run_and_is_published(uint32_t plugin_state, const char *detail,
-                                                                     const char *expected, const char *label) {
-    weivel_standard_service_refusal refusal;
-    weivel_standard_host_outcome outcome;
+#define SECOND_MANIFEST "{\"id\": \"b\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}"
+#define FRONT_DOOR_MANIFEST                                                                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"capabilities\": [\"front-door\"]}"
+
+/** A loader whose settings enable plugins `a` and `b`, both installed, `a` with `a_manifest`. */
+static void start_two_plugin_world(const char *label, const char *a_manifest) {
+    cJSON *settings;
+    char *text;
+    start_host_world(label);
+    write_in(cache, "bundles/a/1.0.0/plugin.json", a_manifest);
+    install_plugin("b", SECOND_MANIFEST);
+    settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}}}");
+    text = cJSON_PrintUnformatted(settings);
+    write_in(application_home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+}
+
+/** Starts the two-plugin run the arguments name and tells it `a` and `b` ended as `a_state` and `b_state`. */
+static started_run started_with_states(const char *const *arguments, size_t count, uint32_t a_state,
+                                       uint32_t b_state, const char *detail) {
+    weivel_standard_host_outcome outcomes[2];
+    started_run run = start_with(arguments, count);
+    CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 2);
+    if (run.plan.plugin_count == 2) {
+        weivel_standard_host_outcome a = {run.plan.plugins[0].manifest, a_state, detail};
+        weivel_standard_host_outcome b = {run.plan.plugins[1].manifest, b_state, detail};
+        outcomes[0] = a;
+        outcomes[1] = b;
+        CHECK(tell_started(outcomes, 2, NULL) == WEIVEL_STATUS_OK);
+    }
+    return run;
+}
+
+static void a_plugin_not_activated_is_left_out_and_the_run_serves_on(uint32_t a_state, const char *detail,
+                                                                      const char *label) {
     started_run run;
     cJSON *record;
-    start_host_world(label);
-    run = start_one(serve_arguments, 1);
-    outcome = outcome_of(&run, plugin_state, detail);
-    CHECK(tell_started(&outcome, 1, &refusal) == WEIVEL_STATUS_REFUSED);
-    expect_detail(&refusal, expected, label);
+    start_two_plugin_world(label, PLUGIN_MANIFEST);
+    hold_the_loader();
+    run = started_with_states(serve_arguments, 1, a_state, WEIVEL_STANDARD_HOST_ACTIVATED, detail);
     record = ready_record();
-    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")), refusal.detail,
-               "the published refusal");
+    expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"), "{}", label);
+    CHECK(cJSON_GetObjectItemCaseSensitive(record, "refused") == NULL);
+    cJSON_Delete(record);
+    expect_tick(NOW, NOW + TURN, label);
+    release_run(&run);
+    stop_expecting(0, label);
+    finish_base();
+}
+
+static void a_front_door_not_activated_publishes_a_refusal_naming_it(uint32_t a_state, const char *detail,
+                                                                     const char *expected, const char *label) {
+    started_run run;
+    cJSON *record;
+    start_two_plugin_world(label, FRONT_DOOR_MANIFEST);
+    run = started_with_states(serve_arguments, 1, a_state, WEIVEL_STANDARD_HOST_ACTIVATED, detail);
+    record = ready_record();
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")), expected, label);
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "fix")), "fix or disable a", label);
     CHECK(cJSON_GetObjectItemCaseSensitive(record, "environment") == NULL);
     cJSON_Delete(record);
-    release_refusal(&refusal);
-    expect_tick_refused(NOW, "before started answered OK", "a tick after a refused started");
     release_run(&run);
-    stop_expecting(RUNTIME_HOST_EXIT_FAILED, label);
+    stop_expecting(0, label);
     finish_base();
 }
 
@@ -327,6 +371,18 @@ static void publish_plugin(const char *version) {
     write_catalog();
 }
 
+static void an_action_runs_on_when_another_plugin_was_not_activated(void) {
+    weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    started_run run;
+    start_two_plugin_world("action-beside-a-failed-plugin", PLUGIN_MANIFEST);
+    run = started_with_states(action_arguments, 5, WEIVEL_STANDARD_HOST_ACTIVATED, WEIVEL_STANDARD_HOST_FAILED,
+                              "it threw");
+    CHECK(tell_finished(&answered, NULL, NULL) == WEIVEL_STATUS_OK);
+    release_run(&run);
+    stop_expecting(0, "an action whose plugin activated beside one that failed");
+    finish_base();
+}
+
 static void a_tick_acts_on_each_timer_when_it_is_due(void) {
     started_run run = serving("timers");
     publish_plugin("1.1.0");
@@ -428,13 +484,16 @@ static void a_now_no_check_can_carry_fails_the_run(void) {
 int main(void) {
     spisor_json_use_library_allocator();
     a_serve_run_started_publishes_that_it_is_ready();
-    a_plugin_not_activated_refuses_the_run_and_is_published(WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
-                                                            "the plugin a of " LOADER
-                                                            " was refused: its scope was refused",
-                                                            "a refused plugin");
-    a_plugin_not_activated_refuses_the_run_and_is_published(WEIVEL_STANDARD_HOST_FAILED, NULL,
-                                                            "the plugin a of " LOADER " failed to activate",
-                                                            "a failed plugin");
+    a_plugin_not_activated_is_left_out_and_the_run_serves_on(WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
+                                                             "a refused plugin");
+    a_plugin_not_activated_is_left_out_and_the_run_serves_on(WEIVEL_STANDARD_HOST_FAILED, NULL, "a failed plugin");
+    a_front_door_not_activated_publishes_a_refusal_naming_it(
+        WEIVEL_STANDARD_HOST_REFUSED, "its scope was refused",
+        "the front door a is enabled but did not start: its scope was refused", "a refused front door");
+    a_front_door_not_activated_publishes_a_refusal_naming_it(
+        WEIVEL_STANDARD_HOST_FAILED, NULL, "the front door a is enabled but did not start: it is not running",
+        "a front door that failed with no detail");
+    an_action_runs_on_when_another_plugin_was_not_activated();
     outcomes_that_are_not_the_plans_are_malformed();
     a_second_started_is_refused_and_fails_the_run();
     an_action_answers_its_exit_code_as_it_ended();

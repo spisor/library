@@ -24,13 +24,14 @@ typedef struct runtime_host_next_tick {
 } runtime_host_next_tick;
 
 /**
- * Takes every plugin's outcome, one per plugin of the plan in its order. A SERVE run whose plugins were all activated
- * publishes to the loader's ready record that it is ready, with an empty environment.
+ * Takes every plugin's outcome, one per plugin of the plan in its order. A plugin that was refused or failed refuses
+ * that plugin alone, as the archived host quarantined it: the run carries on with the plugins that activated. A SERVE
+ * run then publishes to the loader's ready record that it is ready, with an empty environment, unless a plugin whose
+ * manifest declares the `front-door` capability was not activated: then it publishes a refusal naming that front door.
  *
  * @return OK; MALFORMED for outcomes other than one per plugin of the plan, a manifest that is not the plan's in its
- * place, or a state that is no weivel_standard_host_plugin_state; REFUSED when it is not the run's first started, when
- * a plugin was refused or failed, which a SERVE run also publishes to its ready record, or when the ready record could
- * not be written; OUT_OF_MEMORY.
+ * place, or a state that is no weivel_standard_host_plugin_state; REFUSED when it is not the run's first started, or
+ * when the ready record could not be written; OUT_OF_MEMORY.
  */
 spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_standard_host_outcome *outcomes,
                                        size_t outcome_count, spisor_refusal *refusal);

@@ -11,6 +11,7 @@
 #include "cache_refusal.h"
 #include "catalog_time.h"
 #include "definition_support.h"
+#include "node_json_file.h"
 #include "platform_key.h"
 #include "processes.h"
 #include "processes_ready.h"
@@ -25,7 +26,7 @@
 #define current_process_id() getpid()
 #endif
 
-#define PLUGIN_FIX "turn the plugin off in the loader's settings, or install it again, then start the loader again"
+#define FRONT_DOOR "front-door"
 #define UNHELD_FIX "hold the loader again to run it"
 #define ORDER_FIX "call started once after start, tick in a SERVE run after started answered OK, and finished once"
 
@@ -81,55 +82,99 @@ static int are_plan_outcomes(const runtime_host_run *run, const weivel_standard_
     return 1;
 }
 
-/** The first outcome that is not ACTIVATED, with the id of its plugin, or NULL when every plugin was activated. */
-static const weivel_standard_host_outcome *first_not_activated(const runtime_host_run *run,
-                                                               const weivel_standard_host_outcome *outcomes,
-                                                               const char **plugin_id) {
+/** Whether a manifest declares the front-door capability, the one a session host serves its application through. */
+static int declares_front_door(const cJSON *manifest) {
+    const cJSON *capability;
+    cJSON_ArrayForEach(capability, member(manifest, "capabilities")) {
+        if (cJSON_IsString(capability) && strcmp(capability->valuestring, FRONT_DOOR) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * The first plugin that was not activated and whose manifest declares the front door, its id in `*plugin_id`, or NULL
+ * for none; `*out_of_memory` set when memory ran out reading a manifest.
+ *
+ * @implNote Only a manifest that reads can be seen declaring the capability; a plugin whose manifest does not was
+ * refused like any other, as the archived host's was.
+ */
+static const weivel_standard_host_outcome *stopped_front_door(const runtime_host_run *run,
+                                                              const weivel_standard_host_outcome *outcomes,
+                                                              const char **plugin_id, int *out_of_memory) {
     const cJSON *plugin;
     size_t index = 0;
+    *out_of_memory = 0;
     cJSON_ArrayForEach(plugin, member(run->located, "located")) {
-        if (outcomes[index].state != WEIVEL_STANDARD_HOST_ACTIVATED) {
-            *plugin_id = text_of(plugin, "id");
-            return &outcomes[index];
+        const weivel_standard_host_outcome *outcome = &outcomes[index++];
+        cJSON *manifest = outcome->state == WEIVEL_STANDARD_HOST_ACTIVATED
+                              ? NULL
+                              : runtime_read_node_json(text_of(plugin, "manifest"), out_of_memory);
+        int front_door = declares_front_door(manifest);
+        cJSON_Delete(manifest);
+        if (*out_of_memory) {
+            return NULL;
         }
-        index++;
+        if (front_door) {
+            *plugin_id = text_of(plugin, "id");
+            return outcome;
+        }
     }
     return NULL;
 }
 
+/** Publishes to the loader's ready record that the SERVE run is ready with `environment`, or that it is `refused`. */
+static spisor_status publish(const runtime_host_run *run, const cJSON *environment, const char *refused,
+                             const char *fix, spisor_refusal *refusal) {
+    cJSON *json_refusal = NULL;
+    runtime_processes_publication publication = {state_of(run), run->host_id, (double)current_process_id(),
+                                                 environment, refused, fix};
+    return runtime_processes_ready(&publication, &json_refusal) ? SPISOR_OK
+                                                                : runtime_refuse_json(refusal, json_refusal);
+}
+
 /**
- * Refuses the run for the plugin that was not activated, and for a SERVE run publishes why to the loader's ready
- * record, so a launch waiting on it reads the cause rather than timing out.
- *
- * @implNote The publication is best effort, as a refused start's is: the run is refused either way.
+ * Publishes that the front door `plugin_id` did not start, as DECISIONS rules for an enabled front door that is
+ * quarantined or not running: a refusal naming it, never an empty environment, since silently bypassing the
+ * configured providers is the switch the user must not get.
  */
-static spisor_status refuse_plugin(const runtime_host_run *run, const weivel_standard_host_outcome *outcome,
-                                   const char *plugin_id, spisor_refusal *refusal) {
-    const char *how = outcome->state == WEIVEL_STANDARD_HOST_REFUSED ? " was refused" : " failed to activate";
+static spisor_status publish_stopped_front_door(const runtime_host_run *run,
+                                                const weivel_standard_host_outcome *outcome, const char *plugin_id,
+                                                spisor_refusal *refusal) {
     int has_detail = outcome->detail != NULL && outcome->detail[0] != '\0';
-    const char *parts[7] = {"the plugin ", plugin_id, " of ", run->host_id, how, has_detail ? ": " : "",
-                            has_detail ? outcome->detail : ""};
-    spisor_status status = refuse_joined(refusal, parts, 7, PLUGIN_FIX);
-    cJSON *published;
-    if (status == SPISOR_REFUSED && run->mode == WEIVEL_STANDARD_HOST_SERVE) {
-        published = runtime_refusal(refusal->detail, PLUGIN_FIX);
-        if (published != NULL) {
-            runtime_publish_ready_refusal(state_of(run), run->host_id, published);
-        }
-        cJSON_Delete(published);
-    }
+    const char *parts[4] = {"the front door ", plugin_id, " is enabled but did not start: ",
+                            has_detail ? outcome->detail : "it is not running"};
+    const char *fix_parts[2] = {"fix or disable ", plugin_id};
+    char *refused = runtime_cache_text(parts, 4);
+    char *fix = refused == NULL ? NULL : runtime_cache_text(fix_parts, 2);
+    spisor_status status = fix == NULL ? SPISOR_OUT_OF_MEMORY : publish(run, NULL, refused, fix, refusal);
+    spisor_memory_release(fix);
+    spisor_memory_release(refused);
     return status;
 }
 
-/** Publishes that the SERVE run is ready, with the empty environment a loader with no session service gives. */
-static spisor_status publish_ready(const runtime_host_run *run, spisor_refusal *refusal) {
-    cJSON *environment = cJSON_CreateObject();
-    cJSON *json_refusal = NULL;
-    runtime_processes_publication publication = {state_of(run), run->host_id, (double)current_process_id(),
-                                                 environment, NULL, NULL};
-    int published = environment != NULL && runtime_processes_ready(&publication, &json_refusal);
+/**
+ * Publishes a SERVE run's ready record: ready, with the empty environment a loader with no session service gives,
+ * unless its front door did not start.
+ */
+static spisor_status publish_serving(const runtime_host_run *run, const weivel_standard_host_outcome *outcomes,
+                                     spisor_refusal *refusal) {
+    const char *plugin_id = NULL;
+    int out_of_memory = 0;
+    const weivel_standard_host_outcome *front_door = stopped_front_door(run, outcomes, &plugin_id, &out_of_memory);
+    cJSON *environment;
+    spisor_status status;
+    if (out_of_memory) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (front_door != NULL) {
+        return publish_stopped_front_door(run, front_door, plugin_id, refusal);
+    }
+    environment = cJSON_CreateObject();
+    status = environment == NULL ? SPISOR_OUT_OF_MEMORY : publish(run, environment, NULL, NULL, refusal);
     cJSON_Delete(environment);
-    return published ? SPISOR_OK : runtime_refuse_json(refusal, json_refusal);
+    return status;
 }
 
 void runtime_host_run_fail(runtime_host_run *run) {
@@ -148,8 +193,6 @@ static spisor_status failed_unless_ok(runtime_host_run *run, spisor_status statu
 
 spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_standard_host_outcome *outcomes,
                                        size_t outcome_count, spisor_refusal *refusal) {
-    const weivel_standard_host_outcome *refused;
-    const char *plugin_id = NULL;
     spisor_status status;
     if (run->phase != RUNTIME_HOST_PLANNED) {
         return failed_unless_ok(run, refuse_out_of_order(refusal, "host's started was called a second time"));
@@ -160,11 +203,7 @@ spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_stand
                                   "pass each plugin's outcome, naming the manifest the plan named and its state");
         return failed_unless_ok(run, status);
     }
-    refused = first_not_activated(run, outcomes, &plugin_id);
-    if (refused != NULL) {
-        return failed_unless_ok(run, refuse_plugin(run, refused, plugin_id, refusal));
-    }
-    status = run->mode == WEIVEL_STANDARD_HOST_SERVE ? publish_ready(run, refusal) : SPISOR_OK;
+    status = run->mode == WEIVEL_STANDARD_HOST_SERVE ? publish_serving(run, outcomes, refusal) : SPISOR_OK;
     if (status == SPISOR_OK) {
         run->phase = RUNTIME_HOST_RUNNING;
     }

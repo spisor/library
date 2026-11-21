@@ -157,6 +157,8 @@ typedef struct progress_case {
     int held;
     /** What a clean run's stop answers. */
     uint32_t exit_code;
+    /** The manifest plugin `a` is installed with for the run, or NULL for PLUGIN_MANIFEST. */
+    const char *manifest;
 } progress_case;
 
 static void put_status(const char *call, weivel_status status) {
@@ -221,6 +223,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     char code[32];
     place_the_holders(each->held);
     remove_the_newer_plugin();
+    write_in(cache, "bundles/a/1.0.0/plugin.json", each->manifest == NULL ? PLUGIN_MANIFEST : each->manifest);
     start_empty(&plan, sizeof plan);
     *failed = 0;
     if (host->start(host->context, each->arguments, each->argument_count, &plan, NULL) != WEIVEL_STATUS_OK) {
@@ -298,10 +301,12 @@ int main(void) {
                                        {"an action start and its stop", action, 5, WEIVEL_STATUS_OK},
                                        {"an undeclared action's start", undeclared, 5, WEIVEL_STATUS_REFUSED}};
     static const progress_case progress_cases[] = {
-        {"a held serve run's started and tick", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0},
-        {"a serve run's tick no holder keeps", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0},
-        {"a serve run's refused plugin", serve, 1, WEIVEL_STANDARD_HOST_REFUSED, 1, RUNTIME_HOST_EXIT_FAILED},
-        {"an action run's started and finished", action, 5, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0}};
+        {"a held serve run's started and tick", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, NULL},
+        {"a serve run's tick no holder keeps", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL},
+        {"a serve run's refused plugin", serve, 1, WEIVEL_STANDARD_HOST_REFUSED, 0, 0, NULL},
+        {"a serve run's refused front door", serve, 1, WEIVEL_STANDARD_HOST_REFUSED, 0, 0,
+         "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"capabilities\": [\"front-door\"]}"},
+        {"an action run's started and finished", action, 5, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL}};
     spisor_json_use_library_allocator();
     start_host_world("out-of-memory-host");
     list_plugin("a", "1.1.0", "1.1.0");
