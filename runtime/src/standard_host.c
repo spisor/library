@@ -243,13 +243,13 @@ static weivel_status stop(void *context, uint32_t *exit_code, weivel_standard_se
     runtime_mutex_lock(&run_lock);
     run = current_run;
     current_run = NULL;
-    runtime_mutex_unlock(&run_lock);
     if (run == NULL) {
         status = refuse_without_run(&filled, "stop");
     } else {
         runtime_host_run_end(run);
         *exit_code = 0;
     }
+    runtime_mutex_unlock(&run_lock);
     return runtime_answer_service(status, &filled, refusal);
 }
 

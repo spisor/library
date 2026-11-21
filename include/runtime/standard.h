@@ -64,8 +64,9 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
  *
  * `started`, `tick` and `finished` refuse when no run is started and answer OK otherwise; `tick` answers no next
- * tick. `stop` ends the scopes, removes the run record the plan wrote, ends the run and answers exit code 0, and
- * refuses when no run is started.
+ * tick. `stop` ends the scopes, removes the run record the plan wrote, ends the run and answers exit code 0, all
+ * under the lock a start takes, so a start racing it begins its scopes only after they ended; it refuses when no run
+ * is started.
  */
 RUNTIME_DEFINITION_API const void *runtime_standard_host_definition_of(void);
 
