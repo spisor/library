@@ -5,13 +5,17 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
     src/sha256.c src/file_stream.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
     src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
-    src/log_definition.c src/registry_definition.c)
+    src/log_definition.c src/registry_definition.c src/catalog_time.c src/file_times.c src/thread.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(runtime_objects PUBLIC Threads::Threads)
+endif()
 
 add_library(runtime_objects_config_test_hooks OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects_config_test_hooks PUBLIC src)
@@ -127,7 +131,7 @@ spisor_strict_warnings(runtime_identity_also_at)
 set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_definition.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c src/catalog_listed_source.c
     src/catalog_resolve.c src/catalog_semver.c src/catalog_source.c src/catalog_state.c src/catalog_text.c
-    src/catalog_time.c src/catalog_url.c src/catalog_url_host.c)
+    src/catalog_url.c src/catalog_url_host.c)
 add_library(runtime_install_by_id OBJECT src/install_by_id.c)
 target_link_libraries(runtime_install_by_id PUBLIC runtime_objects)
 target_include_directories(runtime_install_by_id PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -176,7 +180,7 @@ set_target_properties(runtime_catalog_refresh_test_hooks PROPERTIES SPISOR_TEST_
 
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
     src/cache_deploy.c src/cache_definition.c src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
-    src/file_times.c src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
+    src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
     src/alive_stamp.c src/definition_host_target.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
 target_link_libraries(runtime_cache PUBLIC runtime_objects)
@@ -253,7 +257,8 @@ spisor_strict_warnings(runtime_install_test_hooks)
 set_target_properties(runtime_install_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 set(runtime_standard_sources src/standard_refusal.c src/scope_host.c src/scope_manifest.c src/plugin_scope.c
-    src/scope_config.c src/standard_scope.c)
+    src/scope_config.c src/scope_secrets.c src/scope_paths.c src/scope_log.c src/log_queue.c src/log_writer.c
+    src/standard_scope.c)
 add_library(runtime_standard OBJECT ${runtime_standard_sources})
 target_link_libraries(runtime_standard PUBLIC runtime_objects weivel_standard)
 target_include_directories(runtime_standard PRIVATE ${PROJECT_SOURCE_DIR}/src)

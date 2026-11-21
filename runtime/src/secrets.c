@@ -10,6 +10,13 @@
 #include "secret_backend.h"
 #include "secret_file.h"
 #include "spisor/path.h"
+#include "thread.h"
+
+/**
+ * Held across every operation that rewrites the secrets file, which reads the whole file, changes it and writes it
+ * back, so two threads writing at once would each write a file lacking the other's change.
+ */
+static runtime_mutex file_lock = RUNTIME_MUTEX_INIT;
 
 typedef struct move_result {
     runtime_secret_file_answer file;
@@ -232,6 +239,15 @@ static spisor_status store_or_file(const runtime_secret_places *place, const cha
     return refuse_store("store", RUNTIME_SECRET_FAILED, refusal);
 }
 
+static spisor_status store_or_file_locked(const runtime_secret_places *place, const char *entry, const char *value,
+                                          runtime_secret_location *location, spisor_refusal *refusal) {
+    spisor_status status;
+    runtime_mutex_lock(&file_lock);
+    status = store_or_file(place, entry, value, location, refusal);
+    runtime_mutex_unlock(&file_lock);
+    return status;
+}
+
 static spisor_status refuse_over_cap(spisor_refusal *refusal) {
     char detail[160];
     snprintf(detail, sizeof detail, "the value is longer than the %u bytes a secret may hold",
@@ -320,7 +336,8 @@ spisor_status runtime_set_secret(const runtime_secret_places *place, const char 
         status = spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no value",
                                    "send value as the secret, a UTF-8 string");
     } else {
-        status = is_over_cap(value) ? refuse_over_cap(refusal) : store_or_file(place, entry, value, location, refusal);
+        status = is_over_cap(value) ? refuse_over_cap(refusal)
+                                    : store_or_file_locked(place, entry, value, location, refusal);
     }
     spisor_memory_release(entry);
     return status;
@@ -333,7 +350,9 @@ spisor_status runtime_delete_secret(const runtime_secret_places *place, const ch
     if (entry == NULL) {
         return status;
     }
+    runtime_mutex_lock(&file_lock);
     status = delete_entry(place, entry, refusal);
+    runtime_mutex_unlock(&file_lock);
     spisor_memory_release(entry);
     return status;
 }
@@ -348,7 +367,9 @@ spisor_status runtime_clear_secrets(const runtime_secret_places *place, const ch
     if (prefix == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
+    runtime_mutex_lock(&file_lock);
     status = clear_under(place, prefix, refusal);
+    runtime_mutex_unlock(&file_lock);
     spisor_memory_release(prefix);
     return status;
 }
@@ -359,7 +380,9 @@ spisor_status runtime_reconcile_secrets(const runtime_secret_places *place, uint
     if (place->force_file_store || !runtime_secret_store_available()) {
         return SPISOR_OK;
     }
+    runtime_mutex_lock(&file_lock);
     result = move_file_secrets(place->secrets_file);
+    runtime_mutex_unlock(&file_lock);
     if (result.file != RUNTIME_SECRET_FILE_DONE) {
         return refuse_file(place->secrets_file, result.file, refusal);
     }

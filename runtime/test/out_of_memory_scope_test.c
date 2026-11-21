@@ -15,9 +15,9 @@
 
 /**
  * @file
- * Fails every allocation of `weivel.scope`'s open and release and of its config's operations, one at a time and then
- * from one on, and requires each to answer OUT_OF_MEMORY with its answer and refusal empty and nothing left allocated,
- * or to answer as a clean run does.
+ * Fails every allocation of `weivel.scope`'s open and release and of its config's, secrets', paths' and log's
+ * operations, one at a time and then from one on, and requires each to answer OUT_OF_MEMORY with its answer and
+ * refusal empty and nothing left allocated, or to answer as a clean run does.
  */
 
 #define WRONG_RUN ((spisor_status)99)
@@ -28,6 +28,10 @@ typedef struct operation_case {
     spisor_status (*run)(void);
     /** Whether the case runs on a scope opened before any allocation is failed. */
     int on_open_scope;
+    /** What a clean run answers. */
+    spisor_status expected;
+    /** What brings back what the run handed elsewhere, run once failures are off and before blocks are counted. */
+    void (*settle)(void);
 } operation_case;
 
 typedef struct clean_run {
@@ -84,9 +88,7 @@ static spisor_status run_open_refused(void) {
 static cJSON *names;
 
 static spisor_status run_begin(void) {
-    runtime_scope_host host = {NULL, NULL, NULL};
-    host.home = place.home;
-    host.portable = place.portable;
+    runtime_scope_host host = scope_host_of(&place);
     host.names = names;
     return runtime_scopes_begin(&host);
 }
@@ -130,6 +132,73 @@ static spisor_status run_set(void) {
     return answered(config->set(config->context, "theme", &value, &refusal), &refusal);
 }
 
+static spisor_status run_secret_get(void) {
+    const weivel_standard_secrets *secrets = opened.secrets;
+    weivel_standard_secret secret;
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    spisor_status status;
+    start_empty(&secret, sizeof secret);
+    status = (spisor_status)secrets->get(secrets->context, "api", &secret, &refusal);
+    if (status == SPISOR_OK && (secret.length != 5 || memcmp(secret.bytes, "value", 5) != 0)) {
+        status = WRONG_RUN;
+    }
+    status = empty_unless_answered(status, &secret, sizeof secret);
+    secrets->release_secret(secrets->context, &secret);
+    return answered((weivel_status)status, &refusal);
+}
+
+static spisor_status run_secret_set(void) {
+    const weivel_standard_secrets *secrets = opened.secrets;
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    return answered(secrets->set(secrets->context, "api", (const uint8_t *)"value", 5, &refusal), &refusal);
+}
+
+static spisor_status run_secret_remove(void) {
+    const weivel_standard_secrets *secrets = opened.secrets;
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    return answered(secrets->remove(secrets->context, "gone", &refusal), &refusal);
+}
+
+static spisor_status run_paths(void) {
+    const weivel_standard_paths *paths = opened.paths;
+    const char *cache = NULL;
+    const char *config = NULL;
+    const char *plugin = NULL;
+    weivel_status status = paths->cache(paths->context, &cache);
+    if (status == WEIVEL_STATUS_OK) {
+        status = paths->config(paths->context, &config);
+    }
+    if (status == WEIVEL_STATUS_OK) {
+        status = paths->plugin(paths->context, &plugin);
+    }
+    put(cache);
+    put(config);
+    put(plugin);
+    return (spisor_status)status;
+}
+
+static spisor_status run_log_write(void) {
+    const weivel_standard_log *log = opened.log;
+    weivel_standard_entry entry = {"count", 5, {WEIVEL_STANDARD_VALUE_NUMBER, 0, 2.0, NULL, 0, NULL, NULL, 0}};
+    weivel_standard_value fields = {WEIVEL_STANDARD_VALUE_RECORD, 0, 0.0, NULL, 0, NULL, &entry, 1};
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    return answered(log->write(log->context, WEIVEL_STANDARD_LOG_INFO, "written", &fields, &refusal), &refusal);
+}
+
+/** Waits for the log's writer to write what the run handed it, by ending the host and beginning it again. */
+static void settle_log(void) {
+    runtime_scope_host host = scope_host_of(&place);
+    host.names = names;
+    runtime_scopes_end();
+    CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
+}
+
+static void settle(const operation_case *each) {
+    if (each->settle != NULL) {
+        each->settle();
+    }
+}
+
 static void prepare(const operation_case *each) {
     const weivel_standard_scopes *scopes = scopes_definition();
     weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
@@ -151,6 +220,7 @@ static void run_clean(const operation_case *each, clean_run *clean) {
     clean->status = each->run();
     clean->allocations = spisor_memory_attempts();
     snprintf(clean->printed, sizeof clean->printed, "%s", printed);
+    settle(each);
     finish();
 }
 
@@ -167,6 +237,7 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
     status = each->run();
     *ran_whole = !spisor_memory_failed();
     spisor_memory_fail_at(0);
+    settle(each);
     kept = spisor_memory_live_blocks() == baseline;
     if (!kept) {
         fprintf(stderr, "%s: failing allocation %llu left %lld blocks live\n", each->label,
@@ -181,12 +252,12 @@ static int fail_once(const operation_case *each, const clean_run *clean, uint64_
     return kept;
 }
 
-static void every_failure_in_mode(const operation_case *each, spisor_status expected) {
+static void every_failure_in_mode(const operation_case *each) {
     clean_run clean;
     uint64_t attempt = 1;
     int ran_whole = 0;
     run_clean(each, &clean);
-    if (clean.status != expected) {
+    if (clean.status != each->expected) {
         fprintf(stderr, "%s: a clean run answered %d \"%s\"\n", each->label, (int)clean.status, clean.printed);
         check_failures++;
     }
@@ -201,12 +272,18 @@ static void every_failure_in_mode(const operation_case *each, spisor_status expe
 }
 
 int main(void) {
-    static const operation_case cases[] = {{"scopes' open and release", run_open_viewer, 0},
-                                           {"scopes' open refused", run_open_refused, 0},
-                                           {"the host's begin", run_begin, 0},
-                                           {"config's all", run_all, 1},
-                                           {"config's get", run_get, 1},
-                                           {"config's set", run_set, 1}};
+    static const operation_case cases[] = {
+        {"scopes' open and release", run_open_viewer, 0, SPISOR_OK, NULL},
+        {"scopes' open refused", run_open_refused, 0, SPISOR_REFUSED, NULL},
+        {"the host's begin", run_begin, 0, SPISOR_OK, NULL},
+        {"config's all", run_all, 1, SPISOR_OK, NULL},
+        {"config's get", run_get, 1, SPISOR_OK, NULL},
+        {"config's set", run_set, 1, SPISOR_OK, NULL},
+        {"secrets' set", run_secret_set, 1, SPISOR_OK, NULL},
+        {"secrets' get", run_secret_get, 1, SPISOR_OK, NULL},
+        {"secrets' remove", run_secret_remove, 1, SPISOR_OK, NULL},
+        {"paths' directories", run_paths, 1, SPISOR_OK, NULL},
+        {"log's write", run_log_write, 1, SPISOR_OK, settle_log}};
     spisor_json_use_library_allocator();
     start_scope_place(&place, "out-of-memory-scope", "fixture");
     names = cJSON_CreateObject();
@@ -214,9 +291,8 @@ int main(void) {
     refused_manifest = write_manifest(&place, "layer.json",
                                       "{\"id\": \"viewer\", \"settings\": {\"theme\": {\"layer\": \"aplication\"}}}");
     for (size_t index = 0; index < sizeof cases / sizeof cases[0]; index++) {
-        spisor_status expected = index == 1 ? SPISOR_REFUSED : SPISOR_OK;
         for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
-            every_failure_in_mode(&cases[index], expected);
+            every_failure_in_mode(&cases[index]);
         }
     }
     runtime_scopes_end();

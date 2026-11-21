@@ -18,7 +18,8 @@
 /**
  * @file
  * `weivel.scope` as runtime serves it: a plugin's scope opened from its manifest, refused at open for a manifest one
- * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds.
+ * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds. Its
+ * `secrets`, `paths` and `log` are scope_services_test's.
  */
 
 static scope_place place;
@@ -341,8 +342,8 @@ static void a_later_consumer_has_its_appended_bytes_zeroed(void) {
     for (size_t index = 0; index < sizeof later.appended; index++) {
         CHECK(later.appended[index] == 0);
     }
-    CHECK(later.scope.size == sizeof later && later.scope.secrets == NULL && later.scope.paths == NULL &&
-          later.scope.log == NULL);
+    CHECK(later.scope.size == sizeof later && later.scope.secrets != NULL && later.scope.paths != NULL &&
+          later.scope.log != NULL);
     release(&later.scope, NULL);
 }
 
@@ -397,7 +398,7 @@ static void a_later_consumer_has_its_answers_and_refusal_zeroed_beyond(void) {
 static void a_scope_outlives_the_host_and_release_empties_it(void) {
     weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
     weivel_standard_setting_answer answer = WEIVEL_INIT(weivel_standard_setting_answer);
-    runtime_scope_host host = {NULL, NULL, NULL};
+    runtime_scope_host host = scope_host_of(&place);
     const weivel_standard_config *config = open_viewer(&scope);
     if (config == NULL) {
         return;
@@ -406,27 +407,40 @@ static void a_scope_outlives_the_host_and_release_empties_it(void) {
     CHECK(get_into(config, "theme", &answer) == WEIVEL_STATUS_OK);
     config->release_answer(config->context, &answer);
     release(&scope, NULL);
-    CHECK(scope.size == sizeof scope && scope.config == NULL && scope.storage == NULL);
+    CHECK(scope.size == sizeof scope && scope.config == NULL && scope.secrets == NULL && scope.paths == NULL &&
+          scope.log == NULL && scope.storage == NULL);
     release(&scope, NULL);
-    host.home = place.home;
-    host.portable = place.portable;
     CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
 }
 
 static void the_host_refuses_to_start_somewhere_unusable(void) {
-    runtime_scope_host host = {"relative/home", NULL, NULL};
+    runtime_scope_host host = scope_host_of(&place);
     cJSON *names = cJSON_CreateArray();
-    CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
     CHECK(runtime_scopes_begin(NULL) == SPISOR_MALFORMED);
-    host.home = place.home;
+    host.home = "relative/home";
+    CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
+    host = scope_host_of(&place);
     host.names = names;
     CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
-    host.names = NULL;
+    host = scope_host_of(&place);
     host.portable = "relative";
+    CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
+    host = scope_host_of(&place);
+    host.cache = NULL;
+    CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
+    host.cache = "relative";
+    CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
+    host = scope_host_of(&place);
+    host.secrets_file = "secrets.json";
     CHECK(runtime_scopes_begin(&host) == SPISOR_MALFORMED);
     cJSON_Delete(names);
 }
 
+/**
+ * The described checks read config alone: they call an operation only through pointer parameters and a refusal last,
+ * so secrets' set (bytes and a length), paths' three (no refusal) and log's write (a level) are beyond them, and
+ * scope_services_test checks those shapes by hand.
+ */
 static void the_scope_config_passes_the_described_checks(void) {
     weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
     spisor_described_definition described = {NULL, NULL};
