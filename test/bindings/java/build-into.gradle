@@ -1,0 +1,11 @@
+// Builds weivel/java's jar into the directory -PspisorBindingsBuild names, so a checkout the bindings tests read is never
+// written to, and names the jar so the tests need not know its version.
+def into = new File(gradle.startParameter.projectProperties['spisorBindingsBuild'])
+
+gradle.beforeProject { project ->
+    project.layout.buildDirectory.set(into)
+}
+
+gradle.afterProject { project ->
+    project.tasks.named('jar') { archiveFileName = 'weivel-java.jar' }
+}

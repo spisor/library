@@ -121,3 +121,5 @@ foreach(scenario
             -DCHECK_SCRIPT=${PROJECT_SOURCE_DIR}/cmake/layouts_check.cmake
             -P ${CMAKE_CURRENT_SOURCE_DIR}/layouts/layouts_check_test.cmake)
 endforeach()
+
+add_subdirectory(bindings)
