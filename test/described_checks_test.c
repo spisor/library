@@ -232,14 +232,14 @@ static weivel_status probe_name(void *context, const probe_argument *argument, c
     return WEIVEL_STATUS_OK;
 }
 
+/** Accepting a short argument, it answers OK and leaves `place` alone, so only the status shows the fault. */
 static weivel_status probe_locate(void *context, const probe_argument *argument, const char **place) {
     (void)context;
     if (behaviour == PROBE_WRITES_AS_IT_REFUSES) {
         *place = probe_label;
     }
-    if (argument->size < offsetof(probe_argument, label) + sizeof argument->label &&
-        behaviour != PROBE_ACCEPTS_A_SHORT_ARGUMENT) {
-        return WEIVEL_STATUS_MALFORMED;
+    if (argument->size < offsetof(probe_argument, label) + sizeof argument->label) {
+        return behaviour == PROBE_ACCEPTS_A_SHORT_ARGUMENT ? WEIVEL_STATUS_OK : WEIVEL_STATUS_MALFORMED;
     }
     *place = probe_label;
     return WEIVEL_STATUS_OK;
