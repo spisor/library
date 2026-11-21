@@ -55,10 +55,4 @@ int runtime_thread_start(runtime_thread *thread, void (*run)(void *argument), vo
 /** Waits until the thread's run returned, and frees what the thread held. */
 void runtime_thread_join(runtime_thread *thread);
 
-/** Adds one to `counter` from any thread, answering the new count. */
-long runtime_atomic_increment(volatile long *counter);
-
-/** Takes one from `counter` from any thread, answering the new count. */
-long runtime_atomic_decrement(volatile long *counter);
-
 #endif

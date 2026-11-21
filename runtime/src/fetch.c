@@ -17,7 +17,7 @@
 #include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
-#include "thread.h"
+#include "atomic.h"
 #ifdef SPISOR_FETCH_TEST_HOOKS
 #include "fetch_hooks.h"
 #endif

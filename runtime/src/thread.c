@@ -40,14 +40,6 @@ void runtime_thread_join(runtime_thread *thread) {
     CloseHandle(thread->handle);
 }
 
-long runtime_atomic_increment(volatile long *counter) {
-    return InterlockedIncrement(counter);
-}
-
-long runtime_atomic_decrement(volatile long *counter) {
-    return InterlockedDecrement(counter);
-}
-
 #else
 
 void runtime_mutex_lock(runtime_mutex *mutex) {
@@ -80,14 +72,6 @@ int runtime_thread_start(runtime_thread *thread, void (*run)(void *argument), vo
 
 void runtime_thread_join(runtime_thread *thread) {
     pthread_join(thread->handle, NULL);
-}
-
-long runtime_atomic_increment(volatile long *counter) {
-    return __atomic_add_fetch(counter, 1, __ATOMIC_ACQ_REL);
-}
-
-long runtime_atomic_decrement(volatile long *counter) {
-    return __atomic_sub_fetch(counter, 1, __ATOMIC_ACQ_REL);
 }
 
 #endif

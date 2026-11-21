@@ -4,7 +4,7 @@
 
 #include "allocation.h"
 #include "spisor/definition.h"
-#include "thread.h"
+#include "atomic.h"
 
 runtime_config_request runtime_plugin_scope_request(const runtime_plugin_scope *scope) {
     runtime_config_request request = runtime_config_request_of(scope->host.home, scope->host.portable);

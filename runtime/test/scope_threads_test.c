@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "atomic.h"
 #include "check.h"
 #include "runtime/processes.h"
 #include "scope_fixture.h"

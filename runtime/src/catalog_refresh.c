@@ -22,7 +22,7 @@
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
-#include "thread.h"
+#include "atomic.h"
 #ifdef SPISOR_CATALOG_TEST_HOOKS
 #include "catalog_hooks.h"
 #endif

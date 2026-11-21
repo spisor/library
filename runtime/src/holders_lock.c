@@ -19,7 +19,7 @@
 #include "prepared_undo.h"
 #include "process_alive.h"
 #include "spisor/file.h"
-#include "thread.h"
+#include "atomic.h"
 
 #if defined(_WIN32)
 #include <process.h>

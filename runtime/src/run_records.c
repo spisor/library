@@ -18,7 +18,7 @@
 #include "spisor/javascript.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
-#include "thread.h"
+#include "atomic.h"
 
 #if defined(_WIN32)
 #include <process.h>

@@ -40,7 +40,7 @@
 #define current_process_id() getpid()
 #endif
 
-#include "thread.h"
+#include "atomic.h"
 
 #ifdef SPISOR_INSTALL_TEST_HOOKS
 #include "install_hooks.h"
