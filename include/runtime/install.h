@@ -213,14 +213,15 @@ typedef enum runtime_install_javascript_source {
 } runtime_install_javascript_source;
 
 /**
- * A JavaScript runtime: its name and version, its executable's path, whether it was fetched now, and a
- * runtime_install_javascript_source. Part of an answer, so it has no size.
+ * A JavaScript runtime: its name and version, its executable's path, whether it was fetched now, and where it came
+ * from. Part of an answer, so it has no size.
  */
 typedef struct runtime_install_javascript {
     const char *name;
     const char *version;
     const char *executable;
     uint32_t fetched;
+    /** A runtime_install_javascript_source. */
     uint32_t source;
 } runtime_install_javascript;
 
