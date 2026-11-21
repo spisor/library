@@ -11,7 +11,10 @@
  * @file
  * Fails every allocation of `weivel.host`'s start and of the stop after it, one at a time and then from one on, and
  * requires each start to answer OUT_OF_MEMORY with its plan and refusal empty, nothing left allocated, no run record
- * and no run left to stop, or to answer as a clean run does.
+ * and no run left to stop, or to answer as a clean run does. Then fails every allocation of the calls after a clean
+ * start, requiring each call to answer OUT_OF_MEMORY, failing its run, or to answer as a clean run does, and a tick
+ * that answers OK to have installed the newer plugin its update check finds, so a check that ran out of memory is
+ * never answered as one that ran.
  */
 
 #define PRINT_CAPACITY 4096
@@ -190,6 +193,13 @@ static void tell_progress(const progress_case *each, const weivel_standard_host_
     host->release_refusal(host->context, &later);
 }
 
+/** Removes the newer plugin version a tick's update check installs, so each run's check installs it again. */
+static void remove_the_newer_plugin(void) {
+    char *folder = joined(cache, "bundles/a/1.1.0");
+    CHECK(runtime_remove_tree(folder) == SPISOR_OK);
+    spisor_memory_release(folder);
+}
+
 static void place_the_holders(int held) {
     char *path = processes_file(".json");
     if (held) {
@@ -210,6 +220,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     uint32_t exit_code = 999;
     char code[32];
     place_the_holders(each->held);
+    remove_the_newer_plugin();
     start_empty(&plan, sizeof plan);
     *failed = 0;
     if (host->start(host->context, each->arguments, each->argument_count, &plan, NULL) != WEIVEL_STATUS_OK) {
@@ -220,6 +231,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     tell_progress(each, &plan, failed);
     *allocations = spisor_memory_attempts();
     spisor_memory_fail_at(0);
+    put(exists_in(cache, "bundles/a/1.1.0/.installed.json") ? "installed" : "not installed");
     host->release_plan(host->context, &plan);
     if (host->stop(host->context, &exit_code, NULL) != WEIVEL_STATUS_OK) {
         put("the stop failed");
@@ -292,6 +304,8 @@ int main(void) {
         {"an action run's started and finished", action, 5, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0}};
     spisor_json_use_library_allocator();
     start_host_world("out-of-memory-host");
+    list_plugin("a", "1.1.0", "1.1.0");
+    write_catalog();
     for (size_t index = 0; index < sizeof cases / sizeof cases[0]; index++) {
         for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
             every_failure_in_mode(&cases[index]);
