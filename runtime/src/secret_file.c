@@ -55,6 +55,25 @@ static spisor_status make_parent_directory(const char *path) {
     return made;
 }
 
+spisor_status runtime_lock_secret_file(const char *path, spisor_lock **guard) {
+    size_t length = strlen(path);
+    char *lock_path;
+    spisor_status status = make_parent_directory(path);
+    *guard = NULL;
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    lock_path = spisor_memory_allocate(length + sizeof ".lock");
+    if (lock_path == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    memcpy(lock_path, path, length);
+    memcpy(lock_path + length, ".lock", sizeof ".lock");
+    status = spisor_lock_file(lock_path, guard);
+    spisor_memory_release(lock_path);
+    return status;
+}
+
 static char *file_text(const cJSON *entries, size_t *length) {
     char *text = spisor_json_stringify_pretty(entries);
     if (text == NULL) {

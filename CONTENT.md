@@ -60,7 +60,8 @@ between calls, so a settings file edited by hand is read afresh by the next call
 `secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
 Service), and that store may prompt the user, and `weivel.scope`, which opens scopes in the host its start began
 and keeps that host's log writer. Every operation is safe from two threads at once: `secrets` serialises its rewrites
-of the secrets file within the process, and a replaced file's temporary name is unique to its process and call.
+of the secrets file under a lock file beside it, which keeps processes apart as well, and a replaced file's temporary
+name is unique to its process and call and created only where nothing stands.
 
 ### The definitions
 

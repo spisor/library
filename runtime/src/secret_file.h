@@ -2,6 +2,8 @@
 #define RUNTIME_SECRET_FILE_H
 
 #include "cJSON.h"
+#include "spisor/lock.h"
+#include "spisor/status.h"
 
 typedef enum runtime_secret_file_answer {
     RUNTIME_SECRET_FILE_DONE,
@@ -29,6 +31,14 @@ cJSON *runtime_read_secret_file(const char *path, runtime_secret_file_answer *an
  */
 runtime_secret_file_answer runtime_write_secret_file(const char *path, const cJSON *entries);
 
+/**
+ * Takes the lock every rewrite of the secrets file at path holds, `<path>.lock` beside it, creating its directory when
+ * absent, in *guard: SPISOR_REFUSED when it cannot be taken, SPISOR_OUT_OF_MEMORY when memory runs out.
+ *
+ * @implNote A lock file, as config's settings writes take, so two threads and two processes are kept apart alike:
+ * each rewrite reads the whole file, changes it and writes it back, and two at once lose one change.
+ */
+spisor_status runtime_lock_secret_file(const char *path, spisor_lock **guard);
 /** The value the file holds for entry, freed; NULL with DONE when it holds none. */
 char *runtime_get_file_secret(const char *path, const char *entry, runtime_secret_file_answer *answer);
 
