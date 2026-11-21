@@ -51,6 +51,9 @@ static void expect_refused(const started_run *run, weivel_status status, const c
         check_failures++;
     }
     CHECK(run->plan.storage == NULL && run->plan.mode == 0 && run->plan.plugin_count == 0);
+    if (run->status == WEIVEL_STATUS_OK) {
+        stop_run();
+    }
 }
 
 static void check_ends_with(const char *text, const char *suffix, const char *label) {
