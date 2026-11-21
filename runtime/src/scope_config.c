@@ -13,7 +13,8 @@
 
 /**
  * One walk over a merged settings record: counting when `settings` is NULL, else filling them, each key built in
- * `path` and copied with each text into `texts`.
+ * `path` and copied with each text into `texts`. The counting walk measures `longest_key` over every key it builds, a
+ * record's as well as a leaf's, since the filling walk writes each into `path`.
  */
 typedef struct flattening {
     weivel_standard_setting *settings;
@@ -24,7 +25,11 @@ typedef struct flattening {
     size_t longest_key;
 } flattening;
 
-/** Whether a member's name can be one segment of a dotted key, which a get could then read back. */
+/**
+ * Whether a member's name can be one segment of a dotted key. A name that is empty or holds a dot is skipped with
+ * everything below it, never offered under a key: runtime's config reads a key by its dot-separated segments, so a get
+ * could never read such a member back, and `all` offers only what `get` answers.
+ */
 static int is_key_segment(const char *name) {
     return name != NULL && name[0] != '\0' && strchr(name, '.') == NULL;
 }
@@ -66,7 +71,6 @@ static weivel_standard_setting_value value_of(const cJSON *value, char **texts) 
 static void add_leaf(flattening *walk, const cJSON *value, size_t key_length) {
     if (walk->settings == NULL) {
         walk->text_bytes += key_length + 1 + (cJSON_IsString(value) ? strlen(value->valuestring) + 1 : 0);
-        walk->longest_key = key_length > walk->longest_key ? key_length : walk->longest_key;
     } else {
         weivel_standard_setting *setting = &walk->settings[walk->count];
         setting->key = copy_into(&walk->texts, walk->path, key_length);
@@ -81,12 +85,15 @@ static void flatten(flattening *walk, const cJSON *record, size_t prefix_length)
     cJSON_ArrayForEach(member, record) {
         size_t name_length;
         size_t key_length;
-        if (!is_key_segment(member->string) || (!cJSON_IsObject(member) && kind_of(member) == WEIVEL_STANDARD_SETTING_NONE)) {
+        if (!is_key_segment(member->string) ||
+            (!cJSON_IsObject(member) && kind_of(member) == WEIVEL_STANDARD_SETTING_NONE)) {
             continue;
         }
         name_length = strlen(member->string);
         key_length = prefix_length + (prefix_length == 0 ? 0 : 1) + name_length;
-        if (walk->path != NULL) {
+        if (walk->path == NULL) {
+            walk->longest_key = key_length > walk->longest_key ? key_length : walk->longest_key;
+        } else {
             if (prefix_length != 0) {
                 walk->path[prefix_length] = '.';
             }

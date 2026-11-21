@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <weivel/descriptions.h>
@@ -298,6 +299,29 @@ static void set_refuses_what_services_h_does_not_allow(void) {
     release(&scope, NULL);
 }
 
+#define LONG_RECORD "a_record_whose_name_is_longer_than_every_key_a_leaf_of_this_plugin_has"
+#define LONG_HOLDER "a_record_whose_name_is_long_and_which_holds_one_short_leaf_below_it"
+
+/** Records whose dotted keys outgrow every leaf key, one holding no leaf at all, so the key buffer must fit each. */
+static void all_measures_every_key_it_builds(void) {
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    weivel_standard_settings settings = WEIVEL_INIT(weivel_standard_settings);
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    char *manifest = write_manifest(&place, "long-keys.json",
+                                    "{\"id\": \"long-keys\", \"config\": {\"defaults\": {\"a\": 1, \"" LONG_RECORD
+                                    "\": {\"x\": null}, \"" LONG_HOLDER "\": {\"y\": 2}}}}");
+    CHECK(open_from(manifest, &scope, &refusal) == WEIVEL_STATUS_OK);
+    if (scope.config != NULL) {
+        CHECK(scope.config->all(scope.config->context, &settings, NULL) == WEIVEL_STATUS_OK);
+        CHECK(settings.count == 2);
+        check_number(&settings, "a", 1);
+        check_number(&settings, LONG_HOLDER ".y", 2);
+        scope.config->release_settings(scope.config->context, &settings);
+    }
+    release(&scope, &refusal);
+    spisor_memory_release(manifest);
+}
+
 /** A consumer compiled against a later scope, whose struct is longer than runtime's. */
 typedef struct later_scope {
     weivel_standard_scope scope;
@@ -316,6 +340,54 @@ static void a_later_consumer_has_its_appended_bytes_zeroed(void) {
     CHECK(later.scope.size == sizeof later && later.scope.secrets == NULL && later.scope.paths == NULL &&
           later.scope.log == NULL);
     release(&later.scope, NULL);
+}
+
+#define LATER_BYTES 16
+
+/** A struct a later consumer hands in, `bytes` long with LATER_BYTES appended beyond runtime's, those set nonzero. */
+static void *later_struct(size_t bytes) {
+    unsigned char *later = calloc(1, bytes + LATER_BYTES);
+    uint32_t size = (uint32_t)(bytes + LATER_BYTES);
+    CHECK(later != NULL);
+    if (later != NULL) {
+        memcpy(later, &size, sizeof size);
+        memset(later + bytes, 0xab, LATER_BYTES);
+    }
+    return later;
+}
+
+static void check_appended_zero(const void *later, size_t bytes, const char *what) {
+    const unsigned char *appended = (const unsigned char *)later + bytes;
+    for (size_t index = 0; index < LATER_BYTES; index++) {
+        if (appended[index] != 0) {
+            fprintf(stderr, "%s kept byte %zu a later consumer appended\n", what, index);
+            check_failures++;
+            return;
+        }
+    }
+}
+
+static void a_later_consumer_has_its_answers_and_refusal_zeroed_beyond(void) {
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    weivel_standard_settings *settings = later_struct(sizeof *settings);
+    weivel_standard_setting_answer *answer = later_struct(sizeof *answer);
+    weivel_standard_service_refusal *refusal = later_struct(sizeof *refusal);
+    const weivel_standard_config *config = open_viewer(&scope);
+    if (config != NULL && settings != NULL && answer != NULL && refusal != NULL) {
+        CHECK(config->all(config->context, settings, NULL) == WEIVEL_STATUS_OK);
+        check_appended_zero(settings, sizeof *settings, "all's settings");
+        config->release_settings(config->context, settings);
+        CHECK(get_into(config, "theme", answer) == WEIVEL_STATUS_OK);
+        check_appended_zero(answer, sizeof *answer, "get's answer");
+        config->release_answer(config->context, answer);
+        CHECK(set_value(config, "token", text_value("s", 1), refusal) == WEIVEL_STATUS_REFUSED);
+        check_appended_zero(refusal, sizeof *refusal, "set's refusal");
+        config->release_refusal(config->context, refusal);
+    }
+    free(settings);
+    free(answer);
+    free(refusal);
+    release(&scope, NULL);
 }
 
 static void a_scope_outlives_the_host_and_release_empties_it(void) {
@@ -377,7 +449,9 @@ int main(void) {
     get_answers_what_is_offered_and_none_for_the_rest();
     set_refuses_what_services_h_does_not_allow();
     set_writes_the_declared_layer_and_get_reads_it_back();
+    all_measures_every_key_it_builds();
     a_later_consumer_has_its_appended_bytes_zeroed();
+    a_later_consumer_has_its_answers_and_refusal_zeroed_beyond();
     a_scope_outlives_the_host_and_release_empties_it();
     the_host_refuses_to_start_somewhere_unusable();
     the_scope_config_passes_the_described_checks();
