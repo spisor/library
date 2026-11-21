@@ -13,13 +13,15 @@ static void drain(void *drained) {
     }
 }
 
-spisor_status runtime_log_writer_start(void) {
+spisor_status runtime_log_writer_start(int *started) {
     spisor_status status = SPISOR_OK;
     runtime_mutex_lock(&writer_lock);
+    *started = !running;
     if (!running) {
         runtime_log_queue_open(&queue);
         running = runtime_thread_start(&writer, drain, &queue);
         if (!running) {
+            *started = 0;
             runtime_log_queue_close(&queue);
             status = SPISOR_REFUSED;
         }

@@ -11,8 +11,12 @@
  */
 #define RUNTIME_LOG_WRITER_CAPACITY 1024
 
-/** Starts the writer when it is not running. @return OK; REFUSED when its thread cannot start. */
-spisor_status runtime_log_writer_start(void);
+/**
+ * Starts the writer when it is not running, `*started` saying whether this call started it.
+ *
+ * @return OK; REFUSED when its thread cannot start.
+ */
+spisor_status runtime_log_writer_start(int *started);
 
 /** Stops the writer once it has delivered every entry handed to it; a writer not running is left as it is. */
 void runtime_log_writer_stop(void);

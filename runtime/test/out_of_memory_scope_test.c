@@ -271,6 +271,27 @@ static void every_failure_in_mode(const operation_case *each) {
            (unsigned long long)(attempt - 1));
 }
 
+/** A begin that runs out of memory after an end must not leave the writer running with no host started. */
+static void a_failed_begin_after_an_end_leaves_the_log_refusing(void) {
+    const weivel_standard_scopes *scopes = scopes_definition();
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    runtime_scope_host host = scope_host_of(&place);
+    CHECK(scopes->open(scopes->context, place.manifest, &scope, NULL) == WEIVEL_STATUS_OK);
+    runtime_scopes_end();
+    spisor_memory_fail_from(1);
+    CHECK(runtime_scopes_begin(&host) == SPISOR_OUT_OF_MEMORY);
+    spisor_memory_fail_at(0);
+    if (scope.log != NULL) {
+        CHECK(scope.log->write(scope.log->context, WEIVEL_STANDARD_LOG_INFO, "after", NULL, &refusal) ==
+              WEIVEL_STATUS_REFUSED);
+        CHECK(refusal.detail != NULL && strstr(refusal.detail, "no host is started") != NULL);
+        scope.log->release_refusal(scope.log->context, &refusal);
+    }
+    scopes->release_scope(scopes->context, &scope);
+    CHECK(runtime_scopes_begin(&host) == SPISOR_OK);
+}
+
 int main(void) {
     static const operation_case cases[] = {
         {"scopes' open and release", run_open_viewer, 0, SPISOR_OK, NULL},
@@ -295,6 +316,7 @@ int main(void) {
             every_failure_in_mode(&cases[index]);
         }
     }
+    a_failed_begin_after_an_end_leaves_the_log_refusing();
     runtime_scopes_end();
     cJSON_Delete(names);
     spisor_memory_release(refused_manifest);

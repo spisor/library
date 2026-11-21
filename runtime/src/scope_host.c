@@ -82,6 +82,7 @@ static spisor_status replace_started(const runtime_scope_host *host, const char 
 
 spisor_status runtime_scopes_begin(const runtime_scope_host *host) {
     char start[RUNTIME_CATALOG_TIME_SIZE];
+    int started_writer = 0;
     spisor_status status;
     if (!is_usable_host(host)) {
         return SPISOR_MALFORMED;
@@ -90,9 +91,12 @@ spisor_status runtime_scopes_begin(const runtime_scope_host *host) {
         return SPISOR_REFUSED;
     }
     runtime_mutex_lock(&lifecycle_lock);
-    status = runtime_log_writer_start();
+    status = runtime_log_writer_start(&started_writer);
     if (status == SPISOR_OK) {
         status = replace_started(host, start);
+    }
+    if (status != SPISOR_OK && started_writer) {
+        runtime_log_writer_stop();
     }
     runtime_mutex_unlock(&lifecycle_lock);
     return status;

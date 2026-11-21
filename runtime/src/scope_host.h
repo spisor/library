@@ -45,7 +45,8 @@ typedef struct runtime_owned_scope_host {
  *
  * @return OK; MALFORMED for a home, portable place, cache place or secrets file that is not absolute, or names that
  * are not a record, with nothing replaced; REFUSED when the clock reads outside the years 0 to 9999 or the log's
- * writer cannot start, with nothing replaced; OUT_OF_MEMORY, with nothing replaced.
+ * writer cannot start, with nothing replaced; OUT_OF_MEMORY, with nothing replaced. A begin that does not answer OK
+ * leaves the log's writer as it found it, so after an end a scope's log still refuses.
  */
 spisor_status runtime_scopes_begin(const runtime_scope_host *host);
 
