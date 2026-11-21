@@ -9,8 +9,14 @@
  * Each check calls an operation answering a status once per change it makes to otherwise empty parameters: every
  * size-prefixed struct its full `size` and zero beyond it, a handle or definition answer a NULL slot, a handle, text or
  * unsized struct input NULL, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names
- * what was changed, and leave every answer byte as it was. An operation taking a parameter no rule here reads, a struct that carries no
- * `size`, or a refusal its description names no release for, is a failure rather than unchecked.
+ * what was changed, and leave every answer byte as it was.
+ *
+ * So a provider checks shapes before required inputs, which is spisor's rule for every definition: first the refusal,
+ * then the `size` and emptiness of each argument and answer, and only then a required input left NULL. A provider that
+ * refuses the NULL input first answers a detail naming that input, and the check fails it.
+ *
+ * An operation taking a parameter no rule here reads, an answer or refusal that carries no `size`, or a refusal its
+ * description names no release for, is a failure rather than unchecked; an input struct needs no `size`.
  */
 
 #include <stddef.h>

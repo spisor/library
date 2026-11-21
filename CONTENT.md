@@ -77,10 +77,10 @@ empty.
 `runtime_short_shape_test` calls every operation of every definition `runtime/library.json` declares, through the
 built `runtime`, with each argument and answer one byte short of its first shape, and `runtime_empty_answer_test`
 calls every operation whose answer counts an array with that count nonzero beside NULL storage; each requires
-MALFORMED with every answer untouched, a text or unsized struct input passed NULL. Both walk the description each
-definition answers, its operations'
-parameters, its types' first shapes and the members its arrays name as their counts, so an operation added to a
-header is checked without a test changing. The walk is `testing/described_checks.c`, test-only, and
+MALFORMED with every answer untouched, a text or unsized struct input passed NULL, so every operation checks its
+argument and answer shapes before a required input. Both walk the description each definition answers, its
+operations' parameters, its types' first shapes and the members its arrays name as their counts, so an operation
+added to a header is checked without a test changing. The walk is `testing/described_checks.c`, test-only, and
 `spisor_add_described_checks(LIBRARY <target> DECLARATION <library.json>)` adds the same two tests, named after the
 library, for another one. `declaration_test` holds every header to one getter per definition struct it defines.
 
@@ -88,8 +88,8 @@ library, for another one. `declaration_test` holds every header to one getter pe
 function of kind `definition` and its `description`, `runtime_<service>_definition_description`, or for a standard
 service `weivel.<name>` the getter `runtime_standard_<name>_definition_of` and its `_description`, and a test keeps
 it complete against the headers; another loads the built `runtime` through `weivel/c`'s host, which checks every
-description with the standard's check, and calls `paths` and `weivel.scope` through the registered definitions. Each description is
-generated at build time by the weivel standard's `weivel_describe` from `spisor/status.h` and every
+description with the standard's check, and calls `paths` and `weivel.scope` through the registered definitions. Each
+description is generated at build time by the weivel standard's `weivel_describe` from `spisor/status.h` and every
 `include/runtime` header, so a language that cannot read a C header binds the definition from it, and
 `description_test` loads each one from the built `runtime` and runs the standard's own check on it. The symbol is
 the definition's name with `_description`, which is the name another library nesting a runtime definition looks
