@@ -6,6 +6,9 @@
 /** The catalog item an entry declaring runsOnJavascriptHost runs a loader's host on. */
 #define RUNTIME_JAVASCRIPT_HOST_ID "javascript-host"
 
+/** The library id runtime itself is installed and hinted under. */
+#define RUNTIME_LIBRARY_ID "runtime"
+
 /**
  * Writes the entry the loader's application declares, every directory, file and settings member through
  * changes.apply under the loader's id, so removing the loader reverses all of it. Answers {written: true,

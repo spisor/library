@@ -256,6 +256,17 @@
       ]
     },
     {
+      "id": "weivel.host",
+      "description": "runtime_standard_host_definition_description",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_standard_host_definition_of",
+          "kind": "definition"
+        }
+      ]
+    },
+    {
       "id": "weivel.scope",
       "description": "runtime_standard_scope_definition_description",
       "functions": [

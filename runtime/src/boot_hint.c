@@ -15,7 +15,6 @@
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 
-#define LIBRARY_DECLARATION "library.json"
 #define WINDOWS_PLATFORM_PREFIX "win32-"
 #define DARWIN_PLATFORM_PREFIX "darwin-"
 #define WINDOWS_BINARY_SUFFIX ".dll"
@@ -182,12 +181,13 @@ static int search_binaries(const char *directory, const char *suffix, binary_sea
     return searched;
 }
 
+/** 1 when directory holds a library declaration, 0 when it holds none, and -1 when memory runs out. */
 static int is_declared_library(const char *directory) {
-    const char *segments[2] = {directory, LIBRARY_DECLARATION};
+    const char *segments[2] = {directory, RUNTIME_LIBRARY_DECLARATION};
     char *declaration = runtime_cache_joined(segments, 2);
-    int declared = declaration != NULL && spisor_probe_file(declaration) == SPISOR_FILE_PRESENT;
+    spisor_file_presence presence = declaration == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(declaration);
     spisor_memory_release(declaration);
-    return declared;
+    return presence == SPISOR_FILE_OUT_OF_MEMORY ? -1 : presence == SPISOR_FILE_PRESENT;
 }
 
 /**
@@ -201,7 +201,7 @@ static int add_binary(cJSON *entry, const char *directory, const char *platform,
     if (searched && search.count != 1) {
         const char *parts[5] = {"the library folder ", directory,
                                 search.count == 0 ? " holds no " : " holds more than one ", suffix,
-                                " file beside its " LIBRARY_DECLARATION};
+                                " file beside its " RUNTIME_LIBRARY_DECLARATION};
         *problem = runtime_cache_text(parts, 5);
     }
     const char *segments[2] = {directory, search.first_name};
@@ -216,9 +216,10 @@ static cJSON *library_entry(const char *cache, const char *id, const char *versi
                             char **problem) {
     char *directory = library_directory(cache, id, version, platform, problem);
     cJSON *entry = directory == NULL ? NULL : cJSON_CreateObject();
-    int built = entry != NULL && cJSON_AddStringToObject(entry, "version", version) != NULL &&
+    int declared = entry == NULL ? -1 : is_declared_library(directory);
+    int built = declared >= 0 && cJSON_AddStringToObject(entry, "version", version) != NULL &&
                 cJSON_AddStringToObject(entry, "directory", directory) != NULL &&
-                (!is_declared_library(directory) || add_binary(entry, directory, platform, problem));
+                (declared == 0 || add_binary(entry, directory, platform, problem));
     if (!built) {
         cJSON_Delete(entry);
         entry = NULL;

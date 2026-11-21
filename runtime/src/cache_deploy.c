@@ -263,8 +263,11 @@ static uint8_t *identity_bytes(deployment *plan, size_t *length) {
     return (uint8_t *)text;
 }
 
-static int exists_at(const deployment *plan, destination_index index) {
-    return spisor_probe_file(plan->destinations[index]) == SPISOR_FILE_PRESENT;
+/** Whether the destination holds a file, noting memory running out in the plan rather than reading it as none. */
+static int exists_at(deployment *plan, destination_index index) {
+    spisor_file_presence presence = spisor_probe_file(plan->destinations[index]);
+    plan->out_of_memory = plan->out_of_memory || presence == SPISOR_FILE_OUT_OF_MEMORY;
+    return presence == SPISOR_FILE_PRESENT;
 }
 
 static char *recorded_id(deployment *plan) {
@@ -284,6 +287,9 @@ static char *recorded_id(deployment *plan) {
 static int is_not_another_plugin(deployment *plan, cJSON **refusal) {
     int has_code = exists_at(plan, MANIFEST_DESTINATION) || exists_at(plan, ENTRY_DESTINATION);
     int has_identity = exists_at(plan, IDENTITY_DESTINATION);
+    if (plan->out_of_memory) {
+        return 0;
+    }
     if (!has_code && !has_identity) {
         return 1;
     }

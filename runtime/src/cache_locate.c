@@ -73,9 +73,10 @@ static int add_other_version(cJSON *problems, const location *place, const char 
 static char *entry_of(const char *directory, const cJSON *manifest, int *failed) {
     const char *entry = text_of(manifest, "entry");
     char *path = entry == NULL ? NULL : runtime_cache_resolve(directory, &entry, 1);
-    *failed = entry != NULL && path == NULL;
-    if (path != NULL && (!runtime_cache_is_strictly_inside(directory, path) ||
-        spisor_probe_file(path) != SPISOR_FILE_PRESENT)) {
+    int inside = path != NULL && runtime_cache_is_strictly_inside(directory, path);
+    spisor_file_presence presence = inside ? spisor_probe_file(path) : SPISOR_FILE_MISSING;
+    *failed = (entry != NULL && path == NULL) || presence == SPISOR_FILE_OUT_OF_MEMORY;
+    if (path != NULL && presence != SPISOR_FILE_PRESENT) {
         spisor_memory_release(path);
         path = NULL;
     }

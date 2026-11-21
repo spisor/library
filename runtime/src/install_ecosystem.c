@@ -22,7 +22,6 @@
 #include "platform_key.h"
 #include "plugin_choices.h"
 
-#define RUNTIME_LIBRARY_ID "runtime"
 #define KOFFI_LIBRARY_ID "koffi"
 #define FOREBAY_LIBRARY_ID "forebay-library"
 #define CATALOG_FIX "check the catalog path or url, then install again"

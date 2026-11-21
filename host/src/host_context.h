@@ -24,9 +24,6 @@ int host_open_context(host_context *context, cJSON **refusal);
 
 void host_close_context(host_context *context);
 
-/** This process's environment as an object of strings, every name once; NULL when memory runs out. */
-cJSON *host_process_environment(void);
-
 /** A new argument {places: {portable, state, cache}} for context; NULL when memory runs out. */
 cJSON *host_places_argument(const host_context *context);
 

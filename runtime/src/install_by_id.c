@@ -240,8 +240,9 @@ static char *record_path(const install_request *request) {
  */
 static int read_recorded_primary(install_request *request, cJSON **refusal) {
     char *path = record_path(request);
-    int out_of_memory = path == NULL;
-    int present = path != NULL && spisor_probe_file(path) == SPISOR_FILE_PRESENT;
+    spisor_file_presence presence = path == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(path);
+    int out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
+    int present = presence == SPISOR_FILE_PRESENT;
     cJSON *record = present ? runtime_read_node_json(path, &out_of_memory) : NULL;
     const char *primary = text_of(record, "primary");
     if (primary != NULL) {
