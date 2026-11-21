@@ -20,6 +20,16 @@
       "id": "github:1457141747",
       "importName": "c",
       "commit": "0d0ef67e66de32b40ef9c7851dcd8652e93af808"
+    },
+    {
+      "id": "github:1427561829",
+      "importName": "typescript",
+      "commit": "3f5ce180fb1b16b4026546224eedb115274232cd"
+    },
+    {
+      "id": "github:1350572676",
+      "importName": "java",
+      "commit": "610747bbf41bbcbf15f2d0f1e02f817e54383fde"
     }
   ]
 }
