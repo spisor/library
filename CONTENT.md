@@ -128,11 +128,16 @@ off the include path.
 | `loader` | `include/runtime/loader.h` | `check`, `home`, `installed` |
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
-| `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list` |
+| `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
 
-23 services, 92 operations.
+23 services, 93 operations.
 
 A `places` argument is what `places.resolve` answers.
+
+A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and
+`ui.render` once a plan names none; `ui.plan` refuses a seventeenth round, so a screen whose bindings chain deeper
+than 16 is never rendered. `ui.action` answers the call a declared action makes, its arguments the declared
+argument, then the input, then the row's `item` and `items`, and refuses an action the manifest does not declare.
 
 ### The places
 

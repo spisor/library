@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "spisor/definition.h"
 #include "ui_fixture.h"
 
 /**
@@ -488,6 +489,81 @@ static void tells_bindings_apart_by_their_arguments_and_shares_one_whose_argumen
     cJSON_Delete(descriptions);
 }
 
+#define ROUNDS_SCREEN "{\"plugin\": \"viewer\", \"kind\": \"view\", \"id\": \"overview\"}"
+
+/** Plans the viewer's overview with no reply, so it always names calls, as round `round`. */
+static catalog_answer endless_plan(uint32_t round) {
+    const char *plugins[] = {"viewer"};
+    cJSON *descriptions = fixture_descriptions(plugins, 1);
+    cJSON *request = screen_request(descriptions, ROUNDS_SCREEN, NULL);
+    cJSON_AddNumberToObject(request, "round", round);
+    cJSON_Delete(descriptions);
+    return ui_call(UI_PLAN, request);
+}
+
+static void refuses_a_screen_whose_plan_still_names_calls_after_the_most_rounds_it_allows(void) {
+    uint32_t planned = 0;
+    for (uint32_t round = 0;; round++) {
+        catalog_answer answer = endless_plan(round);
+        if (answer.status != SPISOR_OK) {
+            expect_ui_refusal(answer, SPISOR_REFUSED, "viewer's screen still names bindings to call after 16 rounds",
+                              "the round past the most");
+            break;
+        }
+        CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "calls")) == 2);
+        cJSON_Delete(answer.tree);
+        planned++;
+    }
+    CHECK(planned == 16);
+    expect_ui_refusal(endless_plan(UINT32_MAX), SPISOR_REFUSED, "16 rounds", "the last round there is");
+}
+
+static void plans_the_sixteenth_round_and_refuses_the_seventeenth(void) {
+    catalog_answer sixteenth = endless_plan(15);
+    CHECK(sixteenth.status == SPISOR_OK);
+    cJSON_Delete(sixteenth.tree);
+    expect_ui_refusal(endless_plan(16), SPISOR_REFUSED, "rounds", "the seventeenth round");
+}
+
+/** Plans the overview as round `round`, the argument's size ending at `size`. */
+static spisor_status plan_sized(uint32_t round, uint32_t size) {
+    const char *plugins[] = {"viewer"};
+    const runtime_ui_definition *ui = runtime_ui_definition_of();
+    ui_request *held = spisor_memory_allocate_zeroed(1, sizeof *held);
+    cJSON *descriptions = fixture_descriptions(plugins, 1);
+    cJSON *request = screen_request(descriptions, ROUNDS_SCREEN, NULL);
+    runtime_ui_screen_argument argument = SPISOR_INIT(runtime_ui_screen_argument);
+    runtime_ui_plan_answer answer = SPISOR_INIT(runtime_ui_plan_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    CHECK(held != NULL);
+    ui_read_screen_argument(held, request, &argument);
+    argument.round = round;
+    argument.size = size;
+    status = ui->plan(ui->context, &argument, &answer, &refusal);
+    ui->release_plan_answer(ui->context, &answer);
+    ui->release_refusal(ui->context, &refusal);
+    ui_request_release(held);
+    spisor_memory_release(held);
+    cJSON_Delete(request);
+    cJSON_Delete(descriptions);
+    return status;
+}
+
+static void reads_an_argument_ending_before_its_round_as_a_first_plan(void) {
+    CHECK(plan_sized(16, (uint32_t)SPISOR_SHAPE_THROUGH(runtime_ui_screen_argument, reply_count)) == SPISOR_OK);
+    CHECK(plan_sized(16, (uint32_t)sizeof(runtime_ui_screen_argument)) == SPISOR_REFUSED);
+}
+
+static void renders_whatever_round_it_is_handed(void) {
+    const char *plugins[] = {"viewer"};
+    cJSON *descriptions = fixture_descriptions(plugins, 1);
+    cJSON *request = screen_request(descriptions, "{\"plugin\": \"viewer\", \"kind\": \"settings\"}", NULL);
+    cJSON_AddNumberToObject(request, "round", 16);
+    cJSON_Delete(successful(UI_RENDER, request, "a render past the rounds"));
+    cJSON_Delete(descriptions);
+}
+
 static void expect_render_refused(const char *screen, cJSON *answers, spisor_status status, const char *fragment,
                                   const char *label) {
     const char *plugins[] = {"viewer"};
@@ -645,6 +721,10 @@ int main(void) {
     plans_each_binding_once_with_every_check_its_nodes_need();
     plans_only_the_bindings_still_unanswered_and_is_done_for_a_screen_binding_nothing();
     tells_bindings_apart_by_their_arguments_and_shares_one_whose_arguments_are_equal();
+    refuses_a_screen_whose_plan_still_names_calls_after_the_most_rounds_it_allows();
+    plans_the_sixteenth_round_and_refuses_the_seventeenth();
+    reads_an_argument_ending_before_its_round_as_a_first_plan();
+    renders_whatever_round_it_is_handed();
     refuses_to_render_a_screen_missing_an_answer_or_one_of_its_checks();
     refuses_an_answer_with_no_outcome();
     marks_detected_and_available_items_unavailable_and_installable_and_leaves_installed_alone();

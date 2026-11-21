@@ -1635,6 +1635,7 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_screen_argument, screen);
     FIELD(runtime_ui_screen_argument, replies);
     FIELD(runtime_ui_screen_argument, reply_count);
+    FIELD(runtime_ui_screen_argument, round);
     SIZE(runtime_ui_screen_argument);
     FIELD(runtime_ui_plan_answer, size);
     FIELD(runtime_ui_plan_answer, calls);
@@ -1675,6 +1676,19 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_plugin_list_answer, row_count);
     FIELD(runtime_ui_plugin_list_answer, storage);
     SIZE(runtime_ui_plugin_list_answer);
+    FIELD(runtime_ui_action_argument, size);
+    FIELD(runtime_ui_action_argument, description);
+    FIELD(runtime_ui_action_argument, action);
+    FIELD(runtime_ui_action_argument, input);
+    FIELD(runtime_ui_action_argument, item);
+    FIELD(runtime_ui_action_argument, has_items);
+    FIELD(runtime_ui_action_argument, items);
+    FIELD(runtime_ui_action_argument, item_count);
+    SIZE(runtime_ui_action_argument);
+    FIELD(runtime_ui_action_answer, size);
+    FIELD(runtime_ui_action_answer, target);
+    FIELD(runtime_ui_action_answer, storage);
+    SIZE(runtime_ui_action_answer);
     FIELD(runtime_ui_definition, size);
     FIELD(runtime_ui_definition, context);
     FIELD(runtime_ui_definition, navigation);
@@ -1688,6 +1702,8 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_definition, release_screen);
     FIELD(runtime_ui_definition, release_plugin_list_answer);
     FIELD(runtime_ui_definition, release_refusal);
+    FIELD(runtime_ui_definition, action);
+    FIELD(runtime_ui_definition, release_action_answer);
     SIZE(runtime_ui_definition);
 }
 

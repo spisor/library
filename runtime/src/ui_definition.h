@@ -33,6 +33,9 @@ spisor_status runtime_ui_check_screen_argument(const runtime_ui_screen_argument 
 /** The JSON call plan and render take for a checked argument; NULL when memory runs out. */
 cJSON *runtime_ui_screen_call(const runtime_ui_screen_argument *argument);
 
+/** Fills a target from a JSON call { plugin, binding: { service, method }, arguments } into `storage`. */
+spisor_status runtime_ui_fill_target(void **storage, const cJSON *json, runtime_ui_target *target);
+
 /** Fills a runtime_ui_plan_answer from what plan answered, as a runtime_answer_filler. */
 spisor_status runtime_ui_fill_plan(const cJSON *answered, void *filled);
 

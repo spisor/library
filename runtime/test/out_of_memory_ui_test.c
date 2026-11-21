@@ -69,6 +69,7 @@ typedef struct operation_inputs {
     const spisor_value *rows;
     const spisor_value *series;
     const spisor_value *groups[3];
+    const spisor_value *input;
 } operation_inputs;
 
 static operation_inputs inputs;
@@ -84,6 +85,7 @@ static void prepare(void) {
     inputs.groups[0] = tree_of("[{\"id\": \"viewer\", \"label\": \"Viewer\"}]");
     inputs.groups[1] = tree_of("[{\"id\": \"greeter\"}]");
     inputs.groups[2] = tree_of("[{\"id\": \"viewer\"}, {\"id\": \"greeter\"}, {\"id\": \"rival\"}]");
+    inputs.input = tree_of("{\"note\": \"n\", \"item\": \"typed\"}");
 }
 
 static void finish(void) {
@@ -214,7 +216,7 @@ static void put_check(const runtime_ui_check *check) {
     }
 }
 
-static spisor_status run_plan(void) {
+static spisor_status plan_round(uint32_t round) {
     runtime_ui_screen_argument argument = SPISOR_INIT(runtime_ui_screen_argument);
     runtime_ui_plan_answer answer;
     start_empty(&answer, sizeof answer);
@@ -227,6 +229,7 @@ static spisor_status run_plan(void) {
     argument.screen = &OVERVIEW;
     argument.replies = &reply;
     argument.reply_count = 1;
+    argument.round = round;
     status = ui->plan(ui->context, &argument, &answer, &refusal);
     for (size_t index = 0; index < answer.call_count; index++) {
         put_text(answer.calls[index].target.plugin);
@@ -244,6 +247,14 @@ static spisor_status run_plan(void) {
     ui->release_plan_answer(ui->context, &answer);
     keep_refusal(&refusal);
     return status;
+}
+
+static spisor_status run_plan(void) {
+    return plan_round(15);
+}
+
+static spisor_status run_plan_past_its_rounds(void) {
+    return plan_round(16);
 }
 
 static void put_screen(const runtime_ui_screen *screen) {
@@ -336,6 +347,34 @@ static spisor_status run_plugin_list(void) {
     return status;
 }
 
+static spisor_status run_action(void) {
+    static const char *const ITEMS[] = {"a", "b"};
+    runtime_ui_action_argument argument = SPISOR_INIT(runtime_ui_action_argument);
+    runtime_ui_action_answer answer;
+    start_empty(&answer, sizeof answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_status status;
+    argument.description = &inputs.viewer->items[0];
+    argument.action = "sync";
+    argument.input = inputs.input;
+    argument.item = "a";
+    argument.has_items = 1;
+    argument.items = ITEMS;
+    argument.item_count = 2;
+    status = ui->action(ui->context, &argument, &answer, &refusal);
+    put_text(answer.target.plugin);
+    put_text(answer.target.service);
+    put_text(answer.target.method);
+    put_value(answer.target.arguments);
+    if (status == SPISOR_OK && (answer.target.arguments == NULL || answer.target.arguments->count != 3)) {
+        status = WRONG_RUN;
+    }
+    status = empty_unless_answered(status, &answer, sizeof answer);
+    ui->release_action_answer(ui->context, &answer);
+    keep_refusal(&refusal);
+    return status;
+}
+
 static void start_run(void) {
     printed.length = 0;
     printed.text[0] = '\0';
@@ -423,19 +462,21 @@ static int is_selected(const char *only, const char *label) {
 
 /** With a label's start as the first argument runs only the cases it starts, failing allocations first to last. */
 int main(int argc, char **argv) {
-    static const operation_case cases[6] = {{"ui's navigation", run_navigation},
+    static const operation_case cases[8] = {{"ui's navigation", run_navigation},
                                             {"ui's settings_view", run_settings_view},
                                             {"ui's plan", run_plan},
                                             {"ui's render", run_render},
                                             {"ui's render refused", run_render_refused},
-                                            {"ui's plugin_list", run_plugin_list}};
+                                            {"ui's plugin_list", run_plugin_list},
+                                            {"ui's action", run_action},
+                                            {"ui's plan past its rounds", run_plan_past_its_rounds}};
     const char *only = argc > 1 ? argv[1] : "";
     uint64_t first = argc > 2 ? strtoull(argv[2], NULL, 10) : 1;
     uint64_t last = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
     spisor_json_use_library_allocator();
     ui = runtime_ui_definition_of();
-    for (size_t index = 0; index < 6; index++) {
-        spisor_status expected = index == 4 ? SPISOR_REFUSED : SPISOR_OK;
+    for (size_t index = 0; index < 8; index++) {
+        spisor_status expected = index == 4 || index == 7 ? SPISOR_REFUSED : SPISOR_OK;
         if (is_selected(only, cases[index].label) && (index != 3 || strcmp(only, cases[4].label) != 0)) {
             every_failure_of(&cases[index], expected, first == 0 ? 1 : first, last);
         }
