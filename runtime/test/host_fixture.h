@@ -41,12 +41,13 @@ static inline void point_the_environment_at_the_places(void) {
 
 static inline void write_layer_hint(void) {
     char hint[6000];
-    snprintf(hint, sizeof hint,
-             "{\"host\": \"2.0.0\", \"libraries\": {"
-             "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"%s/rt\", \"binary\": \"%s/rt/runtime.dll\"}, "
-             "\"koffi\": {\"version\": \"2.0.0\", \"directory\": \"%s/koffi\"}, "
-             "\"forebay-library\": {\"version\": \"0.3.0\", \"directory\": \"%s\", \"binary\": \"%s/forebay.dll\"}}}",
-             scratch, scratch, scratch, forebay_directory, forebay_directory);
+    int written = snprintf(hint, sizeof hint,
+        "{\"host\": \"2.0.0\", \"libraries\": {"
+        "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"%s/rt\", \"binary\": \"%s/rt/runtime.dll\"}, "
+        "\"koffi\": {\"version\": \"2.0.0\", \"directory\": \"%s/koffi\"}, "
+        "\"forebay-library\": {\"version\": \"0.3.0\", \"directory\": \"%s\", \"binary\": \"%s/forebay.dll\"}}}",
+        scratch, scratch, scratch, forebay_directory, forebay_directory);
+    CHECK(written > 0 && (size_t)written < sizeof hint);
     for (char *character = hint; *character != '\0'; character++) {
         if (*character == '\\') {
             *character = '/';
