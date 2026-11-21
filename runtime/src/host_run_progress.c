@@ -133,8 +133,10 @@ static spisor_status publish_ready(const runtime_host_run *run, spisor_refusal *
 }
 
 void runtime_host_run_fail(runtime_host_run *run) {
+    if (run->phase != RUNTIME_HOST_ENDED) {
+        run->exit_code = RUNTIME_HOST_EXIT_FAILED;
+    }
     run->phase = RUNTIME_HOST_ENDED;
-    run->exit_code = RUNTIME_HOST_EXIT_FAILED;
 }
 
 static spisor_status failed_unless_ok(runtime_host_run *run, spisor_status status) {
@@ -292,7 +294,7 @@ spisor_status runtime_host_run_tick(runtime_host_run *run, int64_t now, runtime_
     if (status == SPISOR_OK) {
         answer_next(run, turn, check, next);
     }
-    return run->phase == RUNTIME_HOST_ENDED ? status : failed_unless_ok(run, status);
+    return failed_unless_ok(run, status);
 }
 
 spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failure, spisor_refusal *refusal) {

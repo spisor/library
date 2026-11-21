@@ -12,8 +12,9 @@
 /**
  * @file
  * What `weivel.host` does with a run between its start and its stop: `started`, `tick` and `finished` on the run the
- * caller holds under the run lock. Each answers OK or refuses into `refusal`; every answer but OK fails the run, its
- * exit code becoming RUNTIME_HOST_EXIT_FAILED, except a tick that ends a SERVE run its holders left.
+ * caller holds under the run lock. Each answers OK or refuses into `refusal`; every answer but OK fails a run that has
+ * not ended, its exit code becoming RUNTIME_HOST_EXIT_FAILED, and leaves the exit code of one that has as it was, so a
+ * call out of its order after a run ended on its holders' word or with its action's result changes nothing.
  */
 
 /** When the program ticks next: at `next`, milliseconds since the Unix epoch, when `has_next` is 1. */
@@ -65,7 +66,10 @@ spisor_status runtime_host_run_tick(runtime_host_run *run, int64_t now, runtime_
  */
 spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failure, spisor_refusal *refusal);
 
-/** Fails the run: its exit code becomes RUNTIME_HOST_EXIT_FAILED and no further call acts on it. */
+/**
+ * Ends the run, so no further call acts on it: a run that had not ended fails, its exit code becoming
+ * RUNTIME_HOST_EXIT_FAILED, and one that had keeps the exit code it ended with.
+ */
 void runtime_host_run_fail(runtime_host_run *run);
 
 #endif

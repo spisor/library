@@ -290,7 +290,7 @@ static void an_action_answers_its_exit_code_as_it_ended(void) {
     expect_detail(&refusal, "or a second time", "a second finished");
     release_refusal(&refusal);
     release_run(&run);
-    stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action told finished twice");
+    stop_expecting(0, "an action that answered, told finished twice");
     finish_base();
 }
 
@@ -378,6 +378,8 @@ static void a_serve_run_no_holder_keeps_ends_with_exit_code_zero(void) {
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     expect_tick_refused(NOW, "no holder of " LOADER " is alive", "a tick no holder keeps");
+    expect_tick_refused(NOW + TURN, "after the run ended", "a tick after the run ended");
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_REFUSED);
     release_run(&run);
     stop_expecting(0, "a serve run its holders left");
     finish_base();

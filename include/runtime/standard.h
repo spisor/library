@@ -82,8 +82,9 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * `finished` is an ACTION run's alone, once, after its `started` answered OK. `stop` ends the scopes, removes the run
  * record the plan wrote, ends the run and answers its exit code, all under the lock a start takes, so a start racing
  * it begins its scopes only after they ended. The exit code is 0 for a SERVE run that ends on a stop request or its
- * holders' word and for an action that answered, and 1 for an action that threw or never ran and for a run any of
- * whose calls answered other than OK, but the tick that ended it on its holders' word.
+ * holders' word and for an action that answered, and 1 for an action that threw or never ran and for a run a call of
+ * which answered other than OK before it ended, but the tick that ended it on its holders' word; a call after the run
+ * ended leaves its exit code as it was.
  */
 RUNTIME_DEFINITION_API const void *runtime_standard_host_definition_of(void);
 
