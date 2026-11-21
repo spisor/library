@@ -18,9 +18,10 @@
 /**
  * @file
  * `weivel.scope` as runtime serves it: a plugin's scope opened from its manifest, refused at open for a manifest one
- * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds; every
- * definition it answers passes the described checks. Its `secrets`, `paths` and `log` are otherwise
- * scope_services_test's.
+ * typo breaks, and its `config` answering that plugin's merged settings flattened to the standard's kinds. The
+ * described checks read all four definitions it answers and call config's operations and secrets' `get`, the only
+ * ones taking a size-prefixed struct other than a refusal; paths, log's `write` and secrets' `set` and `remove` are
+ * read and never called, and scope_services_test holds them.
  */
 
 static scope_place place;
@@ -444,10 +445,10 @@ static void every_definition_of_the_scope_passes_the_described_checks(void) {
     if (open_viewer(&scope) == NULL) {
         return;
     }
-    described[0] = (spisor_described_definition){weivel_standard_config_description(), scope.config};
-    described[1] = (spisor_described_definition){weivel_standard_secrets_description(), scope.secrets};
-    described[2] = (spisor_described_definition){weivel_standard_paths_description(), scope.paths};
-    described[3] = (spisor_described_definition){weivel_standard_log_description(), scope.log};
+    described[0] = (spisor_described_definition){weivel_standard_config_description(), scope.config, 0};
+    described[1] = (spisor_described_definition){weivel_standard_secrets_description(), scope.secrets, 0};
+    described[2] = (spisor_described_definition){weivel_standard_paths_description(), scope.paths, 1};
+    described[3] = (spisor_described_definition){weivel_standard_log_description(), scope.log, 1};
     CHECK(spisor_check_described(described, count, spisor_check_short_shapes) == 0);
     CHECK(spisor_check_described(described, count, spisor_check_counted_answers) == 0);
     release(&scope, NULL);

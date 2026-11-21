@@ -6,12 +6,15 @@
  * Checks every operation of a definition through the description it answers (`weivel/description.h`), so an operation
  * added to a header is checked without a test changing, in any library whose definitions describe themselves.
  *
- * Each check calls an operation answering a status once per change it makes to otherwise empty parameters: every
- * size-prefixed struct its full `size` and zero beyond it, a scalar, text, handle or definition answer a zeroed slot,
- * a handle, text, texts, bytes, array, value or unsized struct input NULL with its count 0, a scalar input its
- * default, and an empty refusal. Each call must answer MALFORMED with a refusal whose `detail` names what was
- * changed, and leave every answer byte as it was; an operation taking no refusal must answer MALFORMED with every
- * answer untouched, since it has no detail to name the change in.
+ * Each check calls only an operation that answers a status and takes a size-prefixed struct other than its refusal,
+ * once per change it makes to that struct among otherwise empty parameters: every size-prefixed struct its full
+ * `size` and zero beyond it, a scalar, text, handle or definition answer a zeroed slot, a handle, text, texts, bytes,
+ * array, value or unsized struct input NULL with its count 0, a scalar input its default, and an empty refusal. Each
+ * call must answer MALFORMED with a refusal whose `detail` names what was changed, and leave every answer byte as it
+ * was. An operation taking no refusal has no detail to name the change in, so every other input it takes is passed a
+ * valid value instead of NULL, a text "x", one byte 'x', one text "x" and one zeroed element of an array or behind a
+ * pointer, a value node an empty RECORD, its count 1, and it must answer MALFORMED with every answer untouched; one
+ * also taking a handle input is a failure, since a handle has no valid value to pass.
  *
  * A scalar input's default is the first value its enum lists that is not 0, as the standard keeps 0 for none, or 0
  * when the enum lists no other; any other scalar is passed 0, as a count of nothing, no flag or zero.
@@ -22,9 +25,9 @@
  *
  * An operation taking a parameter no rule here reads, more parameters than ARGUMENT_LIMIT in `described_checks.c`,
  * an answer or refusal that carries no `size`, or a refusal its description names no release for, is a failure
- * rather than unchecked; an input struct needs no `size`. An operation taking no size-prefixed struct but its refusal,
- * as `weivel.paths`' operations and `weivel.log`'s `write` do, has no shape to shorten and no count to fill, so neither
- * check calls it.
+ * rather than unchecked; an input struct needs no `size`. An operation taking no size-prefixed struct other than a
+ * refusal, as `weivel.paths`' three (which take no refusal), `weivel.log`'s `write` and `weivel.secrets`' `set` and
+ * `remove` do, is read but never called by either check.
  */
 
 #include <stddef.h>
@@ -45,26 +48,29 @@ typedef struct spisor_check_tally {
 typedef struct spisor_described_definition {
     const weivel_standard_description *description;
     const void *definition;
+    /**
+     * Nonzero when the caller names it as having no operation that takes a size-prefixed struct other than a
+     * refusal, as `weivel.paths` and `weivel.log` have none, so spisor_check_short_shapes requires that it makes no
+     * call of it; zero, as a library's own definitions are, requires at least one.
+     */
+    int has_no_shape;
 } spisor_described_definition;
 
-typedef void (*spisor_described_check)(const weivel_standard_description *description, const void *definition,
-                                       spisor_check_tally *tally);
+typedef void (*spisor_described_check)(const spisor_described_definition *definition, spisor_check_tally *tally);
 
 /**
  * Calls every operation once per size-prefixed struct it takes, argument or answer, with that struct's `size` one
- * below its first shape, and requires MALFORMED naming a short shape. A description with no operation answering a
- * status is a failure, since it would check nothing.
+ * below its first shape, and requires MALFORMED naming a short shape. A definition this makes no call of is a
+ * failure, since nothing of it was checked, unless it `has_no_shape`, which is a failure once a call is made.
  */
-void spisor_check_short_shapes(const weivel_standard_description *description, const void *definition,
-                               spisor_check_tally *tally);
+void spisor_check_short_shapes(const spisor_described_definition *definition, spisor_check_tally *tally);
 
 /**
  * Calls every operation once per count of each answer it takes, a SIZE member some array, texts or bytes member of
  * the answer names as its `count`, at any depth of structs the answer holds by value, with that count nonzero beside
  * NULL storage, and requires MALFORMED naming a non-empty answer.
  */
-void spisor_check_counted_answers(const weivel_standard_description *description, const void *definition,
-                                  spisor_check_tally *tally);
+void spisor_check_counted_answers(const spisor_described_definition *definition, spisor_check_tally *tally);
 
 /**
  * Runs `check` over each definition after the standard's own check of its description.
