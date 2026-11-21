@@ -36,6 +36,10 @@ typedef struct probe_argument {
     const char *label;
 } probe_argument;
 
+typedef struct probe_options {
+    uint32_t size;
+} probe_options;
+
 typedef struct probe_list {
     uint32_t size;
     const char *const *names;
@@ -56,6 +60,7 @@ typedef struct probe_definition {
     weivel_status (*use_handle)(void *context, probe_handle *handle, probe_answer *answer, probe_refusal *refusal);
     weivel_status (*open)(void *context, const probe_argument *argument, probe_handle **handle, probe_refusal *refusal);
     weivel_status (*take_number)(void *context, uint32_t number, probe_refusal *refusal);
+    weivel_status (*configure)(void *context, const probe_options *options, probe_refusal *refusal);
     void (*forget)(void *context, probe_answer *answer, probe_answer *other);
     void (*release_answer)(void *context, probe_answer *answer);
     void (*release_nested)(void *context, probe_nested_answer *answer);
@@ -67,7 +72,8 @@ typedef enum probe_behaviour {
     PROBE_KEEPS_THE_RULES,
     PROBE_FILLS_A_SHORT_ANSWER,
     PROBE_WRITES_AS_IT_REFUSES,
-    PROBE_IGNORES_THE_HELD_COUNT
+    PROBE_IGNORES_THE_HELD_COUNT,
+    PROBE_ACCEPTS_A_SHORT_ARGUMENT
 } probe_behaviour;
 
 static probe_behaviour behaviour = PROBE_KEEPS_THE_RULES;
@@ -140,6 +146,14 @@ static weivel_status probe_take_number(void *context, uint32_t number, probe_ref
     return refuse(refusal, "short of its first shape");
 }
 
+static weivel_status probe_configure(void *context, const probe_options *options, probe_refusal *refusal) {
+    (void)context;
+    if (options->size < sizeof options->size && behaviour != PROBE_ACCEPTS_A_SHORT_ARGUMENT) {
+        return refuse(refusal, "short of its first shape");
+    }
+    return WEIVEL_STATUS_OK;
+}
+
 static void probe_forget(void *context, probe_answer *answer, probe_answer *other) {
     (void)context;
     (void)answer;
@@ -169,7 +183,8 @@ static void probe_release_refusal(void *context, probe_refusal *refusal) {
 static const probe_definition probe = {sizeof(probe_definition), NULL,
                                        probe_fill, probe_fill_nested,
                                        probe_use_handle, probe_open,
-                                       probe_take_number, probe_forget,
+                                       probe_take_number, probe_configure,
+                                       probe_forget,
                                        probe_release_answer, probe_release_nested,
                                        probe_release_handle, probe_release_refusal};
 
@@ -193,6 +208,9 @@ static const weivel_standard_described_member argument_members[] = {
     MEMBER(probe_argument, size, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL),
     MEMBER(probe_argument, label, WEIVEL_STANDARD_DESCRIBED_TEXT, NULL, NULL)};
 
+static const weivel_standard_described_member options_members[] = {
+    MEMBER(probe_options, size, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL)};
+
 static const weivel_standard_described_member list_members[] = {
     MEMBER(probe_list, size, WEIVEL_STANDARD_DESCRIBED_U32, NULL, NULL),
     MEMBER(probe_list, names, WEIVEL_STANDARD_DESCRIBED_TEXTS, NULL, "name_count"),
@@ -215,6 +233,7 @@ static const weivel_standard_described_type probe_types[] = {
     TYPE(probe_refusal, refusal_members, storage),
     TYPE(probe_answer, answer_members, storage),
     TYPE(probe_argument, argument_members, label),
+    TYPE(probe_options, options_members, size),
     TYPE(probe_list, list_members, name_count),
     TYPE(probe_nested_answer, nested_answer_members, storage),
     TYPE(probe_definition, definition_members, release_refusal)};
@@ -256,6 +275,11 @@ static const weivel_standard_described_parameter take_number_parameters[] = {
     PARAMETER("number", WEIVEL_STANDARD_DESCRIBED_U32, WEIVEL_STANDARD_DESCRIBED_INPUT, NULL, NULL),
     REFUSAL_PARAMETER};
 
+static const weivel_standard_described_parameter configure_parameters[] = {
+    CONTEXT_PARAMETER,
+    PARAMETER("options", WEIVEL_STANDARD_DESCRIBED_POINTER, WEIVEL_STANDARD_DESCRIBED_INPUT, "probe_options", NULL),
+    REFUSAL_PARAMETER};
+
 static const weivel_standard_described_parameter forget_parameters[] = {
     CONTEXT_PARAMETER, ANSWER_PARAMETER("probe_answer", NULL),
     PARAMETER("other", WEIVEL_STANDARD_DESCRIBED_POINTER, WEIVEL_STANDARD_DESCRIBED_ANSWER, "probe_answer", NULL)};
@@ -291,6 +315,9 @@ static const weivel_standard_described_operation handle_input_operations[] = {
 
 static const weivel_standard_described_operation handle_answer_operations[] = {
     STATUS_OPERATION(open), RELEASE_OPERATION(release_handle), RELEASE_OPERATION(release_refusal)};
+
+static const weivel_standard_described_operation size_only_operations[] = {
+    STATUS_OPERATION(configure), RELEASE_OPERATION(release_refusal)};
 
 static const weivel_standard_described_operation unreadable_operations[] = {
     STATUS_OPERATION(fill), STATUS_OPERATION(take_number), RELEASE_OPERATION(release_answer),
@@ -399,6 +426,17 @@ static void a_handle_answer_written_while_refusing_fails(void) {
     CHECK(written.calls == 1 && written.failures == 1);
 }
 
+static void a_struct_whose_first_shape_is_its_size_alone_is_shortened(void) {
+    weivel_standard_description description = SCENARIO(size_only_operations);
+    spisor_check_tally shapes = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
+    spisor_check_tally counts = run(&description, spisor_check_counted_answers, PROBE_KEEPS_THE_RULES);
+    spisor_check_tally accepted = run(&description, spisor_check_short_shapes, PROBE_ACCEPTS_A_SHORT_ARGUMENT);
+    CHECK(passes_the_standards_check(&description));
+    CHECK(shapes.calls == 1 && shapes.failures == 0);
+    CHECK(counts.calls == 0 && counts.failures == 0);
+    CHECK(accepted.calls == 1 && accepted.failures == 1);
+}
+
 static void a_parameter_no_rule_reads_is_a_failure(void) {
     weivel_standard_description description = SCENARIO(unreadable_operations);
     spisor_check_tally tally = run(&description, spisor_check_short_shapes, PROBE_KEEPS_THE_RULES);
@@ -430,6 +468,7 @@ int main(void) {
     a_struct_held_by_value_has_its_own_size_set_in_full();
     a_handle_input_is_passed_null();
     a_handle_answer_written_while_refusing_fails();
+    a_struct_whose_first_shape_is_its_size_alone_is_shortened();
     a_parameter_no_rule_reads_is_a_failure();
     an_operation_answering_no_status_that_is_no_release_is_a_failure();
     a_description_yielding_no_operation_fails_rather_than_passes();
