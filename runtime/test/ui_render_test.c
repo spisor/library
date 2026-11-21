@@ -503,7 +503,7 @@ static catalog_answer endless_plan(uint32_t round) {
 
 static void refuses_a_screen_whose_plan_still_names_calls_after_the_most_rounds_it_allows(void) {
     uint32_t planned = 0;
-    for (uint32_t round = 0;; round++) {
+    for (uint32_t round = 0; round < 4 * 16; round++) {
         catalog_answer answer = endless_plan(round);
         if (answer.status != SPISOR_OK) {
             expect_ui_refusal(answer, SPISOR_REFUSED, "viewer's screen still names bindings to call after 16 rounds",
