@@ -408,7 +408,7 @@ static int make_plugin_directory(deployment *plan, staging *stage) {
     return noted && succeeded(plan, spisor_make_directories(plan->plugin_directory));
 }
 
-/** The staging folder's name: the manifest's destination, this process's id, and a random part. */
+/** The staging folder's name: the manifest's destination, this process's id, and a part no other name took. */
 static char *staging_folder_path(deployment *plan) {
     char process[32];
     snprintf(process, sizeof process, ".%lu", staging_process_id());
