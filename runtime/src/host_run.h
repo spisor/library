@@ -27,8 +27,9 @@ typedef struct runtime_host_timers {
  * One run of a loader's plugins as `weivel.host`'s start decided it, held until its stop: the `mode`, a
  * weivel_standard_host_mode; the loader's `host_id`; `started`, what hosts.start answered, whose plan names the run
  * record; `located`, cache.locate's answer over that plan's plugins, its problems the versions it could not run;
- * `libraries`, the plan's libraries as [{binary, declaration}]; for an ACTION run `action`, {plugin, name,
- * arguments}, the plugin's manifest path, the action's id and the arguments ui.action merged, else NULL; its `phase`, a
+ * `libraries`, the plan's libraries as [{binary, declaration}]; for an ACTION run `action`, {plugin, name, service,
+ * method, arguments}, the plugin's manifest path, the action's id, the service and method its declared call names and
+ * the arguments ui.action merged, else NULL; its `phase`, a
  * runtime_host_phase; the `exit_code` its stop answers, 0 for a SERVE run and RUNTIME_HOST_EXIT_FAILED for an ACTION
  * run until its action answered; and its `timers`.
  */

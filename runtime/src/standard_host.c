@@ -19,6 +19,11 @@
 #define NEXT_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_host_next, storage)
 #define NO_RUN_FIX "call host's start, and this operation only once it answered OK and before its stop"
 #define SECOND_START "host's start was called again before its stop"
+#define ACTION_CALL_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_host_plan, action_method)
+#define TOO_OLD_DETAIL                                                                                              \
+    "host's start was asked for an action run by a program too old for the run: its plan's size holds no "          \
+    "action_service and action_method"
+#define TOO_OLD_FIX "run the action with a host program built against a standard whose plan holds the action's service"
 
 /** The one run a process makes, from host's start answering OK until its stop. */
 static runtime_mutex run_lock = RUNTIME_MUTEX_INIT;
@@ -90,16 +95,26 @@ static spisor_status fill_plugins(void **storage, const cJSON *located, weivel_s
     return SPISOR_OK;
 }
 
+/** Frees what a plan holds and empties it, the action's service and method too when its `size` holds them. */
+static void release_held_plan(weivel_standard_host_plan *plan) {
+    runtime_release_stored_answer(plan, PLAN_SHAPE);
+    if (plan != NULL && spisor_has_shape(plan->size, ACTION_CALL_SHAPE)) {
+        plan->action_service = NULL;
+        plan->action_method = NULL;
+    }
+}
+
+/** Fills the action's members, the service and method among them, which only a plan holding them reaches here. */
 static spisor_status fill_action(void **storage, const cJSON *action, weivel_standard_host_plan *plan) {
     const spisor_value *arguments = NULL;
     spisor_status status;
     if (action == NULL) {
         return SPISOR_OK;
     }
-    if (!runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(action, "plugin")),
-                              &plan->action_plugin) ||
-        !runtime_storage_copy(storage, cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(action, "name")),
-                              &plan->action_name)) {
+    if (!runtime_storage_copy(storage, text_of(action, "plugin"), &plan->action_plugin) ||
+        !runtime_storage_copy(storage, text_of(action, "name"), &plan->action_name) ||
+        !runtime_storage_copy(storage, text_of(action, "service"), &plan->action_service) ||
+        !runtime_storage_copy(storage, text_of(action, "method"), &plan->action_method)) {
         return SPISOR_OUT_OF_MEMORY;
     }
     status = runtime_storage_value(storage, cJSON_GetObjectItemCaseSensitive(action, "arguments"), &arguments);
@@ -129,12 +144,24 @@ static spisor_status fill_plan(const runtime_host_run *run, weivel_standard_host
     }
     plan->storage = storage;
     if (status != SPISOR_OK) {
-        runtime_release_stored_answer(plan, PLAN_SHAPE);
+        release_held_plan(plan);
         return status;
     }
     plan->mode = run->mode;
     runtime_zero_beyond(plan, sizeof *plan);
     return SPISOR_OK;
+}
+
+/** Whether the consumer's plan reaches every member the run fills: an ACTION run's service and method among them. */
+static int can_carry_run(const runtime_host_run *run, const weivel_standard_host_plan *plan) {
+    return run->mode != WEIVEL_STANDARD_HOST_ACTION || spisor_has_shape(plan->size, ACTION_CALL_SHAPE);
+}
+
+static spisor_status plan_run(const runtime_host_run *run, weivel_standard_host_plan *plan, spisor_refusal *refusal) {
+    if (!can_carry_run(run, plan)) {
+        return spisor_refuse_as(refusal, SPISOR_REFUSED, TOO_OLD_DETAIL, TOO_OLD_FIX);
+    }
+    return fill_plan(run, plan);
 }
 
 /** Starts the run the arguments name and fills the plan with it, holding the run until its stop. */
@@ -144,7 +171,7 @@ static spisor_status start_run(const char *const *arguments, size_t count, weive
     cJSON *environment = runtime_process_environment();
     runtime_host_run *run =
         environment == NULL ? NULL : runtime_host_run_start(arguments, count, environment, &json_refusal);
-    spisor_status status = run == NULL ? runtime_refuse_json(refusal, json_refusal) : fill_plan(run, plan);
+    spisor_status status = run == NULL ? runtime_refuse_json(refusal, json_refusal) : plan_run(run, plan, refusal);
     cJSON_Delete(environment);
     if (status == SPISOR_OK) {
         current_run = run;
@@ -283,7 +310,7 @@ static weivel_status stop(void *context, uint32_t *exit_code, weivel_standard_se
 
 static void release_plan(void *context, weivel_standard_host_plan *plan) {
     (void)context;
-    runtime_release_stored_answer(plan, PLAN_SHAPE);
+    release_held_plan(plan);
 }
 
 static void release_next(void *context, weivel_standard_host_next *next) {

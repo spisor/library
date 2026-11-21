@@ -4,6 +4,7 @@
 
 #include "host_fixture.h"
 
+#include "spisor/definition.h"
 #include "spisor/json_allocation.h"
 
 /**
@@ -72,6 +73,7 @@ static void a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin(vo
         CHECK(strstr(run.plan.plugins[0].directory, "1.0.0") != NULL);
     }
     CHECK(run.plan.action_plugin == NULL && run.plan.action_name == NULL);
+    CHECK(run.plan.action_service == NULL && run.plan.action_method == NULL);
     CHECK(run.plan.action_arguments.kind == WEIVEL_STANDARD_VALUE_NONE);
     CHECK(run_record_count() == 1);
     release_run(&run);
@@ -122,6 +124,8 @@ static void an_action_start_names_the_plugins_own_manifest_and_merges_its_argume
         check_text(run.plan.action_plugin, run.plan.plugins[0].manifest, "the action's plugin is its manifest");
     }
     check_text(run.plan.action_name, "greet", "the action's name");
+    check_text(run.plan.action_service, "a.greeter", "the service the action's call names");
+    check_text(run.plan.action_method, "greet", "the method the action's call names");
     CHECK(run.plan.action_arguments.kind == WEIVEL_STANDARD_VALUE_RECORD && run.plan.action_arguments.count == 3);
     entry = entry_at(&run.plan.action_arguments, 0, "name");
     CHECK(entry == NULL || (entry->value.kind == WEIVEL_STANDARD_VALUE_TEXT && strcmp(entry->value.text, "you") == 0));
@@ -130,8 +134,70 @@ static void an_action_start_names_the_plugins_own_manifest_and_merges_its_argume
     entry = entry_at(&run.plan.action_arguments, 2, "times");
     CHECK(entry == NULL || (entry->value.kind == WEIVEL_STANDARD_VALUE_NUMBER && entry->value.number == 2.0));
     release_run(&run);
+    CHECK(run.plan.action_service == NULL && run.plan.action_method == NULL);
     stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run whose action never ran");
     CHECK(run_record_count() == 0);
+    finish_base();
+}
+
+/** A plan whose `size` ends at its first shape, as a program compiled before the action's service and method has. */
+typedef union older_plan {
+    weivel_standard_host_plan plan;
+    unsigned char bytes[sizeof(weivel_standard_host_plan) + 16];
+} older_plan;
+
+#define OLDER_PLAN_SIZE SPISOR_SHAPE_THROUGH(weivel_standard_host_plan, storage)
+#define PAST_ITS_SIZE 0xA5
+
+static weivel_status start_older(const char *const *arguments, size_t count, older_plan *older,
+                                 weivel_standard_service_refusal *refusal) {
+    const weivel_standard_host *host = host_definition();
+    memset(older->bytes, 0, OLDER_PLAN_SIZE);
+    memset(older->bytes + OLDER_PLAN_SIZE, PAST_ITS_SIZE, sizeof older->bytes - OLDER_PLAN_SIZE);
+    older->plan.size = (uint32_t)OLDER_PLAN_SIZE;
+    memset(refusal, 0, sizeof *refusal);
+    refusal->size = sizeof *refusal;
+    return host->start(host->context, arguments, count, &older->plan, refusal);
+}
+
+static int is_untouched_past_its_size(const older_plan *older) {
+    for (size_t index = OLDER_PLAN_SIZE; index < sizeof older->bytes; index++) {
+        if (older->bytes[index] != PAST_ITS_SIZE) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(void) {
+    const char *action[5] = {LOADER, "action", "a", "greet", "{}"};
+    const char *serve[1] = {LOADER};
+    const weivel_standard_host *host = host_definition();
+    weivel_standard_service_refusal refusal;
+    older_plan older;
+    weivel_status status;
+    start_host_world("older-program");
+    status = start_older(action, 5, &older, &refusal);
+    CHECK(status == WEIVEL_STATUS_REFUSED);
+    CHECK(refusal.detail != NULL && strstr(refusal.detail, "too old for the run") != NULL);
+    CHECK(older.plan.storage == NULL && older.plan.mode == 0 && older.plan.action_name == NULL);
+    CHECK(is_untouched_past_its_size(&older));
+    host->release_plan(host->context, &older.plan);
+    host->release_refusal(host->context, &refusal);
+    CHECK(is_untouched_past_its_size(&older));
+    CHECK(run_record_count() == 0);
+    if (status == WEIVEL_STATUS_OK) {
+        stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run a too small plan was answered for");
+    }
+    status = start_older(serve, 1, &older, &refusal);
+    CHECK(status == WEIVEL_STATUS_OK && older.plan.mode == WEIVEL_STANDARD_HOST_SERVE);
+    CHECK(is_untouched_past_its_size(&older));
+    host->release_plan(host->context, &older.plan);
+    host->release_refusal(host->context, &refusal);
+    CHECK(is_untouched_past_its_size(&older));
+    if (status == WEIVEL_STATUS_OK) {
+        stop_run();
+    }
     finish_base();
 }
 
@@ -273,6 +339,7 @@ int main(void) {
     a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin();
     the_scopes_open_from_the_start_until_its_stop();
     an_action_start_names_the_plugins_own_manifest_and_merges_its_arguments();
+    an_action_start_refuses_a_plan_too_small_for_its_service_and_method();
     arguments_that_name_no_run_are_refused();
     a_null_argument_is_malformed();
     an_action_of_a_plugin_the_plan_does_not_run_is_refused();
