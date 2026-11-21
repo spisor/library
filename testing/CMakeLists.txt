@@ -10,12 +10,19 @@ target_link_libraries(spisor_described_checks PUBLIC weivel_standard ${CMAKE_DL_
 set_target_properties(spisor_described_checks PROPERTIES SPISOR_TEST_ONLY TRUE)
 spisor_strict_warnings(spisor_described_checks)
 
-# spisor_add_described_checks(LIBRARY <shared library target> DECLARATION <library.json>) adds short_shape_test and
-# empty_answer_test, which load LIBRARY as a consumer would and check every definition DECLARATION gives a description.
+# spisor_add_described_checks(LIBRARY <shared library target> DECLARATION <library.json>) adds
+# <LIBRARY>_short_shape_test and <LIBRARY>_empty_answer_test, which load LIBRARY as a consumer would and check every
+# definition DECLARATION gives a description.
 function(spisor_add_described_checks)
     cmake_parse_arguments(PARSE_ARGV 0 DESCRIBED "" "LIBRARY;DECLARATION" "")
-    foreach(name IN ITEMS short_shape_test empty_answer_test)
-        add_executable(${name} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/${name}.c)
+    foreach(required IN ITEMS LIBRARY DECLARATION)
+        if(NOT DESCRIBED_${required})
+            message(FATAL_ERROR "spisor_add_described_checks needs ${required}")
+        endif()
+    endforeach()
+    foreach(check IN ITEMS short_shape_test empty_answer_test)
+        set(name ${DESCRIBED_LIBRARY}_${check})
+        add_executable(${name} ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/${check}.c)
         target_compile_definitions(${name} PRIVATE SPISOR_DESCRIBED_LIBRARY_PATH="$<TARGET_FILE:${DESCRIBED_LIBRARY}>"
             SPISOR_DESCRIBED_DECLARATION_PATH="${DESCRIBED_DECLARATION}")
         target_link_libraries(${name} PRIVATE spisor_described_checks)

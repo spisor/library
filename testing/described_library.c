@@ -6,6 +6,8 @@
 
 #include <weivel/library.h>
 
+#include "erased_calls.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -99,6 +101,12 @@ static const char *definition_symbol_of(const weivel_standard_library_service *s
     return NULL;
 }
 
+SPISOR_CALLS_THROUGH_ERASED_TYPES
+static void answer_both(describe_function describe, definition_function define, spisor_described_definition *found) {
+    found->description = describe();
+    found->definition = define();
+}
+
 /** Fills `found` from one service's two symbols; 0, the reason printed, when either is not there to call. */
 static int described_definition_of(library_handle library, const weivel_standard_library_service *service,
                                    const char *description_symbol, spisor_described_definition *found) {
@@ -116,8 +124,7 @@ static int described_definition_of(library_handle library, const weivel_standard
         fprintf(stderr, "service %s: %s or %s is not exported\n", service->id, description_symbol, definition_symbol);
         return 0;
     }
-    found->description = describe();
-    found->definition = define();
+    answer_both(describe, define, found);
     if (found->description == NULL || found->definition == NULL) {
         fprintf(stderr, "service %s answers no description or no definition\n", service->id);
         return 0;

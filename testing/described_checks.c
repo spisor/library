@@ -8,22 +8,11 @@
 #include <weivel/standard.h>
 #include <weivel/value.h>
 
+#include "erased_calls.h"
+
 #define ARGUMENT_LIMIT 6
 #define LABEL_BYTES 256
 #define NONEMPTY_COUNT 3
-
-/**
- * @implNote An operation is called through a function type with every parameter erased to `void *`, as a binding's
- * FFI calls it; Clang's -fsanitize=function would report each call, though every ABI passes the two the same.
- */
-#if defined(__clang__) && defined(__has_attribute)
-#if __has_attribute(no_sanitize)
-#define CALLS_THROUGH_ERASED_TYPES __attribute__((no_sanitize("function")))
-#endif
-#endif
-#ifndef CALLS_THROUGH_ERASED_TYPES
-#define CALLS_THROUGH_ERASED_TYPES
-#endif
 
 typedef void (*erased_function)(void);
 typedef weivel_status (*operation_of_1)(void *, void *);
@@ -148,7 +137,8 @@ static parameter_rule rule_of(const weivel_standard_described_parameter *paramet
     if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_CONTEXT) {
         return RULE_CONTEXT;
     }
-    if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_POINTER && parameter->element == WEIVEL_STANDARD_DESCRIBED_STRUCT) {
+    if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_POINTER &&
+        parameter->element == WEIVEL_STANDARD_DESCRIBED_STRUCT) {
         return struct_rule_of(parameter->role);
     }
     if (parameter->kind == WEIVEL_STANDARD_DESCRIBED_HANDLE && parameter->role == WEIVEL_STANDARD_DESCRIBED_INPUT) {
@@ -245,7 +235,30 @@ static size_t buffer_size_of(const definition_view *view, const weivel_standard_
     return rule == RULE_NULL_INPUT ? 0 : shape_of(view->description, parameter).size;
 }
 
-/** Zeroed buffers for every parameter after the context, each size-prefixed one with its `size` set in full. */
+static void set_size(unsigned char *at, size_t size) {
+    uint32_t full = (uint32_t)size;
+    memcpy(at, &full, sizeof full);
+}
+
+/** Sets the `size` of every size-prefixed struct `type` holds by value, at any depth, laid at `at`, in full. */
+static void set_nested_sizes(const weivel_standard_description *description, const weivel_standard_described_type *type,
+                             unsigned char *at) {
+    for (size_t index = 0; type != NULL && index < type->member_count; index++) {
+        const weivel_standard_described_member *member = &type->members[index];
+        const weivel_standard_described_type *held = type_named(description, member->type);
+        if (member->kind == WEIVEL_STANDARD_DESCRIBED_STRUCT && held != NULL) {
+            if (is_sized(held)) {
+                set_size(at + member->offset, held->size);
+            }
+            set_nested_sizes(description, held, at + member->offset);
+        }
+    }
+}
+
+/**
+ * Zeroed buffers for every parameter after the context, each size-prefixed one, and each it holds by value, with its
+ * `size` set in full.
+ */
 static int prepare(const definition_view *view, const weivel_standard_described_operation *operation,
                    prepared_call *call) {
     memset(call, 0, sizeof *call);
@@ -266,8 +279,8 @@ static int prepare(const definition_view *view, const weivel_standard_described_
             return 0;
         }
         if (takes_struct(parameter)) {
-            uint32_t full = (uint32_t)size;
-            memcpy(call->buffers[index], &full, sizeof full);
+            set_size(call->buffers[index], size);
+            set_nested_sizes(view->description, type_named(view->description, parameter->type), call->buffers[index]);
         }
         call->arguments[index] = call->buffers[index];
     }
@@ -292,7 +305,7 @@ static void apply(const definition_view *view, const weivel_standard_described_o
     }
 }
 
-CALLS_THROUGH_ERASED_TYPES
+SPISOR_CALLS_THROUGH_ERASED_TYPES
 static weivel_status invoke(erased_function function, void *context, void *const *arguments, size_t count) {
     switch (count) {
     case 1:
@@ -312,7 +325,7 @@ static weivel_status invoke(erased_function function, void *context, void *const
     }
 }
 
-CALLS_THROUGH_ERASED_TYPES
+SPISOR_CALLS_THROUGH_ERASED_TYPES
 static void release_refusal(const definition_view *view, const weivel_standard_described_operation *operation,
                             prepared_call *call) {
     const weivel_standard_described_parameter *refusal = &operation->parameters[operation->parameter_count - 1];
@@ -418,6 +431,34 @@ static void counted_answers_of(const definition_view *view, const weivel_standar
     }
 }
 
+static int names_release(const weivel_standard_described_parameter *parameters, size_t parameter_count,
+                         const char *name) {
+    for (size_t index = 0; index < parameter_count; index++) {
+        if (parameters[index].release != NULL && strcmp(parameters[index].release, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int is_release(const weivel_standard_description *description, const char *name) {
+    for (size_t index = 0; index < description->operation_count; index++) {
+        const weivel_standard_described_operation *operation = &description->operations[index];
+        if (names_release(operation->parameters, operation->parameter_count, name)) {
+            return 1;
+        }
+    }
+    for (size_t type = 0; type < description->type_count; type++) {
+        for (size_t index = 0; index < description->types[type].member_count; index++) {
+            const char *release = description->types[type].members[index].release;
+            if (release != NULL && strcmp(release, name) == 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 typedef void (*operation_check)(const definition_view *view, const weivel_standard_described_operation *operation,
                                 spisor_check_tally *tally);
 
@@ -426,7 +467,12 @@ static void check_every_operation(const weivel_standard_description *description
     definition_view view = {description, definition, context_of(description, definition)};
     for (size_t index = 0; index < description->operation_count; index++) {
         const weivel_standard_described_operation *operation = &description->operations[index];
-        if (operation->returns == WEIVEL_STANDARD_DESCRIBED_STATUS && is_callable(&view, operation, tally)) {
+        if (operation->returns != WEIVEL_STANDARD_DESCRIBED_STATUS) {
+            if (!is_release(description, operation->name)) {
+                report(&view, operation, "answers no status and is no release a parameter or member names", NULL,
+                       tally);
+            }
+        } else if (is_callable(&view, operation, tally)) {
             check(&view, operation, tally);
         }
     }
