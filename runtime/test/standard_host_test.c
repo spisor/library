@@ -4,7 +4,6 @@
 
 #include "host_fixture.h"
 
-#include "holders.h"
 #include "spisor/json_allocation.h"
 
 /**
@@ -14,33 +13,8 @@
  * and a stop that leaves no run record and no scope behind.
  */
 
-typedef struct started_run {
-    weivel_status status;
-    weivel_standard_host_plan plan;
-    weivel_standard_service_refusal refusal;
-} started_run;
-
-static started_run start_with(const char *const *arguments, size_t count) {
-    const weivel_standard_host *host = host_definition();
-    started_run run;
-    memset(&run, 0, sizeof run);
-    run.plan.size = sizeof run.plan;
-    run.refusal.size = sizeof run.refusal;
-    run.status = host->start(host->context, arguments, count, &run.plan, &run.refusal);
-    return run;
-}
-
-static void release_run(started_run *run) {
-    const weivel_standard_host *host = host_definition();
-    host->release_plan(host->context, &run->plan);
-    host->release_refusal(host->context, &run->refusal);
-}
-
 static void stop_run(void) {
-    const weivel_standard_host *host = host_definition();
-    uint32_t exit_code = 9;
-    CHECK(host->stop(host->context, &exit_code, NULL) == WEIVEL_STATUS_OK);
-    CHECK(exit_code == 0);
+    stop_expecting(0, "a serve run that is stopped");
 }
 
 static void expect_refused(const started_run *run, weivel_status status, const char *detail_part, const char *label) {
@@ -156,7 +130,7 @@ static void an_action_start_names_the_plugins_own_manifest_and_merges_its_argume
     entry = entry_at(&run.plan.action_arguments, 2, "times");
     CHECK(entry == NULL || (entry->value.kind == WEIVEL_STANDARD_VALUE_NUMBER && entry->value.number == 2.0));
     release_run(&run);
-    stop_run();
+    stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run whose action never ran");
     CHECK(run_record_count() == 0);
     finish_base();
 }

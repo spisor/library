@@ -203,6 +203,7 @@ static runtime_host_run *new_run(const host_request *request) {
     strcpy(host_id, request->host_id);
     run->host_id = host_id;
     run->mode = request->mode;
+    run->exit_code = request->mode == WEIVEL_STANDARD_HOST_ACTION ? RUNTIME_HOST_EXIT_FAILED : 0;
     return run;
 }
 

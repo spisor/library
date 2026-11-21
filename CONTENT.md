@@ -166,10 +166,23 @@ names its plugin by that plugin's manifest path, the very text the plan's plugin
 it exactly, and its arguments are what `ui.action` merges from that manifest. A located plugin whose manifest names no
 entry installed beside it, a plugin the plan does not run, an undeclared action, arguments naming no run, a layer
 with no hinted version and a second start before a stop are refused at start, which then leaves no run record and
-no scopes begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the scopes last, over the loader's home and the places, and `stop`
-ends them, removes the run record and answers exit code 0; `started`, `tick` and `finished` answer OK while a run is
-started, `tick` naming no next tick. `standard_host_test` holds each argument form and refusal, and
-`out_of_memory_host_test` fails every allocation of a start and of the stop after it.
+no scopes begun; a refused SERVE start publishes its refusal to the loader's ready record. The start begins the
+scopes last, over the loader's home and the places.
+
+`started` takes every plugin's outcome and refuses the run for a plugin that was refused or failed; a SERVE run then
+publishes to the loader's ready record that it is ready, with an empty environment, or why it is refused. `tick` is a
+SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's
+timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
+`cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due time as
+its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. `finished` records how
+an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code, as the
+archived host's were: 0 for a SERVE run that ends on a stop request or its holders' word and for an action that
+answered, 1 for an action that threw or never ran and for a run a call of which failed.
+
+`standard_host_test` holds each argument form and refusal of a start, `host_progress_test` the ready record, the
+timers, the exit codes and every call out of its order, `host_tick_threads_test` a plugin's `config.get` through
+its scope while another thread's tick waits on a stalled catalog source, and `out_of_memory_host_test` fails every
+allocation of a start and its stop, and of the calls between them.
 
 A scope opens only once a host has begun the scopes, as `weivel.host`'s start does, and its `open` reads the
 plugin's manifest: the `id`, the `config` record and the `settings`, each declaration a record whose `layer` is
