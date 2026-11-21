@@ -39,6 +39,11 @@ target_include_directories(restatement_test PRIVATE ${PROJECT_SOURCE_DIR}/includ
 spisor_strict_warnings(restatement_test)
 add_test(NAME restatement_test COMMAND restatement_test)
 
+add_executable(described_checks_test described_checks_test.c)
+target_link_libraries(described_checks_test PRIVATE spisor_described_checks)
+spisor_strict_warnings(described_checks_test)
+add_test(NAME described_checks_test COMMAND described_checks_test)
+
 add_executable(vector_reader_test vector_reader_test.c)
 target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting)
 spisor_strict_warnings(vector_reader_test)
