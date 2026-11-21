@@ -4,6 +4,9 @@
 #include "cJSON.h"
 #include "spisor/status.h"
 
+/** The declaration a library folder carries beside its binary. */
+#define RUNTIME_LIBRARY_DECLARATION "library.json"
+
 /**
  * cache/hosts/<host_id>.json, freed; NULL with *problem set (freed) when host_id is
  * no plain file name, or with *problem NULL when memory runs out.

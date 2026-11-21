@@ -80,7 +80,8 @@ typedef struct standard_service {
     const char *definition;
 } standard_service;
 
-static const standard_service standard_services[] = {{"weivel.scope", "weivel_standard_scopes"}};
+static const standard_service standard_services[] = {{"weivel.host", "weivel_standard_host"},
+                                                     {"weivel.scope", "weivel_standard_scopes"}};
 
 static void check_definition_name(const char *definition, const char *service_id) {
     char expected[128];

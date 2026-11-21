@@ -15,7 +15,6 @@
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 
-#define LIBRARY_DECLARATION "library.json"
 #define WINDOWS_PLATFORM_PREFIX "win32-"
 #define DARWIN_PLATFORM_PREFIX "darwin-"
 #define WINDOWS_BINARY_SUFFIX ".dll"
@@ -183,7 +182,7 @@ static int search_binaries(const char *directory, const char *suffix, binary_sea
 }
 
 static int is_declared_library(const char *directory) {
-    const char *segments[2] = {directory, LIBRARY_DECLARATION};
+    const char *segments[2] = {directory, RUNTIME_LIBRARY_DECLARATION};
     char *declaration = runtime_cache_joined(segments, 2);
     int declared = declaration != NULL && spisor_probe_file(declaration) == SPISOR_FILE_PRESENT;
     spisor_memory_release(declaration);
@@ -201,7 +200,7 @@ static int add_binary(cJSON *entry, const char *directory, const char *platform,
     if (searched && search.count != 1) {
         const char *parts[5] = {"the library folder ", directory,
                                 search.count == 0 ? " holds no " : " holds more than one ", suffix,
-                                " file beside its " LIBRARY_DECLARATION};
+                                " file beside its " RUNTIME_LIBRARY_DECLARATION};
         *problem = runtime_cache_text(parts, 5);
     }
     const char *segments[2] = {directory, search.first_name};

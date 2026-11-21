@@ -266,6 +266,12 @@ target_include_directories(runtime_standard PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_standard PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_standard)
 
+add_library(runtime_standard_host OBJECT src/host_run.c src/standard_host.c)
+target_link_libraries(runtime_standard_host PUBLIC runtime_objects weivel_standard)
+target_include_directories(runtime_standard_host PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_standard_host PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_standard_host)
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -273,7 +279,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_commands runtime_path_entry runtime_secret_store
     runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
     runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
-    runtime_hosts runtime_hosts_definition runtime_ui runtime_install runtime_standard)
+    runtime_hosts runtime_hosts_definition runtime_ui runtime_install runtime_standard runtime_standard_host)
 set(runtime_shipped_objects "")
 foreach(library IN LISTS runtime_shipped_object_libraries)
     target_compile_definitions(${library} PRIVATE RUNTIME_BUILDING)

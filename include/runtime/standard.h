@@ -8,8 +8,8 @@
  * standard service's symbols read `runtime_standard_<name>_definition_of` and `_description` for the id
  * `weivel.<name>`, and its description is the standard's own, answered through a one-line forwarder.
  *
- * runtime serves `weivel.scope` and declares none of `weivel.config`, `weivel.secrets`, `weivel.paths` and
- * `weivel.log`: a plugin reaches its own of each only through the scope opened for it.
+ * runtime serves `weivel.host` and `weivel.scope` and declares none of `weivel.config`, `weivel.secrets`,
+ * `weivel.paths` and `weivel.log`: a plugin reaches its own of each only through the scope opened for it.
  */
 
 #include "runtime/definition.h"
@@ -40,6 +40,34 @@ extern "C" {
  * carry is refused at open.
  */
 RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
+
+/**
+ * The static weivel_standard_host (`weivel/host.h`), living until the library is unloaded, which runs a loader's
+ * plugins: a process makes one run at a time, from a `start` answering OK until its `stop`.
+ *
+ * `start` reads its arguments as `<loader id>` for a SERVE run, or `<loader id> action <plugin> <action> <input>` for
+ * an ACTION run, the input a JSON object, and reads this process's environment. The layer is the javascript-host at
+ * the version its boot hint names, beside every library that hint names, and hosts' start plans the run, a SERVE
+ * run as the loader's session start. The plan loads every hinted library that has a binary but runtime itself, which
+ * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
+ * plan that cache's locate finds installed, in id order, a plugin whose manifest names no entry that is there planned
+ * with an empty entry. An ACTION plan's `action_plugin` is the manifest path of the plan's plugin of that id, the
+ * very text its plugin carries, `action_name` the action's id, and `action_arguments` what ui's action merges from
+ * that manifest: the declared argument, then the input. The scopes then begin, over the loader's home and the places,
+ * so `weivel.scope` opens the plan's plugins' scopes until `stop`.
+ *
+ * `start` answers MALFORMED for a refusal or plan short of its first shape, a plan that is not empty, and arguments
+ * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a second start before
+ * a `stop`, a layer with no hinted version, a start hosts' start refuses, a plugin the plan does not run, a manifest
+ * that cannot be read, an action ui's action refuses, as one the manifest does not declare, and scopes that cannot
+ * begin; and OUT_OF_MEMORY. A start that does not answer OK leaves no run record of its own and no scopes begun, and
+ * a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
+ *
+ * `started`, `tick` and `finished` refuse when no run is started and answer OK otherwise; `tick` answers no next
+ * tick. `stop` ends the scopes, removes the run record the plan wrote, ends the run and answers exit code 0, and
+ * refuses when no run is started.
+ */
+RUNTIME_DEFINITION_API const void *runtime_standard_host_definition_of(void);
 
 #ifdef __cplusplus
 }

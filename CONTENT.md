@@ -58,10 +58,11 @@ from a local build (`cmake -S . -B build && cmake --build build --config Release
 Every operation takes the home, the places and the plugin's facts in its argument and keeps no state
 between calls, so a settings file edited by hand is read afresh by the next call. The exceptions are
 `secrets`, which reads and writes the OS credential store (Credential Manager, Keychain, Secret
-Service), and that store may prompt the user, and `weivel.scope`, which opens scopes in the host its start began
-and keeps that host's log writer. Every operation is safe from two threads at once: `secrets` serialises its rewrites
-of the secrets file under a lock file beside it, which keeps processes apart as well, and a replaced file's temporary
-name is unique to its process and call and created only where nothing stands.
+Service), and that store may prompt the user, `weivel.host`, which holds one run from its start to its stop, and
+`weivel.scope`, which opens scopes in the host that run began and keeps that host's log writer. Every operation is
+safe from two threads at once: `secrets` serialises its rewrites of the secrets file under a lock file beside it,
+which keeps processes apart as well, and a replaced file's temporary name is unique to its process and call and
+created only where nothing stands.
 
 ### The definitions
 
@@ -140,19 +141,37 @@ off the include path.
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
 | `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
+| `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
 | `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
-24 services, 104 operations.
+25 services, 109 operations.
 
 A `places` argument is what `places.resolve` answers.
 
 ### The standard services
 
 `include/runtime/standard.h` serves the weivel standard's own definitions under the standard's ids, with the
-standard's structs (`weivel/scope.h`) and its descriptions, each exported through a one-line forwarder such as
-`runtime_standard_scope_definition_description`, so runtime describes none of them again. runtime serves
-`weivel.scope` and declares none of `weivel.config`, `weivel.secrets`, `weivel.paths` and `weivel.log`, which a
-plugin reaches only through its own scope. A scope opens only once the host is started, and its `open` reads the
+standard's structs (`weivel/host.h`, `weivel/scope.h`) and its descriptions, each exported through a one-line
+forwarder such as `runtime_standard_scope_definition_description`, so runtime describes none of them again. runtime
+serves `weivel.host` and `weivel.scope` and declares none of `weivel.config`, `weivel.secrets`, `weivel.paths` and
+`weivel.log`, which a plugin reaches only through its own scope.
+
+`weivel.host` is what weivel's host program runs a loader's plugins on, one run a process, from a `start` answering
+OK to its `stop`. `start` takes the program's arguments, `<loader id>` for a SERVE run or `<loader id> action
+<plugin> <action> <input JSON>` for an ACTION run, and this process's environment. The layer is the javascript-host
+at the version its boot hint names, beside every library the hint names, and `hosts.start` plans the run, a SERVE
+run as the loader's session start. The plan loads every hinted library with a binary but runtime itself, which the
+program was started with, and activates every plugin of that plan `cache.locate` finds installed. An ACTION plan
+names its plugin by that plugin's manifest path, the very text the plan's plugin carries, since the program matches
+it exactly, and its arguments are what `ui.action` merges from that manifest. A plugin the plan does not run, an
+undeclared action, arguments naming no run, a layer with no hinted version and a second start before a stop are
+refused at start, which then leaves no run record and no scopes begun; a refused SERVE start publishes its refusal
+to the loader's ready record. The start begins the scopes last, over the loader's home and the places, and `stop`
+ends them, removes the run record and answers exit code 0; `started`, `tick` and `finished` answer OK while a run is
+started, `tick` naming no next tick. `standard_host_test` holds each argument form and refusal, and
+`out_of_memory_host_test` fails every allocation of a start and of the stop after it.
+
+A scope opens only once a host has begun the scopes, as `weivel.host`'s start does, and its `open` reads the
 plugin's manifest: the `id`, the `config` record and the `settings`, each declaration a record whose `layer` is
 `application` or `portable` when it has one, and refuses at open a manifest one typo breaks, an unknown layer, a
 declaration or `config` that is no record, no `id`, or a config name or id no settings file can be named by, so one

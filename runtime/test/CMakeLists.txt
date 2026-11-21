@@ -237,6 +237,12 @@ foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test)
     runtime_test(${name} ${runtime_install_plain_http_test_objects})
     target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()
+set(runtime_standard_host_test_objects $<TARGET_OBJECTS:runtime_standard_host> $<TARGET_OBJECTS:runtime_standard>
+    $<TARGET_OBJECTS:runtime_ui> ${runtime_install_plain_http_test_objects})
+runtime_test(standard_host_test ${runtime_standard_host_test_objects})
+target_link_libraries(standard_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+runtime_test_with_allocator(out_of_memory_host_test spisor_allocator_counting ${runtime_standard_host_test_objects})
+target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard ${runtime_fetch_libraries})
 foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
         install_ecosystem_test install_applications_test hosts_test)
     runtime_test(${name} ${runtime_install_test_objects})
