@@ -221,7 +221,8 @@ argument, then the input, then the row's `item` and `items`, and refuses an acti
 ### Bound from TypeScript and Java
 
 `test/bindings/` proves that a language which cannot read a C header binds runtime from its descriptions alone,
-through weivel's generic binding and no file naming a runtime type. `bindings_typescript` and `bindings_java` load
+through weivel's generic binding: no file translates a runtime header, and the tests name
+`weivel_standard_host_plan.plugins` only as a string, the data a check is about. `bindings_typescript` and `bindings_java` load
 the built `runtime` through weivel/typescript's and weivel/java's hosts, given the standard's check, over a home
 `home.cmake` lays out with one installed plugin: `weivel.host`'s `start` answers its plan as nested structs,
 `weivel.scope` opens that plugin's scope, and its `config` reads the plugin's settings back, one by one and all at
