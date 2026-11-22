@@ -1,0 +1,25 @@
+{
+  "api": 1,
+  "importName": "a",
+  "id": "a",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "services": {
+    "consumes": ["weivel.config", "weivel.log"],
+    "provides": ["a:greeter"]
+  },
+  "config": {
+    "name": "a",
+    "defaults": {
+      "greeting": "hello from the manifest's defaults",
+      "nested": {"depth": 2}
+    }
+  },
+  "settings": {
+    "greeting": {"type": "text"},
+    "report": {"type": "text", "layer": "application"}
+  },
+  "actions": {
+    "greet": {"call": {"service": "a:greeter", "method": "greet", "argument": {"name": "world"}}}
+  }
+}

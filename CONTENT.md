@@ -218,6 +218,31 @@ A host opens a screen by calling `ui.plan` in rounds, answering the calls each n
 than 16 is never rendered. `ui.action` answers the call a declared action makes, its arguments the declared
 argument, then the input, then the row's `item` and `items`, and refuses an action the manifest does not declare.
 
+### Bound from TypeScript and Java
+
+`test/bindings/` proves that a language which cannot read a C header binds runtime from its descriptions alone,
+through weivel's generic binding and no file naming a runtime type. `bindings_typescript` and `bindings_java` load
+the built `runtime` through weivel/typescript's and weivel/java's hosts, given the standard's check, over a home
+`home.cmake` lays out with one installed plugin: `weivel.host`'s `start` answers its plan as nested structs,
+`weivel.scope` opens that plugin's scope, and its `config` reads the plugin's settings back, one by one and all at
+once; a copy of `weivel.host`'s description with one member moved by 8 bytes is refused by each binding naming the
+member, and the same copy unmoved binds. `bindings_typescript_program` runs weivel/typescript's bundled host program
+as a child process with `runtime` as its host library: a TypeScript plugin reads its own config through
+`weivel.scope`, writes it out and answers its action, and in a second run a plugin whose manifest declares an
+unknown settings layer is refused alone while the run carries on and exits 0. `bindings_typescript_cost` and
+`bindings_java_cost` print a `spisor-bindings-measurement` line, the median time of a scoped `config.get` beside the
+binding's own echo benchmark, which nothing judges (call 10); every such `get` reads the plugin's settings files
+afresh, so it costs a file read where echo costs a copy.
+
+weivel/typescript and weivel/java come from `siblings/typescript` and `siblings/java` at the commits `repo.json`
+pins, or from `SPISOR_WEIVEL_TYPESCRIPT_DIR` and `SPISOR_WEIVEL_JAVA_DIR`, and are built into the build tree, never
+into the checkout: the package's dependencies installed with `npm ci` and its sources compiled beside them, and the
+jar built by the checkout's own Gradle wrapper into `test/bindings/weivel-java`. The TypeScript tests need the node
+weivel/typescript's `engines` names and npm on the `PATH`, and the Java tests a JDK of release 22 or later at
+`SPISOR_BINDINGS_JAVA_HOME`, which defaults to `JAVA_HOME`. Without them, without a checkout, on a sanitized build
+or on a 32-bit platform each test is registered as skipped, saying why. Nothing under `test/bindings/` is linked
+into, staged beside or installed with any shipped artifact.
+
 ### The places
 
 `places.resolve` answers four places for the OS, from the user's home and an `environment` the host

@@ -1,0 +1,16 @@
+{
+  "api": 1,
+  "importName": "b",
+  "id": "b",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "services": {
+    "consumes": ["weivel.config"]
+  },
+  "config": {
+    "name": "b"
+  },
+  "settings": {
+    "report": {"type": "text", "layer": "aplication"}
+  }
+}
