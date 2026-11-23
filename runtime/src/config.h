@@ -93,7 +93,8 @@ spisor_status runtime_config_set_value(const runtime_config_request *request, cJ
                                        spisor_refusal *refusal);
 
 /**
- * The settings file of the application layer a plugin's `request` reads, as a new path freed by the caller.
+ * The settings file of the application layer a plugin's `request` reads, the one its set writes a key no declaration
+ * places elsewhere, as a new path freed by the caller.
  *
  * @return OK; MALFORMED with the refusal the operations answer; OUT_OF_MEMORY.
  */
