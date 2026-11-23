@@ -455,7 +455,8 @@ static spisor_status serve_start(const runtime_hosts_start_argument *argument, r
                                            argument->layer->id,
                                            argument->layer->version,
                                            cJSON_GetObjectItemCaseSensitive(call, "libraries"),
-                                           argument->session != 0};
+                                           argument->session != 0,
+                                           0};
     cJSON *answered = call == NULL ? NULL : runtime_hosts_start(&request, &operation_refusal);
     spisor_status status;
     cJSON_Delete(call);
