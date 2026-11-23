@@ -339,6 +339,30 @@ static void set_writes_the_declared_layer_and_get_reads_it_back(void) {
     release(&scope, &refusal);
 }
 
+static void settings_file_names_the_file_an_undeclared_set_writes(void) {
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    weivel_standard_settings_file file = WEIVEL_INIT(weivel_standard_settings_file);
+    char *expected = joined_path(place.config, "viewer.json");
+    const weivel_standard_config *config = open_viewer(&scope);
+    if (config == NULL) {
+        spisor_memory_release(expected);
+        return;
+    }
+    CHECK(WEIVEL_STANDARD_OFFERS(weivel_standard_config, config, settings_file));
+    CHECK(config->settings_file(config->context, &file, NULL) == WEIVEL_STATUS_OK);
+    check_text(file.path, expected, "the settings file");
+    CHECK(file.storage != NULL);
+    config->release_settings_file(config->context, &file);
+    CHECK(file.size == sizeof file && file.path == NULL && file.storage == NULL);
+    CHECK(set_value(config, "width", number_value(3), NULL) == WEIVEL_STATUS_OK);
+    CHECK(file_holds_number(place.config, "viewer.json", "width", 3));
+    file.size = (uint32_t)offsetof(weivel_standard_settings_file, storage);
+    CHECK(config->settings_file(config->context, &file, NULL) == WEIVEL_STATUS_MALFORMED);
+    CHECK(config->settings_file(config->context, NULL, NULL) == WEIVEL_STATUS_MALFORMED);
+    spisor_memory_release(expected);
+    release(&scope, NULL);
+}
+
 /** Requires the set of `value` to answer `expected`, naming `detail`, and to write nothing. */
 static void set_refuses(const weivel_standard_config *config, weivel_standard_setting_value value,
                         weivel_status expected, const char *detail) {
@@ -536,6 +560,7 @@ int main(void) {
     get_tree_answers_any_setting_whole_and_none_when_absent();
     set_refuses_what_services_h_does_not_allow();
     set_writes_the_declared_layer_and_get_reads_it_back();
+    settings_file_names_the_file_an_undeclared_set_writes();
     all_measures_every_key_it_builds();
     a_later_consumer_has_its_appended_bytes_zeroed();
     a_later_consumer_has_its_answers_and_refusal_zeroed_beyond();

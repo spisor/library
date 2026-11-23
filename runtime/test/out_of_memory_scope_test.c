@@ -143,6 +143,22 @@ static spisor_status run_get_tree(void) {
     return answered((weivel_status)status, &refusal);
 }
 
+static spisor_status run_settings_file(void) {
+    const weivel_standard_config *config = opened.config;
+    weivel_standard_settings_file file;
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    spisor_status status;
+    start_empty(&file, sizeof file);
+    status = (spisor_status)config->settings_file(config->context, &file, &refusal);
+    put(file.path);
+    if (status == SPISOR_OK && file.path == NULL) {
+        status = WRONG_RUN;
+    }
+    status = empty_unless_answered(status, &file, sizeof file);
+    config->release_settings_file(config->context, &file);
+    return answered((weivel_status)status, &refusal);
+}
+
 static spisor_status run_set(void) {
     const weivel_standard_config *config = opened.config;
     weivel_standard_setting_value value = {WEIVEL_STANDARD_SETTING_TEXT, 0, 0.0, "blue", 4};
@@ -318,6 +334,7 @@ int main(void) {
         {"config's all", run_all, 1, SPISOR_OK, NULL},
         {"config's get", run_get, 1, SPISOR_OK, NULL},
         {"config's get_tree", run_get_tree, 1, SPISOR_OK, NULL},
+        {"config's settings_file", run_settings_file, 1, SPISOR_OK, NULL},
         {"config's set", run_set, 1, SPISOR_OK, NULL},
         {"secrets' set", run_secret_set, 1, SPISOR_OK, NULL},
         {"secrets' get", run_secret_get, 1, SPISOR_OK, NULL},

@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "allocation.h"
 #include "config.h"
 #include "config_conversion.h"
 #include "definition_support.h"
@@ -10,7 +9,6 @@
 #define PLUGIN_SHAPE SPISOR_SHAPE_THROUGH(runtime_config_plugin, places)
 #define GET_SHAPE SPISOR_SHAPE_THROUGH(runtime_config_get_argument, key)
 #define SET_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_config_set_answer, storage)
-#define FILE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_config_file_answer, storage)
 
 /** The JSON a request points at while it is served, deleted by free_plugin_json. */
 typedef struct plugin_json {
@@ -172,40 +170,9 @@ static void release_tree(void *context, spisor_value_tree *tree) {
     runtime_release_tree(context, tree);
 }
 
-static spisor_status settings_file(void *context, const runtime_config_plugin *plugin,
-                                   runtime_config_file_answer *answer, spisor_refusal *refusal) {
-    runtime_config_request request = runtime_config_request_of(NULL, NULL);
-    plugin_json json;
-    char *file = NULL;
-    spisor_status status;
-    (void)context;
-    if (!is_whole_plugin(plugin) || !SPISOR_IS_EMPTY_ANSWER(answer, FILE_ANSWER_SHAPE)) {
-        return spisor_refuse_shape(refusal, "config's settings_file");
-    }
-    status = plugin_request(plugin, &request, &json, refusal);
-    if (status == SPISOR_OK) {
-        status = runtime_config_settings_file(&request, &file, refusal);
-    }
-    if (status == SPISOR_OK) {
-        answer->path = file;
-        answer->storage = file;
-    }
-    free_plugin_json(&json);
-    return status;
-}
-
-static void release_file_answer(void *context, runtime_config_file_answer *answer) {
-    (void)context;
-    if (answer == NULL || !spisor_has_shape(answer->size, FILE_ANSWER_SHAPE)) {
-        return;
-    }
-    spisor_memory_release(answer->storage);
-    SPISOR_CLEAR_ANSWER(answer, FILE_ANSWER_SHAPE);
-}
-
 static const runtime_config_definition definition = {
     sizeof(runtime_config_definition), NULL, all, get, set, release_tree, release_set_answer,
-    spisor_release_refusal, settings_file, release_file_answer,
+    spisor_release_refusal,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_config_definition_of(void) {

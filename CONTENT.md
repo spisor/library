@@ -122,7 +122,7 @@ off the include path.
 | `identity` | `include/runtime/identity.h` | `parse`, `folder`, `resolve`, `agree`, `also_at`, `accepts_version` |
 | `marketplace` | `include/runtime/marketplace.h` | `build`, `sources`, `read`, `lookup`, `remember` |
 | `places` | `include/runtime/places.h` | `resolve` |
-| `config` | `include/runtime/config.h` | `all`, `get`, `set`, `settings_file` |
+| `config` | `include/runtime/config.h` | `all`, `get`, `set` |
 | `settings` | `include/runtime/settings.h` | `all`, `set` |
 | `log` | `include/runtime/log.h` | `write` |
 | `secrets` | `include/runtime/secrets.h` | `get`, `set`, `remove`, `clear`, `reconcile` |
@@ -142,7 +142,7 @@ off the include path.
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
 | `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
 | `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
-| `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
+| `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`, `settings_file`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
 25 services, 111 operations.
 
@@ -193,22 +193,23 @@ A scope opens only once a host has begun the scopes, as `weivel.host`'s start do
 plugin's manifest: the `id`, the `config` record and the `settings`, each declaration a record whose `layer` is
 `application` or `portable` when it has one, and refuses at open a manifest one typo breaks, an unknown layer, a
 declaration or `config` that is no record, no `id`, or a config name or id no settings file can be named by, so one
-typo refuses that plugin rather than every later read. The scope's `config` answers `config.all`, `get`, `set`
-and `get_tree` for that plugin alone. `all` and `get` are flattened: a record's members become dotted keys, a text,
-number or boolean is offered as the standard's kind, and a null, a list, a member whose name is empty or holds a dot,
-and a declared secret are not offered, so a get answers NONE for them. `get_tree` answers the setting at a dotted
-key whole as the standard's value tree, a list or a record as well as a text, number, boolean or null, and NONE for
-an absent key, a declared secret or a key inside one. A set of a declared secret is refused, since only
-`weivel.secrets` reaches one. Its `secrets` are runtime's `secrets` under the plugin's id alone, in the host's secret
-places; a secret is UTF-8 text without a NUL byte, as every place runtime keeps one holds, and other bytes are refused.
-Its `paths` answer folders that are the plugin's alone, named by its id: `cache` its folder in the cache place, and
-`config` and `plugin` its own folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder
-in the application's plugin folder for a host with no portable layer; each is resolved once at open.
-Its `log` hands each entry, its fields appended as compact JSON, to one
-writer thread the started host owns, which appends it through runtime's `log`, so a write never waits on a file;
-the writer holds at most 1024 entries, a write beyond them is refused, and the host's end writes every entry handed
-over before it returns, after which a write is refused until the next begin. A TRACE entry is dropped, since
-runtime's log keeps no such level. A scope keeps its own copy of the host and the manifest, so it outlives the
+typo refuses that plugin rather than every later read. The scope's `config` answers `config.all`, `get`, `set`,
+`get_tree` and `settings_file` for that plugin alone. `all` and `get` are flattened: a record's members become dotted
+keys, a text, number or boolean is offered as the standard's kind, and a null, a list, a member whose name is empty or
+holds a dot, and a declared secret are not offered, so a get answers NONE for them. `get_tree` answers the setting at a
+dotted key whole as the standard's value tree, a list or a record as well as a text, number, boolean or null, and NONE
+for an absent key, a declared secret or a key inside one. `settings_file` answers the absolute path of the plugin's
+application settings file, `<config folder>/<config name>.json`, the one its `set` writes a key no declaration places
+elsewhere, which need not exist yet. A set of a declared secret is refused, since only `weivel.secrets` reaches one. Its
+`secrets` are runtime's `secrets` under the plugin's id alone, in the host's secret places; a secret is UTF-8 text
+without a NUL byte, as every place runtime keeps one holds, and other bytes are refused. Its `paths` answer folders that
+are the plugin's alone, named by its id: `cache` its folder in the cache place, and `config` and `plugin` its own
+folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder in the application's plugin
+folder for a host with no portable layer; each is resolved once at open. Its `log` hands each entry, its fields appended
+as compact JSON, to one writer thread the started host owns, which appends it through runtime's `log`, so a write never
+waits on a file; the writer holds at most 1024 entries, a write beyond them is refused, and the host's end writes every
+entry handed over before it returns, after which a write is refused until the next begin. A TRACE entry is dropped,
+since runtime's log keeps no such level. A scope keeps its own copy of the host and the manifest, so it outlives the
 host's end, and releasing it frees everything it holds once the writer has written every entry it handed over.
 `scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the first also running the described
 checks over all four definitions an opened scope answers, which call config's operations and secrets' `get` and read
@@ -414,12 +415,11 @@ The portable place holds `settings.json` (the ecosystem settings, which `log.wri
 `plugins/<manifest id>/config.json` per plugin, named by the manifest `id`, never `config.name`;
 that folder is the plugin's `portable` path from `paths.resolve`, beside its `pluginCache` folder in
 the cache place. `config` reads defaults, then the portable file, then the application file, later
-winning and objects merging key by key. `config.settings_file` answers the absolute path of that application file,
-`<config folder>/<config name>.json`, which need not exist yet. `config.set` writes the application file unless `layer`
-is `"portable"`, or, when no `layer` is given, unless the key is declared: a declared key goes to the layer its
-declaration names, and to the portable one when it names none. A host with no portable layer omits `portable` and a
-portable write is refused. An unreadable file is never overwritten, and a write through a symlinked portable file
-changes the target and leaves the link.
+winning and objects merging key by key. `config.set` writes the application file unless `layer` is `"portable"`, or,
+when no `layer` is given, unless the key is declared: a declared key goes to the layer its declaration names, and to the
+portable one when it names none. A host with no portable layer omits `portable` and a portable write is refused. An
+unreadable file is never overwritten, and a write through a symlinked portable file changes the target and leaves the
+link.
 
 ### Secrets and their stores
 

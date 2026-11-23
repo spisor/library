@@ -12,6 +12,7 @@
 #define SETTINGS_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_settings, storage)
 #define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_setting_answer, storage)
 #define TREE_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_value_tree, storage)
+#define SETTINGS_FILE_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_settings_file, storage)
 
 /**
  * One walk over a merged settings record: counting when `settings` is NULL, else filling them, each key built in
@@ -387,6 +388,36 @@ static void release_tree(void *context, weivel_standard_value_tree *tree) {
     SPISOR_CLEAR_ANSWER(tree, TREE_SHAPE);
 }
 
+static weivel_status settings_file(void *context, weivel_standard_settings_file *file,
+                                   weivel_standard_service_refusal *refusal) {
+    runtime_config_request request = runtime_plugin_scope_request(context);
+    spisor_refusal filled = SPISOR_INIT(spisor_refusal);
+    char *path = NULL;
+    spisor_status status;
+    if (!runtime_is_usable_service_refusal(refusal)) {
+        return WEIVEL_STATUS_MALFORMED;
+    }
+    if (!SPISOR_IS_EMPTY_ANSWER(file, SETTINGS_FILE_SHAPE) || file->path != NULL) {
+        return runtime_answer_service(spisor_refuse_shape(&filled, "config's settings_file"), &filled, refusal);
+    }
+    status = as_scope_answer(runtime_config_settings_file(&request, &path, &filled));
+    if (status == SPISOR_OK) {
+        runtime_zero_beyond(file, sizeof *file);
+        file->path = path;
+        file->storage = path;
+    }
+    return runtime_answer_service(status, &filled, refusal);
+}
+
+static void release_settings_file(void *context, weivel_standard_settings_file *file) {
+    (void)context;
+    if (file == NULL || !spisor_has_shape(file->size, SETTINGS_FILE_SHAPE)) {
+        return;
+    }
+    spisor_memory_release(file->storage);
+    SPISOR_CLEAR_ANSWER(file, SETTINGS_FILE_SHAPE);
+}
+
 void runtime_scope_config_fill(runtime_plugin_scope *scope) {
     weivel_standard_config *config = &scope->config;
     config->size = (uint32_t)sizeof *config;
@@ -399,4 +430,6 @@ void runtime_scope_config_fill(runtime_plugin_scope *scope) {
     config->release_refusal = runtime_release_service_refusal;
     config->get_tree = get_tree;
     config->release_tree = release_tree;
+    config->settings_file = settings_file;
+    config->release_settings_file = release_settings_file;
 }

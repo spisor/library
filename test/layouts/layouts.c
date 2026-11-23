@@ -233,10 +233,6 @@ static void print_config_layouts(void) {
     FIELD(runtime_config_set_answer, previous);
     FIELD(runtime_config_set_answer, storage);
     SIZE(runtime_config_set_answer);
-    FIELD(runtime_config_file_answer, size);
-    FIELD(runtime_config_file_answer, path);
-    FIELD(runtime_config_file_answer, storage);
-    SIZE(runtime_config_file_answer);
     FIELD(runtime_config_definition, size);
     FIELD(runtime_config_definition, context);
     FIELD(runtime_config_definition, all);
@@ -245,8 +241,6 @@ static void print_config_layouts(void) {
     FIELD(runtime_config_definition, release_tree);
     FIELD(runtime_config_definition, release_set_answer);
     FIELD(runtime_config_definition, release_refusal);
-    FIELD(runtime_config_definition, settings_file);
-    FIELD(runtime_config_definition, release_file_answer);
     SIZE(runtime_config_definition);
 }
 

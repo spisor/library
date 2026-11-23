@@ -73,13 +73,6 @@ typedef struct runtime_config_set_answer {
     void *storage;
 } runtime_config_set_answer;
 
-/** The settings file a settings_file answers: `path` absolute, the file need not exist. First shape ends at `storage`. */
-typedef struct runtime_config_file_answer {
-    uint32_t size;
-    const char *path;
-    void *storage;
-} runtime_config_file_answer;
-
 /**
  * The config service. Every operation answers MALFORMED for a home or portable place that is not absolute, no plugin,
  * `names` or `config` that is not a record, a declaration without a key or with a layer it does not know, a config
@@ -122,16 +115,6 @@ typedef struct runtime_config_definition {
     void (*release_tree)(void *context, spisor_value_tree *tree);
     void (*release_set_answer)(void *context, runtime_config_set_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
-    /**
-     * The settings file in the home's config folder, the one named by the plugin's config name: the layer read last,
-     * so its values win, and the one a user edits. Appended after the first shape.
-     *
-     * @param answer the consumer's empty answer. Required.
-     * @return OK; MALFORMED as every operation.
-     */
-    spisor_status (*settings_file)(void *context, const runtime_config_plugin *plugin,
-                                   runtime_config_file_answer *answer, spisor_refusal *refusal);
-    void (*release_file_answer)(void *context, runtime_config_file_answer *answer);
 } runtime_config_definition;
 
 /** The static runtime_config_definition, living until the library is unloaded. */
