@@ -144,7 +144,7 @@ off the include path.
 | `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
 | `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
-25 services, 109 operations.
+25 services, 111 operations.
 
 A `places` argument is what `places.resolve` answers.
 
@@ -175,12 +175,12 @@ over the loader's home and the places.
 on with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
 `finished` as a failure by the program. A SERVE run then publishes to the loader's ready record that it is ready,
 with an empty environment, when every plugin activated, and otherwise a refusal naming the first that did not.
-`tick` is a SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's
-timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
-`cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due time as
-its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. Each failed turn, a
-refused check and each version a check refused are written as a warning to the loader's own log. `finished` records how
-an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code: 0 for
+`tick` is a SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at
+hosts.start's timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the
+versions `cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due
+time as its next tick. A prune that finds no holder alive, or six failed turns in a row, ends the run. Each failed turn,
+a refused check and each version a check refused are written as a warning to the loader's own log. `finished` records
+how an ACTION run's action ended, and `stop` ends the scopes, removes the run record and answers the exit code: 0 for
 a SERVE run that ends on a stop request or its holders' word and for an action that answered, 1 for an action that
 threw or never ran and for a run a call of which failed before it ended.
 
@@ -199,11 +199,11 @@ number or boolean is offered as the standard's kind, and a null, a list, a membe
 and a declared secret are not offered, so a get answers NONE for them. `get_tree` answers the setting at a dotted
 key whole as the standard's value tree, a list or a record as well as a text, number, boolean or null, and NONE for
 an absent key, a declared secret or a key inside one. A set of a declared secret is refused, since only
-`weivel.secrets` reaches one. Its `secrets` are runtime's `secrets` under the plugin's id alone, in the host's secret places; a secret is
-UTF-8 text without a NUL byte, as every place runtime keeps one holds, and other bytes are refused. Its `paths`
-answer folders that are the plugin's alone, named by its id: `cache` its folder in the cache place, and `config` and
-`plugin` its own folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder in the
-application's plugin folder for a host with no portable layer; each is resolved once at open.
+`weivel.secrets` reaches one. Its `secrets` are runtime's `secrets` under the plugin's id alone, in the host's secret
+places; a secret is UTF-8 text without a NUL byte, as every place runtime keeps one holds, and other bytes are refused.
+Its `paths` answer folders that are the plugin's alone, named by its id: `cache` its folder in the cache place, and
+`config` and `plugin` its own folder, `<portable>/plugins/<id>`, which holds its portable `config.json`, or its folder
+in the application's plugin folder for a host with no portable layer; each is resolved once at open.
 Its `log` hands each entry, its fields appended as compact JSON, to one
 writer thread the started host owns, which appends it through runtime's `log`, so a write never waits on a file;
 the writer holds at most 1024 entries, a write beyond them is refused, and the host's end writes every entry handed
@@ -213,7 +213,8 @@ host's end, and releasing it frees everything it holds once the writer has writt
 `scope_test`, `scope_services_test` and `out_of_memory_scope_test` hold it, the first also running the described
 checks over all four definitions an opened scope answers, which call config's operations and secrets' `get` and read
 paths, log's `write` and secrets' `set` and `remove` without calling them, and the last failing every allocation of
-the open, the release and each operation of all four definitions; `scope_threads_test` calls a scope from two threads at once.
+the open, the release and each operation of all four definitions; `scope_threads_test` calls a scope from two threads at
+once.
 
 A host opens a screen by calling `ui.plan` in rounds, answering the calls each names through its own engine, and
 `ui.render` once a plan names none; `ui.plan` refuses a seventeenth round, so a screen whose bindings chain deeper
@@ -414,10 +415,11 @@ The portable place holds `settings.json` (the ecosystem settings, which `log.wri
 that folder is the plugin's `portable` path from `paths.resolve`, beside its `pluginCache` folder in
 the cache place. `config` reads defaults, then the portable file, then the application file, later
 winning and objects merging key by key. `config.settings_file` answers the absolute path of that application file,
-`<config folder>/<config name>.json`, which need not exist yet. `config.set` writes the application file unless `layer` is
-`"portable"`, or, when no `layer` is given, unless the key is declared: a declared key goes to the layer its declaration names, and to the portable one when it names none. A host with no portable layer omits `portable` and a portable write is refused. An
-unreadable file is never overwritten, and a write through a symlinked portable file changes the
-target and leaves the link.
+`<config folder>/<config name>.json`, which need not exist yet. `config.set` writes the application file unless `layer`
+is `"portable"`, or, when no `layer` is given, unless the key is declared: a declared key goes to the layer its
+declaration names, and to the portable one when it names none. A host with no portable layer omits `portable` and a
+portable write is refused. An unreadable file is never overwritten, and a write through a symlinked portable file
+changes the target and leaves the link.
 
 ### Secrets and their stores
 
