@@ -48,8 +48,9 @@ typedef struct runtime_processes_prune_request {
 
 /**
  * processes' prune, one check of the background host its language layer makes every check_milliseconds (5000 by
- * default): answers {exit: true} when another process is recorded as the host, or no holder is alive; otherwise
- * drops the dead holders, stamps self alive at the request's time and answers {exit: false}.
+ * default): answers {exit: true} when another live process is recorded as the host, or no holder is alive;
+ * otherwise drops the dead holders, stamps self alive at the request's time and answers {exit: false}. A recorded
+ * host whose process is dead counts as no host, so a host that crashed or ended never ends the next one.
  *
  * @implNote With no holder left the record is removed before the lock is released, so a holder
  * arriving next starts a new host rather than holding one that is about to exit.

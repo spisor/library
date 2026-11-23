@@ -24,16 +24,23 @@
 #include "ui.h"
 
 #define ACTION_WORD "action"
+#define IN_PROCESS_WORD "in-process"
 #define USAGE_MESSAGE                                                                                               \
-    "the host takes a loader id, or a loader id followed by action, a plugin, an action and its input as a JSON "   \
-    "object"
-#define USAGE_FIX "start it with <loader id>, or with action <plugin> <action> <input json object> after the loader id"
+    "the host takes a loader id, a loader id followed by in-process, or a loader id followed by action, a plugin, " \
+    "an action and its input as a JSON object"
+#define USAGE_FIX                                                                                                   \
+    "start it with <loader id>, with in-process after the loader id, or with action <plugin> <action> <input json " \
+    "object> after the loader id"
 #define SCOPES_FIX "check that the loader's registered home and the places are absolute folders, then try again"
 
-/** What a run's arguments name: its loader, its mode and, for an ACTION run, the plugin, the action and its input. */
+/**
+ * What a run's arguments name: its loader, its mode, whether a SERVE run serves its own process alone, and, for an
+ * ACTION run, the plugin, the action and its input.
+ */
 typedef struct host_request {
     const char *host_id;
     uint32_t mode;
+    int in_process;
     const char *plugin;
     const char *action;
     cJSON *input;
@@ -53,6 +60,10 @@ static int read_request(const char *const *arguments, size_t count, host_request
     memset(request, 0, sizeof *request);
     request->host_id = count > 0 ? arguments[0] : NULL;
     request->mode = count == 1 ? WEIVEL_STANDARD_HOST_SERVE : 0;
+    if (count == 2 && strcmp(arguments[1], IN_PROCESS_WORD) == 0) {
+        request->mode = WEIVEL_STANDARD_HOST_SERVE;
+        request->in_process = 1;
+    }
     if (count == 5 && strcmp(arguments[1], ACTION_WORD) == 0) {
         request->input = spisor_parse_json_reporting((const uint8_t *)arguments[4], strlen(arguments[4]),
                                                      &out_of_memory);
@@ -100,7 +111,7 @@ static cJSON *started_run(const host_request *request, const cJSON *environment,
     cJSON *versions = library_versions(hint);
     runtime_hosts_start_request start = {environment,  request->host_id, RUNTIME_JAVASCRIPT_HOST_ID,
                                          text_of(hint, "host"), versions,
-                                         request->mode == WEIVEL_STANDARD_HOST_SERVE};
+                                         request->mode == WEIVEL_STANDARD_HOST_SERVE, request->in_process};
     cJSON *started = versions == NULL ? NULL : runtime_hosts_start(&start, refusal);
     cJSON_Delete(versions);
     return started;
@@ -206,6 +217,7 @@ static runtime_host_run *new_run(const host_request *request) {
     strcpy(host_id, request->host_id);
     run->host_id = host_id;
     run->mode = request->mode;
+    run->in_process = request->in_process ? 1 : 0;
     run->exit_code = request->mode == WEIVEL_STANDARD_HOST_ACTION ? RUNTIME_HOST_EXIT_FAILED : 0;
     return run;
 }
@@ -261,7 +273,8 @@ static int planned(runtime_host_run *run, const host_request *request, const cJS
  * again: the run is refused either way.
  */
 static void publish_refusal(const host_request *request, const cJSON *places, const cJSON *refusal) {
-    if (request->mode == WEIVEL_STANDARD_HOST_SERVE && refusal != NULL && runtime_is_plain_host_id(request->host_id)) {
+    if (request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process && refusal != NULL &&
+        runtime_is_plain_host_id(request->host_id)) {
         runtime_publish_ready_refusal(text_of(places, "state"), request->host_id, refusal);
     }
 }

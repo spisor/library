@@ -210,8 +210,9 @@ typedef struct runtime_processes_definition {
     spisor_status (*release)(void *context, const runtime_processes_holder_argument *argument,
                              runtime_processes_release_answer *answer, spisor_refusal *refusal);
     /**
-     * One check of the background host: exit when another process is recorded as the host or no holder is alive,
-     * otherwise drop the dead holders and stamp self alive. With no holder left the record is removed before the lock
+     * One check of the background host: exit when another live process is recorded as the host or no holder is
+     * alive, otherwise drop the dead holders and stamp self alive. A recorded host whose process is dead counts as no
+     * host. With no holder left the record is removed before the lock
      * is released, so a holder arriving next starts a new host rather than holding one about to exit.
      *
      * @return OK; MALFORMED; REFUSED when the holders or the lock cannot be used; OUT_OF_MEMORY, having changed nothing

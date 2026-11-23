@@ -246,6 +246,9 @@ target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard ${runtime_
 set_tests_properties(out_of_memory_host_test PROPERTIES TIMEOUT 1800)
 runtime_test(host_progress_test ${runtime_standard_host_test_objects})
 target_link_libraries(host_progress_test PRIVATE weivel_standard ${runtime_fetch_libraries})
+target_compile_definitions(host_progress_test PRIVATE
+    RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
+add_dependencies(host_progress_test background_fixture)
 # Its blocking tick checks an https source on the loopback fixture through the catalog's request redirect, a test hook.
 set(runtime_host_tick_threads_test_objects ${runtime_standard_host_test_objects})
 list(TRANSFORM runtime_host_tick_threads_test_objects REPLACE "runtime_catalog_refresh>$"
