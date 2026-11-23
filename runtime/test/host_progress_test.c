@@ -551,6 +551,32 @@ static void in_process_runs_serve_beside_another_host_and_leave_the_loaders_reco
     release_child(&other);
 }
 
+/**
+ * An in-process start hosts.start refuses, here for a loader registered at no version, leaves the loader's ready
+ * record as it was, since a launch reading it waits on another process.
+ */
+static void a_refused_in_process_start_leaves_the_ready_record_alone(void) {
+    char *path;
+    char *before;
+    char *after;
+    size_t length = 0;
+    started_run run;
+    start_host_world("in-process-refused");
+    path = processes_file(".ready.json");
+    write_file(path, "{\"pid\":1,\"environment\":{}}\n");
+    before = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    write_in(state, "hosts/" LOADER ".json", "{\"id\": \"" LOADER "\", \"kind\": \"host\"}");
+    run = start_with(in_process_arguments, 2);
+    CHECK(run.status == WEIVEL_STATUS_REFUSED);
+    after = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    check_text(after, before, "the ready record a refused in-process start leaves");
+    spisor_memory_release(before);
+    spisor_memory_release(after);
+    spisor_memory_release(path);
+    release_run(&run);
+    finish_base();
+}
+
 /** A recorded host whose process died, as a crashed or ended one leaves behind, never ends the next SERVE run. */
 static void a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking(void) {
     child_process dead = start_sleeper();
@@ -579,6 +605,7 @@ int main(void) {
     a_serve_run_started_publishes_that_it_is_ready();
     in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
     a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();
+    a_refused_in_process_start_leaves_the_ready_record_alone();
     a_plugin_not_activated_publishes_a_refusal_naming_it(
         WEIVEL_STANDARD_HOST_REFUSED, WEIVEL_STANDARD_HOST_ACTIVATED, "its scope was refused",
         "a is enabled but did not start: its scope was refused", "fix or disable a", "a refused plugin");

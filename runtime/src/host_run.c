@@ -111,7 +111,7 @@ static cJSON *started_run(const host_request *request, const cJSON *environment,
     cJSON *versions = library_versions(hint);
     runtime_hosts_start_request start = {environment,  request->host_id, RUNTIME_JAVASCRIPT_HOST_ID,
                                          text_of(hint, "host"), versions,
-                                         request->mode == WEIVEL_STANDARD_HOST_SERVE};
+                                         request->mode == WEIVEL_STANDARD_HOST_SERVE, request->in_process};
     cJSON *started = versions == NULL ? NULL : runtime_hosts_start(&start, refusal);
     cJSON_Delete(versions);
     return started;

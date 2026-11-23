@@ -295,7 +295,7 @@ static void free_context(start_context *context) {
  * has no launch waiting on it.
  */
 static void publish_refusal(const start_context *context, const cJSON *refusal) {
-    if (context->argument.session && context->state != NULL && refusal != NULL) {
+    if (context->argument.session && !context->argument.in_process && context->state != NULL && refusal != NULL) {
         runtime_publish_ready_refusal(context->state, context->argument.host_id, refusal);
     }
 }

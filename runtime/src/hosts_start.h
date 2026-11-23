@@ -16,7 +16,9 @@
 /**
  * What hosts.start starts: the host host_id in environment, an object of variable names to values, beside the
  * language layer's bundle and the libraries it loaded, an object of library id to version; session is not 0 for
- * the application's session host.
+ * the application's session host, and in_process not 0 for a session host that serves the process it runs in alone,
+ * whose refusal is never published to the loader's ready record, since a launch waiting on that record waits on
+ * another process.
  */
 typedef struct runtime_hosts_start_request {
     const cJSON *environment;
@@ -25,6 +27,7 @@ typedef struct runtime_hosts_start_request {
     const char *layer_version;
     const cJSON *libraries;
     int session;
+    int in_process;
 } runtime_hosts_start_request;
 
 /**
