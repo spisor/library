@@ -26,8 +26,8 @@ typedef struct runtime_host_next_tick {
 /**
  * Takes every plugin's outcome, one per plugin of the plan in its order. A plugin that was refused or failed refuses
  * that plugin alone, as the archived host quarantined it: the run carries on with the plugins that activated. A SERVE
- * run then publishes to the loader's ready record that it is ready, with an empty environment, unless a plugin whose
- * manifest declares the `front-door` capability was not activated: then it publishes a refusal naming that front door.
+ * run then publishes to the loader's ready record that it is ready, with an empty environment, when every plugin
+ * activated, and otherwise a refusal naming the first plugin that did not.
  *
  * @return OK; MALFORMED for outcomes other than one per plugin of the plan, a manifest that is not the plan's in its
  * place, or a state that is no weivel_standard_host_plugin_state; REFUSED when it is not the run's first started, or

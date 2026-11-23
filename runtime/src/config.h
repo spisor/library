@@ -93,6 +93,14 @@ spisor_status runtime_config_set_value(const runtime_config_request *request, cJ
                                        spisor_refusal *refusal);
 
 /**
+ * The settings file of the application layer a plugin's `request` reads, as a new path freed by the caller.
+ *
+ * @return OK; MALFORMED with the refusal the operations answer; OUT_OF_MEMORY.
+ */
+spisor_status runtime_config_settings_file(const runtime_config_request *request, char **file,
+                                           spisor_refusal *refusal);
+
+/**
  * The ecosystem settings of home over the portable place (NULL for none), as settings' all answers them, for runtime's
  * own C callers. NULL with *refusal set to the {message, fix} refusal, or left NULL when memory ran out.
  */

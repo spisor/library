@@ -71,8 +71,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * for a second `started`. A plugin that was refused or failed leaves the run running with the plugins that
  * activated, as the archived host quarantined one: an ACTION run's program tells `finished` a failure when the
  * action's own plugin was not activated. A SERVE run then publishes to the loader's ready record that it is ready,
- * with an empty environment, unless a plugin whose manifest declares the `front-door` capability was not activated:
- * then it publishes a refusal naming that front door, never an empty environment, as DECISIONS rules.
+ * with an empty environment, when every plugin activated, and otherwise a refusal naming the first plugin that did
+ * not, never an empty environment.
  *
  * `tick` is a SERVE run's alone, after its `started` answered OK, and REFUSED otherwise, since an ACTION run never
  * ticks. It acts only through its `now` and reads no clock: every `recordRunMilliseconds` of hosts' start's timers

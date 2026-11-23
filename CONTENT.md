@@ -174,7 +174,7 @@ over the loader's home and the places.
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries
 on with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
 `finished` as a failure by the program. A SERVE run then publishes to the loader's ready record that it is ready,
-with an empty environment, or, when an enabled front door did not activate, a refusal naming it. `tick` is a
+with an empty environment, when every plugin activated, and otherwise a refusal naming the first that did not. `tick` is a
 SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's
 timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
 `cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due time as
