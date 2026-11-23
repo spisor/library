@@ -125,6 +125,24 @@ static spisor_status run_get(void) {
     return answered((weivel_status)status, &refusal);
 }
 
+static spisor_status run_get_tree(void) {
+    const weivel_standard_config *config = opened.config;
+    weivel_standard_value_tree tree;
+    weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
+    spisor_status status;
+    char shape[32];
+    start_empty(&tree, sizeof tree);
+    status = (spisor_status)config->get_tree(config->context, "cache", &tree, &refusal);
+    snprintf(shape, sizeof shape, "%u:%zu", (unsigned)tree.root.kind, tree.root.count);
+    put(shape);
+    if (status == SPISOR_OK && (tree.root.kind != WEIVEL_STANDARD_VALUE_RECORD || tree.root.count != 3)) {
+        status = WRONG_RUN;
+    }
+    status = empty_unless_answered(status, &tree, sizeof tree);
+    config->release_tree(config->context, &tree);
+    return answered((weivel_status)status, &refusal);
+}
+
 static spisor_status run_set(void) {
     const weivel_standard_config *config = opened.config;
     weivel_standard_setting_value value = {WEIVEL_STANDARD_SETTING_TEXT, 0, 0.0, "blue", 4};
@@ -299,6 +317,7 @@ int main(void) {
         {"the host's begin", run_begin, 0, SPISOR_OK, NULL},
         {"config's all", run_all, 1, SPISOR_OK, NULL},
         {"config's get", run_get, 1, SPISOR_OK, NULL},
+        {"config's get_tree", run_get_tree, 1, SPISOR_OK, NULL},
         {"config's set", run_set, 1, SPISOR_OK, NULL},
         {"secrets' set", run_secret_set, 1, SPISOR_OK, NULL},
         {"secrets' get", run_secret_get, 1, SPISOR_OK, NULL},
