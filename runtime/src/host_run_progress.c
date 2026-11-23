@@ -172,7 +172,8 @@ spisor_status runtime_host_run_started(runtime_host_run *run, const weivel_stand
                                   "pass each plugin's outcome, naming the manifest the plan named and its state");
         return failed_unless_ok(run, status);
     }
-    status = run->mode == WEIVEL_STANDARD_HOST_SERVE ? publish_serving(run, outcomes, refusal) : SPISOR_OK;
+    status = run->mode == WEIVEL_STANDARD_HOST_SERVE && !run->in_process ? publish_serving(run, outcomes, refusal)
+                                                                          : SPISOR_OK;
     if (status == SPISOR_OK) {
         run->phase = RUNTIME_HOST_RUNNING;
     }
@@ -204,7 +205,10 @@ static spisor_status end_unheld(runtime_host_run *run, const char *const *parts,
     return status;
 }
 
-/** Stamps the run record and prunes the holders; `*unheld` the prune's exit, `*failure` the refusal of either. */
+/**
+ * Stamps the run record and, unless the run is in-process, prunes the holders; `*unheld` the prune's exit,
+ * `*failure` the refusal of either.
+ */
 static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, int64_t interval, int *unheld,
                                      cJSON **failure) {
     const cJSON *plan = plan_of(run);
@@ -214,8 +218,10 @@ static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, i
     runtime_processes_prune_request prune = {state_of(run), run->host_id, (double)current_process_id(), &at,
                                              (double)interval};
     cJSON *stamped = runtime_processes_record_run(&record, failure);
-    cJSON *pruned = stamped == NULL ? NULL : runtime_processes_prune(&prune, failure);
-    spisor_status status = pruned == NULL && *failure == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    cJSON *pruned = stamped == NULL || run->in_process ? NULL : runtime_processes_prune(&prune, failure);
+    spisor_status status = (stamped == NULL || (pruned == NULL && !run->in_process)) && *failure == NULL
+                               ? SPISOR_OUT_OF_MEMORY
+                               : SPISOR_OK;
     *unheld = cJSON_IsTrue(member(pruned, "exit"));
     cJSON_Delete(stamped);
     cJSON_Delete(pruned);

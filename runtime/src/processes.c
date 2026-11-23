@@ -12,6 +12,7 @@
 #include "holders_lock.h"
 #include "json_service.h"
 #include "paths.h"
+#include "process_alive.h"
 #include "processes_holders.h"
 #include "run_records.h"
 #include "spisor/file.h"
@@ -149,7 +150,7 @@ static cJSON *exit_answer(int exit_now) {
 
 static cJSON *prune_step(const void *context, const char *path, runtime_holders_record *record, cJSON **refusal) {
     const runtime_processes_prune_request *request = context;
-    if (!isnan(record->pid) && record->pid != request->self) {
+    if (!isnan(record->pid) && record->pid != request->self && runtime_process_is_alive(record->pid)) {
         return exit_answer(1);
     }
     runtime_keep_live_holders(record, NAN);

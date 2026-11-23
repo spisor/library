@@ -4,6 +4,8 @@
 
 #include "host_fixture.h"
 
+#include "child_process.h"
+
 #include "spisor/json_allocation.h"
 
 /**
@@ -19,6 +21,7 @@
 #define FAILURES_BEFORE_EXIT 6
 
 static const char *const serve_arguments[1] = {LOADER};
+static const char *const in_process_arguments[2] = {LOADER, "in-process"};
 static const char *const action_arguments[5] = {LOADER, "action", "a", "greet", "{}"};
 
 typedef struct tick_answer {
@@ -488,9 +491,94 @@ static void a_now_no_check_can_carry_fails_the_run(void) {
     finish_base();
 }
 
+static child_process start_sleeper(void) {
+    const char *arguments[1] = {"sleep"};
+    return start_child(RUNTIME_BACKGROUND_FIXTURE_PATH, arguments, 1, 0, NULL);
+}
+
+/** Records `pid` as the loader's host, stamped alive at `alive_at`, held by `holders`, a JSON array. */
+static void record_the_host(long pid, int64_t alive_at, const char *holders) {
+    char record[200];
+    char *path = processes_file(".json");
+    snprintf(record, sizeof record, "{\"pid\":%ld,\"aliveAt\":%lld,\"checkMilliseconds\":%lld,\"holders\":%s}\n",
+             pid, (long long)alive_at, (long long)TURN, holders);
+    write_file(path, record);
+    spisor_memory_release(path);
+}
+
+static char *read_processes_record(void) {
+    char *path = processes_file(".json");
+    size_t length = 0;
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    spisor_memory_release(path);
+    return text;
+}
+
+/**
+ * Another live process recorded as the loader's host with no holder, as a second in-process host in another
+ * application's process would be recorded if in-process runs claimed the record, ends no in-process run: it
+ * publishes no ready record, keeps ticking, and leaves the record as it found it.
+ */
+static void in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone(void) {
+    child_process other = start_sleeper();
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    char *before;
+    char *after;
+    cJSON *ready;
+    CHECK(runtime_process_is_alive((double)other.pid));
+    start_host_world("in-process");
+    record_the_host(other.pid, NOW, "[]");
+    before = read_processes_record();
+    run = start_one(in_process_arguments, 2);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    ready = ready_record();
+    CHECK(ready == NULL);
+    cJSON_Delete(ready);
+    expect_tick(NOW, NOW + TURN, "an in-process run's first tick");
+    expect_tick(NOW + TURN, NOW + 2 * TURN, "an in-process run's second turn");
+    expect_tick(NOW + 2 * TURN, NOW + 3 * TURN, "an in-process run's third turn");
+    CHECK(run_record_alive_at() == (double)(NOW + 2 * TURN));
+    after = read_processes_record();
+    check_text(after, before, "the loader's holders record an in-process run leaves");
+    spisor_memory_release(before);
+    spisor_memory_release(after);
+    release_run(&run);
+    stop_expecting(0, "an in-process run");
+    finish_base();
+    kill_child(&other);
+    release_child(&other);
+}
+
+/** A recorded host whose process died, as a crashed or ended one leaves behind, never ends the next SERVE run. */
+static void a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking(void) {
+    child_process dead = start_sleeper();
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    char holders[32];
+    kill_child(&dead);
+    CHECK(!runtime_process_is_alive((double)dead.pid));
+    start_host_world("dead-host");
+    snprintf(holders, sizeof holders, "[%d]", (int)current_process_id());
+    record_the_host(dead.pid, NOW, holders);
+    run = start_one(serve_arguments, 1);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    expect_tick(NOW, NOW + TURN, "a serve run beside a dead host's record");
+    expect_tick(NOW + TURN, NOW + 2 * TURN, "its second turn");
+    CHECK(holders_alive_at() == (double)(NOW + TURN));
+    release_run(&run);
+    stop_expecting(0, "a serve run that replaced a dead host");
+    finish_base();
+    release_child(&dead);
+}
+
 int main(void) {
     spisor_json_use_library_allocator();
     a_serve_run_started_publishes_that_it_is_ready();
+    in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
+    a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();
     a_plugin_not_activated_publishes_a_refusal_naming_it(
         WEIVEL_STANDARD_HOST_REFUSED, WEIVEL_STANDARD_HOST_ACTIVATED, "its scope was refused",
         "a is enabled but did not start: its scope was refused", "fix or disable a", "a refused plugin");

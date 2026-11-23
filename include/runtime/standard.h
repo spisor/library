@@ -45,8 +45,12 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * The static weivel_standard_host (`weivel/host.h`), living until the library is unloaded, which runs a loader's
  * plugins: a process makes one run at a time, from a `start` answering OK until its `stop`.
  *
- * `start` reads its arguments as `<loader id>` for a SERVE run, or `<loader id> action <plugin> <action> <input>` for
- * an ACTION run, the input a JSON object, and reads this process's environment. The layer is the javascript-host at
+ * `start` reads its arguments as `<loader id>` for a SERVE run, `<loader id> in-process` for a SERVE run that serves
+ * the process it runs in alone, or `<loader id> action <plugin> <action> <input>` for an ACTION run, the input a JSON
+ * object, and reads this process's environment. An in-process run, as a host started inside another application's
+ * process makes, never reads or writes the loader's holders and ready records, so any number of them serve at once,
+ * each in its own process: its `started` publishes nothing, its `tick` stamps its run record and runs no prune, and
+ * only a stop request ends it. The layer is the javascript-host at
  * the version its boot hint names, beside every library that hint names, and hosts' start plans the run, a SERVE
  * run as the loader's session start. The plan loads every hinted library that has a binary but runtime itself, which
  * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
@@ -64,7 +68,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * refuses, as one the manifest does not declare, an ACTION run whose plan's `size` cannot hold `action_service` and
  * `action_method`, the program too old for the run, and nothing written past that size, and scopes that cannot
  * begin; and OUT_OF_MEMORY. A start that does not answer OK leaves no run record of its own and no scopes begun, and
- * a refused SERVE start publishes its refusal to the loader's ready record once the places resolved.
+ * a refused SERVE start that is not in-process publishes its refusal to the loader's ready record once the places
+ * resolved.
  *
  * `started`, `tick`, `finished` and `stop` refuse when no run is started. `started` takes one outcome per plugin of
  * the plan, in its order, each naming the manifest the plan named, and answers MALFORMED for any other, and REFUSED
@@ -80,7 +85,7 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * `updateCheckMilliseconds` it runs updates' check at
  * `now`, its damaged versions those cache's locate could not run, the first tick taking both. Each timer is next due
  * at `now` plus its interval, so a late tick runs it once, and `next` is the earlier of the two. A prune that answers
- * that no holder is alive, or another process runs the loader, ends the run with a REFUSED tick, as do
+ * that no holder is alive, or another live process runs the loader, ends the run with a REFUSED tick, as do
  * `pruneFailuresBeforeExit` turns in a row whose stamp or prune was refused; a refused update check changes nothing.
  * Each failed turn, a refused check and each version a check refused are written as a warning to the loader's own
  * log, under the loader's id at `now`, as the archived host wrote them to stderr.
