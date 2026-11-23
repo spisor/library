@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "allocation.h"
+#include "config_conversion.h"
 #include "plugin_scope.h"
 #include "spisor/definition.h"
 #include "spisor/json_value.h"
@@ -10,6 +11,7 @@
 
 #define SETTINGS_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_settings, storage)
 #define ANSWER_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_setting_answer, storage)
+#define TREE_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_value_tree, storage)
 
 /**
  * One walk over a merged settings record: counting when `settings` is NULL, else filling them, each key built in
@@ -322,6 +324,69 @@ static void release_answer(void *context, weivel_standard_setting_answer *answer
     SPISOR_CLEAR_ANSWER(answer, ANSWER_SHAPE);
 }
 
+static int is_empty_tree(const weivel_standard_value_tree *tree) {
+    return SPISOR_IS_EMPTY_ANSWER(tree, TREE_SHAPE) && tree->root.kind == WEIVEL_STANDARD_VALUE_NONE;
+}
+
+/**
+ * Fills an empty tree with the value `found`, NONE for none.
+ *
+ * @implNote spisor_value is weivel_standard_value field for field (restatement_test), so runtime's tree is handed over
+ * as the standard's.
+ */
+static spisor_status fill_tree(const cJSON *found, weivel_standard_value_tree *tree, spisor_refusal *refusal) {
+    spisor_value_tree built = SPISOR_INIT(spisor_value_tree);
+    spisor_status status;
+    if (found == NULL) {
+        return SPISOR_NONE;
+    }
+    status = runtime_tree_of_settings(found, &built, refusal);
+    if (status == SPISOR_OK) {
+        memcpy(&tree->root, &built.root, sizeof tree->root);
+        tree->storage = built.storage;
+    }
+    return status;
+}
+
+static weivel_status get_tree(void *context, const char *key, weivel_standard_value_tree *tree,
+                              weivel_standard_service_refusal *refusal) {
+    runtime_config_request request = runtime_plugin_scope_request(context);
+    spisor_refusal filled = SPISOR_INIT(spisor_refusal);
+    cJSON *found = NULL;
+    spisor_status status;
+    if (!runtime_is_usable_service_refusal(refusal)) {
+        return WEIVEL_STATUS_MALFORMED;
+    }
+    if (!is_empty_tree(tree)) {
+        return runtime_answer_service(spisor_refuse_shape(&filled, "config's get_tree"), &filled, refusal);
+    }
+    if (key == NULL) {
+        return runtime_answer_service(refuse_missing_key(&filled, "get_tree"), &filled, refusal);
+    }
+    request.key = key;
+    status = as_scope_answer(runtime_config_get_value(&request, &found, &filled));
+    if (status == SPISOR_OK) {
+        status = fill_tree(found, tree, &filled);
+    }
+    cJSON_Delete(found);
+    if (status == SPISOR_OK) {
+        runtime_zero_beyond(tree, sizeof *tree);
+    }
+    return runtime_answer_service(status, &filled, refusal);
+}
+
+static void release_tree(void *context, weivel_standard_value_tree *tree) {
+    spisor_value_tree held = SPISOR_INIT(spisor_value_tree);
+    (void)context;
+    if (tree == NULL || !spisor_has_shape(tree->size, TREE_SHAPE)) {
+        return;
+    }
+    memcpy(&held.root, &tree->root, sizeof held.root);
+    held.storage = tree->storage;
+    spisor_value_release(&held);
+    SPISOR_CLEAR_ANSWER(tree, TREE_SHAPE);
+}
+
 void runtime_scope_config_fill(runtime_plugin_scope *scope) {
     weivel_standard_config *config = &scope->config;
     config->size = (uint32_t)sizeof *config;
@@ -332,4 +397,6 @@ void runtime_scope_config_fill(runtime_plugin_scope *scope) {
     config->release_settings = release_settings;
     config->release_answer = release_answer;
     config->release_refusal = runtime_release_service_refusal;
+    config->get_tree = get_tree;
+    config->release_tree = release_tree;
 }

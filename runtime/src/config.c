@@ -491,6 +491,22 @@ spisor_status runtime_config_check_request(const runtime_config_request *request
     return status;
 }
 
+spisor_status runtime_config_settings_file(const runtime_config_request *request, char **file,
+                                           spisor_refusal *refusal) {
+    config_targets targets = {{NULL, NULL}, {NULL, NULL}};
+    spisor_status status = check_places(request, refusal);
+    *file = NULL;
+    if (status == SPISOR_OK) {
+        status = locate_or_refuse(request, &targets, refusal);
+    }
+    if (status == SPISOR_OK) {
+        *file = targets.application.file;
+        targets.application.file = NULL;
+        free_targets(&targets);
+    }
+    return status;
+}
+
 spisor_status runtime_config_all_values(const runtime_config_request *request, cJSON **values, spisor_refusal *refusal) {
     config_targets targets;
     spisor_status status = check_places(request, refusal);

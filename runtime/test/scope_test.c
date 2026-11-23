@@ -213,6 +213,75 @@ static void get_answers_what_is_offered_and_none_for_the_rest(void) {
     release(&scope, NULL);
 }
 
+static weivel_status tree_of(const weivel_standard_config *config, const char *key, weivel_standard_value_tree *tree) {
+    return config->get_tree(config->context, key, tree, NULL);
+}
+
+static const weivel_standard_value *entry_named(const weivel_standard_value *record, const char *key) {
+    for (size_t index = 0; record->kind == WEIVEL_STANDARD_VALUE_RECORD && index < record->count; index++) {
+        if (strcmp(record->entries[index].key, key) == 0) {
+            return &record->entries[index].value;
+        }
+    }
+    return NULL;
+}
+
+static int is_empty_tree(const weivel_standard_value_tree *tree) {
+    return tree->size == sizeof *tree && tree->root.kind == WEIVEL_STANDARD_VALUE_NONE && tree->storage == NULL;
+}
+
+static void check_list_tree(const weivel_standard_config *config) {
+    weivel_standard_value_tree tree = WEIVEL_INIT(weivel_standard_value_tree);
+    CHECK(tree_of(config, "list", &tree) == WEIVEL_STATUS_OK);
+    CHECK(tree.root.kind == WEIVEL_STANDARD_VALUE_LIST && tree.root.count == 2 && tree.storage != NULL);
+    if (tree.root.kind == WEIVEL_STANDARD_VALUE_LIST && tree.root.count == 2) {
+        CHECK(tree.root.items[0].kind == WEIVEL_STANDARD_VALUE_NUMBER && tree.root.items[0].number == 1);
+        CHECK(tree.root.items[1].kind == WEIVEL_STANDARD_VALUE_NUMBER && tree.root.items[1].number == 2);
+    }
+    config->release_tree(config->context, &tree);
+    CHECK(is_empty_tree(&tree));
+}
+
+static void check_record_tree(const weivel_standard_config *config) {
+    weivel_standard_value_tree tree = WEIVEL_INIT(weivel_standard_value_tree);
+    const weivel_standard_value *ttl;
+    const weivel_standard_value *inner;
+    CHECK(tree_of(config, "cache", &tree) == WEIVEL_STATUS_OK);
+    CHECK(tree.root.kind == WEIVEL_STANDARD_VALUE_RECORD && tree.root.count == 3);
+    ttl = entry_named(&tree.root, "ttl");
+    inner = entry_named(&tree.root, "inner");
+    CHECK(ttl != NULL && ttl->kind == WEIVEL_STANDARD_VALUE_NUMBER && ttl->number == 30);
+    CHECK(inner != NULL && inner->kind == WEIVEL_STANDARD_VALUE_RECORD && inner->count == 1);
+    config->release_tree(config->context, &tree);
+    CHECK(is_empty_tree(&tree));
+}
+
+static void get_tree_answers_any_setting_whole_and_none_when_absent(void) {
+    static const char *const absent[] = {"token", "missing", "a..b", "token.inside"};
+    weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
+    weivel_standard_value_tree tree = WEIVEL_INIT(weivel_standard_value_tree);
+    const weivel_standard_config *config = open_viewer(&scope);
+    if (config == NULL) {
+        return;
+    }
+    CHECK(WEIVEL_STANDARD_OFFERS(weivel_standard_config, config, get_tree));
+    check_list_tree(config);
+    check_record_tree(config);
+    CHECK(tree_of(config, "theme", &tree) == WEIVEL_STATUS_OK);
+    CHECK(tree.root.kind == WEIVEL_STANDARD_VALUE_TEXT && tree.root.length == 5 && strcmp(tree.root.text, "light") == 0);
+    config->release_tree(config->context, &tree);
+    for (size_t index = 0; index < sizeof absent / sizeof absent[0]; index++) {
+        if (tree_of(config, absent[index], &tree) != WEIVEL_STATUS_NONE || !is_empty_tree(&tree)) {
+            fprintf(stderr, "get_tree(\"%s\") answered what the scope must not\n", absent[index]);
+            check_failures++;
+        }
+    }
+    CHECK(tree_of(config, NULL, &tree) == WEIVEL_STATUS_MALFORMED);
+    tree.size = (uint32_t)offsetof(weivel_standard_value_tree, storage);
+    CHECK(tree_of(config, "list", &tree) == WEIVEL_STATUS_MALFORMED);
+    release(&scope, NULL);
+}
+
 static weivel_status set_value(const weivel_standard_config *config, const char *key,
                                weivel_standard_setting_value value, weivel_standard_service_refusal *refusal) {
     return config->set(config->context, key, &value, refusal);
@@ -464,6 +533,7 @@ int main(void) {
     a_manifest_one_typo_breaks_is_refused_at_open();
     all_offers_every_setting_flattened();
     get_answers_what_is_offered_and_none_for_the_rest();
+    get_tree_answers_any_setting_whole_and_none_when_absent();
     set_refuses_what_services_h_does_not_allow();
     set_writes_the_declared_layer_and_get_reads_it_back();
     all_measures_every_key_it_builds();

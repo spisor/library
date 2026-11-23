@@ -1019,6 +1019,77 @@ static void a_get_without_its_argument_shape_is_malformed(void) {
     config->release_refusal(config->context, &refusal);
 }
 
+/** Copies into `path` the file settings_file answers for the plugin `id` with `config_json` as its config. */
+static spisor_status settings_file_of(const scratch_home *home, const char *id, const char *config_json, char *path,
+                                      size_t size) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    runtime_config_plugin plugin = SPISOR_INIT(runtime_config_plugin);
+    runtime_config_file_answer answer = SPISOR_INIT(runtime_config_file_answer);
+    spisor_value_tree declared = SPISOR_INIT(spisor_value_tree);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    cJSON *json = config_json == NULL ? NULL : cJSON_Parse(config_json);
+    spisor_status status;
+    path[0] = '\0';
+    plugin.home = home->path;
+    plugin.plugin = id;
+    if (json != NULL) {
+        CHECK(spisor_value_of_json(json, &declared) == SPISOR_OK);
+        plugin.config = &declared.root;
+    }
+    status = config->settings_file(config->context, &plugin, &answer, &refusal);
+    if (status == SPISOR_OK) {
+        CHECK(answer.path != NULL && answer.storage != NULL);
+        snprintf(path, size, "%s", answer.path == NULL ? "" : answer.path);
+    }
+    config->release_file_answer(config->context, &answer);
+    CHECK(answer.size == sizeof answer && answer.path == NULL && answer.storage == NULL);
+    config->release_refusal(config->context, &refusal);
+    spisor_value_release(&declared);
+    cJSON_Delete(json);
+    return status;
+}
+
+static void the_settings_file_is_the_one_a_set_writes_and_get_reads(void) {
+    scratch_home home;
+    char path[1200];
+    fresh_home(&home, "settings-file");
+    CHECK(settings_file_of(&home, "p", "{\"name\": \"named\"}", path, sizeof path) == SPISOR_OK);
+    if (path[0] != '\0') {
+        CHECK(strlen(path) > strlen("named.json") &&
+              strcmp(path + strlen(path) - strlen("named.json"), "named.json") == 0);
+        CHECK(spisor_probe_file(path) != SPISOR_FILE_PRESENT);
+        CHECK(spisor_make_directories(home.config_directory) == SPISOR_OK);
+        write_text(path, "{\"a\": 7}");
+        expect_value(&home, "p", "{\"name\": \"named\"}", "a", "7", "get reads the file settings_file answers");
+    }
+    CHECK(settings_file_of(&home, "p", NULL, path, sizeof path) == SPISOR_OK);
+    if (path[0] != '\0') {
+        CHECK(spisor_probe_file(path) != SPISOR_FILE_PRESENT);
+        answer result = set_key(&home, "p", NULL, NULL, "b", "1");
+        CHECK(ANSWERED(result));
+        finish(&result);
+        CHECK(spisor_probe_file(path) == SPISOR_FILE_PRESENT);
+    }
+    CHECK(settings_file_of(&home, "p", "{\"name\": \"a/b\"}", path, sizeof path) == SPISOR_MALFORMED);
+    CHECK(path[0] == '\0');
+}
+
+static void a_short_settings_file_answer_is_malformed(void) {
+    const runtime_config_definition *config = runtime_config_definition_of();
+    scratch_home home;
+    runtime_config_plugin plugin = SPISOR_INIT(runtime_config_plugin);
+    runtime_config_file_answer answer = SPISOR_INIT(runtime_config_file_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    fresh_home(&home, "short-settings-file");
+    plugin.home = home.path;
+    plugin.plugin = "p";
+    answer.size = (uint32_t)offsetof(runtime_config_file_answer, storage);
+    CHECK(config->settings_file(config->context, &plugin, &answer, &refusal) == SPISOR_MALFORMED);
+    config->release_refusal(config->context, &refusal);
+    CHECK(config->settings_file(config->context, NULL, &answer, &refusal) == SPISOR_MALFORMED);
+    config->release_refusal(config->context, &refusal);
+}
+
 static void a_file_holding_a_number_no_value_carries_reads_as_unreadable(void) {
     scratch_home home;
     fresh_home(&home, "non-finite");
@@ -1037,6 +1108,8 @@ static void a_file_holding_a_number_no_value_carries_reads_as_unreadable(void) {
 
 int main(void) {
     name_rules();
+    the_settings_file_is_the_one_a_set_writes_and_get_reads();
+    a_short_settings_file_answer_is_malformed();
     deep_merge_agrees();
     file_null_wins();
     array_replaced_whole();
