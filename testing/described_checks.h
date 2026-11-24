@@ -84,7 +84,8 @@ size_t spisor_check_described(const spisor_described_definition *definitions, si
  * Loads the shared library at `library_path` as a consumer would and, for every service its declaration at
  * `declaration_path` (`library.json`) gives a definition function, takes the description the service declares and the
  * definition the function answers, and runs spisor_check_described over all of them. A service with a definition and
- * no description, or a symbol the library does not export, is a failure.
+ * no description, a symbol the library does not export, or a description that does not answer the definition its
+ * service's function answers (weivel_standard_description_answers), is a failure.
  *
  * @return the failures, each printed.
  */

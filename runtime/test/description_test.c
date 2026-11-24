@@ -18,11 +18,14 @@
  * @file
  * Loads the built shared runtime as a binding would: reads `runtime/library.json` with the standard's reader, and for
  * every service calls the `description` symbol it declares and requires the description to pass the standard's own
- * check and to name `runtime_<id>_definition`, or for a standard service the standard's own struct, so a description
- * that is declared but not linked, or not generated from the service's own struct, fails here.
+ * check, to name `runtime_<id>_definition`, or for a standard service the standard's own struct, and to answer the
+ * definition the service's definition function answers, so a description that is declared but not linked, not
+ * generated from the service's own struct, or naming another function, fails here.
  */
 
+typedef void (*exported_function)(void);
 typedef const weivel_standard_description *(*describe_function)(void);
+typedef const void *(*definition_function)(void);
 
 #ifdef _WIN32
 typedef HMODULE library_handle;
@@ -31,9 +34,9 @@ static library_handle load_runtime(void) {
     return LoadLibraryA(RUNTIME_LIBRARY_PATH);
 }
 
-static describe_function describer_of(library_handle library, const char *symbol) {
+static exported_function exported_of(library_handle library, const char *symbol) {
     FARPROC address = GetProcAddress(library, symbol);
-    return address == NULL ? NULL : (describe_function)(void (*)(void))address;
+    return address == NULL ? NULL : (exported_function)address;
 }
 
 static void unload_runtime(library_handle library) {
@@ -46,13 +49,13 @@ static library_handle load_runtime(void) {
     return dlopen(RUNTIME_LIBRARY_PATH, RTLD_NOW | RTLD_LOCAL);
 }
 
-static describe_function describer_of(library_handle library, const char *symbol) {
+static exported_function exported_of(library_handle library, const char *symbol) {
     void *address = dlsym(library, symbol);
-    describe_function describer = NULL;
+    exported_function exported = NULL;
     if (address != NULL) {
-        memcpy(&describer, &address, sizeof describer);
+        memcpy(&exported, &address, sizeof exported);
     }
-    return describer;
+    return exported;
 }
 
 static void unload_runtime(library_handle library) {
@@ -95,8 +98,40 @@ static void check_definition_name(const char *definition, const char *service_id
     check_text(definition, expected, service_id);
 }
 
-static void check_description(library_handle runtime, const char *symbol, const char *service_id) {
-    describe_function describer;
+static const char *definition_symbol_of(const weivel_standard_library_service *service) {
+    for (size_t index = 0; index < service->function_count; index++) {
+        if (service->functions[index].kind == WEIVEL_STANDARD_FUNCTION_DEFINITION) {
+            return service->functions[index].symbol;
+        }
+    }
+    return NULL;
+}
+
+/** Requires `description` to answer the definition the service's own definition function answers. */
+static void check_answers(library_handle runtime, const weivel_standard_description *description,
+                          const weivel_standard_library_service *service) {
+    const char *definition_symbol = definition_symbol_of(service);
+    exported_function definer = definition_symbol == NULL ? NULL : exported_of(runtime, definition_symbol);
+    weivel_standard_refusal refusal = WEIVEL_INIT(weivel_standard_refusal);
+    if (definer == NULL) {
+        fprintf(stderr, "service %s declares no definition function runtime exports\n", service->id);
+        check_failures++;
+        return;
+    }
+    if (weivel_standard_description_answers(description, ((definition_function)definer)(), &refusal) !=
+        WEIVEL_STATUS_OK) {
+        fprintf(stderr, "service %s: its description does not answer %s, at \"%s\": %s\n", service->id,
+                definition_symbol, refusal.path == NULL ? "" : refusal.path,
+                refusal.detail == NULL ? "" : refusal.detail);
+        weivel_standard_refusal_release(&refusal);
+        check_failures++;
+    }
+}
+
+static void check_description(library_handle runtime, const char *symbol,
+                              const weivel_standard_library_service *service) {
+    const char *service_id = service->id;
+    exported_function describer;
     const weivel_standard_description *description;
     weivel_standard_refusal refusal = WEIVEL_INIT(weivel_standard_refusal);
     if (symbol == NULL) {
@@ -104,13 +139,13 @@ static void check_description(library_handle runtime, const char *symbol, const 
         check_failures++;
         return;
     }
-    describer = describer_of(runtime, symbol);
+    describer = exported_of(runtime, symbol);
     if (describer == NULL) {
         fprintf(stderr, "service %s declares %s, which runtime does not export\n", service_id, symbol);
         check_failures++;
         return;
     }
-    description = describer();
+    description = ((describe_function)describer)();
     if (weivel_standard_description_check(description, &refusal) != WEIVEL_STATUS_OK) {
         fprintf(stderr, "%s is refused at \"%s\": %s\n", symbol, refusal.path == NULL ? "" : refusal.path,
                 refusal.detail == NULL ? "" : refusal.detail);
@@ -119,6 +154,7 @@ static void check_description(library_handle runtime, const char *symbol, const 
         return;
     }
     check_definition_name(description->definition, service_id);
+    check_answers(runtime, description, service);
 }
 
 static void every_declared_description_is_exported_and_checks(void) {
@@ -132,7 +168,7 @@ static void every_declared_description_is_exported_and_checks(void) {
     if (read_library(&library)) {
         CHECK(library.service_count > 0);
         for (size_t index = 0; index < library.service_count; index++) {
-            check_description(runtime, library.descriptions[index], library.services[index].id);
+            check_description(runtime, library.descriptions[index], &library.services[index]);
         }
         weivel_standard_library_release(&library);
     }

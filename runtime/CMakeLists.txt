@@ -357,28 +357,65 @@ weivel_describe(runtime
     VALUE spisor_value
     TREE spisor_value_tree
     SERVICE runtime_paths_definition SYMBOL runtime_paths_definition_description
+        ANSWERED_BY runtime_paths_definition_of
     SERVICE runtime_identity_definition SYMBOL runtime_identity_definition_description
+        ANSWERED_BY runtime_identity_definition_of
     SERVICE runtime_marketplace_definition SYMBOL runtime_marketplace_definition_description
+        ANSWERED_BY runtime_marketplace_definition_of
     SERVICE runtime_places_definition SYMBOL runtime_places_definition_description
+        ANSWERED_BY runtime_places_definition_of
     SERVICE runtime_config_definition SYMBOL runtime_config_definition_description
+        ANSWERED_BY runtime_config_definition_of
     SERVICE runtime_settings_definition SYMBOL runtime_settings_definition_description
+        ANSWERED_BY runtime_settings_definition_of
     SERVICE runtime_log_definition SYMBOL runtime_log_definition_description
+        ANSWERED_BY runtime_log_definition_of
     SERVICE runtime_secrets_definition SYMBOL runtime_secrets_definition_description
+        ANSWERED_BY runtime_secrets_definition_of
     SERVICE runtime_registry_definition SYMBOL runtime_registry_definition_description
+        ANSWERED_BY runtime_registry_definition_of
     SERVICE runtime_changes_definition SYMBOL runtime_changes_definition_description
+        ANSWERED_BY runtime_changes_definition_of
     SERVICE runtime_commands_definition SYMBOL runtime_commands_definition_description
+        ANSWERED_BY runtime_commands_definition_of
     SERVICE runtime_install_definition SYMBOL runtime_install_definition_description
+        ANSWERED_BY runtime_install_definition_of
     SERVICE runtime_fetch_definition SYMBOL runtime_fetch_definition_description
+        ANSWERED_BY runtime_fetch_definition_of
     SERVICE runtime_catalog_definition SYMBOL runtime_catalog_definition_description
+        ANSWERED_BY runtime_catalog_definition_of
     SERVICE runtime_cache_definition SYMBOL runtime_cache_definition_description
+        ANSWERED_BY runtime_cache_definition_of
     SERVICE runtime_updates_definition SYMBOL runtime_updates_definition_description
+        ANSWERED_BY runtime_updates_definition_of
     SERVICE runtime_boot_definition SYMBOL runtime_boot_definition_description
+        ANSWERED_BY runtime_boot_definition_of
     SERVICE runtime_processes_definition SYMBOL runtime_processes_definition_description
+        ANSWERED_BY runtime_processes_definition_of
     SERVICE runtime_hosts_definition SYMBOL runtime_hosts_definition_description
+        ANSWERED_BY runtime_hosts_definition_of
     SERVICE runtime_loader_definition SYMBOL runtime_loader_definition_description
+        ANSWERED_BY runtime_loader_definition_of
     SERVICE runtime_detect_definition SYMBOL runtime_detect_definition_description
+        ANSWERED_BY runtime_detect_definition_of
     SERVICE runtime_lists_definition SYMBOL runtime_lists_definition_description
-    SERVICE runtime_ui_definition SYMBOL runtime_ui_definition_description)
+        ANSWERED_BY runtime_lists_definition_of
+    SERVICE runtime_ui_definition SYMBOL runtime_ui_definition_description
+        ANSWERED_BY runtime_ui_definition_of)
+# The standard's services are described here from the standard's own headers, so each description names runtime's
+# function: a description the standard exported would be shared by every library serving the service.
+set(runtime_standard_headers ${weivel_standard_SOURCE_DIR}/include/weivel)
+weivel_describe(runtime
+    HEADERS ${PROJECT_SOURCE_DIR}/include/runtime/definition.h ${runtime_standard_headers}/services.h
+        ${runtime_standard_headers}/scope.h ${runtime_standard_headers}/host.h
+        ${runtime_standard_headers}/descriptions.h
+    PREFIX runtime_standard_described_
+    EXPORT RUNTIME_DEFINITION_API
+    SERVICE weivel_standard_host SYMBOL runtime_standard_host_definition_description
+        ANSWERED_BY runtime_standard_host_definition_of
+    SERVICE weivel_standard_scopes SYMBOL runtime_standard_scope_definition_description
+        ANSWERED_BY runtime_standard_scope_definition_of
+    DESCRIBED_ELSEWHERE weivel_standard_config weivel_standard_secrets weivel_standard_paths weivel_standard_log)
 target_link_libraries(runtime PRIVATE weivel_standard)
 
 if(WIN32)

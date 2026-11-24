@@ -4,9 +4,9 @@
 /**
  * @file
  * runtime's `standard` services: the weivel standard's own definitions, served under the standard's ids with the
- * structs and the descriptions weivel/standard publishes, so this header declares their getters and nothing else. A
- * standard service's symbols read `runtime_standard_<name>_definition_of` and `_description` for the id
- * `weivel.<name>`, and its description is the standard's own, answered through a one-line forwarder.
+ * structs weivel/standard publishes, so this header declares their getters and nothing else. A standard service's
+ * symbols read `runtime_standard_<name>_definition_of` and `_description` for the id `weivel.<name>`, and runtime
+ * generates its description from the standard's header, naming that getter as the function answering it.
  *
  * runtime serves `weivel.host` and `weivel.scope` and declares none of `weivel.config`, `weivel.secrets`,
  * `weivel.paths` and `weivel.log`: a plugin reaches its own of each only through the scope opened for it.

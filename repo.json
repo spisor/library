@@ -14,22 +14,22 @@
     {
       "id": "github:1456093642",
       "importName": "standard",
-      "commit": "999d01b2a2f1b7a5cae9c3b3c2daf3b63172efd5"
+      "commit": "832decb50711a34db9bf0d572f26fc4a52e5046f"
     },
     {
       "id": "github:1457141747",
       "importName": "c",
-      "commit": "0d0ef67e66de32b40ef9c7851dcd8652e93af808"
+      "commit": "89b98aea33e2704f7f3bcd5def7208d49ac006b9"
     },
     {
       "id": "github:1427561829",
       "importName": "typescript",
-      "commit": "3f5ce180fb1b16b4026546224eedb115274232cd"
+      "commit": "4f714ea850005e007e5707dbe424c5e2a6aed0e1"
     },
     {
       "id": "github:1350572676",
       "importName": "java",
-      "commit": "610747bbf41bbcbf15f2d0f1e02f817e54383fde"
+      "commit": "1026283c49702dcb8d0a80eb315bc07641e06d3b"
     }
   ]
 }
