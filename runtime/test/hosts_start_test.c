@@ -271,6 +271,26 @@ static void no_color_is_set_by_an_empty_no_color(void) {
     finish_base();
 }
 
+/** An environment is the OS's, every value text, so a NO_COLOR that is no text is a malformed call, never colour. */
+static void a_no_color_that_is_no_text_is_refused_as_no_usable_environment(void) {
+    start_world("start-no-color-number");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    cJSON *environment = environment_json();
+    cJSON_AddNumberToObject(environment, "NO_COLOR", 1);
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}");
+    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1};
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_hosts_start(&request, &refusal);
+    CHECK(answer == NULL);
+    check_text(text_at(refusal, "message"), "the call carries no usable environment", "a number for NO_COLOR");
+    cJSON_Delete(answer);
+    cJSON_Delete(refusal);
+    cJSON_Delete(libraries);
+    cJSON_Delete(environment);
+    finish_base();
+}
+
 static void no_color_ignores_case_on_windows(void) {
     start_world("start-no-color-case");
     register_test_host("1.0.0");
@@ -467,6 +487,7 @@ int main(void) {
     no_color_is_set_by_an_empty_no_color();
     the_timers_are_the_runtimes_own();
     no_color_ignores_case_on_windows();
+    a_no_color_that_is_no_text_is_refused_as_no_usable_environment();
     a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept();
     a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorded_run();
     return check_summary("hosts_start_test");
