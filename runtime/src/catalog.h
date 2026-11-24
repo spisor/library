@@ -4,6 +4,9 @@
 #include "cJSON.h"
 #include "catalog_state.h"
 
+/** The format of a catalog index, its `format` member, as catalog.schema.json pins it. */
+#define RUNTIME_CATALOG_FORMAT 1
+
 /**
  * @file
  * The catalog service's functions, for runtime's own callers: each answers its result, or NULL with *refusal set to

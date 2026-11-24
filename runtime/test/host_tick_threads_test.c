@@ -123,10 +123,9 @@ static void config_reads_while_a_tick_blocks(void) {
     char *seen;
     started_run run;
     http_fixture *fixture;
-    start_host_world("tick-threads");
-    write_in(cache, "bundles/a/1.0.0/plugin.json", VIEWER_MANIFEST);
+    start_held_host_world("tick-threads");
+    install_plugin("a", VIEWER_MANIFEST);
     read_the_stalled_source();
-    hold_the_loader();
     body = index_text();
     route.body = body;
     route.body_length = body == NULL ? 0 : strlen(body);

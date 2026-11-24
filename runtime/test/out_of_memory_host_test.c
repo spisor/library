@@ -223,7 +223,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     char code[32];
     place_the_holders(each->held);
     remove_the_newer_plugin();
-    write_in(cache, "bundles/a/1.0.0/plugin.json", PLUGIN_MANIFEST);
+    install_plugin("a", PLUGIN_MANIFEST);
     start_empty(&plan, sizeof plan);
     *failed = 0;
     if (host->start(host->context, each->arguments, each->argument_count, &plan, NULL) != WEIVEL_STATUS_OK) {

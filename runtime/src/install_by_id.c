@@ -9,6 +9,7 @@
 #include "cache_deploy.h"
 #include "cache_install.h"
 #include "cache_place.h"
+#include "catalog.h"
 #include "cache_refusal.h"
 #include "catalog_read.h"
 #include "fetch_transport.h"
@@ -352,7 +353,7 @@ static char *find_index_url(const install_request *request, const cJSON *reposit
 
 static cJSON *catalog_around(const char *id, const cJSON *item) {
     cJSON *catalog = cJSON_CreateObject();
-    int formatted = catalog != NULL && cJSON_AddNumberToObject(catalog, "format", 1) != NULL;
+    int formatted = catalog != NULL && cJSON_AddNumberToObject(catalog, "format", RUNTIME_CATALOG_FORMAT) != NULL;
     cJSON *items = formatted ? cJSON_AddObjectToObject(catalog, "items") : NULL;
     cJSON *copy = items == NULL ? NULL : cJSON_Duplicate(item, 1);
     if (copy == NULL || !cJSON_AddItemToObject(items, id, copy)) {

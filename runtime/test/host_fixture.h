@@ -7,8 +7,14 @@
 #include "directory_tree.h"
 #include "holders.h"
 #include "host_run.h"
+#include "cache_marker.h"
+#include "cache_place.h"
+#include "places.h"
 #include "runtime/standard.h"
+#include "runtime_testing/home.h"
+#include "spisor/json_value.h"
 #include "updates_fixture.h"
+#include "user_home.h"
 
 #define LOADER "test-host"
 #define PLUGIN_MANIFEST                                                                                            \
@@ -31,40 +37,88 @@ static inline void set_variable(const char *name, const char *value) {
 #endif
 }
 
-/** This process's environment pointed at the places, its secrets in a file so no test reaches the OS store. */
-static inline void point_the_environment_at_the_places(void) {
-    set_variable("HOME", user_home);
-    set_variable("USERPROFILE", user_home);
-    set_variable("SPISOR_HOME", portable);
-    set_variable("SPISOR_STATE", state);
-    set_variable("SPISOR_CACHE", cache);
-    set_variable("SPISOR_SECRETS", secrets);
+static inline const runtime_testing_definition *testing_definition(void) {
+    return (const runtime_testing_definition *)runtime_testing_definition_of();
 }
 
-static inline void write_layer_hint(void) {
-    char hint[6000];
-    int written = snprintf(hint, sizeof hint,
-        "{\"host\": \"2.0.0\", \"libraries\": {"
-        "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"%s/rt\", \"binary\": \"%s/rt/runtime.dll\"}, "
-        "\"koffi\": {\"version\": \"2.0.0\", \"directory\": \"%s/koffi\"}, "
-        "\"forebay-library\": {\"version\": \"0.3.0\", \"directory\": \"%s\", \"binary\": \"%s/forebay.dll\"}}}",
-        scratch, scratch, scratch, forebay_directory, forebay_directory);
-    CHECK(written > 0 && (size_t)written < sizeof hint);
-    for (char *character = hint; *character != '\0'; character++) {
-        if (*character == '\\') {
-            *character = '/';
-        }
+static inline void hash_bundle_file(const char *bundle, const char *name, cJSON *hashes, cJSON *sizes) {
+    char hex[RUNTIME_SHA256_HEX_SIZE];
+    uint64_t size = 0;
+    char *path = joined(bundle, name);
+    if (spisor_probe_file(path) == SPISOR_FILE_PRESENT && runtime_sha256_file_sized(path, hex, &size) == SPISOR_OK) {
+        cJSON_AddStringToObject(hashes, name, hex);
+        cJSON_AddNumberToObject(sizes, name, (double)size);
     }
-    write_hint("javascript-host", hint);
+    spisor_memory_release(path);
 }
 
+/** Installs plugin `id` at 1.0.0 with `manifest` and an empty index.js, marked complete as cache.install marks it. */
 static inline void install_plugin(const char *id, const char *manifest) {
-    char rest[512];
-    mark_installed("bundles", id, "1.0.0");
-    snprintf(rest, sizeof rest, "bundles/%s/1.0.0/plugin.json", id);
-    write_in(cache, rest, manifest);
-    snprintf(rest, sizeof rest, "bundles/%s/1.0.0/index.js", id);
-    write_in(cache, rest, "export default {};\n");
+    int out_of_memory = 0;
+    char *bundle = runtime_cache_bundle_directory(cache, id, "1.0.0", &out_of_memory);
+    cJSON *hashes = cJSON_CreateObject();
+    cJSON *sizes = cJSON_CreateObject();
+    char *manifest_path = joined(bundle, RUNTIME_PLUGIN_MANIFEST);
+    char *entry_path = joined(bundle, "index.js");
+    write_file(manifest_path, manifest);
+    write_file(entry_path, "export default {};\n");
+    hash_bundle_file(bundle, RUNTIME_PLUGIN_MANIFEST, hashes, sizes);
+    hash_bundle_file(bundle, "index.js", hashes, sizes);
+    CHECK(runtime_cache_write_marker(bundle, hashes, sizes) == SPISOR_OK);
+    spisor_memory_release(entry_path);
+    spisor_memory_release(manifest_path);
+    cJSON_Delete(sizes);
+    cJSON_Delete(hashes);
+    spisor_memory_release(bundle);
+}
+
+static inline void keep_variable(const runtime_variable *variable) {
+    set_variable(variable->name, variable->value);
+    if (strcmp(variable->name, RUNTIME_PORTABLE_VARIABLE) == 0) {
+        snprintf(portable, sizeof portable, "%s", variable->value);
+    } else if (strcmp(variable->name, RUNTIME_SECRETS_VARIABLE) == 0) {
+        snprintf(secrets, sizeof secrets, "%s", variable->value);
+    } else if (strcmp(variable->name, RUNTIME_HOME_VARIABLE) == 0) {
+        snprintf(user_home, sizeof user_home, "%s", variable->value);
+    }
+}
+
+/** Lays the world out at scratch through runtime-testing, plugin `a` installed with PLUGIN_MANIFEST. */
+static inline void lay_out_host_world(int64_t holder) {
+    char entry[1200];
+    char runtime_directory[1200];
+    char runtime_binary[1200];
+    char forebay_binary[1500];
+    runtime_boot_library libraries[2] = {{"runtime", "0.2.0", runtime_directory, runtime_binary},
+                                         {"forebay-library", "0.3.0", forebay_directory, forebay_binary}};
+    cJSON *manifest_json = parsed(PLUGIN_MANIFEST);
+    spisor_value_tree manifest = SPISOR_INIT(spisor_value_tree);
+    runtime_testing_install install = {&manifest.root, entry, NULL};
+    runtime_testing_home_argument argument = SPISOR_INIT(runtime_testing_home_argument);
+    runtime_testing_home_answer answer = SPISOR_INIT(runtime_testing_home_answer);
+    snprintf(entry, sizeof entry, "%s.index.js", scratch);
+    snprintf(runtime_directory, sizeof runtime_directory, "%s/rt", scratch);
+    snprintf(runtime_binary, sizeof runtime_binary, "%s/rt/runtime.dll", scratch);
+    snprintf(forebay_directory, sizeof forebay_directory, "%s/forebay", scratch);
+    snprintf(forebay_binary, sizeof forebay_binary, "%s/forebay.dll", forebay_directory);
+    write_file(entry, "export default {};\n");
+    CHECK(spisor_value_of_json(manifest_json, &manifest) == SPISOR_OK);
+    argument.base = scratch;
+    argument.host_id = LOADER;
+    argument.installs = &install;
+    argument.install_count = 1;
+    argument.libraries = libraries;
+    argument.library_count = 2;
+    argument.holder = holder;
+    CHECK(testing_definition()->lay_out_home(NULL, &argument, &answer, NULL) == SPISOR_OK);
+    for (size_t index = 0; index < answer.variable_count; index++) {
+        keep_variable(&answer.variables[index]);
+    }
+    snprintf(application_home, sizeof application_home, "%s", answer.home == NULL ? "" : answer.home);
+    testing_definition()->release_home_answer(NULL, &answer);
+    spisor_value_release(&manifest);
+    cJSON_Delete(manifest_json);
+    CHECK(runtime_remove_tree(entry) == SPISOR_OK);
 }
 
 /**
@@ -72,31 +126,14 @@ static inline void install_plugin(const char *id, const char *manifest) {
  * naming runtime, koffi and forebay-library, and this process's environment pointed at it all.
  */
 static inline void start_host_world(const char *label) {
-    char registration[3200];
     start_base(label);
-    snprintf(user_home, sizeof user_home, "%s/user", scratch);
-    snprintf(application_home, sizeof application_home, "%s/application", scratch);
-    snprintf(portable, sizeof portable, "%s/portable", scratch);
-    snprintf(secrets, sizeof secrets, "%s/secrets", scratch);
-    snprintf(forebay_directory, sizeof forebay_directory, "%s/forebay", scratch);
-    write_catalog();
-    install_plugin("a", PLUGIN_MANIFEST);
-    snprintf(registration, sizeof registration,
-             "{\"id\": \"" LOADER "\", \"kind\": \"host\", \"version\": \"1.0.0\", \"home\": \"%s\"}",
-             application_home);
-    for (char *character = registration; *character != '\0'; character++) {
-        if (*character == '\\') {
-            *character = '/';
-        }
-    }
-    write_in(state, "hosts/" LOADER ".json", registration);
-    cJSON *settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}}}");
-    char *text = cJSON_PrintUnformatted(settings);
-    write_in(application_home, "config/settings.json", text);
-    cJSON_free(text);
-    cJSON_Delete(settings);
-    write_layer_hint();
-    point_the_environment_at_the_places();
+    lay_out_host_world(0);
+}
+
+/** start_host_world with this process recorded as the loader's one holder, so a prune finds it held. */
+static inline void start_held_host_world(const char *label) {
+    start_base(label);
+    lay_out_host_world((int64_t)current_process_id());
 }
 
 static inline const weivel_standard_host *host_definition(void) {
@@ -148,11 +185,11 @@ static inline char *processes_file(const char *extension) {
 
 /** Makes this process the loader's one holder, so a prune finds it held. */
 static inline void hold_the_loader(void) {
-    char record[160];
+    runtime_holders_record record = runtime_no_holders();
     char *path = processes_file(".json");
-    snprintf(record, sizeof record, "{\"pid\":null,\"aliveAt\":null,\"checkMilliseconds\":null,\"holders\":[%d]}\n",
-             (int)current_process_id());
-    write_file(path, record);
+    CHECK(runtime_add_holder(&record, (double)current_process_id()));
+    CHECK(runtime_write_holders(path, &record) == SPISOR_OK);
+    runtime_free_holders(&record);
     spisor_memory_release(path);
 }
 

@@ -101,7 +101,7 @@ static int merge_reading(cJSON *items, const runtime_catalog_reading *reading, c
 cJSON *runtime_catalog_merge_readings(const runtime_catalog_reading *readings, size_t count, cJSON *shadowed) {
     cJSON *catalog = cJSON_CreateObject();
     cJSON *items = NULL;
-    if (catalog != NULL && cJSON_AddNumberToObject(catalog, "format", 1) != NULL) {
+    if (catalog != NULL && cJSON_AddNumberToObject(catalog, "format", RUNTIME_CATALOG_FORMAT) != NULL) {
         items = cJSON_AddObjectToObject(catalog, "items");
     }
     if (items == NULL) {

@@ -27,7 +27,6 @@
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
-#define MANIFEST_NAME "plugin.json"
 #define IDENTITY_SUFFIX "_identity.json"
 #define MANIFEST_SUFFIX ".json"
 #define ENTRY_SUFFIX ".js"
@@ -176,7 +175,7 @@ static int read_request(const runtime_cache_deploy_request *request, deployment 
 }
 
 static int read_manifest(deployment *plan, cJSON **refusal) {
-    const char *segments[1] = {MANIFEST_NAME};
+    const char *segments[1] = {RUNTIME_PLUGIN_MANIFEST};
     char *path = runtime_cache_resolve(plan->directory, segments, 1);
     int out_of_memory = 0;
     plan->manifest_bytes = read_noting(plan, path, &plan->manifest_length);

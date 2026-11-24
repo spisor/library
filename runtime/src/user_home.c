@@ -33,7 +33,7 @@ const char *runtime_environment_text(const cJSON *environment, const char *name)
 }
 
 const char *runtime_user_home_of(const cJSON *environment) {
-    const char *home = RUNTIME_HOST_IS_WINDOWS ? runtime_environment_text(environment, "USERPROFILE") : NULL;
-    home = home == NULL ? runtime_environment_text(environment, "HOME") : home;
+    const char *home = RUNTIME_HOST_IS_WINDOWS ? runtime_environment_text(environment, RUNTIME_USER_PROFILE_VARIABLE) : NULL;
+    home = home == NULL ? runtime_environment_text(environment, RUNTIME_HOME_VARIABLE) : home;
     return home == NULL || home[0] == '\0' ? NULL : home;
 }

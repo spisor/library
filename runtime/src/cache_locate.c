@@ -12,7 +12,6 @@
 #include "node_json_file.h"
 #include "spisor/file.h"
 
-#define MANIFEST_FILE "plugin.json"
 #define VERSION_FIX "ask the catalog's publisher to give plugin.json the version the catalog lists it under"
 #define OUTSIDE_FIX "give the plugin an id and version that are plain folder names"
 #define REINSTALL_FIX "install it again"
@@ -61,10 +60,10 @@ static int add_damaged(cJSON *problems, const location *place, const cJSON *chec
 }
 
 static int add_other_version(cJSON *problems, const location *place, const char *named) {
-    const char *parts[6] = {MANIFEST_FILE " in ", place->directory, " names version ", named == NULL ? "(none)" : named,
+    const char *parts[6] = {RUNTIME_PLUGIN_MANIFEST " in ", place->directory, " names version ", named == NULL ? "(none)" : named,
                             ", not ", place->version};
     char *detail = runtime_cache_text(parts, 6);
-    int added = detail != NULL && add_problem(problems, place, detail, VERSION_FIX, MANIFEST_FILE);
+    int added = detail != NULL && add_problem(problems, place, detail, VERSION_FIX, RUNTIME_PLUGIN_MANIFEST);
     spisor_memory_release(detail);
     return added;
 }
@@ -99,7 +98,7 @@ static int add_located(cJSON *located, const location *place, const char *manife
 
 /** Reads plugin.json of an intact version: located when it names the version, a problem when it names another. */
 static int add_intact(cJSON *located, cJSON *problems, const location *place) {
-    const char *name = MANIFEST_FILE;
+    const char *name = RUNTIME_PLUGIN_MANIFEST;
     char *manifest_path = runtime_cache_resolve(place->directory, &name, 1);
     if (manifest_path == NULL) {
         return 0;

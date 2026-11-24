@@ -3,6 +3,9 @@
 
 #include <stddef.h>
 
+/** The manifest a plugin bundle carries at its root. */
+#define RUNTIME_PLUGIN_MANIFEST "plugin.json"
+
 /**
  * Node's path.resolve(base, ...segments) for this platform: each absolute segment starts over, and the
  * result is absolute and normalized. Freed; NULL when memory runs out.
