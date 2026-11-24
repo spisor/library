@@ -36,7 +36,8 @@ cJSON *runtime_processes_release(const char *state, const char *host_id, double 
 
 /**
  * One prune of background host host_id, whose process is self: at `*now`, or at the current time when `now` is NULL,
- * so a caller passing its own time never has the clock read; a check_milliseconds of 0 takes its default.
+ * so a caller passing its own time never has the clock read, the holders lock's age included; a check_milliseconds of
+ * 0 takes its default.
  */
 typedef struct runtime_processes_prune_request {
     const char *state;

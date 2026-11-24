@@ -38,6 +38,7 @@
 #define INTERVAL_TEXT "750"
 #define ALLOWANCE (4 * INTERVAL)
 #define FIXTURE RUNTIME_BACKGROUND_FIXTURE_PATH
+#define DAY_MILLISECONDS 86400000.0
 
 static char state[1024];
 static double detached[64];
@@ -301,7 +302,7 @@ static runtime_holders_guard *take_lock(void) {
     spisor_memory_release(folder);
     char *path = lock_path();
     runtime_holders_guard *guard = NULL;
-    CHECK(runtime_lock_holders(path, &guard) == SPISOR_OK);
+    CHECK(runtime_lock_holders(path, runtime_now_milliseconds(), &guard) == SPISOR_OK);
     spisor_memory_release(path);
     return guard;
 }
@@ -541,7 +542,7 @@ static void it_refuses_a_lock_path_that_is_a_directory_rather_than_waiting(void)
     CHECK(spisor_make_directories(path) == SPISOR_OK);
     double started = runtime_now_milliseconds();
     runtime_holders_guard *guard = NULL;
-    CHECK(runtime_lock_holders(path, &guard) == SPISOR_REFUSED && guard == NULL);
+    CHECK(runtime_lock_holders(path, runtime_now_milliseconds(), &guard) == SPISOR_REFUSED && guard == NULL);
     catalog_answer answer = hold(self_pid(), sleep_start());
     CHECK(runtime_now_milliseconds() - started < 2000);
     CHECK(answer.status != 0);
@@ -858,6 +859,17 @@ static void it_exits_without_touching_the_record_when_another_process_is_the_hos
     spisor_memory_release(after);
     kill_child(&holder);
     release_child(&holder);
+    finish_case();
+}
+
+/** A prune a day ahead of the clock judges the holders lock's age at its own now, so a live process's lock is old. */
+static void it_judges_the_holders_lock_s_age_at_the_prune_s_now(void) {
+    fresh_state("prune-lock-now");
+    write_record(number_text(self_pid()), "null", "null", "[]");
+    write_lock(number_text(self_pid()), 0);
+    double started = runtime_now_milliseconds();
+    CHECK(prune_exits(self_pid(), floor(started) + DAY_MILLISECONDS) == 1);
+    CHECK(runtime_now_milliseconds() - started < 2000);
     finish_case();
 }
 
@@ -1269,6 +1281,7 @@ int main(void) {
     it_prunes_a_dead_holder_and_keeps_the_live_ones();
     it_exits_without_touching_the_record_when_another_process_is_the_host();
     it_exits_at_once_when_nothing_holds_it();
+    it_judges_the_holders_lock_s_age_at_the_prune_s_now();
     one_holder_starts_one_fixture_and_its_release_stops_it();
     two_holders_share_one_process();
     a_holder_killed_hard_leaves_a_fixture_that_exits_within_two_intervals();

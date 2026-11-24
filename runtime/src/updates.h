@@ -43,8 +43,8 @@ typedef struct runtime_updates_apply_request {
 cJSON *runtime_updates_apply(const runtime_updates_apply_request *request, cJSON **refusal);
 
 /**
- * What a check checks at now, the time of the check as toISOString writes it: settings and defaults as an apply
- * takes them, and problems, an array of the {id, version} found damaged, or NULL.
+ * What a check checks at now, the time of the check as toISOString writes it and the only time it reads: settings
+ * and defaults as an apply takes them, and problems, an array of the {id, version} found damaged, or NULL.
  */
 typedef struct runtime_updates_check_request {
     runtime_updates_target target;

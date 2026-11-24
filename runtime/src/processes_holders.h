@@ -28,10 +28,10 @@ typedef cJSON *(*runtime_holders_step)(const void *context, const char *path, ru
                                        cJSON **refusal);
 
 /**
- * Runs step for context holding the holders lock of host_id under state, with what its holders file records, making
- * the processes folder first when it is missing.
+ * Runs step for context holding the holders lock of host_id under state, taken at now, with what its holders file
+ * records, making the processes folder first when it is missing.
  */
-cJSON *runtime_processes_with_holders(const char *state, const char *host_id, runtime_holders_step step,
+cJSON *runtime_processes_with_holders(const char *state, const char *host_id, double now, runtime_holders_step step,
                                       const void *context, cJSON **refusal);
 
 #endif

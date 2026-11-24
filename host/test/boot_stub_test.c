@@ -225,7 +225,8 @@ static cJSON *drop_this_test(const void *context, const char *path, runtime_hold
 /** Releases this test's hold as a launcher does: under the holders lock, keeping what the host recorded. */
 static void release_this_test(const host_world *world) {
     cJSON *refusal = NULL;
-    cJSON *answer = runtime_processes_with_holders(world->base.state, BACKGROUND_ID, drop_this_test, NULL, &refusal);
+    cJSON *answer = runtime_processes_with_holders(world->base.state, BACKGROUND_ID, runtime_now_milliseconds(),
+                                                   drop_this_test, NULL, &refusal);
     CHECK(answer != NULL && refusal == NULL);
     cJSON_Delete(answer);
     cJSON_Delete(refusal);

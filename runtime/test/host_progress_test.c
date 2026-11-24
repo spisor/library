@@ -127,12 +127,7 @@ static double holders_alive_at(void) {
     return alive_at;
 }
 
-/**
- * When the loader's one run record says its run was last alive, which a tick's turn stamps with its now.
- *
- * @implNote Read only after a tick that ran no update check: the check's sweep reads the clock, and deletes a record
- * stamped years before it, as NOW is, until the next turn stamps it again.
- */
+/** When the loader's one run record says its run was last alive, which a tick's turn stamps with its now. */
 static double run_record_alive_at(void) {
     runtime_directory_listing listing = {NULL, 0};
     char *directory = joined(state, "bundles/runs/" LOADER);
@@ -401,6 +396,17 @@ static void a_late_tick_runs_each_timer_once(void) {
     finish_base();
 }
 
+/** A tick years behind the clock, as NOW is, keeps its own run record through its update check's cache sweep. */
+static void a_tick_far_behind_the_clock_keeps_its_run_alive_through_its_check(void) {
+    started_run run = serving("behind");
+    expect_tick(NOW, NOW + TURN, "a tick that turns and checks years behind the clock");
+    CHECK(run_record_alive_at() == (double)NOW);
+    CHECK(holders_alive_at() == (double)NOW);
+    release_run(&run);
+    stop_expecting(0, "a serve run ticked behind the clock");
+    finish_base();
+}
+
 static void a_tick_at_the_epoch_reads_no_clock(void) {
     started_run run = serving("epoch");
     expect_tick(-TURN, 0, "a tick before the epoch");
@@ -650,6 +656,7 @@ int main(void) {
     a_tick_acts_on_each_timer_when_it_is_due();
     a_late_tick_runs_each_timer_once();
     a_tick_at_the_epoch_reads_no_clock();
+    a_tick_far_behind_the_clock_keeps_its_run_alive_through_its_check();
     a_serve_run_no_holder_keeps_ends_with_exit_code_zero();
     failed_prunes_end_the_run_only_once_enough_fail_in_a_row();
     a_now_no_check_can_carry_fails_the_run();

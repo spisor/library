@@ -136,5 +136,6 @@ cJSON *runtime_processes_hold(const runtime_processes_hold_request *request, cJS
         *refusal = runtime_refusal("the call carries no usable start directory", "pass an absolute folder, or none");
         return NULL;
     }
-    return runtime_processes_with_holders(request->state, request->host_id, hold_step, request, refusal);
+    return runtime_processes_with_holders(request->state, request->host_id, runtime_now_milliseconds(), hold_step,
+                                          request, refusal);
 }

@@ -7,6 +7,7 @@
 #include "cache_marker.h"
 #include "cache_sweep.h"
 #include "catalog_answer.h"
+#include "file_times.h"
 #include "json_service.h"
 #include "hosts_lock.h"
 #include "platform_key.h"
@@ -124,7 +125,7 @@ cJSON *runtime_cache_sweep(const char *cache, const char *state, cJSON **refusal
                                    "check that SPISOR_STATE names a writable folder, then try again");
         return NULL;
     }
-    cJSON *answer = answer_of("removed", runtime_cache_sweep_versions(cache, state));
+    cJSON *answer = answer_of("removed", runtime_cache_sweep_versions(cache, state, runtime_now_milliseconds()));
     spisor_unlock(guard);
     return answer;
 }

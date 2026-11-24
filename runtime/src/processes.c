@@ -69,12 +69,12 @@ static cJSON *lock_refusal(const char *lock) {
     return refusal;
 }
 
-static cJSON *locked_step(const char *state, const char *host_id, const char *path, runtime_holders_step step,
-                          const void *context, cJSON **refusal) {
+static cJSON *locked_step(const char *state, const char *host_id, double now, const char *path,
+                          runtime_holders_step step, const void *context, cJSON **refusal) {
     char *problem = NULL;
     char *lock = runtime_holders_path(state, host_id, ".lock", &problem);
     runtime_holders_guard *guard = NULL;
-    spisor_status locked = lock == NULL ? SPISOR_OUT_OF_MEMORY : runtime_lock_holders(lock, &guard);
+    spisor_status locked = lock == NULL ? SPISOR_OUT_OF_MEMORY : runtime_lock_holders(lock, now, &guard);
     if (locked != SPISOR_OK) {
         *refusal = locked == SPISOR_OUT_OF_MEMORY ? NULL : lock_refusal(lock);
         spisor_memory_release(lock);
@@ -92,7 +92,7 @@ static cJSON *locked_step(const char *state, const char *host_id, const char *pa
     return answer;
 }
 
-cJSON *runtime_processes_with_holders(const char *state, const char *host_id, runtime_holders_step step,
+cJSON *runtime_processes_with_holders(const char *state, const char *host_id, double now, runtime_holders_step step,
                                       const void *context, cJSON **refusal) {
     char *problem = NULL;
     char *path = runtime_holders_path(state, host_id, RUNTIME_JSON_EXTENSION, &problem);
@@ -102,7 +102,7 @@ cJSON *runtime_processes_with_holders(const char *state, const char *host_id, ru
     if (made == SPISOR_REFUSED) {
         *refusal = runtime_processes_state_refusal("the processes folder", folder);
     } else if (made == SPISOR_OK) {
-        answer = locked_step(state, host_id, path, step, context, refusal);
+        answer = locked_step(state, host_id, now, path, step, context, refusal);
     }
     spisor_memory_release(folder);
     spisor_memory_release(path);
@@ -136,7 +136,7 @@ static cJSON *release_step(const void *context, const char *path, runtime_holder
 
 cJSON *runtime_processes_release(const char *state, const char *host_id, double holder, cJSON **refusal) {
     *refusal = NULL;
-    return runtime_processes_with_holders(state, host_id, release_step, &holder, refusal);
+    return runtime_processes_with_holders(state, host_id, runtime_now_milliseconds(), release_step, &holder, refusal);
 }
 
 static cJSON *exit_answer(int exit_now) {
@@ -150,7 +150,7 @@ static cJSON *exit_answer(int exit_now) {
 
 static cJSON *prune_step(const void *context, const char *path, runtime_holders_record *record, cJSON **refusal) {
     const runtime_processes_prune_request *request = context;
-    double now = request->now == NULL ? runtime_now_milliseconds() : *request->now;
+    double now = *request->now;
     if (!isnan(record->pid) && record->pid != request->self &&
         runtime_is_stamp_fresh(record->pid, record->alive_at, record->check_milliseconds, now)) {
         return exit_answer(1);
@@ -169,6 +169,9 @@ static cJSON *prune_step(const void *context, const char *path, runtime_holders_
 }
 
 cJSON *runtime_processes_prune(const runtime_processes_prune_request *request, cJSON **refusal) {
+    double now = request->now == NULL ? runtime_now_milliseconds() : *request->now;
+    runtime_processes_prune_request at_now = *request;
+    at_now.now = &now;
     *refusal = NULL;
-    return runtime_processes_with_holders(request->state, request->host_id, prune_step, request, refusal);
+    return runtime_processes_with_holders(request->state, request->host_id, now, prune_step, &at_now, refusal);
 }
