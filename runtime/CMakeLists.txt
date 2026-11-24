@@ -425,6 +425,7 @@ if(WIN32)
     add_dependencies(runtime runtime_launcher)
 endif()
 
+add_subdirectory(testing)
 add_subdirectory(test)
 
 set(runtime_executable_libraries ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} ${runtime_fetch_libraries}

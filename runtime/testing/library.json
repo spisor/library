@@ -1,0 +1,17 @@
+{
+  "importName": "runtime-testing",
+  "version": "0.1.0",
+  "services": [
+    {
+      "id": "runtime.testing",
+      "description": "runtime_testing_definition_description",
+      "functions": [
+        {
+          "name": "definition",
+          "symbol": "runtime_testing_definition_of",
+          "kind": "definition"
+        }
+      ]
+    }
+  ]
+}

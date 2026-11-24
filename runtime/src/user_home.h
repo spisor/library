@@ -3,6 +3,10 @@
 
 #include "cJSON.h"
 
+/** The variables naming the user's home: the profile Windows prefers, and the one every OS reads. */
+#define RUNTIME_USER_PROFILE_VARIABLE "USERPROFILE"
+#define RUNTIME_HOME_VARIABLE "HOME"
+
 #define RUNTIME_NO_USER_HOME_MESSAGE \
     "the environment carries neither HOME nor USERPROFILE, so the user's home cannot be found"
 #define RUNTIME_NO_USER_HOME_FIX "send an environment that carries the user's home as HOME, or USERPROFILE on Windows"

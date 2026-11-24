@@ -59,8 +59,8 @@ static int resolve_defaults(int windows, int macos, const char *user_home, const
                             runtime_places *places) {
     if (windows) {
         const char *local_app_data = usable_override(environment, "LOCALAPPDATA", 1);
-        int needs_default = usable_override(environment, "SPISOR_STATE", 1) == NULL ||
-                            usable_override(environment, "SPISOR_CACHE", 1) == NULL;
+        int needs_default = usable_override(environment, RUNTIME_STATE_VARIABLE, 1) == NULL ||
+                            usable_override(environment, RUNTIME_CACHE_VARIABLE, 1) == NULL;
         if (local_app_data == NULL && needs_default) {
             return RUNTIME_PLACES_NO_LOCAL_APP_DATA;
         }
@@ -80,13 +80,13 @@ static int resolve_defaults(int windows, int macos, const char *user_home, const
 }
 
 static void apply_overrides(int windows, const cJSON *environment, runtime_places *places) {
-    places->portable = override_or(usable_override(environment, "SPISOR_HOME", windows), places->portable);
-    places->state = override_or(usable_override(environment, "SPISOR_STATE", windows), places->state);
-    places->cache = override_or(usable_override(environment, "SPISOR_CACHE", windows), places->cache);
+    places->portable = override_or(usable_override(environment, RUNTIME_PORTABLE_VARIABLE, windows), places->portable);
+    places->state = override_or(usable_override(environment, RUNTIME_STATE_VARIABLE, windows), places->state);
+    places->cache = override_or(usable_override(environment, RUNTIME_CACHE_VARIABLE, windows), places->cache);
 }
 
 static int place_secrets_file(int windows, const cJSON *environment, runtime_places *places) {
-    const char *secrets_directory = usable_override(environment, "SPISOR_SECRETS", windows);
+    const char *secrets_directory = usable_override(environment, RUNTIME_SECRETS_VARIABLE, windows);
     places->force_file_store = secrets_directory != NULL;
     places->secrets_file =
         join_two(windows, secrets_directory != NULL ? secrets_directory : places->state, "secrets.json");

@@ -157,8 +157,7 @@ static double run_record_alive_at(void) {
 static started_run serving(const char *label) {
     weivel_standard_host_outcome outcome;
     started_run run;
-    start_host_world(label);
-    hold_the_loader();
+    start_held_host_world(label);
     run = start_one(serve_arguments, 1);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
@@ -183,7 +182,7 @@ static void start_two_plugin_world(const char *label) {
     cJSON *settings;
     char *text;
     start_host_world(label);
-    write_in(cache, "bundles/a/1.0.0/plugin.json", PLUGIN_MANIFEST);
+    install_plugin("a", PLUGIN_MANIFEST);
     install_plugin("b", SECOND_MANIFEST);
     settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}}}");
     text = cJSON_PrintUnformatted(settings);

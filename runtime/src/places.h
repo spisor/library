@@ -12,6 +12,12 @@
     "send the environment's LOCALAPPDATA as an absolute directory path; Windows has no default for the " \
     "machine state"
 
+/** The variables that move a place, each counting only when it names an absolute path. */
+#define RUNTIME_PORTABLE_VARIABLE "SPISOR_HOME"
+#define RUNTIME_STATE_VARIABLE "SPISOR_STATE"
+#define RUNTIME_CACHE_VARIABLE "SPISOR_CACHE"
+#define RUNTIME_SECRETS_VARIABLE "SPISOR_SECRETS"
+
 #define RUNTIME_PLACES_OK 0
 #define RUNTIME_PLACES_OUT_OF_MEMORY 1
 #define RUNTIME_PLACES_NO_LOCAL_APP_DATA 2

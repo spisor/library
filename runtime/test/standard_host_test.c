@@ -259,7 +259,7 @@ static void a_located_plugin_with_no_entry_is_refused(void) {
     const char *arguments[1] = {LOADER};
     started_run run;
     start_host_world("no-entry");
-    write_in(cache, "bundles/a/1.0.0/plugin.json", "{\"id\": \"a\", \"version\": \"1.0.0\"}");
+    install_plugin("a", "{\"id\": \"a\", \"version\": \"1.0.0\"}");
     run = start_with(arguments, 1);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "names no entry installed beside it", "a plugin with no entry");
     release_run(&run);
