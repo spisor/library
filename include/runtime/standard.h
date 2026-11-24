@@ -52,8 +52,10 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * each in its own process: its `started` publishes nothing, its `tick` stamps its run record and runs no prune, and
  * only a stop request ends it. The layer is the javascript-host at
  * the version its boot hint names, beside every library that hint names, and hosts' start plans the run, a SERVE
- * run as the loader's session start. The plan loads every hinted library that has a binary but runtime itself, which
- * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
+ * run as the loader's session start; an in-process one reuses the run a live run record names, as a start that is
+ * not the session start does, so it never switches to a scheduled version under a running host. The plan loads every
+ * hinted library that has a binary but runtime itself, which the program was started with, each with the
+ * `library.json` beside it, and activates every plugin of hosts' start's
  * plan that cache's locate finds installed, in id order. An ACTION plan's `action_plugin` is the `manifest` of the
  * plan's plugin of that id, the very text, since the program matches it exactly; `action_name` is the action's id,
  * `action_service` and `action_method` the service and method its declared `call` names, so the program calls that
@@ -85,7 +87,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * `updateCheckMilliseconds` it runs updates' check at
  * `now`, its damaged versions those cache's locate could not run, the first tick taking both. Each timer is next due
  * at `now` plus its interval, so a late tick runs it once, and `next` is the earlier of the two. A prune that answers
- * that no holder is alive, or another live process runs the loader, ends the run with a REFUSED tick, as do
+ * that no holder is alive, or that another process whose stamp is fresh is recorded as the loader's host, ends the run
+ * with a REFUSED tick, as do
  * `pruneFailuresBeforeExit` turns in a row whose stamp or prune was refused; a refused update check changes nothing.
  * Each failed turn, a refused check and each version a check refused are written as a warning to the loader's own
  * log, under the loader's id at `now`, as the archived host wrote them to stderr.

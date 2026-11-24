@@ -38,11 +38,12 @@ typedef struct runtime_hosts_start_request {
  * records, refused with the reinstall fix unless it carries a string version and home, its version being
  * the one the plan runs hostId at; the ecosystem settings of that home; and the plan updates.apply answers
  * with running naming hostId, the layer and each library at the version it runs. A start that is not the
- * session start reuses instead the run updates.recorded answers while a live run record names hostId, with
- * a run record of its own and as plugins that run less the running ids, and then answers no next or
- * rollback. timers are answered to the session start alone. noColor is whether environment carries NO_COLOR
- * at all. A refused session start publishes its refusal to the ready record of hostId, as processes.ready
- * does, once its places have resolved. An answer that cannot be built removes the run record its plan wrote.
+ * session start, or is an in-process one, reuses instead the run updates.recorded answers while a live run
+ * record names hostId, with a run record of its own and as plugins that run less the running ids, and then
+ * answers no next or rollback. timers are answered to the session start alone. noColor is whether
+ * environment carries NO_COLOR at all. A refused session start publishes its refusal to the ready record of
+ * hostId, as processes.ready does, once its places have resolved. An answer that cannot be built removes the
+ * run record its plan wrote.
  */
 cJSON *runtime_hosts_start(const runtime_hosts_start_request *request, cJSON **refusal);
 

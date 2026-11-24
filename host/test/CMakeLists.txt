@@ -57,6 +57,8 @@ function(host_test name)
 endfunction()
 
 host_test(launch_test)
+# A sanitized macOS runner runs past the 300 s SPISOR_TEST_TIMEOUT_SECONDS gives every other test.
+set_tests_properties(host_launch_test PROPERTIES TIMEOUT 900)
 host_test(action_test)
 host_test(hook_test)
 host_test(install_command_test)

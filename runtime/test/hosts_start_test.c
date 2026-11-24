@@ -367,6 +367,50 @@ static void the_identity_version_is_the_one_the_plan_runs(void) {
     finish_base();
 }
 
+static cJSON *start_in_process(void) {
+    cJSON *environment = environment_json();
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}");
+    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1};
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_hosts_start(&request, &refusal);
+    CHECK(answer != NULL && refusal == NULL);
+    cJSON_Delete(refusal);
+    cJSON_Delete(libraries);
+    cJSON_Delete(environment);
+    return answer;
+}
+
+/**
+ * A second in-process host in one home, as a second OpenCode starts, reuses the run the first recorded while the
+ * first's run record is live, and leaves a version scheduled since then for the next session start to apply.
+ */
+static void a_second_in_process_start_reuses_the_live_run_beside_a_scheduled_version(void) {
+    start_world("start-in-process-twice");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    record_references(TEST_HOST, "{\"run\":{\"" TEST_HOST "\":\"1.0.0\"},\"next\":{}}");
+    mark_installed("bundles", TEST_HOST, "2.0.0");
+    cJSON *first = start_in_process();
+    CHECK(cJSON_IsFalse(value_at(first, "reusedRecordedRun")));
+    check_text(text_at(value_at(first, "plan/run"), TEST_HOST), "1.0.0", "the first runs the recorded version");
+    cJSON *scheduled = cJSON_CreateObject();
+    cJSON_AddItemToObject(scheduled, "run", cJSON_Duplicate(value_at(first, "plan/run"), 1));
+    cJSON_AddItemToObject(scheduled, "next", parsed("{\"" TEST_HOST "\":\"2.0.0\"}"));
+    char *references = cJSON_PrintUnformatted(scheduled);
+    record_references(TEST_HOST, references);
+    cJSON_free(references);
+    cJSON_Delete(scheduled);
+    cJSON *second = start_in_process();
+    CHECK(cJSON_IsTrue(value_at(second, "reusedRecordedRun")));
+    check_text(text_at(value_at(second, "plan/run"), TEST_HOST), "1.0.0", "the second reuses the running version");
+    runtime_host_references recorded = runtime_read_host_references(state, TEST_HOST);
+    expect_json(recorded.next, "{\"" TEST_HOST "\":\"2.0.0\"}", "the scheduled version left for a session start");
+    runtime_free_host_references(&recorded);
+    cJSON_Delete(first);
+    cJSON_Delete(second);
+    finish_base();
+}
+
 static void a_refused_session_start_publishes_its_refusal(void) {
     start_world("start-refusal-published");
     catalog_answer started = start_host(1);
@@ -395,6 +439,7 @@ int main(void) {
     a_non_session_start_answers_no_timers();
     a_start_writes_no_hint_for_the_registered_host();
     the_identity_version_is_the_one_the_plan_runs();
+    a_second_in_process_start_reuses_the_live_run_beside_a_scheduled_version();
     a_refused_session_start_publishes_its_refusal();
     a_refused_non_session_start_publishes_nothing();
     a_session_start_applies_updates();

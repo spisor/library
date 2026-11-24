@@ -191,8 +191,8 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
 }
 
 /**
- * What a start that is not the session start runs: the run the host's last start recorded, while a live
- * run record names the host, else what updates.apply answers.
+ * What a start that is not the background session start runs, an in-process one included: the run the host's
+ * last start recorded, while a live run record names the host, else what updates.apply answers.
  *
  * @implNote updates.apply may switch the host and its plugins to a scheduled version and rewrite their
  * references, which a second process beside a running session host must not do; a host with no live run
@@ -220,7 +220,8 @@ static cJSON *recorded_or_applied(const start_context *context, int *reused, cJS
 
 static cJSON *planned(const start_context *context, int *reused, cJSON **refusal) {
     *reused = 0;
-    return context->argument.session ? applied(context, refusal) : recorded_or_applied(context, reused, refusal);
+    return context->argument.session && !context->argument.in_process ? applied(context, refusal)
+                                                                      : recorded_or_applied(context, reused, refusal);
 }
 
 static cJSON *timers(void) {
