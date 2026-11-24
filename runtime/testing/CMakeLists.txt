@@ -2,14 +2,14 @@
 # the same commit, so its writers and the readers a test loads beside it are one source.
 add_library(runtime_testing_objects OBJECT src/home_layout.c src/home_prepare.c src/home_write.c src/home.c
     src/real_places.c src/definition.c)
-target_include_directories(runtime_testing_objects PUBLIC include PRIVATE src ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(runtime_testing_objects PUBLIC include src PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_testing_objects PUBLIC runtime_objects)
 target_compile_definitions(runtime_testing_objects PRIVATE RUNTIME_TESTING_BUILDING)
 set_target_properties(runtime_testing_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden
     SPISOR_TEST_ONLY TRUE)
 spisor_strict_warnings(runtime_testing_objects)
 
-add_library(runtime_testing SHARED ${PROJECT_SOURCE_DIR}/runtime/src/library_load.c ${runtime_shipped_objects})
+add_library(runtime_testing SHARED EXCLUDE_FROM_ALL ${PROJECT_SOURCE_DIR}/runtime/src/library_load.c ${runtime_shipped_objects})
 target_compile_definitions(runtime_testing PRIVATE RUNTIME_TESTING_BUILDING)
 target_include_directories(runtime_testing PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_testing PRIVATE runtime_testing_objects spisor_library spisor_allocator weivel_standard

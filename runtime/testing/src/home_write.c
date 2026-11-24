@@ -3,17 +3,20 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "cache_folders.h"
 #include "cache_marker.h"
 #include "cache_place.h"
 #include "catalog.h"
+#include "catalog_source.h"
+#include "config.h"
 #include "definition_support.h"
 #include "directory_tree.h"
 #include "holders.h"
+#include "hosts.h"
 #include "install_entries.h"
 #include "install_settings.h"
 #include "paths.h"
-#include "platform_key.h"
-#include "registry.h"
+#include "runtime/secrets.h"
 #include "sha256.h"
 #include "spisor/allocation.h"
 #include "spisor/definition.h"
@@ -23,7 +26,7 @@
 #define REGISTERED_HOST_VERSION "1.0.0"
 #define HINTED_HOST_VERSION "2.0.0"
 #define PROVENANCE_METHOD "testing"
-#define PROVENANCE_INSTALLED_AT "2026-01-01T00:00:00Z"
+#define INSTALLED_AT_MILLISECONDS 1767225600000.0
 #define WRITE_FIX "check that the base is a folder this process can write"
 
 static spisor_status refuse_write(spisor_refusal *refusal, const char *detail) {
@@ -43,7 +46,8 @@ static spisor_status refuse_problem(char *problem, spisor_refusal *refusal) {
 }
 
 static spisor_status write_bytes(const char *path, const uint8_t *bytes, size_t length) {
-    char *parent = runtime_cache_resolve(path, (const char *const[]){".."}, 1);
+    const char *const up[1] = {".."};
+    char *parent = runtime_cache_resolve(path, up, 1);
     spisor_status status = parent == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(parent);
     spisor_memory_release(parent);
     return status == SPISOR_OK ? spisor_replace_file(path, bytes, length) : status;
@@ -67,65 +71,50 @@ static spisor_status write_catalog(const runtime_testing_layout *layout, spisor_
     return written(status, "the catalog index cannot be written", refusal);
 }
 
-static int add_platform(cJSON *provenance) {
-    const char *key = runtime_platform_key();
-    const char *hyphen = strchr(key, '-');
-    char os[64];
-    size_t length = hyphen == NULL ? 0 : (size_t)(hyphen - key);
-    if (length == 0 || length >= sizeof os) {
-        return 0;
-    }
-    memcpy(os, key, length);
-    os[length] = '\0';
-    return cJSON_AddStringToObject(provenance, "os", os) != NULL &&
-           cJSON_AddStringToObject(provenance, "architecture", hyphen + 1) != NULL;
-}
-
-static cJSON *provenance_of(const runtime_testing_layout *layout) {
-    cJSON *provenance = cJSON_CreateObject();
-    if (provenance == NULL || cJSON_AddStringToObject(provenance, "method", PROVENANCE_METHOD) == NULL ||
-        cJSON_AddStringToObject(provenance, "version", REGISTERED_HOST_VERSION) == NULL ||
-        cJSON_AddStringToObject(provenance, "location", layout->application) == NULL || !add_platform(provenance) ||
-        cJSON_AddStringToObject(provenance, "installedAt", PROVENANCE_INSTALLED_AT) == NULL) {
-        cJSON_Delete(provenance);
+/** What the host's start would tell hosts' register: who it is, at the home it runs in, with no command. */
+static cJSON *identity_of(const runtime_testing_prepared_home *home) {
+    cJSON *identity = cJSON_CreateObject();
+    if (identity == NULL || cJSON_AddStringToObject(identity, "id", home->host_id) == NULL ||
+        cJSON_AddStringToObject(identity, "version", REGISTERED_HOST_VERSION) == NULL ||
+        cJSON_AddStringToObject(identity, "home", home->layout.application) == NULL ||
+        cJSON_AddFalseToObject(identity, "requiresCommand") == NULL ||
+        cJSON_AddArrayToObject(identity, "commands") == NULL) {
+        cJSON_Delete(identity);
         return NULL;
     }
+    return identity;
+}
+
+/** The provenance hosts' provenance answers for a host installed by this library at a fixed time. */
+static cJSON *provenance_of(const runtime_testing_prepared_home *home, const cJSON *environment, cJSON **refusal) {
+    cJSON *origin = cJSON_CreateObject();
+    cJSON *provenance = NULL;
+    runtime_hosts_provenance_request request = {origin, home->host_id, home->layout.application, environment, 1,
+                                                INSTALLED_AT_MILLISECONDS};
+    *refusal = NULL;
+    if (origin != NULL && cJSON_AddStringToObject(origin, "method", PROVENANCE_METHOD) != NULL &&
+        cJSON_AddStringToObject(origin, "version", REGISTERED_HOST_VERSION) != NULL) {
+        provenance = runtime_hosts_provenance(&request, refusal);
+    }
+    cJSON_Delete(origin);
     return provenance;
 }
 
-static cJSON *registration_of(const runtime_testing_prepared_home *home) {
-    cJSON *registration = cJSON_CreateObject();
-    cJSON *provenance = provenance_of(&home->layout);
-    if (registration == NULL || provenance == NULL || cJSON_AddStringToObject(registration, "id", home->host_id) == NULL ||
-        cJSON_AddStringToObject(registration, "kind", "host") == NULL ||
-        cJSON_AddStringToObject(registration, "version", REGISTERED_HOST_VERSION) == NULL ||
-        cJSON_AddStringToObject(registration, "home", home->layout.application) == NULL ||
-        cJSON_AddFalseToObject(registration, "requiresCommand") == NULL ||
-        !cJSON_AddItemToObject(registration, "provenance", provenance)) {
-        cJSON_Delete(provenance);
-        cJSON_Delete(registration);
-        return NULL;
-    }
-    return registration;
-}
-
+/** Registers the host through hosts' register, as its first start does. */
 static spisor_status register_host(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
-    cJSON *registration = registration_of(home);
+    cJSON *environment = runtime_testing_layout_environment(&home->layout);
+    cJSON *identity = identity_of(home);
     cJSON *operation_refusal = NULL;
-    cJSON *registered;
-    spisor_status status = written(spisor_make_directories(home->layout.application),
-                                   "the host's application home cannot be made", refusal);
-    if (status != SPISOR_OK || registration == NULL) {
-        cJSON_Delete(registration);
-        return status != SPISOR_OK ? status : SPISOR_OUT_OF_MEMORY;
-    }
-    registered = runtime_registry_register(home->layout.state, registration, &operation_refusal);
-    cJSON_Delete(registration);
-    if (registered == NULL) {
-        return runtime_refuse_json(refusal, operation_refusal);
-    }
+    cJSON *provenance = environment == NULL ? NULL : provenance_of(home, environment, &operation_refusal);
+    runtime_hosts_registration_request request = {home->layout.state, identity, provenance, environment};
+    cJSON *registered = identity == NULL || provenance == NULL ? NULL : runtime_hosts_register(&request,
+                                                                                               &operation_refusal);
+    spisor_status status = registered != NULL ? SPISOR_OK : runtime_refuse_json(refusal, operation_refusal);
     cJSON_Delete(registered);
-    return SPISOR_OK;
+    cJSON_Delete(provenance);
+    cJSON_Delete(identity);
+    cJSON_Delete(environment);
+    return status;
 }
 
 static spisor_status hold_host(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
@@ -136,7 +125,7 @@ static spisor_status hold_host(const runtime_testing_prepared_home *home, spisor
     if (home->holder == 0) {
         return SPISOR_OK;
     }
-    path = runtime_holders_path(home->layout.state, home->host_id, ".json", &problem);
+    path = runtime_holders_path(home->layout.state, home->host_id, RUNTIME_JSON_EXTENSION, &problem);
     if (path == NULL) {
         return refuse_problem(problem, refusal);
     }
@@ -194,7 +183,7 @@ static spisor_status mark_installed(const runtime_testing_prepared_install *inst
     spisor_status status = hashes == NULL || sizes == NULL ? SPISOR_OUT_OF_MEMORY
                                                            : record_file(manifest_path, RUNTIME_PLUGIN_MANIFEST, hashes,
                                                                          sizes);
-    if (status == SPISOR_OK) {
+    if (status == SPISOR_OK && install->entry != NULL) {
         status = record_file(install->entry, entry, hashes, sizes);
     }
     if (status == SPISOR_OK) {
@@ -209,7 +198,7 @@ static spisor_status place_bundle(const runtime_testing_prepared_install *instal
     const char *segments[2] = {install->bundle, RUNTIME_PLUGIN_MANIFEST};
     char *manifest_path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
     spisor_status status = manifest_path == NULL ? SPISOR_OUT_OF_MEMORY : write_json(manifest_path, install->manifest);
-    if (status == SPISOR_OK) {
+    if (status == SPISOR_OK && install->entry != NULL) {
         status = copy_file(install->entry_source, install->entry);
     }
     if (status == SPISOR_OK) {
@@ -219,13 +208,33 @@ static spisor_status place_bundle(const runtime_testing_prepared_install *instal
     return status;
 }
 
-static spisor_status place_install(const runtime_testing_prepared_install *install, spisor_refusal *refusal) {
-    spisor_status status = written(place_bundle(install), "a plugin's bundle cannot be written", refusal);
-    if (status == SPISOR_OK && install->settings != NULL) {
-        status = written(write_json(install->settings_file, install->settings),
-                         "a plugin's settings file cannot be written", refusal);
+/** Sets each of the install's settings through config's set, as the plugin's own set would. */
+static spisor_status set_settings(const runtime_testing_layout *layout, const runtime_testing_prepared_install *install,
+                                  spisor_refusal *refusal) {
+    runtime_secret_places places = {sizeof(runtime_secret_places), layout->secrets_file,
+                                    (uint32_t)layout->force_file_store};
+    runtime_config_request request = runtime_config_request_of(layout->application, layout->portable);
+    spisor_status status = SPISOR_OK;
+    request.plugin = install->id;
+    request.config = cJSON_GetObjectItemCaseSensitive(install->manifest, "config");
+    request.settings = cJSON_GetObjectItemCaseSensitive(install->manifest, "settings");
+    request.places = &places;
+    for (const cJSON *setting = install->settings == NULL ? NULL : install->settings->child;
+         status == SPISOR_OK && setting != NULL; setting = setting->next) {
+        cJSON *previous = NULL;
+        int secret = 0;
+        request.key = setting->string;
+        request.value = setting;
+        status = runtime_config_set_value(&request, &previous, &secret, refusal);
+        cJSON_Delete(previous);
     }
     return status;
+}
+
+spisor_status runtime_testing_place_install(const runtime_testing_layout *layout,
+                                            const runtime_testing_prepared_install *install, spisor_refusal *refusal) {
+    spisor_status status = written(place_bundle(install), "a plugin's bundle cannot be written", refusal);
+    return status == SPISOR_OK ? set_settings(layout, install, refusal) : status;
 }
 
 static runtime_install_settings settings_of(const runtime_testing_layout *layout) {
@@ -264,24 +273,16 @@ static spisor_status enable_installs(const runtime_testing_prepared_home *home, 
     return enabled ? SPISOR_OK : runtime_refuse_json(refusal, operation_refusal);
 }
 
-static cJSON *local_sources(const runtime_testing_layout *layout) {
-    cJSON *sources = cJSON_CreateArray();
-    cJSON *source = cJSON_CreateObject();
-    if (sources == NULL || source == NULL || cJSON_AddStringToObject(source, "kind", "local") == NULL ||
-        cJSON_AddStringToObject(source, "path", layout->catalog) == NULL || !cJSON_AddItemToArray(sources, source)) {
-        cJSON_Delete(source);
-        cJSON_Delete(sources);
-        return NULL;
-    }
-    return sources;
-}
-
 static spisor_status record_catalog_source(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
     runtime_install_settings settings = settings_of(&home->layout);
+    runtime_catalog_location location = {1, home->layout.catalog};
     cJSON *operation_refusal = NULL;
-    cJSON *sources = local_sources(&home->layout);
+    cJSON *sources = cJSON_CreateArray();
+    cJSON *source = runtime_catalog_source_json(&location);
     int recorded;
-    if (sources == NULL) {
+    if (sources == NULL || source == NULL || !cJSON_AddItemToArray(sources, source)) {
+        cJSON_Delete(source);
+        cJSON_Delete(sources);
         return SPISOR_OUT_OF_MEMORY;
     }
     recorded = runtime_install_record_sources(&settings, sources, &operation_refusal);
@@ -301,7 +302,7 @@ spisor_status runtime_testing_write_home(const runtime_testing_prepared_home *ho
         status = hint_libraries(home, refusal);
     }
     for (size_t index = 0; status == SPISOR_OK && index < home->install_count; index++) {
-        status = place_install(&home->installs[index], refusal);
+        status = runtime_testing_place_install(&home->layout, &home->installs[index], refusal);
     }
     if (status == SPISOR_OK) {
         status = enable_installs(home, refusal);

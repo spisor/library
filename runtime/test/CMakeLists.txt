@@ -239,6 +239,10 @@ foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test)
 endforeach()
 runtime_test(runtime_testing_test ${runtime_install_plain_http_test_objects})
 target_link_libraries(runtime_testing_test PRIVATE runtime_testing_objects ${runtime_fetch_libraries})
+runtime_test_with_allocator(runtime_testing_out_of_memory_test spisor_allocator_counting
+    ${runtime_install_plain_http_test_objects})
+target_link_libraries(runtime_testing_out_of_memory_test PRIVATE runtime_testing_objects ${runtime_fetch_libraries})
+set_tests_properties(runtime_testing_out_of_memory_test PROPERTIES TIMEOUT 1800)
 set(runtime_standard_host_test_objects $<TARGET_OBJECTS:runtime_standard_host> $<TARGET_OBJECTS:runtime_standard>
     $<TARGET_OBJECTS:runtime_ui> ${runtime_install_plain_http_test_objects})
 runtime_test(standard_host_test ${runtime_standard_host_test_objects})

@@ -31,8 +31,8 @@ extern "C" {
 
 /**
  * One plugin installed in the home: `manifest` the plugin.json record, its id, version and entry required;
- * `entry_source` the absolute file copied to the manifest's entry; `settings` its stored settings, a RECORD, or NULL for
- * none. An element of an array, so it has no size.
+ * `entry_source` the absolute file copied to the manifest's entry; `settings` its stored settings, a RECORD set key
+ * by key through config's set, or NULL for none. An element of an array, so it has no size.
  */
 typedef struct runtime_testing_install {
     const spisor_value *manifest;
@@ -90,7 +90,10 @@ typedef struct runtime_testing_real_places_argument {
     size_t environment_count;
 } runtime_testing_real_places_argument;
 
-/** Every place and the secrets file, absolute, none inside another. First shape ends at `storage`. */
+/**
+ * The places and the secrets file, absolute, leaving out each that repeats one listed before it or lies inside another,
+ * as the secrets file lies in the state place unless SPISOR_SECRETS moves it. First shape ends at `storage`.
+ */
 typedef struct runtime_testing_real_places_answer {
     uint32_t size;
     const char *const *paths;
@@ -107,9 +110,10 @@ typedef struct runtime_testing_definition {
      *
      * @return OK; MALFORMED for a short shape, a base not absolute, missing or not empty, a host id that is no plain
      * file name, an install without a manifest record carrying id, version and entry or without an entry source, an
-     * entry or a bundle climbing out of its folder, settings that are no record, a library without an id or a
+     * entry or a bundle climbing out of its folder, an entry naming the bundle's plugin.json or completion marker, settings that are no record, a library without an id or a
      * directory, or a version neither given nor declared, or a negative holder; REFUSED when a file cannot be written;
-     * OUT_OF_MEMORY. A call that does not answer OK leaves `base` empty.
+     * what config's set answers for a setting; OUT_OF_MEMORY. A call that does not answer OK removes what it wrote,
+     * unless that removal itself fails, as it can while memory stays out.
      */
     spisor_status (*lay_out_home)(void *context, const runtime_testing_home_argument *argument,
                                   runtime_testing_home_answer *answer, spisor_refusal *refusal);
