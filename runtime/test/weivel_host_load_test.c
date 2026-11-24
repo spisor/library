@@ -213,8 +213,15 @@ static void a_definition_served_under_another_description_is_refused(void) {
     weivel_standard_library_release(&declaration);
 }
 
-int main(void) {
-    runtime_answers_through_the_definitions_the_host_registered();
-    a_definition_served_under_another_description_is_refused();
+/**
+ * With the argument `another-definition`, runs the refusal alone: a process loads runtime once, since ASan on macOS
+ * reports a library loaded again after its unload as an ODR violation of its own globals.
+ */
+int main(int argument_count, char **arguments) {
+    if (argument_count == 2 && strcmp(arguments[1], "another-definition") == 0) {
+        a_definition_served_under_another_description_is_refused();
+    } else {
+        runtime_answers_through_the_definitions_the_host_registered();
+    }
     return check_summary("weivel_host_load_test");
 }

@@ -398,6 +398,7 @@ target_link_libraries(weivel_host_load_test PRIVATE weivel_c_standard)
 add_dependencies(weivel_host_load_test runtime weivel_core_shared)
 spisor_strict_warnings(weivel_host_load_test)
 add_test(NAME weivel_host_load_test COMMAND weivel_host_load_test)
+add_test(NAME weivel_host_refuses_another_definition_test COMMAND weivel_host_load_test another-definition)
 
 spisor_add_described_checks(LIBRARY runtime DECLARATION ${PROJECT_SOURCE_DIR}/runtime/library.json)
 
