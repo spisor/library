@@ -397,7 +397,21 @@ static int is_secret_setting(const runtime_config_request *request, const char *
     return key != NULL && is_secret_declaration(cJSON_GetObjectItemCaseSensitive(request->settings, key));
 }
 
-/** Removes the value at a dot path from tree; 0 when memory ran out. */
+static int replace_with_null(cJSON *array, cJSON *element) {
+    cJSON *placeholder = cJSON_CreateNull();
+    if (placeholder == NULL || !cJSON_ReplaceItemViaPointer(array, element, placeholder)) {
+        cJSON_Delete(placeholder);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * Removes the value at a dot path from tree; 0 when memory ran out.
+ *
+ * @implNote An array element becomes null rather than being deleted, so a declared path through a later index still
+ * names the value it named.
+ */
 static int remove_at(cJSON *tree, const char *key) {
     const char *last_dot = strrchr(key, '.');
     if (last_dot == NULL) {
@@ -412,11 +426,13 @@ static int remove_at(cJSON *tree, const char *key) {
     }
     parent_key[last_dot - key] = '\0';
     cJSON *parent = (cJSON *)runtime_walk(tree, parent_key);
+    spisor_memory_release(parent_key);
     if (cJSON_IsObject(parent)) {
         cJSON_DeleteItemFromObjectCaseSensitive(parent, last_dot + 1);
+        return 1;
     }
-    spisor_memory_release(parent_key);
-    return 1;
+    cJSON *element = cJSON_IsArray(parent) ? (cJSON *)runtime_walk(parent, last_dot + 1) : NULL;
+    return element == NULL || replace_with_null(parent, element);
 }
 
 /** The rest of path after key and a dot, or NULL when path does not lie below key. */

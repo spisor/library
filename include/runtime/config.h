@@ -10,7 +10,8 @@
  * provider's until the release for its kind. Keys, layers and changes are as runtime/settings.h has them.
  *
  * A setting the plugin declares of type `secret` never reaches a file: it is kept by the secrets service, left out of
- * every answer of `all` and `get` below it, and a set may write it only by its own key.
+ * every answer of `all` and `get` below it (as null when it is an array element, so the indexes after it keep their
+ * values), and a set may write it only by its own key.
  */
 
 #include <stddef.h>

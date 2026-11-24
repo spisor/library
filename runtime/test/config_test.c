@@ -914,6 +914,17 @@ static void all_leaves_out_a_secret_setting_even_when_a_file_holds_it(void) {
     finish(&all);
 }
 
+static void all_leaves_out_a_secret_declared_at_an_array_index_keeping_the_other_indexes(void) {
+    scratch_home home;
+    fresh_declared_home(&home, "secret-index");
+    write_settings_file(&home, "p", "{\"list\":[\"leak\",{\"key\":\"leak\",\"keep\":3},\"keep\"],\"x\":1}");
+    const char *settings = "{\"list.0\":{\"type\":\"secret\"},\"list.1.key\":{\"type\":\"secret\"}}";
+    answer all = call_with(CONFIG_ALL, declared_request(&home, settings, 1));
+    expect_member(&all, "values", "{\"list\":[null,{\"keep\":3},\"keep\"],\"x\":1}",
+                  "a secret at an index is left out as null, so the indexes after it still name their values");
+    finish(&all);
+}
+
 static answer declared_get(const scratch_home *home, const char *key) {
     cJSON *request = declared_request(home, SECRET_SETTINGS, 1);
     cJSON_AddStringToObject(request, "key", key);
@@ -1089,6 +1100,7 @@ int main(void) {
     a_secret_setting_without_a_store_is_refused();
     get_reads_a_secret_setting_from_the_store();
     all_leaves_out_a_secret_setting_even_when_a_file_holds_it();
+    all_leaves_out_a_secret_declared_at_an_array_index_keeping_the_other_indexes();
     get_of_a_parent_leaves_out_a_secret_below_it();
     get_of_a_key_below_a_secret_is_absent();
     set_of_a_parent_refuses_a_value_reaching_a_secret();
