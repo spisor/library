@@ -85,7 +85,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * `updateCheckMilliseconds` it runs updates' check at
  * `now`, its damaged versions those cache's locate could not run, the first tick taking both. Each timer is next due
  * at `now` plus its interval, so a late tick runs it once, and `next` is the earlier of the two. A prune that answers
- * that no holder is alive, or another live process runs the loader, ends the run with a REFUSED tick, as do
+ * that no holder is alive, or that another process whose stamp is fresh is recorded as the loader's host, ends the run
+ * with a REFUSED tick, as do
  * `pruneFailuresBeforeExit` turns in a row whose stamp or prune was refused; a refused update check changes nothing.
  * Each failed turn, a refused check and each version a check refused are written as a warning to the loader's own
  * log, under the loader's id at `now`, as the archived host wrote them to stderr.

@@ -847,10 +847,11 @@ static void it_exits_without_touching_the_record_when_another_process_is_the_hos
     fresh_state("prune-replaced");
     child_process holder = start_sleeper();
     char holders[64];
+    double now = floor(runtime_now_milliseconds());
     snprintf(holders, sizeof holders, "[%ld]", holder.pid);
-    write_record(number_text((double)holder.pid), "5", INTERVAL_TEXT, holders);
+    write_record(number_text((double)holder.pid), number_text(now), INTERVAL_TEXT, holders);
     char *before = read_text("processes/" HOST ".json");
-    CHECK(prune_exits(self_pid(), runtime_now_milliseconds()) == 1);
+    CHECK(prune_exits(self_pid(), now) == 1);
     char *after = read_text("processes/" HOST ".json");
     check_text(after, before, "untouched record");
     spisor_memory_release(before);

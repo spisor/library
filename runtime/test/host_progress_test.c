@@ -600,11 +600,38 @@ static void a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking(
     release_child(&dead);
 }
 
+/**
+ * A recorded host whose stamp is older than three of its checks never ends the next SERVE run, even while a live
+ * process holds its pid, as an unrelated process given a dead host's pid would.
+ */
+static void a_record_naming_a_live_pid_with_a_stale_stamp_lets_a_serve_run_keep_ticking(void) {
+    child_process unrelated = start_sleeper();
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    char holders[32];
+    CHECK(runtime_process_is_alive((double)unrelated.pid));
+    start_host_world("stale-host");
+    snprintf(holders, sizeof holders, "[%d]", (int)current_process_id());
+    record_the_host(unrelated.pid, NOW - 4 * TURN, holders);
+    run = start_one(serve_arguments, 1);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    expect_tick(NOW, NOW + TURN, "a serve run beside a stale host's record");
+    expect_tick(NOW + TURN, NOW + 2 * TURN, "its second turn");
+    CHECK(holders_alive_at() == (double)(NOW + TURN));
+    release_run(&run);
+    stop_expecting(0, "a serve run that replaced a stale host");
+    finish_base();
+    kill_child(&unrelated);
+    release_child(&unrelated);
+}
+
 int main(void) {
     spisor_json_use_library_allocator();
     a_serve_run_started_publishes_that_it_is_ready();
     in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
     a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();
+    a_record_naming_a_live_pid_with_a_stale_stamp_lets_a_serve_run_keep_ticking();
     a_refused_in_process_start_leaves_the_ready_record_alone();
     a_plugin_not_activated_publishes_a_refusal_naming_it(
         WEIVEL_STANDARD_HOST_REFUSED, WEIVEL_STANDARD_HOST_ACTIVATED, "its scope was refused",

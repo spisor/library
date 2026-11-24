@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alive_stamp.h"
 #include "cache_folders.h"
 #include "cache_refusal.h"
 #include "catalog_answer.h"
@@ -12,7 +13,6 @@
 #include "holders_lock.h"
 #include "json_service.h"
 #include "paths.h"
-#include "process_alive.h"
 #include "processes_holders.h"
 #include "run_records.h"
 #include "spisor/file.h"
@@ -150,7 +150,9 @@ static cJSON *exit_answer(int exit_now) {
 
 static cJSON *prune_step(const void *context, const char *path, runtime_holders_record *record, cJSON **refusal) {
     const runtime_processes_prune_request *request = context;
-    if (!isnan(record->pid) && record->pid != request->self && runtime_process_is_alive(record->pid)) {
+    double now = request->now == NULL ? runtime_now_milliseconds() : *request->now;
+    if (!isnan(record->pid) && record->pid != request->self &&
+        runtime_is_stamp_fresh(record->pid, record->alive_at, record->check_milliseconds, now)) {
         return exit_answer(1);
     }
     runtime_keep_live_holders(record, NAN);
@@ -159,7 +161,7 @@ static cJSON *prune_step(const void *context, const char *path, runtime_holders_
         record->pid = NAN;
     } else {
         record->pid = request->self;
-        record->alive_at = floor(request->now == NULL ? runtime_now_milliseconds() : *request->now);
+        record->alive_at = floor(now);
         record->check_milliseconds =
             request->check_milliseconds == 0 ? RUNTIME_DEFAULT_CHECK_MILLISECONDS : request->check_milliseconds;
     }
