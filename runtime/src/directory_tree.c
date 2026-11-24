@@ -58,7 +58,7 @@ static int grow(entry_buffer *buffer) {
     return 1;
 }
 
-static int append(entry_buffer *buffer, const char *name, int is_directory) {
+static int append(entry_buffer *buffer, const char *name, int is_directory, int is_file) {
     if (!grow(buffer)) {
         return 0;
     }
@@ -68,6 +68,7 @@ static int append(entry_buffer *buffer, const char *name, int is_directory) {
     }
     buffer->entries[buffer->count].name = owned;
     buffer->entries[buffer->count].is_directory = is_directory;
+    buffer->entries[buffer->count].is_file = is_file;
     buffer->count++;
     return 1;
 }
@@ -129,12 +130,17 @@ static int is_real_directory(DWORD attributes) {
     return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 && !is_reparse_point(attributes);
 }
 
+static int is_real_file(DWORD attributes) {
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && !is_reparse_point(attributes);
+}
+
 static spisor_status read_found_entries(HANDLE handle, WIN32_FIND_DATAW *found, entry_buffer *buffer) {
     spisor_status status = SPISOR_OK;
     do {
         char *name = to_utf8(found->cFileName);
-        int is_directory = is_real_directory(found->dwFileAttributes);
-        if (name == NULL || (!is_dot_entry(name) && !append(buffer, name, is_directory))) {
+        DWORD attributes = found->dwFileAttributes;
+        if (name == NULL ||
+            (!is_dot_entry(name) && !append(buffer, name, is_real_directory(attributes), is_real_file(attributes)))) {
             status = SPISOR_OUT_OF_MEMORY;
         }
         spisor_memory_release(name);
@@ -401,9 +407,9 @@ runtime_entry_outcome runtime_remove_empty_directory(const char *path) {
 static int append_directory_entry(entry_buffer *buffer, const char *parent, const char *name) {
     char *full = child_path(parent, name);
     struct stat status;
-    int is_directory = full != NULL && lstat(full, &status) == 0 && S_ISDIR(status.st_mode);
+    int stood = full != NULL && lstat(full, &status) == 0;
     spisor_memory_release(full);
-    return full != NULL && append(buffer, name, is_directory);
+    return full != NULL && append(buffer, name, stood && S_ISDIR(status.st_mode), stood && S_ISREG(status.st_mode));
 }
 
 spisor_status runtime_list_directory(const char *path, runtime_directory_listing *listing) {

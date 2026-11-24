@@ -6,9 +6,11 @@
 
 #include "spisor/status.h"
 
+/** An entry as it stands itself, never following a link: a link is neither a directory nor a file. */
 typedef struct runtime_directory_entry {
     char *name;
     int is_directory;
+    int is_file;
 } runtime_directory_entry;
 
 typedef struct runtime_directory_listing {

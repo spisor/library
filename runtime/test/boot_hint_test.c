@@ -3,6 +3,7 @@
 
 #include "cache_place.h"
 #include "hosts_lock.h"
+#include "links.h"
 #include "platform_key.h"
 #include "spisor/json_write.h"
 
@@ -190,6 +191,39 @@ static void it_refuses_a_library_folder_with_two_binaries(void) {
     start_base("hint-two-binaries");
     const char *files[3] = {DECLARATION, "libruntime.so", "libhelper.so"};
     expect_refused_folder(files, 3, "two binaries");
+    finish_base();
+}
+
+static void it_names_a_windows_binary_whatever_the_case_of_its_suffix(void) {
+    start_base("hint-suffix-case");
+    const char *files[2] = {DECLARATION, "Runtime.DLL"};
+    place_library("runtime", "0.1.0", "win32-x64", files, 2);
+    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", NULL, "win32-x64");
+    expect_success(written, "upper-case suffix");
+    cJSON *expected = hinted_entry("runtime", "0.1.0", "win32-x64", "Runtime.DLL");
+    expect_entry(written.tree, "hint/libraries/runtime", expected, "upper-case suffix");
+    cJSON_Delete(expected);
+    cJSON_Delete(written.tree);
+    finish_base();
+}
+
+static void it_refuses_a_library_folder_whose_binary_is_a_symlink(void) {
+    start_base("hint-binary-link");
+    const char *files[1] = {DECLARATION};
+    place_library("runtime", "0.1.0", "linux-x64", files, 1);
+    write_in(cache, "elsewhere/libruntime.so", "elsewhere");
+    char *target = joined(cache, "elsewhere/libruntime.so");
+    char *folder = library_folder("runtime", "0.1.0", "linux-x64");
+    char *link = joined(folder, "libruntime.so");
+    if (create_link_or_skip(link, target)) {
+        catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", "1.0.0", "linux-x64");
+        expect_cache_refusal(written, SPISOR_REFUSED, folder, "a symlink is no binary");
+        CHECK(!exists_in(cache, "hosts/spisor-host.json"));
+        cJSON_Delete(written.tree);
+    }
+    spisor_memory_release(link);
+    spisor_memory_release(folder);
+    spisor_memory_release(target);
     finish_base();
 }
 
@@ -535,6 +569,8 @@ int main(void) {
     it_names_the_binary_by_the_platform_suffix();
     it_refuses_a_library_folder_with_no_binary();
     it_refuses_a_library_folder_with_two_binaries();
+    it_names_a_windows_binary_whatever_the_case_of_its_suffix();
+    it_refuses_a_library_folder_whose_binary_is_a_symlink();
     it_records_only_the_directory_of_a_library_with_no_declaration();
     it_reads_back_what_it_wrote();
     it_refuses_a_platform_that_is_no_platform_key();
@@ -554,5 +590,5 @@ int main(void) {
 
     it_leaves_everything_the_hint_names_after_a_sweep();
     it_writes_a_hint_with_a_state_only_once_the_registry_lock_is_free();
-    return check_summary("boot_hint_test");
+    return summary_with_links("boot_hint_test");
 }
