@@ -17,110 +17,19 @@
 #include "paths.h"
 #include "registry.h"
 #include "runtime/places.h"
-#include "runtime_testing/home.h"
-#include "scratch_directory.h"
+#include "runtime_testing_fixture.h"
 #include "spisor/allocation.h"
 #include "spisor/json_allocation.h"
 #include "spisor/json_value.h"
 #include "spisor/path.h"
 #include "tree_snapshot.h"
 
-#if defined(_WIN32)
-#include <process.h>
-#define current_process_id() _getpid()
-#else
-#include <unistd.h>
-#define current_process_id() getpid()
-#endif
-
-#define HOST "test-host"
 #define MANIFEST "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"dist/index.js\", \"config\": {\"name\": \"a\"}}"
-#define ENTRY_TEXT "export default {};\n"
-
-static char parent[1024];
-static char base[1100];
-static char entry_source[1100];
-static char forebay_directory[1100];
-
-static const runtime_testing_definition *testing(void) {
-    return (const runtime_testing_definition *)runtime_testing_definition_of();
-}
-
-static char *joined(const char *left, const char *right) {
-    const char *segments[2] = {left, right};
-    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-}
-
-static void write_text(const char *path, const char *text) {
-    CHECK(spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK);
-}
-
-/** A parent folder holding an empty base, an entry source and a declared library beside it. */
-static void start_parent(const char *label) {
-    char declaration[1200];
-    snprintf(parent, sizeof parent, "%s/runtime-testing-%d-%s", RUNTIME_SCRATCH_PATH, (int)current_process_id(), label);
-    start_empty_directory(parent);
-    snprintf(base, sizeof base, "%s/home", parent);
-    CHECK(spisor_make_directories(base) == SPISOR_OK);
-    snprintf(entry_source, sizeof entry_source, "%s/entry.js", parent);
-    write_text(entry_source, ENTRY_TEXT);
-    snprintf(forebay_directory, sizeof forebay_directory, "%s/forebay", parent);
-    CHECK(spisor_make_directories(forebay_directory) == SPISOR_OK);
-    snprintf(declaration, sizeof declaration, "%s/library.json", forebay_directory);
-    write_text(declaration, "{\"importName\": \"forebay\", \"version\": \"0.3.0\", \"services\": []}");
-}
-
-static void finish_parent(void) {
-    CHECK(runtime_remove_tree(parent) == SPISOR_OK);
-}
+#define SECRET_VALUE "s3cret-held-in-the-store"
 
 /** Everything in the parent outside the base, so a call can be shown to have written nothing outside it. */
 static char *outside_base(void) {
     return tree_snapshot(parent, "/home");
-}
-
-/** A value tree of json, which it deletes. */
-static spisor_value_tree tree_of(cJSON *json) {
-    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
-    CHECK(spisor_value_of_json(json, &tree) == SPISOR_OK);
-    cJSON_Delete(json);
-    return tree;
-}
-
-typedef struct laid_out {
-    spisor_status status;
-    runtime_testing_home_answer answer;
-    spisor_refusal refusal;
-} laid_out;
-
-static laid_out lay_out(const char *at, const runtime_testing_install *install, int64_t holder) {
-    runtime_boot_library libraries[2] = {{"runtime", "0.2.0", NULL, NULL}, {"forebay-library", NULL, NULL, NULL}};
-    runtime_testing_home_argument argument = SPISOR_INIT(runtime_testing_home_argument);
-    laid_out result;
-    char *runtime_directory = joined(parent, "rt");
-    char *runtime_binary = joined(runtime_directory, "runtime.dll");
-    libraries[0].directory = runtime_directory;
-    libraries[0].binary = runtime_binary;
-    libraries[1].directory = forebay_directory;
-    argument.base = at;
-    argument.host_id = HOST;
-    argument.installs = install;
-    argument.install_count = install == NULL ? 0 : 1;
-    argument.libraries = libraries;
-    argument.library_count = 2;
-    argument.holder = holder;
-    memset(&result, 0, sizeof result);
-    result.answer.size = sizeof result.answer;
-    result.refusal.size = sizeof result.refusal;
-    result.status = testing()->lay_out_home(NULL, &argument, &result.answer, &result.refusal);
-    spisor_memory_release(runtime_binary);
-    spisor_memory_release(runtime_directory);
-    return result;
-}
-
-static void release(laid_out *result) {
-    testing()->release_home_answer(NULL, &result->answer);
-    testing()->release_refusal(NULL, &result->refusal);
 }
 
 static const cJSON *first_of(const cJSON *tree, const char *member) {
@@ -261,11 +170,10 @@ static void no_holder_writes_no_processes_record(void) {
     finish_parent();
 }
 
-/** Lays out at `at` with the install given, requiring MALFORMED naming `fragment` and nothing written anywhere. */
-static void expect_malformed(const char *at, const runtime_testing_install *install, const char *fragment,
-                             const char *label) {
-    char *before = tree_snapshot(parent, NULL);
-    laid_out result = lay_out(at, install, current_process_id());
+/** Lays out `argument`, requiring MALFORMED naming `fragment` and the parent left as `before` was taken. */
+static void expect_malformed_argument(const runtime_testing_home_argument *argument, const char *fragment,
+                                      const char *label, const char *before) {
+    laid_out result = lay_out_argument(argument);
     char *after = tree_snapshot(parent, NULL);
     if (result.status != SPISOR_MALFORMED || result.refusal.detail == NULL ||
         strstr(result.refusal.detail, fragment) == NULL) {
@@ -277,6 +185,17 @@ static void expect_malformed(const char *at, const runtime_testing_install *inst
     check_text(after, before, label);
     release(&result);
     spisor_memory_release(after);
+}
+
+/** Lays out at `at` with the install given, requiring MALFORMED naming `fragment` and nothing written anywhere. */
+static void expect_malformed(const char *at, const runtime_testing_install *install, const char *fragment,
+                             const char *label) {
+    runtime_boot_library libraries[2];
+    runtime_testing_home_argument argument;
+    char *before = tree_snapshot(parent, NULL);
+    default_libraries(libraries);
+    argument = home_argument(at, install, install == NULL ? 0 : 1, libraries);
+    expect_malformed_argument(&argument, fragment, label, before);
     spisor_memory_release(before);
 }
 
@@ -372,6 +291,106 @@ static void real_places_are_the_places_resolve_answers(void) {
     finish_parent();
 }
 
+static void a_malformed_argument_is_refused(void) {
+    runtime_boot_library libraries[2];
+    runtime_boot_library twice[2];
+    runtime_testing_home_argument argument;
+    char *before;
+    start_parent("malformed-argument");
+    default_libraries(libraries);
+    memcpy(twice, libraries, sizeof twice);
+    twice[1] = twice[0];
+    before = tree_snapshot(parent, NULL);
+    argument = home_argument(base, NULL, 0, libraries);
+    argument.host_id = "../escaped";
+    expect_malformed_argument(&argument, "host id", "a host id that is no plain file name", before);
+    argument = home_argument(base, NULL, 0, libraries);
+    argument.holder = -1;
+    expect_malformed_argument(&argument, "holder", "a negative holder", before);
+    argument = home_argument(base, NULL, 0, twice);
+    expect_malformed_argument(&argument, "named twice", "a library named twice", before);
+    spisor_memory_release(before);
+    finish_parent();
+}
+
+static void expect_install_refused(const char *manifest, const char *source, const char *label) {
+    spisor_value_tree tree = tree_of(parsed(manifest));
+    runtime_testing_install install = {&tree.root, source, NULL};
+    expect_malformed(base, &install, "malformed", label);
+    spisor_value_release(&tree);
+}
+
+static void a_malformed_install_is_refused(void) {
+    char *missing;
+    start_parent("malformed-install");
+    missing = joined(parent, "missing.js");
+    expect_install_refused(MANIFEST, missing, "a missing entry source");
+    expect_install_refused("{\"id\": \"../../escaped\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}", entry_source,
+                           "an id climbing out");
+    expect_install_refused("{\"id\": \"a\", \"version\": \"../../..\", \"entry\": \"index.js\"}", entry_source,
+                           "a version climbing out");
+    expect_install_refused("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"plugin.json\"}", entry_source,
+                           "an entry naming the manifest");
+    expect_install_refused("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"./sub/../.installed.json\"}",
+                           entry_source, "an entry naming the completion marker");
+    if (RUNTIME_HOST_IS_WINDOWS) {
+        expect_install_refused("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"Plugin.JSON\"}", entry_source,
+                               "an entry naming the manifest in another case");
+    }
+    spisor_memory_release(missing);
+    finish_parent();
+}
+
+static void a_refused_write_leaves_the_base_empty(void) {
+    start_parent("refused-write");
+    spisor_value_tree file = tree_of(parsed("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"dist\"}"));
+    spisor_value_tree below = tree_of(parsed("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"dist/index.js\"}"));
+    runtime_testing_install installs[2] = {{&file.root, entry_source, NULL}, {&below.root, entry_source, NULL}};
+    runtime_boot_library libraries[2];
+    runtime_testing_home_argument argument;
+    laid_out result;
+    default_libraries(libraries);
+    argument = home_argument(base, installs, 2, libraries);
+    result = lay_out_argument(&argument);
+    CHECK(result.status == SPISOR_REFUSED);
+    CHECK(result.answer.storage == NULL && result.answer.variable_count == 0);
+    CHECK(is_empty_folder(base));
+    release(&result);
+    spisor_value_release(&below);
+    spisor_value_release(&file);
+    finish_parent();
+}
+
+/** Whether any file below `place` holds `text`. */
+static int holds_text(const char *place, const char *text) {
+    char *snapshot = tree_snapshot(place, NULL);
+    int held = snapshot != NULL && strstr(snapshot, text) != NULL;
+    spisor_memory_release(snapshot);
+    return held;
+}
+
+static void a_secret_setting_lands_in_the_secret_store(void) {
+    start_parent("secret");
+    spisor_value_tree manifest = tree_of(parsed("{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+                                                "\"settings\": {\"token\": {\"type\": \"secret\"}}}"));
+    spisor_value_tree settings = tree_of(parsed("{\"token\": \"" SECRET_VALUE "\", \"greeting\": \"hi\"}"));
+    runtime_testing_install install = {&manifest.root, entry_source, &settings.root};
+    laid_out result = lay_out(base, &install, 0);
+    CHECK(result.status == SPISOR_OK);
+    if (result.status == SPISOR_OK) {
+        char *portable = joined(base, "portable");
+        CHECK(!holds_text(result.answer.home, SECRET_VALUE));
+        CHECK(!holds_text(portable, SECRET_VALUE));
+        CHECK(holds_text(result.answer.home, "\"greeting\""));
+        CHECK(!is_empty_folder(variable(&result.answer, "SPISOR_SECRETS")));
+        spisor_memory_release(portable);
+    }
+    release(&result);
+    spisor_value_release(&settings);
+    spisor_value_release(&manifest);
+    finish_parent();
+}
+
 int main(void) {
     spisor_json_use_library_allocator();
     a_laid_out_home_is_read_by_runtime();
@@ -379,5 +398,9 @@ int main(void) {
     a_base_that_cannot_hold_a_home_is_refused();
     an_entry_climbing_out_of_its_bundle_is_refused();
     real_places_are_the_places_resolve_answers();
+    a_malformed_argument_is_refused();
+    a_malformed_install_is_refused();
+    a_refused_write_leaves_the_base_empty();
+    a_secret_setting_lands_in_the_secret_store();
     return check_summary("runtime_testing_test");
 }

@@ -5,32 +5,27 @@
 #include "home_prepare.h"
 #include "home_write.h"
 #include "operations.h"
-#include "places.h"
 #include "spisor/allocation.h"
 #include "spisor/definition.h"
-#include "user_home.h"
 
 #define ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_testing_home_argument, holder)
-#define VARIABLE_COUNT 6
 
 static int fill_variables(const runtime_testing_layout *layout, runtime_testing_home_answer *answer) {
-    const char *const names[VARIABLE_COUNT] = {RUNTIME_PORTABLE_VARIABLE,     RUNTIME_STATE_VARIABLE,
-                                               RUNTIME_CACHE_VARIABLE,        RUNTIME_SECRETS_VARIABLE,
-                                               RUNTIME_USER_PROFILE_VARIABLE, RUNTIME_HOME_VARIABLE};
-    const char *const values[VARIABLE_COUNT] = {layout->portable, layout->state,  layout->cache,
-                                                layout->secrets,  layout->user,   layout->user};
+    runtime_variable laid_out[RUNTIME_TESTING_VARIABLE_COUNT];
     runtime_variable *variables = NULL;
-    if (!runtime_storage_take_array(&answer->storage, VARIABLE_COUNT, sizeof *variables, (void **)&variables)) {
+    runtime_testing_layout_variables(layout, laid_out);
+    if (!runtime_storage_take_array(&answer->storage, RUNTIME_TESTING_VARIABLE_COUNT, sizeof *variables,
+                                    (void **)&variables)) {
         return 0;
     }
-    for (size_t index = 0; index < VARIABLE_COUNT; index++) {
-        if (!runtime_storage_copy(&answer->storage, names[index], &variables[index].name) ||
-            !runtime_storage_copy(&answer->storage, values[index], &variables[index].value)) {
+    for (size_t index = 0; index < RUNTIME_TESTING_VARIABLE_COUNT; index++) {
+        if (!runtime_storage_copy(&answer->storage, laid_out[index].name, &variables[index].name) ||
+            !runtime_storage_copy(&answer->storage, laid_out[index].value, &variables[index].value)) {
             return 0;
         }
     }
     answer->variables = variables;
-    answer->variable_count = VARIABLE_COUNT;
+    answer->variable_count = RUNTIME_TESTING_VARIABLE_COUNT;
     return 1;
 }
 
@@ -61,12 +56,17 @@ static int fill_answer(const runtime_testing_prepared_home *home, runtime_testin
     return filled;
 }
 
-/** Fills the answer first, so memory running out writes nothing, then writes, leaving the base empty on failure. */
+/**
+ * Fills the answer first, so memory running out writes nothing, then writes, emptying the base again on failure.
+ *
+ * @implNote The emptying is best effort and its own status is not answered: the failure that caused it is what the
+ * caller needs, and an emptying that itself fails, as it can once memory stays out, leaves the base as it stands.
+ */
 static spisor_status lay_out(const runtime_testing_prepared_home *home, runtime_testing_home_answer *answer,
                              spisor_refusal *refusal) {
     spisor_status status = fill_answer(home, answer) ? runtime_testing_write_home(home, refusal) : SPISOR_OUT_OF_MEMORY;
     if (status != SPISOR_OK) {
-        runtime_testing_empty_base(home->base);
+        (void)runtime_testing_empty_base(home->base);
         runtime_release_stored_answer(answer, RUNTIME_TESTING_HOME_ANSWER_SHAPE);
     }
     return status;

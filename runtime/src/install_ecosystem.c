@@ -22,7 +22,6 @@
 #include "platform_key.h"
 #include "plugin_choices.h"
 
-#define KOFFI_LIBRARY_ID "koffi"
 #define FOREBAY_LIBRARY_ID "forebay-library"
 #define CATALOG_FIX "check the catalog path or url, then install again"
 #define ECOSYSTEM_FIX                                                                                           \
@@ -30,7 +29,7 @@
     "{\"portable\", \"state\", \"cache\"}, \"environment\": {<name>: <value>}, \"choices\"?: {<application>: "  \
     "<method>}, \"defaults\"?: [<plugin id>], \"requested\"?: [<plugin id>], \"platform\"?: \"<os>-<arch>\"}"
 
-static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, KOFFI_LIBRARY_ID,
+static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, RUNTIME_KOFFI_LIBRARY_ID,
                                              FOREBAY_LIBRARY_ID, RUNTIME_JAVASCRIPT_HOST_ID};
 
 /** What one ecosystem install has settled so far, beside the run every step shares. */
@@ -379,8 +378,8 @@ static int install_javascript(ecosystem *install, const cJSON *background) {
         return 1;
     }
     static const char *const host_ids[1] = {RUNTIME_JAVASCRIPT_HOST_ID};
-    static const char *const library_ids[2] = {KOFFI_LIBRARY_ID, FOREBAY_LIBRARY_ID};
-    const char *libraries[3] = {RUNTIME_LIBRARY_ID, KOFFI_LIBRARY_ID, FOREBAY_LIBRARY_ID};
+    static const char *const library_ids[2] = {RUNTIME_KOFFI_LIBRARY_ID, FOREBAY_LIBRARY_ID};
+    const char *libraries[3] = {RUNTIME_LIBRARY_ID, RUNTIME_KOFFI_LIBRARY_ID, FOREBAY_LIBRARY_ID};
     return install_pinned(install, library_ids, 2, "library") && install_pinned(install, host_ids, 1, "host") &&
            write_hint(install, RUNTIME_JAVASCRIPT_HOST_ID, libraries, 3) && (!starts || acquire_javascript(install));
 }

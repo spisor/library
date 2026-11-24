@@ -8,7 +8,7 @@
 #include "home_layout.h"
 #include "runtime_testing/home.h"
 
-/** One install, checked: its manifest and settings parsed, and every path it writes resolved. */
+/** One install, checked: its manifest and settings parsed, and every path it writes resolved, `entry` NULL for none. */
 typedef struct runtime_testing_prepared_install {
     cJSON *manifest;
     cJSON *settings;
@@ -38,6 +38,19 @@ typedef struct runtime_testing_prepared_home {
  *
  * @return OK; MALFORMED with the refusal lay_out_home documents; OUT_OF_MEMORY.
  */
+/**
+ * Checks one install and resolves the paths it writes below layout into `prepared`, released with
+ * runtime_testing_free_prepared_install whatever it answers. With `requires_entry` 0, a manifest naming no entry beside
+ * an absent entry source is taken, as a bundle holding its manifest alone.
+ *
+ * @return OK; MALFORMED with the refusal lay_out_home documents; OUT_OF_MEMORY.
+ */
+spisor_status runtime_testing_prepare_install(const runtime_testing_install *install,
+                                              const runtime_testing_layout *layout, int requires_entry,
+                                              runtime_testing_prepared_install *prepared, spisor_refusal *refusal);
+
+void runtime_testing_free_prepared_install(runtime_testing_prepared_install *prepared);
+
 spisor_status runtime_testing_prepare_home(const runtime_testing_home_argument *argument,
                                            runtime_testing_prepared_home *home, spisor_refusal *refusal);
 

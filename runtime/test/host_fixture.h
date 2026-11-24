@@ -7,8 +7,9 @@
 #include "directory_tree.h"
 #include "holders.h"
 #include "host_run.h"
-#include "cache_marker.h"
-#include "cache_place.h"
+#include "home_layout.h"
+#include "home_prepare.h"
+#include "home_write.h"
 #include "places.h"
 #include "runtime/standard.h"
 #include "runtime_testing/home.h"
@@ -41,40 +42,48 @@ static inline const runtime_testing_definition *testing_definition(void) {
     return (const runtime_testing_definition *)runtime_testing_definition_of();
 }
 
-static inline void hash_bundle_file(const char *bundle, const char *name, cJSON *hashes, cJSON *sizes) {
-    char hex[RUNTIME_SHA256_HEX_SIZE];
-    uint64_t size = 0;
-    char *path = joined(bundle, name);
-    if (spisor_probe_file(path) == SPISOR_FILE_PRESENT && runtime_sha256_file_sized(path, hex, &size) == SPISOR_OK) {
-        cJSON_AddStringToObject(hashes, name, hex);
-        cJSON_AddNumberToObject(sizes, name, (double)size);
-    }
-    spisor_memory_release(path);
+/** An empty entry module beside the scratch folder, so a home laid out in it starts empty; removed by the caller. */
+static inline void write_entry_source(char *entry, size_t capacity) {
+    snprintf(entry, capacity, "%s.index.js", scratch);
+    write_file(entry, "export default {};\n");
 }
 
-/** Installs plugin `id` at 1.0.0 with `manifest` and an empty index.js, marked complete as cache.install marks it. */
+/**
+ * Installs plugin `id` with `manifest` again, as a plugin's next install would leave it: through runtime-testing's own
+ * placing of one install, an empty module at the entry the manifest names, if it names one.
+ */
 static inline void install_plugin(const char *id, const char *manifest) {
-    int out_of_memory = 0;
-    char *bundle = runtime_cache_bundle_directory(cache, id, "1.0.0", &out_of_memory);
-    cJSON *hashes = cJSON_CreateObject();
-    cJSON *sizes = cJSON_CreateObject();
-    char *manifest_path = joined(bundle, RUNTIME_PLUGIN_MANIFEST);
-    char *entry_path = joined(bundle, "index.js");
-    write_file(manifest_path, manifest);
-    write_file(entry_path, "export default {};\n");
-    hash_bundle_file(bundle, RUNTIME_PLUGIN_MANIFEST, hashes, sizes);
-    hash_bundle_file(bundle, "index.js", hashes, sizes);
-    CHECK(runtime_cache_write_marker(bundle, hashes, sizes) == SPISOR_OK);
-    spisor_memory_release(entry_path);
-    spisor_memory_release(manifest_path);
-    cJSON_Delete(sizes);
-    cJSON_Delete(hashes);
-    spisor_memory_release(bundle);
+    char entry[1200];
+    cJSON *manifest_json = parsed(manifest);
+    spisor_value_tree tree = SPISOR_INIT(spisor_value_tree);
+    runtime_testing_install install = {&tree.root, NULL, NULL};
+    runtime_testing_prepared_install prepared;
+    runtime_testing_layout layout;
+    CHECK(strcmp(text_at(manifest_json, "id"), id) == 0);
+    CHECK(spisor_value_of_json(manifest_json, &tree) == SPISOR_OK);
+    if (text_at(manifest_json, "entry") != NULL) {
+        write_entry_source(entry, sizeof entry);
+        install.entry_source = entry;
+    }
+    CHECK(runtime_testing_layout_of(scratch, &layout));
+    CHECK(runtime_testing_prepare_install(&install, &layout, 0, &prepared, NULL) == SPISOR_OK);
+    CHECK(runtime_testing_place_install(&layout, &prepared, NULL) == SPISOR_OK);
+    runtime_testing_free_prepared_install(&prepared);
+    runtime_testing_free_layout(&layout);
+    if (install.entry_source != NULL) {
+        CHECK(runtime_remove_tree(entry) == SPISOR_OK);
+    }
+    spisor_value_release(&tree);
+    cJSON_Delete(manifest_json);
 }
 
 static inline void keep_variable(const runtime_variable *variable) {
     set_variable(variable->name, variable->value);
-    if (strcmp(variable->name, RUNTIME_PORTABLE_VARIABLE) == 0) {
+    if (strcmp(variable->name, RUNTIME_STATE_VARIABLE) == 0) {
+        snprintf(state, sizeof state, "%s", variable->value);
+    } else if (strcmp(variable->name, RUNTIME_CACHE_VARIABLE) == 0) {
+        snprintf(cache, sizeof cache, "%s", variable->value);
+    } else if (strcmp(variable->name, RUNTIME_PORTABLE_VARIABLE) == 0) {
         snprintf(portable, sizeof portable, "%s", variable->value);
     } else if (strcmp(variable->name, RUNTIME_SECRETS_VARIABLE) == 0) {
         snprintf(secrets, sizeof secrets, "%s", variable->value);
@@ -96,12 +105,11 @@ static inline void lay_out_host_world(int64_t holder) {
     runtime_testing_install install = {&manifest.root, entry, NULL};
     runtime_testing_home_argument argument = SPISOR_INIT(runtime_testing_home_argument);
     runtime_testing_home_answer answer = SPISOR_INIT(runtime_testing_home_answer);
-    snprintf(entry, sizeof entry, "%s.index.js", scratch);
+    write_entry_source(entry, sizeof entry);
     snprintf(runtime_directory, sizeof runtime_directory, "%s/rt", scratch);
     snprintf(runtime_binary, sizeof runtime_binary, "%s/rt/runtime.dll", scratch);
     snprintf(forebay_directory, sizeof forebay_directory, "%s/forebay", scratch);
     snprintf(forebay_binary, sizeof forebay_binary, "%s/forebay.dll", forebay_directory);
-    write_file(entry, "export default {};\n");
     CHECK(spisor_value_of_json(manifest_json, &manifest) == SPISOR_OK);
     argument.base = scratch;
     argument.host_id = LOADER;

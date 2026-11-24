@@ -4,8 +4,10 @@
 
 #include "boot_hint.h"
 #include "cache_place.h"
+#include "cache_marker.h"
 #include "config.h"
 #include "directory_tree.h"
+#include "install_entries.h"
 #include "paths.h"
 #include "registry.h"
 #include "spisor/allocation.h"
@@ -14,8 +16,8 @@
 #include "spisor/json_kind.h"
 #include "spisor/json_value.h"
 #include "spisor/path.h"
+#include "user_home.h"
 
-#define KOFFI_ID "koffi"
 #define DEFAULT_KOFFI_VERSION "2.0.0"
 #define BASE_FIX "pass the absolute path of an empty folder that exists"
 #define INSTALL_FIX                                                                                                   \
@@ -68,20 +70,45 @@ static spisor_status record_json(const spisor_value *value, int optional, cJSON 
     return spisor_json_of_value(value, json);
 }
 
-static int is_entry_source(const char *path) {
-    return path != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, path) &&
-           spisor_probe_file(path) == SPISOR_FILE_PRESENT;
+/** OK for an absolute file that is there; MALFORMED for anything else; OUT_OF_MEMORY when the probe runs out. */
+static spisor_status check_entry_source(const char *path) {
+    spisor_file_presence presence;
+    if (path == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, path)) {
+        return SPISOR_MALFORMED;
+    }
+    presence = spisor_probe_file(path);
+    return presence == SPISOR_FILE_PRESENT         ? SPISOR_OK
+           : presence == SPISOR_FILE_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY
+                                                   : SPISOR_MALFORMED;
 }
 
-/** The entry's path inside the bundle into prepared->entry; MALFORMED when it climbs out. */
+static int is_same_path(const char *left, const char *right) {
+    return RUNTIME_HOST_IS_WINDOWS ? runtime_equal_ignoring_ascii_case(left, right) : strcmp(left, right) == 0;
+}
+
+/** Whether entry, resolved inside bundle, is a file the bundle keeps for itself: its manifest or its marker. */
+static int is_bundle_file(const char *bundle, const char *entry, int *out_of_memory) {
+    const char *const names[2] = {RUNTIME_PLUGIN_MANIFEST, RUNTIME_INSTALL_MARKER};
+    int found = 0;
+    for (size_t index = 0; !found && !*out_of_memory && index < 2; index++) {
+        char *path = runtime_cache_resolve(bundle, &names[index], 1);
+        *out_of_memory = path == NULL;
+        found = path != NULL && is_same_path(path, entry);
+        spisor_memory_release(path);
+    }
+    return found;
+}
+
+/** The entry's path inside the bundle into prepared->entry; MALFORMED when it climbs out or names a bundle file. */
 static spisor_status place_entry(runtime_testing_prepared_install *prepared, const char *entry) {
     char *bundle = runtime_cache_resolve(prepared->bundle, NULL, 0);
+    int out_of_memory = 0;
+    int inside;
     prepared->entry = bundle == NULL ? NULL : runtime_cache_resolve(bundle, &entry, 1);
-    spisor_status status = prepared->entry == NULL ? SPISOR_OUT_OF_MEMORY
-                           : runtime_cache_is_strictly_inside(bundle, prepared->entry) ? SPISOR_OK
-                                                                                     : SPISOR_MALFORMED;
+    inside = prepared->entry != NULL && runtime_cache_is_strictly_inside(bundle, prepared->entry) &&
+             !is_bundle_file(bundle, prepared->entry, &out_of_memory);
     spisor_memory_release(bundle);
-    return status;
+    return prepared->entry == NULL || out_of_memory ? SPISOR_OUT_OF_MEMORY : inside ? SPISOR_OK : SPISOR_MALFORMED;
 }
 
 static spisor_status place_bundle(runtime_testing_prepared_install *prepared, const char *cache, const char *entry) {
@@ -90,7 +117,7 @@ static spisor_status place_bundle(runtime_testing_prepared_install *prepared, co
     if (prepared->bundle == NULL) {
         return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_MALFORMED;
     }
-    return place_entry(prepared, entry);
+    return entry == NULL ? SPISOR_OK : place_entry(prepared, entry);
 }
 
 static spisor_status place_settings_file(runtime_testing_prepared_install *prepared,
@@ -98,10 +125,20 @@ static spisor_status place_settings_file(runtime_testing_prepared_install *prepa
     runtime_config_request request = runtime_config_request_of(layout->application, layout->portable);
     request.plugin = prepared->id;
     request.config = cJSON_GetObjectItemCaseSensitive(prepared->manifest, "config");
+    request.settings = cJSON_GetObjectItemCaseSensitive(prepared->manifest, "settings");
     return runtime_config_settings_file(&request, &prepared->settings_file, refusal);
 }
 
-static spisor_status read_install(const runtime_testing_install *install, runtime_testing_prepared_install *prepared) {
+/** OK when the install carries its entry as `requires_entry` asks, else as check_entry_source answers. */
+static spisor_status check_entry(const runtime_testing_install *install, const cJSON *manifest, int requires_entry) {
+    if (!requires_entry && install->entry_source == NULL && text_member(manifest, "entry") == NULL) {
+        return SPISOR_OK;
+    }
+    return text_member(manifest, "entry") == NULL ? SPISOR_MALFORMED : check_entry_source(install->entry_source);
+}
+
+static spisor_status read_install(const runtime_testing_install *install, int requires_entry,
+                                  runtime_testing_prepared_install *prepared) {
     spisor_status status = record_json(install->manifest, 0, &prepared->manifest);
     if (status == SPISOR_OK) {
         status = record_json(install->settings, 1, &prepared->settings);
@@ -112,21 +149,23 @@ static spisor_status read_install(const runtime_testing_install *install, runtim
     prepared->id = text_member(prepared->manifest, "id");
     prepared->version = text_member(prepared->manifest, "version");
     prepared->entry_source = install->entry_source;
-    if (prepared->id == NULL || prepared->version == NULL || text_member(prepared->manifest, "entry") == NULL ||
-        !is_entry_source(install->entry_source)) {
+    if (prepared->id == NULL || prepared->version == NULL) {
         return SPISOR_MALFORMED;
     }
-    return SPISOR_OK;
+    return check_entry(install, prepared->manifest, requires_entry);
 }
 
-static spisor_status prepare_install(const runtime_testing_install *install, const runtime_testing_layout *layout,
-                                     runtime_testing_prepared_install *prepared, spisor_refusal *refusal) {
-    spisor_status status = read_install(install, prepared);
+spisor_status runtime_testing_prepare_install(const runtime_testing_install *install,
+                                              const runtime_testing_layout *layout, int requires_entry,
+                                              runtime_testing_prepared_install *prepared, spisor_refusal *refusal) {
+    spisor_status status;
+    memset(prepared, 0, sizeof *prepared);
+    status = read_install(install, requires_entry, prepared);
     if (status == SPISOR_OK) {
         status = place_bundle(prepared, layout->cache, text_member(prepared->manifest, "entry"));
     }
     if (status == SPISOR_MALFORMED) {
-        return refuse(refusal, "an install is malformed or its bundle or entry climbs out of its folder", INSTALL_FIX);
+        return refuse(refusal, "an install is malformed, its bundle or entry climbs out of its folder, or its entry is a bundle file", INSTALL_FIX);
     }
     return status == SPISOR_OK ? place_settings_file(prepared, layout, refusal) : status;
 }
@@ -147,7 +186,8 @@ static spisor_status prepare_installs(const runtime_testing_home_argument *argum
     memset(home->installs, 0, argument->install_count * sizeof *home->installs);
     home->install_count = argument->install_count;
     for (size_t index = 0; status == SPISOR_OK && index < argument->install_count; index++) {
-        status = prepare_install(&argument->installs[index], &home->layout, &home->installs[index], refusal);
+        status = runtime_testing_prepare_install(&argument->installs[index], &home->layout, 1, &home->installs[index],
+                                                 refusal);
     }
     return status;
 }
@@ -212,9 +252,9 @@ static spisor_status prepare_libraries(const runtime_testing_home_argument *argu
         return refuse(refusal, "a library has no id or no absolute directory, is named twice, or has no version",
                       LIBRARY_FIX);
     }
-    home->hints_default_koffi = cJSON_GetObjectItemCaseSensitive(home->libraries, KOFFI_ID) == NULL;
+    home->hints_default_koffi = cJSON_GetObjectItemCaseSensitive(home->libraries, RUNTIME_KOFFI_LIBRARY_ID) == NULL;
     if (status == SPISOR_OK && home->hints_default_koffi) {
-        status = add_library(home->libraries, KOFFI_ID, DEFAULT_KOFFI_VERSION, home->layout.koffi, NULL);
+        status = add_library(home->libraries, RUNTIME_KOFFI_LIBRARY_ID, DEFAULT_KOFFI_VERSION, home->layout.koffi, NULL);
     }
     return status;
 }
@@ -249,14 +289,18 @@ spisor_status runtime_testing_prepare_home(const runtime_testing_home_argument *
     return status == SPISOR_OK ? prepare_libraries(argument, home, refusal) : status;
 }
 
+void runtime_testing_free_prepared_install(runtime_testing_prepared_install *prepared) {
+    cJSON_Delete(prepared->manifest);
+    cJSON_Delete(prepared->settings);
+    spisor_memory_release(prepared->bundle);
+    spisor_memory_release(prepared->entry);
+    spisor_memory_release(prepared->settings_file);
+    memset(prepared, 0, sizeof *prepared);
+}
+
 void runtime_testing_free_prepared_home(runtime_testing_prepared_home *home) {
     for (size_t index = 0; index < home->install_count; index++) {
-        runtime_testing_prepared_install *install = &home->installs[index];
-        cJSON_Delete(install->manifest);
-        cJSON_Delete(install->settings);
-        spisor_memory_release(install->bundle);
-        spisor_memory_release(install->entry);
-        spisor_memory_release(install->settings_file);
+        runtime_testing_free_prepared_install(&home->installs[index]);
     }
     spisor_memory_release(home->installs);
     cJSON_Delete(home->libraries);
