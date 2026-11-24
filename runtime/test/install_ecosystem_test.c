@@ -82,6 +82,45 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     finish_install_base(&base);
 }
 
+/** The file name a C library binary carries on this machine's platform. */
+static const char *runtime_binary_name(void) {
+    const char *platform = runtime_platform_key();
+    if (strncmp(platform, "win32-", 6) == 0) {
+        return "runtime.dll";
+    }
+    return strncmp(platform, "darwin-", 7) == 0 ? "libruntime.dylib" : "libruntime.so";
+}
+
+/** The runtime library as a C library ships: its library.json declaration and one binary, for this platform. */
+static void list_declared_runtime(install_base *base) {
+    cJSON *item = catalog_item(base, "runtime", "library", NULL, "0.1.0");
+    list_file(base, item, "runtime", "0.1.0", RUNTIME_LIBRARY_DECLARATION, "{\"id\": \"runtime\"}", 1);
+    cJSON *files = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(value_at(item, "versions/0.1.0/platforms"), runtime_platform_key()), "files");
+    cJSON_AddItemToObject(files, runtime_binary_name(),
+                          served_reference(base, "runtime", "0.1.0", runtime_binary_name(), "binary"));
+}
+
+static void records_the_binary_of_a_declared_c_library_in_the_boot_hint(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "declared");
+    list_host(&base, "spisor-host", "1.0.0", "native", NULL);
+    list_declared_runtime(&base);
+    list_plugin(&base, "announcer", "1.0.0", "native");
+    list_plugin(&base, "viewer", "1.0.0", "native");
+    write_catalog(&base);
+    cJSON_Delete(install_defaults(&base, ""));
+    cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
+    const char *directory = text_at(value_at(hint, "libraries/runtime"), "directory");
+    const char *binary = text_at(value_at(hint, "libraries/runtime"), "binary");
+    char *expected = directory == NULL ? NULL : joined(directory, runtime_binary_name());
+    check_text(binary, expected, "the hint names the declared library's binary");
+    CHECK(binary != NULL && spisor_probe_file(binary) == SPISOR_FILE_PRESENT);
+    spisor_memory_release(expected);
+    cJSON_Delete(hint);
+    finish_install_base(&base);
+}
+
 static void reports_everything_cached_on_a_second_run(void) {
     install_base base;
     start_install_base(&base, "ecosystem", "second");
@@ -723,6 +762,7 @@ int main(int argc, char **argv) {
     user_path_guard guard;
     guard_user_path(&guard);
     installs_the_host_the_runtime_and_the_defaults_and_records_them();
+    records_the_binary_of_a_declared_c_library_in_the_boot_hint();
     reports_everything_cached_on_a_second_run();
     leaves_a_plugin_the_user_disabled_disabled();
     reports_an_item_with_no_build_for_this_platform_and_installs_the_rest();

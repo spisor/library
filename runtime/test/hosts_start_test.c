@@ -189,6 +189,20 @@ static void a_non_session_start_plans_afresh_when_the_recorded_run_is_dead(void)
     finish_base();
 }
 
+static void a_live_recorded_run_with_a_version_that_is_no_text_is_refused_as_unreadable(void) {
+    start_world("start-run-number");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    record_references(TEST_HOST, "{\"run\":{\"test-host\":\"1.0.0\",\"a\":1},\"next\":{}}");
+    spisor_memory_release(record_a_live_run());
+    catalog_answer started = start_host(0);
+    CHECK(started.status == SPISOR_REFUSED);
+    const char *message = text_at(started.tree, "message");
+    CHECK(message != NULL && strstr(message, "could not be read, so what its last start ran is unknown") != NULL);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 static void the_running_map_names_the_host_the_layer_and_every_library(void) {
     start_world("start-running");
     register_test_host("1.0.0");
@@ -254,6 +268,26 @@ static void no_color_is_set_by_an_empty_no_color(void) {
     CHECK(is_false_at(colored.tree, "noColor"));
     cJSON_Delete(colored.tree);
     cJSON_Delete(colorless.tree);
+    finish_base();
+}
+
+/** An environment is the OS's, every value text, so a NO_COLOR that is no text is a malformed call, never colour. */
+static void a_no_color_that_is_no_text_is_refused_as_no_usable_environment(void) {
+    start_world("start-no-color-number");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    cJSON *environment = environment_json();
+    cJSON_AddNumberToObject(environment, "NO_COLOR", 1);
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}");
+    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1};
+    cJSON *refusal = NULL;
+    cJSON *answer = runtime_hosts_start(&request, &refusal);
+    CHECK(answer == NULL);
+    check_text(text_at(refusal, "message"), "the call carries no usable environment", "a number for NO_COLOR");
+    cJSON_Delete(answer);
+    cJSON_Delete(refusal);
+    cJSON_Delete(libraries);
+    cJSON_Delete(environment);
     finish_base();
 }
 
@@ -445,6 +479,7 @@ int main(void) {
     a_session_start_applies_updates();
     a_non_session_start_reuses_a_live_recorded_run();
     a_non_session_start_plans_afresh_when_the_recorded_run_is_dead();
+    a_live_recorded_run_with_a_version_that_is_no_text_is_refused_as_unreadable();
     the_running_map_names_the_host_the_layer_and_every_library();
     an_unregistered_host_is_refused_with_the_reinstall_fix();
     a_registration_without_a_version_is_refused();
@@ -452,6 +487,7 @@ int main(void) {
     no_color_is_set_by_an_empty_no_color();
     the_timers_are_the_runtimes_own();
     no_color_ignores_case_on_windows();
+    a_no_color_that_is_no_text_is_refused_as_no_usable_environment();
     a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept();
     a_live_run_naming_the_host_in_another_case_does_not_keep_its_recorded_run();
     return check_summary("hosts_start_test");

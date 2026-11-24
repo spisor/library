@@ -12,6 +12,7 @@
 #include "host_references.h"
 #include "identity.h"
 #include "node_json_file.h"
+#include "user_home.h"
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 
@@ -112,16 +113,28 @@ static int has_prefix(const char *text, const char *prefix) {
     return strncmp(text, prefix, strlen(prefix)) == 0;
 }
 
-static int has_suffix(const char *text, const char *suffix) {
+typedef struct binary_suffix {
+    const char *text;
+    int ignores_case;
+} binary_suffix;
+
+static int has_suffix(const char *text, binary_suffix suffix) {
     size_t length = strlen(text);
-    return length > strlen(suffix) && strcmp(text + length - strlen(suffix), suffix) == 0;
+    size_t suffix_length = strlen(suffix.text);
+    if (length <= suffix_length) {
+        return 0;
+    }
+    const char *tail = text + length - suffix_length;
+    return suffix.ignores_case ? runtime_equal_ignoring_ascii_case(tail, suffix.text) : strcmp(tail, suffix.text) == 0;
 }
 
-static const char *binary_suffix(const char *platform) {
+/** The suffix a binary for platform carries; a Windows file name is matched in any case, as Windows matches it. */
+static binary_suffix binary_suffix_of(const char *platform) {
     if (has_prefix(platform, WINDOWS_PLATFORM_PREFIX)) {
-        return WINDOWS_BINARY_SUFFIX;
+        return (binary_suffix){WINDOWS_BINARY_SUFFIX, 1};
     }
-    return has_prefix(platform, DARWIN_PLATFORM_PREFIX) ? DARWIN_BINARY_SUFFIX : OTHER_BINARY_SUFFIX;
+    const char *text = has_prefix(platform, DARWIN_PLATFORM_PREFIX) ? DARWIN_BINARY_SUFFIX : OTHER_BINARY_SUFFIX;
+    return (binary_suffix){text, 0};
 }
 
 /** cache/libraries/<id folder>/<version>/<platform>, resolved; NULL with *problem set when it would leave the id's folder. */
@@ -155,10 +168,10 @@ typedef struct binary_search {
 } binary_search;
 
 /**
- * The files directly inside directory that end in suffix: how many, and the first one's name. 0 with
- * *problem naming directory when it cannot be listed, and with *problem NULL when memory runs out.
+ * The files directly inside directory that end in suffix, a link never counting as one: how many, and the first one's
+ * name. 0 with *problem naming directory when it cannot be listed, and with *problem NULL when memory runs out.
  */
-static int search_binaries(const char *directory, const char *suffix, binary_search *search, char **problem) {
+static int search_binaries(const char *directory, binary_suffix suffix, binary_search *search, char **problem) {
     search->first_name = NULL;
     search->count = 0;
     runtime_directory_listing listing;
@@ -171,7 +184,7 @@ static int search_binaries(const char *directory, const char *suffix, binary_sea
     int searched = 1;
     for (size_t index = 0; searched && index < listing.count; index++) {
         const runtime_directory_entry *entry = &listing.entries[index];
-        if (!entry->is_directory && has_suffix(entry->name, suffix) && search->count++ == 0) {
+        if (entry->is_file && has_suffix(entry->name, suffix) && search->count++ == 0) {
             const char *parts[1] = {entry->name};
             search->first_name = runtime_cache_text(parts, 1);
             searched = search->first_name != NULL;
@@ -195,12 +208,12 @@ static int is_declared_library(const char *directory) {
  * or several, or cannot be listed.
  */
 static int add_binary(cJSON *entry, const char *directory, const char *platform, char **problem) {
-    const char *suffix = binary_suffix(platform);
+    binary_suffix suffix = binary_suffix_of(platform);
     binary_search search;
     int searched = search_binaries(directory, suffix, &search, problem);
     if (searched && search.count != 1) {
         const char *parts[5] = {"the library folder ", directory,
-                                search.count == 0 ? " holds no " : " holds more than one ", suffix,
+                                search.count == 0 ? " holds no " : " holds more than one ", suffix.text,
                                 " file beside its " RUNTIME_LIBRARY_DECLARATION};
         *problem = runtime_cache_text(parts, 5);
     }
