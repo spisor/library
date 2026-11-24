@@ -13,8 +13,8 @@
 typedef enum runtime_host_phase { RUNTIME_HOST_PLANNED, RUNTIME_HOST_RUNNING, RUNTIME_HOST_ENDED } runtime_host_phase;
 
 /**
- * A SERVE run's timers: when its next turn (the run record's stamp and, unless it runs in-process, the holders' prune) and its next update check
- * are due, both due before its first tick, and how many turns in a row have failed.
+ * A SERVE run's timers: when its next turn (the run record's stamp and, unless it runs in-process, the holders'
+ * prune) and its next update check are due, both due before its first tick, and how many turns in a row have failed.
  */
 typedef struct runtime_host_timers {
     uint32_t ticked;
@@ -45,7 +45,7 @@ typedef struct runtime_host_run {
     uint32_t phase;
     uint32_t exit_code;
     runtime_host_timers timers;
-    uint32_t in_process;
+    int in_process;
 } runtime_host_run;
 
 /**
