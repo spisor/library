@@ -72,8 +72,8 @@ typedef struct runtime_processes_release_answer {
 
 /**
  * One check of the background host running as process `self`, at `now` in milliseconds since the epoch, 0 for the
- * current time, by a host that checks every `check_milliseconds`, 0 for 5000. First shape ends at
- * `check_milliseconds`.
+ * current time, by a host that checks every `check_milliseconds`, 0 for 5000. The stamp it writes, the stamp it
+ * judges and the age of the holders lock are all read at `now`. First shape ends at `check_milliseconds`.
  */
 typedef struct runtime_processes_prune_argument {
     uint32_t size;

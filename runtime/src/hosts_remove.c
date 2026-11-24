@@ -8,6 +8,7 @@
 #include "cache_refusal.h"
 #include "changes.h"
 #include "directory_tree.h"
+#include "file_times.h"
 #include "holders.h"
 #include "holders_lock.h"
 #include "host_references.h"
@@ -40,7 +41,7 @@ static spisor_status removed_entry(runtime_entry_outcome removed) {
 
 static spisor_status removed_under_lock(const char *lock, const char *path) {
     runtime_holders_guard *guard = NULL;
-    spisor_status removed = runtime_lock_holders(lock, &guard);
+    spisor_status removed = runtime_lock_holders(lock, runtime_now_milliseconds(), &guard);
     if (removed == SPISOR_OK) {
         removed = removed_entry(runtime_remove_file_entry(path));
     }

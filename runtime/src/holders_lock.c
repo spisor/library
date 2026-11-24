@@ -63,11 +63,10 @@ static void pause_milliseconds(long milliseconds) {
 }
 
 /** A text no other taker of any lock writes: the pid, a space, then a number and the time. */
-static char *new_token(void) {
+static char *new_token(double now) {
     char *token = spisor_memory_allocate(TOKEN_CAPACITY);
     if (token != NULL) {
-        snprintf(token, TOKEN_CAPACITY, "%d %lu-%.0f", (int)current_process_id(), next_token_number(),
-                 floor(runtime_now_milliseconds()));
+        snprintf(token, TOKEN_CAPACITY, "%d %lu-%.0f", (int)current_process_id(), next_token_number(), floor(now));
     }
     return token;
 }
@@ -99,16 +98,16 @@ static double leading_integer(const char *token) {
     return negative ? -value : value;
 }
 
-static int is_old(const char *path) {
+static int is_old(const char *path, double now) {
     double changed = 0;
-    return runtime_newest_change(path, &changed) && runtime_now_milliseconds() - changed > STALE_LOCK_MILLISECONDS;
+    return runtime_newest_change(path, &changed) && now - changed > STALE_LOCK_MILLISECONDS;
 }
 
-static int is_stale(const char *path, const char *held) {
+static int is_stale(const char *path, const char *held, double now) {
     if (*held != 0 && !runtime_process_is_alive(leading_integer(held))) {
         return 1;
     }
-    return is_old(path);
+    return is_old(path, now);
 }
 
 /** Whether the prepared file holds exactly text, read without allocating. */
@@ -186,9 +185,9 @@ static spisor_status refused_creating(runtime_entry_outcome created, const char 
 }
 
 /** @implNote The guard is made before the lock file, so memory running out never leaves a lock nobody holds. */
-spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **guard) {
+spisor_status runtime_lock_holders(const char *path, double now, runtime_holders_guard **guard) {
     *guard = NULL;
-    char *token = new_token();
+    char *token = new_token(now);
     spisor_status prepared = SPISOR_OUT_OF_MEMORY;
     runtime_holders_guard *made = token == NULL ? NULL : guard_of(path, token, &prepared);
     if (made == NULL) {
@@ -212,7 +211,7 @@ spisor_status runtime_lock_holders(const char *path, runtime_holders_guard **gua
             release_guard(made);
             return SPISOR_OUT_OF_MEMORY;
         }
-        int stale = held != NULL && is_stale(path, held);
+        int stale = held != NULL && is_stale(path, held, now + (runtime_now_milliseconds() - started));
         if (stale) {
             remove_stale_lock(made, held);
         }
