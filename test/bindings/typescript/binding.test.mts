@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { CopiedDescription, withMemberMoved } from "./moved-member.mts";
-import { openRuntime, runtimeLibraryPath, type OpenedRuntime } from "./runtime.mts";
+import { openRuntime, refusalOfServing, runtimeLibraryPath, type OpenedRuntime } from "./runtime.mts";
 import { koffi, runtimeServiceIds, weivelModule } from "./weivel.mts";
 
 const serveMode = 1;
@@ -76,5 +76,17 @@ describe("runtime bound from its descriptions by weivel/typescript", () => {
       copies.free();
       binary.unload();
     }
+  });
+
+  it("refuses paths served by identity's definition, which only the check that a description answers its definition sees", async () => {
+    const answers = /was refused by the check, status 2 at answered_by: answered_by answers another definition/;
+
+    assert.match((await refusalOfServing("paths", "runtime_identity_definition_of", true))!, answers);
+    assert.equal(await refusalOfServing("paths", "runtime_identity_definition_of", false), undefined);
+  });
+
+  it("refuses identity served by paths' definition, as its first shape alone already did", async () => {
+    assert.match((await refusalOfServing("identity", "runtime_paths_definition_of", true))!, /status 2 at answered_by/);
+    assert.match((await refusalOfServing("identity", "runtime_paths_definition_of", false))!, /below its first shape/);
   });
 });

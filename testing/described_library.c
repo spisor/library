@@ -107,6 +107,23 @@ static void answer_both(describe_function describe, definition_function define, 
     found->definition = define();
 }
 
+/**
+ * Whether the description answers the definition its service's getter answered. A description the standard's check
+ * refuses is left to spisor_check_described, which names that refusal.
+ */
+static int answers_its_definition(const char *service_id, const spisor_described_definition *found) {
+    weivel_standard_refusal refusal = WEIVEL_INIT(weivel_standard_refusal);
+    int answers = 1;
+    if (weivel_standard_description_check(found->description, &refusal) == WEIVEL_STATUS_OK &&
+        weivel_standard_description_answers(found->description, found->definition, &refusal) != WEIVEL_STATUS_OK) {
+        fprintf(stderr, "service %s: its description does not answer its definition, at \"%s\": %s\n", service_id,
+                refusal.path == NULL ? "" : refusal.path, refusal.detail == NULL ? "" : refusal.detail);
+        answers = 0;
+    }
+    weivel_standard_refusal_release(&refusal);
+    return answers;
+}
+
 /** Fills `found` from one service's two symbols; 0, the reason printed, when either is not there to call. */
 static int described_definition_of(library_handle library, const weivel_standard_library_service *service,
                                    const char *description_symbol, spisor_described_definition *found) {
@@ -129,7 +146,7 @@ static int described_definition_of(library_handle library, const weivel_standard
         fprintf(stderr, "service %s answers no description or no definition\n", service->id);
         return 0;
     }
-    return 1;
+    return answers_its_definition(service->id, found);
 }
 
 static size_t check_declared(library_handle library, const weivel_standard_library *declaration,

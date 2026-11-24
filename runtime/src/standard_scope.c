@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include <weivel/descriptions.h>
 #include <weivel/scope.h>
 
 #include "plugin_scope.h"
@@ -58,8 +57,4 @@ static const weivel_standard_scopes definition = {
 
 RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void) {
     return &definition;
-}
-
-RUNTIME_DEFINITION_API const weivel_standard_description *runtime_standard_scope_definition_description(void) {
-    return weivel_standard_scopes_description();
 }

@@ -45,7 +45,7 @@ async function installEntries(home: string, plugins: readonly string[]): Promise
 async function runProgram(label: string, home: string, programArguments: readonly string[]): Promise<Ran> {
   const programDirectory = join(weivelPackage, "programs", label);
   rmSync(programDirectory, { recursive: true, force: true });
-  const program = await bundleProgram(programDirectory, { nativeLibraries: { coreLibraryPath, standardLibraryPath } });
+  const { commandLine: program } = await bundleProgram(programDirectory, { nativeLibraries: { coreLibraryPath, standardLibraryPath } });
   const child = spawn(process.execPath, [program, join(home, "rt", runtimeName), ...programArguments], { env: placesOf(home), windowsHide: true });
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
