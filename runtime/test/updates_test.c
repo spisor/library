@@ -963,6 +963,21 @@ static void it_passes_on_the_refusal_of_a_service_it_calls(void) {
     finish_base();
 }
 
+/** With no source to check, the sweep is what reads the check's now, so one that is no time is still refused. */
+static void it_refuses_a_now_that_is_no_time_when_no_source_reads_it(void) {
+    start_base("now-unread");
+    register_host(TEST_HOST);
+    cJSON *argument = cJSON_CreateObject();
+    cJSON_AddItemToObject(argument, "places", places_json());
+    cJSON_AddStringToObject(argument, "hostId", TEST_HOST);
+    cJSON_AddStringToObject(argument, "now", "yesterday");
+    cJSON_AddItemToObject(argument, "settings", cJSON_CreateObject());
+    catalog_answer checked = updates_call(UPDATES_CHECK, argument);
+    expect_cache_refusal(checked, SPISOR_REFUSED, "no ISO 8601 time", "a now no source reads");
+    cJSON_Delete(checked.tree);
+    finish_base();
+}
+
 static void it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from(void) {
     start_base("apply-filters-rolled-away");
     list_plugin("a", "1.0.0", "2.0.0");
@@ -1086,6 +1101,7 @@ int main(void) {
     it_rolls_a_plugin_back_and_holds_it_on_the_next_start();
     it_reports_a_hint_it_could_not_write_and_still_starts();
     it_passes_on_the_refusal_of_a_service_it_calls();
+    it_refuses_a_now_that_is_no_time_when_no_source_reads_it();
 
     it_schedules_no_fetch_of_a_plugin_version_a_rollback_moved_away_from();
     it_drops_a_next_naming_the_version_a_rollback_moves_away_from();

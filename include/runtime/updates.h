@@ -244,13 +244,14 @@ typedef struct runtime_updates_definition {
      * Checks every catalog source the settings name, an https one at most once per updates.intervalHours (24 by
      * default); schedules as next every damaged version named, every newer version of a plugin the settings choose,
      * and the version the host and spisor-host are held to, recording next under the registry lock before anything is
-     * fetched; installs each; switches the boot hint of a host it switches to; and sweeps the cache. What runs now is
-     * never changed, and a version a rollback moved away from is scheduled again only once the catalog's latest is
-     * another one.
+     * fetched; installs each; switches the boot hint of a host it switches to; and sweeps the cache, judging every run
+     * record and every unfinished version at `now`, so a check never reads the clock. What runs now is never changed,
+     * and a version a rollback moved away from is scheduled again only once the catalog's latest is another one.
      *
      * @return OK, a version that cannot be installed or switched reported in the answer's refused; MALFORMED; REFUSED
-     * when the host is not registered, the registry lock cannot be taken, or next cannot be recorded; OUT_OF_MEMORY.
-     * A refused or OUT_OF_MEMORY check may have recorded next and installed versions, which the next check keeps.
+     * when the host is not registered, the registry lock cannot be taken, next cannot be recorded, or `now` is no ISO
+     * 8601 time; OUT_OF_MEMORY. A refused or OUT_OF_MEMORY check may have recorded next and installed versions, which
+     * the next check keeps.
      */
     spisor_status (*check)(void *context, const runtime_updates_check_argument *argument,
                            runtime_updates_check_answer *answer, spisor_refusal *refusal);

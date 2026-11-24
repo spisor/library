@@ -186,8 +186,7 @@ static cJSON *remove_all(const char *cache, const cJSON *doomed) {
     return removed;
 }
 
-cJSON *runtime_cache_sweep_versions(const char *cache, const char *state) {
-    double now = runtime_now_milliseconds();
+cJSON *runtime_cache_sweep_versions(const char *cache, const char *state, double now) {
     cJSON *referenced = runtime_cache_referenced(cache, state, now);
     sweep_scope scope = {cache, referenced, now, cJSON_CreateArray(), 0};
     cJSON *removed = NULL;

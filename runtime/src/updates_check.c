@@ -11,6 +11,7 @@
 #include "cache_refusal.h"
 #include "cache_sweep.h"
 #include "catalog_answer.h"
+#include "catalog_time.h"
 #include "host_references.h"
 #include "install_run.h"
 #include "json_service.h"
@@ -22,6 +23,7 @@
 #include "version_map.h"
 
 #define DEFAULT_INTERVAL_HOURS 24.0
+#define NOW_FIX "pass now, the time of the check as toISOString writes it"
 #define HINT_FIX "check that SPISOR_CACHE names a writable folder; the next check switches the hint again"
 
 /**
@@ -399,10 +401,17 @@ static int install_targets(const runtime_updates_check_request *request, const c
     return installed;
 }
 
-/** Sweeps with the registry lock held, never through cache.sweep, which takes the lock itself. */
+/** Sweeps at the check's now with the registry lock held, never through cache.sweep, which takes the lock itself. */
 static cJSON *sweep(const runtime_updates_check_request *request, cJSON **refusal) {
+    double now = 0;
+    if (!runtime_catalog_parse_time(request->now, &now)) {
+        const char *parts[1] = {"the call carries a now that is no ISO 8601 time"};
+        *refusal = runtime_cache_refusal(parts, 1, NOW_FIX);
+        return NULL;
+    }
     spisor_lock *guard = runtime_updates_lock(&request->target, refusal);
-    cJSON *removed = guard == NULL ? NULL : runtime_cache_sweep_versions(request->target.cache, request->target.state);
+    cJSON *removed =
+        guard == NULL ? NULL : runtime_cache_sweep_versions(request->target.cache, request->target.state, now);
     spisor_unlock(guard);
     return removed;
 }
@@ -454,7 +463,7 @@ cJSON *runtime_updates_check(const runtime_updates_check_request *request, cJSON
     }
     if (now == NULL || now[0] == 0) {
         const char *parts[1] = {"the call carries no now"};
-        *refusal = runtime_cache_refusal(parts, 1, "pass now, the time of the check as toISOString writes it");
+        *refusal = runtime_cache_refusal(parts, 1, NOW_FIX);
         return NULL;
     }
     check_plan plan = {NULL, NULL, NULL, NULL, NULL};
