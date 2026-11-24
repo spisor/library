@@ -52,7 +52,8 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * each in its own process: its `started` publishes nothing, its `tick` stamps its run record and runs no prune, and
  * only a stop request ends it. The layer is the javascript-host at
  * the version its boot hint names, beside every library that hint names, and hosts' start plans the run, a SERVE
- * run as the loader's session start. The plan loads every hinted library that has a binary but runtime itself, which
+ * run as the loader's session start; an in-process one reuses the run a live run record names, as a start that is
+ * not the session start does, so it never switches to a scheduled version under a running host. The plan loads every hinted library that has a binary but runtime itself, which
  * the program was started with, each with the `library.json` beside it, and activates every plugin of hosts' start's
  * plan that cache's locate finds installed, in id order. An ACTION plan's `action_plugin` is the `manifest` of the
  * plan's plugin of that id, the very text, since the program matches it exactly; `action_name` is the action's id,
