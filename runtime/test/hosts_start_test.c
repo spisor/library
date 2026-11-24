@@ -189,6 +189,20 @@ static void a_non_session_start_plans_afresh_when_the_recorded_run_is_dead(void)
     finish_base();
 }
 
+static void a_live_recorded_run_with_a_version_that_is_no_text_is_refused_as_unreadable(void) {
+    start_world("start-run-number");
+    register_test_host("1.0.0");
+    enable_plugin_a();
+    record_references(TEST_HOST, "{\"run\":{\"test-host\":\"1.0.0\",\"a\":1},\"next\":{}}");
+    spisor_memory_release(record_a_live_run());
+    catalog_answer started = start_host(0);
+    CHECK(started.status == SPISOR_REFUSED);
+    const char *message = text_at(started.tree, "message");
+    CHECK(message != NULL && strstr(message, "could not be read, so what its last start ran is unknown") != NULL);
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 static void the_running_map_names_the_host_the_layer_and_every_library(void) {
     start_world("start-running");
     register_test_host("1.0.0");
@@ -445,6 +459,7 @@ int main(void) {
     a_session_start_applies_updates();
     a_non_session_start_reuses_a_live_recorded_run();
     a_non_session_start_plans_afresh_when_the_recorded_run_is_dead();
+    a_live_recorded_run_with_a_version_that_is_no_text_is_refused_as_unreadable();
     the_running_map_names_the_host_the_layer_and_every_library();
     an_unregistered_host_is_refused_with_the_reinstall_fix();
     a_registration_without_a_version_is_refused();
