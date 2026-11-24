@@ -667,7 +667,8 @@ static weivel_standard_description described(const weivel_standard_described_ope
                                                NULL,
                                                0,
                                                NULL,
-                                               0};
+                                               0,
+                                               NULL};
     return description;
 }
 
