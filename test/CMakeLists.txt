@@ -122,4 +122,7 @@ foreach(scenario
             -P ${CMAKE_CURRENT_SOURCE_DIR}/layouts/layouts_check_test.cmake)
 endforeach()
 
+add_test(NAME weivel_pins_test
+    COMMAND ${CMAKE_COMMAND} -DREPO=${PROJECT_SOURCE_DIR} -P ${PROJECT_SOURCE_DIR}/cmake/check_weivel_pins.cmake)
+
 add_subdirectory(bindings)
