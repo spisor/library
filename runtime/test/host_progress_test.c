@@ -176,21 +176,42 @@ static void a_serve_run_started_publishes_that_it_is_ready(void) {
     finish_base();
 }
 
-#define CONSUMING_MANIFEST \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"config\": {\"name\": \"a\"}, " \
-    "\"capabilities\": {\"provides\": [], \"consumes\": [\"greeting\"]}, " \
-    "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\"}}}}"
-#define SECOND_MANIFEST \
-    "{\"id\": \"b\", \"version\": \"1.0.0\", \"entry\": \"index.js\", " \
-    "\"capabilities\": {\"provides\": [\"greeting\"], \"consumes\": []}}"
-/** A loader whose settings enable plugins `a` and `b`, both installed, `a` consuming a capability `b` provides. */
+#define SECOND_MANIFEST "{\"id\": \"b\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}"
+/** A loader whose settings enable plugins `a` and `b`, both installed. */
 static void start_two_plugin_world(const char *label) {
     cJSON *settings;
     char *text;
     start_host_world(label);
-    install_plugin("a", CONSUMING_MANIFEST);
+    install_plugin("a", PLUGIN_MANIFEST);
     install_plugin("b", SECOND_MANIFEST);
     settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}}}");
+    text = cJSON_PrintUnformatted(settings);
+    write_in(application_home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+}
+
+#define CONSUMING_MANIFEST                                                                                       \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                          \
+    "\"capabilities\": {\"provides\": [], \"consumes\": [\"greeting\"]}, "                                      \
+    "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\"}}}}"
+#define PROVIDING_MANIFEST(id)                                                                                   \
+    "{\"id\": \"" id "\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                    \
+    "\"capabilities\": {\"provides\": [\"greeting\"], \"consumes\": []}}"
+
+/**
+ * A loader whose settings enable `a`, whose action consumes `greeting`, and `b` and `c`, each providing it, so an
+ * action of `a` plans all three.
+ */
+static void start_two_provider_world(const char *label) {
+    cJSON *settings;
+    char *text;
+    start_host_world(label);
+    install_plugin("a", CONSUMING_MANIFEST);
+    install_plugin("b", PROVIDING_MANIFEST("b"));
+    install_plugin("c", PROVIDING_MANIFEST("c"));
+    settings = settings_with(
+        "{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}, \"c\": {\"enabled\": true}}}");
     text = cJSON_PrintUnformatted(settings);
     write_in(application_home, "config/settings.json", text);
     cJSON_free(text);
@@ -358,12 +379,23 @@ static void publish_plugin(const char *version) {
     write_catalog();
 }
 
+/** An action of `a` beside `b`, which provides what it consumes and activated, and `c`, which also does and failed. */
 static void an_action_runs_on_when_another_plugin_was_not_activated(void) {
     weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    weivel_standard_host_outcome outcomes[3];
     started_run run;
-    start_two_plugin_world("action-beside-a-failed-plugin");
-    run = started_with_states(action_arguments, 6, WEIVEL_STANDARD_HOST_ACTIVATED, WEIVEL_STANDARD_HOST_FAILED,
-                              "it threw");
+    start_two_provider_world("action-beside-a-failed-plugin");
+    run = start_with(action_arguments, 6);
+    CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 3);
+    if (run.plan.plugin_count == 3) {
+        weivel_standard_host_outcome a = {run.plan.plugins[0].manifest, WEIVEL_STANDARD_HOST_ACTIVATED, NULL};
+        weivel_standard_host_outcome b = {run.plan.plugins[1].manifest, WEIVEL_STANDARD_HOST_ACTIVATED, NULL};
+        weivel_standard_host_outcome c = {run.plan.plugins[2].manifest, WEIVEL_STANDARD_HOST_FAILED, "it threw"};
+        outcomes[0] = a;
+        outcomes[1] = b;
+        outcomes[2] = c;
+        CHECK(tell_started(outcomes, 3, NULL) == WEIVEL_STATUS_OK);
+    }
     CHECK(tell_finished(&answered, NULL, NULL) == WEIVEL_STATUS_OK);
     release_run(&run);
     stop_expecting(0, "an action whose plugin activated beside one that failed");

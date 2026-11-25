@@ -596,6 +596,26 @@ static void an_action_start_of_a_consumer_plans_its_provider_too(void) {
     finish_base();
 }
 
+/** `front`'s action consumes x, `middle` provides x and consumes y, `back` provides y; `watcher` consumes y alone. */
+static void an_action_start_plans_the_providers_of_its_providers(void) {
+    start_world("start-action-transitive");
+    register_test_host("1.0.0");
+    install_layered_plugin("front", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", GREET_ACTION);
+    install_layered_plugin("middle", JAVASCRIPT, "{\"provides\":[\"x\"],\"consumes\":[\"y\"]}", NULL);
+    install_layered_plugin("back", JAVASCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
+    install_layered_plugin("watcher", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"front\":{\"enabled\":true},\"middle\":{\"enabled\":true},"
+                                     "\"back\":{\"enabled\":true},\"watcher\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "front");
+    expect_success(started, "transitive action");
+    expect_member_json(started.tree, "plan/plugins",
+                       "{\"back\":\"1.0.0\",\"front\":\"1.0.0\",\"middle\":\"1.0.0\"}",
+                       "the action's plugin, its provider and its provider's provider");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 static cJSON *start_layer_directly(const cJSON *environment, const cJSON *libraries, const char *layer_id,
                                    const char *layer_runtime) {
     runtime_hosts_start_request request = {environment, TEST_HOST, layer_id, "2.0.0", libraries, 0, 0,
@@ -632,6 +652,7 @@ int main(void) {
     an_unknown_layer_runtime_is_malformed();
     an_action_start_plans_the_actions_plugin_without_a_serve_only_plugin_beside_it();
     an_action_start_of_a_consumer_plans_its_provider_too();
+    an_action_start_plans_the_providers_of_its_providers();
     the_layer_without_the_front_door_runs_under_its_own_identity();
     a_non_session_start_answers_no_timers();
     a_start_writes_no_hint_for_the_registered_host();
