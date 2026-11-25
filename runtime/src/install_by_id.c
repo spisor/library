@@ -12,6 +12,7 @@
 #include "catalog.h"
 #include "cache_refusal.h"
 #include "catalog_read.h"
+#include "fetch_answer.h"
 #include "fetch_file.h"
 #include "identity.h"
 #include "identity_also_at.h"
@@ -136,7 +137,7 @@ static void refuse_fetch(const naula_fetch_answer *answer, const char *url, cJSO
                answer->status);
     } else if (answer->outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         *refusal = NULL;
-    } else if (answer->outcome == NAULA_FETCH_REFUSED) {
+    } else if (answer->outcome == NAULA_FETCH_REFUSED || runtime_fetch_is_deadline_cut_off(answer)) {
         refuse(refusal, answer->fix, "%s", answer->detail);
     } else if (answer->outcome == NAULA_FETCH_STOPPED_BY_SINK) {
         refuse(refusal, "check that the release publishes the files it should", "%s answered more than an install reads", url);

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "definition_support.h"
+#include "fetch_answer.h"
 #include "identity.h"
 #include "json_service.h"
 #include "naula/memory.h"
@@ -151,7 +152,7 @@ static void fail_status(lookup_failure *failure, const naula_fetch_answer *answe
         failure->status = answer->status;
     } else if (answer->outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         failure->refusal = NULL;
-    } else if (answer->outcome == NAULA_FETCH_REFUSED) {
+    } else if (answer->outcome == NAULA_FETCH_REFUSED || runtime_fetch_is_deadline_cut_off(answer)) {
         refuse(&failure->refusal, answer->fix, "%s", answer->detail);
     } else if (answer->outcome == NAULA_FETCH_STOPPED_BY_SINK) {
         refuse(&failure->refusal, "check that the host is the repo host the id names", "%s answered more than a lookup reads",

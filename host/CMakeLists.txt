@@ -49,9 +49,14 @@ set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime
     $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>)
 
 function(host_executable target output_name)
-    add_executable(${target} ${ARGN})
+    cmake_parse_arguments(PARSE_ARGV 2 HOST "TEST_HOOKS" "" "")
+    add_executable(${target} ${HOST_UNPARSED_ARGUMENTS})
     target_link_libraries(${target} PRIVATE runtime_objects spisor_allocator ${runtime_executable_libraries})
-    runtime_link_naula(${target})
+    if(HOST_TEST_HOOKS)
+        runtime_link_naula(${target} TEST_HOOKS)
+    else()
+        runtime_link_naula(${target})
+    endif()
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
         ${PROJECT_SOURCE_DIR}/src)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME ${output_name})

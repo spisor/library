@@ -118,11 +118,11 @@ target_include_directories(runtime_naula_allocator PRIVATE ${PROJECT_SOURCE_DIR}
 set_target_properties(runtime_naula_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_naula_allocator)
 
-# Every binary carrying runtime's objects links one of naula's two transports, the one its fetch objects were built
-# for, and hands naula's allocations to the binary's own allocator so an out-of-memory test counts them too.
+# Every binary carrying runtime's objects links one of naula's two transports, naula_test_hooks when it is given
+# TEST_HOOKS, and hands naula's allocations to the binary's own allocator so an out-of-memory test counts them too.
 function(runtime_link_naula target)
-    get_target_property(sources ${target} SOURCES)
-    if("${sources}" MATCHES "runtime_fetch_test_hooks")
+    cmake_parse_arguments(PARSE_ARGV 1 NAULA "TEST_HOOKS" "" "")
+    if(NAULA_TEST_HOOKS)
         target_link_libraries(${target} PRIVATE naula_test_hooks)
     else()
         target_link_libraries(${target} PRIVATE naula)

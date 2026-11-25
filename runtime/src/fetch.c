@@ -11,6 +11,7 @@
 #include "definition_support.h"
 #include "directory_tree.h"
 #include "prepared_undo.h"
+#include "fetch_answer.h"
 #include "fetch_file.h"
 #include "file_stream.h"
 #include "naula/memory.h"
@@ -238,11 +239,6 @@ static spisor_status refuse_unwritable(const char *destination, spisor_refusal *
     return refuse(refusal, message, UNWRITABLE_FIX);
 }
 
-/** A transfer the deadline ended, which the transport answers CUT_OFF with nothing declared and its own refusal. */
-static int is_deadline_cut_off(const naula_fetch_answer *answer) {
-    return answer->declared == 0 && answer->fix != NULL;
-}
-
 static spisor_status refuse_answer(const fetch_order *order, const naula_fetch_answer *answer,
                                    const naula_fetch_sink *sink, spisor_refusal *refusal) {
     char message[NAULA_FETCH_DETAIL_SIZE + 2048];
@@ -251,7 +247,7 @@ static spisor_status refuse_answer(const fetch_order *order, const naula_fetch_a
         snprintf(message, sizeof message, "%s answered HTTP %ld", order->url, answer->status);
         return refuse(refusal, message, "check that the catalog still publishes this file");
     case NAULA_FETCH_CUT_OFF:
-        if (is_deadline_cut_off(answer)) {
+        if (runtime_fetch_is_deadline_cut_off(answer)) {
             return refuse(refusal, answer->detail, answer->fix);
         }
         snprintf(message, sizeof message, "%s ended after %" PRIu64 " of the %" PRIu64 " bytes it declared",
