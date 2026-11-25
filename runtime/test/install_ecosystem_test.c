@@ -434,7 +434,7 @@ static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item
 /** A served runtime build install.runtime is pointed at: its archive's file: url and SHA-256. */
 typedef struct served_build {
     char url[2048];
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
 } served_build;
 
 /** Bytes that do not compress, so an archive of them takes long enough to fetch and unpack that two installs overlap. */
@@ -630,7 +630,7 @@ static int runtime_is_intact(const install_base *base) {
     char *executable = joined(directory, "node-v1.2.3-fixture/bin/node");
 #endif
     char *marker = text_in(directory, ".unpacked");
-    char hash[RUNTIME_SHA256_HEX_SIZE];
+    char hash[NAULA_SHA256_HEX_SIZE];
     int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) == SPISOR_OK &&
                  strncmp(marker + 65, hash, 64) == 0;
     spisor_memory_release(marker);

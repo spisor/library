@@ -291,7 +291,7 @@ static inline cJSON *served_copy(install_base *base, const char *id, const char 
     copy_file(source, path);
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
     uint64_t size = 0;
     CHECK(runtime_sha256_file_sized(path, sha256, &size) == SPISOR_OK);
     cJSON *reference = cJSON_CreateObject();

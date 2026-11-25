@@ -31,10 +31,11 @@
 #include "directory_tree.h"
 #include "install_call.h"
 #include "install_ecosystem.h"
+#include "naula/sha256.h"
 #include "paths.h"
 #include "platform_key.h"
 #include "scratch_directory.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -154,11 +155,11 @@ static inline cJSON *environment_of(const install_base *base) {
     return environment_with_path(base, base->path);
 }
 
-static inline void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)text, strlen(text));
-    runtime_sha256_finish_hex(&hash, out);
+static inline void sha256_of_text(const char *text, char out[NAULA_SHA256_HEX_SIZE]) {
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)text, strlen(text));
+    naula_sha256_hex(&hash, out);
 }
 
 /** A FileRef to catalog/files/<id>/<version>/<name> holding content. */
@@ -171,7 +172,7 @@ static inline cJSON *served_reference(install_base *base, const char *id, const 
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, path, &url);
     spisor_memory_release(path);
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);
     cJSON *reference = cJSON_CreateObject();
     cJSON_AddStringToObject(reference, "url", url);

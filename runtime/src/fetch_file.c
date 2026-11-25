@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include "fetch_transport.h"
+#include "fetch_file.h"
 #include "allocation.h"
 
 #include <stdlib.h>
@@ -14,7 +14,6 @@
 #include <time.h>
 #endif
 
-#include "fetch_hooks.h"
 #include "file_stream.h"
 #include "paths.h"
 
@@ -93,27 +92,27 @@ static int make_local(char *decoded) {
  * @implNote Matches Node's fileURLToPath: an encoded "/" (and on Windows an encoded "\") is refused rather than decoded, so a url can never name a different path than
  * the one a containment check saw, and on Windows the path must start with a drive letter.
  */
-static char *local_path_of(const char *url, const char *path, runtime_fetch_answer *answer) {
+static char *local_path_of(const char *url, const char *path, naula_fetch_answer *answer) {
     size_t length = strcspn(path, "?#");
     char *decoded = spisor_memory_allocate(length + 1);
     if (decoded == NULL) {
-        runtime_fetch_out_of_memory(answer);
+        naula_fetch_out_of_memory(answer);
         return NULL;
     }
     decoding result = percent_decode(path, length, decoded);
     if (result != DECODED) {
         spisor_memory_release(decoded);
         if (result == ENCODED_SEPARATOR) {
-            runtime_fetch_refuse(answer, "name the file by a file url whose path separators are plain slashes",
+            naula_fetch_refuse(answer, "name the file by a file url whose path separators are plain slashes",
                                  "%s carries an encoded path separator, which could name a different path", url);
         } else {
-            runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s carries an escape that names no file", url);
+            naula_fetch_refuse(answer, FILE_URL_READ_FIX, "%s carries an escape that names no file", url);
         }
         return NULL;
     }
     if (!make_local(decoded)) {
         spisor_memory_release(decoded);
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s names no absolute path on this system", url);
+        naula_fetch_refuse(answer, FILE_URL_READ_FIX, "%s names no absolute path on this system", url);
         return NULL;
     }
     return decoded;
@@ -135,7 +134,7 @@ static int is_local_host(const char *host, size_t length) {
     return 1;
 }
 
-static const char *path_after_authority(const char *url, runtime_fetch_answer *answer) {
+static const char *path_after_authority(const char *url, naula_fetch_answer *answer) {
     const char *rest = url + strlen("file:");
     if (strncmp(rest, "//", 2) != 0) {
         return rest;
@@ -143,7 +142,7 @@ static const char *path_after_authority(const char *url, runtime_fetch_answer *a
     const char *host = rest + 2;
     size_t host_length = strcspn(host, "/?#");
     if (!is_local_host(host, host_length)) {
-        runtime_fetch_refuse(answer, "serve remote files over https and local ones by a file url with no host",
+        naula_fetch_refuse(answer, "serve remote files over https and local ones by a file url with no host",
                              "%s names the host %.*s, which would read from a network share", url, (int)host_length,
                              host);
         return NULL;
@@ -151,24 +150,24 @@ static const char *path_after_authority(const char *url, runtime_fetch_answer *a
     return host + host_length;
 }
 
-static void copy_into_sink(FILE *file, const char *url, runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
+static void copy_into_sink(FILE *file, const char *url, naula_fetch_sink *sink, naula_fetch_answer *answer) {
     uint8_t *chunk = spisor_memory_allocate(FILE_CHUNK);
     if (chunk == NULL) {
-        runtime_fetch_out_of_memory(answer);
+        naula_fetch_out_of_memory(answer);
         return;
     }
     size_t read;
     int taken = 1;
     while (taken && (read = fread(chunk, 1, FILE_CHUNK, file)) > 0) {
-        taken = runtime_fetch_sink_take(sink, chunk, read);
+        taken = naula_fetch_sink_take(sink, chunk, read);
     }
     spisor_memory_release(chunk);
     if (!taken) {
-        answer->outcome = RUNTIME_FETCH_STOPPED_BY_SINK;
+        answer->outcome = NAULA_FETCH_STOPPED_BY_SINK;
     } else if (ferror(file)) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read to its end", url);
+        naula_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read to its end", url);
     } else {
-        answer->outcome = RUNTIME_FETCH_RECEIVED;
+        answer->outcome = NAULA_FETCH_RECEIVED;
     }
 }
 
@@ -198,7 +197,7 @@ static void stall_if_asked(const char *url) {
 }
 #endif
 
-void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
+void runtime_fetch_file_url(const char *url, naula_fetch_sink *sink, naula_fetch_answer *answer) {
     const char *path = path_after_authority(url, answer);
     char *local = path == NULL ? NULL : local_path_of(url, path, answer);
     if (local == NULL) {
@@ -209,11 +208,11 @@ void runtime_fetch_file_url(const char *url, runtime_fetch_sink *sink, runtime_f
     FILE *file = runtime_open_file(local, RUNTIME_FILE_READ, &out_of_memory);
     spisor_memory_release(local);
     if (file == NULL && out_of_memory) {
-        runtime_fetch_out_of_memory(answer);
+        naula_fetch_out_of_memory(answer);
         return;
     }
     if (file == NULL) {
-        runtime_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read", url);
+        naula_fetch_refuse(answer, FILE_URL_READ_FIX, "%s could not be read", url);
         return;
     }
     copy_into_sink(file, url, sink, answer);

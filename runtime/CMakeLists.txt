@@ -2,7 +2,7 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/path_comparison.c
     src/changes.c
     src/hosts_lock.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256.c src/file_stream.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
+    src/sha256_file.c src/file_stream.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
     src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
     src/log_definition.c src/registry_definition.c src/catalog_time.c src/file_times.c src/thread.c src/atomic.c
@@ -10,6 +10,7 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(runtime_objects PUBLIC $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
 target_link_libraries(runtime_objects PUBLIC spisor_library)
 set_target_properties(runtime_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_objects)
@@ -21,6 +22,8 @@ endif()
 add_library(runtime_objects_config_test_hooks OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects_config_test_hooks PUBLIC src)
 target_include_directories(runtime_objects_config_test_hooks PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(runtime_objects_config_test_hooks PUBLIC
+    $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
 target_link_libraries(runtime_objects_config_test_hooks PUBLIC spisor_library)
 target_compile_definitions(runtime_objects_config_test_hooks PRIVATE SPISOR_CONFIG_TEST_HOOKS)
 spisor_strict_warnings(runtime_objects_config_test_hooks)
@@ -95,15 +98,7 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_target_properties(runtime_secret_store_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 endif()
 
-if(WIN32)
-    set(runtime_fetch_transport_source src/fetch_windows.c)
-    set(runtime_fetch_libraries Winhttp Shlwapi)
-else()
-    set(runtime_fetch_transport_source src/fetch_curl.c)
-    find_package(Threads REQUIRED)
-    set(runtime_fetch_libraries ${CMAKE_DL_LIBS} Threads::Threads)
-endif()
-set(runtime_fetch_sources src/fetch.c src/fetch_sink.c src/fetch_file.c ${runtime_fetch_transport_source})
+set(runtime_fetch_sources src/fetch.c src/fetch_file.c)
 add_library(runtime_fetch OBJECT ${runtime_fetch_sources})
 target_include_directories(runtime_fetch PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_fetch PUBLIC runtime_objects)
@@ -116,6 +111,24 @@ target_link_libraries(runtime_fetch_test_hooks PUBLIC runtime_objects)
 target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HOOKS)
 spisor_strict_warnings(runtime_fetch_test_hooks)
 set_target_properties(runtime_fetch_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
+
+add_library(runtime_naula_allocator OBJECT src/naula_allocator.c)
+target_include_directories(runtime_naula_allocator PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include
+    $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
+set_target_properties(runtime_naula_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_naula_allocator)
+
+# Every binary carrying runtime's objects links one of naula's two transports, the one its fetch objects were built
+# for, and hands naula's allocations to the binary's own allocator so an out-of-memory test counts them too.
+function(runtime_link_naula target)
+    get_target_property(sources ${target} SOURCES)
+    if("${sources}" MATCHES "runtime_fetch_test_hooks")
+        target_link_libraries(${target} PRIVATE naula_test_hooks)
+    else()
+        target_link_libraries(${target} PRIVATE naula)
+    endif()
+    target_sources(${target} PRIVATE $<TARGET_OBJECTS:runtime_naula_allocator>)
+endfunction()
 
 add_library(runtime_identity_resolve OBJECT src/identity_resolve.c)
 target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
@@ -327,8 +340,8 @@ endforeach()
 add_library(runtime SHARED src/library_load.c ${runtime_shipped_objects})
 target_compile_definitions(runtime PRIVATE RUNTIME_BUILDING)
 target_include_directories(runtime PRIVATE src ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_secret_store_libraries} ${runtime_path_entry_libraries}
-    ${runtime_fetch_libraries})
+target_link_libraries(runtime PRIVATE spisor_library spisor_allocator ${runtime_secret_store_libraries} ${runtime_path_entry_libraries})
+runtime_link_naula(runtime)
 set_target_properties(runtime PROPERTIES C_VISIBILITY_PRESET hidden)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(runtime PRIVATE -Wl,--exclude-libs,ALL)
@@ -428,5 +441,4 @@ endif()
 add_subdirectory(testing)
 add_subdirectory(test)
 
-set(runtime_executable_libraries ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} ${runtime_fetch_libraries}
-    PARENT_SCOPE)
+set(runtime_executable_libraries ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} PARENT_SCOPE)

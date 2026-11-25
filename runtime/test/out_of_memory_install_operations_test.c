@@ -25,7 +25,7 @@
 #include "runtime/loader.h"
 #include "runtime/processes.h"
 #include "runtime/updates.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "timestamp_text.h"
 #include "tree_snapshot.h"
 
@@ -354,7 +354,7 @@ static int acquired_nothing(void) {
 
 static install_base archive_base;
 static char *staged_archive_url = NULL;
-static char staged_archive_sha256[RUNTIME_SHA256_HEX_SIZE];
+static char staged_archive_sha256[NAULA_SHA256_HEX_SIZE];
 
 static char *system_tar(void) {
 #if defined(_WIN32)

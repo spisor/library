@@ -41,12 +41,12 @@
 #include "catalog_path.h"
 #include "catalog_state.h"
 #include "directory_tree.h"
-#include "fetch_hooks.h"
 #include "host_references.h"
 #include "http_fixture.h"
 #include "scratch_directory.h"
 #include "registry.h"
 #include "spisor/file.h"
+#include "transport_hooks.h"
 
 /**
  * @file
@@ -1778,11 +1778,11 @@ static void every_install_operation(void) {
     if (server == NULL) {
         return;
     }
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     snprintf(by_id_api_base, sizeof by_id_api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
     failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0};
     every_failure_of(&by_id);
-    runtime_fetch_allow_plain_http(0);
+    naula_fetch_allow_plain_http(0);
     spisor_memory_release(http_fixture_stop(server));
     failure_case ecosystem = {"install's ecosystem", install_the_ecosystem, a_catalog_with_one_plugin, NULL,
                               recorded_the_run, 1};

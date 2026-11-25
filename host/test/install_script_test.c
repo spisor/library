@@ -221,8 +221,8 @@ static int install(host_world *world, program *run, const char *const *extra) {
 }
 
 static int has_same_bytes(const char *path, const char *source) {
-    char left[RUNTIME_SHA256_HEX_SIZE];
-    char right[RUNTIME_SHA256_HEX_SIZE];
+    char left[NAULA_SHA256_HEX_SIZE];
+    char right[NAULA_SHA256_HEX_SIZE];
     return spisor_sha256_file(path, left) == SPISOR_OK && spisor_sha256_file(source, right) == SPISOR_OK &&
            strcmp(left, right) == 0;
 }
@@ -697,7 +697,7 @@ static void answers_1_when_spisor_host_cannot_be_started(void) {
     start_script_world(&world, "not-a-program");
     const char *bytes = "not a program";
     write_in(world.base.catalog, "not-a-program/" HOST_EXECUTABLE, bytes);
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(bytes, sha256);
     cJSON *catalog = json_in(world.base.catalog, "catalog.json");
     cJSON *file = file_named(platform_files(catalog), HOST_EXECUTABLE);

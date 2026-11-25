@@ -14,19 +14,15 @@ endif()
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/sanitizers.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/weivel.cmake)
 spisor_add_weivel_standard()
-
-add_library(spisor_cjson STATIC vendor/cjson/cJSON.c)
-target_include_directories(spisor_cjson PUBLIC vendor/cjson)
-# Hidden, and cJSON's default dllexport off, so a shared library linking these exports only what it declares itself.
-target_compile_definitions(spisor_cjson PUBLIC CJSON_HIDE_SYMBOLS)
-set_target_properties(spisor_cjson PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/naula.cmake)
+spisor_add_naula()
 
 set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
     src/windows_file.c src/prepared_undo.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/refusal.c
     src/value.c src/value_block.c src/json_value.c src/entry_order.c src/json_allocation.c src/definition.c)
 add_library(spisor_library STATIC ${spisor_library_sources})
 target_include_directories(spisor_library PUBLIC include)
-target_link_libraries(spisor_library PUBLIC spisor_cjson)
+target_link_libraries(spisor_library PUBLIC naula_cjson)
 set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 if(UNIX)
     target_link_libraries(spisor_library PUBLIC m)

@@ -1,7 +1,7 @@
 #include "updates_fixture.h"
 #include "spisor/allocation.h"
 
-#include "fetch_hooks.h"
+#include "fetch_file.h"
 #include "file_times.h"
 #include "host_references.h"
 #include "run_records.h"

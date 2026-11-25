@@ -1,12 +1,12 @@
 #include "host_fixture.h"
 #include "spisor/allocation.h"
 
-#include "fetch_hooks.h"
 #include "host_commands.h"
 #include "host_output.h"
 #include "marketplace_lookup.h"
 #include "http_fixture.h"
 #include "marketplace_check.h"
+#include "transport_hooks.h"
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
@@ -396,7 +396,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run_against_the_server();
     answers_2_when_the_list_or_the_out_is_missing();
     prints_a_name_with_its_control_characters_escaped();

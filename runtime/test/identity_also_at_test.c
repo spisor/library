@@ -9,9 +9,9 @@
 #include "check.h"
 #include "spisor/allocation.h"
 #include "definition_fixture.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "runtime/identity.h"
+#include "transport_hooks.h"
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
@@ -542,7 +542,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     two_copies_listing_each_other_agree();
     agreement_does_not_depend_on_which_copy_it_starts_from();
     a_one_sided_claim_is_not_counted();

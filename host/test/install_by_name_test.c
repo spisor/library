@@ -4,11 +4,11 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#include "fetch_hooks.h"
 #include "host_commands.h"
 #include "host_output.h"
 #include "http_fixture.h"
 #include "marketplace_lookup.h"
+#include "transport_hooks.h"
 
 #if defined(_WIN32)
 #include <io.h>
@@ -399,8 +399,8 @@ static void write_release(void) {
     start_empty_directory(fixture_root);
     write_in(fixture_root, "release/plugin.json", MANIFEST);
     write_in(fixture_root, "release/index.js", ENTRY);
-    char manifest_digest[RUNTIME_SHA256_HEX_SIZE];
-    char entry_digest[RUNTIME_SHA256_HEX_SIZE];
+    char manifest_digest[NAULA_SHA256_HEX_SIZE];
+    char entry_digest[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(MANIFEST, manifest_digest);
     sha256_of_text(ENTRY, entry_digest);
     char index[1024];
@@ -489,7 +489,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     write_release();
     run_against_the_server();
     return check_summary("install_by_name_test");

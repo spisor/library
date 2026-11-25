@@ -23,7 +23,7 @@
 #include "paths.h"
 #include "platform_key.h"
 #include "process_run.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
@@ -243,12 +243,12 @@ static int lay_out(acquisition *runtime, const char *cache, const char *platform
 
 /** Whether the executable's hash is the one `recorded` names, marking the acquisition when memory runs out. */
 static int is_recorded_executable(acquisition *runtime, const char *recorded, const char *executable) {
-    char actual[RUNTIME_SHA256_HEX_SIZE];
+    char actual[NAULA_SHA256_HEX_SIZE];
     spisor_status hashed = spisor_sha256_file(executable, actual);
     if (hashed == SPISOR_OUT_OF_MEMORY) {
         runtime->out_of_memory = 1;
     }
-    return hashed == SPISOR_OK && strncmp(recorded, actual, RUNTIME_SHA256_HEX_SIZE - 1) == 0;
+    return hashed == SPISOR_OK && strncmp(recorded, actual, NAULA_SHA256_HEX_SIZE - 1) == 0;
 }
 
 /**
@@ -259,17 +259,17 @@ static int is_unpacked(acquisition *runtime, const runtime_layout *layout) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(layout->marker, &length, &outcome);
-    char recorded[2 * RUNTIME_SHA256_HEX_SIZE + 2];
-    int unpacked = bytes != NULL && length == 2 * (RUNTIME_SHA256_HEX_SIZE - 1) + 2;
+    char recorded[2 * NAULA_SHA256_HEX_SIZE + 2];
+    int unpacked = bytes != NULL && length == 2 * (NAULA_SHA256_HEX_SIZE - 1) + 2;
     if (outcome == SPISOR_READ_OUT_OF_MEMORY) {
         runtime->out_of_memory = 1;
     }
     if (unpacked) {
         memcpy(recorded, bytes, length);
         recorded[length] = 0;
-        unpacked = strncmp(recorded, runtime->build.sha256, RUNTIME_SHA256_HEX_SIZE - 1) == 0 &&
-                   recorded[RUNTIME_SHA256_HEX_SIZE - 1] == '\n' &&
-                   is_recorded_executable(runtime, recorded + RUNTIME_SHA256_HEX_SIZE, layout->executable);
+        unpacked = strncmp(recorded, runtime->build.sha256, NAULA_SHA256_HEX_SIZE - 1) == 0 &&
+                   recorded[NAULA_SHA256_HEX_SIZE - 1] == '\n' &&
+                   is_recorded_executable(runtime, recorded + NAULA_SHA256_HEX_SIZE, layout->executable);
     }
     spisor_memory_release(bytes);
     return unpacked;
@@ -415,7 +415,7 @@ static cJSON *unpack(acquisition *runtime) {
 
 /** Writes the marker naming the archive and the executable's hash: NULL once written, else the refusal. */
 static cJSON *marker_refusal(acquisition *runtime) {
-    char executable_hash[RUNTIME_SHA256_HEX_SIZE];
+    char executable_hash[NAULA_SHA256_HEX_SIZE];
     char *text = NULL;
     spisor_status written = spisor_sha256_file(runtime->staged.executable, executable_hash);
     if (written == SPISOR_OK) {

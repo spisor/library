@@ -10,7 +10,7 @@
 #include "prepared_undo.h"
 #include "json_service.h"
 #include "runtime/fetch.h"
-#include "sha256.h"
+#include "sha256_file.h"
 
 #define CORRUPT_FILE_FIX "never use it: ask the catalog's publisher to correct the file or its entry"
 
@@ -30,7 +30,7 @@ static file_reference reference_of(const cJSON *reference) {
 
 /** Whether destination holds the reference's bytes: SPISOR_OK, SPISOR_REFUSED, or SPISOR_OUT_OF_MEMORY asking. */
 static spisor_status holds(const char *destination, const file_reference *reference) {
-    char actual[RUNTIME_SHA256_HEX_SIZE];
+    char actual[NAULA_SHA256_HEX_SIZE];
     uint64_t size = 0;
     spisor_status hashed = runtime_sha256_file_sized(destination, actual, &size);
     if (hashed != SPISOR_OK) {

@@ -13,7 +13,7 @@ set(host_test_bundles $<TARGET_FILE_DIR:spisor_host_test>/test-bundles)
 stage_bundles(spisor_host_test_bundles spisor_host_test ${host_test_bundles})
 
 add_executable(fake_application fake_application.c)
-target_link_libraries(fake_application PRIVATE spisor_cjson spisor_allocator)
+target_link_libraries(fake_application PRIVATE naula_cjson spisor_allocator)
 target_include_directories(fake_application PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/include)
 if(WIN32)

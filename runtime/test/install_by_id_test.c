@@ -12,12 +12,12 @@
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "install_call.h"
 #include "paths.h"
 #include "service_scratch.h"
-#include "sha256.h"
+#include "sha256_file.h"
+#include "transport_hooks.h"
 #include "tree_snapshot.h"
 
 #define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
@@ -47,16 +47,16 @@ static void write_in_scratch(const char *relative, const char *text) {
     spisor_memory_release(path);
 }
 
-static void sha256_of(const char *text, char hex[RUNTIME_SHA256_HEX_SIZE]) {
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)text, strlen(text));
-    runtime_sha256_finish_hex(&hash, hex);
+static void sha256_of(const char *text, char hex[NAULA_SHA256_HEX_SIZE]) {
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)text, strlen(text));
+    naula_sha256_hex(&hash, hex);
 }
 
 static void add_file_reference(cJSON *files, const char *key, const char *url_prefix, const char *file_name,
                                const char *text) {
-    char digest[RUNTIME_SHA256_HEX_SIZE];
+    char digest[NAULA_SHA256_HEX_SIZE];
     sha256_of(text, digest);
     char url[1600];
     snprintf(url, sizeof url, "%s%s%s", url_prefix == NULL ? "" : url_prefix, url_prefix == NULL ? "" : "/", file_name);
@@ -191,7 +191,7 @@ static void installs_from_the_release_index_and_checks_digests(void) {
     check_text(text_at(answer.tree, "version"), "1.0.0", "version");
     check_text(text_at(answer.tree, "commit"), "abc123", "commit");
     char *index_path = in_scratch("release/weivel-index.json");
-    char index_digest[RUNTIME_SHA256_HEX_SIZE];
+    char index_digest[NAULA_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(index_path, index_digest) == SPISOR_OK);
     check_text(text_at(answer.tree, "sha256"), index_digest, "digest of the index");
     spisor_memory_release(index_path);
@@ -550,7 +550,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     prepare_releases();
     run_against_the_server();
     return check_summary("install_by_id_test");

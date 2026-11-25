@@ -174,7 +174,7 @@ static void lists_every_copied_file_with_its_real_hash_and_size(void) {
         char rest[512];
         snprintf(rest, sizeof rest, "catalog/%s", text_at(file, "url"));
         char *copied = in_base(rest);
-        char hash[RUNTIME_SHA256_HEX_SIZE];
+        char hash[NAULA_SHA256_HEX_SIZE];
         uint64_t size = 0;
         CHECK(runtime_sha256_file_sized(copied, hash, &size) == SPISOR_OK);
         check_text(text_at(file, "sha256"), hash, "hash");

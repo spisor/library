@@ -6,11 +6,11 @@
 
 #include "atomic.h"
 #include "catalog_hooks.h"
-#include "fetch_hooks.h"
 #include "file_times.h"
 #include "http_fixture.h"
 #include "spisor/json_allocation.h"
 #include "thread.h"
+#include "transport_hooks.h"
 
 /**
  * @file
@@ -132,7 +132,7 @@ static void config_reads_while_a_tick_blocks(void) {
     fixture = http_fixture_start(&route, 1);
     snprintf(target, sizeof target, "http://127.0.0.1:%u", (unsigned)http_fixture_port(fixture));
     runtime_catalog_redirect_requests(SOURCE, target);
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run = start_with(arguments, 2);
     CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 1);
     if (run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 1) {
@@ -151,7 +151,7 @@ static void config_reads_while_a_tick_blocks(void) {
     CHECK(seen != NULL && strstr(seen, "GET /index.json") != NULL);
     spisor_memory_release(seen);
     runtime_catalog_redirect_requests(NULL, NULL);
-    runtime_fetch_allow_plain_http(0);
+    naula_fetch_allow_plain_http(0);
     spisor_memory_release(body);
     finish_base();
 }

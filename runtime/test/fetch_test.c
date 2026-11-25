@@ -11,17 +11,17 @@
 #include "spisor/allocation.h"
 #include "definition_fixture.h"
 #include "directory_tree.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
+#include "naula/sha256.h"
 #include "runtime/fetch.h"
 #include "scratch_directory.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
+#include "transport_hooks.h"
 
 #if defined(_WIN32)
 #include <process.h>
 #include <windows.h>
-#include <winhttp.h>
 #define current_process_id() _getpid()
 #else
 #include <pthread.h>
@@ -43,7 +43,7 @@ typedef struct answer {
 } answer;
 
 static char body[BODY_LENGTH];
-static char body_sha256[RUNTIME_SHA256_HEX_SIZE];
+static char body_sha256[NAULA_SHA256_HEX_SIZE];
 static char scratch[1024];
 static char destination[1200];
 static unsigned short server_port;
@@ -52,10 +52,10 @@ static void prepare_body(void) {
     for (size_t index = 0; index < BODY_LENGTH; index++) {
         body[index] = (char)('a' + index % 26);
     }
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)body, BODY_LENGTH);
-    runtime_sha256_finish_hex(&hash, body_sha256);
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)body, BODY_LENGTH);
+    naula_sha256_hex(&hash, body_sha256);
 }
 
 static void start_scratch(void) {
@@ -163,7 +163,7 @@ static void expect_stored_body(answer result, const char *label) {
     CHECK(result.answer.outcome == RUNTIME_FETCH_GET_STORED);
     check_text(result.answer.sha256, body_sha256, label);
     CHECK(result.answer.bytes == BODY_LENGTH);
-    char stored_sha256[RUNTIME_SHA256_HEX_SIZE] = "";
+    char stored_sha256[NAULA_SHA256_HEX_SIZE] = "";
     CHECK(spisor_sha256_file(destination, stored_sha256) == SPISOR_OK);
     check_text(stored_sha256, body_sha256, label);
     CHECK(has_no_partial_file());
@@ -275,13 +275,6 @@ static void a_fetch_outliving_its_timeout_is_refused(void) {
     unusable = request_for_path("/stall");
     cJSON_AddNumberToObject(unusable, "timeoutSeconds", 86401);
     expect_malformed(get(unusable), "timeout_seconds", "a timeout over a day");
-}
-
-static void a_fetch_outliving_its_deadline_is_refused(void) {
-    runtime_fetch_use_deadline(300);
-    expect_refused(get(request_for_path("/stall")), "did not finish within 300 ms", "deadline");
-    runtime_fetch_use_deadline(0);
-    expect_nothing_stored("deadline");
 }
 
 static void a_relative_redirect_is_followed(void) {
@@ -435,9 +428,9 @@ static void a_file_url_naming_a_host_is_refused(void) {
 static void any_other_scheme_is_refused(void) {
     expect_refused(get(request_for("ftp://example.com/file.bin")), "uses the scheme ftp:", "ftp");
     expect_refused(get(request_for("no scheme at all")), "uses the scheme (none)", "no scheme");
-    runtime_fetch_allow_plain_http(0);
+    naula_fetch_allow_plain_http(0);
     expect_refused(get(request_for_path("/file")), "uses the scheme http:", "plain http");
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     expect_nothing_stored("other scheme");
 }
 
@@ -461,46 +454,13 @@ static void an_unusable_argument_is_refused(void) {
     expect_nothing_stored("unusable argument");
 }
 
-#if defined(_WIN32)
-static void winhttp_takes_the_system_proxy(void) {
-    CHECK(runtime_fetch_windows_access_type() == WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY);
-}
-#else
-static void libcurl_honours_https_proxy_and_no_proxy(void) {
-    http_fixture *proxy = http_fixture_start_proxy();
-    CHECK(proxy != NULL);
-    char proxy_url[64];
-    snprintf(proxy_url, sizeof proxy_url, "http://127.0.0.1:%u", (unsigned)http_fixture_port(proxy));
-    setenv("HTTPS_PROXY", proxy_url, 1);
-    expect_refused(get(request_for("https://catalog.invalid/index.json")), "502", "through the proxy");
-    setenv("NO_PROXY", "catalog.invalid", 1);
-    expect_refused(get(request_for("https://catalog.invalid/index.json")), "resolve host", "past the proxy");
-    unsetenv("NO_PROXY");
-    unsetenv("HTTPS_PROXY");
-    char *log = http_fixture_stop(proxy);
-    CHECK(log != NULL && occurrences(log, "CONNECT catalog.invalid:443 HTTP/1.1") == 1);
-    spisor_memory_release(log);
-    expect_nothing_stored("proxy");
-}
-
+#if !defined(_WIN32)
 static void clear_proxy_environment(void) {
     const char *names[] = {"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy",
                            "ALL_PROXY",  "no_proxy",   "NO_PROXY"};
     for (size_t index = 0; index < sizeof names / sizeof names[0]; index++) {
         unsetenv(names[index]);
     }
-}
-#endif
-
-#if defined(__linux__)
-static void a_linux_without_libcurl_is_refused_naming_the_package(void) {
-    runtime_fetch_curl_use_library("libspisor-no-such-curl.so.4");
-    answer result = get(request_for_path("/file"));
-    CHECK(result.status == SPISOR_REFUSED);
-    check_text(result.refusal.fix, "install the libcurl package (libcurl4 on Debian and Ubuntu)", "libcurl fix");
-    release(&result);
-    runtime_fetch_curl_use_library(NULL);
-    expect_nothing_stored("no libcurl");
 }
 #endif
 
@@ -534,7 +494,6 @@ static void run_against_the_server(void) {
     an_undeclared_body_over_max_bytes_is_refused();
     a_body_of_exactly_max_bytes_is_stored();
     another_status_is_refused_naming_it();
-    a_fetch_outliving_its_deadline_is_refused();
     a_fetch_outliving_its_timeout_is_refused();
     a_relative_redirect_is_followed();
     a_redirect_to_a_file_url_is_refused();
@@ -544,9 +503,6 @@ static void run_against_the_server(void) {
     two_threads_fetching_one_destination_both_store_it();
     any_other_scheme_is_refused();
     an_unusable_argument_is_refused();
-#if defined(__linux__)
-    a_linux_without_libcurl_is_refused_naming_the_package();
-#endif
     spisor_memory_release(http_fixture_stop(server));
 }
 
@@ -556,18 +512,13 @@ int main(void) {
 #endif
     prepare_body();
     start_scratch();
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run_against_the_server();
     a_redirect_loop_is_refused();
     a_file_url_is_copied_through_the_same_verification();
     a_file_url_that_cannot_be_read_is_refused();
     a_file_url_with_an_encoded_separator_is_refused();
     a_file_url_naming_a_host_is_refused();
-#if defined(_WIN32)
-    winhttp_takes_the_system_proxy();
-#else
-    libcurl_honours_https_proxy_and_no_proxy();
-#endif
     CHECK(runtime_remove_tree(scratch) == SPISOR_OK);
     return check_summary("fetch_test");
 }

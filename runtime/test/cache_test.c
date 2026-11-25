@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "naula/sha256.h"
 #include "spisor/allocation.h"
 #include "cache_damaged.h"
 #include "cache_call.h"
@@ -18,7 +19,6 @@
 #include "hosts_lock.h"
 #include "paths.h"
 #include "scratch_directory.h"
-#include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/json_write.h"
@@ -90,11 +90,11 @@ static void expect_file_text(const char *base, const char *rest, const char *exp
     spisor_memory_release(path);
 }
 
-static void sha256_of_text(const char *text, char out[RUNTIME_SHA256_HEX_SIZE]) {
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)text, strlen(text));
-    runtime_sha256_finish_hex(&hash, out);
+static void sha256_of_text(const char *text, char out[NAULA_SHA256_HEX_SIZE]) {
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)text, strlen(text));
+    naula_sha256_hex(&hash, out);
 }
 
 /** A file url serving content, stored under scratch/sources/name, so the real fetch.get runs. */
@@ -119,7 +119,7 @@ static void remove_source(const char *name) {
 
 /** A FileRef naming content, served from a source file called name holding served. */
 static cJSON *reference_serving(const char *name, const char *content, const char *served, size_t size) {
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(content, sha256);
     char *url = source_url(name, served);
     cJSON *reference = cJSON_CreateObject();
@@ -329,7 +329,7 @@ static void it_refuses_a_source_serving_other_bytes_naming_the_url_and_the_expec
     cJSON *reference = reference_serving("p.js", INDEX_JS, other, strlen(other));
     char url[2048];
     snprintf(url, sizeof url, "%s", text_at(reference, "url"));
-    char expected_sha256[RUNTIME_SHA256_HEX_SIZE];
+    char expected_sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(INDEX_JS, expected_sha256);
     catalog_answer answer = install("a", single_file_item(reference), "1.0.0", "linux-x64");
     expect_cache_refusal_refused(answer, expected_sha256, "other bytes hash");
@@ -459,8 +459,8 @@ static void it_installs_a_plugin_s_files_into_its_bundle_version_directory(void)
 static void it_marks_a_version_complete_last_naming_every_file_its_hash_and_its_size(void) {
     start_cache("marker");
     cJSON *item = plugin_item();
-    char plugin_sha256[RUNTIME_SHA256_HEX_SIZE];
-    char index_sha256[RUNTIME_SHA256_HEX_SIZE];
+    char plugin_sha256[NAULA_SHA256_HEX_SIZE];
+    char index_sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(PLUGIN_JSON, plugin_sha256);
     sha256_of_text(INDEX_JS, index_sha256);
     catalog_answer answer = install("a", item, "1.0.0", "linux-x64");
@@ -693,7 +693,7 @@ static void it_refuses_a_mismatched_file_naming_the_item_the_file_and_the_expect
     cJSON *files = cJSON_CreateObject();
     cJSON_AddItemToObject(files, "plugin.json", reference_serving("plugin.json", PLUGIN_JSON, lie, strlen(lie)));
     cJSON_AddItemToObject(files, "dist/index.js", reference_serving("index.js", INDEX_JS, lie, strlen(INDEX_JS)));
-    char expected_sha256[RUNTIME_SHA256_HEX_SIZE];
+    char expected_sha256[NAULA_SHA256_HEX_SIZE];
     sha256_of_text(PLUGIN_JSON, expected_sha256);
     catalog_answer answer = install("a", item_of("plugin", "1.0.0", version_with_files(files)), "1.0.0", "linux-x64");
     expect_cache_refusal_refused(answer, "a@1.0.0", "lying item");
@@ -733,7 +733,7 @@ static char *marked_bundle(const char *id, const char *version, int marked) {
     cJSON *hashes = cJSON_AddObjectToObject(marker, "files");
     for (size_t index = 0; index < 2; index++) {
         write_in(directory, names[index], contents[index]);
-        char sha256[RUNTIME_SHA256_HEX_SIZE];
+        char sha256[NAULA_SHA256_HEX_SIZE];
         sha256_of_text(contents[index], sha256);
         cJSON_AddStringToObject(hashes, names[index], sha256);
     }

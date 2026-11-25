@@ -13,7 +13,8 @@ add_library(runtime_testing SHARED EXCLUDE_FROM_ALL ${PROJECT_SOURCE_DIR}/runtim
 target_compile_definitions(runtime_testing PRIVATE RUNTIME_TESTING_BUILDING)
 target_include_directories(runtime_testing PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(runtime_testing PRIVATE runtime_testing_objects spisor_library spisor_allocator weivel_standard
-    ${runtime_secret_store_libraries} ${runtime_path_entry_libraries} ${runtime_fetch_libraries})
+    ${runtime_secret_store_libraries} ${runtime_path_entry_libraries})
+runtime_link_naula(runtime_testing)
 set_target_properties(runtime_testing PROPERTIES C_VISIBILITY_PRESET hidden SPISOR_TEST_ONLY TRUE)
 set(runtime_testing_exports runtime_testing_definition_of runtime_testing_definition_description)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

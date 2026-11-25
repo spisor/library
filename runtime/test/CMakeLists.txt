@@ -5,6 +5,7 @@ function(runtime_test_with_allocator name allocator)
     target_link_libraries(${name} PRIVATE runtime_objects ${allocator} ${runtime_secret_store_libraries}
         ${runtime_path_entry_libraries})
     target_link_libraries(${name} PRIVATE spisor_vector_reader)
+    runtime_link_naula(${name})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
@@ -87,13 +88,10 @@ if(WIN32)
     add_dependencies(lifecycle_test runtime_launcher)
 endif()
 
-runtime_test(sha256_test $<TARGET_OBJECTS:runtime_secret_store>)
 runtime_test(identity_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test(fetch_test http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(fetch_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(fetch_test PRIVATE Ws2_32)
 endif()
@@ -101,7 +99,6 @@ endif()
 runtime_test(identity_resolve_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
 endif()
@@ -109,7 +106,6 @@ endif()
 runtime_test(identity_also_at_test http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_also_at_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
 endif()
@@ -117,7 +113,6 @@ endif()
 runtime_test(marketplace_build_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_build>
     $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(marketplace_build_test PRIVATE ${runtime_fetch_libraries})
 target_compile_definitions(marketplace_build_test PRIVATE
     RUNTIME_MARKETPLACE_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace.schema.json"
     RUNTIME_MARKETPLACE_COPY_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace-copy.schema.json")
@@ -128,7 +123,6 @@ endif()
 runtime_test(marketplace_sources_test http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
     $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(marketplace_sources_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(marketplace_sources_test PRIVATE Ws2_32)
 endif()
@@ -136,7 +130,6 @@ endif()
 runtime_test(marketplace_memory_test $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
     $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(marketplace_memory_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(marketplace_memory_test PRIVATE Ws2_32)
 endif()
@@ -147,10 +140,8 @@ target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE
 
 runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(identity_resolve_shipped_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(fetch_network_test PRIVATE ${runtime_fetch_libraries})
 set_tests_properties(fetch_network_test PROPERTIES LABELS network)
 
 set(runtime_catalog_fixture_definitions RUNTIME_CATALOG_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/catalog"
@@ -158,31 +149,26 @@ set(runtime_catalog_fixture_definitions RUNTIME_CATALOG_FIXTURES_PATH="${CMAKE_C
 foreach(name catalog_test catalog_sources_test catalog_resolve_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
         $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_compile_definitions(${name} PRIVATE ${runtime_catalog_fixture_definitions})
 endforeach()
 
 runtime_test(catalog_check_test http_fixture.c $<TARGET_OBJECTS:runtime_catalog>
     $<TARGET_OBJECTS:runtime_catalog_refresh_test_hooks> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
     $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(catalog_check_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(catalog_check_test PRIVATE Ws2_32)
 endif()
 
 runtime_test(cache_test $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(cache_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test(cache_deploy_test $<TARGET_OBJECTS:runtime_cache_test_hooks> $<TARGET_OBJECTS:runtime_catalog>
     $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
-target_link_libraries(cache_deploy_test PRIVATE ${runtime_fetch_libraries})
 
 foreach(name cache_locate_test cache_id_key_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
         $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
         $<TARGET_OBJECTS:runtime_secret_store>)
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()
 
 set(runtime_processes_test_objects $<TARGET_OBJECTS:runtime_processes> $<TARGET_OBJECTS:runtime_cache>
@@ -191,7 +177,8 @@ set(runtime_processes_test_objects $<TARGET_OBJECTS:runtime_processes> $<TARGET_
 add_executable(background_fixture background_fixture.c ${runtime_processes_test_objects}
     $<TARGET_OBJECTS:runtime_path_entry>)
 target_link_libraries(background_fixture PRIVATE runtime_objects spisor_allocator ${runtime_secret_store_libraries}
-    ${runtime_path_entry_libraries} ${runtime_fetch_libraries})
+    ${runtime_path_entry_libraries})
+runtime_link_naula(background_fixture)
 target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
 spisor_strict_warnings(background_fixture)
 
@@ -199,19 +186,16 @@ set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_process
     $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands>)
 foreach(name loader_test entry_template_test detect_test lists_test)
     runtime_test(${name} ${runtime_hosts_test_objects})
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
 
 foreach(name ui_navigation_test ui_settings_view_test ui_render_test ui_action_test)
     runtime_test(${name} $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     target_compile_definitions(${name} PRIVATE RUNTIME_UI_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/ui")
 endforeach()
 
 runtime_test(processes_test ${runtime_processes_test_objects})
-target_link_libraries(processes_test PRIVATE ${runtime_fetch_libraries})
 target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
 add_dependencies(processes_test background_fixture)
 if(NOT WIN32)
@@ -220,8 +204,7 @@ endif()
 
 runtime_test(processes_ready_test ${runtime_processes_test_objects})
 runtime_test(scope_threads_test $<TARGET_OBJECTS:runtime_standard> ${runtime_processes_test_objects})
-target_link_libraries(scope_threads_test PRIVATE weivel_standard ${runtime_fetch_libraries})
-target_link_libraries(processes_ready_test PRIVATE ${runtime_fetch_libraries})
+target_link_libraries(scope_threads_test PRIVATE weivel_standard)
 
 add_executable(node_probe node_probe.c)
 spisor_strict_warnings(node_probe)
@@ -235,23 +218,22 @@ set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
 foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test)
     runtime_test(${name} ${runtime_install_plain_http_test_objects})
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
 endforeach()
 runtime_test(runtime_testing_test ${runtime_install_plain_http_test_objects})
-target_link_libraries(runtime_testing_test PRIVATE runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(runtime_testing_test PRIVATE runtime_testing_objects)
 runtime_test_with_allocator(runtime_testing_out_of_memory_test spisor_allocator_counting
     ${runtime_install_plain_http_test_objects})
-target_link_libraries(runtime_testing_out_of_memory_test PRIVATE runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(runtime_testing_out_of_memory_test PRIVATE runtime_testing_objects)
 set_tests_properties(runtime_testing_out_of_memory_test PROPERTIES TIMEOUT 1800)
 set(runtime_standard_host_test_objects $<TARGET_OBJECTS:runtime_standard_host> $<TARGET_OBJECTS:runtime_standard>
     $<TARGET_OBJECTS:runtime_ui> ${runtime_install_plain_http_test_objects})
 runtime_test(standard_host_test ${runtime_standard_host_test_objects})
-target_link_libraries(standard_host_test PRIVATE weivel_standard runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(standard_host_test PRIVATE weivel_standard runtime_testing_objects)
 runtime_test_with_allocator(out_of_memory_host_test spisor_allocator_counting ${runtime_standard_host_test_objects})
-target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(out_of_memory_host_test PRIVATE weivel_standard runtime_testing_objects)
 set_tests_properties(out_of_memory_host_test PROPERTIES TIMEOUT 1800)
 runtime_test(host_progress_test ${runtime_standard_host_test_objects})
-target_link_libraries(host_progress_test PRIVATE weivel_standard runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(host_progress_test PRIVATE weivel_standard runtime_testing_objects)
 target_compile_definitions(host_progress_test PRIVATE
     RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
 add_dependencies(host_progress_test background_fixture)
@@ -260,14 +242,13 @@ set(runtime_host_tick_threads_test_objects ${runtime_standard_host_test_objects}
 list(TRANSFORM runtime_host_tick_threads_test_objects REPLACE "runtime_catalog_refresh>$"
     "runtime_catalog_refresh_test_hooks>")
 runtime_test(host_tick_threads_test http_fixture.c ${runtime_host_tick_threads_test_objects})
-target_link_libraries(host_tick_threads_test PRIVATE weivel_standard runtime_testing_objects ${runtime_fetch_libraries})
+target_link_libraries(host_tick_threads_test PRIVATE weivel_standard runtime_testing_objects)
 if(WIN32)
     target_link_libraries(host_tick_threads_test PRIVATE Ws2_32)
 endif()
 foreach(name install_test install_warnings_test install_methods_test install_entries_test install_runtime_test
         install_ecosystem_test install_applications_test hosts_test)
     runtime_test(${name} ${runtime_install_test_objects})
-    target_link_libraries(${name} PRIVATE ${runtime_fetch_libraries})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     if(WIN32)
         add_dependencies(${name} runtime_launcher)
@@ -277,7 +258,6 @@ if(WIN32)
     add_dependencies(hosts_test runtime_launcher)
 endif()
 runtime_test(install_by_id_test http_fixture.c ${runtime_install_plain_http_test_objects})
-target_link_libraries(install_by_id_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(install_by_id_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 if(WIN32)
     target_link_libraries(install_by_id_test PRIVATE Ws2_32)
@@ -287,7 +267,6 @@ target_compile_definitions(install_runtime_test PRIVATE RUNTIME_NODE_PROBE_PATH=
 add_dependencies(install_runtime_test node_probe)
 
 runtime_test(host_removal_test ${runtime_install_test_objects})
-target_link_libraries(host_removal_test PRIVATE ${runtime_fetch_libraries})
 
 add_executable(settings_lock_test settings_lock_test.c $<TARGET_OBJECTS:runtime_secret_store>
     $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
@@ -297,6 +276,7 @@ if(NOT WIN32)
     target_link_libraries(settings_lock_test PRIVATE Threads::Threads)
 endif()
 target_link_libraries(settings_lock_test PRIVATE spisor_vector_reader)
+runtime_link_naula(settings_lock_test)
 target_include_directories(settings_lock_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
 spisor_strict_warnings(settings_lock_test)
 target_compile_definitions(settings_lock_test PRIVATE RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}")
@@ -310,7 +290,6 @@ list(TRANSFORM runtime_out_of_memory_test_objects REPLACE "runtime_catalog_refre
     "runtime_catalog_refresh_test_hooks>")
 runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting http_fixture.c
     ${runtime_marketplace_test_objects} ${runtime_out_of_memory_test_objects})
-target_link_libraries(out_of_memory_test PRIVATE ${runtime_fetch_libraries})
 if(WIN32)
     target_link_libraries(out_of_memory_test PRIVATE Ws2_32)
 endif()
@@ -327,7 +306,6 @@ if(WIN32)
 endif()
 
 runtime_test_with_allocator(out_of_memory_ecosystem_test spisor_allocator_counting ${runtime_install_test_objects})
-target_link_libraries(out_of_memory_ecosystem_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_ecosystem_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_tests_properties(out_of_memory_ecosystem_test PROPERTIES TIMEOUT 1800)
 if(WIN32)
@@ -336,7 +314,6 @@ endif()
 
 runtime_test_with_allocator(out_of_memory_install_operations_test spisor_allocator_counting
     ${runtime_install_test_objects})
-target_link_libraries(out_of_memory_install_operations_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(out_of_memory_install_operations_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_compile_definitions(out_of_memory_install_operations_test PRIVATE
     RUNTIME_NODE_PROBE_PATH="$<TARGET_FILE:node_probe>"
@@ -349,10 +326,8 @@ endif()
 
 runtime_test_with_allocator(out_of_memory_ui_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_ui>
     ${runtime_hosts_test_objects})
-target_link_libraries(out_of_memory_ui_test PRIVATE ${runtime_fetch_libraries})
 
 runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting ${runtime_definition_test_objects})
-target_link_libraries(json_hooks_race_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(json_hooks_race_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 if(NOT WIN32)
     find_package(Threads REQUIRED)
@@ -436,5 +411,4 @@ add_test(NAME runtime_exports_only_definitions_test
         -P ${PROJECT_SOURCE_DIR}/cmake/exports_check.cmake)
 
 runtime_test_with_allocator(environment_check_test spisor_allocator_counting ${runtime_install_test_objects})
-target_link_libraries(environment_check_test PRIVATE ${runtime_fetch_libraries})
 target_include_directories(environment_check_test PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/runtime/src)
