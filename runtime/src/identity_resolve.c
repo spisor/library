@@ -8,9 +8,11 @@
 #include <string.h>
 
 #include "definition_support.h"
-#include "fetch_transport.h"
+#include "fetch_answer.h"
 #include "identity.h"
 #include "json_service.h"
+#include "naula/memory.h"
+#include "naula/transport.h"
 #include "spisor/json_kind.h"
 
 #define BODY_CAPACITY (256 * 1024)
@@ -145,18 +147,18 @@ static int is_rate_limited(long status) {
     return status == 403 || status == 429;
 }
 
-static void fail_status(lookup_failure *failure, const runtime_fetch_answer *answer, const char *url) {
-    if (answer->outcome == RUNTIME_FETCH_STATUS) {
+static void fail_status(lookup_failure *failure, const naula_fetch_answer *answer, const char *url) {
+    if (answer->outcome == NAULA_FETCH_STATUS) {
         failure->status = answer->status;
-    } else if (answer->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+    } else if (answer->outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         failure->refusal = NULL;
-    } else if (answer->outcome == RUNTIME_FETCH_REFUSED) {
+    } else if (answer->outcome == NAULA_FETCH_REFUSED || runtime_fetch_is_deadline_cut_off(answer)) {
         refuse(&failure->refusal, answer->fix, "%s", answer->detail);
-    } else if (answer->outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
+    } else if (answer->outcome == NAULA_FETCH_STOPPED_BY_SINK) {
         refuse(&failure->refusal, "check that the host is the repo host the id names", "%s answered more than a lookup reads",
                url);
     } else {
-        refuse(&failure->refusal, RUNTIME_FETCH_NETWORK_FIX, "%s ended before its whole answer arrived", url);
+        refuse(&failure->refusal, NAULA_FETCH_NETWORK_FIX, "%s ended before its whole answer arrived", url);
     }
 }
 
@@ -184,20 +186,21 @@ static cJSON *lookup(const char *url, const char *token, lookup_failure *failure
         spisor_overwrite(authorization, sizeof authorization);
         return NULL;
     }
-    runtime_fetch_sink sink;
-    runtime_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
-    runtime_fetch_answer answer;
+    naula_fetch_sink sink;
+    naula_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
+    naula_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
-    runtime_fetch_into_memory(url, token == NULL ? NULL : authorization, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    answer.size = sizeof answer;
+    naula_fetch_into_memory(url, token == NULL ? NULL : authorization, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     spisor_overwrite(authorization, sizeof authorization);
     cJSON *repository = NULL;
-    if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
+    if (answer.outcome == NAULA_FETCH_RECEIVED) {
         repository = parse_body(body, (size_t)sink.bytes, url, &failure->refusal);
     } else {
         fail_status(failure, &answer, url);
     }
-    spisor_memory_release(answer.etag);
-    spisor_memory_release(answer.last_modified);
+    naula_memory_release(answer.etag);
+    naula_memory_release(answer.last_modified);
     spisor_memory_release(body);
     return repository;
 }
@@ -390,7 +393,7 @@ static cJSON *resolve_remote(const resolver *kind, const runtime_identity *parse
         return refuse(refusal, "pass token as the access token itself, on one line with no spaces",
                       "the token is not usable");
     }
-    if (request->api_base != NULL && !runtime_fetch_plain_http_is_allowed()) {
+    if (request->api_base != NULL && !naula_fetch_plain_http_is_allowed()) {
         return refuse(refusal, "pass no api_base: the host's own API address is used",
                       "api_base is only honoured by the test build");
     }
@@ -453,23 +456,24 @@ static runtime_repo_file_status fetch_file(const char *url, uint8_t **content, s
     if (body == NULL) {
         return RUNTIME_REPO_FILE_OUT_OF_MEMORY;
     }
-    runtime_fetch_sink sink;
-    runtime_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
-    runtime_fetch_answer answer;
+    naula_fetch_sink sink;
+    naula_fetch_sink_start_memory(&sink, body, BODY_CAPACITY);
+    naula_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
-    runtime_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+    answer.size = sizeof answer;
+    naula_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     runtime_repo_file_status status = RUNTIME_REPO_FILE_UNAVAILABLE;
-    if (answer.outcome == RUNTIME_FETCH_RECEIVED) {
+    if (answer.outcome == NAULA_FETCH_RECEIVED) {
         status = RUNTIME_REPO_FILE_READ;
-    } else if (answer.outcome == RUNTIME_FETCH_STATUS && answer.status == 404) {
+    } else if (answer.outcome == NAULA_FETCH_STATUS && answer.status == 404) {
         status = RUNTIME_REPO_FILE_ABSENT;
-    } else if (answer.outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
+    } else if (answer.outcome == NAULA_FETCH_STOPPED_BY_SINK) {
         status = RUNTIME_REPO_FILE_TOO_LARGE;
-    } else if (answer.outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+    } else if (answer.outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         status = RUNTIME_REPO_FILE_OUT_OF_MEMORY;
     }
-    spisor_memory_release(answer.etag);
-    spisor_memory_release(answer.last_modified);
+    naula_memory_release(answer.etag);
+    naula_memory_release(answer.last_modified);
     if (status == RUNTIME_REPO_FILE_READ) {
         *content = body;
         *length = (size_t)sink.bytes;

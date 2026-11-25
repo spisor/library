@@ -22,7 +22,7 @@ static void installed(const char *id, const char *version, bundle shape) {
     cJSON *sizes = cJSON_CreateObject();
     for (size_t index = 0; index < 2 && names[index] != NULL; index++) {
         write_in(directory, names[index], contents[index]);
-        char sha256[RUNTIME_SHA256_HEX_SIZE];
+        char sha256[NAULA_SHA256_HEX_SIZE];
         sha256_of_text(contents[index], sha256);
         cJSON_AddStringToObject(hashes, names[index], sha256);
         cJSON_AddNumberToObject(sizes, names[index], (double)strlen(contents[index]));

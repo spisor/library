@@ -27,7 +27,7 @@
 typedef struct runtime_fixture {
     install_base base;
     char *archive;
-    char archive_sha256[RUNTIME_SHA256_HEX_SIZE];
+    char archive_sha256[NAULA_SHA256_HEX_SIZE];
 } runtime_fixture;
 
 static char *system_tar(void) {
@@ -165,7 +165,7 @@ static void keeps_only_the_executable_and_the_archive_s_hash_in_place_of_the_arc
     char *executable = executable_path(&fixture);
     CHECK(!exists_in(directory, ARCHIVE_NAME));
     CHECK(!exists_in(directory, STEM "/README.md") && !exists_in(directory, STEM "/lib"));
-    char executable_sha256[RUNTIME_SHA256_HEX_SIZE];
+    char executable_sha256[NAULA_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(executable, executable_sha256) == SPISOR_OK);
     char expected[200];
     snprintf(expected, sizeof expected, "%s\n%s\n", fixture.archive_sha256, executable_sha256);

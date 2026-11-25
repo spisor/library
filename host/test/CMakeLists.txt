@@ -13,7 +13,7 @@ set(host_test_bundles $<TARGET_FILE_DIR:spisor_host_test>/test-bundles)
 stage_bundles(spisor_host_test_bundles spisor_host_test ${host_test_bundles})
 
 add_executable(fake_application fake_application.c)
-target_link_libraries(fake_application PRIVATE spisor_cjson spisor_allocator)
+target_link_libraries(fake_application PRIVATE naula_cjson spisor_allocator)
 target_include_directories(fake_application PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/include)
 if(WIN32)
@@ -92,7 +92,7 @@ endif()
 set(host_marketplace_test_objects ${host_test_runtime_objects})
 list(REMOVE_ITEM host_marketplace_test_objects $<TARGET_OBJECTS:runtime_fetch>)
 list(APPEND host_marketplace_test_objects $<TARGET_OBJECTS:runtime_fetch_test_hooks>)
-host_executable(marketplace_command_test marketplace_command_test marketplace_command_test.c
+host_executable(marketplace_command_test marketplace_command_test TEST_HOOKS marketplace_command_test.c
     ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
 if(WIN32)
     target_link_libraries(marketplace_command_test PRIVATE Ws2_32)
@@ -104,7 +104,7 @@ add_dependencies(marketplace_command_test spisor_host_test spisor_boot fake_appl
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77)
 
-host_executable(install_by_name_test install_by_name_test install_by_name_test.c
+host_executable(install_by_name_test install_by_name_test TEST_HOOKS install_by_name_test.c
     ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
 if(WIN32)
     target_link_libraries(install_by_name_test PRIVATE Ws2_32)

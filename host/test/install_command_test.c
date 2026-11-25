@@ -135,8 +135,8 @@ static void puts_spisor_boot_into_the_cache_from_the_spisor_host_build_it_instal
     program run;
     CHECK(run_install(&world, &run, NULL) == 0);
     char *stub = joined(world.base.cache, "boot/spisor-boot" EXECUTABLE_ENDING);
-    char stub_hash[RUNTIME_SHA256_HEX_SIZE];
-    char built_hash[RUNTIME_SHA256_HEX_SIZE];
+    char stub_hash[NAULA_SHA256_HEX_SIZE];
+    char built_hash[NAULA_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(stub, stub_hash) == SPISOR_OK &&
           spisor_sha256_file(SPISOR_BOOT_PATH, built_hash) == SPISOR_OK &&
           strcmp(stub_hash, built_hash) == 0);

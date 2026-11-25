@@ -6,7 +6,7 @@
 #include "check.h"
 #include "runtime/fetch.h"
 #include "scratch_directory.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
 
 #if defined(_WIN32)
@@ -44,7 +44,7 @@ static void a_pinned_https_file_is_fetched_over_the_os_stack(void) {
     CHECK(answer.bytes == PINNED_BYTES);
     fetch->release_answer(fetch->context, &answer);
     fetch->release_refusal(fetch->context, &refusal);
-    char stored[RUNTIME_SHA256_HEX_SIZE] = "";
+    char stored[NAULA_SHA256_HEX_SIZE] = "";
     CHECK(spisor_sha256_file(destination, stored) == SPISOR_OK);
     check_text(stored, PINNED_SHA256, "stored file");
     CHECK(runtime_remove_tree(scratch) == SPISOR_OK);

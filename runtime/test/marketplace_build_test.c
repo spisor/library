@@ -10,10 +10,10 @@
 #include "spisor/allocation.h"
 #include "check.h"
 #include "marketplace_call.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "marketplace_build.h"
 #include "marketplace_check.h"
+#include "transport_hooks.h"
 
 #define BUILT "2026-11-10T12:00:00Z"
 #define REPOSITORY(identifier, name_text, full_name_text) \
@@ -722,7 +722,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run_against_the_server();
     a_list_over_the_limit_is_refused_before_any_lookup();
     a_refusal_that_needs_no_lookup_makes_none();

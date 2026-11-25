@@ -7,22 +7,22 @@
 #include "catalog_path.h"
 #include "catalog_text.h"
 #include "catalog_url.h"
+#include "naula/sha256.h"
 #include "paths.h"
-#include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
 char *runtime_catalog_state_path(const char *cache, const char *location) {
-    runtime_sha256 hash;
-    char hex[RUNTIME_SHA256_HEX_SIZE];
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)location, strlen(location));
-    runtime_sha256_finish_hex(&hash, hex);
-    char name[RUNTIME_SHA256_HEX_SIZE + 5];
-    memcpy(name, hex, RUNTIME_SHA256_HEX_SIZE - 1);
-    memcpy(name + RUNTIME_SHA256_HEX_SIZE - 1, ".json", 6);
+    naula_sha256 hash;
+    char hex[NAULA_SHA256_HEX_SIZE];
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)location, strlen(location));
+    naula_sha256_hex(&hash, hex);
+    char name[NAULA_SHA256_HEX_SIZE + 5];
+    memcpy(name, hex, NAULA_SHA256_HEX_SIZE - 1);
+    memcpy(name + NAULA_SHA256_HEX_SIZE - 1, ".json", 6);
     const char *segments[] = {cache, "catalog", name};
     return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
 }

@@ -11,16 +11,16 @@
 #include "definition_support.h"
 #include "directory_tree.h"
 #include "prepared_undo.h"
-#include "fetch_transport.h"
+#include "fetch_answer.h"
+#include "fetch_file.h"
 #include "file_stream.h"
+#include "naula/memory.h"
+#include "naula/transport.h"
 #include "paths.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
 #include "spisor/path.h"
 #include "atomic.h"
-#ifdef SPISOR_FETCH_TEST_HOOKS
-#include "fetch_hooks.h"
-#endif
 
 #if defined(_WIN32)
 #include <process.h>
@@ -38,19 +38,6 @@
 #define LONGEST_TIMEOUT_SECONDS 86400.0
 #define CORRUPT_FILE_FIX "never use it: ask the catalog's publisher to correct the file or its entry"
 #define UNWRITABLE_FIX "free the cached file or point SPISOR_CACHE at a writable directory, then try again"
-
-static int plain_http_allowed = 0;
-static unsigned deadline_override = 0;
-
-#ifdef SPISOR_FETCH_TEST_HOOKS
-void runtime_fetch_allow_plain_http(int allowed) {
-    plain_http_allowed = allowed;
-}
-
-void runtime_fetch_use_deadline(unsigned milliseconds) {
-    deadline_override = milliseconds;
-}
-#endif
 
 /**
  * @implNote fetch is called from worker threads, so the partial name carries a per-call number as well as
@@ -170,7 +157,7 @@ static url_scheme scheme_of(const char *url) {
     if (scheme_is(url, "file:")) {
         return SCHEME_FILE;
     }
-    if (scheme_is(url, "https:") || (plain_http_allowed && scheme_is(url, "http:"))) {
+    if (scheme_is(url, "https:") || (naula_fetch_plain_http_is_allowed() && scheme_is(url, "http:"))) {
         return SCHEME_NETWORK;
     }
     return SCHEME_REFUSED;
@@ -252,18 +239,21 @@ static spisor_status refuse_unwritable(const char *destination, spisor_refusal *
     return refuse(refusal, message, UNWRITABLE_FIX);
 }
 
-static spisor_status refuse_answer(const fetch_order *order, const runtime_fetch_answer *answer,
-                                   const runtime_fetch_sink *sink, spisor_refusal *refusal) {
-    char message[RUNTIME_FETCH_DETAIL_SIZE + 2048];
+static spisor_status refuse_answer(const fetch_order *order, const naula_fetch_answer *answer,
+                                   const naula_fetch_sink *sink, spisor_refusal *refusal) {
+    char message[NAULA_FETCH_DETAIL_SIZE + 2048];
     switch (answer->outcome) {
-    case RUNTIME_FETCH_STATUS:
+    case NAULA_FETCH_STATUS:
         snprintf(message, sizeof message, "%s answered HTTP %ld", order->url, answer->status);
         return refuse(refusal, message, "check that the catalog still publishes this file");
-    case RUNTIME_FETCH_CUT_OFF:
+    case NAULA_FETCH_CUT_OFF:
+        if (runtime_fetch_is_deadline_cut_off(answer)) {
+            return refuse(refusal, answer->detail, answer->fix);
+        }
         snprintf(message, sizeof message, "%s ended after %" PRIu64 " of the %" PRIu64 " bytes it declared",
                  order->url, sink->bytes, answer->declared);
-        return refuse(refusal, message, RUNTIME_FETCH_NETWORK_FIX);
-    case RUNTIME_FETCH_STOPPED_BY_SINK:
+        return refuse(refusal, message, NAULA_FETCH_NETWORK_FIX);
+    case NAULA_FETCH_STOPPED_BY_SINK:
         if (sink->unwritable) {
             return refuse_unwritable(order->destination, refusal);
         }
@@ -286,7 +276,7 @@ static void release_get_answer_storage(runtime_fetch_get_answer *answer) {
 }
 
 /** Copies the stored answer's texts, taken before the file is moved into place so running out writes nothing. */
-static int take_stored_answer(const char *sha256, uint64_t bytes, const runtime_fetch_answer *received,
+static int take_stored_answer(const char *sha256, uint64_t bytes, const naula_fetch_answer *received,
                               runtime_fetch_get_answer *answer) {
     if (!runtime_storage_copy(&answer->storage, sha256, &answer->sha256) ||
         !runtime_storage_copy(&answer->storage, received->etag, &answer->etag) ||
@@ -313,7 +303,7 @@ static spisor_status move_into_place(fetch_files *files, const char *destination
     if (moved != SPISOR_REFUSED) {
         return moved;
     }
-    char present[RUNTIME_SHA256_HEX_SIZE];
+    char present[NAULA_SHA256_HEX_SIZE];
     spisor_status hashed = spisor_sha256_file(destination, present);
     if (hashed != SPISOR_OK) {
         return hashed;
@@ -324,11 +314,11 @@ static spisor_status move_into_place(fetch_files *files, const char *destination
     return runtime_remove_file_entry(files->partial) == RUNTIME_ENTRY_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-static spisor_status settle_received(const fetch_order *order, fetch_files *files, runtime_fetch_sink *sink,
-                                     const runtime_fetch_answer *received, runtime_fetch_get_answer *answer,
+static spisor_status settle_received(const fetch_order *order, fetch_files *files, naula_fetch_sink *sink,
+                                     const naula_fetch_answer *received, runtime_fetch_get_answer *answer,
                                      spisor_refusal *refusal) {
-    char actual[RUNTIME_SHA256_HEX_SIZE];
-    runtime_sha256_finish_hex(&sink->hash, actual);
+    char actual[NAULA_SHA256_HEX_SIZE];
+    naula_sha256_hex(&sink->hash, actual);
     int closed = fclose(files->file) == 0;
     files->file = NULL;
     if (!closed) {
@@ -354,44 +344,28 @@ static spisor_status settle_received(const fetch_order *order, fetch_files *file
     return SPISOR_OK;
 }
 
-static void transfer(const fetch_order *order, url_scheme scheme, runtime_fetch_sink *sink,
-                     runtime_fetch_answer *answer) {
+static void transfer(const fetch_order *order, url_scheme scheme, naula_fetch_sink *sink,
+                     naula_fetch_answer *answer) {
     if (scheme == SCHEME_FILE) {
         runtime_fetch_file_url(order->url, sink, answer);
         return;
     }
-    runtime_fetch_request request = {order->url, order->etag, order->last_modified,
-                                     deadline_override != 0 ? deadline_override : order->deadline_milliseconds,
-                                     plain_http_allowed, NULL};
-    runtime_fetch_over_network(&request, sink, answer);
+    naula_fetch_request request = {sizeof request, order->url, order->etag, order->last_modified,
+                                   order->deadline_milliseconds, NULL};
+    naula_fetch_over_network(&request, sink, answer);
 }
 
-int runtime_fetch_plain_http_is_allowed(void) {
-    return plain_http_allowed;
-}
-
-void runtime_fetch_into_memory(const char *url, const char *authorization, unsigned deadline_milliseconds,
-                               runtime_fetch_sink *sink, runtime_fetch_answer *answer) {
-    if (scheme_of(url) != SCHEME_NETWORK) {
-        runtime_fetch_refuse(answer, "serve the lookup over https", "%s is not an https url", url);
-        return;
-    }
-    runtime_fetch_request request = {url, NULL, NULL, deadline_override != 0 ? deadline_override : deadline_milliseconds,
-                                     plain_http_allowed, authorization};
-    runtime_fetch_over_network(&request, sink, answer);
-}
-
-static spisor_status settle(const fetch_order *order, fetch_files *files, runtime_fetch_sink *sink,
-                            const runtime_fetch_answer *received, runtime_fetch_get_answer *answer,
+static spisor_status settle(const fetch_order *order, fetch_files *files, naula_fetch_sink *sink,
+                            const naula_fetch_answer *received, runtime_fetch_get_answer *answer,
                             spisor_refusal *refusal) {
-    if (received->outcome == RUNTIME_FETCH_RECEIVED) {
+    if (received->outcome == NAULA_FETCH_RECEIVED) {
         return settle_received(order, files, sink, received, answer, refusal);
     }
     discard_partial(files);
-    if (received->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+    if (received->outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    if (received->outcome != RUNTIME_FETCH_NOT_MODIFIED) {
+    if (received->outcome != NAULA_FETCH_NOT_MODIFIED) {
         return refuse_answer(order, received, sink, refusal);
     }
     if (order->etag == NULL && order->last_modified == NULL) {
@@ -412,14 +386,15 @@ static spisor_status fetch(const fetch_order *order, runtime_fetch_get_answer *a
         discard_partial(&files);
         return opened == SPISOR_OUT_OF_MEMORY ? opened : refuse_unwritable(order->destination, refusal);
     }
-    runtime_fetch_sink sink;
-    runtime_fetch_sink_start(&sink, files.file, order->limited, order->max_bytes);
-    runtime_fetch_answer received;
+    naula_fetch_sink sink;
+    naula_fetch_sink_start(&sink, files.file, order->limited, order->max_bytes);
+    naula_fetch_answer received;
     memset(&received, 0, sizeof received);
+    received.size = sizeof received;
     transfer(order, scheme, &sink, &received);
     spisor_status status = settle(order, &files, &sink, &received, answer, refusal);
-    spisor_memory_release(received.etag);
-    spisor_memory_release(received.last_modified);
+    naula_memory_release(received.etag);
+    naula_memory_release(received.last_modified);
     return status;
 }
 

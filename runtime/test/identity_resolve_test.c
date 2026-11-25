@@ -9,9 +9,9 @@
 #include "check.h"
 #include "spisor/allocation.h"
 #include "definition_fixture.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "runtime/identity.h"
+#include "transport_hooks.h"
 
 #define REPOSITORY(identifier, name_text, full_name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
@@ -216,6 +216,12 @@ static void refuses_a_body_that_is_not_an_object(void) {
     expect_refused_then_free(resolve("github:81", NULL), "did not answer a repository", "array body");
 }
 
+static void refuses_a_lookup_the_deadline_ended_naming_the_deadline(void) {
+    naula_fetch_use_deadline(300);
+    expect_refused_then_free(resolve("github:90", NULL), "did not finish within 300 ms", "deadline");
+    naula_fetch_use_deadline(0);
+}
+
 static void run_against_the_server(void) {
     memset(oversized_body, 'a', sizeof oversized_body);
     const http_route routes[] = {
@@ -237,6 +243,7 @@ static void run_against_the_server(void) {
         ROUTE("/repositories/70", 200, no_names),
         {"/repositories/80", 200, NULL, oversized_body, sizeof oversized_body, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
         ROUTE("/repositories/81", 200, not_an_object),
+        {"/repositories/90", 200, NULL, found_seven, sizeof found_seven - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 1500, 0},
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
     CHECK(server != NULL);
@@ -265,6 +272,7 @@ static void run_against_the_server(void) {
     names_the_missing_resolver_for_an_unknown_scheme();
     an_invalid_id_is_malformed();
     resolves_local_without_the_network();
+    refuses_a_lookup_the_deadline_ended_naming_the_deadline();
     spisor_memory_release(http_fixture_stop(server));
 }
 
@@ -341,7 +349,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run_against_the_server();
     sends_the_token_only_when_given_and_never_to_another_host();
     refuses_a_token_that_is_not_one_line_without_repeating_it();

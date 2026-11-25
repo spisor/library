@@ -12,12 +12,12 @@
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "install_call.h"
 #include "paths.h"
 #include "service_scratch.h"
-#include "sha256.h"
+#include "sha256_file.h"
+#include "transport_hooks.h"
 #include "tree_snapshot.h"
 
 #define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
@@ -47,16 +47,16 @@ static void write_in_scratch(const char *relative, const char *text) {
     spisor_memory_release(path);
 }
 
-static void sha256_of(const char *text, char hex[RUNTIME_SHA256_HEX_SIZE]) {
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)text, strlen(text));
-    runtime_sha256_finish_hex(&hash, hex);
+static void sha256_of(const char *text, char hex[NAULA_SHA256_HEX_SIZE]) {
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)text, strlen(text));
+    naula_sha256_hex(&hash, hex);
 }
 
 static void add_file_reference(cJSON *files, const char *key, const char *url_prefix, const char *file_name,
                                const char *text) {
-    char digest[RUNTIME_SHA256_HEX_SIZE];
+    char digest[NAULA_SHA256_HEX_SIZE];
     sha256_of(text, digest);
     char url[1600];
     snprintf(url, sizeof url, "%s%s%s", url_prefix == NULL ? "" : url_prefix, url_prefix == NULL ? "" : "/", file_name);
@@ -191,7 +191,7 @@ static void installs_from_the_release_index_and_checks_digests(void) {
     check_text(text_at(answer.tree, "version"), "1.0.0", "version");
     check_text(text_at(answer.tree, "commit"), "abc123", "commit");
     char *index_path = in_scratch("release/weivel-index.json");
-    char index_digest[RUNTIME_SHA256_HEX_SIZE];
+    char index_digest[NAULA_SHA256_HEX_SIZE];
     CHECK(spisor_sha256_file(index_path, index_digest) == SPISOR_OK);
     check_text(text_at(answer.tree, "sha256"), index_digest, "digest of the index");
     spisor_memory_release(index_path);
@@ -442,6 +442,14 @@ static void refuses_a_local_id_and_a_missing_argument(void) {
     cJSON_Delete(answer.tree);
 }
 
+static void a_release_the_deadline_ended_is_refused_naming_the_deadline(void) {
+    naula_fetch_use_deadline(300);
+    catalog_answer answer = install_with("github:16", NULL);
+    naula_fetch_use_deadline(0);
+    CHECK(expect_cache_refusal_refused(answer, "did not finish within 300 ms", "deadline"));
+    cJSON_Delete(answer.tree);
+}
+
 static void run_against_the_server(void) {
     static const char repository_five[] = REPOSITORY("5", "greeter");
     static const char repository_six[] = REPOSITORY("6", "mirror");
@@ -455,6 +463,7 @@ static void run_against_the_server(void) {
     static const char repository_thirteen[] = REPOSITORY("13", "thirteen");
     static const char repository_fourteen[] = REPOSITORY("14", "fourteen");
     static const char repository_fifteen[] = REPOSITORY("15", "fifteen");
+    static const char repository_sixteen[] = REPOSITORY("16", "sixteen");
     static const char repository_twenty[] = REPOSITORY("20", "twenty");
     static const char repository_twenty_one[] = REPOSITORY("21", "twentyone");
     static const char twenty_before[] = "{\"primary\":\"github:20\",\"ids\":[\"github:20\"]}";
@@ -504,6 +513,9 @@ static void run_against_the_server(void) {
         ROUTE("/o/thirteen/HEAD/.weivel/also-at.json", 200, thirteen_file),
         ROUTE("/o/fourteen/HEAD/.weivel/also-at.json", 200, fourteen_file),
         {"/repos/o/thirteen/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
+        ROUTE("/repositories/16", 200, repository_sixteen),
+        EMPTY_ROUTE("/o/sixteen/HEAD/.weivel/also-at.json", 404),
+        {"/repos/o/sixteen/releases/latest", 200, NULL, release_json_good, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 1500, 0},
     };
     for (size_t index = 0; index < sizeof routes / sizeof routes[0]; index++) {
         if (routes[index].body_length == 0 && routes[index].body != NULL && routes[index].body[0] != '\0') {
@@ -533,6 +545,7 @@ static void run_against_the_server(void) {
     an_accepted_change_of_primary_replaces_the_deployed_plugin();
     a_release_without_an_index_is_refused_naming_it();
     refuses_a_local_id_and_a_missing_argument();
+    a_release_the_deadline_ended_is_refused_naming_the_deadline();
     spisor_memory_release(http_fixture_stop(server));
 }
 
@@ -550,7 +563,7 @@ int main(void) {
 #if !defined(_WIN32)
     clear_proxy_environment();
 #endif
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     prepare_releases();
     run_against_the_server();
     return check_summary("install_by_id_test");

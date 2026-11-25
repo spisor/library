@@ -12,15 +12,17 @@
 #include "catalog.h"
 #include "cache_refusal.h"
 #include "catalog_read.h"
-#include "fetch_transport.h"
+#include "fetch_answer.h"
+#include "fetch_file.h"
 #include "identity.h"
 #include "identity_also_at.h"
 #include "identity_resolve.h"
 #include "json_service.h"
+#include "naula/memory.h"
+#include "naula/sha256.h"
 #include "node_json_file.h"
 #include "platform_key.h"
 #include "runtime/identity.h"
-#include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -49,7 +51,7 @@ typedef struct install_request {
 typedef struct release_index {
     cJSON *catalog;
     const cJSON *item;
-    char sha256[RUNTIME_SHA256_HEX_SIZE];
+    char sha256[NAULA_SHA256_HEX_SIZE];
 } release_index;
 
 static cJSON *refuse(cJSON **refusal, const char *fix, const char *format, ...) {
@@ -126,27 +128,27 @@ static int read_request(const runtime_install_by_id_request *install, install_re
     return repo_id != NULL;
 }
 
-static void refuse_fetch(const runtime_fetch_answer *answer, const char *url, cJSON **refusal) {
-    if (answer->outcome == RUNTIME_FETCH_STATUS && (answer->status == 403 || answer->status == 429)) {
+static void refuse_fetch(const naula_fetch_answer *answer, const char *url, cJSON **refusal) {
+    if (answer->outcome == NAULA_FETCH_STATUS && (answer->status == 403 || answer->status == 429)) {
         refuse(refusal, "wait for the host's rate limit to reset, then try again", "%s answered HTTP %ld: an anonymous caller is rate limited by this host",
                url, answer->status);
-    } else if (answer->outcome == RUNTIME_FETCH_STATUS) {
+    } else if (answer->outcome == NAULA_FETCH_STATUS) {
         refuse(refusal, "check that the repo has a release that publishes " INDEX_ASSET, "%s answered HTTP %ld", url,
                answer->status);
-    } else if (answer->outcome == RUNTIME_FETCH_OUT_OF_MEMORY) {
+    } else if (answer->outcome == NAULA_FETCH_OUT_OF_MEMORY) {
         *refusal = NULL;
-    } else if (answer->outcome == RUNTIME_FETCH_REFUSED) {
+    } else if (answer->outcome == NAULA_FETCH_REFUSED || runtime_fetch_is_deadline_cut_off(answer)) {
         refuse(refusal, answer->fix, "%s", answer->detail);
-    } else if (answer->outcome == RUNTIME_FETCH_STOPPED_BY_SINK) {
+    } else if (answer->outcome == NAULA_FETCH_STOPPED_BY_SINK) {
         refuse(refusal, "check that the release publishes the files it should", "%s answered more than an install reads", url);
     } else {
-        refuse(refusal, RUNTIME_FETCH_NETWORK_FIX, "%s ended before its whole answer arrived", url);
+        refuse(refusal, NAULA_FETCH_NETWORK_FIX, "%s ended before its whole answer arrived", url);
     }
 }
 
 /** A file: url is read only when the fetch test hook allows plain http, so only a test can aim an install at a local release. */
 static int is_readable_file_url(const char *url) {
-    return strncmp(url, "file:", 5) == 0 && runtime_fetch_plain_http_is_allowed();
+    return strncmp(url, "file:", 5) == 0 && naula_fetch_plain_http_is_allowed();
 }
 
 /** The bytes at url, freed and NUL terminated, with their length; NULL with a refusal, or without one out of memory. */
@@ -155,24 +157,25 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
     if (body == NULL) {
         return NULL;
     }
-    runtime_fetch_sink sink;
-    runtime_fetch_sink_start_memory(&sink, body, capacity);
-    runtime_fetch_answer answer;
+    naula_fetch_sink sink;
+    naula_fetch_sink_start_memory(&sink, body, capacity);
+    naula_fetch_answer answer;
     memset(&answer, 0, sizeof answer);
+    answer.size = sizeof answer;
     if (is_readable_file_url(url)) {
         runtime_fetch_file_url(url, &sink, &answer);
     } else {
-        runtime_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
+        naula_fetch_into_memory(url, NULL, LOOKUP_DEADLINE_MILLISECONDS, &sink, &answer);
     }
-    int received = answer.outcome == RUNTIME_FETCH_RECEIVED;
+    int received = answer.outcome == NAULA_FETCH_RECEIVED;
     if (received) {
         *length = (size_t)sink.bytes;
         body[*length] = '\0';
     } else {
         refuse_fetch(&answer, url, refusal);
     }
-    spisor_memory_release(answer.etag);
-    spisor_memory_release(answer.last_modified);
+    naula_memory_release(answer.etag);
+    naula_memory_release(answer.last_modified);
     if (!received) {
         spisor_memory_release(body);
         return NULL;
@@ -397,11 +400,11 @@ static cJSON *read_catalog(const char *id, const char *url, const uint8_t *bytes
     return catalog;
 }
 
-static void digest_of(const uint8_t *bytes, size_t length, char sha256[RUNTIME_SHA256_HEX_SIZE]) {
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, bytes, length);
-    runtime_sha256_finish_hex(&hash, sha256);
+static void digest_of(const uint8_t *bytes, size_t length, char sha256[NAULA_SHA256_HEX_SIZE]) {
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, bytes, length);
+    naula_sha256_hex(&hash, sha256);
 }
 
 static int is_still_the_repository(const install_request *request, const cJSON *repository, cJSON **refusal) {

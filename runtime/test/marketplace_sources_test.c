@@ -10,13 +10,13 @@
 #include "spisor/allocation.h"
 #include "check.h"
 #include "marketplace_call.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "marketplace_name_lookup.h"
 #include "marketplace_read.h"
 #include "marketplace_sources.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
+#include "transport_hooks.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -517,7 +517,7 @@ int main(void) {
 #endif
     snprintf(scratch, sizeof scratch, "%s/marketplace-sources-%d", RUNTIME_SCRATCH_PATH, (int)current_process_id());
     start_empty_directory(scratch);
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     run_without_a_server();
     run_against_the_server();
     CHECK(runtime_remove_tree(scratch) == SPISOR_OK);

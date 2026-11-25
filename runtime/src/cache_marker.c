@@ -16,7 +16,7 @@
 #include "file_stream.h"
 #include "node_json_file.h"
 #include "paths.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
@@ -228,7 +228,7 @@ static file_verdict check_file(const char *directory, const char *resolved_direc
     const char *key = recorded->string;
     char *path = runtime_cache_resolve(resolved_directory, &key, 1);
     file_verdict verdict = {NULL, path == NULL};
-    char actual[RUNTIME_SHA256_HEX_SIZE];
+    char actual[NAULA_SHA256_HEX_SIZE];
     if (path == NULL) {
         return verdict;
     }

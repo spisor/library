@@ -464,15 +464,15 @@ basekit folded in.
 
 ## Using it
 
-Check it out at `siblings/library` beside weivel's `core` and `standard` at `siblings/core` and `siblings/standard`,
-each at the commit your `repo.json` pins, as CI's dependency checkout does, and add it as a subdirectory:
+Check it out at `siblings/library` beside weivel's `core` and `standard` at `siblings/core` and `siblings/standard`
+and naula at `siblings/naula`, each at the commit your `repo.json` pins, as CI's dependency checkout does, and add it as a subdirectory:
 
 ```cmake
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/siblings/library ${PROJECT_BINARY_DIR}/siblings/library)
 target_link_libraries(your_library PRIVATE spisor_library)
 ```
 
-The library reads weivel from the TOP-LEVEL project's `siblings/`, so the consumer's pins are the ones built, and
+The library reads weivel and naula from the TOP-LEVEL project's `siblings/`, so the consumer's pins are the ones built, and
 it stops with an error naming the missing checkout otherwise. Both targets are built position independent, so they
 link into a shared library on Linux. Tests are built only when this repository is the top-level project.
 
@@ -558,8 +558,11 @@ The tests check every vector under BOTH platform rules on whichever OS runs them
 generated with Node v26.3.1, whose Windows join also handles reserved device names (`CON`, `COM1`
 and the rest); regenerate them and re-run the tests when moving to another Node.
 
-## Vendored cJSON
+## cJSON and the transport come from naula
 
-`vendor/cjson/` holds `cJSON.c`, `cJSON.h` and `LICENSE` from cJSON **v1.7.19**, tag commit
-`c859b25da02955fef659d658b8f324b5cde87be3`, unmodified. It builds as its own target without this
-repository's warning flags, which apply to everything else.
+cJSON is naula's `naula_cjson` target, which `spisor_library` links publicly; naula vendors it unmodified. `runtime`
+reaches hosts through naula's HTTP transport and hashes through naula's SHA-256, and keeps only what is its own: the
+`file:` urls of `fetch.get`, and hashing a whole file. naula's allocations go through this repository's allocator
+(`runtime/src/naula_allocator.c`), so an out-of-memory test counts and fails them as well. A binary whose fetch
+objects carry the test hooks links `naula_test_hooks`, which alone allows plain http to the loopback fixture; every
+other binary links `naula`.

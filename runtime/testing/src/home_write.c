@@ -17,7 +17,7 @@
 #include "install_settings.h"
 #include "paths.h"
 #include "runtime/secrets.h"
-#include "sha256.h"
+#include "sha256_file.h"
 #include "spisor/allocation.h"
 #include "spisor/definition.h"
 #include "spisor/file.h"
@@ -165,7 +165,7 @@ static spisor_status copy_file(const char *from, const char *to) {
 
 /** Records the file at path under key in hashes and sizes, as an install records what it stored. */
 static spisor_status record_file(const char *path, const char *key, cJSON *hashes, cJSON *sizes) {
-    char hex[RUNTIME_SHA256_HEX_SIZE];
+    char hex[NAULA_SHA256_HEX_SIZE];
     uint64_t size = 0;
     spisor_status status = runtime_sha256_file_sized(path, hex, &size);
     if (status != SPISOR_OK) {

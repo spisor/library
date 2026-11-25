@@ -8,18 +8,18 @@
 #include <string.h>
 
 #include "catalog.h"
+#include "naula/sha256.h"
 #include "spisor/allocation.h"
 #include "catalog_call.h"
 #include "catalog_service_call.h"
 #include "catalog_hooks.h"
 #include "catalog_state.h"
 #include "check.h"
-#include "fetch_hooks.h"
 #include "http_fixture.h"
 #include "scratch_directory.h"
-#include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
+#include "transport_hooks.h"
 
 #if defined(_WIN32)
 #include <process.h>
@@ -205,11 +205,11 @@ static void it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder(vo
     start_scratch("keeps");
     check_once(200, "1.0.0", ETAG, START, "changed");
     char *path = state_file(URL);
-    char hex[RUNTIME_SHA256_HEX_SIZE];
-    runtime_sha256 hash;
-    runtime_sha256_start(&hash);
-    runtime_sha256_add(&hash, (const uint8_t *)URL, strlen(URL));
-    runtime_sha256_finish_hex(&hash, hex);
+    char hex[NAULA_SHA256_HEX_SIZE];
+    naula_sha256 hash;
+    naula_sha256_start(&hash);
+    naula_sha256_add(&hash, (const uint8_t *)URL, strlen(URL));
+    naula_sha256_hex(&hash, hex);
     char expected_name[128];
     snprintf(expected_name, sizeof expected_name, "catalog%c%s.json", RUNTIME_SEPARATOR, hex);
     size_t length = strlen(path);
@@ -453,7 +453,7 @@ static void it_refuses_an_unusable_argument(void) {
 }
 
 int main(void) {
-    runtime_fetch_allow_plain_http(1);
+    naula_fetch_allow_plain_http(1);
     it_makes_one_request_for_two_checks_inside_the_interval();
     it_keeps_the_index_its_etag_and_the_time_under_the_catalog_folder();
     it_asks_again_once_the_interval_has_passed_sending_the_etag();

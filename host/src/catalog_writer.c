@@ -13,9 +13,9 @@
 #include "catalog_text.h"
 #include "host_context.h"
 #include "identity.h"
+#include "naula/sha256.h"
 #include "paths.h"
 #include "platform_key.h"
-#include "sha256.h"
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
@@ -256,16 +256,16 @@ static cJSON *place_file(const char *out, const catalog_input *input, const char
     size_t length = 0;
     int out_of_memory = 0;
     uint8_t *bytes = parent == NULL ? NULL : bytes_of(file, &length, &out_of_memory);
-    char hash[RUNTIME_SHA256_HEX_SIZE];
+    char hash[NAULA_SHA256_HEX_SIZE];
     int copied = bytes != NULL && spisor_make_directories(parent) == SPISOR_OK &&
         spisor_replace_file(destination, bytes, length) == SPISOR_OK;
     cJSON *reference = copied ? cJSON_CreateObject() : NULL;
     char *url = reference == NULL ? NULL : url_of(input, folder, key);
     if (reference != NULL) {
-        runtime_sha256 sha256;
-        runtime_sha256_start(&sha256);
-        runtime_sha256_add(&sha256, bytes, length);
-        runtime_sha256_finish_hex(&sha256, hash);
+        naula_sha256 sha256;
+        naula_sha256_start(&sha256);
+        naula_sha256_add(&sha256, bytes, length);
+        naula_sha256_hex(&sha256, hash);
         if (url == NULL || cJSON_AddStringToObject(reference, "url", url) == NULL ||
             cJSON_AddStringToObject(reference, "sha256", hash) == NULL ||
             cJSON_AddNumberToObject(reference, "size", (double)length) == NULL) {
