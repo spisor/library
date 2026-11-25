@@ -90,7 +90,10 @@ shorten. Both walk the description each
 definition answers, its operations' parameters, its types' first shapes and the members its arrays name as their
 counts, so an operation added to a header is checked without a test changing. The walk is
 `testing/described_checks.c`, test-only, and `spisor_add_described_checks(LIBRARY <target> DECLARATION
-<library.json>)` adds the same two tests, named after the library, for another one. `declaration_test` holds every
+<library.json>)` adds the same two tests, named after the library, for another one; each also requires every
+declared description to answer the definition its service's function answers. `testing/another_definition.c` is the
+check a library's host load test runs to prove weivel/c's host refuses one service served by another's definition.
+`declaration_test` holds every
 header to one getter per definition struct it defines.
 
 `runtime/library.json` declares the library in the weivel standard's format, `runtime` 0.2.0, each service one
@@ -102,9 +105,9 @@ refuses the declaration with `paths` served by `identity`'s getter under its own
 description is generated at build time by the weivel standard's `weivel_describe` from `spisor/status.h` and every
 `include/runtime` header, or for a standard service from the standard's headers, each naming as its `answered_by`
 the getter the service declares, so a language that cannot read a C header binds the definition from it, and
-`description_test` loads each one from the built `runtime` and runs the standard's own check on it, and its check that
-the description answers the definition its service's getter answers. The symbol is the definition's name with
-`_description`, which is the name another library nesting a runtime definition looks for. `runtime` links `weivel_standard` statically, and no other weivel library. It declares no `release`, since
+`description_test` loads each one from the built `runtime` and runs the standard's own check on it. The symbol is the
+definition's name with `_description`, which is the name another library nesting a runtime definition looks for.
+`runtime` links `weivel_standard` statically, and no other weivel library. It declares no `release`, since
 every definition releases its own answers, and the binary exports its definitions and their descriptions and
 nothing else, which `runtime_exports_only_definitions_test` holds: what it links statically is hidden by
 `--exclude-libs` on Linux and by an exported symbols list on macOS, generated from the same headers the test reads.

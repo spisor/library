@@ -10,6 +10,13 @@ target_link_libraries(spisor_described_checks PUBLIC weivel_standard ${CMAKE_DL_
 set_target_properties(spisor_described_checks PROPERTIES SPISOR_TEST_ONLY TRUE)
 spisor_strict_warnings(spisor_described_checks)
 
+# Linked only where weivel/c is added, as every project testing a library on its host does.
+add_library(spisor_another_definition_check STATIC EXCLUDE_FROM_ALL another_definition.c)
+target_include_directories(spisor_another_definition_check PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(spisor_another_definition_check PUBLIC weivel_c_standard)
+set_target_properties(spisor_another_definition_check PROPERTIES SPISOR_TEST_ONLY TRUE)
+spisor_strict_warnings(spisor_another_definition_check)
+
 # spisor_add_described_checks(LIBRARY <shared library target> DECLARATION <library.json>) adds
 # <LIBRARY>_short_shape_test and <LIBRARY>_empty_answer_test, which load LIBRARY as a consumer would and check every
 # definition DECLARATION gives a description.
