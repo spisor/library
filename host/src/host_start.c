@@ -63,11 +63,13 @@ static char *entry_inside(const char *directory, const char *id, const char *ent
     return path;
 }
 
-static cJSON *start_with(const host_context *context, const char *executable, const char *script, const char *id) {
+static cJSON *start_with(const host_context *context, const char *executable, const char *script, const char *layer,
+                         const char *id) {
     cJSON *start = cJSON_CreateObject();
     cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
     int built = arguments != NULL && cJSON_AddStringToObject(start, "executable", executable) != NULL &&
                 (script == NULL || cJSON_AddItemToArray(arguments, cJSON_CreateString(script))) &&
+                (layer == NULL || cJSON_AddItemToArray(arguments, cJSON_CreateString(layer))) &&
                 cJSON_AddItemToArray(arguments, cJSON_CreateString(id)) &&
                 cJSON_AddItemToObject(start, "environment", cJSON_Duplicate(context->environment, 1));
     if (!built) {
@@ -77,9 +79,12 @@ static cJSON *start_with(const host_context *context, const char *executable, co
     return start;
 }
 
-/** The start of the entry inside directory on runtime, with id as the host it starts. */
+/**
+ * The start of the entry inside directory on runtime, with id as the host it starts, after layer, the runtime of the
+ * plugins a session host runs, NULL for a host that runs none.
+ */
 static cJSON *layer_start(const host_context *context, const char *runtime, const char *directory, const char *entry,
-                          const char *id, cJSON **refusal) {
+                          const char *layer, const char *id, cJSON **refusal) {
     char *path = entry_inside(directory, id, entry, refusal);
     int native = runtime != NULL && strcmp(runtime, NATIVE_RUNTIME) == 0;
     int javascript = runtime != NULL && strcmp(runtime, JAVASCRIPT_RUNTIME) == 0;
@@ -89,9 +94,9 @@ static cJSON *layer_start(const host_context *context, const char *runtime, cons
     if (path != NULL && native && !host_make_runnable(path)) {
         *refusal = refused("the entry of ", id, " cannot be made runnable");
     } else if (path != NULL && native) {
-        start = start_with(context, path, NULL, id);
+        start = start_with(context, path, NULL, layer, id);
     } else if (executable != NULL) {
-        start = start_with(context, executable, path, id);
+        start = start_with(context, executable, path, layer, id);
     } else if (path != NULL && !javascript) {
         *refusal = refused("the start recorded for ", id, " names a runtime this host cannot start");
     }
@@ -109,7 +114,7 @@ cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusa
     char *directory = cJSON_IsObject(recorded) ? installed_version(context, id, host_text(registration, "version"), refusal) : NULL;
     cJSON *start = directory == NULL ? NULL
                                      : layer_start(context, host_text(recorded, "runtime"), directory,
-                                                   host_text(recorded, "entry"), id, refusal);
+                                                   host_text(recorded, "entry"), NULL, id, refusal);
     spisor_memory_release(directory);
     cJSON_Delete(registration);
     return start;
@@ -169,7 +174,8 @@ cJSON *host_session_start_of(const host_context *context, const char *loader_id,
     char *entry = directory == NULL ? NULL : entry_of_bundle(directory, &out_of_memory);
     cJSON *start = directory == NULL || out_of_memory
                        ? NULL
-                       : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, loader_id, refusal);
+                       : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, JAVASCRIPT_RUNTIME, loader_id,
+                                     refusal);
     spisor_memory_release(entry);
     spisor_memory_release(directory);
     spisor_memory_release(version);

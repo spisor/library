@@ -33,7 +33,8 @@ typedef struct runtime_host_timers {
  * runtime_host_phase; the `exit_code` its stop answers, 0 for a SERVE run and RUNTIME_HOST_EXIT_FAILED for an ACTION
  * run until its action answered; its `timers`; and `in_process`, 1 for a SERVE run that serves the process it runs
  * in alone, as a host started inside another application's process does, which never reads or writes the loader's
- * holders and ready records, so any number of such runs serve at once, each in its own process.
+ * holders and ready records, so any number of such runs serve at once, each in its own process; and `run_id`, the
+ * identity hosts.start answered, under which the run publishes its ready record and prunes its holders.
  */
 typedef struct runtime_host_run {
     uint32_t mode;
@@ -46,13 +47,15 @@ typedef struct runtime_host_run {
     uint32_t exit_code;
     runtime_host_timers timers;
     int in_process;
+    char *run_id;
 } runtime_host_run;
 
 /**
- * Starts the run `arguments` name in `environment`, an object of variable names to values: `<loader id>` serves,
- * `<loader id> in-process` serves in-process, `<loader id> action <plugin> <action> <input>` runs one action, the
- * input a JSON object. The layer is the
- * javascript-host at the version its boot hint names, beside every library the hint names; hosts.start plans the run,
+ * Starts the run `arguments` name in `environment`, an object of variable names to values, each form led by the
+ * layer's runtime, javascript or native: `<runtime> <loader id>` serves, `<runtime> <loader id> in-process` serves
+ * in-process, `<runtime> <loader id> action <plugin> <action> <input>` runs one action, the input a JSON object. The
+ * layer is the item that runtime names, javascript-host or spisor-interface, at the version its boot hint names,
+ * beside every library the hint names; hosts.start plans the layer's run,
  * a SERVE run as the loader's session start; the plan's libraries are the hinted ones with a binary but runtime
  * itself, which the program was started with, and its plugins are those cache.locate finds of the plan's. An ACTION
  * run's plugin must be one of them, and ui.action merges the action's arguments from its manifest. The scopes begin

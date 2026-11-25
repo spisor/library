@@ -93,8 +93,9 @@ typedef struct runtime_hosts_provenance_answer {
 
 /**
  * The start of `host_id` in the user's `environment`, its language `layer`'s bundle and the `library_count`
- * `libraries` that layer loaded, and `session` 1 for the application's session host, else 0. First shape ends at
- * `session`.
+ * `libraries` that layer loaded, and `session` 1 for the application's session host, else 0; the `layer_runtime`,
+ * `javascript` or `native`, whose plugins the start plans; and `action_plugin`, the plugin an ACTION start runs an
+ * action of, NULL for any other start. First shape ends at `session`.
  */
 typedef struct runtime_hosts_start_argument {
     uint32_t size;
@@ -105,6 +106,8 @@ typedef struct runtime_hosts_start_argument {
     const runtime_item_version *libraries;
     size_t library_count;
     uint32_t session;
+    const char *layer_runtime;
+    const char *action_plugin;
 } runtime_hosts_start_argument;
 
 /** The timers of a session host. Part of an answer, so it has no size. */
@@ -198,10 +201,15 @@ typedef struct runtime_hosts_definition {
      * The whole start of a host: resolves the places, reads the host's registration and its home's settings, then
      * plans what runs as updates' apply does, with the layer and each library at the version it runs; a start that is
      * not the session start reuses instead the run a live run record of the host names, with a run record of its own.
-     * A refused session start publishes its refusal to the host's ready record once its places resolved.
+     * The plan holds only the enabled plugins whose catalog runtime is `layer_runtime`, and for an ACTION start only
+     * `action_plugin` and every plugin of the layer that provides, transitively, a capability it consumes. A refused
+     * session start publishes its refusal to the ready record of the run's identity, the host id for the layer that
+     * holds the front door and `<host id>.<layer runtime>` for the other, once its places resolved.
      *
-     * @return OK; MALFORMED; REFUSED when the host is not registered or its registration carries no version or home,
-     * the settings cannot be read, or as updates' apply refuses; OUT_OF_MEMORY, removing the run record this start
+     * @return OK; MALFORMED, also for a `layer_runtime` that is neither `javascript` nor `native`; REFUSED when the
+     * host is not registered or its registration carries no version or home, the settings cannot be read, a planned
+     * plugin consumes a capability only a plugin of the other layer provides, or as updates' apply refuses;
+     * OUT_OF_MEMORY, removing the run record this start
      * wrote, and publishing no refusal. A refused or OUT_OF_MEMORY start may have recorded the references, which the
      * next start would record alike.
      */

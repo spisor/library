@@ -6,6 +6,9 @@
 /** The catalog item an entry declaring runsOnJavascriptHost runs a loader's host on. */
 #define RUNTIME_JAVASCRIPT_HOST_ID "javascript-host"
 
+/** The catalog item whose boot hint names the native layer's libraries and version. */
+#define RUNTIME_NATIVE_HOST_ID "spisor-interface"
+
 /** The library id runtime itself is installed and hinted under. */
 #define RUNTIME_LIBRARY_ID "runtime"
 

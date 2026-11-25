@@ -67,7 +67,7 @@ function report(home: string, plugin: string): string | undefined {
   return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
-const greetAction = ["test-host", "action", "a", "greet", "{}"];
+const greetAction = ["javascript", "test-host", "action", "a", "greet", "{}"];
 const greeted = "activated: hello from the manifest's defaults\ngreeted: world\n";
 
 describe("weivel/typescript's bundled host program over runtime", () => {

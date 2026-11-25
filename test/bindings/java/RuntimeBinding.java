@@ -91,7 +91,7 @@ public final class RuntimeBinding {
             BoundDefinition runtimeHost = (BoundDefinition) library.definitions().get(HOST);
             BoundDefinition scopes = (BoundDefinition) library.definitions().get(SCOPE);
             Map<?, ?> plan = (Map<?, ?>) answered(runtimeHost.call("start",
-                    Map.of("arguments", List.of(LOADER)))).value();
+                    Map.of("arguments", List.of("javascript", LOADER)))).value();
             planNamesTheInstalledPlugin(plan);
             String manifest = (String) ((Map<?, ?>) ((List<?>) plan.get("plugins")).get(0)).get("manifest");
             DescribedAnswer.Answered opened = answered(scopes.call("open", Map.of("manifest_path", manifest)));

@@ -294,17 +294,17 @@ static void every_progress_failure_in_mode(const progress_case *each) {
 }
 
 int main(void) {
-    static const char *const serve[1] = {LOADER};
-    static const char *const action[5] = {LOADER, "action", "a", "greet", "{\"name\": \"you\"}"};
-    static const char *const undeclared[5] = {LOADER, "action", "a", "wave", "{}"};
-    static const start_case cases[] = {{"a serve start and its stop", serve, 1, WEIVEL_STATUS_OK},
-                                       {"an action start and its stop", action, 5, WEIVEL_STATUS_OK},
-                                       {"an undeclared action's start", undeclared, 5, WEIVEL_STATUS_REFUSED}};
+    static const char *const serve[2] = {LAYER_RUNTIME, LOADER};
+    static const char *const action[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}"};
+    static const char *const undeclared[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
+    static const start_case cases[] = {{"a serve start and its stop", serve, 2, WEIVEL_STATUS_OK},
+                                       {"an action start and its stop", action, 6, WEIVEL_STATUS_OK},
+                                       {"an undeclared action's start", undeclared, 6, WEIVEL_STATUS_REFUSED}};
     static const progress_case progress_cases[] = {
-        {"a held serve run's started and tick", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0},
-        {"a serve run's tick no holder keeps", serve, 1, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0},
-        {"a serve run's refused plugin", serve, 1, WEIVEL_STANDARD_HOST_REFUSED, 0, 0},
-        {"an action run's started and finished", action, 5, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0}};
+        {"a held serve run's started and tick", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0},
+        {"a serve run's tick no holder keeps", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0},
+        {"a serve run's refused plugin", serve, 2, WEIVEL_STANDARD_HOST_REFUSED, 0, 0},
+        {"an action run's started and finished", action, 6, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0}};
     spisor_json_use_library_allocator();
     start_host_world("out-of-memory-host");
     list_plugin("a", "1.1.0", "1.1.0");

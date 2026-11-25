@@ -103,7 +103,7 @@ static const weivel_standard_host_outcome *first_not_activated(const runtime_hos
 static spisor_status publish(const runtime_host_run *run, const cJSON *environment, const char *refused,
                              const char *fix, spisor_refusal *refusal) {
     cJSON *json_refusal = NULL;
-    runtime_processes_publication publication = {state_of(run), run->host_id, (double)current_process_id(),
+    runtime_processes_publication publication = {state_of(run), run->run_id, (double)current_process_id(),
                                                  environment, refused, fix};
     return runtime_processes_ready(&publication, &json_refusal) ? SPISOR_OK
                                                                 : runtime_refuse_json(refusal, json_refusal);
@@ -215,7 +215,7 @@ static spisor_status stamp_and_prune(const runtime_host_run *run, int64_t now, i
     double at = (double)now;
     runtime_processes_record_request record = {state_of(run), run->host_id, member(plan, "run"), (double)interval,
                                                text_of(plan, "runRecord"), &at};
-    runtime_processes_prune_request prune = {state_of(run), run->host_id, (double)current_process_id(), &at,
+    runtime_processes_prune_request prune = {state_of(run), run->run_id, (double)current_process_id(), &at,
                                              (double)interval};
     cJSON *stamped = runtime_processes_record_run(&record, failure);
     cJSON *pruned = stamped == NULL || run->in_process ? NULL : runtime_processes_prune(&prune, failure);
