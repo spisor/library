@@ -259,6 +259,8 @@ weivel/typescript's `engines` names and npm on the `PATH`, and the Java tests a 
 `SPISOR_BINDINGS_JAVA_HOME`, which defaults to `JAVA_HOME`. Without them, without a checkout, on a sanitized build
 or on a 32-bit platform each test is registered as skipped, saying why. Nothing under `test/bindings/` is linked
 into, staged beside or installed with any shipped artifact.
+`weivel_pins_test` fails when this repository's `core` or `standard` pin differs from `siblings/typescript`'s, so the
+two layers that load weivel load one.
 
 ### The places
 

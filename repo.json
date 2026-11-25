@@ -9,12 +9,12 @@
     {
       "id": "github:1455223370",
       "importName": "core",
-      "commit": "fba572ac6fc61ab719dd331a5409796c06ef23b4"
+      "commit": "15800809b3ee4fdb7aba4d43fe2e6f3015ab26a6"
     },
     {
       "id": "github:1456093642",
       "importName": "standard",
-      "commit": "832decb50711a34db9bf0d572f26fc4a52e5046f"
+      "commit": "b8c40b7cfb994ecd80bb5cd8739245af29954190"
     },
     {
       "id": "github:1457141747",
@@ -24,7 +24,7 @@
     {
       "id": "github:1427561829",
       "importName": "typescript",
-      "commit": "4f714ea850005e007e5707dbe424c5e2a6aed0e1"
+      "commit": "7dd974a4e8f86f041e9d9fa02d4e387051a4bfc8"
     },
     {
       "id": "github:1350572676",
