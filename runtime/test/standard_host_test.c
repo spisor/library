@@ -53,10 +53,10 @@ static void release_scope(weivel_standard_scope *scope) {
 }
 
 static void a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin(void) {
-    const char *arguments[1] = {LOADER};
+    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
     started_run run;
     start_host_world("serve");
-    run = start_with(arguments, 1);
+    run = start_with(arguments, 2);
     CHECK(run.status == WEIVEL_STATUS_OK);
     CHECK(run.plan.mode == WEIVEL_STANDARD_HOST_SERVE);
     CHECK(run.plan.library_count == 1);
@@ -83,11 +83,11 @@ static void a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin(vo
 }
 
 static void the_scopes_open_from_the_start_until_its_stop(void) {
-    const char *arguments[1] = {LOADER};
+    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
     weivel_standard_scope scope;
     started_run run;
     start_host_world("scopes");
-    run = start_with(arguments, 1);
+    run = start_with(arguments, 2);
     CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 1);
     if (run.plan.plugin_count == 1) {
         CHECK(open_scope(run.plan.plugins[0].manifest, &scope) == WEIVEL_STATUS_OK);
@@ -112,11 +112,11 @@ static const weivel_standard_entry *entry_at(const weivel_standard_value *record
 }
 
 static void an_action_start_names_the_plugins_own_manifest_and_merges_its_arguments(void) {
-    const char *arguments[5] = {LOADER, "action", "a", "greet", "{\"name\": \"you\", \"times\": 2}"};
+    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\", \"times\": 2}"};
     const weivel_standard_entry *entry;
     started_run run;
     start_host_world("action");
-    run = start_with(arguments, 5);
+    run = start_with(arguments, 6);
     CHECK(run.status == WEIVEL_STATUS_OK);
     CHECK(run.plan.mode == WEIVEL_STANDARD_HOST_ACTION);
     CHECK(run.plan.plugin_count == 1);
@@ -170,14 +170,14 @@ static int is_untouched_past_its_size(const older_plan *older) {
 }
 
 static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(void) {
-    const char *action[5] = {LOADER, "action", "a", "greet", "{}"};
-    const char *serve[1] = {LOADER};
+    const char *action[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}"};
+    const char *serve[2] = {LAYER_RUNTIME, LOADER};
     const weivel_standard_host *host = host_definition();
     weivel_standard_service_refusal refusal;
     older_plan older;
     weivel_status status;
     start_host_world("older-program");
-    status = start_older(action, 5, &older, &refusal);
+    status = start_older(action, 6, &older, &refusal);
     CHECK(status == WEIVEL_STATUS_REFUSED);
     CHECK(refusal.detail != NULL && strstr(refusal.detail, "too old for the run") != NULL);
     CHECK(older.plan.storage == NULL && older.plan.mode == 0 && older.plan.action_name == NULL);
@@ -189,7 +189,7 @@ static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(
     if (status == WEIVEL_STATUS_OK) {
         stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run a too small plan was answered for");
     }
-    status = start_older(serve, 1, &older, &refusal);
+    status = start_older(serve, 2, &older, &refusal);
     CHECK(status == WEIVEL_STATUS_OK && older.plan.mode == WEIVEL_STANDARD_HOST_SERVE);
     CHECK(is_untouched_past_its_size(&older));
     host->release_plan(host->context, &older.plan);
@@ -201,35 +201,45 @@ static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(
     finish_base();
 }
 
+#define USAGE "takes its layer's runtime, javascript or native, then a loader id"
+
 static void arguments_that_name_no_run_are_refused(void) {
-    const char *serve_word[2] = {LOADER, "serve"};
-    const char *short_action[4] = {LOADER, "action", "a", "greet"};
-    const char *listed_input[5] = {LOADER, "action", "a", "greet", "[1]"};
-    const char *broken_input[5] = {LOADER, "action", "a", "greet", "{"};
+    const char *loader_alone[1] = {LOADER};
+    const char *other_runtime[2] = {"jvm", LOADER};
+    const char *serve_word[3] = {LAYER_RUNTIME, LOADER, "serve"};
+    const char *short_action[5] = {LAYER_RUNTIME, LOADER, "action", "a", "greet"};
+    const char *listed_input[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "[1]"};
+    const char *broken_input[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{"};
     started_run run;
     start_host_world("usage");
     run = start_with(NULL, 0);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "takes a loader id", "no arguments");
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "no arguments");
     release_run(&run);
-    run = start_with(serve_word, 2);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "takes a loader id", "a second word");
+    run = start_with(loader_alone, 1);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a loader id with no runtime before it");
     release_run(&run);
-    run = start_with(short_action, 4);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "takes a loader id", "an action without its input");
+    run = start_with(other_runtime, 2);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a runtime no layer runs");
     release_run(&run);
-    run = start_with(listed_input, 5);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "takes a loader id", "an input that is a list");
+    run = start_with(serve_word, 3);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a second word");
     release_run(&run);
-    run = start_with(broken_input, 5);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "takes a loader id", "an input that is no JSON");
+    run = start_with(short_action, 5);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "an action without its input");
+    release_run(&run);
+    run = start_with(listed_input, 6);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "an input that is a list");
+    release_run(&run);
+    run = start_with(broken_input, 6);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "an input that is no JSON");
     release_run(&run);
     CHECK(run_record_count() == 0);
     finish_base();
 }
 
 static void a_null_argument_is_malformed(void) {
-    const char *holding_null[2] = {LOADER, NULL};
-    started_run run = start_with(holding_null, 2);
+    const char *holding_null[3] = {LAYER_RUNTIME, LOADER, NULL};
+    started_run run = start_with(holding_null, 3);
     expect_refused(&run, WEIVEL_STATUS_MALFORMED, "NULL", "an argument that is NULL");
     release_run(&run);
     run = start_with(NULL, 1);
@@ -238,14 +248,14 @@ static void a_null_argument_is_malformed(void) {
 }
 
 static void an_action_of_a_plugin_the_plan_does_not_run_is_refused(void) {
-    const char *arguments[5] = {LOADER, "action", "b", "greet", "{}"};
+    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "b", "greet", "{}"};
     weivel_standard_scope scope;
     char *manifest;
     started_run run;
     start_host_world("not-deployed");
     install_plugin("b", "{\"id\": \"b\", \"version\": \"1.0.0\", \"actions\": {\"greet\": {\"call\": "
                         "{\"service\": \"b\", \"method\": \"greet\"}}}}");
-    run = start_with(arguments, 5);
+    run = start_with(arguments, 6);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "b is not among the plugins " LOADER " runs", "an undeployed plugin");
     release_run(&run);
     CHECK(run_record_count() == 0);
@@ -256,11 +266,11 @@ static void an_action_of_a_plugin_the_plan_does_not_run_is_refused(void) {
 }
 
 static void a_located_plugin_with_no_entry_is_refused(void) {
-    const char *arguments[1] = {LOADER};
+    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
     started_run run;
     start_host_world("no-entry");
     install_plugin("a", "{\"id\": \"a\", \"version\": \"1.0.0\"}");
-    run = start_with(arguments, 1);
+    run = start_with(arguments, 2);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "names no entry installed beside it", "a plugin with no entry");
     release_run(&run);
     CHECK(run_record_count() == 0);
@@ -268,10 +278,10 @@ static void a_located_plugin_with_no_entry_is_refused(void) {
 }
 
 static void an_undeclared_action_is_refused(void) {
-    const char *arguments[5] = {LOADER, "action", "a", "wave", "{}"};
+    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
     started_run run;
     start_host_world("undeclared");
-    run = start_with(arguments, 5);
+    run = start_with(arguments, 6);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "declares no action wave", "an undeclared action");
     release_run(&run);
     CHECK(run_record_count() == 0);
@@ -279,13 +289,13 @@ static void an_undeclared_action_is_refused(void) {
 }
 
 static void a_layer_with_no_hinted_version_is_refused_and_published(void) {
-    const char *arguments[1] = {LOADER};
+    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
     char *problem = NULL;
     char *ready;
     started_run run;
     start_host_world("no-layer");
     write_hint("javascript-host", "{\"libraries\": {}}");
-    run = start_with(arguments, 1);
+    run = start_with(arguments, 2);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "no javascript-host version is recorded", "a layer with no version");
     release_run(&run);
     ready = runtime_holders_path(state, LOADER, ".ready.json", &problem);
@@ -296,23 +306,23 @@ static void a_layer_with_no_hinted_version_is_refused_and_published(void) {
 }
 
 static void an_unregistered_loader_is_refused(void) {
-    const char *arguments[1] = {"other-host"};
+    const char *arguments[2] = {LAYER_RUNTIME, "other-host"};
     started_run run;
     start_host_world("unregistered");
-    run = start_with(arguments, 1);
+    run = start_with(arguments, 2);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "other-host", "an unregistered loader");
     release_run(&run);
     finish_base();
 }
 
 static void a_second_start_before_its_stop_is_refused(void) {
-    const char *arguments[1] = {LOADER};
+    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
     started_run first;
     started_run second;
     start_host_world("second");
-    first = start_with(arguments, 1);
+    first = start_with(arguments, 2);
     CHECK(first.status == WEIVEL_STATUS_OK);
-    second = start_with(arguments, 1);
+    second = start_with(arguments, 2);
     expect_refused(&second, WEIVEL_STATUS_REFUSED, "called again before its stop", "a second start");
     release_run(&second);
     release_run(&first);

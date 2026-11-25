@@ -20,9 +20,9 @@
 #define CHECK_INTERVAL 3600000LL
 #define FAILURES_BEFORE_EXIT 6
 
-static const char *const serve_arguments[1] = {LOADER};
-static const char *const in_process_arguments[2] = {LOADER, "in-process"};
-static const char *const action_arguments[5] = {LOADER, "action", "a", "greet", "{}"};
+static const char *const serve_arguments[2] = {LAYER_RUNTIME, LOADER};
+static const char *const in_process_arguments[3] = {LAYER_RUNTIME, LOADER, "in-process"};
+static const char *const action_arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}"};
 
 typedef struct tick_answer {
     weivel_status status;
@@ -158,7 +158,7 @@ static started_run serving(const char *label) {
     weivel_standard_host_outcome outcome;
     started_run run;
     start_held_host_world(label);
-    run = start_one(serve_arguments, 1);
+    run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     return run;
@@ -191,6 +191,33 @@ static void start_two_plugin_world(const char *label) {
     cJSON_Delete(settings);
 }
 
+#define CONSUMING_MANIFEST                                                                                       \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                          \
+    "\"capabilities\": {\"provides\": [], \"consumes\": [\"greeting\"]}, "                                      \
+    "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\"}}}}"
+#define PROVIDING_MANIFEST(id)                                                                                   \
+    "{\"id\": \"" id "\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                    \
+    "\"capabilities\": {\"provides\": [\"greeting\"], \"consumes\": []}}"
+
+/**
+ * A loader whose settings enable `a`, whose action consumes `greeting`, and `b` and `c`, each providing it, so an
+ * action of `a` plans all three.
+ */
+static void start_two_provider_world(const char *label) {
+    cJSON *settings;
+    char *text;
+    start_host_world(label);
+    install_plugin("a", CONSUMING_MANIFEST);
+    install_plugin("b", PROVIDING_MANIFEST("b"));
+    install_plugin("c", PROVIDING_MANIFEST("c"));
+    settings = settings_with(
+        "{\"plugins\": {\"a\": {\"enabled\": true}, \"b\": {\"enabled\": true}, \"c\": {\"enabled\": true}}}");
+    text = cJSON_PrintUnformatted(settings);
+    write_in(application_home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+}
+
 /** Starts the two-plugin run the arguments name and tells it `a` and `b` ended as `a_state` and `b_state`. */
 static started_run started_with_states(const char *const *arguments, size_t count, uint32_t a_state,
                                        uint32_t b_state, const char *detail) {
@@ -215,7 +242,7 @@ static void a_plugin_not_activated_publishes_a_refusal_naming_it(uint32_t a_stat
     cJSON *record;
     start_two_plugin_world(label);
     hold_the_loader();
-    run = started_with_states(serve_arguments, 1, a_state, b_state, detail);
+    run = started_with_states(serve_arguments, 2, a_state, b_state, detail);
     record = ready_record();
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")), expected, label);
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "fix")), fix, label);
@@ -233,7 +260,7 @@ static void outcomes_that_are_not_the_plans_are_malformed(void) {
     const char *labels[5] = {"no outcome", "two outcomes", "another manifest", "no state", "an unknown state"};
     for (size_t index = 0; index < 5; index++) {
         start_host_world("malformed-outcomes");
-        run = start_one(serve_arguments, 1);
+        run = start_one(serve_arguments, 2);
         outcomes[0] = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
         outcomes[1] = outcomes[0];
         if (index == 2) {
@@ -279,7 +306,7 @@ static started_run acting(const char *label) {
     started_run run;
     cJSON *record;
     start_host_world(label);
-    run = start_one(action_arguments, 5);
+    run = start_one(action_arguments, 6);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     record = ready_record();
@@ -331,7 +358,7 @@ static void finished_is_refused_in_a_serve_run_and_before_started(void) {
     finish_base();
 
     start_host_world("finished-early");
-    run = start_one(action_arguments, 5);
+    run = start_one(action_arguments, 6);
     CHECK(tell_finished(&answered, NULL, &refusal) == WEIVEL_STATUS_REFUSED);
     expect_detail(&refusal, "before started answered OK", "finished before started");
     release_refusal(&refusal);
@@ -352,12 +379,23 @@ static void publish_plugin(const char *version) {
     write_catalog();
 }
 
+/** An action of `a` beside `b`, which provides what it consumes and activated, and `c`, which also does and failed. */
 static void an_action_runs_on_when_another_plugin_was_not_activated(void) {
     weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    weivel_standard_host_outcome outcomes[3];
     started_run run;
-    start_two_plugin_world("action-beside-a-failed-plugin");
-    run = started_with_states(action_arguments, 5, WEIVEL_STANDARD_HOST_ACTIVATED, WEIVEL_STANDARD_HOST_FAILED,
-                              "it threw");
+    start_two_provider_world("action-beside-a-failed-plugin");
+    run = start_with(action_arguments, 6);
+    CHECK(run.status == WEIVEL_STATUS_OK && run.plan.plugin_count == 3);
+    if (run.plan.plugin_count == 3) {
+        weivel_standard_host_outcome a = {run.plan.plugins[0].manifest, WEIVEL_STANDARD_HOST_ACTIVATED, NULL};
+        weivel_standard_host_outcome b = {run.plan.plugins[1].manifest, WEIVEL_STANDARD_HOST_ACTIVATED, NULL};
+        weivel_standard_host_outcome c = {run.plan.plugins[2].manifest, WEIVEL_STANDARD_HOST_FAILED, "it threw"};
+        outcomes[0] = a;
+        outcomes[1] = b;
+        outcomes[2] = c;
+        CHECK(tell_started(outcomes, 3, NULL) == WEIVEL_STATUS_OK);
+    }
     CHECK(tell_finished(&answered, NULL, NULL) == WEIVEL_STATUS_OK);
     release_run(&run);
     stop_expecting(0, "an action whose plugin activated beside one that failed");
@@ -422,7 +460,7 @@ static void a_serve_run_no_holder_keeps_ends_with_exit_code_zero(void) {
     weivel_standard_host_outcome outcome;
     started_run run;
     start_host_world("unheld");
-    run = start_one(serve_arguments, 1);
+    run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     expect_tick_refused(NOW, "no holder of " LOADER " is alive", "a tick no holder keeps");
@@ -535,7 +573,7 @@ static void in_process_runs_serve_beside_another_host_and_leave_the_loaders_reco
     start_host_world("in-process");
     record_the_host(other.pid, NOW, "[]");
     before = read_processes_record();
-    run = start_one(in_process_arguments, 2);
+    run = start_one(in_process_arguments, 3);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     ready = ready_record();
@@ -571,7 +609,7 @@ static void a_refused_in_process_start_leaves_the_ready_record_alone(void) {
     write_file(path, "{\"pid\":1,\"environment\":{}}\n");
     before = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     write_in(state, "hosts/" LOADER ".json", "{\"id\": \"" LOADER "\", \"kind\": \"host\"}");
-    run = start_with(in_process_arguments, 2);
+    run = start_with(in_process_arguments, 3);
     CHECK(run.status == WEIVEL_STATUS_REFUSED);
     after = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     check_text(after, before, "the ready record a refused in-process start leaves");
@@ -593,7 +631,7 @@ static void a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking(
     start_host_world("dead-host");
     snprintf(holders, sizeof holders, "[%d]", (int)current_process_id());
     record_the_host(dead.pid, NOW, holders);
-    run = start_one(serve_arguments, 1);
+    run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     expect_tick(NOW, NOW + TURN, "a serve run beside a dead host's record");
@@ -618,7 +656,7 @@ static void a_record_naming_a_live_pid_with_a_stale_stamp_lets_a_serve_run_keep_
     start_host_world("stale-host");
     snprintf(holders, sizeof holders, "[%d]", (int)current_process_id());
     record_the_host(unrelated.pid, NOW - 4 * TURN, holders);
-    run = start_one(serve_arguments, 1);
+    run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     expect_tick(NOW, NOW + TURN, "a serve run beside a stale host's record");

@@ -25,19 +25,21 @@
 
 #define ACTION_WORD "action"
 #define IN_PROCESS_WORD "in-process"
-#define USAGE_MESSAGE                                                                                               \
-    "the host takes a loader id, a loader id followed by in-process, or a loader id followed by action, a plugin, " \
-    "an action and its input as a JSON object"
-#define USAGE_FIX                                                                                                   \
-    "start it with <loader id>, with in-process after the loader id, or with action <plugin> <action> <input json " \
-    "object> after the loader id"
+#define USAGE_MESSAGE                                                                                             \
+    "the host takes its layer's runtime, javascript or native, then a loader id, alone, followed by in-process, " \
+    "or followed by action, a plugin, an action and its input as a JSON object"
+#define USAGE_FIX                                                                                                 \
+    "start it with <runtime> <loader id>, with in-process after the loader id, or with action <plugin> <action> " \
+    "<input json object> after the loader id"
 #define SCOPES_FIX "check that the loader's registered home and the places are absolute folders, then try again"
 
 /**
- * What a run's arguments name: its loader, its mode, whether a SERVE run serves its own process alone, and, for an
- * ACTION run, the plugin, the action and its input.
+ * What a run's arguments name: its layer's runtime and the layer item that runtime names, its loader, its mode,
+ * whether a SERVE run serves its own process alone, and, for an ACTION run, the plugin, the action and its input.
  */
 typedef struct host_request {
+    const char *runtime;
+    const char *layer_id;
     const char *host_id;
     uint32_t mode;
     int in_process;
@@ -54,22 +56,35 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix) {
     return runtime_cache_refusal(parts, count, fix);
 }
 
+/** The layer item whose boot hint names the libraries a layer of runtime loads, NULL for no layer's runtime. */
+static const char *layer_id_of(const char *runtime) {
+    if (runtime != NULL && strcmp(runtime, RUNTIME_LAYER_JAVASCRIPT) == 0) {
+        return RUNTIME_JAVASCRIPT_HOST_ID;
+    }
+    return runtime != NULL && strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0 ? RUNTIME_NATIVE_HOST_ID : NULL;
+}
+
 /** 1 with `request` filled; 0 with `*refusal` set for arguments naming no run, or NULL when memory runs out. */
 static int read_request(const char *const *arguments, size_t count, host_request *request, cJSON **refusal) {
     int out_of_memory = 0;
     memset(request, 0, sizeof *request);
-    request->host_id = count > 0 ? arguments[0] : NULL;
-    request->mode = count == 1 ? WEIVEL_STANDARD_HOST_SERVE : 0;
-    if (count == 2 && strcmp(arguments[1], IN_PROCESS_WORD) == 0) {
+    request->runtime = count > 0 ? arguments[0] : NULL;
+    request->layer_id = layer_id_of(request->runtime);
+    request->host_id = count > 1 ? arguments[1] : NULL;
+    request->mode = count == 2 ? WEIVEL_STANDARD_HOST_SERVE : 0;
+    if (count == 3 && strcmp(arguments[2], IN_PROCESS_WORD) == 0) {
         request->mode = WEIVEL_STANDARD_HOST_SERVE;
         request->in_process = 1;
     }
-    if (count == 5 && strcmp(arguments[1], ACTION_WORD) == 0) {
-        request->input = spisor_parse_json_reporting((const uint8_t *)arguments[4], strlen(arguments[4]),
+    if (count == 6 && strcmp(arguments[2], ACTION_WORD) == 0) {
+        request->input = spisor_parse_json_reporting((const uint8_t *)arguments[5], strlen(arguments[5]),
                                                      &out_of_memory);
         request->mode = cJSON_IsObject(request->input) ? WEIVEL_STANDARD_HOST_ACTION : 0;
-        request->plugin = arguments[2];
-        request->action = arguments[3];
+        request->plugin = arguments[3];
+        request->action = arguments[4];
+    }
+    if (request->layer_id == NULL) {
+        request->mode = 0;
     }
     if (request->mode == 0 && !out_of_memory) {
         *refusal = runtime_refusal(USAGE_MESSAGE, USAGE_FIX);
@@ -77,15 +92,15 @@ static int read_request(const char *const *arguments, size_t count, host_request
     return request->mode != 0;
 }
 
-/** The javascript-host's hint, {libraries, host}, refused unless it names the version the layer runs at. */
-static cJSON *layer_hint(const char *cache, cJSON **refusal) {
-    cJSON *read = runtime_boot_read(cache, RUNTIME_JAVASCRIPT_HOST_ID, refusal);
+/** The hint of layer item layer_id, {libraries, host}, refused unless it names the version the layer runs at. */
+static cJSON *layer_hint(const char *cache, const char *layer_id, cJSON **refusal) {
+    cJSON *read = runtime_boot_read(cache, layer_id, refusal);
     cJSON *hint = cJSON_DetachItemFromObjectCaseSensitive(read, "hint");
     cJSON_Delete(read);
     if (read != NULL && text_of(hint, "host") == NULL) {
-        const char *parts[3] = {"no " RUNTIME_JAVASCRIPT_HOST_ID " version is recorded in ", cache,
+        const char *parts[5] = {"no ", layer_id, " version is recorded in ", cache,
                                 ", which runs the plugins the loader's settings enable"};
-        *refusal = refused(parts, 3, RUNTIME_REINSTALL_FIX);
+        *refusal = refused(parts, 5, RUNTIME_REINSTALL_FIX);
         cJSON_Delete(hint);
         hint = NULL;
     }
@@ -109,9 +124,15 @@ static cJSON *library_versions(const cJSON *hint) {
 static cJSON *started_run(const host_request *request, const cJSON *environment, const cJSON *hint,
                           cJSON **refusal) {
     cJSON *versions = library_versions(hint);
-    runtime_hosts_start_request start = {environment,  request->host_id, RUNTIME_JAVASCRIPT_HOST_ID,
-                                         text_of(hint, "host"), versions,
-                                         request->mode == WEIVEL_STANDARD_HOST_SERVE, request->in_process};
+    runtime_hosts_start_request start = {environment,
+                                         request->host_id,
+                                         request->layer_id,
+                                         text_of(hint, "host"),
+                                         versions,
+                                         request->mode == WEIVEL_STANDARD_HOST_SERVE,
+                                         request->in_process,
+                                         request->runtime,
+                                         request->mode == WEIVEL_STANDARD_HOST_ACTION ? request->plugin : NULL};
     cJSON *started = versions == NULL ? NULL : runtime_hosts_start(&start, refusal);
     cJSON_Delete(versions);
     return started;
@@ -206,6 +227,16 @@ static int scopes_began(const host_request *request, const cJSON *started, cJSON
     return status == SPISOR_OK;
 }
 
+/** A copy of the identity hosts.start answered for the run; NULL when memory runs out. */
+static char *run_id_of(const cJSON *started) {
+    const char *run_id = text_of(started, "runId");
+    char *copy = run_id == NULL ? NULL : spisor_memory_allocate(strlen(run_id) + 1);
+    if (copy != NULL) {
+        strcpy(copy, run_id);
+    }
+    return copy;
+}
+
 static runtime_host_run *new_run(const host_request *request) {
     runtime_host_run *run = spisor_memory_allocate(sizeof *run);
     char *host_id = run == NULL ? NULL : spisor_memory_allocate(strlen(request->host_id) + 1);
@@ -227,6 +258,7 @@ static void free_run(runtime_host_run *run) {
     cJSON_Delete(run->located);
     cJSON_Delete(run->libraries);
     cJSON_Delete(run->action);
+    spisor_memory_release(run->run_id);
     spisor_memory_release(run->host_id);
     spisor_memory_release(run);
 }
@@ -267,15 +299,17 @@ static int planned(runtime_host_run *run, const host_request *request, const cJS
 }
 
 /**
- * Publishes a SERVE run's refusal to the loader's ready record, so a launch waiting on it reads why it will not serve.
+ * Publishes a SERVE run's refusal to the ready record of run_id, the run's identity, else of the loader before its
+ * identity is known, so a launch waiting on it reads why it will not serve.
  *
  * @implNote Best effort, as hosts.start publishes its own, which is why a refusal of hosts.start is not published
  * again: the run is refused either way.
  */
-static void publish_refusal(const host_request *request, const cJSON *places, const cJSON *refusal) {
+static void publish_refusal(const host_request *request, const char *run_id, const cJSON *places,
+                            const cJSON *refusal) {
     if (request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process && refusal != NULL &&
         runtime_is_plain_host_id(request->host_id)) {
-        runtime_publish_ready_refusal(text_of(places, "state"), request->host_id, refusal);
+        runtime_publish_ready_refusal(text_of(places, "state"), run_id == NULL ? request->host_id : run_id, refusal);
     }
 }
 
@@ -284,9 +318,10 @@ static runtime_host_run *run_of(const host_request *request, const cJSON *enviro
     runtime_host_run *run = new_run(request);
     if (run != NULL) {
         run->started = started_run(request, environment, hint, refusal);
+        run->run_id = run->started == NULL ? NULL : run_id_of(run->started);
     }
-    if (run != NULL && run->started != NULL && !planned(run, request, hint, refusal)) {
-        publish_refusal(request, cJSON_GetObjectItemCaseSensitive(run->started, "places"), *refusal);
+    if (run != NULL && run->started != NULL && (run->run_id == NULL || !planned(run, request, hint, refusal))) {
+        publish_refusal(request, run->run_id, cJSON_GetObjectItemCaseSensitive(run->started, "places"), *refusal);
         runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(run->started, "plan"));
         free_run(run);
         run = NULL;
@@ -307,9 +342,9 @@ runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t ar
     if (read_request(arguments, argument_count, &request, refusal)) {
         places = runtime_places_of_environment(environment, refusal);
     }
-    hint = places == NULL ? NULL : layer_hint(text_of(places, "cache"), refusal);
+    hint = places == NULL ? NULL : layer_hint(text_of(places, "cache"), request.layer_id, refusal);
     if (hint == NULL && places != NULL) {
-        publish_refusal(&request, places, *refusal);
+        publish_refusal(&request, NULL, places, *refusal);
     }
     run = hint == NULL ? NULL : run_of(&request, environment, hint, refusal);
     cJSON_Delete(request.input);

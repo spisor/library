@@ -18,6 +18,7 @@
 #include "user_home.h"
 
 #define LOADER "test-host"
+#define LAYER_RUNTIME "javascript"
 #define PLUGIN_MANIFEST                                                                                            \
     "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"config\": {\"name\": \"a\"}, "              \
     "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\", "                      \

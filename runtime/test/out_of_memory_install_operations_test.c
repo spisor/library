@@ -1321,6 +1321,7 @@ static spisor_status start_spisor_host(int session) {
     argument.libraries = libraries;
     argument.library_count = 1;
     argument.session = session;
+    argument.layer_runtime = "javascript";
     last_status = hosts->start(hosts->context, &argument, &answer, &refusal);
     int owed = answer.plan != NULL && answer.plan->run_record != NULL && (!session || answer.timers != NULL);
     if (last_status == SPISOR_OK && !owed) {

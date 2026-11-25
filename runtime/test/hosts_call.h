@@ -249,6 +249,8 @@ static inline spisor_status hosts_start_call(const runtime_hosts_definition *hos
     argument.libraries = hosts_versions_of(read, cJSON_GetObjectItemCaseSensitive(request, "libraries"),
                                            &argument.library_count);
     argument.session = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(request, "session")) ? 1 : 0;
+    argument.layer_runtime = cache_member_text(request, "layerRuntime");
+    argument.action_plugin = cache_member_text(request, "actionPlugin");
     status = hosts->start(hosts->context, &argument, &answer, refusal);
     if (status == SPISOR_OK) {
         *tree = hosts_start_json(&answer);

@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cache_locate.h"
+#include "cache_folders.h"
+#include "cache_refusal.h"
+#include "catalog.h"
 #include "catalog_answer.h"
 #include "config.h"
 #include "file_times.h"
@@ -19,12 +23,16 @@
 #include "run_records.h"
 #include "spisor/json_kind.h"
 #include "updates.h"
+#include "updates_catalog.h"
 #include "user_home.h"
 #include "version_map.h"
 
 #define WRITABLE_STATE_FIX "check that SPISOR_STATE names a writable folder, then try again"
 
-/** What a start resolved before it plans: its places, its identity, its settings and what it runs beside its plugins. */
+/**
+ * What a start resolved before it plans: its places, its identity, its settings and what it runs beside its plugins;
+ * and once planned, the identity its run publishes and holds under.
+ */
 typedef struct start_context {
     runtime_hosts_start_request argument;
     cJSON *places;
@@ -34,6 +42,7 @@ typedef struct start_context {
     cJSON *identity;
     cJSON *settings;
     cJSON *running;
+    char *run_id;
 } start_context;
 
 static cJSON *request_refusal(const char *member, const char *shape) {
@@ -57,6 +66,11 @@ static const char *string_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
 }
 
+int runtime_is_layer_runtime(const char *runtime) {
+    return runtime != NULL &&
+           (strcmp(runtime, RUNTIME_LAYER_JAVASCRIPT) == 0 || strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0);
+}
+
 static int is_usable_request(const runtime_hosts_start_request *start, cJSON **refusal) {
     if (!runtime_is_version_map(start->environment)) {
         *refusal = request_refusal("environment", "an object of variable names to string values");
@@ -66,6 +80,8 @@ static int is_usable_request(const runtime_hosts_start_request *start, cJSON **r
         *refusal = request_refusal("layer", "the layer bundle's id and its version");
     } else if (!runtime_is_version_map(start->libraries)) {
         *refusal = request_refusal("libraries", "an object of the loaded library ids to their versions");
+    } else if (!runtime_is_layer_runtime(start->layer_runtime)) {
+        *refusal = request_refusal("layerRuntime", RUNTIME_LAYER_JAVASCRIPT " or " RUNTIME_LAYER_NATIVE);
     }
     return *refusal == NULL;
 }
@@ -224,6 +240,278 @@ static cJSON *planned(const start_context *context, int *reused, cJSON **refusal
                                                                       : recorded_or_applied(context, reused, refusal);
 }
 
+/** The runtime the catalog lists plugin id on, javascript for a plugin it does not list, as the catalog defaults one. */
+static const char *catalog_runtime(const cJSON *catalog, const char *id) {
+    const char *runtime = text_of(runtime_updates_item(catalog, id), "runtime");
+    return runtime == NULL ? RUNTIME_LAYER_JAVASCRIPT : runtime;
+}
+
+static cJSON *strings_of(const cJSON *capabilities, const char *member) {
+    const cJSON *strings = cJSON_GetObjectItemCaseSensitive(capabilities, member);
+    return cJSON_IsArray(strings) ? cJSON_Duplicate(strings, 1) : cJSON_CreateArray();
+}
+
+static const char *located_manifest(const cJSON *located, const char *id) {
+    const cJSON *found;
+    cJSON_ArrayForEach(found, cJSON_GetObjectItemCaseSensitive(located, "located")) {
+        if (strcmp(string_of(found, "id"), id) == 0) {
+            return string_of(found, "manifest");
+        }
+    }
+    return NULL;
+}
+
+/**
+ * {runtime, provides, consumes}: plugin id's catalog runtime and the capabilities its manifest declares, none for a
+ * manifest that is not located or cannot be read, which the run refuses by name once it reads it; NULL with
+ * *out_of_memory set when memory runs out.
+ */
+static cJSON *described_plugin(const cJSON *catalog, const char *id, const char *manifest, int *out_of_memory) {
+    cJSON *read = manifest == NULL ? NULL : runtime_read_node_json(manifest, out_of_memory);
+    const cJSON *capabilities = cJSON_GetObjectItemCaseSensitive(read, "capabilities");
+    cJSON *described = *out_of_memory ? NULL : cJSON_CreateObject();
+    int built = described != NULL &&
+                cJSON_AddStringToObject(described, "runtime", catalog_runtime(catalog, id)) != NULL &&
+                runtime_add_owned(described, "provides", strings_of(capabilities, "provides")) &&
+                runtime_add_owned(described, "consumes", strings_of(capabilities, "consumes"));
+    cJSON_Delete(read);
+    if (!built) {
+        cJSON_Delete(described);
+        *out_of_memory = 1;
+        return NULL;
+    }
+    return described;
+}
+
+/** Each of plugins described as described_plugin says, by id; NULL when memory runs out. */
+static cJSON *described_plugins(const char *cache, const cJSON *catalog, const cJSON *plugins) {
+    cJSON *located = runtime_cache_locate_plugins(cache, plugins);
+    cJSON *described = located == NULL ? NULL : cJSON_CreateObject();
+    int out_of_memory = described == NULL;
+    for (const cJSON *plugin = plugins == NULL ? NULL : plugins->child; !out_of_memory && plugin != NULL; plugin = plugin->next) {
+        cJSON *each = described_plugin(catalog, plugin->string, located_manifest(located, plugin->string),
+                                       &out_of_memory);
+        out_of_memory = out_of_memory || !runtime_add_owned(described, plugin->string, each);
+    }
+    cJSON_Delete(located);
+    if (out_of_memory) {
+        cJSON_Delete(described);
+        return NULL;
+    }
+    return described;
+}
+
+static int runs_on(const cJSON *plugin, const char *runtime) {
+    return strcmp(string_of(plugin, "runtime"), runtime) == 0;
+}
+
+static int lists(const cJSON *strings, const char *text) {
+    const cJSON *each;
+    cJSON_ArrayForEach(each, strings) {
+        if (cJSON_IsString(each) && strcmp(each->valuestring, text) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** The first described plugin providing capability on runtime when on_runtime is 1, else on any other runtime. */
+static const cJSON *provider_of(const cJSON *described, const char *capability, const char *runtime, int on_runtime) {
+    const cJSON *plugin;
+    cJSON_ArrayForEach(plugin, described) {
+        if (runs_on(plugin, runtime) == on_runtime &&
+            lists(cJSON_GetObjectItemCaseSensitive(plugin, "provides"), capability)) {
+            return plugin;
+        }
+    }
+    return NULL;
+}
+
+static int has_plugin_on(const cJSON *described, const char *runtime) {
+    const cJSON *plugin;
+    cJSON_ArrayForEach(plugin, described) {
+        if (runs_on(plugin, runtime)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** The ids of every described plugin on runtime, as an object of id to true; NULL when memory runs out. */
+static cJSON *layer_plugins(const cJSON *described, const char *runtime) {
+    cJSON *needed = cJSON_CreateObject();
+    const cJSON *plugin;
+    cJSON_ArrayForEach(plugin, described) {
+        if (needed != NULL && runs_on(plugin, runtime) && cJSON_AddTrueToObject(needed, plugin->string) == NULL) {
+            cJSON_Delete(needed);
+            needed = NULL;
+        }
+    }
+    return needed;
+}
+
+/** Adds to needed every plugin on runtime that provides capability; 0 when memory runs out. */
+static int add_providers(cJSON *needed, const cJSON *described, const char *capability, const char *runtime) {
+    const cJSON *plugin;
+    cJSON_ArrayForEach(plugin, described) {
+        int provides = runs_on(plugin, runtime) && lists(cJSON_GetObjectItemCaseSensitive(plugin, "provides"), capability);
+        if (provides && !cJSON_HasObjectItem(needed, plugin->string) &&
+            cJSON_AddTrueToObject(needed, plugin->string) == NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * What an action of action_plugin needs, as an object of id to true: it, when it runs on runtime, and every plugin on
+ * runtime that provides, transitively, a capability one of them consumes; NULL when memory runs out.
+ *
+ * @implNote A provider is appended behind the id being read, so the one walk reaches the providers it adds.
+ */
+static cJSON *action_needs(const cJSON *described, const char *action_plugin, const char *runtime) {
+    const cJSON *action = cJSON_GetObjectItemCaseSensitive(described, action_plugin);
+    cJSON *needed = cJSON_CreateObject();
+    int built = needed != NULL && (action == NULL || !runs_on(action, runtime) ||
+                                   cJSON_AddTrueToObject(needed, action_plugin) != NULL);
+    for (const cJSON *id = built ? needed->child : NULL; built && id != NULL; id = id->next) {
+        const cJSON *capability;
+        cJSON_ArrayForEach(capability, cJSON_GetObjectItemCaseSensitive(
+                                           cJSON_GetObjectItemCaseSensitive(described, id->string), "consumes")) {
+            built = built && (!cJSON_IsString(capability) ||
+                              add_providers(needed, described, capability->valuestring, runtime));
+        }
+    }
+    if (!built) {
+        cJSON_Delete(needed);
+        return NULL;
+    }
+    return needed;
+}
+
+static cJSON *split_refusal(const char *consumer, const char *runtime, const char *capability, const cJSON *provider) {
+    const char *parts[10] = {consumer, " (", runtime, ") consumes ", capability, ", which only ", provider->string,
+                             " (", string_of(provider, "runtime"), ") provides, and a layer runs plugins of one runtime"};
+    const char *fix_parts[4] = {"enable a provider of ", capability, " written in the consumer's language, or disable ",
+                                consumer};
+    char *fix = runtime_cache_text(fix_parts, 4);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 10, fix);
+    spisor_memory_release(fix);
+    return refusal;
+}
+
+/**
+ * 1 with *refusal set, or NULL when memory runs out, when a needed plugin consumes a capability no plugin on runtime
+ * provides and a plugin on another runtime does; 0 otherwise.
+ */
+static int is_split(const cJSON *described, const cJSON *needed, const char *runtime, cJSON **refusal) {
+    const cJSON *id;
+    cJSON_ArrayForEach(id, needed) {
+        const cJSON *capability;
+        cJSON_ArrayForEach(capability, cJSON_GetObjectItemCaseSensitive(
+                                           cJSON_GetObjectItemCaseSensitive(described, id->string), "consumes")) {
+            const char *name = cJSON_GetStringValue(capability);
+            const cJSON *elsewhere = name == NULL || provider_of(described, name, runtime, 1) != NULL
+                                         ? NULL
+                                         : provider_of(described, name, runtime, 0);
+            if (elsewhere != NULL) {
+                *refusal = split_refusal(id->string, runtime, name, elsewhere);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/** plugins less every id needed does not name; NULL when memory runs out. */
+static cJSON *narrowed(const cJSON *plugins, const cJSON *needed) {
+    cJSON *kept = cJSON_CreateObject();
+    for (const cJSON *plugin = plugins == NULL ? NULL : plugins->child; kept != NULL && plugin != NULL; plugin = plugin->next) {
+        if (cJSON_HasObjectItem(needed, plugin->string) && !runtime_map_set(kept, plugin->string, plugin->valuestring)) {
+            cJSON_Delete(kept);
+            kept = NULL;
+        }
+    }
+    return kept;
+}
+
+/**
+ * The loader standard the host's bundle at the version plan runs carries, NULL when it cannot be read, with
+ * *out_of_memory set when memory ran out.
+ *
+ * @implNote Read as JSON alone, not checked as loader.installed checks it: install refuses a loader whose standard
+ * fails that check, and a start reads no more of it than its required plugins.
+ */
+static cJSON *installed_standard(const start_context *context, const cJSON *plan, int *out_of_memory) {
+    const char *version = string_of(cJSON_GetObjectItemCaseSensitive(plan, "run"), context->argument.host_id);
+    const char *segments[5] = {context->cache, "bundles", context->argument.host_id,
+                               version == NULL ? string_of(context->identity, "version") : version, "host.json"};
+    char *file = runtime_cache_joined(segments, 5);
+    cJSON *standard = file == NULL ? NULL : runtime_read_node_json(file, out_of_memory);
+    *out_of_memory = *out_of_memory || file == NULL;
+    spisor_memory_release(file);
+    return standard;
+}
+
+/**
+ * The runtime of the layer holding the front door: that of the first plugin the loader standard requires, else
+ * javascript unless only native plugins are described; NULL when memory runs out. A host whose standard cannot be
+ * read requires no plugin here, as a start needs none.
+ */
+static const char *front_door(const start_context *context, const cJSON *catalog, const cJSON *described,
+                              const cJSON *plan) {
+    int out_of_memory = 0;
+    cJSON *standard = installed_standard(context, plan, &out_of_memory);
+    const cJSON *required = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(standard, "plugins"), 0);
+    const char *door = cJSON_IsString(required) ? catalog_runtime(catalog, required->valuestring) : NULL;
+    cJSON_Delete(standard);
+    if (door == NULL && !out_of_memory) {
+        int native_only =
+            !has_plugin_on(described, RUNTIME_LAYER_JAVASCRIPT) && has_plugin_on(described, RUNTIME_LAYER_NATIVE);
+        door = native_only ? RUNTIME_LAYER_NATIVE : RUNTIME_LAYER_JAVASCRIPT;
+    }
+    return door;
+}
+
+static char *run_id_of(const char *host_id, const char *runtime, const char *door) {
+    const char *parts[3] = {host_id, ".", runtime};
+    return runtime_cache_text(parts, strcmp(door, runtime) == 0 ? 1 : 3);
+}
+
+static cJSON *current_catalog(const start_context *context, cJSON **refusal) {
+    cJSON *sources = runtime_updates_sources(context->settings, refusal);
+    cJSON *catalog = sources == NULL ? NULL : runtime_catalog_current(sources, context->cache, refusal);
+    cJSON_Delete(sources);
+    return catalog;
+}
+
+/**
+ * Narrows plan's plugins to what the start's layer runs and sets the run's identity; 0 with *refusal set as
+ * hosts.start says, or with it NULL when memory runs out.
+ */
+static int layered(start_context *context, cJSON *plan, cJSON **refusal) {
+    const char *runtime = context->argument.layer_runtime;
+    const char *action_plugin = context->argument.action_plugin;
+    const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(plan, "plugins");
+    cJSON *catalog = current_catalog(context, refusal);
+    cJSON *described = catalog == NULL ? NULL : described_plugins(context->cache, catalog, plugins);
+    const char *door = described == NULL ? NULL : front_door(context, catalog, described, plan);
+    context->run_id = door == NULL ? NULL : run_id_of(context->argument.host_id, runtime, door);
+    cJSON *needed = context->run_id == NULL ? NULL
+                    : action_plugin == NULL ? layer_plugins(described, runtime)
+                                            : action_needs(described, action_plugin, runtime);
+    int split = needed != NULL && is_split(described, needed, runtime, refusal);
+    cJSON *kept = needed == NULL || split ? NULL : narrowed(plugins, needed);
+    int replaced = kept != NULL && cJSON_ReplaceItemInObjectCaseSensitive(plan, "plugins", kept);
+    if (kept != NULL && !replaced) {
+        cJSON_Delete(kept);
+    }
+    cJSON_Delete(needed);
+    cJSON_Delete(described);
+    cJSON_Delete(catalog);
+    return replaced;
+}
+
 static cJSON *timers(void) {
     cJSON *timers = cJSON_CreateObject();
     int built = timers != NULL &&
@@ -270,6 +558,7 @@ static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
                 (!context->argument.session || runtime_add_owned(answer, "timers", timers())) &&
                 cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL &&
+                cJSON_AddStringToObject(answer, "runId", context->run_id) != NULL &&
                 cJSON_AddItemToObjectCS(answer, "plan", plan);
     if (!built) {
         runtime_hosts_start_undo(plan);
@@ -285,6 +574,7 @@ static void free_context(start_context *context) {
     cJSON_Delete(context->identity);
     cJSON_Delete(context->settings);
     cJSON_Delete(context->running);
+    spisor_memory_release(context->run_id);
 }
 
 /**
@@ -293,11 +583,13 @@ static void free_context(start_context *context) {
  *
  * @implNote Best effort: the start is refused either way, and a publication that fails must not hide why.
  * A refusal before the places resolve has nowhere to publish, and a start that is not the session start
- * has no launch waiting on it.
+ * has no launch waiting on it. A refusal before the run's identity is known is one of every layer alike, so the
+ * host's own record, which the front door's layer publishes, carries it.
  */
 static void publish_refusal(const start_context *context, const cJSON *refusal) {
     if (context->argument.session && !context->argument.in_process && context->state != NULL && refusal != NULL) {
-        runtime_publish_ready_refusal(context->state, context->argument.host_id, refusal);
+        runtime_publish_ready_refusal(context->state,
+                                      context->run_id == NULL ? context->argument.host_id : context->run_id, refusal);
     }
 }
 
@@ -310,6 +602,11 @@ cJSON *runtime_hosts_start(const runtime_hosts_start_request *request, cJSON **r
     if (is_usable_request(request, refusal) && prepare(&context, refusal)) {
         int reused = 0;
         cJSON *plan = planned(&context, &reused, refusal);
+        if (plan != NULL && !layered(&context, plan, refusal)) {
+            runtime_hosts_start_undo(plan);
+            cJSON_Delete(plan);
+            plan = NULL;
+        }
         answer = plan == NULL ? NULL : answer_of(&context, plan, reused);
     }
     if (answer == NULL) {

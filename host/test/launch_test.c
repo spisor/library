@@ -188,9 +188,9 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
     expect_holders(&world, LOADER_ID, launcher.child.pid, started_pid(started), "session held");
-    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
+    char *starts = await_starts_holding(&world, "host.js javascript " LOADER_ID);
     expect_contains(starts, "javascript-host", "session host on javascript-host");
-    expect_contains(starts, "host.js " LOADER_ID, "its entry run for the loader");
+    expect_contains(starts, "host.js javascript " LOADER_ID, "its entry run for the loader");
     release_application(&world, "session");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -272,8 +272,8 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
     cJSON *started = await_application(&world, "again");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
-    expect_contains(starts, "host.js " LOADER_ID, "session host started");
+    char *starts = await_starts_holding(&world, "host.js javascript " LOADER_ID);
+    expect_contains(starts, "host.js javascript " LOADER_ID, "session host started");
     cJSON *record = json_in(world.base.cache, "runtimes/javascript.json");
     expect_contains(text_at(record, "executable"), "node-again", "the runtime found again is recorded");
     release_application(&world, "again");
@@ -303,8 +303,8 @@ static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(voi
     cJSON *started = await_application(&world, "sized");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
-    expect_contains(starts, "host.js " LOADER_ID, "session host started on sizes");
+    char *starts = await_starts_holding(&world, "host.js javascript " LOADER_ID);
+    expect_contains(starts, "host.js javascript " LOADER_ID, "session host started on sizes");
     release_application(&world, "sized");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -386,8 +386,8 @@ static void starts_the_session_host_for_the_plugins_the_loader_requires(void) {
     cJSON *started = await_application(&world, "required");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, "host.js " LOADER_ID);
-    expect_contains(starts, "host.js " LOADER_ID, "session host started");
+    char *starts = await_starts_holding(&world, "host.js javascript " LOADER_ID);
+    expect_contains(starts, "host.js javascript " LOADER_ID, "session host started");
     release_application(&world, "required");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));

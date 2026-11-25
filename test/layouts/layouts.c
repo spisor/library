@@ -1423,6 +1423,8 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_start_argument, libraries);
     FIELD(runtime_hosts_start_argument, library_count);
     FIELD(runtime_hosts_start_argument, session);
+    FIELD(runtime_hosts_start_argument, layer_runtime);
+    FIELD(runtime_hosts_start_argument, action_plugin);
     SIZE(runtime_hosts_start_argument);
     FIELD(runtime_hosts_timers, record_run_milliseconds);
     FIELD(runtime_hosts_timers, prune_failures_before_exit);

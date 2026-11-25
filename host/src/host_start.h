@@ -21,7 +21,8 @@ int host_start_append_arguments(cJSON *start, const char *const *extra, size_t c
 
 /**
  * How to start loader_id's own plugins in a session host on javascript-host, the version its boot hint
- * names, with the loader id as its last argument; NULL with *refusal set when it is not installed.
+ * names, with the layer's runtime, javascript, and the loader id as its last arguments; NULL with *refusal set when it
+ * is not installed.
  */
 cJSON *host_session_start_of(const host_context *context, const char *loader_id, cJSON **refusal);
 
