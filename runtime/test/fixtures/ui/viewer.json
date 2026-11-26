@@ -115,6 +115,27 @@
         }
       ]
     },
+    "unknown": {
+      "title": "Unknown",
+      "nodes": [
+        {
+          "id": "blinking",
+          "component": "blink",
+          "bind": {
+            "service": "viewer:status",
+            "method": "blinks"
+          }
+        },
+        {
+          "id": "greeting",
+          "component": "text",
+          "bind": {
+            "service": "viewer:status",
+            "method": "greeting"
+          }
+        }
+      ]
+    },
     "failing": {
       "title": "Failing",
       "nodes": [

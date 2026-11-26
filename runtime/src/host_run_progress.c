@@ -17,6 +17,7 @@
 #include "platform_key.h"
 #include "processes.h"
 #include "processes_ready.h"
+#include "run_result.h"
 #include "scope_host.h"
 #include "spisor/definition.h"
 #include "updates.h"
@@ -384,7 +385,20 @@ spisor_status runtime_host_run_tick(runtime_host_run *run, int64_t now, runtime_
     return failed_unless_ok(run, status);
 }
 
-spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failure, spisor_refusal *refusal) {
+/** Writes an answered action's result to the run's result path, when it has one. */
+static spisor_status write_result(const runtime_host_run *run, const spisor_value *result, const char *failure,
+                                  spisor_refusal *refusal) {
+    const cJSON *places = cJSON_GetObjectItemCaseSensitive(run->started, "places");
+    if (failure != NULL || run->result_path == NULL) {
+        return SPISOR_OK;
+    }
+    return runtime_write_result(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(places, "state")),
+                                run->result_path, result, refusal);
+}
+
+spisor_status runtime_host_run_finished(runtime_host_run *run, const spisor_value *result, const char *failure,
+                                        spisor_refusal *refusal) {
+    spisor_status status;
     if (run->mode != WEIVEL_STANDARD_HOST_ACTION) {
         return failed_unless_ok(run, refuse_out_of_order(refusal, "host's finished was called in a SERVE run, which "
                                                                   "runs no action"));
@@ -392,6 +406,10 @@ spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failu
     if (run->phase != RUNTIME_HOST_RUNNING) {
         return failed_unless_ok(run, refuse_out_of_order(refusal, "host's finished was called before started "
                                                                   "answered OK, or a second time"));
+    }
+    status = write_result(run, result, failure, refusal);
+    if (status != SPISOR_OK) {
+        return failed_unless_ok(run, status);
     }
     run->phase = RUNTIME_HOST_ENDED;
     run->exit_code = failure == NULL ? 0 : RUNTIME_HOST_EXIT_FAILED;

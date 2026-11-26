@@ -52,7 +52,7 @@ static char *application_binary(const host_context *context, const cJSON *standa
 }
 
 static cJSON *serving_layers(const host_context *context, const char *loader_id, cJSON **refusal) {
-    return host_layer_starts(context, loader_id, RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL, refusal);
+    return host_layer_starts(context, loader_id, RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL, NULL, refusal);
 }
 
 /**

@@ -2,6 +2,7 @@
 #define RUNTIME_CONFIG_CONVERSION_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "cJSON.h"
 #include "config.h"
@@ -24,6 +25,12 @@ spisor_status runtime_scope_request(const runtime_settings_scope *scope, runtime
 
 /** The JSON a plugin's own record holds, NULL for none; MALFORMED, refusing with `what`, for any other kind. */
 spisor_status runtime_record_json(const spisor_value *value, const char *what, cJSON **json, spisor_refusal *refusal);
+
+/** The runtime_ui_field_kind a declaration's `type` names in lower kebab case, such as `multi-choice`; 0 for none. */
+uint32_t runtime_field_kind_named(const char *name);
+
+/** Whether a declaration's `choices` are absent, NULL, or a list of texts. */
+int runtime_are_setting_choices(const cJSON *choices);
 
 /** Whether `name` names a layer a declaration may carry as its `layer`: `application` or `portable`. */
 int runtime_is_settings_layer_name(const char *name);

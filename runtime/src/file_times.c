@@ -37,9 +37,10 @@ double runtime_now_milliseconds(void) {
 }
 
 /** GetFileAttributesExW describes a link itself, never what it points at, as lstat does. */
-static int own_change(const char *path, double *milliseconds, int *is_directory) {
+static int own_change(const char *path, double *milliseconds, int *is_directory, int *out_of_memory) {
     wchar_t *wide = spisor_wide_path(path);
     WIN32_FILE_ATTRIBUTE_DATA data;
+    *out_of_memory = wide == NULL;
     memset(&data, 0, sizeof data);
     int read = wide != NULL && GetFileAttributesExW(wide, GetFileExInfoStandard, &data) != 0;
     spisor_memory_release(wide);
@@ -59,8 +60,9 @@ double runtime_now_milliseconds(void) {
     return (double)now.tv_sec * 1000.0 + (double)now.tv_nsec / 1000000.0;
 }
 
-static int own_change(const char *path, double *milliseconds, int *is_directory) {
+static int own_change(const char *path, double *milliseconds, int *is_directory, int *out_of_memory) {
     struct stat status;
+    *out_of_memory = 0;
     if (lstat(path, &status) != 0) {
         return 0;
     }
@@ -98,8 +100,14 @@ static int newest_child_change(const char *path, double *newest) {
 
 int runtime_newest_change(const char *path, double *milliseconds) {
     int is_directory = 0;
-    if (!own_change(path, milliseconds, &is_directory)) {
+    int out_of_memory = 0;
+    if (!own_change(path, milliseconds, &is_directory, &out_of_memory)) {
         return 0;
     }
     return !is_directory || newest_child_change(path, milliseconds);
+}
+
+int runtime_own_change(const char *path, double *milliseconds, int *out_of_memory) {
+    int is_directory = 0;
+    return own_change(path, milliseconds, &is_directory, out_of_memory);
 }

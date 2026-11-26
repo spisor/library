@@ -106,6 +106,13 @@ static void a_manifest_one_typo_breaks_is_refused_at_open(void) {
                      "declares the setting \"theme\" with a layer that is not text");
     refuses_manifest("declaration.json", "{\"id\": \"viewer\", \"settings\": {\"theme\": \"text\"}}",
                      "declares the setting \"theme\" as something other than a record");
+    refuses_manifest("type.json", "{\"id\": \"viewer\", \"settings\": {\"theme\": {\"type\": \"colour\"}}}",
+                     "declares the setting \"theme\" with the type \"colour\", which runtime does not know");
+    refuses_manifest("type-number.json", "{\"id\": \"viewer\", \"settings\": {\"theme\": {\"type\": 2}}}",
+                     "declares the setting \"theme\" with a type that is not text");
+    refuses_manifest("choices.json",
+                     "{\"id\": \"viewer\", \"settings\": {\"theme\": {\"type\": \"choice\", \"choices\": [\"a\", 1]}}}",
+                     "declares the setting \"theme\" with choices that are not a list of texts");
     refuses_manifest("settings.json", "{\"id\": \"viewer\", \"settings\": [\"theme\"]}",
                      "declares settings that are not a record");
     refuses_manifest("config.json", "{\"id\": \"viewer\", \"config\": \"viewer\"}",

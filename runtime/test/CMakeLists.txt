@@ -201,6 +201,10 @@ foreach(name ui_navigation_test ui_settings_view_test ui_render_test ui_action_t
     target_compile_definitions(${name} PRIVATE RUNTIME_UI_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/ui")
 endforeach()
 
+runtime_test(ui_component_enum_test $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
+target_compile_definitions(ui_component_enum_test PRIVATE
+    RUNTIME_UI_HEADER_PATH="${PROJECT_SOURCE_DIR}/include/runtime/ui.h")
+
 runtime_test(processes_test ${runtime_processes_test_objects})
 target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
 add_dependencies(processes_test background_fixture)

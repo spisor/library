@@ -18,6 +18,7 @@
 #include "places.h"
 #include "processes_ready.h"
 #include "registry.h"
+#include "run_result.h"
 #include "scope_host.h"
 #include "spisor/json_kind.h"
 #include "spisor/path.h"
@@ -27,15 +28,17 @@
 #define IN_PROCESS_WORD "in-process"
 #define USAGE_MESSAGE                                                                                             \
     "the host takes its layer's runtime, javascript or native, then a loader id, alone, followed by in-process, " \
-    "or followed by action, a plugin, an action and its input as a JSON object"
+    "or followed by action, a plugin, an action, its input as a JSON object and the path of its result, if any"
 #define USAGE_FIX                                                                                                 \
     "start it with <runtime> <loader id>, with in-process after the loader id, or with action <plugin> <action> " \
-    "<input json object> after the loader id"
+    "<input json object> [<result path>] after the loader id"
+#define RESULT_FIX "name a file directly inside the results folder of the state place, by an absolute path"
 #define SCOPES_FIX "check that the loader's registered home and the places are absolute folders, then try again"
 
 /**
  * What a run's arguments name: its layer's runtime and the layer item that runtime names, its loader, its mode,
- * whether a SERVE run serves its own process alone, and, for an ACTION run, the plugin, the action and its input.
+ * whether a SERVE run serves its own process alone, and, for an ACTION run, the plugin, the action, its input and the
+ * path its result is written to, NULL for none.
  */
 typedef struct host_request {
     const char *runtime;
@@ -46,6 +49,7 @@ typedef struct host_request {
     const char *plugin;
     const char *action;
     cJSON *input;
+    const char *result;
 } host_request;
 
 static const char *text_of(const cJSON *object, const char *member) {
@@ -68,12 +72,13 @@ static int read_request(const char *const *arguments, size_t count, host_request
         request->mode = WEIVEL_STANDARD_HOST_SERVE;
         request->in_process = 1;
     }
-    if (count == 6 && strcmp(arguments[2], ACTION_WORD) == 0) {
+    if ((count == 6 || count == 7) && strcmp(arguments[2], ACTION_WORD) == 0) {
         request->input = spisor_parse_json_reporting((const uint8_t *)arguments[5], strlen(arguments[5]),
                                                      &out_of_memory);
         request->mode = cJSON_IsObject(request->input) ? WEIVEL_STANDARD_HOST_ACTION : 0;
         request->plugin = arguments[3];
         request->action = arguments[4];
+        request->result = count == 7 ? arguments[6] : NULL;
     }
     if (request->layer_id == NULL) {
         request->mode = 0;
@@ -214,16 +219,26 @@ static char *run_id_of(const cJSON *started) {
     return copy;
 }
 
+static char *copy_of(const char *text) {
+    char *copy = spisor_memory_allocate(strlen(text) + 1);
+    if (copy != NULL) {
+        strcpy(copy, text);
+    }
+    return copy;
+}
+
 static runtime_host_run *new_run(const host_request *request) {
     runtime_host_run *run = spisor_memory_allocate(sizeof *run);
-    char *host_id = run == NULL ? NULL : spisor_memory_allocate(strlen(request->host_id) + 1);
-    if (host_id == NULL) {
+    char *host_id = run == NULL ? NULL : copy_of(request->host_id);
+    char *result_path = host_id == NULL || request->result == NULL ? NULL : copy_of(request->result);
+    if (host_id == NULL || (request->result != NULL && result_path == NULL)) {
+        spisor_memory_release(host_id);
         spisor_memory_release(run);
         return NULL;
     }
     memset(run, 0, sizeof *run);
-    strcpy(host_id, request->host_id);
     run->host_id = host_id;
+    run->result_path = result_path;
     run->mode = request->mode;
     run->in_process = request->in_process ? 1 : 0;
     run->exit_code = request->mode == WEIVEL_STANDARD_HOST_ACTION ? RUNTIME_HOST_EXIT_FAILED : 0;
@@ -237,6 +252,7 @@ static void free_run(runtime_host_run *run) {
     cJSON_Delete(run->action);
     spisor_memory_release(run->run_id);
     spisor_memory_release(run->host_id);
+    spisor_memory_release(run->result_path);
     spisor_memory_release(run);
 }
 
@@ -324,6 +340,21 @@ static runtime_host_run *run_of(const host_request *request, const cJSON *enviro
     return run;
 }
 
+/** 1 when the run names no result path or one directly inside its state's results folder; 0 with *refusal set. */
+static int has_usable_result(const host_request *request, const cJSON *places, cJSON **refusal) {
+    int out_of_memory = 0;
+    if (request->result == NULL ||
+        runtime_is_result_path(text_of(places, "state"), request->result, &out_of_memory)) {
+        return 1;
+    }
+    if (!out_of_memory) {
+        const char *parts[3] = {"the result path ", request->result,
+                                " is not a file directly inside the results folder of the state place"};
+        *refusal = refused(parts, 3, RESULT_FIX);
+    }
+    return 0;
+}
+
 runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t argument_count,
                                          const cJSON *environment, cJSON **refusal) {
     host_request request;
@@ -333,6 +364,10 @@ runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t ar
     *refusal = NULL;
     if (read_request(arguments, argument_count, &request, refusal)) {
         places = runtime_places_of_environment(environment, refusal);
+    }
+    if (places != NULL && !has_usable_result(&request, places, refusal)) {
+        cJSON_Delete(places);
+        places = NULL;
     }
     hint = places == NULL ? NULL : runtime_layer_hint(text_of(places, "cache"), request.layer_id, refusal);
     if (hint == NULL && places != NULL) {

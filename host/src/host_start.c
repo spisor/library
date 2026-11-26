@@ -69,7 +69,7 @@ static cJSON *layers_json(const runtime_hosts_layer_start_answer *answer) {
 }
 
 cJSON *host_layer_starts(const host_context *context, const char *loader_id, uint32_t mode, const char *plugin,
-                         const char *action, const char *input, cJSON **refusal) {
+                         const char *action, const char *input, const char *result, cJSON **refusal) {
     const runtime_hosts_definition *hosts = runtime_hosts_definition_of();
     runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
     runtime_hosts_layer_start_answer answer = SPISOR_INIT(runtime_hosts_layer_start_answer);
@@ -81,6 +81,7 @@ cJSON *host_layer_starts(const host_context *context, const char *loader_id, uin
     argument.plugin = plugin;
     argument.action = action;
     argument.input = input;
+    argument.result = result;
     spisor_status status = environment == NULL ? SPISOR_OUT_OF_MEMORY
                                                : hosts->layer_start(hosts->context, &argument, &answer, &declined);
     cJSON *layers = status == SPISOR_OK ? layers_json(&answer) : NULL;

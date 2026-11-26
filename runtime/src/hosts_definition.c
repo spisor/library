@@ -27,6 +27,7 @@
 #define START_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_start_answer, storage)
 #define LAYER_START_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_argument, input)
 #define LAYER_START_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_answer, storage)
+#define LAYER_START_RESULT_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_argument, result)
 
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
@@ -505,13 +506,21 @@ static spisor_status start(void *context, const runtime_hosts_start_argument *ar
     return status != SPISOR_OK ? status : serve_start(argument, answer, refusal);
 }
 
-/** Whether the plugin, action and input are all given texts for an ACTION, and all NULL for any other mode. */
+static const char *result_of(const runtime_hosts_layer_start_argument *argument) {
+    return spisor_has_shape(argument->size, LAYER_START_RESULT_SHAPE) ? argument->result : NULL;
+}
+
+/**
+ * Whether the plugin, action and input are all given texts for an ACTION, its result a text when given, and all four
+ * NULL for any other mode.
+ */
 static int are_action_members(const runtime_hosts_layer_start_argument *argument) {
+    const char *result = result_of(argument);
     if (argument->mode == RUNTIME_HOSTS_LAYER_ACTION) {
         return runtime_is_text(argument->plugin) && runtime_is_text(argument->action) &&
-               runtime_is_text(argument->input);
+               runtime_is_text(argument->input) && (result == NULL || runtime_is_text(result));
     }
-    return argument->plugin == NULL && argument->action == NULL && argument->input == NULL;
+    return argument->plugin == NULL && argument->action == NULL && argument->input == NULL && result == NULL;
 }
 
 static spisor_status check_layer_start(const runtime_hosts_layer_start_argument *argument, spisor_refusal *refusal) {
@@ -523,7 +532,7 @@ static spisor_status check_layer_start(const runtime_hosts_layer_start_argument 
         status = runtime_refuse_member(refusal, "mode", HEADER);
     }
     if (status == SPISOR_OK && !are_action_members(argument)) {
-        status = runtime_refuse_member(refusal, "plugin, action and input", HEADER);
+        status = runtime_refuse_member(refusal, "plugin, action, input and result", HEADER);
     }
     return status;
 }
@@ -593,7 +602,8 @@ static spisor_status layer_start(void *context, const runtime_hosts_layer_start_
         return status;
     }
     runtime_hosts_layer_start_request request = {environment,      argument->loader_id, argument->mode,
-                                                 argument->plugin, argument->action,    argument->input};
+                                                 argument->plugin, argument->action,    argument->input,
+                                                 result_of(argument)};
     answered = runtime_hosts_layer_start(&request, &operation_refusal);
     cJSON_Delete(environment);
     return runtime_serve_answered(answered, operation_refusal, fill_layer_start, answer, LAYER_START_ANSWER_SHAPE,

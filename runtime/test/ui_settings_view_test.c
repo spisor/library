@@ -66,6 +66,56 @@ static void generates_an_empty_form_for_a_plugin_declaring_no_settings(void) {
     cJSON_Delete(view);
 }
 
+static void types_each_field_from_its_declaration_with_its_choices_and_its_default(void) {
+    cJSON *view = settings_view_of("{\"id\": \"tools\", \"config\": {\"defaults\": {\"mode\": \"a\"}}, \"settings\": {"
+                                   "\"token\": {\"type\": \"secret\"},"
+                                   "\"mode\": {\"type\": \"choice\", \"choices\": [\"a\", \"b\"]}}}");
+    check_json_at(view, "fields",
+                  "[{\"choices\": []}, {\"type\": \"choice\", \"choices\": [\"a\", \"b\"], \"default\": \"a\"},"
+                  " {\"type\": \"secret\", \"choices\": []}]",
+                  "the form untyped, then mode and token in key order");
+    cJSON_Delete(view);
+}
+
+static void reads_every_field_kind_by_name_and_a_declaration_without_a_type_as_text(void) {
+    cJSON *view = settings_view_of("{\"id\": \"tools\", \"settings\": {"
+                                   "\"a\": {\"type\": \"text\"}, \"b\": {\"type\": \"secret\"}, \"c\": {\"type\": \"number\"},"
+                                   "\"d\": {\"type\": \"toggle\"}, \"e\": {\"type\": \"choice\"},"
+                                   "\"f\": {\"type\": \"multi-choice\", \"choices\": [\"x\"]}, \"g\": {\"type\": \"path\"},"
+                                   "\"h\": {\"type\": \"list\"}, \"i\": {\"type\": \"key-value\"}, \"j\": {\"label\": \"J\"}}}");
+    const char *expected[] = {"text", "secret", "number", "toggle", "choice", "multi-choice", "path", "list", "key-value",
+                              "text"};
+    const cJSON *fields = cJSON_GetObjectItemCaseSensitive(view, "fields");
+    CHECK(cJSON_GetArraySize(fields) == 11);
+    for (int index = 0; index < 10; index++) {
+        check_text(text_at(cJSON_GetArrayItem(fields, index + 1), "type"), expected[index], "a field's kind");
+    }
+    cJSON_Delete(view);
+}
+
+static void reads_a_default_at_a_dotted_key_through_the_defaults_tree(void) {
+    cJSON *view = settings_view_of("{\"id\": \"tools\", \"config\": {\"defaults\": {\"proxy\": {\"port\": 8080}}},"
+                                   " \"settings\": {\"proxy.port\": {\"type\": \"number\"}, \"proxy.host\": {}}}");
+    check_json_at(view, "fields",
+                  "[{\"choices\": []}, {\"type\": \"text\", \"choices\": []},"
+                  " {\"type\": \"number\", \"choices\": [], \"default\": 8080}]",
+                  "a nested default and a missing one");
+    cJSON_Delete(view);
+}
+
+static void refuses_a_field_type_it_does_not_know_and_choices_that_are_not_texts(void) {
+    const char *requests[] = {
+        "{\"description\": {\"id\": \"tools\", \"settings\": {\"a\": {\"type\": \"colour\"}}}}",
+        "{\"description\": {\"id\": \"tools\", \"settings\": {\"a\": {\"type\": 3}}}}",
+        "{\"description\": {\"id\": \"tools\", \"settings\": {\"a\": {\"type\": \"choice\", \"choices\": \"a\"}}}}",
+        "{\"description\": {\"id\": \"tools\", \"settings\": {\"a\": {\"type\": \"choice\", \"choices\": [1]}}}}",
+        "{\"description\": {\"id\": \"tools\", \"settings\": {\"a\": \"text\"}}}"};
+    for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
+        expect_ui_refusal(ui_call(UI_SETTINGS_VIEW, parsed(requests[index])), SPISOR_MALFORMED, "setting",
+                          requests[index]);
+    }
+}
+
 static void refuses_a_description_that_is_no_manifest_with_an_id(void) {
     const char *requests[] = {"{}", "{\"description\": []}", "{\"description\": {\"api\": 1}}"};
     for (size_t index = 0; index < sizeof requests / sizeof requests[0]; index++) {
@@ -78,6 +128,10 @@ int main(void) {
     generates_one_form_holding_one_field_node_per_setting_in_key_order();
     gives_every_node_an_id_the_model_accepts_and_no_two_the_same();
     generates_an_empty_form_for_a_plugin_declaring_no_settings();
+    types_each_field_from_its_declaration_with_its_choices_and_its_default();
+    reads_every_field_kind_by_name_and_a_declaration_without_a_type_as_text();
+    reads_a_default_at_a_dotted_key_through_the_defaults_tree();
+    refuses_a_field_type_it_does_not_know_and_choices_that_are_not_texts();
     refuses_a_description_that_is_no_manifest_with_an_id();
     return check_summary("ui_settings_view_test");
 }

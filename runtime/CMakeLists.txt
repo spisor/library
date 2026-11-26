@@ -194,7 +194,7 @@ set_target_properties(runtime_catalog_refresh_test_hooks PROPERTIES SPISOR_TEST_
 
 set(runtime_cache_sources src/boot_hint.c src/cache.c src/cache_damaged.c src/cache_folders.c src/cache_install.c src/cache_installed.c src/cache_locate.c src/cache_marker.c
     src/cache_deploy.c src/cache_definition.c src/cache_place.c src/cache_plan.c src/cache_references.c src/cache_refusal.c src/cache_store.c src/cache_sweep.c
-    src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c
+    src/host_references.c src/node_json_file.c src/platform_key.c src/process_alive.c src/run_records.c src/run_result.c
     src/alive_stamp.c src/definition_host_target.c)
 add_library(runtime_cache OBJECT ${runtime_cache_sources})
 target_link_libraries(runtime_cache PUBLIC runtime_objects)
@@ -245,8 +245,8 @@ target_include_directories(runtime_hosts_definition PRIVATE ${PROJECT_SOURCE_DIR
 set_target_properties(runtime_hosts_definition PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts_definition)
 
-set(runtime_ui_sources src/ui_action.c src/ui_binding.c src/ui_definition.c src/ui_items.c src/ui_navigation.c
-    src/ui_refusal.c src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_settings_view.c)
+set(runtime_ui_sources src/ui_action.c src/ui_binding.c src/ui_components.c src/ui_definition.c src/ui_items.c
+    src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_settings_view.c)
 add_library(runtime_ui OBJECT ${runtime_ui_sources})
 target_link_libraries(runtime_ui PUBLIC runtime_objects)
 target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)

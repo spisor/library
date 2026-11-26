@@ -9,13 +9,17 @@
 #include "lists.h"
 #include "runtime/lists.h"
 #include "ui.h"
+#include "config_conversion.h"
+#include "ui_components.h"
 #include "ui_definition.h"
 #include "ui_refusal.h"
+#include "ui_settings_view.h"
 
 #define NAVIGATION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_argument, ui)
 #define NAVIGATION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_navigation_answer, storage)
 #define SETTINGS_VIEW_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_settings_view_argument, description)
 #define SETTINGS_VIEW_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_settings_view_answer, storage)
+#define SETTINGS_FIELDS_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_settings_view_answer, field_count)
 #define SCREEN_ARGUMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen_argument, reply_count)
 #define PLAN_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_plan_answer, storage)
 #define SCREEN_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_screen, storage)
@@ -27,8 +31,6 @@
 #define MOST_PLAN_ROUNDS 16
 #define UI_ROUNDS_SPELLED(number) #number
 #define UI_ROUNDS_TEXT(number) UI_ROUNDS_SPELLED(number)
-
-static const char *const COMPONENT_NAMES[] = {NULL, "form", "field"};
 
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
@@ -155,16 +157,52 @@ static spisor_status navigation(void *context, const runtime_ui_navigation_argum
 }
 
 static spisor_status fill_settings_node(void **storage, const cJSON *json, runtime_ui_settings_node *node) {
-    const char *component = text_of(json, "component");
-    node->component = component != NULL && strcmp(component, COMPONENT_NAMES[RUNTIME_UI_COMPONENT_FIELD]) == 0
-                          ? RUNTIME_UI_COMPONENT_FIELD
-                          : RUNTIME_UI_COMPONENT_FORM;
+    node->component = runtime_ui_component_of(text_of(json, "component"));
     return runtime_storage_copy(storage, text_of(json, "id"), &node->id) &&
                    runtime_storage_copy(storage, text_of(json, "parent"), &node->parent) &&
                    runtime_storage_copy(storage, text_of(json, "field"), &node->field) &&
                    runtime_storage_copy(storage, text_of(json, "label"), &node->label)
                ? SPISOR_OK
                : SPISOR_OUT_OF_MEMORY;
+}
+
+/** Fills a field node's type, its choices and its default; the form's stays all zero. */
+static spisor_status fill_field_type(void **storage, const cJSON *json, runtime_ui_field_type *field) {
+    const char *type = text_of(json, "type");
+    if (type == NULL) {
+        return SPISOR_OK;
+    }
+    field->type = runtime_field_kind_named(type);
+    if (!runtime_storage_texts(storage, cJSON_GetObjectItemCaseSensitive(json, "choices"), &field->choices,
+                               &field->choice_count)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return runtime_storage_value(storage, cJSON_GetObjectItemCaseSensitive(json, "default"), &field->default_value);
+}
+
+/** Fills the fields, one per node, when the consumer's answer reaches them. */
+static spisor_status fill_field_types(runtime_ui_settings_view_answer *answer, const cJSON *nodes) {
+    const cJSON *node;
+    runtime_ui_field_type *fields;
+    spisor_status status = SPISOR_OK;
+    if (!spisor_has_shape(answer->size, SETTINGS_FIELDS_SHAPE)) {
+        return SPISOR_OK;
+    }
+    if (!runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(nodes), sizeof *fields,
+                                    (void **)&fields)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    answer->fields = fields;
+    cJSON_ArrayForEach(node, nodes) {
+        if (status == SPISOR_OK) {
+            status = fill_field_type(&answer->storage, node, &fields[answer->field_count++]);
+        }
+    }
+    if (status != SPISOR_OK) {
+        answer->fields = NULL;
+        answer->field_count = 0;
+    }
+    return status;
 }
 
 static spisor_status fill_settings_view(const cJSON *answered, void *filled) {
@@ -184,18 +222,25 @@ static spisor_status fill_settings_view(const cJSON *answered, void *filled) {
             status = fill_settings_node(&answer->storage, node, &copies[answer->node_count++]);
         }
     }
-    return status;
+    return status == SPISOR_OK ? fill_field_types(answer, nodes) : status;
+}
+
+/** Whether the answer is empty through its fields too, when its size reaches them. */
+static int has_empty_fields(const runtime_ui_settings_view_answer *answer) {
+    return !spisor_has_shape(answer->size, SETTINGS_FIELDS_SHAPE) ||
+           (answer->fields == NULL && answer->field_count == 0);
 }
 
 static spisor_status settings_view(void *context, const runtime_ui_settings_view_argument *argument,
                                    runtime_ui_settings_view_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    cJSON *answered;
+    cJSON *answered = NULL;
     cJSON *call;
     spisor_status status;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, SETTINGS_VIEW_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE, answer->node_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SETTINGS_VIEW_ANSWER_SHAPE, answer->node_count) ||
+        !has_empty_fields(answer)) {
         return spisor_refuse_shape(refusal, "ui's settings_view");
     }
     status = check_member(refusal, argument->description, SPISOR_VALUE_RECORD, runtime_ui_is_manifest,
@@ -204,6 +249,10 @@ static spisor_status settings_view(void *context, const runtime_ui_settings_view
         return status;
     }
     call = value_call("description", argument->description);
+    if (call != NULL && !runtime_ui_are_settings_readable(cJSON_GetObjectItemCaseSensitive(call, "description"))) {
+        cJSON_Delete(call);
+        return runtime_refuse_member(refusal, "settings of the description", RUNTIME_UI_HEADER);
+    }
     answered = call == NULL ? NULL
                             : runtime_ui_settings_view(cJSON_GetObjectItemCaseSensitive(call, "description"),
                                                        &operation_refusal);
@@ -425,6 +474,10 @@ static void release_navigation_answer(void *context, runtime_ui_navigation_answe
 static void release_settings_view_answer(void *context, runtime_ui_settings_view_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, SETTINGS_VIEW_ANSWER_SHAPE);
+    if (answer != NULL && spisor_has_shape(answer->size, SETTINGS_FIELDS_SHAPE)) {
+        answer->fields = NULL;
+        answer->field_count = 0;
+    }
 }
 
 static void release_plan_answer(void *context, runtime_ui_plan_answer *answer) {

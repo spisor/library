@@ -161,7 +161,8 @@ static cJSON *layer_json(const runtime_hosts_layer *layer, size_t expected_envir
     return json;
 }
 
-static layer_answer layer_start(uint32_t mode, const char *plugin, const char *action, const char *input) {
+static layer_answer layer_start_with(uint32_t mode, const char *plugin, const char *action, const char *input,
+                                    const char *result_path, uint32_t size) {
     const runtime_hosts_definition *hosts = runtime_hosts_definition_of();
     runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
     runtime_hosts_layer_start_answer answer = SPISOR_INIT(runtime_hosts_layer_start_answer);
@@ -174,6 +175,8 @@ static layer_answer layer_start(uint32_t mode, const char *plugin, const char *a
     argument.plugin = plugin;
     argument.action = action;
     argument.input = input;
+    argument.result = result_path;
+    argument.size = size;
     result.status = hosts->layer_start(hosts->context, &argument, &answer, &refusal);
     if (result.status == SPISOR_OK) {
         result.layers = cJSON_CreateArray();
@@ -186,6 +189,10 @@ static layer_answer layer_start(uint32_t mode, const char *plugin, const char *a
     hosts->release_layer_start_answer(hosts->context, &answer);
     hosts->release_refusal(hosts->context, &refusal);
     return result;
+}
+
+static layer_answer layer_start(uint32_t mode, const char *plugin, const char *action, const char *input) {
+    return layer_start_with(mode, plugin, action, input, NULL, (uint32_t)sizeof(runtime_hosts_layer_start_argument));
 }
 
 static void release_answer(layer_answer *answer) {
@@ -362,6 +369,24 @@ static void an_action_of_a_native_plugin_answers_the_native_layer_alone(void) {
     finish_world();
 }
 
+static void an_action_given_a_result_path_ends_its_start_with_it(void) {
+    start_world("layer-action-result", "{\"compiled\":{\"enabled\":true}}");
+    install_plugin_on("compiled", NATIVE, GREET_ACTION);
+    layer_answer answer = layer_start_with(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}", "/state/results/7-1.json",
+                                           (uint32_t)sizeof(runtime_hosts_layer_start_argument));
+    expect_layers(&answer,
+                  layers_of(expected_layer(NATIVE, LOADER, "[\"action\",\"compiled\",\"greet\",\"{}\",\"/state/results/7-1.json\"]"),
+                            NULL),
+                  "the action's layer with its result path");
+    release_answer(&answer);
+    answer = layer_start_with(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}", "/state/results/7-1.json",
+                              (uint32_t)SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_argument, input));
+    expect_layers(&answer, layers_of(expected_layer(NATIVE, LOADER, "[\"action\",\"compiled\",\"greet\",\"{}\"]"), NULL),
+                  "a result past the argument's size is not read");
+    release_answer(&answer);
+    finish_world();
+}
+
 /**
  * install records the catalog source in spisor-host's own settings alone, so a layer reading the loader's would find
  * no catalog and take the native plugin for a javascript one.
@@ -432,6 +457,15 @@ static void a_mode_or_its_members_out_of_shape_is_malformed(void) {
     CHECK(unknown.status == SPISOR_MALFORMED);
     CHECK(bare_action.status == SPISOR_MALFORMED);
     CHECK(serve_with_plugin.status == SPISOR_MALFORMED);
+    layer_answer serve_with_result =
+        layer_start_with(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL, "/state/results/7-1.json",
+                         (uint32_t)sizeof(runtime_hosts_layer_start_argument));
+    layer_answer empty_result = layer_start_with(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}", "",
+                                                 (uint32_t)sizeof(runtime_hosts_layer_start_argument));
+    CHECK(serve_with_result.status == SPISOR_MALFORMED);
+    CHECK(empty_result.status == SPISOR_MALFORMED);
+    release_answer(&serve_with_result);
+    release_answer(&empty_result);
     release_answer(&unknown);
     release_answer(&bare_action);
     release_answer(&serve_with_plugin);
@@ -443,6 +477,7 @@ int main(void) {
     a_loader_spanning_two_layers_answers_both_the_front_door_first();
     the_first_required_plugin_puts_the_front_door_in_its_layer();
     an_in_process_start_ends_each_layer_with_its_word();
+    an_action_given_a_result_path_ends_its_start_with_it();
     an_in_process_start_of_two_layers_answers_the_javascript_layer_alone();
     an_in_process_start_of_native_plugins_alone_is_refused_naming_launch();
     a_first_required_plugin_on_no_layers_runtime_is_refused_naming_it();

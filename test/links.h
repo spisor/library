@@ -21,7 +21,8 @@ static inline int is_privilege_refusal(DWORD error) {
     return error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_INVALID_PARAMETER;
 }
 
-static inline int create_link(const char *link_path, const char *target_path) {
+/** A link to target_path, a folder's when `folder` is 1, which Windows marks on the link itself. */
+static inline int create_link_of(const char *link_path, const char *target_path, int folder) {
     wchar_t wide_link[1024];
     wchar_t wide_target[1024];
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, link_path, -1, wide_link, 1024) == 0
@@ -32,7 +33,8 @@ static inline int create_link(const char *link_path, const char *target_path) {
         *cursor = *cursor == L'/' ? L'\\' : *cursor;
     }
     DeleteFileW(wide_link);
-    if (CreateSymbolicLinkW(wide_link, wide_target, SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0) {
+    DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE | (folder ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0);
+    if (CreateSymbolicLinkW(wide_link, wide_target, flags) != 0) {
         return 1;
     }
     return is_privilege_refusal(GetLastError()) ? LINK_PRIVILEGE_MISSING : 0;
@@ -47,7 +49,8 @@ static inline int is_link(const char *path) {
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 #else
-static inline int create_link(const char *link_path, const char *target_path) {
+static inline int create_link_of(const char *link_path, const char *target_path, int folder) {
+    (void)folder;
     remove(link_path);
     return symlink(target_path, link_path) == 0;
 }
@@ -58,6 +61,10 @@ static inline int is_link(const char *path) {
 }
 #endif
 
+static inline int create_link(const char *link_path, const char *target_path) {
+    return create_link_of(link_path, target_path, 0);
+}
+
 static int links_skipped = 0;
 
 /**
@@ -66,8 +73,8 @@ static int links_skipped = 0;
  * @implNote CI must never skip, so there a refusal is a failure: a dotfiles symlink is a case every
  * runner has to prove.
  */
-static inline int create_link_or_skip(const char *link_path, const char *target_path) {
-    int created = create_link(link_path, target_path);
+static inline int create_link_of_or_skip(const char *link_path, const char *target_path, int folder) {
+    int created = create_link_of(link_path, target_path, folder);
     if (created == LINK_PRIVILEGE_MISSING && getenv("CI") == NULL) {
         links_skipped = 1;
         printf("SKIP symlink tests: this platform refuses to create symlinks without privilege\n");
@@ -75,6 +82,15 @@ static inline int create_link_or_skip(const char *link_path, const char *target_
     }
     CHECK(created == 1);
     return created == 1;
+}
+
+static inline int create_link_or_skip(const char *link_path, const char *target_path) {
+    return create_link_of_or_skip(link_path, target_path, 0);
+}
+
+/** create_link_or_skip for a link to a folder. */
+static inline int create_folder_link_or_skip(const char *link_path, const char *target_path) {
+    return create_link_of_or_skip(link_path, target_path, 1);
 }
 
 /** The exit code of a suite: a skip only when every check that ran passed and a link was refused. */

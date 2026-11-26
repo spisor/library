@@ -13,6 +13,7 @@
 #include "runtime/ui.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
+#include "ui_components.h"
 #include "vector_reader.h"
 
 /**
@@ -211,10 +212,24 @@ static inline cJSON *ui_navigation_json(const runtime_ui_navigation_answer *answ
     return tree;
 }
 
+static const char *const UI_FIELD_KIND_NAMES[] = {NULL,   "text", "secret", "number",   "toggle",
+                                                  "choice", "multi-choice", "path", "list", "key-value"};
+
+/** One field type as {type, choices, default}, its type's name or none. */
+static inline cJSON *ui_field_type_json(const runtime_ui_field_type *field) {
+    cJSON *json = cJSON_CreateObject();
+    ui_add_text(json, "type", field->type <= RUNTIME_UI_FIELD_KEY_VALUE ? UI_FIELD_KIND_NAMES[field->type] : "?");
+    ui_add_texts(json, "choices", field->choices, field->choice_count);
+    if (field->default_value != NULL) {
+        ui_add_value(json, "default", field->default_value);
+    }
+    return json;
+}
+
 static inline cJSON *ui_settings_view_json(const runtime_ui_settings_view_answer *answer) {
-    static const char *const components[] = {NULL, "form", "field"};
     cJSON *tree = cJSON_CreateObject();
     cJSON *nodes;
+    cJSON *fields;
     ui_add_text(tree, "title", answer->title);
     nodes = cJSON_AddArrayToObject(tree, "nodes");
     for (size_t index = 0; index < answer->node_count; index++) {
@@ -222,10 +237,15 @@ static inline cJSON *ui_settings_view_json(const runtime_ui_settings_view_answer
         cJSON *json = cJSON_CreateObject();
         ui_add_text(json, "id", node->id);
         ui_add_text(json, "parent", node->parent);
-        ui_add_text(json, "component", node->component <= 2 ? components[node->component] : NULL);
+        ui_add_text(json, "component", runtime_ui_component_name(node->component));
         ui_add_text(json, "field", node->field);
         ui_add_text(json, "label", node->label);
         CHECK(cJSON_AddItemToArray(nodes, json));
+    }
+    CHECK(answer->field_count == answer->node_count && (answer->field_count == 0 || answer->fields != NULL));
+    fields = cJSON_AddArrayToObject(tree, "fields");
+    for (size_t index = 0; answer->fields != NULL && index < answer->field_count; index++) {
+        CHECK(cJSON_AddItemToArray(fields, ui_field_type_json(&answer->fields[index])));
     }
     return tree;
 }

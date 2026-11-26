@@ -41,6 +41,7 @@ typedef struct runtime_hosts_layer_start_request {
     const char *plugin;
     const char *action;
     const char *input;
+    const char *result;
 } runtime_hosts_layer_start_request;
 
 /**

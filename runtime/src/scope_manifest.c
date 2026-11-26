@@ -36,16 +36,42 @@ static spisor_status refuse_layer(spisor_refusal *refusal, const char *path, con
     return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
 }
 
+static spisor_status refuse_type(spisor_refusal *refusal, const char *path, const char *key, const cJSON *type) {
+    static const char fix[] = "declare its type as one of text, secret, number, toggle, choice, multi-choice, path, "
+                              "list or key-value, or leave the type out for text";
+    char detail[DETAIL_BYTES];
+    if (!cJSON_IsString(type)) {
+        return refuse_setting(refusal, path, key, "with a type that is not text", fix);
+    }
+    snprintf(detail, sizeof detail,
+             "the manifest at %s declares the setting \"%s\" with the type \"%s\", which runtime does not know", path,
+             key, type->valuestring);
+    return spisor_refuse_as(refusal, SPISOR_REFUSED, detail, fix);
+}
+
+/** The declaration's type and choices checked: OK, or REFUSED naming the first that runtime cannot read. */
+static spisor_status check_field(const cJSON *declaration, const char *path, spisor_refusal *refusal) {
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(declaration, "type");
+    if (type != NULL && !(cJSON_IsString(type) && runtime_field_kind_named(type->valuestring) != 0)) {
+        return refuse_type(refusal, path, declaration->string, type);
+    }
+    if (!runtime_are_setting_choices(cJSON_GetObjectItemCaseSensitive(declaration, "choices"))) {
+        return refuse_setting(refusal, path, declaration->string, "with choices that are not a list of texts",
+                              "declare its choices as a list of texts, such as [\"light\", \"dark\"]");
+    }
+    return SPISOR_OK;
+}
+
 static spisor_status check_declaration(const cJSON *declaration, const char *path, spisor_refusal *refusal) {
     const cJSON *layer = cJSON_GetObjectItemCaseSensitive(declaration, "layer");
     if (!cJSON_IsObject(declaration)) {
         return refuse_setting(refusal, path, declaration->string, "as something other than a record",
                               "declare each setting as a record, such as {\"type\": \"text\"}");
     }
-    if (layer == NULL || (cJSON_IsString(layer) && runtime_is_settings_layer_name(layer->valuestring))) {
-        return SPISOR_OK;
+    if (layer != NULL && !(cJSON_IsString(layer) && runtime_is_settings_layer_name(layer->valuestring))) {
+        return refuse_layer(refusal, path, declaration->string, layer);
     }
-    return refuse_layer(refusal, path, declaration->string, layer);
+    return check_field(declaration, path, refusal);
 }
 
 static spisor_status check_settings(const cJSON *settings, const char *path, spisor_refusal *refusal) {

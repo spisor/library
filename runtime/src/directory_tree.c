@@ -312,6 +312,7 @@ static int met_a_file_being_deleted(DWORD error, LONG status) {
     return error == ERROR_ACCESS_DENIED && status == DELETE_PENDING_STATUS;
 }
 
+/** @implNote CREATE_NEW alone follows a dangling link and creates its target; the flag makes the link itself stand. */
 runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *bytes, size_t length, int executable) {
     (void)executable;
     int out_of_memory;
@@ -320,7 +321,8 @@ runtime_entry_outcome runtime_create_new_file(const char *path, const uint8_t *b
         return unconverted(out_of_memory);
     }
     nt_status_reader reader = nt_status_reader_of_process();
-    HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE handle = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         DWORD error = GetLastError();
         LONG status = reader == NULL ? 0 : reader();
