@@ -199,8 +199,12 @@ layer an action answers.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries on
 with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
-`finished` as a failure by the program. A SERVE run then publishes to the loader's ready record that it is ready, with
-an empty environment, when every plugin activated, and otherwise a refusal naming the first that did not. `tick` is a
+`finished` as a failure by the program. A SERVE run then publishes to the ready record of its identity that it is
+ready when every plugin activated, and otherwise a refusal naming the first that did not. The layer holding the front
+door of a loader whose standard declares `application.proxy` publishes the proxy's `baseUrlVariable` as
+`http://127.0.0.1:<port>` and its placeholder, the port the one the front door declares it listens on as `port` access
+with mode `listen`, a number or `setting:<key>`, read after `started` from that plugin's settings, so the
+plugin reports nothing; any other layer, and a loader with no proxy, publishes an empty environment (S-114). `tick` is a
 SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at hosts.start's timers
 it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the versions
 `cache.locate` could not run as damaged, every hour in the layer holding the front door alone, the first tick taking

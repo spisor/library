@@ -279,7 +279,8 @@ target_include_directories(runtime_standard PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_standard PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_standard)
 
-add_library(runtime_standard_host OBJECT src/host_run.c src/host_run_progress.c src/standard_host.c)
+add_library(runtime_standard_host OBJECT src/host_run.c src/host_run_progress.c src/host_front_door.c
+    src/standard_host.c)
 target_link_libraries(runtime_standard_host PUBLIC runtime_objects weivel_standard)
 target_include_directories(runtime_standard_host PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_standard_host PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)

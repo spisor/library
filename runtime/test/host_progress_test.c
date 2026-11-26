@@ -104,15 +104,22 @@ static void expect_tick_refused(int64_t now, const char *part, const char *label
     release_tick(&answer);
 }
 
-/** The ready record the loader's last run published, parsed, or NULL when there is none. */
-static cJSON *ready_record(void) {
-    char *path = processes_file(".ready.json");
+/** The ready record the last run of identity published, parsed, or NULL when there is none. */
+static cJSON *ready_record_of(const char *identity) {
+    char *problem = NULL;
+    char *path = runtime_holders_path(state, identity, ".ready.json", &problem);
     size_t length = 0;
     char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     cJSON *record = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, length, &(int){0});
     spisor_memory_release(text);
     spisor_memory_release(path);
+    spisor_memory_release(problem);
     return record;
+}
+
+/** The ready record the loader's last run published, parsed, or NULL when there is none. */
+static cJSON *ready_record(void) {
+    return ready_record_of(LOADER);
 }
 
 /** When the loader's holders record says its host was last alive, which a prune stamps with the tick's now. */
@@ -173,6 +180,136 @@ static void a_serve_run_started_publishes_that_it_is_ready(void) {
     cJSON_Delete(record);
     release_run(&run);
     stop_expecting(0, "a ready serve run");
+    finish_base();
+}
+
+#define PROXY_STANDARD                                                                                           \
+    "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"ANTHROPIC_BASE_URL\", "        \
+    "\"placeholder\": {\"variable\": \"ANTHROPIC_AUTH_TOKEN\", \"value\": \"sk-ant-loader-proxy\"}}}}"
+#define LISTENING_MANIFEST                                                                                        \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "\"config\": {\"name\": \"a\", \"defaults\": {\"proxy\": {\"port\": 34567}}}, "                             \
+    "\"access\": [{\"kind\": \"network\", \"target\": \"example.com\", \"mode\": \"connect\"}, "                \
+    "{\"kind\": \"port\", \"target\": \"setting:proxy.port\", \"mode\": \"listen\"}]}"
+
+/** The loader's standard at the version its registration names, as install leaves it in the cache. */
+static void write_loader_standard(const char *standard) {
+    write_in(cache, "bundles/" LOADER "/1.0.0/host.json", standard);
+}
+
+/**
+ * A SERVE run of a loader whose standard requires `a` as its front door, installed with `manifest`, its portable
+ * settings `settings`, told it activated.
+ */
+static started_run serving_front_door_set(const char *label, const char *manifest, const char *settings) {
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    start_held_host_world(label);
+    install_plugin("a", manifest);
+    write_loader_standard(PROXY_STANDARD);
+    write_in(portable, "plugins/a/config.json", settings);
+    run = start_one(serve_arguments, 2);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    return run;
+}
+
+/** serving_front_door_set with the user's port 43123 over the manifest's default. */
+static started_run serving_front_door(const char *label, const char *manifest) {
+    return serving_front_door_set(label, manifest, "{\"proxy\": {\"port\": 43123}}");
+}
+
+static void expect_front_door_environment(const char *manifest, const char *label) {
+    started_run run = serving_front_door(label, manifest);
+    cJSON *record = ready_record();
+    expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"),
+                "{\"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:43123\", "
+                "\"ANTHROPIC_AUTH_TOKEN\": \"sk-ant-loader-proxy\"}",
+                label);
+    CHECK(cJSON_GetObjectItemCaseSensitive(record, "refused") == NULL);
+    cJSON_Delete(record);
+    release_run(&run);
+    stop_expecting(0, label);
+    finish_base();
+}
+
+/**
+ * The front door listens on the port its manifest declares by the setting `proxy.port`, which the user set to 43123
+ * over its default, so the application is handed that address and the placeholder its standard declares; a port
+ * declared as a number is handed as it stands.
+ */
+static void a_front_door_serve_run_publishes_its_applications_variables(void) {
+    expect_front_door_environment(LISTENING_MANIFEST, "a front door listening on its setting");
+    expect_front_door_environment(
+        "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+        "\"access\": [{\"kind\": \"port\", \"target\": 43123, \"mode\": \"listen\"}]}",
+        "a front door listening on a declared number");
+}
+
+static void expect_front_door_refused(started_run run, const char *refused_part, const char *fix, const char *label) {
+    cJSON *record = ready_record();
+    const char *refused = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused"));
+    CHECK(cJSON_GetObjectItemCaseSensitive(record, "environment") == NULL);
+    if (refused == NULL || strstr(refused, refused_part) == NULL) {
+        fprintf(stderr, "%s: expected a refusal holding \"%s\", got \"%s\"\n", label, refused_part,
+                refused == NULL ? "(null)" : refused);
+        check_failures++;
+    }
+    check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "fix")), fix, label);
+    cJSON_Delete(record);
+    release_run(&run);
+    stop_expecting(0, label);
+    finish_base();
+}
+
+/**
+ * A front door that declares no fixed port it listens on, or whose setting holds no port, cannot be handed to the
+ * application, so the launch is refused rather than told an empty environment.
+ */
+static void a_front_door_with_no_port_to_hand_publishes_a_refusal(void) {
+    expect_front_door_refused(serving_front_door("front-door-without-port", PLUGIN_MANIFEST),
+                              "a, the front door of " LOADER ", declares no fixed port it listens on",
+                              "install a version of a that declares the port it listens on as port access with "
+                              "mode listen",
+                              "a front door declaring no port");
+    expect_front_door_refused(
+        serving_front_door("front-door-on-any-port",
+                           "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+                           "\"access\": [{\"kind\": \"port\", \"target\": \"any\", \"mode\": \"listen\"}]}"),
+        "a, the front door of " LOADER ", declares no fixed port it listens on",
+        "install a version of a that declares the port it listens on as port access with mode listen",
+        "a front door listening on a port the system picks");
+    expect_front_door_refused(serving_front_door_set("front-door-port-setting-no-port", LISTENING_MANIFEST,
+                                                     "{\"proxy\": {\"port\": \"high\"}}"),
+                              "a, the front door of " LOADER ", listens on the port its setting proxy.port holds, "
+                              "which is no port from 1 to 65535",
+                              "set proxy.port of a to a port from 1 to 65535",
+                              "a front door whose setting holds no port");
+}
+
+/**
+ * The javascript layer of a loader whose front door is a native plugin runs as `<loader>.javascript`, and hands the
+ * application nothing: only the front door's layer publishes the proxy's variables.
+ */
+static void a_layer_not_holding_the_front_door_publishes_an_empty_environment(void) {
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    cJSON *record;
+    start_held_host_world("other-layer-environment");
+    install_plugin("a", LISTENING_MANIFEST);
+    list_plugin("n", "1.0.0", "1.0.0");
+    cJSON_AddStringToObject(cJSON_GetObjectItemCaseSensitive(catalog_items, "n"), "runtime", "native");
+    write_catalog();
+    write_loader_standard("{\"plugins\": [\"n\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+                          "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}");
+    run = start_one(serve_arguments, 2);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    record = ready_record_of(LOADER ".javascript");
+    expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"), "{}", "the other layer's environment");
+    cJSON_Delete(record);
+    release_run(&run);
+    stop_expecting(0, "a layer not holding the front door");
     finish_base();
 }
 
@@ -672,6 +809,9 @@ static void a_record_naming_a_live_pid_with_a_stale_stamp_lets_a_serve_run_keep_
 int main(void) {
     spisor_json_use_library_allocator();
     a_serve_run_started_publishes_that_it_is_ready();
+    a_front_door_serve_run_publishes_its_applications_variables();
+    a_front_door_with_no_port_to_hand_publishes_a_refusal();
+    a_layer_not_holding_the_front_door_publishes_an_empty_environment();
     in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
     a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();
     a_record_naming_a_live_pid_with_a_stale_stamp_lets_a_serve_run_keep_ticking();
