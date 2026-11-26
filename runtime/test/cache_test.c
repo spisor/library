@@ -1071,8 +1071,8 @@ static void it_sweeps_library_versions_per_platform_like_bundles(void) {
 
 static void it_leaves_a_library_version_with_no_completion_marker_alone(void) {
     start_cache("sweep-library-unmarked");
-    installed_library("runtime", "1.0.0", "linux-x64", 0);
-    installed_library("runtime", "2.0.0", "linux-x64", 1);
+    installed_library("native-library", "1.0.0", "linux-x64", 0);
+    installed_library("native-library", "2.0.0", "linux-x64", 1);
     expect_removed("[]", "library unmarked");
     finish_cache();
 }
@@ -1121,12 +1121,13 @@ static void it_keys_an_abandoned_id_folder_by_its_id_when_it_checks_references_a
 
 static void it_removes_an_old_unmarked_library_version_for_one_platform(void) {
     start_cache("sweep-library-abandoned");
-    installed_library("runtime", "2.0.0", "linux-x64", 1);
-    installed_library("runtime", "1.0.0", "linux-x64", 0);
-    age_in_cache("libraries/runtime/1.0.0/linux-x64", 25);
-    installed_library("runtime", "1.0.0", "win32-x64", 1);
-    expect_removed("[\"runtime@1.0.0 for linux-x64\"]", "library abandoned");
-    CHECK(!library_present("runtime", "1.0.0", "linux-x64") && library_present("runtime", "1.0.0", "win32-x64"));
+    installed_library("native-library", "2.0.0", "linux-x64", 1);
+    installed_library("native-library", "1.0.0", "linux-x64", 0);
+    age_in_cache("libraries/native-library/1.0.0/linux-x64", 25);
+    installed_library("native-library", "1.0.0", "win32-x64", 1);
+    expect_removed("[\"native-library@1.0.0 for linux-x64\"]", "library abandoned");
+    CHECK(!library_present("native-library", "1.0.0", "linux-x64") &&
+          library_present("native-library", "1.0.0", "win32-x64"));
     finish_cache();
 }
 

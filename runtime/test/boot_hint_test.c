@@ -230,11 +230,11 @@ static void it_refuses_a_library_folder_whose_binary_is_a_symlink(void) {
 static void it_records_only_the_directory_of_a_library_with_no_declaration(void) {
     start_base("hint-undeclared");
     const char *files[2] = {"lib/native.node", "package.json"};
-    place_library("runtime", "2.16.3", "linux-x64", files, 2);
-    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"2.16.3\"}", "1.0.0", "linux-x64");
+    place_library("native-library", "2.16.3", "linux-x64", files, 2);
+    catalog_answer written = write_hint_on(HOST, "{\"native-library\":\"2.16.3\"}", "1.0.0", "linux-x64");
     expect_success(written, "undeclared write");
-    cJSON *expected = hinted_entry("runtime", "2.16.3", "linux-x64", NULL);
-    expect_entry(written.tree, "hint/libraries/runtime", expected, "directory only");
+    cJSON *expected = hinted_entry("native-library", "2.16.3", "linux-x64", NULL);
+    expect_entry(written.tree, "hint/libraries/native-library", expected, "directory only");
     cJSON_Delete(expected);
     cJSON_Delete(written.tree);
     finish_base();

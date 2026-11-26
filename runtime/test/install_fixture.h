@@ -238,6 +238,13 @@ static inline void list_host(install_base *base, const char *id, const char *ver
               host_json == NULL ? "{}" : host_json, 0);
 }
 
+/** The folder Node's archive of version unpacks into on this platform, node-v<version>-<os>-<arch>, win32 as win. */
+static inline void node_archive_stem(const char *version, char *stem, size_t size) {
+    const char *platform = runtime_platform_key();
+    int windows = strncmp(platform, "win32-", 6) == 0;
+    snprintf(stem, size, "node-v%s-%s%s", version, windows ? "win-" : "", windows ? platform + 6 : platform);
+}
+
 /** javascript-host's host.json pinning Node pinned at minimum, this platform's build at url with sha256 (freed). */
 static inline char *javascript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
     cJSON *manifest = cJSON_CreateObject();

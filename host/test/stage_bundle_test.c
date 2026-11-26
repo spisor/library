@@ -4,9 +4,7 @@
 #include "on_path.h"
 #include "process_environment.h"
 
-#define NODE_PIN                                                                                                   \
-    "{\"pinned\": \"26.0.1\", \"builds\": {\"win32-x64\": {\"url\": \"https://nodejs.org/node.zip\", \"sha256\": " \
-    "\"aa\"}}}"
+#define SHA256 "e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f1f7"
 #define OTHER_TRIPLET "freebsd_ia32"
 
 static char base_folder[1024];
@@ -89,13 +87,41 @@ static int stage(const char *const *arguments, program *run) {
     return program_finish(run, 120000);
 }
 
-/** Runs stage-bundle javascript-host into <base>/bundle at 9.8.7 over checkout, with the pin and two libraries. */
-static int stage_javascript_host(const char *checkout, program *run) {
+/** The builds of a pin: platform's one, its archive at url with sha256. */
+static cJSON *builds_of(const char *platform, const char *url, const char *sha256) {
+    cJSON *builds = cJSON_CreateObject();
+    cJSON *build = cJSON_AddObjectToObject(builds, platform);
+    cJSON_AddStringToObject(build, "url", url);
+    cJSON_AddStringToObject(build, "sha256", sha256);
+    return builds;
+}
+
+/** A pin of Node 26.0.1 holding builds, which it takes, as text (freed). */
+static char *pin_text(cJSON *builds) {
+    cJSON *pin = cJSON_CreateObject();
+    cJSON_AddStringToObject(pin, "pinned", "26.0.1");
+    cJSON_AddItemToObject(pin, "builds", builds);
+    char *printed = cJSON_PrintUnformatted(pin);
+    char *text = copy_text(printed);
+    cJSON_free(printed);
+    cJSON_Delete(pin);
+    return text;
+}
+
+/** This platform's build, an https zip with a real-shaped SHA-256. */
+static cJSON *good_builds(void) {
+    return builds_of(runtime_platform_key(), "https://nodejs.org/dist/v26.0.1/node.zip", SHA256);
+}
+
+/** Runs stage-bundle javascript-host into <base>/bundle at 9.8.7 over checkout, with the pin builds and two libraries. */
+static int stage_javascript_host_with(const char *checkout, cJSON *builds, program *run) {
     char *directory = in_base("bundle");
     char *pin = in_base("node.json");
     char *core = in_base("built/core.bin");
     char *standard = in_base("built/standard.bin");
-    write_file(pin, NODE_PIN);
+    char *text = pin_text(builds);
+    write_file(pin, text);
+    spisor_memory_release(text);
     write_file(core, "the core");
     write_file(standard, "the standard");
     const char *arguments[] = {"javascript-host", directory, "9.8.7", checkout, pin, core, standard, NULL};
@@ -105,6 +131,10 @@ static int stage_javascript_host(const char *checkout, program *run) {
     spisor_memory_release(pin);
     spisor_memory_release(directory);
     return code;
+}
+
+static int stage_javascript_host(const char *checkout, program *run) {
+    return stage_javascript_host_with(checkout, good_builds(), run);
 }
 
 static void expect_file(const char *directory, const char *rest, const char *content) {
@@ -138,8 +168,8 @@ static void expect_host_manifest(const char *directory) {
     cJSON *manifest = json_in(directory, "host.json");
     cJSON *expected = parsed("{\"id\": \"javascript-host\", \"version\": \"9.8.7\", \"runtime\": \"javascript\", "
                              "\"entry\": \"weivel-host.mjs\", \"inProcessEntry\": \"weivel-host-in-process.mjs\", "
-                             "\"node\": {\"pinned\": \"26.0.1\", \"minimum\": \"22.18.0\", \"builds\": "
-                             "{\"win32-x64\": {\"url\": \"https://nodejs.org/node.zip\", \"sha256\": \"aa\"}}}}");
+                             "\"node\": {\"pinned\": \"26.0.1\", \"minimum\": \"22.18.0\"}}");
+    cJSON_AddItemToObject(cJSON_GetObjectItemCaseSensitive(expected, "node"), "builds", good_builds());
     if (manifest == NULL || !cJSON_Compare(manifest, expected, 1)) {
         char *printed = manifest == NULL ? NULL : cJSON_PrintUnformatted(manifest);
         fprintf(stderr, "host.json: %s\n", printed == NULL ? "(none)" : printed);
@@ -228,6 +258,40 @@ static void refuses_an_engine_that_names_no_lower_bound(void) {
     finish_case();
 }
 
+/** stage-bundle refuses the pin builds, naming part, and stages nothing. */
+static void expect_builds_refused(const char *label, cJSON *builds, const char *part) {
+    start_case(label);
+    char *checkout = fake_checkout(">=22.18.0");
+    program run;
+    CHECK(stage_javascript_host_with(checkout, builds, &run) == 1);
+    expect_contains(run.err, part, label);
+    CHECK(!exists_in(base_folder, "bundle"));
+    program_free(&run);
+    spisor_memory_release(checkout);
+    finish_case();
+}
+
+static void refuses_a_build_that_is_not_an_https_archive_with_a_sha256(void) {
+    cJSON *http = good_builds();
+    cJSON *other = cJSON_AddObjectToObject(http, "linux-arm64");
+    cJSON_AddStringToObject(other, "url", "http://nodejs.org/node.tar.gz");
+    cJSON_AddStringToObject(other, "sha256", SHA256);
+    expect_builds_refused("http", http, "http://nodejs.org/node.tar.gz");
+    expect_builds_refused("no-archive", builds_of(runtime_platform_key(), "https://nodejs.org/node.exe", SHA256),
+                          "https://nodejs.org/node.exe");
+    expect_builds_refused("upper-sha",
+                          builds_of(runtime_platform_key(), "https://nodejs.org/node.zip",
+                                    "E2EDDA75BFB089654705CF65A13B58933BFD5F57148E8EBDA916F58A2474F1F7"),
+                          "E2EDDA75");
+    expect_builds_refused("short-sha", builds_of(runtime_platform_key(), "https://nodejs.org/node.zip", "aa"),
+                          "not a sha256");
+}
+
+static void refuses_a_pin_with_no_build_for_this_platform(void) {
+    expect_builds_refused("no-platform", builds_of("aix-ppc64", "https://nodejs.org/node.tar.gz", SHA256),
+                          runtime_platform_key());
+}
+
 static void answers_2_for_a_javascript_host_word_missing_an_argument(void) {
     start_case("usage");
     const char *arguments[] = {"javascript-host", "bundle", "1.0.0", NULL};
@@ -249,12 +313,14 @@ static int node_is_on_the_path(void) {
 
 int main(void) {
     answers_2_for_a_javascript_host_word_missing_an_argument();
+    refuses_a_pinned_node_older_than_the_one_the_program_needs();
+    refuses_an_engine_that_names_no_lower_bound();
+    refuses_a_build_that_is_not_an_https_archive_with_a_sha256();
+    refuses_a_pin_with_no_build_for_this_platform();
     if (!node_is_on_the_path()) {
-        fputs("stage_bundle_test: no node on the PATH, so the bundler cannot run\n", stderr);
+        fputs("stage_bundle_test: no node on the PATH, so the bundler cannot run; its refusals ran\n", stderr);
         return check_failures == 0 ? 77 : check_summary("stage_bundle_test");
     }
     stages_the_program_bundle_beside_its_libraries_koffi_and_the_node_pin();
-    refuses_a_pinned_node_older_than_the_one_the_program_needs();
-    refuses_an_engine_that_names_no_lower_bound();
     return check_summary("stage_bundle_test");
 }

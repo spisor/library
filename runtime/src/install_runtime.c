@@ -10,7 +10,9 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "boot_resolve.h"
 #include "cache_refusal.h"
+#include "catalog_semver.h"
 #include "catalog_text.h"
 #include "directory_tree.h"
 #include "prepared_undo.h"
@@ -93,7 +95,7 @@ typedef struct acquisition {
     const char *version;
     runtime_build build;
     int zip;
-    const char *archive_name;
+    char *archive_name;
     char *versions;
     char *stem;
     char *member;
@@ -164,6 +166,7 @@ static void discard_layout(runtime_layout *layout) {
 
 static void discard(acquisition *runtime) {
     spisor_memory_release(runtime->versions);
+    spisor_memory_release(runtime->archive_name);
     spisor_memory_release(runtime->stem);
     spisor_memory_release(runtime->member);
     discard_layout(&runtime->final);
@@ -198,17 +201,29 @@ static char *staging_folder(const char *cache, const char *version, const char *
     return joined(segments, 5);
 }
 
+/**
+ * The folder Node's archive of version for platform unpacks into, node-v<version>-<os>-<arch>, Node naming win32
+ * win; NULL when memory runs out.
+ *
+ * @implNote Named from the pinned version, a plain x.y.z, and the platform key, never from the pinned url, which is
+ * catalog data: a url ending in ..\..\x.zip or ...tar.gz would otherwise name a path outside the runtime's folder.
+ */
+static char *archive_stem(const char *version, const char *platform) {
+    int windows = strncmp(platform, "win32-", strlen("win32-")) == 0;
+    const char *parts[4] = {"node-v", version, windows ? "-win-" : "-", windows ? platform + strlen("win32-") : platform};
+    return runtime_cache_text(parts, 4);
+}
+
 static int lay_out(acquisition *runtime, const char *cache, const char *platform) {
-    const char *archive_name = strrchr(runtime->build.url, '/');
-    runtime->archive_name = archive_name == NULL ? runtime->build.url : archive_name + 1;
-    const char *ending = runtime->zip ? ZIP_ENDING : TAR_GZ_ENDING;
-    runtime->stem = runtime_catalog_copy_bytes(runtime->archive_name, strlen(runtime->archive_name) - strlen(ending));
+    runtime->stem = archive_stem(runtime->version, platform);
+    const char *archive_parts[2] = {runtime->stem, runtime->zip ? ZIP_ENDING : TAR_GZ_ENDING};
+    runtime->archive_name = runtime->stem == NULL ? NULL : runtime_cache_text(archive_parts, 2);
     const char *member_parts[2] = {runtime->stem, runtime->zip ? "/node.exe" : "/bin/node"};
     runtime->member = runtime->stem == NULL ? NULL : runtime_cache_text(member_parts, 2);
     const char *versions_segments[3] = {cache, "runtimes", RUNTIME_NAME};
     const char *directory_segments[5] = {cache, "runtimes", RUNTIME_NAME, runtime->version, platform};
     runtime->versions = joined(versions_segments, 3);
-    return runtime->member != NULL && runtime->versions != NULL &&
+    return runtime->member != NULL && runtime->archive_name != NULL && runtime->versions != NULL &&
            lay_out_in(runtime, joined(directory_segments, 5), &runtime->final) &&
            lay_out_in(runtime, staging_folder(cache, runtime->version, platform), &runtime->staged);
 }
@@ -565,43 +580,6 @@ static cJSON *acquire_pinned(const node_pin *pin, const char *cache, const char 
     return answer;
 }
 
-/**
- * The major, minor and patch of a version such as 22.18.0 in parts, a missing minor or patch read as 0; 1, or 0 when
- * it does not start with a number. strict also refuses anything but exactly three numbers.
- */
-static int version_parts(const char *version, long parts[3], int strict) {
-    const char *at = version;
-    for (int index = 0; index < 3; index++) {
-        char *end = NULL;
-        parts[index] = 0;
-        if (*at < '0' || *at > '9') {
-            return index > 0 && !strict;
-        }
-        parts[index] = strtol(at, &end, 10);
-        at = end;
-        if (*at != '.') {
-            return strict ? index == 2 && *at == 0 : 1;
-        }
-        at++;
-    }
-    return !strict;
-}
-
-/** Whether version is minimum or newer, comparing major, minor and patch; 0 when version cannot be read. */
-static int is_at_least(const char *version, const char *minimum) {
-    long have[3];
-    long need[3];
-    if (!version_parts(version, have, 0) || !version_parts(minimum, need, 1)) {
-        return 0;
-    }
-    for (int index = 0; index < 3; index++) {
-        if (have[index] != need[index]) {
-            return have[index] > need[index];
-        }
-    }
-    return 1;
-}
-
 static char *trimmed(const char *text) {
     while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') {
         text++;
@@ -636,8 +614,9 @@ static char *reported_version(const char *executable, int *out_of_memory) {
 
 /**
  * A compatible node on the PATH of environment, as spec 5.3 orders it before acquiring one; NULL when
- * there is none, its version cannot be read, or it is older than minimum, and NULL with
- * *out_of_memory set when memory ran out finding or probing it, so a missing node is never assumed.
+ * there is none, its version cannot be read, or it ranks below minimum by semver, so a prerelease or nightly of the
+ * minimum itself is refused, and NULL with *out_of_memory set when memory ran out finding or probing it, so a missing
+ * node is never assumed.
  *
  * @implNote Found by detect's PATH rules and run once, only here at install, never by detection.
  */
@@ -648,7 +627,7 @@ static cJSON *runtime_on_path(const cJSON *environment, const char *minimum, int
                                                                               environment, &executable);
     *out_of_memory = found == RUNTIME_ON_PATH_OUT_OF_MEMORY;
     char *version = executable == NULL ? NULL : reported_version(executable, out_of_memory);
-    int compatible = version != NULL && is_at_least(version, minimum);
+    int compatible = version != NULL && runtime_catalog_compare_versions(version, minimum) >= 0;
     cJSON *answer = compatible ? answer_of(version, executable, 0, "path") : NULL;
     *out_of_memory = *out_of_memory || (compatible && answer == NULL);
     spisor_memory_release(version);
@@ -681,19 +660,16 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     return recorded == SPISOR_OK;
 }
 
-/** Whether text is a version of exactly three numbers, which the pin's version must be to name a cache folder. */
-static int is_plain_version(const char *text) {
-    long parts[3];
-    return text != NULL && version_parts(text, parts, 1);
-}
-
 /** The host.json of the javascript-host version cache hints, NULL with *refusal set, or with it NULL out of memory. */
 static cJSON *javascript_host_manifest(const char *cache, cJSON **refusal) {
     int out_of_memory = 0;
     cJSON *hint = runtime_read_boot_hint(cache, RUNTIME_JAVASCRIPT_HOST_ID, &out_of_memory);
     const char *version = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(hint, "host"));
-    const char *segments[5] = {cache, "bundles", RUNTIME_JAVASCRIPT_HOST_ID, version, "host.json"};
-    char *path = version == NULL ? NULL : joined(segments, 5);
+    char *directory = version == NULL ? NULL
+                                      : runtime_bundle_version_directory(cache, RUNTIME_JAVASCRIPT_HOST_ID, version,
+                                                                         refusal);
+    const char *segments[2] = {directory, "host.json"};
+    char *path = directory == NULL ? NULL : joined(segments, 2);
     cJSON *manifest = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
     if (!out_of_memory && version == NULL) {
         *refusal = runtime_refusal("no javascript-host version is installed, and its host.json carries the Node pin",
@@ -702,6 +678,7 @@ static cJSON *javascript_host_manifest(const char *cache, cJSON **refusal) {
         *refusal = refused("the javascript-host host.json that carries the Node pin cannot be read: ", path, PIN_FIX);
     }
     spisor_memory_release(path);
+    spisor_memory_release(directory);
     cJSON_Delete(hint);
     return manifest;
 }
@@ -717,7 +694,8 @@ static cJSON *read_pin(const char *cache, node_pin *pin, int *out_of_memory) {
     pin->builds = cJSON_GetObjectItemCaseSensitive(node, "builds");
     *out_of_memory = pin->manifest == NULL && refusal == NULL;
     if (pin->manifest != NULL &&
-        (!is_plain_version(pin->pinned) || !is_plain_version(pin->minimum) || !cJSON_IsObject(pin->builds))) {
+        (!runtime_catalog_is_plain_version(pin->pinned) || !runtime_catalog_is_plain_version(pin->minimum) ||
+         !cJSON_IsObject(pin->builds))) {
         refusal = runtime_refusal("the installed javascript-host pins no Node as {pinned, minimum, builds}, "
                                   "pinned and minimum each a version such as 22.18.0", PIN_FIX);
         *out_of_memory = refusal == NULL;

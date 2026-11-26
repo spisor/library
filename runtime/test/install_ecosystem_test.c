@@ -455,12 +455,16 @@ static void write_incompressible(const char *path, size_t size) {
 
 /** Packs a one-file runtime archive of size bytes with the OS's tar, for javascript-host's host.json to pin. */
 static void serve_runtime_build(install_base *base, size_t size, served_build *served) {
+    char stem[64];
+    char member[96];
+    char archive_name[96];
+    node_archive_stem("1.2.3", stem, sizeof stem);
 #if defined(_WIN32)
-    const char *member = "node-v1.2.3-fixture/node.exe";
-    const char *archive_name = "node-v1.2.3-fixture.zip";
+    snprintf(member, sizeof member, "%s/node.exe", stem);
+    snprintf(archive_name, sizeof archive_name, "%s.zip", stem);
 #else
-    const char *member = "node-v1.2.3-fixture/bin/node";
-    const char *archive_name = "node-v1.2.3-fixture.tar.gz";
+    snprintf(member, sizeof member, "%s/bin/node", stem);
+    snprintf(archive_name, sizeof archive_name, "%s.tar.gz", stem);
 #endif
     char *packing = joined(base->root, "packing");
     char *executable = joined(packing, member);
@@ -483,7 +487,7 @@ static void serve_runtime_build(install_base *base, size_t size, served_build *s
     cJSON_AddItemToArray(arguments, cJSON_CreateString(archive));
     cJSON_AddItemToArray(arguments, cJSON_CreateString("-C"));
     cJSON_AddItemToArray(arguments, cJSON_CreateString(packing));
-    cJSON_AddItemToArray(arguments, cJSON_CreateString("node-v1.2.3-fixture"));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString(stem));
     int exit_code = -1;
     char *problem = NULL;
     CHECK(runtime_run_to_exit(tar, arguments, 120000, &exit_code, NULL, &problem) && exit_code == 0);
@@ -622,11 +626,15 @@ static int runtime_is_intact(const install_base *base) {
     char rest[256];
     snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s", runtime_platform_key());
     char *directory = joined(base->cache, rest);
+    char stem[64];
+    char member[96];
+    node_archive_stem("1.2.3", stem, sizeof stem);
 #if defined(_WIN32)
-    char *executable = joined(directory, "node-v1.2.3-fixture/node.exe");
+    snprintf(member, sizeof member, "%s/node.exe", stem);
 #else
-    char *executable = joined(directory, "node-v1.2.3-fixture/bin/node");
+    snprintf(member, sizeof member, "%s/bin/node", stem);
 #endif
+    char *executable = joined(directory, member);
     char *marker = text_in(directory, ".unpacked");
     char hash[NAULA_SHA256_HEX_SIZE];
     int intact = marker != NULL && strlen(marker) == 130 && spisor_sha256_file(executable, hash) == SPISOR_OK &&
@@ -658,10 +666,12 @@ static void expect_no_staging_left(const install_base *base) {
 static void expect_recorded_runtime(const install_base *base) {
     cJSON *record = json_in(base->cache, "runtimes/javascript.json");
     char rest[256];
+    char stem[64];
+    node_archive_stem("1.2.3", stem, sizeof stem);
 #if defined(_WIN32)
-    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/node-v1.2.3-fixture/node.exe", runtime_platform_key());
+    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/%s/node.exe", runtime_platform_key(), stem);
 #else
-    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/node-v1.2.3-fixture/bin/node", runtime_platform_key());
+    snprintf(rest, sizeof rest, "runtimes/node/1.2.3/%s/%s/bin/node", runtime_platform_key(), stem);
 #endif
     char *executable = joined(base->cache, rest);
     check_text(text_at(record, "name"), "node", "recorded name");

@@ -351,14 +351,17 @@ static int acquired_nothing(void) {
 }
 
 #define STAGED_VERSION "1.2.3"
-#define STAGED_STEM "node-v1.2.3-staged"
 #if defined(_WIN32)
-#define STAGED_ARCHIVE STAGED_STEM ".zip"
+#define STAGED_ENDING ".zip"
 #define STAGED_EXECUTABLE "node.exe"
 #else
-#define STAGED_ARCHIVE STAGED_STEM ".tar.gz"
+#define STAGED_ENDING ".tar.gz"
 #define STAGED_EXECUTABLE "bin/node"
 #endif
+
+/** The folder STAGED_VERSION's archive unpacks into and the archive's name, as Node names them. */
+static char STAGED_STEM[64];
+static char STAGED_ARCHIVE[80];
 
 static install_base archive_base;
 static char *staged_archive_url = NULL;
@@ -395,8 +398,12 @@ static cJSON *packing_arguments(const char *archive, const char *packing) {
 /** Packs, once for every attempt, a runtime archive the staging case fetches and unpacks. */
 static void pack_staged_archive(void) {
     start_install_base(&archive_base, "operations", "runtime-archive");
+    node_archive_stem(STAGED_VERSION, STAGED_STEM, sizeof STAGED_STEM);
+    snprintf(STAGED_ARCHIVE, sizeof STAGED_ARCHIVE, "%s" STAGED_ENDING, STAGED_STEM);
+    char member[128];
+    snprintf(member, sizeof member, "%s/" STAGED_EXECUTABLE, STAGED_STEM);
     char *packing = joined(archive_base.root, "packing");
-    write_in(packing, STAGED_STEM "/" STAGED_EXECUTABLE, "the node executable");
+    write_in(packing, member, "the node executable");
     char *archive = joined(archive_base.root, STAGED_ARCHIVE);
     cJSON *arguments = packing_arguments(archive, packing);
     char *tar = system_tar();

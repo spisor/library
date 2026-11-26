@@ -8,6 +8,7 @@
 
 #include "cJSON.h"
 #include "allocation.h"
+#include "catalog_semver.h"
 #include "directory_tree.h"
 #include "node_json_file.h"
 #include "on_path.h"
@@ -147,28 +148,51 @@ static int stage_library(int count, char **arguments) {
     return staged ? 0 : 1;
 }
 
-/** The major, minor and patch of a version of exactly three numbers such as 22.18.0; 1, or 0 for any other text. */
-static int version_parts(const char *version, long parts[3]) {
-    const char *at = version;
-    for (int index = 0; index < 3; index++) {
-        char *end = NULL;
-        if (*at < '0' || *at > '9') {
-            return 0;
-        }
-        parts[index] = strtol(at, &end, 10);
-        at = end;
-        if (index < 2 && *at++ != '.') {
+static int ends_with(const char *text, const char *ending) {
+    size_t length = strlen(text);
+    size_t ending_length = strlen(ending);
+    return length >= ending_length && strcmp(text + length - ending_length, ending) == 0;
+}
+
+/** Whether text is a SHA-256 as nodejs.org's SHASUMS256.txt prints one: 64 lowercase hexadecimal digits. */
+static int is_sha256(const char *text) {
+    size_t length = text == NULL ? 0 : strlen(text);
+    for (size_t index = 0; index < length; index++) {
+        if (!((text[index] >= '0' && text[index] <= '9') || (text[index] >= 'a' && text[index] <= 'f'))) {
             return 0;
         }
     }
-    return *at == 0;
+    return length == 64;
 }
 
-static int is_at_least(const long version[3], const long minimum[3]) {
-    for (int index = 0; index < 3; index++) {
-        if (version[index] != minimum[index]) {
-            return version[index] > minimum[index];
+/** Whether build is {url, sha256}, the url an https one ending .zip or .tar.gz, printing what is wrong when not. */
+static int is_build(const char *path, const cJSON *build) {
+    const char *url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(build, "url"));
+    const char *sha256 = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(build, "sha256"));
+    int fetchable = url != NULL && strncmp(url, "https://", strlen("https://")) == 0 &&
+                    (ends_with(url, ".zip") || ends_with(url, ".tar.gz"));
+    if (!fetchable) {
+        fprintf(stderr, "stage-bundle: %s pins %s for %s, not an https url ending .zip or .tar.gz\n", path,
+                url == NULL ? "no url" : url, build->string);
+    } else if (!is_sha256(sha256)) {
+        fprintf(stderr, "stage-bundle: %s pins %s for %s, not a sha256 of 64 lowercase hexadecimal digits\n", path,
+                sha256 == NULL ? "no sha256" : sha256, build->string);
+    }
+    return fetchable && is_sha256(sha256);
+}
+
+/** Whether every build in builds is one, and builds holds this platform's, printing what is wrong when not. */
+static int are_builds(const char *path, const cJSON *builds) {
+    const cJSON *build;
+    cJSON_ArrayForEach(build, builds) {
+        if (!is_build(path, build)) {
+            return 0;
         }
+    }
+    if (cJSON_GetObjectItemCaseSensitive(builds, runtime_platform_key()) == NULL) {
+        fprintf(stderr, "stage-bundle: %s pins no build for %s, the platform this bundle is staged for\n", path,
+                runtime_platform_key());
+        return 0;
     }
     return 1;
 }
@@ -188,10 +212,9 @@ static int read_minimum(javascript_host_inputs *inputs) {
     cJSON *package = path == NULL ? NULL : read_json(path);
     const char *engine =
         cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(package, "engines"), "node"));
-    long parts[3];
     size_t bound = strlen(ENGINE_BOUND);
-    int read = engine != NULL && strncmp(engine, ENGINE_BOUND, bound) == 0 && version_parts(engine + bound, parts) &&
-               strlen(engine + bound) < sizeof inputs->minimum;
+    int read = engine != NULL && strncmp(engine, ENGINE_BOUND, bound) == 0 &&
+               runtime_catalog_is_plain_version(engine + bound) && strlen(engine + bound) < sizeof inputs->minimum;
     if (read) {
         snprintf(inputs->minimum, sizeof inputs->minimum, "%s", engine + bound);
     } else if (package != NULL) {
@@ -203,24 +226,25 @@ static int read_minimum(javascript_host_inputs *inputs) {
     return read;
 }
 
-/** The pin file as {pinned, builds}, refused unless pinned is a version no older than the checkout's minimum. */
+/**
+ * The pin file as {pinned, builds}, refused unless pinned is a plain version no older than the checkout's minimum and
+ * every build is one stage-bundle can vouch for, this platform's among them.
+ */
 static int read_pin(javascript_host_inputs *inputs, const char *path) {
     inputs->pin = read_json(path);
     const char *pinned = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(inputs->pin, "pinned"));
-    long version[3];
-    long minimum[3];
-    int shaped = pinned != NULL && version_parts(pinned, version) &&
-                 cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(inputs->pin, "builds"));
+    const cJSON *builds = cJSON_GetObjectItemCaseSensitive(inputs->pin, "builds");
+    int shaped = runtime_catalog_is_plain_version(pinned) && cJSON_IsObject(builds);
     if (inputs->pin != NULL && !shaped) {
         fprintf(stderr, "stage-bundle: %s is not {\"pinned\": \"<major>.<minor>.<patch>\", \"builds\": {...}}\n", path);
         return 0;
     }
-    if (shaped && version_parts(inputs->minimum, minimum) && !is_at_least(version, minimum)) {
+    if (shaped && runtime_catalog_compare_versions(pinned, inputs->minimum) < 0) {
         fprintf(stderr, "stage-bundle: %s pins Node %s, older than the %s the program needs\n", path, pinned,
                 inputs->minimum);
         return 0;
     }
-    return shaped;
+    return shaped && are_builds(path, builds);
 }
 
 /** Runs the checkout's bundler on the PATH's node, writing the program's two files into the directory. */
