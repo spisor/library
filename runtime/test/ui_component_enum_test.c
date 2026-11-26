@@ -97,11 +97,17 @@ static void read_inside(read_enum *read, const char *line, int *documented) {
     }
 }
 
+/** Every line of text, an empty one kept as empty, cut in place at each line feed. */
 static void read_lines(read_enum *read, char *text) {
     int inside = 0;
     int closed = 0;
     int documented = 0;
-    for (char *line = strtok(text, "\n"); line != NULL && !closed; line = strtok(NULL, "\n")) {
+    for (char *line = text, *next = NULL; line != NULL && !closed; line = next) {
+        char *feed = strchr(line, '\n');
+        next = feed == NULL ? NULL : feed + 1;
+        if (feed != NULL) {
+            *feed = '\0';
+        }
         size_t length = strlen(line);
         if (length > 0 && line[length - 1] == '\r') {
             line[length - 1] = '\0';
@@ -132,6 +138,35 @@ static void read_enum_of_header(read_enum *read) {
     }
     read_lines(read, text);
     spisor_memory_release(text);
+}
+
+/** Reads the enum out of `text` as the header's reader does, from a copy, since reading cuts the text into lines. */
+static void read_enum_of_text(read_enum *read, const char *text) {
+    char copy[1024];
+    memset(read, 0, sizeof *read);
+    snprintf(copy, sizeof copy, "%s", text);
+    read_lines(read, copy);
+}
+
+static void refuses_a_blank_line_inside_the_enum_under_either_line_ending(void) {
+    static const char *const texts[] = {
+        ENUM_OPENING "\n    /** One. */\n    RUNTIME_UI_COMPONENT_ONE = 1,\n\n    /** Two. */\n"
+                     "    RUNTIME_UI_COMPONENT_TWO = 2,\n" ENUM_CLOSING "\n",
+        ENUM_OPENING "\r\n    /** One. */\r\n    RUNTIME_UI_COMPONENT_ONE = 1,\r\n\r\n    /** Two. */\r\n"
+                     "    RUNTIME_UI_COMPONENT_TWO = 2,\r\n" ENUM_CLOSING "\r\n",
+        ENUM_OPENING "\n    /** One. */\n\n    RUNTIME_UI_COMPONENT_ONE = 1,\n" ENUM_CLOSING "\n"};
+    for (size_t index = 0; index < sizeof texts / sizeof texts[0]; index++) {
+        read_enum read;
+        read_enum_of_text(&read, texts[index]);
+        if (!read.failed) {
+            fprintf(stderr, "a blank line inside the enum was read, in text %zu\n", index);
+            check_failures++;
+        }
+    }
+    read_enum read;
+    read_enum_of_text(&read, ENUM_OPENING "\r\n    /** One. */\r\n    RUNTIME_UI_COMPONENT_ONE = 1,\r\n" ENUM_CLOSING
+                                          "\r\n");
+    CHECK(!read.failed && read.count == 1);
 }
 
 static void lower_case(const char *name, char *lowered) {
@@ -177,5 +212,6 @@ static void knows_no_name_beside_the_enums(void) {
 int main(void) {
     reads_thirty_components_numbered_from_one_in_the_vocabularys_order();
     knows_no_name_beside_the_enums();
+    refuses_a_blank_line_inside_the_enum_under_either_line_ending();
     return check_summary("ui_component_enum_test");
 }

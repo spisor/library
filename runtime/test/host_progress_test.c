@@ -659,6 +659,26 @@ static void an_action_writes_no_result_through_a_results_folder_that_is_a_link(v
     finish_base();
 }
 
+static void an_action_writes_no_result_through_a_dangling_link_at_its_path(void) {
+    started_run run = acting_with_result("action-result-dangling");
+    char *results = joined(state, "results");
+    char *path = joined(state, RESULT_REST);
+    char *target = joined(state, "nowhere.json");
+    CHECK(spisor_make_directories(results) == SPISOR_OK);
+    if (create_link_or_skip(path, target)) {
+        expect_result_refused(&run, "already stands", "a dangling link at the result path");
+        CHECK(spisor_probe_file(target) == SPISOR_FILE_MISSING);
+        CHECK(is_link(path));
+    } else {
+        release_run(&run);
+        stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run whose link was refused");
+    }
+    spisor_memory_release(target);
+    spisor_memory_release(path);
+    spisor_memory_release(results);
+    finish_base();
+}
+
 static void finished_is_refused_in_a_serve_run_and_before_started(void) {
     weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
     weivel_standard_service_refusal refusal;
@@ -1013,6 +1033,7 @@ int main(void) {
     an_action_writes_its_result_as_json_to_the_path_it_was_given();
     an_action_writes_no_result_over_anything_already_at_its_path();
     an_action_writes_no_result_through_a_results_folder_that_is_a_link();
+    an_action_writes_no_result_through_a_dangling_link_at_its_path();
     finished_is_refused_in_a_serve_run_and_before_started();
     a_tick_acts_on_each_timer_when_it_is_due();
     a_late_tick_runs_each_timer_once();

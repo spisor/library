@@ -131,6 +131,11 @@ static spisor_status result_json(const spisor_value *result, char **text) {
     return status;
 }
 
+/**
+ * @implNote The folder is probed before the file is created in it, so a writer of the state place who swaps the folder
+ * for a link in between leads the file through it; accepted, since that writer can already change what reads the
+ * state place.
+ */
 static spisor_status create_file(const char *path, const char *text, spisor_refusal *refusal) {
     runtime_entry_outcome outcome = runtime_create_new_file(path, (const uint8_t *)text, strlen(text), 0);
     if (outcome == RUNTIME_ENTRY_OUT_OF_MEMORY) {

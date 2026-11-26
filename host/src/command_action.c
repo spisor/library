@@ -1,22 +1,20 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "action_result.h"
 #include "cache_refusal.h"
 #include "allocation.h"
-#include "directory_tree.h"
 #include "host_child.h"
 #include "host_commands.h"
 #include "host_context.h"
 #include "host_options.h"
 #include "host_output.h"
 #include "host_start.h"
-#include "paths.h"
-#include "run_result.h"
+#include "json_service.h"
 #include "runtime/hosts.h"
-#include "spisor/file.h"
-#include "spisor/path.h"
 
+#define STALE_RESULT_MESSAGE "a file an earlier spisor-host left in the state place's results folder could not be removed"
+#define STALE_RESULT_FIX "remove the files in the results folder of the state place, then run the action again"
 #define ACTION_USAGE "action needs the host id, the plugin and the action, and takes --input name=value as often as it needs"
 
 static char *problem_of(const char *first, const char *second) {
@@ -71,26 +69,16 @@ static int runs_in_session_host(const host_context *context, const char *host_id
     return loader;
 }
 
-/** A path for this process's next result, `<state>/results/<pid>-<n>.json`, freed; NULL when memory runs out. */
-static char *next_result_path(const host_context *context) {
-    static unsigned long taken;
-    char name[64];
-    snprintf(name, sizeof name, "%.0f-%lu.json", host_process_id(), ++taken);
-    const char *segments[3] = {context->state, RUNTIME_RESULTS_FOLDER, name};
-    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
-}
-
-/** Prints the result the action's run wrote to result, when it wrote one, and removes the file; 0 out of memory. */
-static int answer_result(const char *result) {
-    size_t length = 0;
-    spisor_read_outcome outcome = SPISOR_READ_FAILED;
-    char *text = (char *)spisor_read_file_reporting(result, &length, &outcome);
+/** Prints the result the action's run wrote to result, as host_take_result answers it; 0 when memory ran out. */
+static int answer_result(const char *result, int exit_code) {
+    int out_of_memory = 0;
+    char *text = host_take_result(result, exit_code, &out_of_memory);
     if (text != NULL) {
         host_write(0, text);
         host_write(0, "\n");
     }
     spisor_memory_release(text);
-    return runtime_remove_file_entry(result) != RUNTIME_ENTRY_OUT_OF_MEMORY && outcome != SPISOR_READ_OUT_OF_MEMORY;
+    return !out_of_memory;
 }
 
 /** The one layer hosts' layer_start answers for an action of a loader's plugin; NULL with *refusal set. */
@@ -106,18 +94,19 @@ static cJSON *action_layer(const host_context *context, const char *loader_id, c
 /**
  * Runs the start the registration of host_id records, or the layer of a loader's plugin when it records none,
  * with the arguments action, plugin, action and input, as this process's child sharing its terminal, and
- * answers its exit code. A loader's layer is also given a result path of this process's own, whose result is
- * printed once the child exits and the file removed before answering.
+ * answers its exit code. A loader's layer is also given a result path of this process's own, cleared before the
+ * child starts, whose result is printed once the child exited 0 and the file removed before answering.
  *
  * @implNote A background host's recorded start is the archived host's, which takes no result path.
  */
 static int run_action(const host_context *context, const char *host_id, const char *const *action_arguments) {
     cJSON *refusal = NULL;
     int in_session_host = runs_in_session_host(context, host_id);
-    char *result = in_session_host ? next_result_path(context) : NULL;
+    int removable = 1;
+    char *result = in_session_host ? host_result_path(context, &removable) : NULL;
     cJSON *start = NULL;
     if (in_session_host && result == NULL) {
-        return host_refuse(NULL);
+        return host_refuse(removable ? NULL : runtime_refusal(STALE_RESULT_MESSAGE, STALE_RESULT_FIX));
     }
     start = in_session_host ? action_layer(context, host_id, action_arguments, result, &refusal)
                             : host_start_of(context, host_id, action_arguments, 4, &refusal);
@@ -125,7 +114,7 @@ static int run_action(const host_context *context, const char *host_id, const ch
     int ran = start != NULL &&
               host_run_child(host_text(start, "executable"), cJSON_GetObjectItemCaseSensitive(start, "arguments"),
                              cJSON_GetObjectItemCaseSensitive(start, "environment"), NULL, &exit_code, &refusal);
-    int answered = result == NULL || answer_result(result);
+    int answered = result == NULL || answer_result(result, ran ? exit_code : 1);
     cJSON_Delete(start);
     spisor_memory_release(result);
     if (!answered) {

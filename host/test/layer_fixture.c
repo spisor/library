@@ -143,8 +143,9 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
 
 /**
  * Run as <host-id> action <plugin> <action> <input-json>, the result's path after the input when `with_result`:
- * prints the arguments from the action word to the input, one per line, writes FIXTURE_RESULT to the result's path,
- * and exits with the number after "exit-" when the action starts with it, 0 otherwise.
+ * prints the arguments from the action word to the input, one per line, writes FIXTURE_RESULT to the result's path
+ * unless the action starts with "refuse-", which then exits 1 as a run whose write was refused does, and exits with
+ * the number after "exit-" when the action starts with it, 0 otherwise.
  */
 static int run_action(int count, char **arguments, int with_result) {
     host_context context;
@@ -159,11 +160,12 @@ static int run_action(int count, char **arguments, int with_result) {
         fputs(arguments[index], stdout);
         fputs("\n", stdout);
     }
-    if (with_result) {
+    const char *action = arguments[last - 2];
+    int refused = strncmp(action, "refuse-", 7) == 0;
+    if (with_result && !refused) {
         spisor_append_file(arguments[count - 1], (const uint8_t *)FIXTURE_RESULT, strlen(FIXTURE_RESULT));
     }
-    const char *action = arguments[last - 2];
-    int code = strncmp(action, "exit-", 5) == 0 ? atoi(action + 5) : 0;
+    int code = refused ? 1 : strncmp(action, "exit-", 5) == 0 ? atoi(action + 5) : 0;
     host_close_context(&context);
     return code;
 }

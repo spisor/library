@@ -17,6 +17,7 @@
 #include "check.h"
 #include "directory_tree.h"
 #include "file_age.h"
+#include "links.h"
 #include "hosts_lock.h"
 #include "paths.h"
 #include "scratch_directory.h"
@@ -1098,6 +1099,26 @@ static void it_removes_a_result_file_untouched_for_a_day_and_keeps_a_fresh_one(v
     finish_cache();
 }
 
+/** A results folder that is a link leads outside the state place, so a sweep never deletes through it. */
+static void it_leaves_a_results_folder_that_is_a_link_alone(void) {
+    start_cache("sweep-results-link");
+    char *elsewhere = joined(scratch, "elsewhere");
+    char *results = joined(state, "results");
+    write_in(elsewhere, "1-1.json", "\"outside\"");
+    char *outside = joined(elsewhere, "1-1.json");
+    set_modified(outside, now_milliseconds() - 25 * HOUR_MILLISECONDS);
+    CHECK(spisor_make_directories(state) == SPISOR_OK);
+    if (create_link_or_skip(results, elsewhere)) {
+        expect_removed("[]", "a linked results folder");
+        CHECK(spisor_probe_file(outside) == SPISOR_FILE_PRESENT);
+        CHECK(is_link(results));
+    }
+    spisor_memory_release(outside);
+    spisor_memory_release(results);
+    spisor_memory_release(elsewhere);
+    finish_cache();
+}
+
 static void it_keeps_an_unmarked_bundle_version_while_any_one_of_its_files_is_recent(void) {
     start_cache("sweep-arriving");
     installed_bundle("a", "2.0.0", 0);
@@ -1491,6 +1512,7 @@ int main(void) {
     it_answers_nothing_removed_for_a_cache_with_no_bundles();
     it_sweeps_library_versions_per_platform_like_bundles();
     it_removes_a_result_file_untouched_for_a_day_and_keeps_a_fresh_one();
+    it_leaves_a_results_folder_that_is_a_link_alone();
     it_leaves_a_library_version_with_no_completion_marker_alone();
     it_removes_an_unmarked_bundle_version_whose_newest_file_is_more_than_a_day_old();
     it_keeps_an_unmarked_bundle_version_while_any_one_of_its_files_is_recent();
@@ -1510,5 +1532,5 @@ int main(void) {
     it_answers_this_build_s_platform_key_as_node_spells_it();
     it_installs_for_this_machine_s_platform_when_none_is_given();
     it_refuses_an_unusable_argument_as_malformed();
-    return check_summary("cache_test");
+    return summary_with_links("cache_test");
 }
