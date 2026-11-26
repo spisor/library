@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "boot_hint.h"
 #include "cache_refusal.h"
 #include "catalog_text.h"
 #include "directory_tree.h"
@@ -16,6 +17,7 @@
 #include "runtime/fetch.h"
 #include "followed_entry.h"
 #include "file_times.h"
+#include "install_entries.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "node_json_file.h"
@@ -47,16 +49,14 @@
 #endif
 
 #define RUNTIME_NAME "node"
-#define PINNED_VERSION "26.13.0"
-#define COMPATIBLE_MAJOR 20
 #define UNPACKED_MARKER ".unpacked"
 #define RECORD_FILE "javascript.json"
 #define DOWNLOAD_SECONDS 1800
 #define TAR_MILLISECONDS 600000u
 #define VERSION_MILLISECONDS 10000u
-#define RUNTIME_FIX                                                                                    \
-    "install the ecosystem on win32-x64, linux-x64, darwin-x64 or darwin-arm64, or put Node 20 or newer " \
-    "on the PATH"
+#define PIN_FIX                                                                                                     \
+    "install the ecosystem with a JavaScript plugin from a catalog whose javascript-host host.json carries node " \
+    "{pinned, minimum, builds: {<platform>: {url, sha256}}}"
 #define AGAIN_FIX "run install again; if it repeats, report the pinned archive"
 #define CACHE_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
 #define STALE_STAGING_MILLISECONDS (24.0 * 3600000.0)
@@ -69,16 +69,16 @@ typedef struct runtime_build {
     const char *sha256;
 } runtime_build;
 
-static const runtime_build PINNED_BUILDS[] = {
-    {"win32-x64", "https://nodejs.org/dist/v26.13.0/node-v26.13.0-win-x64.zip",
-     "dcc60d59a0746999f99064a01c020445d54d84228c691cdbf25b49ac3b59150a"},
-    {"linux-x64", "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz",
-     "5848553868b402d3fabb5b09270649977780a390f832155721025a08b5104455"},
-    {"darwin-x64", "https://nodejs.org/dist/v26.13.0/node-v26.13.0-darwin-x64.tar.gz",
-     "525c9b29bb0263d687de60a4cec0e2a6db876a8eb032369e5795eca71e7c358e"},
-    {"darwin-arm64", "https://nodejs.org/dist/v26.13.0/node-v26.13.0-darwin-arm64.tar.gz",
-     "d38bd5e5a2ddce6bbb5ce45e46e208337da4d51fffe611e567fd32073d6439f6"},
-};
+/**
+ * The Node the installed javascript-host pins: its host.json, which every member points into, the pinned version, the
+ * minimum a PATH node must be, and the builds by platform.
+ */
+typedef struct node_pin {
+    cJSON *manifest;
+    const char *pinned;
+    const char *minimum;
+    const cJSON *builds;
+} node_pin;
 
 /** Where one unpacked runtime lives: its folder, the archive fetched into it, its marker and its executable. */
 typedef struct runtime_layout {
@@ -103,24 +103,6 @@ typedef struct acquisition {
 } acquisition;
 
 #ifdef SPISOR_INSTALL_TEST_HOOKS
-static char *test_version = NULL;
-static char *test_url = NULL;
-static char *test_sha256 = NULL;
-static runtime_build test_build = {NULL, NULL, NULL};
-
-void runtime_install_use_runtime_build(const char *version, const char *url, const char *sha256) {
-    spisor_memory_release(test_version);
-    spisor_memory_release(test_url);
-    spisor_memory_release(test_sha256);
-    test_version = url == NULL ? NULL : runtime_catalog_copy(version);
-    test_url = url == NULL ? NULL : runtime_catalog_copy(url);
-    test_sha256 = url == NULL ? NULL : runtime_catalog_copy(sha256);
-    test_build.url = test_url;
-    test_build.sha256 = test_sha256;
-}
-#endif
-
-#ifdef SPISOR_INSTALL_TEST_HOOKS
 static void (*publish_hook)(const char *staging) = NULL;
 
 void runtime_install_before_publish(void (*hook)(const char *staging)) {
@@ -138,23 +120,13 @@ static void before_publish(const acquisition *runtime) {
 #endif
 }
 
-static int build_for(const char *platform, runtime_build *build, const char **version) {
-#ifdef SPISOR_INSTALL_TEST_HOOKS
-    if (test_build.url != NULL) {
-        *build = test_build;
-        build->platform = platform;
-        *version = test_version;
-        return 1;
-    }
-#endif
-    *version = PINNED_VERSION;
-    for (size_t index = 0; index < sizeof PINNED_BUILDS / sizeof PINNED_BUILDS[0]; index++) {
-        if (strcmp(PINNED_BUILDS[index].platform, platform) == 0) {
-            *build = PINNED_BUILDS[index];
-            return 1;
-        }
-    }
-    return 0;
+/** Whether the pin names a build for platform, an archive url and its sha256, which it then sets in *build. */
+static int build_for(const node_pin *pin, const char *platform, runtime_build *build) {
+    const cJSON *named = cJSON_GetObjectItemCaseSensitive(pin->builds, platform);
+    build->platform = platform;
+    build->url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(named, "url"));
+    build->sha256 = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(named, "sha256"));
+    return build->url != NULL && build->sha256 != NULL;
 }
 
 static int ends_with(const char *text, const char *ending) {
@@ -544,16 +516,33 @@ static cJSON *answer_of(const char *version, const char *executable, int fetched
     return answer;
 }
 
-static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **refusal) {
+/** The fix for a platform the pin has no build for: another platform, or a PATH node of its minimum; NULL when out of memory. */
+static char *unpinned_fix(const node_pin *pin) {
+    const char *parts[3] = {"install on a platform javascript-host pins a Node build for, or put Node ", pin->minimum,
+                            " or newer on the PATH"};
+    return runtime_cache_text(parts, 3);
+}
+
+static cJSON *unpinned_refusal(const node_pin *pin, const char *message, const char *subject) {
+    char *fix = unpinned_fix(pin);
+    const char *parts[4] = {RUNTIME_NAME " ", pin->pinned, message, subject};
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 4, fix);
+    spisor_memory_release(fix);
+    return refusal;
+}
+
+static cJSON *acquire_pinned(const node_pin *pin, const char *cache, const char *platform, cJSON **refusal) {
     acquisition runtime;
     memset(&runtime, 0, sizeof runtime);
-    if (!build_for(platform, &runtime.build, &runtime.version)) {
-        *refusal = refused(RUNTIME_NAME " " PINNED_VERSION " has no pinned build for ", platform, RUNTIME_FIX);
+    runtime.version = pin->pinned;
+    if (!build_for(pin, platform, &runtime.build)) {
+        *refusal = unpinned_refusal(pin, " has no pinned build for ", platform);
         return NULL;
     }
     runtime.zip = ends_with(runtime.build.url, ZIP_ENDING);
     if (!runtime.zip && !ends_with(runtime.build.url, TAR_GZ_ENDING)) {
-        *refusal = refused("the pinned runtime is neither a .zip nor a .tar.gz: ", runtime.build.url, RUNTIME_FIX);
+        *refusal = unpinned_refusal(pin, " is pinned to an archive that is neither a .zip nor a .tar.gz: ",
+                                    runtime.build.url);
         return NULL;
     }
     cJSON *answer = NULL;
@@ -576,11 +565,41 @@ static cJSON *acquire_pinned(const char *cache, const char *platform, cJSON **re
     return answer;
 }
 
-/** The leading number of a version line such as 22.1.0, or -1 when it has none. */
-static long major_of(const char *version) {
-    char *end = NULL;
-    long major = strtol(version, &end, 10);
-    return end == version || (*end != '.' && *end != 0) ? -1 : major;
+/**
+ * The major, minor and patch of a version such as 22.18.0 in parts, a missing minor or patch read as 0; 1, or 0 when
+ * it does not start with a number. strict also refuses anything but exactly three numbers.
+ */
+static int version_parts(const char *version, long parts[3], int strict) {
+    const char *at = version;
+    for (int index = 0; index < 3; index++) {
+        char *end = NULL;
+        parts[index] = 0;
+        if (*at < '0' || *at > '9') {
+            return index > 0 && !strict;
+        }
+        parts[index] = strtol(at, &end, 10);
+        at = end;
+        if (*at != '.') {
+            return strict ? index == 2 && *at == 0 : 1;
+        }
+        at++;
+    }
+    return !strict;
+}
+
+/** Whether version is minimum or newer, comparing major, minor and patch; 0 when version cannot be read. */
+static int is_at_least(const char *version, const char *minimum) {
+    long have[3];
+    long need[3];
+    if (!version_parts(version, have, 0) || !version_parts(minimum, need, 1)) {
+        return 0;
+    }
+    for (int index = 0; index < 3; index++) {
+        if (have[index] != need[index]) {
+            return have[index] > need[index];
+        }
+    }
+    return 1;
 }
 
 static char *trimmed(const char *text) {
@@ -617,19 +636,19 @@ static char *reported_version(const char *executable, int *out_of_memory) {
 
 /**
  * A compatible node on the PATH of environment, as spec 5.3 orders it before acquiring one; NULL when
- * there is none, its version cannot be read, or its major is below COMPATIBLE_MAJOR, and NULL with
+ * there is none, its version cannot be read, or it is older than minimum, and NULL with
  * *out_of_memory set when memory ran out finding or probing it, so a missing node is never assumed.
  *
  * @implNote Found by detect's PATH rules and run once, only here at install, never by detection.
  */
-static cJSON *runtime_on_path(const cJSON *environment, int *out_of_memory) {
+static cJSON *runtime_on_path(const cJSON *environment, const char *minimum, int *out_of_memory) {
     char *executable = NULL;
     runtime_on_path_status found = environment == NULL ? RUNTIME_ON_PATH_ABSENT
                                                        : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, RUNTIME_NAME,
                                                                               environment, &executable);
     *out_of_memory = found == RUNTIME_ON_PATH_OUT_OF_MEMORY;
     char *version = executable == NULL ? NULL : reported_version(executable, out_of_memory);
-    int compatible = version != NULL && major_of(version) >= COMPATIBLE_MAJOR;
+    int compatible = version != NULL && is_at_least(version, minimum);
     cJSON *answer = compatible ? answer_of(version, executable, 0, "path") : NULL;
     *out_of_memory = *out_of_memory || (compatible && answer == NULL);
     spisor_memory_release(version);
@@ -662,16 +681,68 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     return recorded == SPISOR_OK;
 }
 
+/** Whether text is a version of exactly three numbers, which the pin's version must be to name a cache folder. */
+static int is_plain_version(const char *text) {
+    long parts[3];
+    return text != NULL && version_parts(text, parts, 1);
+}
+
+/** The host.json of the javascript-host version cache hints, NULL with *refusal set, or with it NULL out of memory. */
+static cJSON *javascript_host_manifest(const char *cache, cJSON **refusal) {
+    int out_of_memory = 0;
+    cJSON *hint = runtime_read_boot_hint(cache, RUNTIME_JAVASCRIPT_HOST_ID, &out_of_memory);
+    const char *version = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(hint, "host"));
+    const char *segments[5] = {cache, "bundles", RUNTIME_JAVASCRIPT_HOST_ID, version, "host.json"};
+    char *path = version == NULL ? NULL : joined(segments, 5);
+    cJSON *manifest = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
+    if (!out_of_memory && version == NULL) {
+        *refusal = runtime_refusal("no javascript-host version is installed, and its host.json carries the Node pin",
+                                   PIN_FIX);
+    } else if (!out_of_memory && path != NULL && manifest == NULL) {
+        *refusal = refused("the javascript-host host.json that carries the Node pin cannot be read: ", path, PIN_FIX);
+    }
+    spisor_memory_release(path);
+    cJSON_Delete(hint);
+    return manifest;
+}
+
+/** Reads the Node pin into *pin: NULL, else the refusal, or NULL with *out_of_memory set when memory ran out. */
+static cJSON *read_pin(const char *cache, node_pin *pin, int *out_of_memory) {
+    cJSON *refusal = NULL;
+    memset(pin, 0, sizeof *pin);
+    pin->manifest = javascript_host_manifest(cache, &refusal);
+    const cJSON *node = cJSON_GetObjectItemCaseSensitive(pin->manifest, "node");
+    pin->pinned = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(node, "pinned"));
+    pin->minimum = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(node, "minimum"));
+    pin->builds = cJSON_GetObjectItemCaseSensitive(node, "builds");
+    *out_of_memory = pin->manifest == NULL && refusal == NULL;
+    if (pin->manifest != NULL &&
+        (!is_plain_version(pin->pinned) || !is_plain_version(pin->minimum) || !cJSON_IsObject(pin->builds))) {
+        refusal = runtime_refusal("the installed javascript-host pins no Node as {pinned, minimum, builds}, "
+                                  "pinned and minimum each a version such as 22.18.0", PIN_FIX);
+        *out_of_memory = refusal == NULL;
+    }
+    return refusal;
+}
+
 cJSON *runtime_acquire_javascript(const char *cache, const char *platform, const cJSON *environment, cJSON **refusal) {
     int this_machine = strcmp(platform, runtime_platform_key()) == 0;
     int out_of_memory = 0;
-    cJSON *answer = this_machine ? runtime_on_path(environment, &out_of_memory) : NULL;
+    node_pin pin;
+    *refusal = read_pin(cache, &pin, &out_of_memory);
+    if (*refusal != NULL || out_of_memory) {
+        cJSON_Delete(pin.manifest);
+        return NULL;
+    }
+    cJSON *answer = this_machine ? runtime_on_path(environment, pin.minimum, &out_of_memory) : NULL;
     if (out_of_memory) {
+        cJSON_Delete(pin.manifest);
         return NULL;
     }
     if (answer == NULL) {
-        answer = acquire_pinned(cache, platform, refusal);
+        answer = acquire_pinned(&pin, cache, platform, refusal);
     }
+    cJSON_Delete(pin.manifest);
     if (answer != NULL && !record_runtime(cache, answer, &out_of_memory)) {
         cJSON_Delete(answer);
         answer = NULL;

@@ -132,7 +132,7 @@ static inline void lay_out_host_world(int64_t holder) {
 
 /**
  * A registered loader whose settings enable plugin `a`, installed with PLUGIN_MANIFEST, the javascript-host's hint
- * naming runtime, koffi and forebay-library, and this process's environment pointed at it all.
+ * naming runtime and forebay-library, and this process's environment pointed at it all.
  */
 static inline void start_host_world(const char *label) {
     start_base(label);

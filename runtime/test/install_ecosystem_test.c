@@ -417,16 +417,15 @@ static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item
     install_base base;
     start_install_base(&base, "ecosystem", "no-javascript");
     list_ecosystem(&base);
-    list_library(&base, "koffi", "2.16.3");
-    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
+    char *manifest = javascript_host_json("1.2.3", "22.18.0", "file:///nowhere/node.zip",
+                                          "0000000000000000000000000000000000000000000000000000000000000000");
+    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    spisor_memory_release(manifest);
     write_catalog(&base);
-    runtime_install_use_runtime_build("1.2.3", "file:///nowhere/node.zip", "0000000000000000000000000000000000000000000000000000000000000000");
     cJSON *report = install_defaults(&base, "");
     CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
     expect_member(report, "unavailable", "[]", "nothing unavailable");
-    CHECK(!exists_in(base.cache, "runtimes") && !exists_in(base.cache, "libraries/koffi") &&
-          !exists_in(base.cache, "bundles/javascript-host"));
-    runtime_install_use_runtime_build(NULL, NULL, NULL);
+    CHECK(!exists_in(base.cache, "runtimes") && !exists_in(base.cache, "bundles/javascript-host"));
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -454,7 +453,7 @@ static void write_incompressible(const char *path, size_t size) {
     spisor_memory_release(bytes);
 }
 
-/** Packs a one-file runtime archive of size bytes with the OS's tar and makes install.runtime acquire it. */
+/** Packs a one-file runtime archive of size bytes with the OS's tar, for javascript-host's host.json to pin. */
 static void serve_runtime_build(install_base *base, size_t size, served_build *served) {
 #if defined(_WIN32)
     const char *member = "node-v1.2.3-fixture/node.exe";
@@ -492,7 +491,6 @@ static void serve_runtime_build(install_base *base, size_t size, served_build *s
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, archive, &url);
     snprintf(served->url, sizeof served->url, "%s", url);
-    runtime_install_use_runtime_build("1.2.3", served->url, served->sha256);
     spisor_memory_release(url);
     spisor_memory_release(problem);
     spisor_memory_release(tar);
@@ -507,23 +505,24 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     start_install_base(&base, "ecosystem", "javascript");
     list_foundation(&base);
     list_plugin(&base, "scripted", "1.0.0", NULL);
-    list_library(&base, "koffi", "2.16.3");
     list_library(&base, "forebay-library", "0.1.2");
-    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
-    write_catalog(&base);
     served_build served;
     serve_runtime_build(&base, 64, &served);
+    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    spisor_memory_release(manifest);
+    write_catalog(&base);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"scripted\"]}", NULL), "javascript");
-    expect_installed_ids(report, "[\"forebay-library\",\"javascript-host\",\"koffi\",\"runtime\",\"scripted\",\"spisor-host\"]", "with its host");
+    expect_installed_ids(report, "[\"forebay-library\",\"javascript-host\",\"runtime\",\"scripted\",\"spisor-host\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
           spisor_probe_file(text_at(javascript, "executable")) == SPISOR_FILE_PRESENT);
+    check_text(text_at(javascript, "version"), "1.2.3", "the version javascript-host's host.json pins");
     cJSON *hint = json_in(base.cache, "hosts/javascript-host.json");
     cJSON *versions = hinted_versions(hint);
-    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
+    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
     cJSON_Delete(versions);
     cJSON_Delete(hint);
-    runtime_install_use_runtime_build(NULL, NULL, NULL);
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -555,11 +554,10 @@ static void leave_install_base(install_base *base) {
     spisor_memory_release(base->catalog);
 }
 
-/** The child half of the concurrent test: one install requesting the comma-separated plugins, from the served build. */
-static int run_child_install(const char *root, const char *requested, const char *url, const char *sha256) {
+/** The child half of the concurrent test: one install requesting the comma-separated plugins. */
+static int run_child_install(const char *root, const char *requested) {
     install_base base;
     enter_install_base(&base, root);
-    runtime_install_use_runtime_build("1.2.3", url, sha256);
     cJSON *argument = parsed("{\"choices\": {}}");
     cJSON *ids = cJSON_AddArrayToObject(argument, "requested");
     char copy[256];
@@ -686,15 +684,16 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     list_ecosystem(&base);
     list_plugin(&base, "scripted", "1.0.0", NULL);
     list_many_plugins(&base);
-    list_library(&base, "koffi", "2.16.3");
     list_library(&base, "forebay-library", "0.1.2");
-    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
+    served_build served;
+    serve_runtime_build(&base, 24 * 1024 * 1024, &served);
+    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    spisor_memory_release(manifest);
     cJSON *application = application_json("claude", "claude", "{}");
     list_loader(&base, "claude-loader", "1.0.0", application, "[]", 0, "[\"keeper\"]");
     list_host(&base, "keeper", "1.0.0", "native", NULL);
     write_catalog(&base);
-    served_build served;
-    serve_runtime_build(&base, 24 * 1024 * 1024, &served);
     write_in(base.path, "claude.cmd", "@echo off\r\n");
 #if !defined(_WIN32)
     char *binary = joined(base.path, "claude");
@@ -702,10 +701,10 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     CHECK(chmod(binary, 0755) == 0);
     spisor_memory_release(binary);
 #endif
-    const char *first_arguments[5] = {"--child", base.root, "announcer,first-1,first-2,first-3,first-4,first-5,scripted", served.url, served.sha256};
-    const char *second_arguments[5] = {"--child", base.root, "viewer,second-1,second-2,second-3,second-4,second-5,scripted", served.url, served.sha256};
-    child_process first = start_child(self, first_arguments, 5, 0, NULL);
-    child_process second = start_child(self, second_arguments, 5, 0, NULL);
+    const char *first_arguments[3] = {"--child", base.root, "announcer,first-1,first-2,first-3,first-4,first-5,scripted"};
+    const char *second_arguments[3] = {"--child", base.root, "viewer,second-1,second-2,second-3,second-4,second-5,scripted"};
+    child_process first = start_child(self, first_arguments, 3, 0, NULL);
+    child_process second = start_child(self, second_arguments, 3, 0, NULL);
     CHECK(first.pid != 0 && second.pid != 0);
     CHECK(child_exit_code(&first) == 0);
     CHECK(child_exit_code(&second) == 0);
@@ -756,8 +755,8 @@ static const char *self_path(const char *argument) {
 }
 
 int main(int argc, char **argv) {
-    if (argc == 6 && strcmp(argv[1], "--child") == 0) {
-        return run_child_install(argv[2], argv[3], argv[4], argv[5]);
+    if (argc == 4 && strcmp(argv[1], "--child") == 0) {
+        return run_child_install(argv[2], argv[3]);
     }
     user_path_guard guard;
     guard_user_path(&guard);

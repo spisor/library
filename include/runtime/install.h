@@ -533,13 +533,13 @@ typedef struct runtime_install_definition {
     spisor_status (*entry)(void *context, const runtime_install_entry_argument *argument,
                            runtime_install_entry_answer *answer, spisor_refusal *refusal);
     /**
-     * A node on the environment's PATH whose major version is 20 or more, else the pinned Node for the platform,
-     * fetched into the cache and verified against its pinned SHA-256 only when it is not there intact, and recorded as
-     * the runtime every host started on JavaScript runs with. What it stored in the cache stays there for the next
-     * call, whatever this one answers.
+     * A node on the environment's PATH of the minimum the installed javascript-host's Node pin names or newer, else
+     * the build that pin names for the platform, fetched into the cache and verified against its pinned SHA-256 only
+     * when it is not there intact, and recorded as the runtime every host started on JavaScript runs with. What it
+     * stored in the cache stays there for the next call, whatever this one answers.
      *
-     * @return OK; MALFORMED, also for a platform that is not os-arch; REFUSED when there is none to reuse and the pin
-     * cannot be acquired; OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for a platform that is not os-arch; REFUSED when no installed javascript-host pins
+     * Node, or there is none to reuse and the pin cannot be acquired; OUT_OF_MEMORY.
      */
     spisor_status (*runtime)(void *context, const runtime_install_runtime_argument *argument,
                              runtime_install_runtime_answer *answer, spisor_refusal *refusal);
@@ -588,7 +588,7 @@ typedef struct runtime_install_definition {
      * they name none, plus each of `requested`; each installed default or requested plugin the settings never mention
      * is enabled; each source not yet listed is recorded; spisor-host is registered and its boot hint written. The
      * loader of every installed or detected application is installed and registered with its commands and its
-     * application entry, and every background host a loader names is installed and registered. koffi,
+     * application entry, and every background host a loader names is installed and registered.
      * forebay-library and the JavaScript host install only when something runs on them, and the pinned Node only when
      * something this install would start runs on JavaScript. Last, the versions now running are recorded.
      *

@@ -7,7 +7,6 @@
 #include "cache_marker.h"
 #include "config.h"
 #include "directory_tree.h"
-#include "install_entries.h"
 #include "paths.h"
 #include "registry.h"
 #include "spisor/allocation.h"
@@ -18,7 +17,6 @@
 #include "spisor/path.h"
 #include "user_home.h"
 
-#define DEFAULT_KOFFI_VERSION "2.0.0"
 #define BASE_FIX "pass the absolute path of an empty folder that exists"
 #define INSTALL_FIX                                                                                                   \
     "give each install a plugin.json record with an id, a version and an entry below its bundle, an absolute entry " \
@@ -251,10 +249,6 @@ static spisor_status prepare_libraries(const runtime_testing_home_argument *argu
     if (status == SPISOR_MALFORMED) {
         return refuse(refusal, "a library has no id or no absolute directory, is named twice, or has no version",
                       LIBRARY_FIX);
-    }
-    home->hints_default_koffi = cJSON_GetObjectItemCaseSensitive(home->libraries, RUNTIME_KOFFI_LIBRARY_ID) == NULL;
-    if (status == SPISOR_OK && home->hints_default_koffi) {
-        status = add_library(home->libraries, RUNTIME_KOFFI_LIBRARY_ID, DEFAULT_KOFFI_VERSION, home->layout.koffi, NULL);
     }
     return status;
 }

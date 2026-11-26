@@ -98,13 +98,7 @@ if(WIN32)
 else()
     set(stage_bundle_platform_sources "")
 endif()
-add_executable(stage_bundle bundle/stage_bundle.c ${stage_bundle_platform_sources}
-    ${PROJECT_SOURCE_DIR}/runtime/src/directory_tree.c ${PROJECT_SOURCE_DIR}/runtime/src/platform_key.c)
-target_link_libraries(stage_bundle PRIVATE spisor_library spisor_allocator)
-target_include_directories(stage_bundle PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
-    ${PROJECT_SOURCE_DIR}/src)
-set_target_properties(stage_bundle PROPERTIES OUTPUT_NAME stage-bundle)
-spisor_strict_warnings(stage_bundle)
+host_executable(stage_bundle stage-bundle bundle/stage_bundle.c ${stage_bundle_platform_sources} ${host_runtime_objects})
 
 function(stage_bundles target executable directory)
     set(host_files $<TARGET_FILE:${executable}> $<TARGET_FILE:spisor_boot>)
@@ -122,5 +116,14 @@ function(stage_bundles target executable directory)
 endfunction()
 
 stage_bundles(spisor_host_bundles spisor_host $<TARGET_FILE_DIR:spisor_host>/bundles)
+
+# Not built by default: it runs weivel/typescript's bundler, so it needs node and that checkout installed and built.
+set(SPISOR_JAVASCRIPT_HOST_VERSION 0.1.0)
+add_custom_target(javascript_host_bundle
+    COMMAND stage_bundle javascript-host $<TARGET_FILE_DIR:spisor_host>/bundles/javascript-host
+        ${SPISOR_JAVASCRIPT_HOST_VERSION} ${SPISOR_WEIVEL_TYPESCRIPT_DIR} ${PROJECT_SOURCE_DIR}/host/bundle/node.json
+        $<TARGET_FILE:weivel_core_shared> $<TARGET_FILE:weivel_standard_shared>
+    VERBATIM)
+add_dependencies(javascript_host_bundle stage_bundle spisor_host weivel_core_shared weivel_standard_shared)
 
 add_subdirectory(test)

@@ -67,6 +67,8 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_timeouts.cmake)
     spisor_refuse_unbounded_tests("${CMAKE_CURRENT_SOURCE_DIR}")
     spisor_add_weivel()
+    set(SPISOR_WEIVEL_TYPESCRIPT_DIR "${CMAKE_SOURCE_DIR}/siblings/typescript" CACHE PATH
+        "weivel/typescript at the commit repo.json pins")
     add_subdirectory(test)
     add_subdirectory(runtime)
     add_subdirectory(host)

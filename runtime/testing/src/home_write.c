@@ -138,13 +138,6 @@ static spisor_status hold_host(const runtime_testing_prepared_home *home, spisor
 
 static spisor_status hint_libraries(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
     char *problem = NULL;
-    if (home->hints_default_koffi) {
-        spisor_status made = written(spisor_make_directories(home->layout.koffi), "koffi's folder cannot be made",
-                                     refusal);
-        if (made != SPISOR_OK) {
-            return made;
-        }
-    }
     if (runtime_write_boot_hint(home->layout.cache, RUNTIME_JAVASCRIPT_HOST_ID, home->libraries, HINTED_HOST_VERSION,
                                 &problem)) {
         return SPISOR_OK;

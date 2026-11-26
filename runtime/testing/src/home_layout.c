@@ -22,7 +22,6 @@ void runtime_testing_free_layout(runtime_testing_layout *layout) {
     spisor_memory_release(layout->secrets);
     spisor_memory_release(layout->application);
     spisor_memory_release(layout->catalog);
-    spisor_memory_release(layout->koffi);
     spisor_memory_release(layout->secrets_file);
     memset(layout, 0, sizeof *layout);
 }
@@ -69,9 +68,8 @@ int runtime_testing_layout_of(const char *base, runtime_testing_layout *layout) 
     layout->secrets = below(base, "secrets", NULL);
     layout->application = below(base, "application", NULL);
     layout->catalog = below(base, "catalog", "index.json");
-    layout->koffi = below(base, "koffi", NULL);
     if (layout->user == NULL || layout->portable == NULL || layout->state == NULL || layout->cache == NULL ||
-        layout->secrets == NULL || layout->application == NULL || layout->catalog == NULL || layout->koffi == NULL ||
+        layout->secrets == NULL || layout->application == NULL || layout->catalog == NULL ||
         !place_secrets_file(layout)) {
         runtime_testing_free_layout(layout);
         return 0;

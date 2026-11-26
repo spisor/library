@@ -193,14 +193,14 @@ static void places_a_per_platform_item_under_its_platform(void) {
     catalog_inputs inputs = {NULL, 0, 0};
     cJSON *refusal = NULL;
     char *directory = library_directory();
-    CHECK(host_read_library_directory(&inputs, "koffi", directory, "linux-x64", &refusal));
+    CHECK(host_read_library_directory(&inputs, "runtime", directory, "linux-x64", &refusal));
     char *path = build(&inputs, &refusal);
     cJSON *catalog = read_back(path);
-    const cJSON *item = item_of(catalog, "koffi");
+    const cJSON *item = item_of(catalog, "runtime");
     check_text(text_at(item, "kind"), "library", "kind");
     const cJSON *platforms = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item, "versions"), "2.16.3"), "platforms");
     const cJSON *reference = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(platforms, "linux-x64"), "files"), "lib/native.node");
-    char *placed = in_base("catalog/files/koffi/2.16.3/linux-x64/lib/native.node");
+    char *placed = in_base("catalog/files/runtime/2.16.3/linux-x64/lib/native.node");
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, placed, &url);
     check_text(text_at(reference, "url"), url, "resolved under its platform");
@@ -358,7 +358,7 @@ static void refuses_a_platform_that_is_not_an_os_arch_key_before_copying_anythin
     char *source = source_file();
     char *files = files_with("lib/native.node", NULL, source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "library", "koffi", "2.16.3", "../escape", files);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", "../escape", files);
     cJSON *refusal = NULL;
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, "platform", "platform");
@@ -374,7 +374,7 @@ static void refuses_a_file_the_installer_would_take_for_its_completion_marker_in
     char *source = source_file();
     char *files = files_with(".INSTALLED.json", NULL, source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "library", "koffi", "2.16.3", "linux-x64", files);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", "linux-x64", files);
     cJSON *refusal = NULL;
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, ".INSTALLED.json", "marker");
@@ -390,7 +390,7 @@ static void refuses_two_file_keys_that_differ_only_by_case_before_copying_anythi
     char *source = source_file();
     char *files = files_with("lib/Native.node", "lib/native.node", source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "library", "koffi", "2.16.3", "linux-x64", files);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", "linux-x64", files);
     cJSON *refusal = NULL;
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, "lib/Native.node and lib/native.node", "both named");
@@ -407,8 +407,8 @@ static void refuses_a_platform_file_that_differs_only_by_case_from_a_file_given_
     char *shared = files_with("README.md", NULL, source);
     char *platform = files_with("readme.md", NULL, source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "library", "koffi", "2.16.3", NULL, shared);
-    add_made_input(&inputs, "library", "koffi", "2.16.3", "linux-x64", platform);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", NULL, shared);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", "linux-x64", platform);
     cJSON *refusal = NULL;
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, "differ only by case", "shared and platform");
@@ -424,7 +424,7 @@ static void refuses_a_file_key_the_catalog_would_refuse(void) {
     char *source = source_file();
     char *files = files_with("lib/../native.node", NULL, source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "library", "koffi", "2.16.3", "linux-x64", files);
+    add_made_input(&inputs, "library", "runtime", "2.16.3", "linux-x64", files);
     cJSON *refusal = NULL;
     CHECK(build(&inputs, &refusal) == NULL);
     expect_refusal_naming(refusal, "which a catalog refuses", "bad key");
@@ -624,7 +624,7 @@ static void builds_a_catalog_from_plugin_host_and_library_directories(void) {
     write_in(host, "linux-x64/spisor-host", "native executable");
     char *library = library_directory();
     char library_argument[2048];
-    snprintf(library_argument, sizeof library_argument, "koffi=%s@linux-x64", library);
+    snprintf(library_argument, sizeof library_argument, "runtime=%s@linux-x64", library);
     char *out = in_base("catalog");
     char *native_host = in_base("native-host");
     write_in(native_host, "host.json", "{\"id\": \"native-host\", \"version\": \"0.2.0\", \"runtime\": \"native\", \"entry\": \"native-host\"}");
@@ -641,7 +641,7 @@ static void builds_a_catalog_from_plugin_host_and_library_directories(void) {
     cJSON *catalog = read_back(index);
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(catalog, "items");
     CHECK(cJSON_GetArraySize(items) == 4 && item_of(catalog, "greeter") != NULL && item_of(catalog, "spisor-host") != NULL &&
-          item_of(catalog, "koffi") != NULL && item_of(catalog, "native-host") != NULL);
+          item_of(catalog, "runtime") != NULL && item_of(catalog, "native-host") != NULL);
     const cJSON *host_files = cJSON_GetObjectItemCaseSensitive(
         cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item_of(catalog, "spisor-host"), "versions"), "0.1.0"), "files");
     CHECK(cJSON_HasObjectItem(host_files, "host.json") && cJSON_HasObjectItem(host_files, "linux-x64/spisor-host"));
@@ -672,7 +672,7 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
     CHECK(run_build(without, &no_out) == 2);
     expect_contains(no_out.err, "--out", "out required");
     program library;
-    const char *shapeless[] = {"catalog", "build", "--library", "koffi", "--out", "x", NULL};
+    const char *shapeless[] = {"catalog", "build", "--library", "runtime", "--out", "x", NULL};
     CHECK(run_build(shapeless, &library) == 2);
     expect_contains(library.err, "<id>=<directory>@<platform>", "library shape");
     program refused;

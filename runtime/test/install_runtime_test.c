@@ -14,6 +14,7 @@
 #include "process_run.h"
 
 #define TEST_VERSION "1.2.3"
+#define MINIMUM "22.18.0"
 #define STEM "node-v1.2.3-fixture"
 
 #if defined(_WIN32)
@@ -27,7 +28,9 @@
 typedef struct runtime_fixture {
     install_base base;
     char *archive;
+    char *pinned_url;
     char archive_sha256[NAULA_SHA256_HEX_SIZE];
+    const char *pinned_sha256;
 } runtime_fixture;
 
 static char *system_tar(void) {
@@ -80,17 +83,25 @@ static void pack_archive(runtime_fixture *fixture, const char *executable_conten
     spisor_memory_release(packing);
 }
 
+/** javascript-host 1.0.0 installed and hinted under cache, its host.json pinning Node at url with sha256. */
+static void install_node_pin(const char *cache, const char *url, const char *sha256) {
+    write_in(cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    char *manifest = javascript_host_json(TEST_VERSION, MINIMUM, url, sha256);
+    write_in(cache, "bundles/javascript-host/1.0.0/host.json", manifest);
+    spisor_memory_release(manifest);
+}
+
 static void start_runtime(runtime_fixture *fixture, const char *label, const char *sha256_override) {
     start_install_base(&fixture->base, "runtime", label);
     pack_archive(fixture, "the node executable");
-    char *url = NULL;
-    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture->archive, &url);
-    runtime_install_use_runtime_build(TEST_VERSION, url, sha256_override == NULL ? fixture->archive_sha256 : sha256_override);
-    spisor_memory_release(url);
+    fixture->pinned_url = NULL;
+    runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture->archive, &fixture->pinned_url);
+    fixture->pinned_sha256 = sha256_override == NULL ? fixture->archive_sha256 : sha256_override;
+    install_node_pin(fixture->base.cache, fixture->pinned_url, fixture->pinned_sha256);
 }
 
 static void finish_runtime(runtime_fixture *fixture) {
-    runtime_install_use_runtime_build(NULL, NULL, NULL);
+    spisor_memory_release(fixture->pinned_url);
     spisor_memory_release(fixture->archive);
     finish_install_base(&fixture->base);
 }
@@ -237,14 +248,36 @@ static void refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_exe
 }
 
 static void refuses_a_platform_with_no_pinned_build(void) {
-    install_base base;
-    start_install_base(&base, "runtime", "unpinned");
+    runtime_fixture fixture;
+    start_runtime(&fixture, "unpinned", NULL);
     cJSON *argument = cJSON_CreateObject();
-    cJSON_AddStringToObject(argument, "cache", base.cache);
-    cJSON_AddItemToObject(argument, "environment", environment_of(&base));
+    cJSON_AddStringToObject(argument, "cache", fixture.base.cache);
+    cJSON_AddItemToObject(argument, "environment", environment_of(&fixture.base));
     cJSON_AddStringToObject(argument, "platform", "aix-ppc64");
     catalog_answer answer = install_call(INSTALL_RUNTIME, argument);
     expect_cache_refusal_refused(answer, "aix-ppc64", "no pinned build");
+    cJSON_Delete(answer.tree);
+    CHECK(!exists_in(fixture.base.cache, "runtimes"));
+    finish_runtime(&fixture);
+}
+
+static void refuses_a_cache_with_no_javascript_host_to_read_the_pin_from(void) {
+    install_base base;
+    start_install_base(&base, "runtime", "no-layer");
+    catalog_answer answer = acquire_on(&base, base.path);
+    expect_cache_refusal_refused(answer, "javascript-host", "no javascript-host");
+    cJSON_Delete(answer.tree);
+    CHECK(!exists_in(base.cache, "runtimes"));
+    finish_install_base(&base);
+}
+
+static void refuses_a_javascript_host_whose_host_json_pins_no_node(void) {
+    install_base base;
+    start_install_base(&base, "runtime", "no-pin");
+    write_in(base.cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(base.cache, "bundles/javascript-host/1.0.0/host.json", "{\"id\": \"javascript-host\", \"runtime\": \"javascript\"}");
+    catalog_answer answer = acquire_on(&base, base.path);
+    expect_cache_refusal_refused(answer, "pins no Node", "no node member");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "runtimes"));
     finish_install_base(&base);
@@ -271,13 +304,13 @@ static char *path_node(const install_base *base, const char *version) {
     return folder;
 }
 
-static void reuses_a_node_on_the_path_whose_major_is_twenty_or_more(void) {
+static void reuses_a_node_on_the_path_at_the_pinned_minimum(void) {
     runtime_fixture fixture;
     start_runtime(&fixture, "path-node", NULL);
-    char *folder = path_node(&fixture.base, "22.1.0");
+    char *folder = path_node(&fixture.base, "22.18.0");
     catalog_answer answer = acquire_on(&fixture.base, folder);
     CHECK(answer.status == SPISOR_OK);
-    check_text(text_at(answer.tree, "version"), "22.1.0", "path version");
+    check_text(text_at(answer.tree, "version"), "22.18.0", "path version");
     check_text(text_at(answer.tree, "source"), "path", "path source");
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(answer.tree, "fetched")));
     const char *executable = text_at(answer.tree, "executable");
@@ -291,10 +324,10 @@ static void reuses_a_node_on_the_path_whose_major_is_twenty_or_more(void) {
     finish_runtime(&fixture);
 }
 
-static void ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin(void) {
+static void ignores_a_node_on_the_path_older_than_the_pinned_minimum_and_acquires_the_pin(void) {
     runtime_fixture fixture;
     start_runtime(&fixture, "old-path-node", NULL);
-    char *folder = path_node(&fixture.base, "18.0.0");
+    char *folder = path_node(&fixture.base, "22.17.0");
     catalog_answer answer = acquire_on(&fixture.base, folder);
     CHECK(answer.status == SPISOR_OK);
     check_text(text_at(answer.tree, "version"), TEST_VERSION, "pinned version");
@@ -458,6 +491,7 @@ static void acquires_into_a_cache_at(const char *label, const char *cache_folder
     start_runtime(&fixture, label, NULL);
     install_base elsewhere = fixture.base;
     elsewhere.cache = joined(fixture.base.root, cache_folder);
+    install_node_pin(elsewhere.cache, fixture.pinned_url, fixture.pinned_sha256);
     catalog_answer answer = acquire_on(&elsewhere, elsewhere.path);
     CHECK(answer.status == SPISOR_OK);
     const char *executable = text_at(answer.tree, "executable");
@@ -486,14 +520,16 @@ int main(void) {
     removes_the_runtime_versions_no_longer_pinned();
     refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_executable();
     refuses_a_platform_with_no_pinned_build();
+    refuses_a_cache_with_no_javascript_host_to_read_the_pin_from();
+    refuses_a_javascript_host_whose_host_json_pins_no_node();
     stops_a_run_that_does_not_exit_in_time_and_refuses_it();
     returns_when_the_child_exits_though_a_grandchild_holds_its_output();
     sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one();
 #if defined(_WIN32)
     moves_the_runtime_into_place_once_a_scanner_lets_go_of_it();
 #endif
-    reuses_a_node_on_the_path_whose_major_is_twenty_or_more();
-    ignores_a_node_on_the_path_older_than_twenty_and_acquires_the_pin();
+    reuses_a_node_on_the_path_at_the_pinned_minimum();
+    ignores_a_node_on_the_path_older_than_the_pinned_minimum_and_acquires_the_pin();
     unpacks_into_a_cache_whose_path_holds_letters_outside_the_ansi_codepage();
     unpacks_into_a_cache_deeper_than_the_windows_path_limit();
     return check_summary("install_runtime_test");
