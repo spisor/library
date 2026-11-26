@@ -156,29 +156,29 @@ static int run_child(const char *executable, const cJSON *arguments, const cJSON
     return created;
 }
 
-int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
-                   int *exit_code, cJSON **refusal) {
-    return run_child(executable, arguments, environment, watch, 0, exit_code, refusal);
-}
-
 /**
- * CREATE_NO_WINDOW when this process has no console at all, else nothing, so the child shares the console
- * it has, a windowless one included.
+ * CREATE_NO_WINDOW when this process has no console at all, else nothing, so a child it runs or replaces
+ * itself with shares the console it has, a windowless one included.
  *
  * @implNote Without it Windows gives the console child of a console-less process a console window of its
- * own, which flashes open on a SessionStart run by an application that spawns its hooks detached. The test
- * is GetConsoleProcessList, not GetConsoleWindow: the latter is NULL in the windowless console a windowsHide
+ * own, which flashes open whenever spisor-host or spisor-boot is spawned detached. The test is
+ * GetConsoleProcessList, not GetConsoleWindow: the latter is NULL in the windowless console a windowsHide
  * spawn makes too, where a console of the child's own cost about 20 ms per hook on Windows Debug.
  */
-static DWORD replacing_flags(void) {
+static DWORD console_flags(void) {
     DWORD attached[1];
     return GetConsoleProcessList(attached, 1) == 0 ? CREATE_NO_WINDOW : 0;
+}
+
+int host_run_child(const char *executable, const cJSON *arguments, const cJSON *environment, const host_child_watch *watch,
+                   int *exit_code, cJSON **refusal) {
+    return run_child(executable, arguments, environment, watch, console_flags(), exit_code, refusal);
 }
 
 cJSON *host_replace_process(const char *executable, const cJSON *arguments, const host_child_watch *watch) {
     cJSON *refusal = NULL;
     int code = 1;
-    if (run_child(executable, arguments, NULL, watch, replacing_flags(), &code, &refusal)) {
+    if (run_child(executable, arguments, NULL, watch, console_flags(), &code, &refusal)) {
         exit(code);
     }
     return refusal;
