@@ -647,7 +647,7 @@ static void an_action_writes_no_result_through_a_results_folder_that_is_a_link(v
     char *elsewhere = joined(state, "elsewhere");
     char *results = joined(state, "results");
     CHECK(spisor_make_directories(elsewhere) == SPISOR_OK);
-    if (create_link_or_skip(results, elsewhere)) {
+    if (create_folder_link_or_skip(results, elsewhere)) {
         expect_result_refused(&run, "is not a folder of its own", "a results folder that is a link");
         CHECK(!exists_in(elsewhere, "7-1.json"));
     } else {

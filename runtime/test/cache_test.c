@@ -1108,7 +1108,7 @@ static void it_leaves_a_results_folder_that_is_a_link_alone(void) {
     char *outside = joined(elsewhere, "1-1.json");
     set_modified(outside, now_milliseconds() - 25 * HOUR_MILLISECONDS);
     CHECK(spisor_make_directories(state) == SPISOR_OK);
-    if (create_link_or_skip(results, elsewhere)) {
+    if (create_folder_link_or_skip(results, elsewhere)) {
         expect_removed("[]", "a linked results folder");
         CHECK(spisor_probe_file(outside) == SPISOR_FILE_PRESENT);
         CHECK(is_link(results));
