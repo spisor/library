@@ -159,6 +159,27 @@ static void runs_the_loader_version_its_references_schedule_keeping_the_one_it_r
     finish_world(&world);
 }
 
+#if defined(_WIN32)
+/** spisor-host launch started with no console at all, as a detached spawn starts it: the application gets no console window. */
+static void gives_the_application_no_console_window_when_the_launcher_has_no_console(void) {
+    host_world world;
+    install_launch_world(&world, "launch", "no-console", 0);
+    program launcher;
+    const char *arguments[] = {"launch", LOADER_ID, "windowless", "0", NULL};
+    world_start(&world, &launcher, SPISOR_HOST_PATH, arguments, NULL, 1);
+    cJSON *started = await_application(&world, "windowless");
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(started, "consoleWindow")));
+    long background = await_holders(&world, BACKGROUND_ID, 2);
+    release_application(&world, "windowless");
+    CHECK(program_finish(&launcher, 30000) == 0);
+    CHECK(gone_within(background, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
+    stop_if_alive(background);
+    cJSON_Delete(started);
+    program_free(&launcher);
+    finish_world(&world);
+}
+#endif
+
 #if !defined(_WIN32)
 static void passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_number(void) {
     host_world world;
@@ -739,7 +760,9 @@ int main(void) {
     keeps_the_application_and_its_background_host_after_a_hard_killed_launcher();
     refuses_an_application_that_is_not_on_the_path_leaving_nothing_held();
     runs_the_loader_version_its_references_schedule_keeping_the_one_it_ran_for_rollback();
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    gives_the_application_no_console_window_when_the_launcher_has_no_console();
+#else
     passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_number();
 #endif
     starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
