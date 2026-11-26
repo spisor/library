@@ -4,11 +4,11 @@
 #include "allocation.h"
 #include "allocation_failure.h"
 #include "check.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 #include "spisor/json_value.h"
 
 static cJSON *parsed(const char *text) {
-    return spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    return json_of((const uint8_t *)text, strlen(text));
 }
 
 static void every_json_kind_becomes_its_node(void) {

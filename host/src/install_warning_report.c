@@ -12,7 +12,7 @@
 #include "runtime/cache.h"
 #include "runtime/install.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 #define MANIFEST_FILE "plugin.json"
 
@@ -95,7 +95,10 @@ static cJSON *manifest_at(const char *path, int *out_of_memory) {
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, out_of_memory);
+    cJSON *manifest = NULL;
+    if (bytes != NULL) {
+        *out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &manifest, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     *out_of_memory = *out_of_memory || outcome == SPISOR_READ_OUT_OF_MEMORY;
     spisor_memory_release(bytes);
     return manifest;

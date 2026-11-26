@@ -10,7 +10,7 @@
 #include "spisor/json_write.h"
 #include "catalog_text.h"
 #include "catalog_url.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 #define NOT_JSON_DETAIL "the catalog index is not valid JSON: it is not one JSON document in UTF-8"
 #define NOT_JSON_FIX "serve the index as a JSON document"
@@ -271,7 +271,8 @@ spisor_status runtime_catalog_read_text(const char *text, size_t length, const c
     *catalog = NULL;
     size_t skipped = byte_order_mark_length(text, length);
     int out_of_memory = 0;
-    cJSON *document = spisor_parse_json_reporting((const uint8_t *)text + skipped, length - skipped, &out_of_memory);
+    cJSON *document = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value((const uint8_t *)text + skipped, length - skipped, &document, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     if (document == NULL) {
         return out_of_memory ? SPISOR_OUT_OF_MEMORY
                              : runtime_catalog_refuse(refusal, runtime_catalog_copy(NOT_JSON_DETAIL), NOT_JSON_FIX, NULL);

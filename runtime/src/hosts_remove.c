@@ -17,7 +17,7 @@
 #include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 
 #define STATE_FIX                                                                                    \

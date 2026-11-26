@@ -7,7 +7,7 @@
 
 #include "json_service.h"
 #include "loader_issues.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #define PORTABLE_NAME_LIMIT 64
 #define PORTABLE_NAME_FIX                                                                                     \

@@ -9,7 +9,7 @@
 #include "catalog_patterns.h"
 #include "catalog_schema.h"
 #include "catalog_text.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/json_write.h"
 
 #define FIX_PATTERN                                                                                               \

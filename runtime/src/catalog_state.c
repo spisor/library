@@ -10,7 +10,7 @@
 #include "naula/sha256.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
@@ -59,7 +59,10 @@ int runtime_catalog_read_state(const char *path, runtime_catalog_state *state) {
     spisor_read_outcome outcome;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
-    cJSON *kept = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    cJSON *kept = NULL;
+    if (bytes != NULL) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &kept, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(bytes);
     if (cJSON_IsObject(kept) && !copied_every_member(kept, state)) {
         runtime_catalog_free_state(state);

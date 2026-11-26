@@ -1,9 +1,9 @@
 spisor_bound_tests()
 
-foreach(name json_kind_test path_test file_test javascript_test json_write_test json_file_test lock_test
+foreach(name naula_json_test path_test file_test javascript_test json_write_test json_file_test lock_test
     memory_error_test temporary_name_test)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE spisor_library spisor_allocator)
+    target_link_libraries(${name} PRIVATE spisor_library spisor_allocator naula)
     spisor_strict_warnings(${name})
     target_compile_definitions(${name} PRIVATE
         SPISOR_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/path-join.json"
@@ -30,7 +30,7 @@ spisor_refuse_name_in_headers(public_headers_without_cjson NAME cJSON INCLUDE_DI
 
 foreach(name status_test value_test json_value_test file_memory_test)
     add_executable(${name} ${name}.c)
-    target_link_libraries(${name} PRIVATE spisor_library spisor_allocator_counting spisor_vector_reader)
+    target_link_libraries(${name} PRIVATE spisor_library spisor_allocator_counting spisor_vector_reader naula)
     spisor_strict_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 120)
@@ -49,14 +49,15 @@ spisor_strict_warnings(described_checks_test)
 add_test(NAME described_checks_test COMMAND described_checks_test)
 
 add_executable(vector_reader_test vector_reader_test.c)
-target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting)
+target_link_libraries(vector_reader_test PRIVATE spisor_vector_reader spisor_allocator_counting naula)
 spisor_strict_warnings(vector_reader_test)
 target_compile_definitions(vector_reader_test PRIVATE
     SPISOR_VECTOR_READER_VECTOR_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/vector-reader.json")
 add_test(NAME vector_reader_test COMMAND vector_reader_test)
 
 add_executable(vector_reader_shipped_allocator_test vector_reader_shipped_allocator_test.c)
-target_link_libraries(vector_reader_shipped_allocator_test PRIVATE spisor_vector_reader spisor_library spisor_allocator)
+target_link_libraries(vector_reader_shipped_allocator_test PRIVATE spisor_vector_reader spisor_library spisor_allocator
+    naula)
 spisor_strict_warnings(vector_reader_shipped_allocator_test)
 target_compile_definitions(vector_reader_shipped_allocator_test PRIVATE
     SPISOR_VECTOR_READER_VECTOR_PATH="${CMAKE_CURRENT_SOURCE_DIR}/vectors/vector-reader.json")
@@ -99,7 +100,7 @@ add_test(NAME allocation_check_refuses_a_plain_allocation
 
 set(spisor_layouts_prefix "^(spisor|runtime)_")
 add_executable(layouts layouts/layouts.c)
-target_link_libraries(layouts PRIVATE spisor_library)
+target_link_libraries(layouts PRIVATE spisor_library naula)
 spisor_strict_warnings(layouts)
 add_test(NAME layouts_list_every_public_struct_and_field
     COMMAND ${CMAKE_COMMAND} -DLAYOUTS=$<TARGET_FILE:layouts> -DHEADERS=${PROJECT_SOURCE_DIR}/include

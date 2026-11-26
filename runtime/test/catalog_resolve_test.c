@@ -7,7 +7,7 @@
 #include "catalog_service_call.h"
 #include "catalog_semver.h"
 #include "check.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #define ITEM_A_2 "{\"a\":{\"kind\":\"plugin\",\"latest\":\"2.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}},\"2.0.0\":{\"files\":{}}}}}"
 #define ITEM_A_1_OF_2 \

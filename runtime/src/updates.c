@@ -8,7 +8,7 @@
 #include "json_service.h"
 #include "host_references.h"
 #include "platform_key.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 #include "paths.h"
 #include "registry.h"

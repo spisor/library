@@ -9,7 +9,7 @@
 #include "paths.h"
 #include "runtime/paths.h"
 #include "segment.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 
 #if defined(_WIN32)

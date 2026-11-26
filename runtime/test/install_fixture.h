@@ -37,7 +37,7 @@
 #include "scratch_directory.h"
 #include "sha256_file.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 #include "spisor/path.h"
 
 /** One test's places, all under its own scratch folder. */
@@ -93,7 +93,7 @@ static inline char *text_in(const char *base, const char *rest) {
 
 static inline cJSON *json_in(const char *base, const char *rest) {
     char *text = text_in(base, rest);
-    cJSON *tree = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    cJSON *tree = text == NULL ? NULL : json_of((const uint8_t *)text, strlen(text));
     spisor_memory_release(text);
     return tree;
 }

@@ -18,7 +18,7 @@
 #include "processes_holders.h"
 #include "spisor/status.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #if defined(_WIN32)
 #include <process.h>

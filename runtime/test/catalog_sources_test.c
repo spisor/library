@@ -13,7 +13,7 @@
 #include "check.h"
 #include "config.h"
 #include "scratch_directory.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #if defined(_WIN32)
 #include <process.h>

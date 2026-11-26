@@ -7,7 +7,7 @@
 
 #include "cache_folders.h"
 #include "host_references.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "json_service.h"
 #include "paths.h"
 #include "spisor/file.h"
@@ -50,7 +50,10 @@ static cJSON *read_standard(const char *file, cJSON **refusal) {
     uint8_t *bytes = spisor_read_file_reporting(file, &length, &outcome);
     int readable = bytes != NULL;
     int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
-    cJSON *manifest = readable ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
+    cJSON *manifest = NULL;
+    if (readable) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &manifest, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(bytes);
     if (manifest == NULL && !out_of_memory) {
         *refusal = refusal_naming(file, "could not be read: ", "",

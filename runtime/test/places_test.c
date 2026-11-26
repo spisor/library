@@ -8,7 +8,7 @@
 #include "definition_fixture.h"
 #include "places.h"
 #include "runtime/places.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "user_home.h"
 
 typedef struct expected_places {

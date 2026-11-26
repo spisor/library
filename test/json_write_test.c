@@ -4,7 +4,7 @@
 #include "check.h"
 #include "spisor/allocation.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 #include "spisor/json_write.h"
 
 static cJSON *load_vectors(void) {
@@ -37,7 +37,7 @@ static void check_vector(const cJSON *vector, int index) {
     if (input == NULL) {
         return;
     }
-    cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)input, strlen(input), &(int){0});
+    cJSON *parsed = json_of((const uint8_t *)input, strlen(input));
     CHECK(parsed != NULL);
     if (parsed == NULL) {
         fprintf(stderr, "%s: cannot parse \"%s\"\n", label, input);

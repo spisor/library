@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include "json_of.h"
 #include "host_fixture.h"
 
 #include "child_process.h"
@@ -109,7 +110,7 @@ static cJSON *ready_record(void) {
     char *path = processes_file(".ready.json");
     size_t length = 0;
     char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
-    cJSON *record = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, length, &(int){0});
+    cJSON *record = text == NULL ? NULL : json_of((const uint8_t *)text, length);
     spisor_memory_release(text);
     spisor_memory_release(path);
     return record;
@@ -141,7 +142,7 @@ static double run_record_alive_at(void) {
     text = path == NULL ? NULL
                         : (char *)spisor_read_file_reporting(path, &length,
                                                              &(spisor_read_outcome){SPISOR_READ_FAILED});
-    record = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, length, &(int){0});
+    record = text == NULL ? NULL : json_of((const uint8_t *)text, length);
     if (cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(record, "aliveAt"))) {
         alive_at = cJSON_GetObjectItemCaseSensitive(record, "aliveAt")->valuedouble;
     }

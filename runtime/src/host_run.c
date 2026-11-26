@@ -19,7 +19,7 @@
 #include "processes_ready.h"
 #include "registry.h"
 #include "scope_host.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/path.h"
 #include "ui.h"
 
@@ -77,8 +77,8 @@ static int read_request(const char *const *arguments, size_t count, host_request
         request->in_process = 1;
     }
     if (count == 6 && strcmp(arguments[2], ACTION_WORD) == 0) {
-        request->input = spisor_parse_json_reporting((const uint8_t *)arguments[5], strlen(arguments[5]),
-                                                     &out_of_memory);
+        request->input = NULL;
+        out_of_memory = naula_json_parse_keeping_last_value((const uint8_t *)arguments[5], strlen(arguments[5]), &request->input, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
         request->mode = cJSON_IsObject(request->input) ? WEIVEL_STANDARD_HOST_ACTION : 0;
         request->plugin = arguments[3];
         request->action = arguments[4];

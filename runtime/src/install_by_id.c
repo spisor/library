@@ -17,7 +17,7 @@
 #include "naula/sha256.h"
 #include "platform_key.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 #define INDEX_ASSET "weivel-index.json"
 #define MESSAGE_SIZE 2048
@@ -140,7 +140,8 @@ static void refuse_catalog(runtime_catalog_refusal *catalog_refusal, const char 
 /** The index's one item, checked as a catalog item with its file urls resolved against the index's own url. */
 static cJSON *read_catalog(const char *id, const char *url, const uint8_t *bytes, size_t length, cJSON **refusal) {
     int out_of_memory = 0;
-    cJSON *item = spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    cJSON *item = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &item, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     cJSON *wrapped = cJSON_IsObject(item) ? catalog_around(id, item) : NULL;
     char *text = wrapped == NULL ? NULL : cJSON_PrintUnformatted(wrapped);
     runtime_catalog_refusal catalog_refusal;

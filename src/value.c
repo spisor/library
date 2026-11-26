@@ -7,12 +7,12 @@
 
 #include "allocation.h"
 #include "entry_order.h"
-#include "utf8.h"
+#include "naula/json.h"
 #include "value_block.h"
 
 static int is_text(const char *text, size_t length) {
     return text != NULL && text[length] == '\0' && memchr(text, '\0', length) == NULL &&
-           spisor_is_valid_utf8((const uint8_t *)text, length);
+           naula_json_is_valid_utf8((const uint8_t *)text, length);
 }
 
 static int holds_no_text(const spisor_value *value) {

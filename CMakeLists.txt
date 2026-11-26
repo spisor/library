@@ -17,11 +17,11 @@ spisor_add_weivel_standard()
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/naula.cmake)
 spisor_add_naula()
 
-set(spisor_library_sources src/json_kind.c src/json_grammar.c src/javascript.c src/path.c src/file.c src/wide_path.c
-    src/windows_file.c src/prepared_undo.c src/lock.c src/json_write.c src/json_file.c src/utf8.c src/refusal.c
+set(spisor_library_sources src/javascript.c src/path.c src/file.c src/wide_path.c
+    src/windows_file.c src/prepared_undo.c src/lock.c src/json_write.c src/json_file.c src/refusal.c
     src/value.c src/value_block.c src/json_value.c src/entry_order.c src/json_allocation.c src/definition.c)
 add_library(spisor_library STATIC ${spisor_library_sources})
-target_include_directories(spisor_library PUBLIC include)
+target_include_directories(spisor_library PUBLIC include $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
 target_link_libraries(spisor_library PUBLIC naula_cjson)
 set_target_properties(spisor_library PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 if(UNIX)
@@ -40,14 +40,17 @@ endfunction()
 spisor_strict_warnings(spisor_library)
 
 # spisor_library carries no allocator: every binary links exactly one of these two, so a test can count and fail
-# allocations without a second definition of the allocator beside it.
-add_library(spisor_allocator OBJECT src/allocation.c)
-target_include_directories(spisor_allocator PRIVATE include)
+# allocations without a second definition of the allocator beside it. Each also answers naula's allocator, so naula's
+# blocks, cJSON's included, are counted with the library's. spisor_library reads JSON through naula, so a binary
+# linking it also links one of naula and naula_test_hooks.
+add_library(spisor_allocator OBJECT src/allocation.c src/naula_allocator.c)
+target_include_directories(spisor_allocator PRIVATE include $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
 set_target_properties(spisor_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden SPISOR_ALLOCATOR TRUE)
 spisor_strict_warnings(spisor_allocator)
 
-add_library(spisor_allocator_counting OBJECT EXCLUDE_FROM_ALL src/allocation.c)
-target_include_directories(spisor_allocator_counting PUBLIC src include)
+add_library(spisor_allocator_counting OBJECT EXCLUDE_FROM_ALL src/allocation.c src/naula_allocator.c)
+target_include_directories(spisor_allocator_counting PUBLIC src include
+    $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_definitions(spisor_allocator_counting PUBLIC SPISOR_TESTING)
 if(NOT WIN32)
     find_package(Threads REQUIRED)

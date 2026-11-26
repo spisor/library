@@ -13,7 +13,7 @@
 #include "catalog_url.h"
 #include "check.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #define FIXTURES RUNTIME_CATALOG_FIXTURES_PATH
 #define ORIGIN "https://example.com/catalog/index.json"

@@ -9,7 +9,7 @@
 #include "spisor/allocation.h"
 #include "check.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 #include "spisor/status.h"
 
 typedef struct catalog_answer {
@@ -18,7 +18,7 @@ typedef struct catalog_answer {
 } catalog_answer;
 
 static inline cJSON *parsed(const char *json) {
-    cJSON *tree = spisor_parse_json_reporting((const uint8_t *)json, strlen(json), &(int){0});
+    cJSON *tree = json_of((const uint8_t *)json, strlen(json));
     if (tree == NULL) {
         fprintf(stderr, "a test's own JSON does not parse: %s\n", json);
         exit(2);
@@ -29,7 +29,7 @@ static inline cJSON *parsed(const char *json) {
 static inline cJSON *read_json_file(const char *path) {
     size_t length;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
-    cJSON *tree = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &(int){0});
+    cJSON *tree = bytes == NULL ? NULL : json_of(bytes, length);
     spisor_memory_release(bytes);
     if (tree == NULL) {
         fprintf(stderr, "cannot read %s\n", path);

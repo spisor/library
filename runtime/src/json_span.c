@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 /** Deeper than cJSON's own nesting limit, so a text spisor_read_json_file parsed is never refused here. */
 #define DEEPEST_NESTING 1100
@@ -170,8 +170,8 @@ int json_span_key_is(const char *text, json_span key, const char *name) {
         return strlen(name) == inner && memcmp(text + key.start + 1, name, inner) == 0;
     }
     int out_of_memory = 0;
-    cJSON *decoded = spisor_parse_json_reporting((const uint8_t *)text + key.start, key.end - key.start,
-                                                 &out_of_memory);
+    cJSON *decoded = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value((const uint8_t *)text + key.start, key.end - key.start, &decoded, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     if (decoded == NULL) {
         return out_of_memory ? JSON_SPAN_KEY_OUT_OF_MEMORY : JSON_SPAN_KEY_UNDECODABLE;
     }

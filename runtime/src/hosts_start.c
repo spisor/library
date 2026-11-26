@@ -21,7 +21,7 @@
 #include "processes_ready.h"
 #include "registry.h"
 #include "run_records.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "updates.h"
 #include "updates_catalog.h"
 #include "user_home.h"

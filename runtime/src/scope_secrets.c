@@ -6,7 +6,7 @@
 #include "secrets.h"
 #include "spisor/definition.h"
 #include "standard_refusal.h"
-#include "utf8.h"
+#include "naula/json.h"
 
 #define SECRET_SHAPE SPISOR_SHAPE_THROUGH(weivel_standard_secret, storage)
 
@@ -81,7 +81,7 @@ static spisor_status check_bytes(const uint8_t *bytes, size_t length, spisor_ref
     if (length != 0 && memchr(bytes, '\0', length) != NULL) {
         return refuse_bytes(refusal, SPISOR_REFUSED, "bytes holding a NUL byte");
     }
-    if (length != 0 && !spisor_is_valid_utf8(bytes, length)) {
+    if (length != 0 && !naula_json_is_valid_utf8(bytes, length)) {
         return refuse_bytes(refusal, SPISOR_REFUSED, "bytes that are not well-formed UTF-8");
     }
     return SPISOR_OK;

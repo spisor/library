@@ -20,7 +20,7 @@
 #include "runtime/fetch.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 #include "atomic.h"
 #ifdef SPISOR_CATALOG_TEST_HOOKS

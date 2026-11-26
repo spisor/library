@@ -21,7 +21,7 @@
 #include "scratch_directory.h"
 #include "config.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "links.h"
 #include "temporary_entries.h"
 

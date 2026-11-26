@@ -90,7 +90,7 @@ else()
 endif()
 add_executable(stage_bundle bundle/stage_bundle.c ${stage_bundle_platform_sources}
     ${PROJECT_SOURCE_DIR}/runtime/src/directory_tree.c ${PROJECT_SOURCE_DIR}/runtime/src/platform_key.c)
-target_link_libraries(stage_bundle PRIVATE spisor_library spisor_allocator)
+target_link_libraries(stage_bundle PRIVATE spisor_library spisor_allocator naula)
 target_include_directories(stage_bundle PRIVATE ${PROJECT_SOURCE_DIR}/host/src ${PROJECT_SOURCE_DIR}/runtime/src
     ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(stage_bundle PROPERTIES OUTPUT_NAME stage-bundle)

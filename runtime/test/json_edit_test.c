@@ -4,7 +4,7 @@
 #include "check.h"
 #include "spisor/allocation.h"
 #include "json_edit.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 
 static cJSON *parsed(const char *json) {
     cJSON *tree = cJSON_Parse(json);
@@ -134,7 +134,7 @@ static void a_duplicated_key_resolves_as_json_parse_does(void) {
     cJSON *key = parsed("[\"a\"]");
     json_span value = {0, 0};
     CHECK(json_edit_find_value(text, strlen(text), key, &value) && value.start == 11 && value.end == 12);
-    cJSON *read = spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    cJSON *read = json_of((const uint8_t *)text, strlen(text));
     CHECK(cJSON_GetObjectItemCaseSensitive(read, "a")->valueint == 2);
     cJSON_Delete(read);
     cJSON_Delete(key);

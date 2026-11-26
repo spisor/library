@@ -13,7 +13,7 @@
 #include "spisor/allocation.h"
 #include "spisor/definition.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/json_value.h"
 #include "spisor/path.h"
 #include "user_home.h"
@@ -200,7 +200,10 @@ static const char *declared_version(const char *directory, cJSON **declaration, 
     size_t length = 0;
     uint8_t *bytes = path == NULL ? NULL : spisor_read_file_reporting(path, &length, &outcome);
     *out_of_memory = path == NULL || outcome == SPISOR_READ_OUT_OF_MEMORY;
-    *declaration = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, out_of_memory);
+    *declaration = NULL;
+    if (bytes != NULL) {
+        *out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &*declaration, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(bytes);
     spisor_memory_release(path);
     return text_member(*declaration, "version");

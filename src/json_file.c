@@ -5,7 +5,7 @@
 
 #include "spisor/file.h"
 #include "spisor/javascript.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 #include "allocation.h"
 
@@ -82,7 +82,8 @@ static cJSON *parse_stripped(const uint8_t *bytes, size_t length, spisor_json_fi
     if (text == NULL) {
         return NULL;
     }
-    cJSON *parsed = spisor_parse_json_reporting((const uint8_t *)text, text_length, &out_of_memory);
+    cJSON *parsed = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value((const uint8_t *)text, text_length, &parsed, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     spisor_memory_release(text);
     if (parsed != NULL) {
         *state = SPISOR_JSON_FILE_PARSED;

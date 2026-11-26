@@ -10,8 +10,8 @@
  * @implNote Portable means usable on every OS the host runs on: not empty, ".", ".." or ending in "."
  * or a space, free of "/", "\", ":", "<", ">", the double quote, "|", "?", "*" and the control
  * characters U+0000 to U+001F, and with a stem (the part before the first ".") that is not a Windows
- * reserved device name, compared ignoring case. U+0000 never arrives, since spisor_parse_json_reporting refuses
- * a document that escapes it.
+ * reserved device name, compared ignoring case. U+0000 never arrives, since naula_json_parse_keeping_last_value
+ * refuses a document that escapes it.
  */
 spisor_status runtime_portable_segment(const char *name, char **segment);
 

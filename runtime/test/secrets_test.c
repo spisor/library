@@ -26,7 +26,7 @@
 #include "runtime/secrets.h"
 #include "spisor/file.h"
 #include "spisor/json_file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 typedef enum secrets_operation {
     SECRETS_GET,

@@ -24,7 +24,7 @@
 #include "paths.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "json_of.h"
 #include "spisor/path.h"
 #include "updates_call.h"
 
@@ -99,7 +99,7 @@ static inline void expect_json(const cJSON *actual, const char *expected_json, c
 
 static inline void expect_json_in(const char *base, const char *rest, const char *expected_json, const char *label) {
     char *text = text_in(base, rest);
-    cJSON *actual = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    cJSON *actual = text == NULL ? NULL : json_of((const uint8_t *)text, strlen(text));
     expect_json(actual, expected_json, label);
     cJSON_Delete(actual);
     spisor_memory_release(text);
@@ -291,7 +291,7 @@ static inline void expect_hinted_versions(const char *host, const char *expected
     char rest[512];
     snprintf(rest, sizeof rest, "hosts/%s.json", host);
     char *text = text_in(cache, rest);
-    cJSON *recorded = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    cJSON *recorded = text == NULL ? NULL : json_of((const uint8_t *)text, strlen(text));
     cJSON *versions = hinted_versions(recorded);
     expect_json(versions, expected_json, label);
     cJSON_Delete(versions);

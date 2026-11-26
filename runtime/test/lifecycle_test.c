@@ -33,7 +33,7 @@
 #include "registry_call.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "tree_snapshot.h"
 
 #ifdef _WIN32

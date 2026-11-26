@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/json_value.h"
 
 typedef struct status_name {
@@ -36,7 +36,8 @@ cJSON *spisor_vector_read(const char *path) {
         return NULL;
     }
     int out_of_memory = 0;
-    vector = spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    vector = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &vector, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     spisor_memory_release(bytes);
     if (vector == NULL) {
         fprintf(stderr, "vector %s %s\n", path, out_of_memory ? "ran out of memory parsing" : "is not JSON");

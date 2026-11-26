@@ -26,7 +26,7 @@
 #include "registry.h"
 #include "registry_call.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #ifdef _WIN32
 #define FIXTURE_HOME "C:/home/claude"

@@ -12,6 +12,7 @@
 #include "cache_call.h"
 #include "catalog_call.h"
 #include "check.h"
+#include "json_of.h"
 #include "service_scratch.h"
 #include "tree_snapshot.h"
 
@@ -90,8 +91,7 @@ static void deploys_under_the_import_name(void) {
     expect_file("plugins/greeter.js", "export default {};", "entry");
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     cJSON *identity = identity_text == NULL ? NULL
-                                            : spisor_parse_json_reporting((const uint8_t *)identity_text,
-                                                                          strlen(identity_text), &(int){0});
+                                            : json_of((const uint8_t *)identity_text, strlen(identity_text));
     CHECK(identity != NULL);
     check_text(text_at(identity, "id"), "git:0000000000000000000000000000000000000005", "identity id");
     check_text(text_at(identity, "name"), "greeter", "identity name");
@@ -122,8 +122,7 @@ static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
     CHECK(answer.status == SPISOR_OK);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     cJSON *identity = identity_text == NULL ? NULL
-                                            : spisor_parse_json_reporting((const uint8_t *)identity_text,
-                                                                          strlen(identity_text), &(int){0});
+                                            : json_of((const uint8_t *)identity_text, strlen(identity_text));
     check_text(text_at(identity, "id"), "git:0000000000000000000000000000000000000005", "argument id wins");
     check_text(text_at(identity, "name"), "greeter", "argument name wins");
     cJSON_Delete(identity);

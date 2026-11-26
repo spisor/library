@@ -13,7 +13,7 @@
 #include "loader.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/path.h"
 
 #define PLUGIN_MANIFEST "plugin.json"
@@ -46,7 +46,10 @@ static cJSON *read_manifest(const char *path, cJSON **refusal) {
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     int out_of_memory = 0;
-    cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    cJSON *manifest = NULL;
+    if (bytes != NULL) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &manifest, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(bytes);
     if (outcome == SPISOR_READ_OUT_OF_MEMORY || out_of_memory) {
         return NULL;

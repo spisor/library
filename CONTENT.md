@@ -21,8 +21,9 @@ The C conventions every spisor and forebay library shares, as one static CMake t
   through `spisor_memory_allocate` and its family, cJSON's included, so an out-of-memory test sees all of them.
   `spisor_library` carries no allocator itself: each final binary links exactly one of `spisor_allocator` and the
   test-only `spisor_allocator_counting`, and the configure refuses anything else.
-- **JSON reading** (`spisor/json_kind.h`): reading one whole JSON document exactly as `JSON.parse`
-  reads it, for the files a library keeps on disk. Nothing crosses a library's boundary as JSON.
+- **JSON reading** is naula's (`naula/json.h`): `naula_json_parse_keeping_last_value` reads one whole JSON
+  document exactly as `JSON.parse` reads it, for the files a library keeps on disk; the library keeps no reader of its
+  own. Nothing crosses a library's boundary as JSON.
 - **Paths** (`spisor/path.h`): Node's `path.join` and `path.isAbsolute` for both platform rules,
   chosen by an argument rather than by the OS the code runs on, and basekit's `expandHome`.
 - **JavaScript semantics** (`spisor/javascript.h`): Node's lossy UTF-8 decoding, as
@@ -478,9 +479,9 @@ link into a shared library on Linux. Tests are built only when this repository i
 
 ## Reading a JSON file
 
-A library reads every JSON file it keeps (a registry file, say) through `spisor_parse_json_reporting`
-instead of calling cJSON directly, and is told whether memory or the text failed. It reads a document as
-`JSON.parse` does:
+A library reads every JSON file it keeps (a registry file, say) through naula's
+`naula_json_parse_keeping_last_value` instead of calling cJSON directly, and is told whether memory or the text failed
+(`NAULA_OUT_OF_MEMORY` or `NAULA_MALFORMED`). It reads a document as `JSON.parse` does:
 
 - **Invalid UTF-8 is refused**, because cJSON accepts it. A library reading a file the way Node
   does decodes it with `spisor_decode_utf8_lossy` first, so the replacement happens where Node's
@@ -493,7 +494,7 @@ instead of calling cJSON directly, and is told whether memory or the text failed
   cut it short at the NUL.
 - **An unpaired surrogate escape such as `\ud800` reads as U+FFFD**, which is what Node's UTF-8
   encoding of such a string holds; `JSON.stringify` emits one for an unpaired UTF-16 value, which a
-  Windows environment variable or argument can carry. cJSON refuses it, so the escape is rewritten
+  Windows environment variable or argument can carry. cJSON refuses it, so naula rewrites the escape
   before cJSON reads the text.
 - **A duplicated key keeps its first position and its last value**, so every cJSON lookup and
   iteration over the tree sees what JavaScript sees.
@@ -567,11 +568,15 @@ The tests check every vector under BOTH platform rules on whichever OS runs them
 generated with Node v26.3.1, whose Windows join also handles reserved device names (`CON`, `COM1`
 and the rest); regenerate them and re-run the tests when moving to another Node.
 
-## cJSON and the transport come from naula
+## cJSON, JSON reading and the transport come from naula
 
-cJSON is naula's `naula_cjson` target, which `spisor_library` links publicly; naula vendors it unmodified. `runtime`
-reaches hosts through naula's HTTP transport and hashes through naula's SHA-256, and keeps only what is its own: the
-`file:` urls of `fetch.get`, and hashing a whole file. naula's allocations go through this repository's allocator
-(`runtime/src/naula_allocator.c`), so an out-of-memory test counts and fails them as well. A binary whose fetch
+cJSON is naula's `naula_cjson` target, which `spisor_library` links publicly; naula vendors it unmodified, and it is
+the only cJSON a binary carries. Every JSON document is read through naula's `naula_json_parse_keeping_last_value`
+and UTF-8 is checked with `naula_json_is_valid_utf8`, so a binary that links `spisor_library` also links naula.
+`runtime` reaches hosts through naula's HTTP transport and hashes through naula's SHA-256, and keeps only what is its
+own: the `file:` urls of `fetch.get`, and hashing a whole file. naula's allocations go through this repository's
+allocator: both `spisor_allocator` and `spisor_allocator_counting` also answer naula's (`src/naula_allocator.c`), so an
+out-of-memory test counts and fails them as well. Each binary installs cJSON's hooks once, with
+`spisor_json_use_library_allocator`, never with naula's own, since both would point the one cJSON at the same allocator. A binary whose fetch
 objects carry the test hooks links `naula_test_hooks`, which alone allows plain http to the loopback fixture; every
 other binary links `naula`.

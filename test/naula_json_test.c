@@ -2,31 +2,31 @@
 #include <string.h>
 
 #include "check.h"
+#include "json_of.h"
 #include "spisor/allocation.h"
-#include "spisor/json_kind.h"
 
 static cJSON *parse_json_text(const char *text) {
-    return spisor_parse_json_reporting((const uint8_t *)text, strlen(text), &(int){0});
+    return json_of(text, strlen(text));
 }
 
 static void refuses_text(const char *text) {
     cJSON *document = parse_json_text(text);
     if (document != NULL) {
-        fprintf(stderr, "spisor_parse_json_reporting accepted %s\n", text);
+        fprintf(stderr, "naula_json_parse_keeping_last_value accepted %s\n", text);
         check_failures++;
     }
     cJSON_Delete(document);
 }
 
 static void refuses_bytes(const uint8_t *bytes, size_t length) {
-    cJSON *document = spisor_parse_json_reporting(bytes, length, &(int){0});
+    cJSON *document = json_of(bytes, length);
     CHECK(document == NULL);
     cJSON_Delete(document);
 }
 
 static void reads_only_the_given_length(void) {
     static const uint8_t bytes[] = {'"', 'a', '"', '!', '!'};
-    cJSON *document = spisor_parse_json_reporting(bytes, 3, &(int){0});
+    cJSON *document = json_of(bytes, 3);
     check_text(cJSON_GetStringValue(document), "a", "length-bounded document");
     cJSON_Delete(document);
 }
@@ -104,7 +104,7 @@ static void parses_a_whole_document_as_json_parse_does(void) {
     cJSON *document = parse_json_text(" {\"k\":1,\"k\":\"\\ud800\"} ");
     check_text(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(document, "k")), "\xef\xbf\xbd", "parse_json");
     cJSON_Delete(document);
-    CHECK(spisor_parse_json_reporting(invalid_utf8, sizeof(invalid_utf8), &(int){0}) == NULL);
+    CHECK(json_of(invalid_utf8, sizeof(invalid_utf8)) == NULL);
     CHECK(parse_json_text("1 2") == NULL);
     CHECK(parse_json_text("\"a\\u0000\"") == NULL);
     CHECK(parse_json_text("") == NULL);
@@ -125,7 +125,7 @@ static void parses_only_what_json_parse_accepts(void) {
     for (size_t index = 0; index < sizeof(refused_by_json_parse) / sizeof(refused_by_json_parse[0]); index++) {
         cJSON *document = parse_json_text(refused_by_json_parse[index]);
         if (document != NULL) {
-            fprintf(stderr, "spisor_parse_json_reporting accepted %s\n", refused_by_json_parse[index]);
+            fprintf(stderr, "naula_json_parse_keeping_last_value accepted %s\n", refused_by_json_parse[index]);
             check_failures++;
         }
         cJSON_Delete(document);
@@ -133,7 +133,7 @@ static void parses_only_what_json_parse_accepts(void) {
     for (size_t index = 0; index < sizeof(accepted_by_json_parse) / sizeof(accepted_by_json_parse[0]); index++) {
         cJSON *document = parse_json_text(accepted_by_json_parse[index]);
         if (document == NULL) {
-            fprintf(stderr, "spisor_parse_json_reporting refused %s\n", accepted_by_json_parse[index]);
+            fprintf(stderr, "naula_json_parse_keeping_last_value refused %s\n", accepted_by_json_parse[index]);
             check_failures++;
         }
         cJSON_Delete(document);
@@ -151,5 +151,5 @@ int main(void) {
     decodes_an_unpaired_surrogate_as_a_replacement_character();
     parses_a_whole_document_as_json_parse_does();
     parses_only_what_json_parse_accepts();
-    return check_summary("json_kind_test");
+    return check_summary("naula_json_test");
 }

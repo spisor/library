@@ -6,7 +6,7 @@
 
 #include "json_service.h"
 #include "registry.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "user_home.h"
 
 #define IDENTITY_FIX                                                                       \

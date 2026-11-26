@@ -19,7 +19,7 @@
 #include "runtime/marketplace.h"
 #include "paths.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
@@ -34,7 +34,10 @@ static cJSON *read_list(const char *path, cJSON **refusal) {
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
     int was_read = bytes != NULL;
     int out_of_memory = 0;
-    cJSON *list = was_read ? spisor_parse_json_reporting(bytes, length, &out_of_memory) : NULL;
+    cJSON *list = NULL;
+    if (was_read) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &list, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(bytes);
     if (list == NULL && outcome != SPISOR_READ_OUT_OF_MEMORY && !out_of_memory) {
         *refusal = refusal_naming(was_read ? "the list is not JSON: " : "the list could not be read: ", path,
@@ -204,7 +207,10 @@ static cJSON *read_previous(const char *path, int *out_of_memory, cJSON **refusa
     size_t length = 0;
     spisor_read_outcome outcome = SPISOR_READ_FAILED;
     uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    cJSON *previous = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, out_of_memory);
+    cJSON *previous = NULL;
+    if (bytes != NULL) {
+        *out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &previous, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     *out_of_memory = *out_of_memory || outcome == SPISOR_READ_OUT_OF_MEMORY;
     if (bytes != NULL && previous == NULL && !*out_of_memory) {
         *refusal = refusal_naming("the copy already at --out is not JSON: ", path,

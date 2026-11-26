@@ -6,13 +6,16 @@
 #include "allocation.h"
 #include "spisor/file.h"
 #include "spisor/javascript.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 cJSON *runtime_parse_node_json(const uint8_t *bytes, size_t length, int *out_of_memory) {
     size_t decoded_length = 0;
     uint8_t *decoded = spisor_decode_utf8_lossy(bytes, length, &decoded_length);
     *out_of_memory = decoded == NULL;
-    cJSON *tree = decoded == NULL ? NULL : spisor_parse_json_reporting(decoded, decoded_length, out_of_memory);
+    cJSON *tree = NULL;
+    if (decoded != NULL) {
+        *out_of_memory = naula_json_parse_keeping_last_value(decoded, decoded_length, &tree, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     spisor_memory_release(decoded);
     return tree;
 }

@@ -112,14 +112,8 @@ target_compile_definitions(runtime_fetch_test_hooks PRIVATE SPISOR_FETCH_TEST_HO
 spisor_strict_warnings(runtime_fetch_test_hooks)
 set_target_properties(runtime_fetch_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
-add_library(runtime_naula_allocator OBJECT src/naula_allocator.c)
-target_include_directories(runtime_naula_allocator PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include
-    $<TARGET_PROPERTY:naula,INTERFACE_INCLUDE_DIRECTORIES>)
-set_target_properties(runtime_naula_allocator PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
-spisor_strict_warnings(runtime_naula_allocator)
-
 # Every binary carrying runtime's objects links one of naula's two transports, naula_test_hooks when it is given
-# TEST_HOOKS, and hands naula's allocations to the binary's own allocator so an out-of-memory test counts them too.
+# TEST_HOOKS; the binary's allocator answers naula's allocations, so an out-of-memory test counts them too.
 function(runtime_link_naula target)
     cmake_parse_arguments(PARSE_ARGV 1 NAULA "TEST_HOOKS" "" "")
     if(NAULA_TEST_HOOKS)
@@ -127,7 +121,6 @@ function(runtime_link_naula target)
     else()
         target_link_libraries(${target} PRIVATE naula)
     endif()
-    target_sources(${target} PRIVATE $<TARGET_OBJECTS:runtime_naula_allocator>)
 endfunction()
 
 add_library(runtime_identity OBJECT src/identity_naula.c src/identity_definition.c)

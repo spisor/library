@@ -25,7 +25,7 @@
 #include "json_service.h"
 #include "process_alive.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 
 #define IDENTITY_SUFFIX "_identity.json"
 #define MANIFEST_SUFFIX ".json"
@@ -181,9 +181,10 @@ static int read_manifest(deployment *plan, cJSON **refusal) {
     char *path = runtime_cache_resolve(plan->directory, segments, 1);
     int out_of_memory = 0;
     plan->manifest_bytes = read_noting(plan, path, &plan->manifest_length);
-    plan->manifest = plan->manifest_bytes == NULL
-                         ? NULL
-                         : spisor_parse_json_reporting(plan->manifest_bytes, plan->manifest_length, &out_of_memory);
+    plan->manifest = NULL;
+                         if (plan->manifest_bytes != NULL) {
+                             out_of_memory = naula_json_parse_keeping_last_value(plan->manifest_bytes, plan->manifest_length, &plan->manifest, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+                         }
     plan->out_of_memory = plan->out_of_memory || out_of_memory;
     spisor_memory_release(path);
     if (plan->manifest == NULL || !cJSON_IsObject(plan->manifest)) {
@@ -275,7 +276,10 @@ static char *recorded_id(deployment *plan) {
     size_t length = 0;
     uint8_t *bytes = read_noting(plan, plan->destinations[IDENTITY_DESTINATION], &length);
     int out_of_memory = 0;
-    cJSON *identity = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    cJSON *identity = NULL;
+    if (bytes != NULL) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &identity, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     const char *id = text_member(identity, "id");
     char *copy = id == NULL ? NULL : runtime_cache_text(&id, 1);
     plan->out_of_memory = plan->out_of_memory || out_of_memory || (id != NULL && copy == NULL);
@@ -580,7 +584,10 @@ static int interrupted_names_entry(deployment *plan, const char *folder) {
         bytes = read_noting(plan, plan->destinations[MANIFEST_DESTINATION], &length);
     }
     int out_of_memory = 0;
-    cJSON *manifest = bytes == NULL ? NULL : spisor_parse_json_reporting(bytes, length, &out_of_memory);
+    cJSON *manifest = NULL;
+    if (bytes != NULL) {
+        out_of_memory = naula_json_parse_keeping_last_value(bytes, length, &manifest, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
+    }
     int names_entry = text_member(manifest, "entry") != NULL;
     plan->out_of_memory = plan->out_of_memory || staged == NULL || out_of_memory;
     cJSON_Delete(manifest);

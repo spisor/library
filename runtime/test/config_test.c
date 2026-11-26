@@ -24,7 +24,7 @@
 #include "fake_secret_backend.h"
 #include "merge.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "links.h"
 #include "temporary_entries.h"
 

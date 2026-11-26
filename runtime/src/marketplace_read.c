@@ -15,7 +15,7 @@
 #include "marketplace_check.h"
 #include "marketplace_sources.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "naula/json.h"
 #include "spisor/path.h"
 
 #define MESSAGE_SIZE 2048
@@ -146,7 +146,8 @@ static cJSON *parsed_copy(const runtime_marketplace_read_request *order, const c
                           cJSON **refusal) {
     size_t skipped = length >= 3 && memcmp(text, BYTE_ORDER_MARK, 3) == 0 ? 3 : 0;
     int out_of_memory = 0;
-    cJSON *document = spisor_parse_json_reporting((const uint8_t *)text + skipped, length - skipped, &out_of_memory);
+    cJSON *document = NULL;
+    out_of_memory = naula_json_parse_keeping_last_value((const uint8_t *)text + skipped, length - skipped, &document, &(const char *){NULL}) == NAULA_OUT_OF_MEMORY;
     if (document != NULL || out_of_memory) {
         return document;
     }

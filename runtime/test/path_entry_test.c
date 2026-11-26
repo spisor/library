@@ -30,7 +30,7 @@
 #include "paths.h"
 #include "registry.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 
 #ifdef _WIN32
 #include "path_entry_windows_hooks.h"

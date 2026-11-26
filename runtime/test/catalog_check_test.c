@@ -18,7 +18,7 @@
 #include "http_fixture.h"
 #include "scratch_directory.h"
 #include "spisor/file.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "transport_hooks.h"
 
 #if defined(_WIN32)

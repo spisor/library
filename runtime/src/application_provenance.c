@@ -11,7 +11,7 @@
 #include "on_path.h"
 #include "paths.h"
 #include "platform_key.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 
 #define PROVENANCE_FIX                                                                                           \

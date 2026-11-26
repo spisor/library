@@ -8,7 +8,7 @@
 #include "followed_entry.h"
 #include "json_service.h"
 #include "paths.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 #include "user_home.h"
 

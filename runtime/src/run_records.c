@@ -16,7 +16,7 @@
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/javascript.h"
-#include "spisor/json_kind.h"
+#include "cJSON.h"
 #include "spisor/path.h"
 #include "atomic.h"
 
