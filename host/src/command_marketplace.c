@@ -12,12 +12,11 @@
 #include "host_options.h"
 #include "host_output.h"
 #include "host_service.h"
-#include "identity_resolve.h"
+#include "identity_naula.h"
 #include "json_service.h"
 #include "host_definition.h"
 #include "spisor/json_value.h"
 #include "runtime/marketplace.h"
-#include "marketplace_lookup.h"
 #include "paths.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
@@ -101,7 +100,6 @@ static cJSON *copy_built(const build_inputs *inputs, const char *built, cJSON **
     argument.previous = inputs->previous == NULL ? NULL : &previous.root;
     argument.token = inputs->token;
     argument.token_host = inputs->token_host;
-    argument.api_base = host_marketplace_lookup_api_base();
     if (status == SPISOR_OK) {
         status = marketplace->build(marketplace->context, &argument, &answer, &declined);
         *refusal = status == SPISOR_OK ? NULL : host_refusal_json(&declined);
@@ -289,7 +287,7 @@ int host_command_marketplace_build(int count, char **arguments) {
     } else if (host_last_value(&options[0]) == NULL || host_last_value(&options[1]) == NULL) {
         code = host_misuse("--list <path> and --out <path> are both required");
     } else if (host_last_value(&options[2]) != NULL && host_last_value(&options[3]) == NULL) {
-        code = host_misuse("--token-env needs --token-host <host>: github.com for github ids, or the instance host");
+        code = host_misuse("--token-env needs --token-host <host>: github.com for places on GitHub, or the instance host");
     } else {
         build_paths paths = {host_last_value(&options[0]), host_last_value(&options[1]), host_last_value(&options[2]),
                              host_last_value(&options[3])};

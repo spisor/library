@@ -94,7 +94,7 @@ if(WIN32)
 endif()
 
 runtime_test(sha256_file_test $<TARGET_OBJECTS:runtime_secret_store>)
-runtime_test(identity_test $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+runtime_test(identity_test fake_forge.c $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 
 runtime_test(fetch_test TEST_HOOKS http_fixture.c $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
@@ -102,22 +102,8 @@ if(WIN32)
     target_link_libraries(fetch_test PRIVATE Ws2_32)
 endif()
 
-runtime_test(identity_resolve_test TEST_HOOKS http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
-    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
-    $<TARGET_OBJECTS:runtime_secret_store>)
-if(WIN32)
-    target_link_libraries(identity_resolve_test PRIVATE Ws2_32)
-endif()
-
-runtime_test(identity_also_at_test TEST_HOOKS http_fixture.c $<TARGET_OBJECTS:runtime_identity_resolve>
-    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch_test_hooks>
-    $<TARGET_OBJECTS:runtime_secret_store>)
-if(WIN32)
-    target_link_libraries(identity_also_at_test PRIVATE Ws2_32)
-endif()
-
-runtime_test(marketplace_build_test TEST_HOOKS http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_build>
-    $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks> $<TARGET_OBJECTS:runtime_identity_resolve>
+runtime_test(marketplace_build_test TEST_HOOKS fake_forge.c $<TARGET_OBJECTS:runtime_marketplace_build>
+    $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks> $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 target_compile_definitions(marketplace_build_test PRIVATE
     RUNTIME_MARKETPLACE_SCHEMA_PATH="${PROJECT_SOURCE_DIR}/runtime/schema/marketplace.schema.json"
@@ -127,14 +113,14 @@ if(WIN32)
 endif()
 
 runtime_test(marketplace_sources_test TEST_HOOKS http_fixture.c $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
-    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 if(WIN32)
     target_link_libraries(marketplace_sources_test PRIVATE Ws2_32)
 endif()
 
 runtime_test(marketplace_memory_test TEST_HOOKS $<TARGET_OBJECTS:runtime_marketplace_reading_test_hooks>
-    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity_resolve>
+    $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_fetch_test_hooks> $<TARGET_OBJECTS:runtime_secret_store>)
 if(WIN32)
     target_link_libraries(marketplace_memory_test PRIVATE Ws2_32)
@@ -143,9 +129,6 @@ endif()
 set(SPISOR_MARKETPLACE_TEMPLATES_PATH "" CACHE PATH "Folder holding the six marketplace-template-<host> checkouts; the test skips when empty")
 runtime_test(marketplace_templates_test $<TARGET_OBJECTS:runtime_secret_store>)
 target_compile_definitions(marketplace_templates_test PRIVATE SPISOR_MARKETPLACE_TEMPLATES_PATH="${SPISOR_MARKETPLACE_TEMPLATES_PATH}")
-
-runtime_test(identity_resolve_shipped_test $<TARGET_OBJECTS:runtime_identity_resolve>
-    $<TARGET_OBJECTS:runtime_identity_also_at> $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 
 runtime_test(fetch_network_test $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_secret_store>)
 set_tests_properties(fetch_network_test PROPERTIES LABELS network)
@@ -215,8 +198,7 @@ target_link_libraries(scope_threads_test PRIVATE weivel_standard)
 add_executable(node_probe node_probe.c)
 spisor_strict_warnings(node_probe)
 
-set(runtime_install_by_id_objects $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_identity_resolve>
-    $<TARGET_OBJECTS:runtime_identity_also_at>)
+set(runtime_install_by_id_objects $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_identity>)
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
     $<TARGET_OBJECTS:runtime_hosts_definition> ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
@@ -263,7 +245,7 @@ endforeach()
 if(WIN32)
     add_dependencies(hosts_test runtime_launcher)
 endif()
-runtime_test(install_by_id_test TEST_HOOKS http_fixture.c ${runtime_install_plain_http_test_objects})
+runtime_test(install_by_id_test TEST_HOOKS http_fixture.c fake_forge.c ${runtime_install_plain_http_test_objects})
 target_include_directories(install_by_id_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
 if(WIN32)
     target_link_libraries(install_by_id_test PRIVATE Ws2_32)
@@ -294,7 +276,7 @@ set(runtime_definition_test_objects ${runtime_marketplace_test_objects} ${runtim
 set(runtime_out_of_memory_test_objects ${runtime_install_plain_http_test_objects})
 list(TRANSFORM runtime_out_of_memory_test_objects REPLACE "runtime_catalog_refresh>$"
     "runtime_catalog_refresh_test_hooks>")
-runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting TEST_HOOKS http_fixture.c
+runtime_test_with_allocator(out_of_memory_test spisor_allocator_counting TEST_HOOKS http_fixture.c fake_forge.c
     ${runtime_marketplace_test_objects} ${runtime_out_of_memory_test_objects})
 if(WIN32)
     target_link_libraries(out_of_memory_test PRIVATE Ws2_32)

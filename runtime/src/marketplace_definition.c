@@ -13,7 +13,7 @@
 #include "paths.h"
 #include "spisor/path.h"
 
-#define BUILD_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_build_argument, api_base)
+#define BUILD_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_build_argument, token_host)
 #define SOURCES_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_sources_argument, settings)
 #define READ_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_read_argument, destination)
 #define LOOKUP_SHAPE SPISOR_SHAPE_THROUGH(runtime_marketplace_lookup_argument, name)
@@ -95,7 +95,6 @@ static spisor_status serve_build(const runtime_marketplace_build_argument *argum
     cJSON *operation_refusal = NULL;
     runtime_marketplace_build_request request = {cJSON_GetObjectItemCaseSensitive(call, "list"),
                                                  argument->built,
-                                                 argument->api_base,
                                                  argument->token,
                                                  argument->token_host,
                                                  cJSON_GetObjectItemCaseSensitive(call, "previous")};
@@ -239,7 +238,9 @@ static spisor_status fill_lookup(const cJSON *answered, void *answer_space) {
     answer->match = ambiguous != NULL ? RUNTIME_MARKETPLACE_AMBIGUOUS : RUNTIME_MARKETPLACE_FOUND;
     if (!runtime_storage_copy(&answer->storage, text_of(answered, "id"), &answer->id) ||
         !runtime_storage_copy(&answer->storage, text_of(answered, "marketplace"), &answer->marketplace) ||
-        !runtime_storage_texts(&answer->storage, ambiguous, &answer->ambiguous, &answer->ambiguous_count)) {
+        !runtime_storage_texts(&answer->storage, ambiguous, &answer->ambiguous, &answer->ambiguous_count) ||
+        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "at"), &answer->at,
+                               &answer->at_count)) {
         return SPISOR_OUT_OF_MEMORY;
     }
     return SPISOR_OK;
@@ -285,7 +286,7 @@ static spisor_status lookup(void *context, const runtime_marketplace_lookup_argu
     spisor_status status = SPISOR_OUT_OF_MEMORY;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, LOOKUP_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LOOKUP_ANSWER_SHAPE, answer->ambiguous_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LOOKUP_ANSWER_SHAPE, answer->ambiguous_count | answer->at_count)) {
         return spisor_refuse_shape(refusal, "marketplace's lookup");
     }
     if (argument->name == NULL) {

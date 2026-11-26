@@ -41,11 +41,13 @@
 #include "catalog_path.h"
 #include "catalog_state.h"
 #include "directory_tree.h"
+#include "fake_forge.h"
 #include "host_references.h"
 #include "http_fixture.h"
 #include "scratch_directory.h"
 #include "registry.h"
 #include "spisor/file.h"
+#include "naula/repo_file.h"
 #include "transport_hooks.h"
 
 /**
@@ -64,9 +66,10 @@
 #define CHANGED_FILE "{\"a\":{\"b\":1},\"logging\":true}"
 #define PACKAGES_FILE "{\"tool\":{\"brew\":{\"name\":\"tool\",\"options\":{\"tap\":\"v/t\"}}}}"
 #define TIME "2026-10-27T19:34:53.123Z"
+#define WRONG_ANSWER ((spisor_status)99)
 #define MARKETPLACE_COPY                                                                                           \
     "{\"format\":1,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":["                                              \
-    "{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\",\"lastKnown\":\"spisor/runtime\"}]}"
+    "{\"id\":\"" FAKE_ID "\",\"at\":[\"forge:5\"],\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"}]}"
 
 typedef struct scratch {
     char base[1024];
@@ -83,8 +86,6 @@ static scratch place;
 static spisor_value_tree names = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree config = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree value = SPISOR_INIT(spisor_value_tree);
-static spisor_value_tree first_file = SPISOR_INIT(spisor_value_tree);
-static spisor_value_tree second_file = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree plugin_rows = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree catalog_items = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree whole_catalog = SPISOR_INIT(spisor_value_tree);
@@ -330,23 +331,64 @@ static spisor_status write_log(void) {
     return status;
 }
 
-static spisor_status agree_on_copies(void) {
+/** Resolves the fake forge's repo from forge:5, keeping naula's record in the base, and checks the homes it answers. */
+static spisor_status resolve_a_repo(void) {
     const runtime_identity_definition *identity = runtime_identity_definition_of();
-    runtime_identity_copy copies[3] = {{"github:1", 0, &first_file.root}, {"github:2", 0, &second_file.root},
-                                       {"github:3", 1, NULL}};
-    runtime_identity_agree_argument argument = SPISOR_INIT(runtime_identity_agree_argument);
-    runtime_identity_agreement answer;
+    static const char *const at[1] = {"forge:5"};
+    runtime_identity_resolve_argument argument = SPISOR_INIT(runtime_identity_resolve_argument);
+    runtime_identity_resolution answer;
     start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    spisor_status status;
-    argument.id = "github:1";
-    argument.copies = copies;
-    argument.copy_count = 3;
-    status = identity->agree(identity->context, &argument, &answer, &refusal);
+    argument.id = FAKE_ID;
+    argument.at = at;
+    argument.at_count = 1;
+    argument.cache = place.base;
+    spisor_status status = identity->resolve(identity->context, &argument, &answer, &refusal);
+    if (status == SPISOR_OK && (answer.home_count != 2 || answer.primary == NULL || strcmp(answer.primary, "forge:5") != 0)) {
+        status = WRONG_ANSWER;
+    }
     status = empty_unless_answered(status, &answer, sizeof answer);
-    identity->release_agreement(identity->context, &answer);
+    identity->release_resolution(identity->context, &answer);
     identity->release_refusal(identity->context, &refusal);
     return status;
+}
+
+#define REPO_FILE "{\"format\":2,\"name\":\"lib\",\"importName\":\"lib\",\"homes\":[{\"provider\":\"forge\",\"account\":\"a\"}]}"
+
+/** naula reads repo.json through cJSON, so a failing allocation inside cJSON must answer out of memory too. */
+static spisor_status parse_a_repo_file(void) {
+    naula_repo_file file;
+    naula_refusal refusal;
+    memset(&file, 0, sizeof file);
+    file.size = sizeof file;
+    memset(&refusal, 0, sizeof refusal);
+    refusal.size = sizeof refusal;
+    naula_status status = naula_repo_file_parse((const uint8_t *)REPO_FILE, strlen(REPO_FILE), &file, &refusal);
+    naula_repo_file_release(&file);
+    return status == NAULA_OK ? SPISOR_OK : status == NAULA_OUT_OF_MEMORY ? SPISOR_OUT_OF_MEMORY : WRONG_ANSWER;
+}
+
+static uint64_t attempts_of_a_repo_file_parse(void) {
+    spisor_memory_fail_at(0);
+    CHECK(parse_a_repo_file() == SPISOR_OK);
+    return spisor_memory_attempts();
+}
+
+/**
+ * The library's hooks, which every binary installs, are the ones naula's cJSON allocates through: the two are one
+ * cJSON since naula_cjson replaced the library's, so with cJSON's own malloc in their place the parse makes fewer
+ * counted attempts.
+ */
+static void naula_json_allocates_through_the_library_allocator(void) {
+    uint64_t hooked = attempts_of_a_repo_file_parse();
+    cJSON_InitHooks(NULL);
+    uint64_t unhooked = attempts_of_a_repo_file_parse();
+    spisor_json_use_library_allocator();
+    if (hooked <= unhooked) {
+        fprintf(stderr, "a repo file parse made %llu counted attempts with the library's hooks and %llu without\n",
+                (unsigned long long)hooked, (unsigned long long)unhooked);
+        check_failures++;
+    }
 }
 
 /** The file: url of a path, every byte but the plain ones percent-encoded. */
@@ -628,7 +670,7 @@ static spisor_status remember_a_name(void) {
     argument.state = place.state;
     argument.marketplace = "spisor";
     argument.name = "calendar";
-    argument.id = "github:7";
+    argument.id = FAKE_ID;
     status = marketplace->remember(marketplace->context, &argument, &answer, &refusal);
     status = empty_unless_answered(status, &answer, sizeof answer);
     marketplace->release_remember_answer(marketplace->context, &answer);
@@ -1069,7 +1111,9 @@ static void every_service_but_commands(void) {
     every_failure_answers_out_of_memory("config's set", set_config, NULL);
     every_failure_answers_out_of_memory("settings' all", all_settings, NULL);
     every_failure_answers_out_of_memory("log's write", write_log, appended_nothing);
-    every_failure_answers_out_of_memory("identity's agree", agree_on_copies, NULL);
+    naula_json_allocates_through_the_library_allocator();
+    every_failure_answers_out_of_memory("naula's repo file parse", parse_a_repo_file, NULL);
+    every_failure_answers_out_of_memory("identity's resolve", resolve_a_repo, NULL);
     every_failure_answers_out_of_memory("fetch's get", fetch_a_file, fetched_nothing);
     every_failure_answers_out_of_memory("detect's on_path", find_on_path, NULL);
     every_failure_answers_out_of_memory("registry's register_host", register_a_host, registered_nothing);
@@ -1094,7 +1138,6 @@ static void every_service_but_commands(void) {
     "0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1}}}}}}}"
 #define HELLO_SHA256 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 
-#define WRONG_ANSWER ((spisor_status)99)
 
 static spisor_value_tree install_item = SPISOR_INIT(spisor_value_tree);
 static spisor_value_tree short_item = SPISOR_INIT(spisor_value_tree);
@@ -1271,7 +1314,7 @@ static spisor_status deploy_a_bundle(void) {
     under_base(plugins, sizeof plugins, "deep/plugins");
     argument.directory = bundle;
     argument.plugin_directory = plugins;
-    argument.id = "github:5";
+    argument.id = FAKE_ID;
     argument.name = "greeter";
     spisor_status status = cache->deploy(cache->context, &argument, &answer, &refusal);
     if (status == SPISOR_OK && (deployed_nothing() || answer.import_name == NULL ||
@@ -1284,10 +1327,10 @@ static spisor_status deploy_a_bundle(void) {
     return status;
 }
 
-#define OTHER_IDENTITY "{\"id\":\"github:9\",\"name\":\"greeter\"}"
+#define OTHER_IDENTITY "{\"id\":\"git:9000000000000000000000000000000000000009\",\"name\":\"greeter\"}"
 
 /**
- * A bundle to deploy where another plugin, github:9, left its identity under the same name and no code, so the
+ * A bundle to deploy where another plugin, of another root, left its identity under the same name and no code, so the
  * identity's probe alone tells deploy the name is taken.
  */
 static void another_plugin_deployed(void) {
@@ -1309,7 +1352,7 @@ static int kept_the_other_plugin(void) {
 }
 
 /**
- * Deploys github:5 over github:9's plugin of the same name, which deploy refuses, answering OK for that refusal and
+ * Deploys the fake forge's plugin over another root's plugin of the same name, which deploy refuses, answering OK for that refusal and
  * WRONG_ANSWER for a deploy that went over it; the case checks the other plugin is kept once failures are off.
  */
 static spisor_status deploy_over_another_plugin(void) {
@@ -1324,7 +1367,7 @@ static spisor_status deploy_over_another_plugin(void) {
     under_base(plugins, sizeof plugins, "deep/plugins");
     argument.directory = bundle;
     argument.plugin_directory = plugins;
-    argument.id = "github:5";
+    argument.id = FAKE_ID;
     argument.name = "greeter";
     spisor_status status = cache->deploy(cache->context, &argument, &answer, &refusal);
     if (status == SPISOR_REFUSED) {
@@ -1643,7 +1686,7 @@ static void a_release_to_install(void) {
 }
 
 static int installed_by_id(void) {
-    return exists_under_base("plugins/greeter.json") && exists_under_base("cache/identities/github+5.json");
+    return exists_under_base("plugins/greeter.json") && exists_under_base("plugins/greeter_identity.json");
 }
 
 static spisor_status install_by_id(void) {
@@ -1656,7 +1699,10 @@ static spisor_status install_by_id(void) {
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
     under_base(cache_place, sizeof cache_place, "cache");
     under_base(plugins, sizeof plugins, "plugins");
-    argument.id = "github:5";
+    static const char *const at[1] = {"forge:5"};
+    argument.id = FAKE_ID;
+    argument.at = at;
+    argument.at_count = 1;
     argument.cache = cache_place;
     argument.plugin_directory = plugins;
     argument.api_base = by_id_api_base;
@@ -1670,7 +1716,7 @@ static spisor_status install_by_id(void) {
     return status;
 }
 
-/** The release the loopback fake answers for github:5, its index a file under the base. */
+/** The release the loopback fake answers for the fake forge's repo, its index a file under the base. */
 static void release_json_of(char *json, size_t capacity) {
     char index[1300];
     char url[4200];
@@ -1763,14 +1809,10 @@ static spisor_status install_the_ecosystem(void) {
 }
 
 static void every_install_operation(void) {
-    static const char repository[] =
-        "{\"id\":5,\"name\":\"greeter\",\"full_name\":\"o/greeter\",\"default_branch\":\"main\"}";
     static char release_json[4400];
     release_json_of(release_json, sizeof release_json);
     http_route routes[] = {
-        {"/repositories/5", 200, NULL, repository, sizeof repository - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-        {"/o/greeter/HEAD/.weivel/also-at.json", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-        {"/repos/o/greeter/releases/latest", 200, NULL, release_json, strlen(release_json), HTTP_ROUTE_BODY_LENGTH,
+        {"/repos/alpha/greeter/releases/latest", 200, NULL, release_json, strlen(release_json), HTTP_ROUTE_BODY_LENGTH,
          NULL, NULL, 0, 0},
     };
     http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
@@ -1855,9 +1897,10 @@ int main(int argc, char **argv) {
     CHECK(value_of_text("{\"cache\":\"c\"}", &names));
     CHECK(value_of_text("{\"defaults\":{\"a\":{\"d\":[1,\"two\"]}}}", &config));
     CHECK(value_of_text("{\"x\":[true,null,3]}", &value));
-    CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\",\"github:3\"]}",
-                        &first_file));
-    CHECK(value_of_text("{\"primary\":\"github:1\",\"ids\":[\"github:1\",\"github:2\"]}", &second_file));
+    fake_forge_install();
+    const char *forge_file = fake_forge_file("greeter", FAKE_HOME("alpha") "," FAKE_HOME("bee"));
+    fake_forge_add(5, "alpha", "greeter", forge_file);
+    fake_forge_add(6, "bee", "greeter", forge_file);
     CHECK(value_of_text("[{\"id\":\"b\",\"label\":\"x\"},{\"id\":\"a\",\"n\":[1,2]}]", &plugin_rows));
     CHECK(value_of_text("{\"claude-host\":{\"kind\":\"host\",\"application\":{\"id\":\"claude\",\"label\":\"C\","
                         "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
@@ -1885,8 +1928,6 @@ int main(int argc, char **argv) {
     spisor_value_release(&names);
     spisor_value_release(&config);
     spisor_value_release(&value);
-    spisor_value_release(&first_file);
-    spisor_value_release(&second_file);
     spisor_value_release(&plugin_rows);
     spisor_value_release(&catalog_items);
     spisor_value_release(&whole_catalog);

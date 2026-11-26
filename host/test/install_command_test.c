@@ -177,12 +177,12 @@ static void prints_each_warning_and_still_installs(void) {
     list_plugin_with_manifest(&world, "warned-plugin",
                               "{\"id\": \"warned-plugin\", \"version\": \"1.0.0\", "
                               "\"dependencies\": [{\"importName\": \"left-pad\", \"name\": \"left-pad\"}], "
-                              "\"services\": {\"consumes\": [\"github:12/files\"]}}");
+                              "\"services\": {\"consumes\": [\"git:000000000000000000000000000000000000000c/files\"]}}");
     program run;
     const char *plugin[] = {"--plugin", "warned-plugin", NULL};
     CHECK(run_install(&world, &run, plugin) == 0);
     expect_contains(run.err, "warning: warned-plugin: left-pad", "the dependency by name");
-    expect_contains(run.err, "warning: warned-plugin: github:12/files", "the unbound service");
+    expect_contains(run.err, "warning: warned-plugin: git:000000000000000000000000000000000000000c/files", "the unbound service");
     expect_contains(run.err, "whoever takes that name can replace it", "why");
     expect_contains(run.out, "\"warned-plugin\"", "still installed");
     program_free(&run);
@@ -194,7 +194,7 @@ static void prints_no_warning_for_a_plugin_that_depends_on_nothing_by_name(void)
     start_install_world(&world, "quiet");
     list_plugin_with_manifest(&world, "quiet-plugin",
                               "{\"id\": \"quiet-plugin\", \"version\": \"1.0.0\", "
-                              "\"dependencies\": [{\"importName\": \"left-pad\", \"id\": \"github:5\"}]}");
+                              "\"dependencies\": [{\"importName\": \"left-pad\", \"id\": \"git:0000000000000000000000000000000000000005\"}]}");
     program run;
     const char *plugin[] = {"--plugin", "quiet-plugin", NULL};
     CHECK(run_install(&world, &run, plugin) == 0);

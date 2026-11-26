@@ -2,7 +2,7 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
     src/secret_file.c src/secrets.c src/directory_tree.c src/registry.c src/change_kinds.c src/path_comparison.c
     src/changes.c
     src/hosts_lock.c src/install.c src/json_span.c src/json_style.c src/json_edit.c src/json_key_change.c
-    src/sha256_file.c src/file_stream.c src/identity_parse.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
+    src/sha256_file.c src/file_stream.c src/identity_id.c src/install_warnings.c src/import_name.c src/json_service.c src/catalog_answer.c src/marketplace_check.c
     src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
     src/log_definition.c src/registry_definition.c src/catalog_time.c src/file_times.c src/thread.c src/atomic.c
@@ -130,17 +130,11 @@ function(runtime_link_naula target)
     target_sources(${target} PRIVATE $<TARGET_OBJECTS:runtime_naula_allocator>)
 endfunction()
 
-add_library(runtime_identity_resolve OBJECT src/identity_resolve.c)
-target_link_libraries(runtime_identity_resolve PUBLIC runtime_objects)
-target_include_directories(runtime_identity_resolve PRIVATE ${PROJECT_SOURCE_DIR}/src)
-set_target_properties(runtime_identity_resolve PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
-spisor_strict_warnings(runtime_identity_resolve)
-
-add_library(runtime_identity_also_at OBJECT src/identity_also_at.c src/identity_definition.c)
-target_link_libraries(runtime_identity_also_at PUBLIC runtime_objects)
-target_include_directories(runtime_identity_also_at PRIVATE ${PROJECT_SOURCE_DIR}/src)
-set_target_properties(runtime_identity_also_at PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
-spisor_strict_warnings(runtime_identity_also_at)
+add_library(runtime_identity OBJECT src/identity_naula.c src/identity_definition.c)
+target_link_libraries(runtime_identity PUBLIC runtime_objects)
+target_include_directories(runtime_identity PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_identity PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_identity)
 
 set(runtime_catalog_sources src/catalog.c src/catalog_check.c src/catalog_definition.c src/catalog_patterns.c src/catalog_schema.c src/catalog_fold.c
     src/catalog_fold_table.c src/catalog_sources.c src/catalog_path.c src/catalog_read.c src/catalog_listed_source.c
@@ -290,7 +284,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # Whether a definition is exported follows membership here, never which object library holds its source.
 set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_commands runtime_path_entry runtime_secret_store
-    runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
+    runtime_fetch runtime_identity runtime_install_by_id runtime_marketplace_build
     runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
     runtime_hosts runtime_hosts_definition runtime_ui runtime_install runtime_standard runtime_standard_host)
 set(runtime_shipped_objects "")

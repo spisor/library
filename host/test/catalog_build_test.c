@@ -298,7 +298,7 @@ static void refuses_one_id_under_two_kinds_and_one_version_twice(void) {
 }
 
 static void refuses_an_import_name_that_is_an_id_or_the_module_marker(void) {
-    const char *refused[] = {"github:5", "local:x", "package", "con.x", "A"};
+    const char *refused[] = {"git:0000000000000000000000000000000000000005", "local:x", "package", "con.x", "A"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         start_case("bad-import-name");
         catalog_inputs inputs = {NULL, 0, 0};
@@ -337,13 +337,13 @@ static void keys_an_item_by_an_id_as_well_as_by_a_name(void) {
     char *source = source_file();
     char *files = files_with("index.js", NULL, source);
     catalog_inputs inputs = {NULL, 0, 0};
-    add_made_input(&inputs, "plugin", "github:12", "1.0.0", NULL, files);
+    add_made_input(&inputs, "plugin", "git:000000000000000000000000000000000000000c", "1.0.0", NULL, files);
     add_made_input(&inputs, "plugin", "greeter", "1.0.0", NULL, files);
     cJSON *refusal = NULL;
     char *path = build(&inputs, &refusal);
     CHECK(path != NULL);
     cJSON *catalog = path == NULL ? NULL : read_back(path);
-    CHECK(item_of(catalog, "github:12") != NULL);
+    CHECK(item_of(catalog, "git:000000000000000000000000000000000000000c") != NULL);
     CHECK(item_of(catalog, "greeter") != NULL);
     cJSON_Delete(catalog);
     spisor_memory_release(path);

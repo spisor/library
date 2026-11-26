@@ -38,23 +38,23 @@ static catalog_answer call_with_cache(cache_operation operation, const char *ext
 
 static void lists_an_id_key_by_its_id_and_a_name_by_its_name(void) {
     start_base("id-key-installed");
-    installed_in_folder("github+5", "1.0.0");
-    installed_in_folder("github+5", "2.0.0");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "1.0.0");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "2.0.0");
     installed_in_folder("plain", "1.0.0");
     catalog_answer answer = call_with_cache(CACHE_INSTALLED, NULL, NULL);
-    expect_member_json(answer.tree, "bundles", "{\"github:5\":[\"1.0.0\",\"2.0.0\"],\"plain\":[\"1.0.0\"]}", "installed");
+    expect_member_json(answer.tree, "bundles", "{\"git:0000000000000000000000000000000000000005\":[\"1.0.0\",\"2.0.0\"],\"plain\":[\"1.0.0\"]}", "installed");
     cJSON_Delete(answer.tree);
     finish_base();
 }
 
 static void locates_an_id_key_in_its_folder(void) {
     start_base("id-key-locate");
-    installed_in_folder("github+5", "1.0.0");
-    catalog_answer answer = call_with_cache(CACHE_LOCATE, "plugins", parsed("{\"github:5\":\"1.0.0\"}"));
+    installed_in_folder("git+0000000000000000000000000000000000000005", "1.0.0");
+    catalog_answer answer = call_with_cache(CACHE_LOCATE, "plugins", parsed("{\"git:0000000000000000000000000000000000000005\":\"1.0.0\"}"));
     const cJSON *found = value_at(answer.tree, "located");
     CHECK(cJSON_GetArraySize(found) == 1);
-    check_text(text_at(found->child, "id"), "github:5", "located id");
-    CHECK(text_at(found->child, "directory") != NULL && strstr(text_at(found->child, "directory"), "github+5") != NULL);
+    check_text(text_at(found->child, "id"), "git:0000000000000000000000000000000000000005", "located id");
+    CHECK(text_at(found->child, "directory") != NULL && strstr(text_at(found->child, "directory"), "git+0000000000000000000000000000000000000005") != NULL);
     expect_member_json(answer.tree, "problems", "[]", "no problems");
     cJSON_Delete(answer.tree);
     finish_base();
@@ -62,7 +62,7 @@ static void locates_an_id_key_in_its_folder(void) {
 
 static void finds_no_damage_in_an_id_key(void) {
     start_base("id-key-damaged");
-    installed_in_folder("github+5", "1.0.0");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "1.0.0");
     catalog_answer answer = call_with_cache(CACHE_DAMAGED, NULL, NULL);
     expect_member_json(answer.tree, "damaged", "[]", "damaged");
     cJSON_Delete(answer.tree);
@@ -71,19 +71,19 @@ static void finds_no_damage_in_an_id_key(void) {
 
 static void sweeps_an_id_key_keeping_what_a_reference_names_and_the_newest(void) {
     start_base("id-key-sweep");
-    installed_in_folder("github+5", "1.0.0");
-    installed_in_folder("github+5", "1.5.0");
-    installed_in_folder("github+5", "2.0.0");
-    write_in(state, "bundles/host.json", "{\"run\":{\"github:5\":\"1.0.0\"},\"next\":{}}");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "1.0.0");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "1.5.0");
+    installed_in_folder("git+0000000000000000000000000000000000000005", "2.0.0");
+    write_in(state, "bundles/host.json", "{\"run\":{\"git:0000000000000000000000000000000000000005\":\"1.0.0\"},\"next\":{}}");
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddStringToObject(argument, "cache", cache);
     cJSON_AddStringToObject(argument, "state", state);
     catalog_answer answer = cache_call(CACHE_SWEEP, argument);
-    expect_member_json(answer.tree, "removed", "[\"github:5@1.5.0\"]", "removed");
+    expect_member_json(answer.tree, "removed", "[\"git:0000000000000000000000000000000000000005@1.5.0\"]", "removed");
     cJSON_Delete(answer.tree);
-    CHECK(exists_in(cache, "bundles/github+5/1.0.0"));
-    CHECK(!exists_in(cache, "bundles/github+5/1.5.0"));
-    CHECK(exists_in(cache, "bundles/github+5/2.0.0"));
+    CHECK(exists_in(cache, "bundles/git+0000000000000000000000000000000000000005/1.0.0"));
+    CHECK(!exists_in(cache, "bundles/git+0000000000000000000000000000000000000005/1.5.0"));
+    CHECK(exists_in(cache, "bundles/git+0000000000000000000000000000000000000005/2.0.0"));
     finish_base();
 }
 

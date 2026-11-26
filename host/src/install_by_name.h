@@ -3,12 +3,13 @@
 
 #include "host_context.h"
 
-/** What `spisor-host install --name` was asked; every member but accepted_name_id and accepted_primary is required. */
+/** What `spisor-host install --name` was asked; name and application are required, the accepted ones are optional. */
 typedef struct host_name_request {
     const char *name;
     const char *application;
     const char *accepted_name_id;
     const char *accepted_primary;
+    const char *accepted_number;
 } host_name_request;
 
 /**
@@ -17,9 +18,10 @@ typedef struct host_name_request {
  * and then the warnings install.warnings finds in the plugin's manifest. The exit code: 0 done, 1 refused. Installs
  * nothing when the name is found nowhere, is found under two ids, or is a name this host remembers as another id.
  *
- * accepted_name_id is the id the user accepted in place of the one remembered for the name, and accepted_primary the
- * primary the user accepted in place of the one recorded for the repo; each changes nothing unless it is the id now
- * offered, and neither is ever taken for the other.
+ * accepted_name_id is the id the user accepted in place of the one remembered for the name, accepted_primary the
+ * primary the user accepted in place of the one confirmed for the repo, and accepted_number the place the user accepted
+ * as a disputed account's number; each changes nothing unless it is what is now offered, and none is ever taken for
+ * another.
  *
  * @implNote A name is remembered only once its install has succeeded, so a failed first install records nothing that
  * a later prompt could claim was installed. A bare name is remembered under the bare name as well as under its marketplace,

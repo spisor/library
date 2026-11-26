@@ -436,7 +436,6 @@ static spisor_status serve_deploy(const runtime_cache_deploy_argument *argument,
 
 static spisor_status deploy(void *context, const runtime_cache_deploy_argument *argument,
                             runtime_cache_deploy_answer *answer, spisor_refusal *refusal) {
-    runtime_identity parsed;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, DEPLOY_SHAPE) ||
         !SPISOR_IS_EMPTY_ANSWER(answer, DEPLOY_ANSWER_SHAPE)) {
@@ -448,9 +447,13 @@ static spisor_status deploy(void *context, const runtime_cache_deploy_argument *
                                        : !runtime_is_text(argument->plugin_directory) ? "plugin_directory"
                                                                                       : "name");
     }
-    if (argument->id == NULL || !runtime_identity_parse_id(argument->id, &parsed)) {
+    runtime_identity_kind kind = argument->id == NULL ? RUNTIME_IDENTITY_NOT_AN_ID : runtime_identity_kind_of(argument->id);
+    if (kind == RUNTIME_IDENTITY_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (kind == RUNTIME_IDENTITY_NOT_AN_ID) {
         return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the identity id is not a valid id",
-                                 "send an id such as github:<number> or local:<name>");
+                                 "send an id such as git:<root commit> or local:<name>");
     }
     return serve_deploy(argument, answer, refusal);
 }

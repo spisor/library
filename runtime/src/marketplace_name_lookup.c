@@ -69,11 +69,14 @@ static const char *checked_source(const cJSON *copies, const cJSON *pair, cJSON 
     const char *marketplace = text_of(cJSON_GetObjectItemCaseSensitive(pair, "source"), "id");
     const cJSON *copy = cJSON_GetObjectItemCaseSensitive(pair, "copy");
     char problem[PROBLEM_SIZE];
+    int verdict = 0;
     if (marketplace == NULL) {
         refuse(refusal, "send each copy with its source as {source: {id}, copy}", "a copy has no source id");
     } else if (is_one_source_twice(copies, pair, marketplace)) {
         refuse(refusal, "send one copy for each source", "two copies came from the source %s", marketplace);
-    } else if (!runtime_marketplace_check_copy(copy, problem, sizeof problem)) {
+    } else if ((verdict = runtime_marketplace_check_copy(copy, problem, sizeof problem)) < 0) {
+        return NULL;
+    } else if (verdict == 0) {
         refuse(refusal, "send the copy marketplace.read answered for that source", "the copy of %s is not a marketplace copy: %s",
                marketplace, problem);
     } else {
@@ -121,7 +124,13 @@ static int finds_matches(const cJSON *copies, const wanted_name *wanted, match *
 
 static cJSON *found_answer(const match *found) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddStringToObject(answer, "id", text_of(found->entry, "id")) == NULL ||
+    cJSON *at = cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(found->entry, "at"), 1);
+    if (answer == NULL || at == NULL || !cJSON_AddItemToObject(answer, "at", at)) {
+        cJSON_Delete(at);
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    if (cJSON_AddStringToObject(answer, "id", text_of(found->entry, "id")) == NULL ||
         cJSON_AddStringToObject(answer, "marketplace", found->marketplace) == NULL) {
         cJSON_Delete(answer);
         return NULL;

@@ -2,58 +2,66 @@
 #include "allocation.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "answer_storage.h"
 #include "definition_support.h"
 #include "identity.h"
-#include "identity_also_at.h"
-#include "identity_resolve.h"
-#include "spisor/json_value.h"
+#include "identity_naula.h"
+#include "naula/id.h"
 
 #define ID_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_id_argument, id)
-#define RESOLVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_resolve_argument, api_base)
-#define AGREE_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_agree_argument, copy_count)
-#define ALSO_AT_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_also_at_argument, api_base)
-#define VERSION_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_version_argument, primary)
+#define RESOLVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_resolve_argument, accept_number)
 #define PARTS_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_parts, storage)
 #define FOLDER_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_folder_answer, storage)
-#define REPOSITORY_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_repository, storage)
-#define AGREEMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_agreement, storage)
-#define VERSION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_version_answer, accepted)
+#define RESOLUTION_SHAPE SPISOR_SHAPE_THROUGH(runtime_identity_resolution, storage)
 
-#define ID_FIX "send an id such as github:<number>[/<path>] or local:<name>"
-#define REPO_ID_FIX "send a repo id such as github:<number>, with no folder and not local"
+#define ID_FIX "send an id such as git:<root commit>[/<path>] or local:<name>"
+#define REPO_ID_FIX "send a repo id such as git:<root commit>, with no folder and not local"
+#define TOKEN_FIX "send token as the access token itself, on one line with no spaces, with the token_host it belongs to"
+#define MESSAGE_SIZE 1400
 
 static spisor_status refuse_id(spisor_refusal *refusal) {
     return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the id is not valid", ID_FIX);
 }
 
-static spisor_status refuse_repo_id(spisor_refusal *refusal, const char *what) {
-    char detail[96];
-    snprintf(detail, sizeof detail, "the %s is not the id of a repo", what);
-    return spisor_refuse_as(refusal, SPISOR_MALFORMED, detail, REPO_ID_FIX);
+static spisor_status copy_segments(void **storage, const naula_id *id, const char **path) {
+    size_t length = 0;
+    *path = NULL;
+    if (id->segment_count == 0) {
+        return SPISOR_OK;
+    }
+    for (size_t index = 0; index < id->segment_count; index++) {
+        length += strlen(id->segments[index]) + 1;
+    }
+    char *joined = runtime_storage_take(storage, length);
+    if (joined == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    for (size_t index = 0; index < id->segment_count; index++) {
+        strcat(joined, id->segments[index]);
+        if (index + 1 < id->segment_count) {
+            strcat(joined, "/");
+        }
+    }
+    *path = joined;
+    return SPISOR_OK;
 }
 
-static int copy_part(void **storage, runtime_identity_part part, const char **copy) {
-    char *taken;
-    *copy = NULL;
-    if (part.start == NULL) {
-        return 1;
+static spisor_status fill_parts(const naula_id *id, runtime_identity_parts *answer) {
+    int is_git = id->kind == NAULA_ID_GIT;
+    if (!runtime_storage_copy(&answer->storage, is_git ? "git" : "local", &answer->kind) ||
+        !runtime_storage_copy(&answer->storage, is_git ? id->commit : NULL, &answer->commit) ||
+        !runtime_storage_copy(&answer->storage, id->local_name, &answer->name) ||
+        copy_segments(&answer->storage, id, &answer->path) != SPISOR_OK) {
+        runtime_release_stored_answer(answer, PARTS_SHAPE);
+        return SPISOR_OUT_OF_MEMORY;
     }
-    taken = runtime_storage_take(storage, part.length + 1);
-    if (taken == NULL) {
-        return 0;
-    }
-    memcpy(taken, part.start, part.length);
-    *copy = taken;
-    return 1;
+    return SPISOR_OK;
 }
 
 static spisor_status parse(void *context, const runtime_identity_id_argument *argument,
                            runtime_identity_parts *answer, spisor_refusal *refusal) {
-    runtime_identity parsed;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, ID_SHAPE) ||
         !SPISOR_IS_EMPTY_ANSWER(answer, PARTS_SHAPE)) {
@@ -62,17 +70,19 @@ static spisor_status parse(void *context, const runtime_identity_id_argument *ar
     if (argument->id == NULL) {
         return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the argument carries no id", ID_FIX);
     }
-    if (!runtime_identity_parse_id(argument->id, &parsed)) {
-        return SPISOR_NONE;
-    }
-    if (!copy_part(&answer->storage, parsed.resolver, &answer->resolver) ||
-        !copy_part(&answer->storage, parsed.host, &answer->host) ||
-        !copy_part(&answer->storage, parsed.number, &answer->number) ||
-        !copy_part(&answer->storage, parsed.path, &answer->path)) {
-        runtime_release_stored_answer(answer, PARTS_SHAPE);
+    naula_id id;
+    memset(&id, 0, sizeof id);
+    id.size = sizeof id;
+    naula_status status = naula_id_parse(argument->id, strlen(argument->id), &id, NULL);
+    if (status == NAULA_OUT_OF_MEMORY) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    return SPISOR_OK;
+    if (status != NAULA_OK) {
+        return SPISOR_NONE;
+    }
+    spisor_status filled = fill_parts(&id, answer);
+    naula_id_release(&id);
+    return filled;
 }
 
 static spisor_status refuse_folder(runtime_identity_folder_status status, spisor_refusal *refusal) {
@@ -113,183 +123,146 @@ static spisor_status folder(void *context, const runtime_identity_id_argument *a
     return SPISOR_OK;
 }
 
-static const char *text_of(const cJSON *object, const char *name) {
-    const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, name);
-    return cJSON_IsString(item) ? item->valuestring : NULL;
+static spisor_status check_repo_id(const char *id, spisor_refusal *refusal) {
+    runtime_identity_kind kind = id == NULL ? RUNTIME_IDENTITY_NOT_AN_ID : runtime_identity_kind_of(id);
+    if (kind == RUNTIME_IDENTITY_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    if (kind != RUNTIME_IDENTITY_GIT || !runtime_identity_names_a_whole_repo(id)) {
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the id is not the id of a repo", REPO_ID_FIX);
+    }
+    return SPISOR_OK;
 }
 
-static spisor_status fill_repository(const cJSON *found, runtime_identity_repository *answer) {
-    if (!runtime_storage_copy(&answer->storage, text_of(found, "name"), &answer->name) ||
-        !runtime_storage_copy(&answer->storage, text_of(found, "fullName"), &answer->full_name) ||
-        !runtime_storage_copy(&answer->storage, text_of(found, "defaultBranch"), &answer->default_branch)) {
-        runtime_release_stored_answer(answer, REPOSITORY_SHAPE);
+static spisor_status refuse_naula(naula_status status, const naula_refusal *naula_refused,
+                                  spisor_refusal *refusal) {
+    char message[MESSAGE_SIZE];
+    if (status == NAULA_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    runtime_identity_refusal_text(naula_refused, message, sizeof message);
+    return spisor_refuse_as(refusal, status == NAULA_MALFORMED ? SPISOR_MALFORMED : SPISOR_REFUSED, message,
+                            runtime_identity_refusal_fix(naula_refused));
+}
+
+static const char *state_text(uint32_t state) {
+    return state == NAULA_STALE ? "stale" : state == NAULA_DOMAIN_ONLY ? "domain-only" : "confirmed";
+}
+
+static int copy_place(void **storage, const naula_place *place, const char **copy) {
+    char text[RUNTIME_PLACE_TEXT_SIZE];
+    return runtime_identity_place_text(place, text, sizeof text) && runtime_storage_copy(storage, text, copy);
+}
+
+static int copy_full_name(void **storage, const naula_repository *repository, const char **copy) {
+    char text[RUNTIME_PLACE_TEXT_SIZE];
+    *copy = NULL;
+    if (repository->account == NULL || repository->name == NULL) {
+        return 1;
+    }
+    snprintf(text, sizeof text, "%s/%s", repository->account, repository->name);
+    return runtime_storage_copy(storage, text, copy);
+}
+
+static int fill_homes(void **storage, const naula_resolution *found, runtime_identity_resolution *answer) {
+    const char **copies = NULL;
+    if (!runtime_storage_take_array(storage, found->home_count, sizeof *copies, (void **)&copies)) {
+        return 0;
+    }
+    for (size_t index = 0; index < found->home_count; index++) {
+        if (!copy_place(storage, &found->homes[index], &copies[index])) {
+            return 0;
+        }
+    }
+    answer->homes = copies;
+    answer->home_count = found->home_count;
+    return 1;
+}
+
+static int fill_found(const naula_resolution *found, runtime_identity_resolution *answer) {
+    const naula_repository *primary = &found->primary_repository;
+    void **storage = &answer->storage;
+    return runtime_storage_copy(storage, state_text(found->state), &answer->state) &&
+           fill_homes(storage, found, answer) &&
+           (found->home_count == 0 || copy_place(storage, &found->homes[found->primary], &answer->primary)) &&
+           copy_full_name(storage, primary, &answer->full_name) &&
+           runtime_storage_copy(storage, primary->name, &answer->name) &&
+           runtime_storage_copy(storage, primary->default_branch, &answer->default_branch);
+}
+
+static int fill_asked(const runtime_identity_acceptance *acceptance, runtime_identity_resolution *answer) {
+    void **storage = &answer->storage;
+    if (acceptance->primary_needed) {
+        answer->needs_user_acceptance = 1;
+        return runtime_storage_copy(storage, acceptance->recorded_primary, &answer->recorded_primary) &&
+               runtime_storage_copy(storage, acceptance->offered_primary, &answer->primary);
+    }
+    answer->needs_number_acceptance = 1;
+    return runtime_storage_copy(storage, acceptance->disputed_account, &answer->disputed_account) &&
+           runtime_storage_copy(storage, acceptance->recorded_number, &answer->recorded_number) &&
+           runtime_storage_copy(storage, acceptance->offered_number, &answer->offered_number);
+}
+
+static spisor_status check_resolve_argument(const runtime_identity_resolve_argument *argument,
+                                  spisor_refusal *refusal) {
+    spisor_status status = check_repo_id(argument->id, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    if ((argument->token == NULL) != (argument->token_host == NULL) ||
+        (argument->token != NULL && !runtime_identity_is_token_text(argument->token))) {
+        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the token is not usable", TOKEN_FIX);
+    }
+    if (argument->cache != NULL && !runtime_is_place(argument->cache)) {
+        return runtime_refuse_member(refusal, "cache", "runtime/identity.h");
+    }
+    return SPISOR_OK;
+}
+
+static spisor_status fill_resolution(const naula_resolution *found, const runtime_identity_acceptance *acceptance,
+                                     runtime_identity_resolution *answer) {
+    int asked = acceptance->primary_needed || acceptance->number_needed;
+    int filled = asked ? fill_asked(acceptance, answer) : fill_found(found, answer);
+    if (!filled) {
+        runtime_release_stored_answer(answer, RESOLUTION_SHAPE);
         return SPISOR_OUT_OF_MEMORY;
     }
     return SPISOR_OK;
 }
 
 static spisor_status resolve(void *context, const runtime_identity_resolve_argument *argument,
-                             runtime_identity_repository *answer, spisor_refusal *refusal) {
-    runtime_identity parsed;
-    runtime_identity_lookup_request request = {NULL, NULL, NULL, NULL};
-    cJSON *found;
-    cJSON *found_refusal = NULL;
-    spisor_status status;
+                             runtime_identity_resolution *answer, spisor_refusal *refusal) {
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !SPISOR_IS_EMPTY_ANSWER(answer, REPOSITORY_SHAPE)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RESOLUTION_SHAPE, answer->home_count)) {
         return spisor_refuse_shape(refusal, "identity's resolve");
     }
-    if (argument->id == NULL || !runtime_identity_parse_id(argument->id, &parsed)) {
-        return refuse_id(refusal);
-    }
-    if (argument->token != NULL && !runtime_identity_is_token_text(argument->token)) {
-        return spisor_refuse_as(refusal, SPISOR_MALFORMED, "the token is not usable",
-                                 "send token as the access token itself, on one line with no spaces");
-    }
-    request.id = argument->id;
-    request.last_known = argument->last_known;
-    request.token = argument->token;
-    request.api_base = argument->api_base;
-    found = runtime_identity_lookup(&request, &found_refusal);
-    status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_repository(found, answer);
-    cJSON_Delete(found);
-    return status;
-}
-
-static spisor_status refuse_copies(spisor_refusal *refusal) {
-    return spisor_refuse_as(refusal, SPISOR_MALFORMED, "a copy carries no id, is listed twice, or holds a file that "
-                             "is not a well-formed value",
-                             "send each copy once with its id, and its file as read or NULL");
-}
-
-static cJSON *file_json(const runtime_identity_copy *copy, spisor_status *status) {
-    cJSON *file = NULL;
-    *status = SPISOR_OK;
-    if (copy->read_failed) {
-        file = cJSON_CreateFalse();
-    } else if (copy->file == NULL) {
-        file = cJSON_CreateNull();
-    } else {
-        *status = spisor_json_of_value(copy->file, &file);
-    }
-    if (*status == SPISOR_OK && file == NULL) {
-        *status = SPISOR_OUT_OF_MEMORY;
-    }
-    return file;
-}
-
-static spisor_status add_copy(cJSON *files, const runtime_identity_copy *copy) {
-    spisor_status status;
-    cJSON *file;
-    if (copy->id == NULL || cJSON_GetObjectItemCaseSensitive(files, copy->id) != NULL) {
-        return SPISOR_MALFORMED;
-    }
-    file = file_json(copy, &status);
-    if (status == SPISOR_OK && !cJSON_AddItemToObject(files, copy->id, file)) {
-        cJSON_Delete(file);
-        status = SPISOR_OUT_OF_MEMORY;
-    }
-    return status;
-}
-
-/** The files runtime_identity_agree_on_files reads, NULL with `*status` saying why. */
-static cJSON *agree_files(const runtime_identity_agree_argument *argument, spisor_status *status) {
-    cJSON *files = NULL;
-    *status = argument->copy_count > 0 && argument->copies == NULL ? SPISOR_MALFORMED : SPISOR_OK;
-    if (*status == SPISOR_OK) {
-        files = cJSON_CreateObject();
-        *status = files == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
-    }
-    for (size_t index = 0; *status == SPISOR_OK && index < argument->copy_count; index++) {
-        *status = add_copy(files, &argument->copies[index]);
-    }
-    if (*status != SPISOR_OK) {
-        cJSON_Delete(files);
-        return NULL;
-    }
-    return files;
-}
-
-static spisor_status fill_agreement(const cJSON *found, runtime_identity_agreement *answer) {
-    if (!runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(found, "ids"), &answer->ids,
-                               &answer->id_count) ||
-        !runtime_storage_copy(&answer->storage, text_of(found, "primary"), &answer->primary)) {
-        runtime_release_stored_answer(answer, AGREEMENT_SHAPE);
-        return SPISOR_OUT_OF_MEMORY;
-    }
-    answer->primary_confirmed = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(found, "primaryConfirmed")) ? 1 : 0;
-    answer->start_file_malformed = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(found, "startFileMalformed")) ? 1 : 0;
-    answer->start_file_unavailable =
-        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(found, "startFileUnavailable")) ? 1 : 0;
-    return SPISOR_OK;
-}
-
-/** Fills answer from what agree or also_at found, which it deletes, or refuses with found_refusal. */
-static spisor_status answer_agreement(cJSON *found, cJSON *found_refusal, runtime_identity_agreement *answer,
-                                      spisor_refusal *refusal) {
-    spisor_status status = found == NULL ? runtime_refuse_json(refusal, found_refusal) : fill_agreement(found, answer);
-    cJSON_Delete(found);
-    return status;
-}
-
-static spisor_status agree(void *context, const runtime_identity_agree_argument *argument,
-                           runtime_identity_agreement *answer, spisor_refusal *refusal) {
-    spisor_status status;
-    cJSON *files;
-    cJSON *found;
-    cJSON *found_refusal = NULL;
-    (void)context;
-    if (argument == NULL || !spisor_has_shape(argument->size, AGREE_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
-        return spisor_refuse_shape(refusal, "identity's agree");
-    }
-    if (!runtime_identity_is_repo_id(argument->id)) {
-        return refuse_repo_id(refusal, "id");
-    }
-    files = agree_files(argument, &status);
-    if (status == SPISOR_MALFORMED) {
-        return refuse_copies(refusal);
-    }
-    if (files == NULL) {
+    spisor_status status = check_resolve_argument(argument, refusal);
+    if (status != SPISOR_OK) {
         return status;
     }
-    found = runtime_identity_agree_on_files(argument->id, files, &found_refusal);
-    cJSON_Delete(files);
-    return answer_agreement(found, found_refusal, answer, refusal);
-}
-
-static spisor_status also_at(void *context, const runtime_identity_also_at_argument *argument,
-                             runtime_identity_agreement *answer, spisor_refusal *refusal) {
-    cJSON *found;
-    cJSON *found_refusal = NULL;
-    (void)context;
-    if (argument == NULL || !spisor_has_shape(argument->size, ALSO_AT_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, AGREEMENT_SHAPE, answer->id_count)) {
-        return spisor_refuse_shape(refusal, "identity's also_at");
+    runtime_identity_request request = {argument->id,    argument->at,         argument->at_count,
+                                        argument->cache, argument->token,      argument->token_host,
+                                        argument->accept_primary, argument->accept_number};
+    naula_resolution found;
+    memset(&found, 0, sizeof found);
+    found.size = sizeof found;
+    runtime_identity_acceptance acceptance;
+    naula_refusal naula_refused;
+    memset(&naula_refused, 0, sizeof naula_refused);
+    naula_refused.size = sizeof naula_refused;
+    naula_status resolved = runtime_identity_resolve(&request, &found, &acceptance, &naula_refused);
+    int asked = acceptance.primary_needed || acceptance.number_needed;
+    if (resolved != NAULA_OK && !(asked && resolved != NAULA_OUT_OF_MEMORY)) {
+        naula_resolution_release(&found);
+        return refuse_naula(resolved, &naula_refused, refusal);
     }
-    if (!runtime_identity_is_repo_id(argument->id)) {
-        return refuse_repo_id(refusal, "id");
+    status = runtime_start_storage(&answer->storage);
+    if (status == SPISOR_OK) {
+        status = fill_resolution(&found, &acceptance, answer);
     }
-    found = runtime_identity_read_also_at(argument->id, argument->api_base, &found_refusal);
-    return answer_agreement(found, found_refusal, answer, refusal);
-}
-
-static spisor_status accepts_version(void *context, const runtime_identity_version_argument *argument,
-                                     runtime_identity_version_answer *answer, spisor_refusal *refusal) {
-    (void)context;
-    if (argument == NULL || !spisor_has_shape(argument->size, VERSION_SHAPE) || answer == NULL ||
-        !spisor_has_shape(answer->size, VERSION_ANSWER_SHAPE)) {
-        return spisor_refuse_shape(refusal, "identity's accepts_version");
-    }
-    if (!runtime_identity_is_repo_id(argument->recorded)) {
-        return refuse_repo_id(refusal, "recorded");
-    }
-    if (!runtime_identity_is_repo_id(argument->primary)) {
-        return refuse_repo_id(refusal, "primary");
-    }
-    answer->accepted = strcmp(argument->recorded, argument->primary) == 0 ? 1 : 0;
-    return SPISOR_OK;
+    naula_resolution_release(&found);
+    return status;
 }
 
 static void release_parts(void *context, runtime_identity_parts *answer) {
@@ -302,14 +275,9 @@ static void release_folder_answer(void *context, runtime_identity_folder_answer 
     runtime_release_stored_answer(answer, FOLDER_SHAPE);
 }
 
-static void release_repository(void *context, runtime_identity_repository *answer) {
+static void release_resolution(void *context, runtime_identity_resolution *answer) {
     (void)context;
-    runtime_release_stored_answer(answer, REPOSITORY_SHAPE);
-}
-
-static void release_agreement(void *context, runtime_identity_agreement *answer) {
-    (void)context;
-    runtime_release_stored_answer(answer, AGREEMENT_SHAPE);
+    runtime_release_stored_answer(answer, RESOLUTION_SHAPE);
 }
 
 static const runtime_identity_definition definition = {
@@ -318,13 +286,9 @@ static const runtime_identity_definition definition = {
     parse,
     folder,
     resolve,
-    agree,
-    also_at,
-    accepts_version,
     release_parts,
     release_folder_answer,
-    release_repository,
-    release_agreement,
+    release_resolution,
     spisor_release_refusal,
 };
 

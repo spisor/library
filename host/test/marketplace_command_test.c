@@ -3,20 +3,14 @@
 
 #include "host_commands.h"
 #include "host_output.h"
-#include "marketplace_lookup.h"
-#include "http_fixture.h"
+#include "fake_forge.h"
 #include "marketplace_check.h"
-#include "transport_hooks.h"
-
-#define REPOSITORY(identifier, name_text, full_name_text) \
-    "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
-#define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
 
 #define TOKEN "tok-1234567890abcdef"
 #define TOKEN_VARIABLE "SPISOR_MARKETPLACE_TEST_TOKEN"
-#define AUTHORIZATION_LINE "Authorization: token " TOKEN
+#define HOSTED_HOME(account) "{\"provider\":\"forge\",\"host\":\"git.example.com\",\"account\":\"" account "\"}"
 #define KEPT_COPY \
-    "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[{\"id\":\"github:60\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\"}]}"
+    "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[{\"id\":\"git:000000000000000000000000000000000000003c\",\"at\":[\"forge:60\"],\"name\":\"kept\",\"fullName\":\"spisor/kept\"}]}"
 
 static char base_folder[1024];
 
@@ -48,7 +42,7 @@ static int count_files_in(const char *directory) {
 
 static void writes_the_copy_atomically_and_exits_0(void) {
     start_case("writes");
-    write_in(base_folder, "marketplace.json", "{\"format\":1,\"title\":\"Spisor\",\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\",\"alias\":\"core\"}]}");
+    write_in(base_folder, "marketplace.json", "{\"format\":1,\"title\":\"Spisor\",\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]},{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"],\"alias\":\"core\"}]}");
     char *list = in_base("marketplace.json");
     char *out = in_base("published/copy.json");
     CHECK(run_command(list, out) == 0);
@@ -73,7 +67,7 @@ static void writes_the_copy_atomically_and_exits_0(void) {
 
 static void a_skipped_entry_is_reported_and_the_copy_still_written(void) {
     start_case("skipped");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:2\"},{\"id\":\"github:6\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"]},{\"id\":\"git:0000000000000000000000000000000000000006\",\"at\":[\"forge:6\"]}]}");
     char *list = in_base("list.json");
     char *out = in_base("copy.json");
     CHECK(run_command(list, out) == 0);
@@ -87,7 +81,7 @@ static void a_skipped_entry_is_reported_and_the_copy_still_written(void) {
 
 static void a_refusal_exits_non_zero_and_writes_nothing(void) {
     start_case("refuses");
-    write_in(base_folder, "clash.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:4\"}]}");
+    write_in(base_folder, "clash.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]},{\"id\":\"git:0000000000000000000000000000000000000004\",\"at\":[\"forge:4\"]}]}");
     write_in(base_folder, "broken.json", "{\"format\":1");
     write_in(base_folder, "kept/copy.json", KEPT_COPY);
     char *kept = in_base("kept/copy.json");
@@ -138,7 +132,7 @@ static int run_binary(const char *list_path, program *run) {
 
 static void the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal(void) {
     start_case("binary");
-    write_in(base_folder, "local.json", "{\"format\":1,\"entries\":[{\"id\":\"local:a\\u001b[2Jb\"}]}");
+    write_in(base_folder, "local.json", "{\"format\":1,\"entries\":[{\"id\":\"local:a\\u001b[2Jb\",\"at\":[\"forge:1\"]}]}");
     char *list = in_base("local.json");
     program run;
     CHECK(run_binary(list, &run) == 1);
@@ -164,7 +158,7 @@ static void set_token_variable(const char *value) {
 }
 
 static int run_command_with_token(const char *list_path, const char *out_path) {
-    const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE, "--token-host", "github.com"};
+    const char *arguments[] = {"--list", list_path, "--out", out_path, "--token-env", TOKEN_VARIABLE, "--token-host", "git.example.com"};
     return host_command_marketplace_build(8, (char **)arguments);
 }
 
@@ -175,7 +169,7 @@ static int run_command_with_token_and_no_host(const char *list_path, const char 
 
 static void an_unresolvable_entry_is_carried_over_or_skipped_and_the_copy_still_written(void) {
     start_case("unresolvable");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]},{\"id\":\"git:000000000000000000000000000000000000003c\",\"at\":[\"forge:60\"]}]}");
     write_in(base_folder, "carried/copy.json", KEPT_COPY);
     char *list = in_base("list.json");
     char *carried = in_base("carried/copy.json");
@@ -198,7 +192,7 @@ static void an_unresolvable_entry_is_carried_over_or_skipped_and_the_copy_still_
 
 static void a_copy_at_out_that_is_not_a_copy_is_refused_and_left_alone(void) {
     start_case("bad-previous");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     write_in(base_folder, "a.json", "{\"format\":1}");
     write_in(base_folder, "b.json", "not json");
     char *list = in_base("list.json");
@@ -217,7 +211,7 @@ static void a_copy_at_out_that_is_not_a_copy_is_refused_and_left_alone(void) {
 
 static void out_that_is_the_list_is_refused_and_the_list_left_alone(void) {
     start_case("out-is-list");
-    const char *text = "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}";
+    const char *text = "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}";
     write_in(base_folder, "marketplace.json", text);
     write_in(base_folder, "sub/placeholder", "");
     char *list = in_base("marketplace.json");
@@ -234,14 +228,16 @@ static void out_that_is_the_list_is_refused_and_the_list_left_alone(void) {
 
 static void the_token_in_the_named_variable_reaches_each_lookup_and_is_written_nowhere(void) {
     start_case("token");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge@git.example.com:11\"]},{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge@git.example.com:12\"]}]}");
     char *list = in_base("list.json");
     char *out = in_base("copy.json");
+    unsigned before = fake_forge_calls_with_token(TOKEN);
     set_token_variable(TOKEN);
     CHECK(run_command_with_token(list, out) == 0);
     set_token_variable(NULL);
+    CHECK(fake_forge_calls_with_token(TOKEN) > before);
     char *content = text_in(base_folder, "copy.json");
-    CHECK(strstr(content, TOKEN) == NULL && strstr(content, "uthorization") == NULL);
+    CHECK(content != NULL && strstr(content, TOKEN) == NULL && strstr(content, "spisor/runtime") != NULL);
     spisor_memory_release(content);
     spisor_memory_release(out);
     spisor_memory_release(list);
@@ -250,7 +246,7 @@ static void the_token_in_the_named_variable_reaches_each_lookup_and_is_written_n
 
 static void a_variable_that_is_not_set_is_refused_and_writes_nothing(void) {
     start_case("unset-token");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     char *list = in_base("list.json");
     char *out = in_base("fresh/copy.json");
     set_token_variable(NULL);
@@ -263,7 +259,7 @@ static void a_variable_that_is_not_set_is_refused_and_writes_nothing(void) {
 
 static void a_token_without_its_host_is_refused_and_writes_nothing(void) {
     start_case("token-no-host");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     char *list = in_base("list.json");
     char *out = in_base("fresh/copy.json");
     set_token_variable(TOKEN);
@@ -277,7 +273,7 @@ static void a_token_without_its_host_is_refused_and_writes_nothing(void) {
 
 static void an_unusable_token_is_refused_and_writes_nothing(void) {
     start_case("unusable-token");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     char *list = in_base("list.json");
     char *out = in_base("fresh/copy.json");
     set_token_variable(TOKEN "\n");
@@ -291,7 +287,7 @@ static void an_unusable_token_is_refused_and_writes_nothing(void) {
 
 static void a_build_where_every_lookup_is_refused_authorization_writes_nothing(void) {
     start_case("refused-authorization");
-    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"github:70\"}]}");
+    write_in(base_folder, "list.json", "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000046\",\"at\":[\"forge:70\"]}]}");
     write_in(base_folder, "carried/copy.json", KEPT_COPY);
     char *list = in_base("list.json");
     char *carried = in_base("carried/copy.json");
@@ -310,7 +306,7 @@ static void a_build_where_every_lookup_is_refused_authorization_writes_nothing(v
 
 static int run_binary_with_token(const char *list_path, program *run) {
     prepare_program(run, base_folder, "token");
-    const char *words[] = {"marketplace", "build", "--list", list_path, "--out", "unused/copy.json", "--token-env", TOKEN_VARIABLE, "--token-host", "github.com", NULL};
+    const char *words[] = {"marketplace", "build", "--list", list_path, "--out", "unused/copy.json", "--token-env", TOKEN_VARIABLE, "--token-host", "git.example.com", NULL};
     cJSON *arguments = strings_of(words);
     cJSON *environment = cJSON_CreateObject();
     copy_system_variable(environment, "SystemRoot");
@@ -324,7 +320,7 @@ static int run_binary_with_token(const char *list_path, program *run) {
 
 static void the_binary_never_prints_the_token(void) {
     start_case("binary-token");
-    write_in(base_folder, "local.json", "{\"format\":1,\"entries\":[{\"id\":\"local:a\"}]}");
+    write_in(base_folder, "local.json", "{\"format\":1,\"entries\":[{\"id\":\"local:a\",\"at\":[\"forge:1\"]}]}");
     char *list = in_base("local.json");
     program run;
     CHECK(run_binary_with_token(list, &run) == 1);
@@ -335,35 +331,26 @@ static void the_binary_never_prints_the_token(void) {
     finish_case();
 }
 
-static int count_of(const char *text, const char *fragment) {
-    int count = 0;
-    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
-        count++;
-    }
-    return count;
+static fake_repo *add(uint64_t number, const char *account, const char *name, const char *root, const char *homes) {
+    fake_repo *repo = fake_forge_add(number, account, name, fake_forge_file(name, homes));
+    repo->root = root;
+    return repo;
 }
 
-static void run_against_the_server(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
-    static const char reserved[] = REPOSITORY("6", "Con", "spisor/Con");
-    static const char another_runtime[] = REPOSITORY("4", "runtime", "other/runtime");
-    const http_route routes[] = {
-        ROUTE("/repositories/1", 200, runtime),
-        ROUTE("/repositories/2", 200, weivel),
-        ROUTE("/repositories/4", 200, another_runtime),
-        ROUTE("/repositories/6", 200, reserved),
-    {"/repositories/70", 401, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-    {"/repositories/60", 404, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-    };
-    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
-    host_marketplace_aim_lookups(api_base);
+/** The repos the lists name: two on the fake provider's own host, the same two at git.example.com, and two awkward. */
+static void run_against_the_forge(void) {
+    static const char runtime_root[] = "0000000000000000000000000000000000000001";
+    static const char weivel_root[] = "0000000000000000000000000000000000000002";
+    fake_forge_install();
+    fake_forge_reset();
+    add(1, "spisor", "runtime", runtime_root, FAKE_HOME("spisor"));
+    add(2, "spisor", "weivel", weivel_root, FAKE_HOME("spisor"));
+    add(4, "other", "runtime", "0000000000000000000000000000000000000004", FAKE_HOME("other"));
+    add(6, "spisor", "Con", "0000000000000000000000000000000000000006", FAKE_HOME("spisor"));
+    add(70, "spisor", "locked", "0000000000000000000000000000000000000046", FAKE_HOME("spisor"))->refused_with =
+        "token_needed";
+    add(11, "spisor", "runtime", runtime_root, HOSTED_HOME("spisor"));
+    add(12, "spisor", "weivel", weivel_root, HOSTED_HOME("spisor"));
     writes_the_copy_atomically_and_exits_0();
     a_skipped_entry_is_reported_and_the_copy_still_written();
     a_refusal_exits_non_zero_and_writes_nothing();
@@ -375,29 +362,10 @@ static void run_against_the_server(void) {
     a_token_without_its_host_is_refused_and_writes_nothing();
     an_unusable_token_is_refused_and_writes_nothing();
     a_build_where_every_lookup_is_refused_authorization_writes_nothing();
-    host_marketplace_aim_lookups(NULL);
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 2);
-    CHECK(requests != NULL && count_of(requests, "uthorization") == 2);
-    spisor_memory_release(requests);
 }
-
-#if !defined(_WIN32)
-static void clear_proxy_environment(void) {
-    const char *names[] = {"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy",
-                           "ALL_PROXY",  "no_proxy",   "NO_PROXY"};
-    for (size_t index = 0; index < sizeof names / sizeof names[0]; index++) {
-        unsetenv(names[index]);
-    }
-}
-#endif
 
 int main(void) {
-#if !defined(_WIN32)
-    clear_proxy_environment();
-#endif
-    naula_fetch_allow_plain_http(1);
-    run_against_the_server();
+    run_against_the_forge();
     answers_2_when_the_list_or_the_out_is_missing();
     prints_a_name_with_its_control_characters_escaped();
     the_binary_refuses_a_local_id_and_escapes_it_on_the_terminal();

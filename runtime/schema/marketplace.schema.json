@@ -33,14 +33,27 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "id"
+          "id",
+          "at"
         ],
         "properties": {
           "id": {
             "description": "The repository identity of the listed repository, which survives a rename.",
             "type": "string",
-            "pattern": "^(local:[^/\\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\\.{1,2}(/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
-            "fix": "write the id as a repository id, for example \"github:123\" or \"gitea@git.example.com:12/runtime\""
+            "pattern": "^(?:git:(?:[0-9a-f]{40}|[0-9a-f]{64})|local:[^/\\u0000\\t\\n\\u000b\\f\\r ]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
+            "fix": "write the id as a repository id, for example \"git:dd92836cca7c292258635112ecfe1acb7b4f6ecd\" or that id followed by \"/runtime\""
+          },
+          "at": {
+            "description": "Where to start looking for the repository: the places the list's owner recorded for it, provider numbers, web domains or git urls, which survive a rename.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "description": "One place.",
+              "type": "string",
+              "pattern": "^(?:(?!web[@:])[a-z][a-z0-9-]{0,31}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,254}(?::[0-9]{1,5})?)?:(?=[0-9]{1,19}(?![\\s\\S]))0*[1-9][0-9]*|web:[A-Za-z0-9][A-Za-z0-9.-]{0,254}|https://[\\x21-\\x7e]{1,2040}|ssh://[\\x21-\\x7e]{1,2042})(?![\\s\\S])",
+              "fix": "write the place as <provider>:<number>, <provider>@<host>:<number>, web:<domain> or an https url"
+            },
+            "fix": "list at least one place, for example [\"gitea@git.example.com:12\"]"
           },
           "alias": {
             "description": "The name this marketplace calls the entry by, set only to settle a clash with another entry of the same name.",

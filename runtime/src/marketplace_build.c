@@ -8,13 +8,14 @@
 
 #include "definition_support.h"
 #include "identity.h"
-#include "identity_resolve.h"
+#include "identity_naula.h"
 #include "import_name.h"
 #include "json_service.h"
 #include "marketplace_check.h"
 
 #define MESSAGE_SIZE 1024
 #define GITHUB_HOST "github.com"
+#define GITHUB_WORD "github"
 
 static void refuse_with(cJSON **refusal, const char *fix, const char *format, const char *first, const char *second,
                         const char *third) {
@@ -43,8 +44,8 @@ static int check_token_is_usable(const runtime_marketplace_build_request *reques
     }
     if (request->token_host == NULL) {
         *refusal = runtime_refusal("a token was sent with no token_host",
-                                   "set token_host to github.com for github ids, or to the instance host for gitea@ "
-                                   "and forgejo@ ids");
+                                   "set token_host to github.com for places on GitHub, or to the instance host of "
+                                   "places on another host");
         return 0;
     }
     if (!runtime_identity_is_token_text(request->token)) {
@@ -54,14 +55,15 @@ static int check_token_is_usable(const runtime_marketplace_build_request *reques
     return 1;
 }
 
+/** 1 for no previous copy or a usable one; 0 with a refusal, or without one when memory runs out. */
 static int check_previous(const cJSON *previous, cJSON **refusal) {
     char problem[MESSAGE_SIZE / 2];
-    if (previous != NULL && !runtime_marketplace_check_copy(previous, problem, sizeof problem)) {
+    int verdict = previous == NULL ? 1 : runtime_marketplace_check_copy(previous, problem, sizeof problem);
+    if (verdict == 0) {
         refuse_with(refusal, "send the copy this build replaces as marketplace-copy.schema.json describes it, or leave previous out",
                     "previous is not a marketplace copy: %s", problem, "", "");
-        return 0;
     }
-    return 1;
+    return verdict == 1;
 }
 
 static int is_usable_request(const runtime_marketplace_build_request *request, cJSON **refusal) {
@@ -75,16 +77,12 @@ static int is_usable_request(const runtime_marketplace_build_request *request, c
                                    "send the time of the build as RFC 3339, for example \"2026-11-10T12:00:00Z\"");
         return 0;
     }
-    if (!runtime_marketplace_check_list(request->list, problem, sizeof problem)) {
+    int verdict = runtime_marketplace_check_list(request->list, problem, sizeof problem);
+    if (verdict == 0) {
         refuse_with(refusal, "write the list as marketplace.schema.json describes", "the list is not a marketplace list: %s",
                     problem, "", "");
-        return 0;
     }
-    return 1;
-}
-
-static int is_local_id(const runtime_identity *parsed) {
-    return parsed->resolver.length == 5 && strncmp(parsed->resolver.start, "local", 5) == 0;
+    return verdict == 1;
 }
 
 static int is_listed_before(const cJSON *entries, const cJSON *entry, const char *id) {
@@ -96,18 +94,20 @@ static int is_listed_before(const cJSON *entries, const cJSON *entry, const char
     return 0;
 }
 
+/** 1 for an entry whose id may be listed; 0 with a refusal, or without one when memory runs out. */
 static int check_listed_id(const cJSON *entries, const cJSON *entry, cJSON **refusal) {
     const char *id = text_of(entry, "id");
-    runtime_identity parsed;
-    if (!runtime_identity_parse_id(id, &parsed)) {
-        refuse_with(refusal, "list each repository by its host id, such as github:123", "%s is not a repository id", id, "", "");
-    } else if (is_local_id(&parsed)) {
-        refuse_with(refusal, "list a repository by its host id, such as github:123; a local id has no host to look up",
-                    "%s is a local id", id, "", "");
-    } else if (is_listed_before(entries, entry, id)) {
+    runtime_identity_kind kind = runtime_identity_kind_of(id);
+    if (kind == RUNTIME_IDENTITY_NOT_AN_ID) {
+        refuse_with(refusal, "list each repository by its id, such as git:<root commit>", "%s is not a repository id", id,
+                    "", "");
+    } else if (kind == RUNTIME_IDENTITY_LOCAL) {
+        refuse_with(refusal, "list a repository by its git: id; a local id has no home to resolve", "%s is a local id",
+                    id, "", "");
+    } else if (kind == RUNTIME_IDENTITY_GIT && is_listed_before(entries, entry, id)) {
         refuse_with(refusal, "list each repository once", "%s is listed twice", id, "", "");
     } else {
-        return 1;
+        return kind == RUNTIME_IDENTITY_GIT;
     }
     return 0;
 }
@@ -121,75 +121,134 @@ static int check_listed_ids(const cJSON *entries, cJSON **refusal) {
     return 1;
 }
 
-static int equals_ignoring_case(const char *text, const char *start, size_t length) {
-    if (strlen(text) != length) {
+static int equals_ignoring_case(const char *left, const char *right) {
+    if (strlen(left) != strlen(right)) {
         return 0;
     }
-    for (size_t index = 0; index < length; index++) {
-        if (tolower((unsigned char)text[index]) != tolower((unsigned char)start[index])) {
+    for (size_t index = 0; left[index] != '\0'; index++) {
+        if (tolower((unsigned char)left[index]) != tolower((unsigned char)right[index])) {
             return 0;
         }
     }
     return 1;
 }
 
-static int is_github_id(const runtime_identity *parsed) {
-    return parsed->resolver.length == 6 && strncmp(parsed->resolver.start, "github", 6) == 0;
+/** The host a place is asked at: its own, github.com for a github place that names none, a web place's domain. */
+static const char *host_of(const naula_place *place) {
+    if (place->kind == NAULA_HOME_PROVIDER) {
+        return place->host != NULL ? place->host : strcmp(place->provider, GITHUB_WORD) == 0 ? GITHUB_HOST : NULL;
+    }
+    return place->kind == NAULA_HOME_WEB ? place->domain : NULL;
 }
 
-/** The host an id carries, or github.com for a github id that carries none; an id with neither is on no host. */
-static int is_on_host(const runtime_identity *parsed, const char *host) {
-    if (parsed->host.start != NULL) {
-        return equals_ignoring_case(host, parsed->host.start, parsed->host.length);
-    }
-    return is_github_id(parsed) && equals_ignoring_case(host, GITHUB_HOST, strlen(GITHUB_HOST));
+/** 1 when the place is on host, 0 when it is not or names none, -1 when memory runs out. */
+static int is_on_host(const char *text, const char *host) {
+    naula_place place;
+    memset(&place, 0, sizeof place);
+    place.size = sizeof place;
+    naula_status status = naula_place_parse(text, &place, NULL);
+    const char *named = status == NAULA_OK ? host_of(&place) : NULL;
+    int on = named != NULL && equals_ignoring_case(named, host);
+    naula_place_release(&place);
+    return status == NAULA_OUT_OF_MEMORY ? -1 : on;
 }
 
 /** One token belongs to one host, so a list that sends it must name no other host for it to reach. */
-static int check_ids_are_on_token_host(const cJSON *entries, const char *token_host, cJSON **refusal) {
+static int check_places_are_on_token_host(const cJSON *entries, const char *token_host, cJSON **refusal) {
     for (const cJSON *entry = entries->child; entry != NULL; entry = entry->next) {
-        runtime_identity parsed;
-        if (runtime_identity_parse_id(text_of(entry, "id"), &parsed) && !is_on_host(&parsed, token_host)) {
-            refuse_with(refusal, "list only ids on the token's host, or build this list without a token",
-                        "%s is not on %s, the one host the token is sent to", text_of(entry, "id"), token_host, "");
-            return 0;
+        const cJSON *place;
+        cJSON_ArrayForEach(place, cJSON_GetObjectItemCaseSensitive(entry, "at")) {
+            int on = is_on_host(place->valuestring, token_host);
+            if (on == 0) {
+                refuse_with(refusal, "list only places on the token's host, or build this list without a token",
+                            "%s of %s is not on %s, the one host the token is sent to", place->valuestring,
+                            text_of(entry, "id"), token_host);
+            }
+            if (on != 1) {
+                return 0;
+            }
         }
     }
     return 1;
 }
 
 /**
- * What identity.resolve answered for one repository: answer, or NULL with reason saying why the host could not be
- * asked. reason stays empty when the failure was memory running out, which is not the host's to answer for.
+ * What naula answered for one repository: its primary's `name` and `full_name`, or `found` 0 with reason saying why it
+ * could not be confirmed. `out_of_memory` is set when memory ran out, which is not the host's to answer for.
  */
 typedef struct lookup_result {
-    cJSON *answer;
+    int found;
+    int out_of_memory;
+    char name[MESSAGE_SIZE / 4];
+    char full_name[MESSAGE_SIZE / 2];
     char reason[MESSAGE_SIZE];
-    long status;
+    int was_rate_limited;
 } lookup_result;
 
-static lookup_result resolved(const char *repository_id, const runtime_marketplace_build_request *request) {
-    lookup_result result = {NULL, "", 0};
-    cJSON *lookup_refusal = NULL;
-    runtime_identity_lookup_request lookup = {repository_id, NULL, request->token, request->api_base};
-    result.answer = runtime_identity_lookup(&lookup, &lookup_refusal);
-    if (result.answer == NULL && runtime_is_refusal(lookup_refusal)) {
-        snprintf(result.reason, sizeof result.reason, "it cannot be looked up: %s", text_of(lookup_refusal, "message"));
-        result.status = runtime_identity_refusal_status(lookup_refusal);
-    }
-    cJSON_Delete(lookup_refusal);
-    return result;
+static int is_rate_limited(const naula_refusal *refused) {
+    return strstr(refused->code, "rate_limited") != NULL || strstr(refused->detail, "rate_limited") != NULL;
 }
 
-/** The id of the repository itself: id up to the folder below it, freed; NULL when memory runs out. */
-static char *repository_id_of(const char *id) {
-    size_t length = strcspn(id, "/");
-    char *repository = spisor_memory_allocate(length + 1);
-    if (repository != NULL) {
-        memcpy(repository, id, length);
-        repository[length] = '\0';
+static void take_primary(const naula_resolution *resolution, lookup_result *result) {
+    const naula_repository *primary = &resolution->primary_repository;
+    if (resolution->state != NAULA_CONFIRMED || primary->account == NULL || primary->name == NULL) {
+        snprintf(result->reason, sizeof result->reason,
+                 "it has no owner/name to show: its primary is not a repository on a provider");
+        return;
     }
-    return repository;
+    snprintf(result->name, sizeof result->name, "%s", primary->name);
+    snprintf(result->full_name, sizeof result->full_name, "%s/%s", primary->account, primary->name);
+    result->found = 1;
+}
+
+/** The texts of the entry's places, freed; NULL when memory runs out. */
+static const char **places_of(const cJSON *entry, size_t *count) {
+    const cJSON *at = cJSON_GetObjectItemCaseSensitive(entry, "at");
+    *count = (size_t)cJSON_GetArraySize(at);
+    const char **places = spisor_memory_allocate((*count == 0 ? 1 : *count) * sizeof *places);
+    size_t index = 0;
+    const cJSON *place;
+    cJSON_ArrayForEach(place, at) {
+        if (places != NULL) {
+            places[index++] = place->valuestring;
+        }
+    }
+    return places;
+}
+
+static lookup_result resolved(const char *repository_id, const cJSON *entry,
+                              const runtime_marketplace_build_request *request) {
+    lookup_result result;
+    memset(&result, 0, sizeof result);
+    size_t count = 0;
+    const char **places = places_of(entry, &count);
+    if (places == NULL) {
+        result.out_of_memory = 1;
+        return result;
+    }
+    runtime_identity_request resolving = {repository_id, places, count, NULL, request->token, request->token_host,
+                                          NULL, NULL};
+    naula_resolution resolution;
+    memset(&resolution, 0, sizeof resolution);
+    resolution.size = sizeof resolution;
+    runtime_identity_acceptance acceptance;
+    naula_refusal refused;
+    memset(&refused, 0, sizeof refused);
+    refused.size = sizeof refused;
+    naula_status status = runtime_identity_resolve(&resolving, &resolution, &acceptance, &refused);
+    if (status == NAULA_OK) {
+        take_primary(&resolution, &result);
+    } else if (status == NAULA_OUT_OF_MEMORY) {
+        result.out_of_memory = 1;
+    } else {
+        char text[MESSAGE_SIZE / 2];
+        runtime_identity_refusal_text(&refused, text, sizeof text);
+        snprintf(result.reason, sizeof result.reason, "it cannot be resolved: %s", text);
+        result.was_rate_limited = is_rate_limited(&refused);
+    }
+    naula_resolution_release(&resolution);
+    spisor_memory_release(places);
+    return result;
 }
 
 /** The last segment of the folder id names below its repository, or NULL when id names the repository itself. */
@@ -251,8 +310,8 @@ static int copies_member(cJSON *to, const cJSON *from, const char *member) {
 static cJSON *copy_entry(const cJSON *entry, const char *name, const char *full_name) {
     cJSON *copy = cJSON_CreateObject();
     if (copy == NULL || cJSON_AddStringToObject(copy, "id", text_of(entry, "id")) == NULL ||
-        cJSON_AddStringToObject(copy, "name", name) == NULL || cJSON_AddStringToObject(copy, "fullName", full_name) == NULL ||
-        cJSON_AddStringToObject(copy, "lastKnown", full_name) == NULL || !copies_member(copy, entry, "description") ||
+        !copies_member(copy, entry, "at") || cJSON_AddStringToObject(copy, "name", name) == NULL ||
+        cJSON_AddStringToObject(copy, "fullName", full_name) == NULL || !copies_member(copy, entry, "description") ||
         !copies_member(copy, entry, "categories")) {
         cJSON_Delete(copy);
         return NULL;
@@ -323,14 +382,14 @@ static int adds_skipped_for_name(cJSON *skipped, const char *id, const char *sou
     return adds_skipped(skipped, id, reason);
 }
 
-/** The copy of one entry from what its repository answered; a name that is no import name skips it. */
-static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *skipped) {
+/** The copy of one entry from what its repository's primary answered; a name that is no import name skips it. */
+static entry_result copied_from(const cJSON *entry, const lookup_result *found, cJSON *skipped) {
     entry_result result = {ENTRY_FAILED, NULL, 0};
     const char *id = text_of(entry, "id");
     const char *folder = folder_name_of(id);
-    const char *source_name = folder != NULL ? folder : text_of(answer, "name");
-    const char *full_name = text_of(answer, "fullName");
-    char *name = source_name == NULL ? NULL : shown_name(entry, source_name);
+    const char *source_name = folder != NULL ? folder : found->name;
+    const char *full_name = found->full_name;
+    char *name = shown_name(entry, source_name);
     if (name != NULL && runtime_is_import_name(name)) {
         result.copy = copy_entry(entry, name, full_name);
         result.outcome = result.copy == NULL ? ENTRY_FAILED : ENTRY_COPIED;
@@ -341,27 +400,26 @@ static entry_result copied_from(const cJSON *entry, const cJSON *answer, cJSON *
     return result;
 }
 
-/** The copy of one list entry as its repository is now; one that cannot be looked up is carried over or skipped. */
+/** The copy of one list entry as its repository is now; one naula does not confirm is carried over or skipped. */
 static entry_result copied_entry(const runtime_marketplace_build_request *request, const cJSON *entry, cJSON *skipped) {
     entry_result result = {ENTRY_FAILED, NULL, 0};
-    char *repository_id = repository_id_of(text_of(entry, "id"));
-    lookup_result found = {NULL, "", 0};
+    char *repository_id = runtime_identity_repo_of(text_of(entry, "id"));
+    lookup_result found;
+    memset(&found, 0, sizeof found);
+    found.out_of_memory = repository_id == NULL;
     if (repository_id != NULL) {
-        found = resolved(repository_id, request);
+        found = resolved(repository_id, entry, request);
     }
-    const char *full_name = found.answer == NULL ? NULL : text_of(found.answer, "fullName");
-    if (found.answer != NULL && (full_name == NULL || !runtime_marketplace_is_full_name(full_name))) {
-        snprintf(found.reason, sizeof found.reason, "it cannot be looked up: the host answered a name that is not owner/name");
-        cJSON_Delete(found.answer);
-        found.answer = NULL;
+    if (found.found && !runtime_marketplace_is_full_name(found.full_name)) {
+        snprintf(found.reason, sizeof found.reason, "it cannot be resolved: the host answered a name that is not owner/name");
+        found.found = 0;
     }
-    if (found.answer != NULL) {
-        result = copied_from(entry, found.answer, skipped);
-    } else if (found.reason[0] != '\0') {
+    if (found.found) {
+        result = copied_from(entry, &found, skipped);
+    } else if (!found.out_of_memory) {
         result = left_unlooked(request, entry, found.reason, skipped);
     }
-    result.was_rate_limited = found.status == 429 || found.status == 403;
-    cJSON_Delete(found.answer);
+    result.was_rate_limited = found.was_rate_limited;
     spisor_memory_release(repository_id);
     return result;
 }
@@ -449,7 +507,7 @@ cJSON *runtime_marketplace_build(const runtime_marketplace_build_request *reques
     }
     const cJSON *entries = cJSON_GetObjectItemCaseSensitive(request->list, "entries");
     if (!check_listed_ids(entries, refusal) ||
-        (request->token != NULL && !check_ids_are_on_token_host(entries, request->token_host, refusal))) {
+        (request->token != NULL && !check_places_are_on_token_host(entries, request->token_host, refusal))) {
         return NULL;
     }
     cJSON *skipped = cJSON_CreateArray();

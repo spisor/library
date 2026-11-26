@@ -8,21 +8,16 @@
 
 #include "cache_deploy.h"
 #include "cache_install.h"
-#include "cache_place.h"
 #include "catalog.h"
-#include "cache_refusal.h"
 #include "catalog_read.h"
 #include "fetch_answer.h"
 #include "fetch_file.h"
 #include "identity.h"
-#include "identity_also_at.h"
-#include "identity_resolve.h"
+#include "identity_naula.h"
 #include "json_service.h"
 #include "naula/memory.h"
 #include "naula/sha256.h"
-#include "node_json_file.h"
 #include "platform_key.h"
-#include "runtime/identity.h"
 #include "spisor/file.h"
 #include "spisor/json_kind.h"
 
@@ -32,21 +27,23 @@
 #define LOOKUP_DEADLINE_MILLISECONDS 30000u
 #define URL_SIZE 1024
 #define MESSAGE_SIZE 2048
+#define ROOT_SIZE 512
 
 typedef struct install_request {
-    const char *id;
-    const char *repo_id;
-    const char *replaces;
-    const char *cache;
-    const char *plugin_directory;
-    const char *version;
-    const char *last_known;
-    const char *api_base;
-    const char *accept_primary;
-    char *recorded_primary;
+    const runtime_install_by_id_request *install;
     runtime_install_by_id_taker take;
     void *taken;
 } install_request;
+
+/** The primary naula confirmed, as the release is read from it: its provider, host, number, account and name. */
+typedef struct primary_home {
+    const char *provider;
+    const char *host;
+    uint64_t number;
+    const char *account;
+    const char *name;
+    char place[RUNTIME_PLACE_TEXT_SIZE];
+} primary_home;
 
 typedef struct release_index {
     cJSON *catalog;
@@ -83,49 +80,41 @@ static int check_required_text(const char *text, const char *member, cJSON **ref
         return 0;
     }
     if (text == NULL) {
-        refuse(refusal,
-               "pass id, cache and plugin_directory and, when they are known, version, last_known and api_base",
+        refuse(refusal, "pass id, at, cache and plugin_directory and, when they are known, version and api_base",
                "the call carries no %s", member);
         return 0;
     }
     return 1;
 }
 
-static int read_request(const runtime_install_by_id_request *install, install_request *request, cJSON **refusal) {
-    memset(request, 0, sizeof *request);
-    runtime_identity parsed;
-    if (!check_required_text(install->id, "id", refusal) || !check_required_text(install->cache, "cache", refusal) ||
-        !check_required_text(install->plugin_directory, "plugin_directory", refusal) ||
-        !check_optional_text(install->version, "version", refusal) ||
-        !check_optional_text(install->last_known, "last_known", refusal) ||
-        !check_optional_text(install->api_base, "api_base", refusal) ||
-        !check_optional_text(install->accept_primary, "accept_primary", refusal)) {
+static int check_texts(const runtime_install_by_id_request *install, cJSON **refusal) {
+    return check_required_text(install->id, "id", refusal) && check_required_text(install->cache, "cache", refusal) &&
+           check_required_text(install->plugin_directory, "plugin_directory", refusal) &&
+           check_optional_text(install->version, "version", refusal) &&
+           check_optional_text(install->accept_primary, "accept_primary", refusal) &&
+           check_optional_text(install->accept_number, "accept_number", refusal) &&
+           check_optional_text(install->api_base, "api_base", refusal);
+}
+
+/** 1 for an id of a home's repo; 0 with a refusal, or without one out of memory. */
+static int check_id(const char *id, cJSON **refusal) {
+    runtime_identity_kind kind = runtime_identity_kind_of(id);
+    if (kind == RUNTIME_IDENTITY_NOT_AN_ID) {
+        refuse(refusal, "send an id such as git:<root commit>", "the id is not valid");
+    } else if (kind == RUNTIME_IDENTITY_LOCAL) {
+        refuse(refusal, "a local plugin is deployed from its folder, not installed", "%s names no home to install from",
+               id);
+    }
+    return kind == RUNTIME_IDENTITY_GIT;
+}
+
+static int check_aim(const runtime_install_by_id_request *install, cJSON **refusal) {
+    if (install->api_base != NULL && !naula_fetch_plain_http_is_allowed()) {
+        refuse(refusal, "pass no api_base: the release host's own API address is used",
+               "api_base is only honoured by the test build");
         return 0;
     }
-    request->id = install->id;
-    request->cache = install->cache;
-    request->plugin_directory = install->plugin_directory;
-    request->version = install->version;
-    request->last_known = install->last_known;
-    request->api_base = install->api_base;
-    request->accept_primary = install->accept_primary;
-    if (!runtime_identity_parse_id(request->id, &parsed)) {
-        refuse(refusal, "send an id such as github:<number>", "the id is not valid");
-        return 0;
-    }
-    if (parsed.number.start == NULL) {
-        refuse(refusal, "a local plugin is deployed from its folder, not installed", "%s names no repo host to install from",
-               request->id);
-        return 0;
-    }
-    size_t repo_length = parsed.path.length == 0 ? strlen(request->id) : (size_t)(parsed.path.start - 1 - request->id);
-    char *repo_id = spisor_memory_allocate(repo_length + 1);
-    if (repo_id != NULL) {
-        memcpy(repo_id, request->id, repo_length);
-        repo_id[repo_length] = '\0';
-    }
-    request->repo_id = repo_id;
-    return repo_id != NULL;
+    return 1;
 }
 
 static void refuse_fetch(const naula_fetch_answer *answer, const char *url, cJSON **refusal) {
@@ -183,129 +172,51 @@ static uint8_t *fetch_bytes(const char *url, size_t capacity, size_t *length, cJ
     return body;
 }
 
-static cJSON *resolve_repository(const install_request *request, cJSON **refusal) {
-    runtime_identity_lookup_request lookup = {request->repo_id, request->last_known, NULL, request->api_base};
-    return runtime_identity_lookup(&lookup, refusal);
+static void refuse_naula(const naula_refusal *refused, cJSON **refusal) {
+    char message[MESSAGE_SIZE];
+    runtime_identity_refusal_text(refused, message, sizeof message);
+    *refusal = runtime_refusal(message, runtime_identity_refusal_fix(refused));
 }
 
-static cJSON *unconfirmed_set(const char *id) {
-    cJSON *set = cJSON_CreateObject();
-    cJSON *ids = set == NULL ? NULL : cJSON_AddArrayToObject(set, "ids");
-    int built = ids != NULL && cJSON_AddItemToArray(ids, cJSON_CreateString(id)) &&
-                cJSON_AddStringToObject(set, "primary", id) != NULL &&
-                cJSON_AddFalseToObject(set, "primaryConfirmed") != NULL;
-    if (!built) {
-        cJSON_Delete(set);
-        set = NULL;
+static naula_refusal empty_refusal(void) {
+    naula_refusal refused;
+    memset(&refused, 0, sizeof refused);
+    refused.size = sizeof refused;
+    return refused;
+}
+
+/** The address of the latest release under the primary's API root; 0 with a refusal when it has none here. */
+static int latest_release_url(const install_request *request, const primary_home *primary, char *url,
+                              cJSON **refusal) {
+    char root[ROOT_SIZE];
+    const char *api_base = request->install->api_base;
+    int fits;
+    if (api_base != NULL) {
+        fits = snprintf(root, sizeof root, "%s", api_base) < (int)sizeof root;
+    } else if (strcmp(primary->provider, "github") == 0) {
+        fits = primary->host == NULL || strcmp(primary->host, "github.com") == 0
+                   ? snprintf(root, sizeof root, "https://api.github.com") < (int)sizeof root
+                   : snprintf(root, sizeof root, "https://%s/api/v3", primary->host) < (int)sizeof root;
+    } else if ((strcmp(primary->provider, "gitea") == 0 || strcmp(primary->provider, "forgejo") == 0) &&
+               primary->host != NULL) {
+        fits = snprintf(root, sizeof root, "https://%s/api/v1", primary->host) < (int)sizeof root;
+    } else {
+        refuse(refusal, "install from a repo whose primary is on GitHub, Gitea or Forgejo",
+               "%s is the primary of %s, and releases are read here only from GitHub, Gitea and Forgejo", primary->place,
+               request->install->id);
+        return 0;
     }
-    return set;
-}
-
-static int has_confirmed_primary(const cJSON *set) {
-    return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed")) &&
-           !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "startFileUnavailable"));
-}
-
-/**
- * The set the repo's copies agree on. The repo alone, unconfirmed, when its also-at file is unreadable or names a
- * primary nothing confirms; any refusal, copies naming different primaries included, stops the install. NULL with a
- * refusal for that, or without one out of memory.
- */
-static cJSON *verified_set(const install_request *request, cJSON **refusal) {
-    cJSON *found_refusal = NULL;
-    cJSON *found = runtime_identity_read_also_at(request->repo_id, request->api_base, &found_refusal);
-    if (found_refusal != NULL) {
-        *refusal = found_refusal;
-        return NULL;
+    size_t length = strlen(root);
+    while (length > 0 && root[length - 1] == '/') {
+        root[--length] = '\0';
     }
-    if (found != NULL && has_confirmed_primary(found)) {
-        return found;
-    }
-    cJSON_Delete(found);
-    return found == NULL ? NULL : unconfirmed_set(request->repo_id);
-}
-
-/** cache/identities/<folder>.json, where the set and primary of each installed id are kept; freed. */
-static char *record_path(const install_request *request) {
-    int unfit = 0;
-    char *folder = runtime_item_folder(request->repo_id, &unfit);
-    const char *file_parts[2] = {folder, ".json"};
-    char *file_name = folder == NULL ? NULL : runtime_cache_text(file_parts, 2);
-    const char *segments[2] = {"identities", file_name};
-    char *path = file_name == NULL ? NULL : runtime_cache_resolve(request->cache, segments, 2);
-    spisor_memory_release(file_name);
-    spisor_memory_release(folder);
-    return path;
-}
-
-/**
- * Reads the primary recorded for the id; 1 when there is none or it reads, 0 with a refusal when the record is unusable,
- * or without one out of memory.
- */
-static int read_recorded_primary(install_request *request, cJSON **refusal) {
-    char *path = record_path(request);
-    spisor_file_presence presence = path == NULL ? SPISOR_FILE_OUT_OF_MEMORY : spisor_probe_file(path);
-    int out_of_memory = presence == SPISOR_FILE_OUT_OF_MEMORY;
-    int present = presence == SPISOR_FILE_PRESENT;
-    cJSON *record = present ? runtime_read_node_json(path, &out_of_memory) : NULL;
-    const char *primary = text_of(record, "primary");
-    if (primary != NULL) {
-        request->recorded_primary = runtime_cache_text(&primary, 1);
-        out_of_memory = request->recorded_primary == NULL;
-    } else if (present && !out_of_memory) {
-        refuse(refusal, "delete the record so the next install records it again", "%s holds no recorded primary", path);
-    }
-    cJSON_Delete(record);
-    spisor_memory_release(path);
-    return !out_of_memory && (!present || primary != NULL);
-}
-
-static int add_copy(cJSON *answer, const char *member, const cJSON *value) {
-    cJSON *copy = cJSON_Duplicate(value, 1);
-    if (copy == NULL || !cJSON_AddItemToObject(answer, member, copy)) {
-        cJSON_Delete(copy);
+    if (!fits || snprintf(url, URL_SIZE, "%s/repos/%s/%s/releases/latest", root, primary->account, primary->name) >=
+                     URL_SIZE) {
+        refuse(refusal, "use a shorter apiBase", "the address of the latest release of %s is not usable",
+               request->install->id);
         return 0;
     }
     return 1;
-}
-
-/** OK once the record is written, REFUSED when the disk refuses it, OUT_OF_MEMORY before anything is written. */
-static spisor_status write_record(const install_request *request, const cJSON *set) {
-    cJSON *record = cJSON_CreateObject();
-    int built = record != NULL && add_copy(record, "ids", cJSON_GetObjectItemCaseSensitive(set, "ids")) &&
-                cJSON_AddStringToObject(record, "primary", text_of(set, "primary")) != NULL;
-    char *text = built ? cJSON_Print(record) : NULL;
-    char *path = text == NULL ? NULL : record_path(request);
-    const char *parent_segment[1] = {".."};
-    char *directory = path == NULL ? NULL : runtime_cache_resolve(path, parent_segment, 1);
-    spisor_status status = directory == NULL ? SPISOR_OUT_OF_MEMORY : spisor_make_directories(directory);
-    if (status == SPISOR_OK) {
-        status = spisor_replace_file(path, (const uint8_t *)text, strlen(text));
-    }
-    spisor_memory_release(directory);
-    spisor_memory_release(path);
-    cJSON_free(text);
-    cJSON_Delete(record);
-    return status;
-}
-
-static int needs_user_acceptance(const install_request *request, const cJSON *set, int *needed, cJSON **refusal) {
-    *needed = 0;
-    if (request->recorded_primary == NULL) {
-        return 1;
-    }
-    const runtime_identity_definition *identity = runtime_identity_definition_of();
-    runtime_identity_version_argument argument = SPISOR_INIT(runtime_identity_version_argument);
-    runtime_identity_version_answer decision = SPISOR_INIT(runtime_identity_version_answer);
-    spisor_refusal refused = SPISOR_INIT(spisor_refusal);
-    argument.recorded = request->recorded_primary;
-    argument.primary = text_of(set, "primary");
-    spisor_status status = identity->accepts_version(identity->context, &argument, &decision, &refused);
-    int accepted = request->accept_primary != NULL && strcmp(request->accept_primary, text_of(set, "primary")) == 0;
-    *needed = status == SPISOR_OK && !decision.accepted && !accepted;
-    *refusal = status == SPISOR_OK ? NULL : runtime_refusal_of(&refused);
-    identity->release_refusal(identity->context, &refused);
-    return status == SPISOR_OK;
 }
 
 static const char *index_asset_url(const cJSON *release) {
@@ -320,19 +231,10 @@ static const char *index_asset_url(const cJSON *release) {
     return NULL;
 }
 
-static int same_repository_as(const cJSON *before, const cJSON *after) {
-    const char *before_name = text_of(before, "fullName");
-    const char *after_name = text_of(after, "fullName");
-    return before_name != NULL && after_name != NULL && strcmp(before_name, after_name) == 0;
-}
-
 /** The index url of the latest release, freed; NULL with a refusal or, out of memory, without one. */
-static char *find_index_url(const install_request *request, const cJSON *repository, cJSON **refusal) {
+static char *find_index_url(const install_request *request, const primary_home *primary, cJSON **refusal) {
     char url[URL_SIZE];
-    const char *full_name = text_of(repository, "fullName");
-    if (full_name == NULL ||
-        !runtime_identity_repo_url(request->repo_id, request->api_base, full_name, "releases/latest", url, sizeof url)) {
-        refuse(refusal, "use a shorter apiBase", "the address of the latest release of %s is not usable", request->id);
+    if (!latest_release_url(request, primary, url, refusal)) {
         return NULL;
     }
     size_t length = 0;
@@ -343,8 +245,8 @@ static char *find_index_url(const install_request *request, const cJSON *reposit
     spisor_memory_release(bytes);
     const char *asset_url = release == NULL ? NULL : index_asset_url(release);
     if (fetched && asset_url == NULL) {
-        refuse(refusal, "ask the owner to publish " INDEX_ASSET " with each release", "the latest release of %s has no %s",
-               full_name, INDEX_ASSET);
+        refuse(refusal, "ask the owner to publish " INDEX_ASSET " with each release", "the latest release of %s/%s has no %s",
+               primary->account, primary->name, INDEX_ASSET);
     }
     char *copy = asset_url == NULL ? NULL : spisor_memory_allocate(strlen(asset_url) + 1);
     if (copy != NULL) {
@@ -407,15 +309,30 @@ static void digest_of(const uint8_t *bytes, size_t length, char sha256[NAULA_SHA
     naula_sha256_hex(&hash, sha256);
 }
 
-static int is_still_the_repository(const install_request *request, const cJSON *repository, cJSON **refusal) {
-    cJSON *again = resolve_repository(request, refusal);
-    int same = again != NULL && same_repository_as(repository, again);
-    if (again != NULL && !same) {
-        refuse(refusal, "try the install again; if it keeps happening, check who owns the repo now",
-               "%s was %s when the install began and is %s now", request->repo_id, text_of(repository, "fullName"),
-               text_of(again, "fullName"));
+/** 1 when the primary's number still answers its account and name; 0 with a refusal, or without one out of memory. */
+static int is_still_the_primary(const primary_home *primary, cJSON **refusal) {
+    naula_providers *providers = NULL;
+    naula_refusal refused = empty_refusal();
+    naula_status status = runtime_identity_providers(&providers);
+    const naula_provider *provider = status == NAULA_OK ? naula_providers_find(providers, primary->provider, &refused) : NULL;
+    naula_repository again;
+    memset(&again, 0, sizeof again);
+    again.size = sizeof again;
+    if (provider != NULL) {
+        status = provider->lookup(provider->context, primary->host, primary->number, NULL, &again, &refused);
     }
-    cJSON_Delete(again);
+    int same = status == NAULA_OK && provider != NULL && again.account != NULL && again.name != NULL &&
+               strcmp(again.account, primary->account) == 0 && strcmp(again.name, primary->name) == 0;
+    if (status == NAULA_OK && provider != NULL && !same) {
+        refuse(refusal, "try the install again; if it keeps happening, check who owns the repo now",
+               "%s was %s/%s when the install began and is %s/%s now", primary->place, primary->account, primary->name,
+               again.account == NULL ? "" : again.account, again.name == NULL ? "" : again.name);
+    } else if (status != NAULA_OK && status != NAULA_OUT_OF_MEMORY) {
+        refuse_naula(&refused, refusal);
+    } else if (status == NAULA_OK && provider == NULL) {
+        refuse_naula(&refused, refusal);
+    }
+    naula_repository_release(&again);
     return same;
 }
 
@@ -428,17 +345,18 @@ static int is_plugin_item(const cJSON *item, cJSON **refusal) {
     return 0;
 }
 
-static int read_release_index(const install_request *request, const cJSON *repository, release_index *index,
+static int read_release_index(const install_request *request, const primary_home *primary, release_index *index,
                               cJSON **refusal) {
     memset(index, 0, sizeof *index);
-    char *url = find_index_url(request, repository, refusal);
+    char *url = find_index_url(request, primary, refusal);
     size_t length = 0;
     uint8_t *bytes = url == NULL ? NULL : fetch_bytes(url, INDEX_CAPACITY, &length, refusal);
-    int tied = bytes != NULL && is_still_the_repository(request, repository, refusal);
-    index->catalog = tied ? read_catalog(request->id, url, bytes, length, refusal) : NULL;
+    int tied = bytes != NULL && is_still_the_primary(primary, refusal);
+    const char *id = request->install->id;
+    index->catalog = tied ? read_catalog(id, url, bytes, length, refusal) : NULL;
     index->item = index->catalog == NULL
                       ? NULL
-                      : cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(index->catalog, "items"), request->id);
+                      : cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(index->catalog, "items"), id);
     if (bytes != NULL) {
         digest_of(bytes, length, index->sha256);
     }
@@ -447,51 +365,47 @@ static int read_release_index(const install_request *request, const cJSON *repos
     return index->item != NULL && is_plugin_item(index->item, refusal);
 }
 
-
 static const char *chosen_version(const install_request *request, const release_index *index, cJSON **refusal) {
-    const char *version = request->version != NULL ? request->version : text_of(index->item, "latest");
+    const char *version = request->install->version != NULL ? request->install->version : text_of(index->item, "latest");
     if (version == NULL) {
         refuse(refusal, "ask the owner to name a latest version in the release index", "the release index names no latest version");
     }
     return version;
 }
 
-/** Installs the chosen version and deploys it, answering the version; NULL with a refusal, or without one out of memory. */
-static const char *install_and_deploy(const install_request *request, const cJSON *repository, const release_index *index,
-                                      cJSON **refusal) {
-    const char *version = chosen_version(request, index, refusal);
-    cJSON *installed = version == NULL ? NULL
-                                       : runtime_cache_install_version(request->cache, request->id, index->item, version,
-                                                                       runtime_platform_key(), refusal);
-    runtime_cache_deploy_request deploy = {text_of(installed, "directory"), request->plugin_directory, request->id,
-                                           text_of(repository, "name"), request->replaces};
-    int succeeded = deploy.directory != NULL && runtime_cache_deploy(&deploy, refusal);
-    cJSON_Delete(installed);
-    return succeeded ? version : NULL;
-}
-
 static int add_text(cJSON *answer, const char *member, const char *value) {
     return cJSON_AddStringToObject(answer, member, value == NULL ? "" : value) != NULL;
 }
 
-static cJSON *set_answer(const install_request *request, const cJSON *repository, const cJSON *set) {
-    cJSON *answer = cJSON_CreateObject();
-    int built = answer != NULL && add_text(answer, "id", request->id) && add_text(answer, "name", text_of(repository, "name")) &&
-                add_text(answer, "fullName", text_of(repository, "fullName")) &&
-                add_copy(answer, "ids", cJSON_GetObjectItemCaseSensitive(set, "ids")) &&
-                add_text(answer, "primary", text_of(set, "primary")) &&
-                cJSON_AddBoolToObject(answer, "primaryConfirmed", cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed"))) != NULL;
-    if (!built) {
-        cJSON_Delete(answer);
-        answer = NULL;
+static int add_homes(cJSON *answer, const naula_resolution *resolution) {
+    cJSON *homes = cJSON_AddArrayToObject(answer, "homes");
+    for (size_t index = 0; homes != NULL && index < resolution->home_count; index++) {
+        char text[RUNTIME_PLACE_TEXT_SIZE];
+        cJSON *home = runtime_identity_place_text(&resolution->homes[index], text, sizeof text)
+                          ? cJSON_CreateString(text)
+                          : NULL;
+        if (home == NULL || !cJSON_AddItemToArray(homes, home)) {
+            cJSON_Delete(home);
+            return 0;
+        }
     }
-    return answer;
+    return homes != NULL;
 }
 
-static cJSON *acceptance_answer(const install_request *request, const cJSON *repository, const cJSON *set) {
-    cJSON *answer = set_answer(request, repository, set);
-    if (answer != NULL && (!add_text(answer, "recordedPrimary", request->recorded_primary) ||
-                           cJSON_AddTrueToObject(answer, "needsUserAcceptance") == NULL)) {
+static cJSON *acceptance_answer(const install_request *request, const runtime_identity_acceptance *acceptance) {
+    cJSON *answer = cJSON_CreateObject();
+    int built = answer != NULL && add_text(answer, "id", request->install->id);
+    if (built && acceptance->primary_needed) {
+        built = add_text(answer, "primary", acceptance->offered_primary) &&
+                add_text(answer, "recordedPrimary", acceptance->recorded_primary) &&
+                cJSON_AddTrueToObject(answer, "needsUserAcceptance") != NULL;
+    } else if (built) {
+        built = add_text(answer, "disputedAccount", acceptance->disputed_account) &&
+                add_text(answer, "recordedNumber", acceptance->recorded_number) &&
+                add_text(answer, "offeredNumber", acceptance->offered_number) &&
+                cJSON_AddTrueToObject(answer, "needsNumberAcceptance") != NULL;
+    }
+    if (!built) {
         cJSON_Delete(answer);
         answer = NULL;
     }
@@ -502,126 +416,128 @@ static const char *commit_of(const cJSON *item, const char *version) {
     return text_of(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(item, "versions"), version), "commit");
 }
 
-static cJSON *installed_answer(const install_request *request, const cJSON *repository, const cJSON *set,
-                               const release_index *index, const char *version) {
-    cJSON *answer = set_answer(request, repository, set);
-    if (answer != NULL && (!add_text(answer, "version", version) || !add_text(answer, "commit", commit_of(index->item, version)) ||
-                           !add_text(answer, "sha256", index->sha256))) {
+static cJSON *installed_answer(const install_request *request, const primary_home *primary,
+                               const naula_resolution *resolution, const release_index *index, const char *version) {
+    char full_name[RUNTIME_PLACE_TEXT_SIZE];
+    snprintf(full_name, sizeof full_name, "%s/%s", primary->account, primary->name);
+    cJSON *answer = cJSON_CreateObject();
+    int built = answer != NULL && add_text(answer, "id", request->install->id) && add_text(answer, "name", primary->name) &&
+                add_text(answer, "fullName", full_name) && add_homes(answer, resolution) &&
+                add_text(answer, "primary", primary->place) && add_text(answer, "version", version) &&
+                add_text(answer, "commit", commit_of(index->item, version)) && add_text(answer, "sha256", index->sha256);
+    if (!built) {
         cJSON_Delete(answer);
         answer = NULL;
     }
     return answer;
 }
 
-/** Hands the answer to the request's taker before the record is written, so no answer is lost after it. */
+/** The primary of a confirmed resolution, as a release is read from it; 0 with a refusal when it has none. */
+static int primary_of(const install_request *request, const naula_resolution *resolution, primary_home *primary,
+                      cJSON **refusal) {
+    memset(primary, 0, sizeof *primary);
+    const naula_place *place = resolution->home_count == 0 ? NULL : &resolution->homes[resolution->primary];
+    if (place == NULL || !runtime_identity_place_text(place, primary->place, sizeof primary->place)) {
+        refuse(refusal, RUNTIME_IDENTITY_FIX, "nothing confirms %s", request->install->id);
+        return 0;
+    }
+    if (resolution->state != NAULA_CONFIRMED || place->kind != NAULA_HOME_PROVIDER ||
+        resolution->primary_repository.account == NULL || resolution->primary_repository.name == NULL) {
+        refuse(refusal, "try again once its primary can be reached",
+               "%s could not be confirmed at its primary %s now, so no release can be read from it",
+               request->install->id, primary->place);
+        return 0;
+    }
+    primary->provider = place->provider;
+    primary->host = place->host;
+    primary->number = place->number;
+    primary->account = resolution->primary_repository.account;
+    primary->name = resolution->primary_repository.name;
+    return 1;
+}
+
+/** Hands the answer to the request's taker, so the caller holds it before it is answered. */
 static spisor_status take_answer(const install_request *request, const cJSON *answer) {
     return request->take == NULL ? SPISOR_OK : request->take(answer, request->taken);
 }
 
-/** Installs from source, the repo the verified set names as primary, and records the set under the id that was asked for. */
-static cJSON *install_verified(const install_request *request, const install_request *source, const cJSON *repository,
-                               const cJSON *set, cJSON **refusal) {
-    int needed = 0;
-    if (!needs_user_acceptance(request, set, &needed, refusal)) {
+/** Deploys the installed version, the install's last write; 0 with a refusal, or without one out of memory. */
+static int deploy(const install_request *request, const primary_home *primary, const cJSON *installed,
+                  cJSON **refusal) {
+    const runtime_install_by_id_request *install = request->install;
+    runtime_cache_deploy_request deployment = {text_of(installed, "directory"), install->plugin_directory, install->id,
+                                               primary->name, NULL};
+    return deployment.directory != NULL && runtime_cache_deploy(&deployment, refusal);
+}
+
+/**
+ * Installs the chosen version into the cache, takes the answer and only then deploys, so no allocation can fail after
+ * the deploy has written the plugin; NULL with a refusal, or without one out of memory.
+ */
+static cJSON *install_release(const install_request *request, const primary_home *primary,
+                              const naula_resolution *resolution, const release_index *index, cJSON **refusal) {
+    const runtime_install_by_id_request *install = request->install;
+    const char *version = chosen_version(request, index, refusal);
+    cJSON *installed = version == NULL ? NULL
+                                       : runtime_cache_install_version(install->cache, install->id, index->item, version,
+                                                                       runtime_platform_key(), refusal);
+    cJSON *answer = installed == NULL ? NULL : installed_answer(request, primary, resolution, index, version);
+    if (answer != NULL && (take_answer(request, answer) != SPISOR_OK || !deploy(request, primary, installed, refusal))) {
+        cJSON_Delete(answer);
+        answer = NULL;
+    }
+    cJSON_Delete(installed);
+    return answer;
+}
+
+static cJSON *install_from_primary(const install_request *request, const naula_resolution *resolution,
+                                   cJSON **refusal) {
+    primary_home primary;
+    if (!primary_of(request, resolution, &primary, refusal)) {
         return NULL;
     }
-    if (needed) {
-        return acceptance_answer(source, repository, set);
-    }
     release_index index;
-    cJSON *answer = NULL;
-    if (read_release_index(source, repository, &index, refusal)) {
-        const char *version = install_and_deploy(source, repository, &index, refusal);
-        answer = version == NULL ? NULL : installed_answer(source, repository, set, &index, version);
-        spisor_status recorded = answer == NULL ? SPISOR_OK : take_answer(request, answer);
-        if (recorded == SPISOR_OK && answer != NULL) {
-            recorded = write_record(request, set);
-        }
-        if (recorded == SPISOR_REFUSED) {
-            refuse(refusal, "free the cache's identities folder or point cache at a writable directory, then install again",
-                   "the primary of %s could not be recorded", request->repo_id);
-        }
-        if (recorded != SPISOR_OK) {
-            cJSON_Delete(answer);
-            answer = NULL;
-        }
-    }
+    cJSON *answer = read_release_index(request, &primary, &index, refusal)
+                        ? install_release(request, &primary, resolution, &index, refusal)
+                        : NULL;
     cJSON_Delete(index.catalog);
     return answer;
 }
 
-/** The id of a folder at repo_id, the repo id followed by the folder as asked for. */
-static char *joined_id(const char *repo_id, const char *folder) {
-    const char *parts[2] = {repo_id, folder};
-    return runtime_cache_text(parts, 2);
-}
-
-/** The id of the folder below a repo id as asked for, "/kernel" for github:5/kernel and "" for a repo. */
-static const char *folder_of(const install_request *request) {
-    return request->id + strlen(request->repo_id);
-}
-
-/**
- * A confirmed primary other than the repo asked for is where a new version comes from, at the same folder; a mirror
- * never supplies one. An accepted change of primary lets the deployed plugin of the old primary be replaced.
- */
-static install_request source_of(const install_request *request, const cJSON *set, char *source_id, char *replaced_id) {
-    install_request source = *request;
-    const char *primary = text_of(set, "primary");
-    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed")) && primary != NULL &&
-        strcmp(primary, request->repo_id) != 0) {
-        source.repo_id = primary;
-        source.last_known = NULL;
-    }
-    source.id = source_id;
-    int accepted_change = request->recorded_primary != NULL && request->accept_primary != NULL && primary != NULL &&
-                          strcmp(request->recorded_primary, primary) != 0 && strcmp(request->accept_primary, primary) == 0;
-    source.replaces = accepted_change ? replaced_id : NULL;
-    return source;
-}
-
-static cJSON *install_from_set(const install_request *request, const cJSON *repository, const cJSON *set,
-                               cJSON **refusal) {
-    char *source_id = joined_id(text_of(set, "primary") != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(set, "primaryConfirmed"))
-                                    ? text_of(set, "primary")
-                                    : request->repo_id,
-                                folder_of(request));
-    char *replaced_id = request->recorded_primary == NULL ? NULL : joined_id(request->recorded_primary, folder_of(request));
+static cJSON *install_resolved(const install_request *request, char *repo_id, cJSON **refusal) {
+    const runtime_install_by_id_request *install = request->install;
+    runtime_identity_request resolving = {repo_id, install->at, install->at_count, install->cache, NULL, NULL,
+                                          install->accept_primary, install->accept_number};
+    naula_resolution resolution;
+    memset(&resolution, 0, sizeof resolution);
+    resolution.size = sizeof resolution;
+    runtime_identity_acceptance acceptance;
+    naula_refusal refused = empty_refusal();
+    naula_status status = runtime_identity_resolve(&resolving, &resolution, &acceptance, &refused);
     cJSON *answer = NULL;
-    if (source_id != NULL && (request->recorded_primary == NULL || replaced_id != NULL)) {
-        install_request source = source_of(request, set, source_id, replaced_id);
-        int is_mirror = strcmp(source.repo_id, request->repo_id) != 0;
-        cJSON *primary_repository = is_mirror ? resolve_repository(&source, refusal) : NULL;
-        answer = is_mirror && primary_repository == NULL
-                     ? NULL
-                     : install_verified(request, &source, is_mirror ? primary_repository : repository, set, refusal);
-        cJSON_Delete(primary_repository);
+    if (status != NAULA_OUT_OF_MEMORY && (acceptance.primary_needed || acceptance.number_needed)) {
+        answer = acceptance_answer(request, &acceptance);
+    } else if (status == NAULA_OK) {
+        answer = install_from_primary(request, &resolution, refusal);
+    } else if (status != NAULA_OUT_OF_MEMORY) {
+        refuse_naula(&refused, refusal);
     }
-    spisor_memory_release(replaced_id);
-    spisor_memory_release(source_id);
+    naula_resolution_release(&resolution);
     return answer;
 }
 
-
 cJSON *runtime_install_by_id(const runtime_install_by_id_request *install, runtime_install_by_id_taker take,
                              void *taken, cJSON **refusal) {
-    install_request request;
-    int read;
+    install_request request = {install, take, taken};
     *refusal = NULL;
-    read = read_request(install, &request, refusal);
-    request.take = take;
-    request.taken = taken;
-    if (!read || !read_recorded_primary(&request, refusal)) {
-        spisor_memory_release(request.recorded_primary);
-        spisor_memory_release((char *)request.repo_id);
+    if (!check_texts(install, refusal) || !check_id(install->id, refusal) || !check_aim(install, refusal)) {
         return NULL;
     }
-    cJSON *repository = resolve_repository(&request, refusal);
-    cJSON *set = repository == NULL ? NULL : verified_set(&request, refusal);
-    cJSON *answer = set == NULL ? NULL : install_from_set(&request, repository, set, refusal);
-    cJSON_Delete(set);
-    cJSON_Delete(repository);
-    spisor_memory_release(request.recorded_primary);
-    spisor_memory_release((char *)request.repo_id);
+    if (spisor_make_directories(install->cache) == SPISOR_OUT_OF_MEMORY) {
+        return NULL;
+    }
+    char *repo_id = runtime_identity_repo_of(install->id);
+    cJSON *answer = repo_id == NULL ? NULL : install_resolved(&request, repo_id, refusal);
+    spisor_memory_release(repo_id);
     return answer;
 }

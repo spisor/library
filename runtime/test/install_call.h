@@ -348,13 +348,13 @@ static inline spisor_status install_by_id_call(const runtime_install_definition 
     runtime_install_by_id_argument argument = SPISOR_INIT(runtime_install_by_id_argument);
     runtime_install_by_id_answer answer = SPISOR_INIT(runtime_install_by_id_answer);
     spisor_status status;
-    (void)held;
     argument.id = cache_member_text(request, "id");
+    argument.at = install_texts_of(held, cJSON_GetObjectItemCaseSensitive(request, "at"), &argument.at_count);
     argument.cache = cache_member_text(request, "cache");
     argument.plugin_directory = cache_member_text(request, "pluginDir");
     argument.version = cache_member_text(request, "version");
-    argument.last_known = cache_member_text(request, "lastKnown");
     argument.accept_primary = cache_member_text(request, "acceptPrimary");
+    argument.accept_number = cache_member_text(request, "acceptNumber");
     argument.api_base = cache_member_text(request, "apiBase");
     status = install->by_id(install->context, &argument, &answer, refusal);
     if (status == SPISOR_OK) {
@@ -362,12 +362,17 @@ static inline spisor_status install_by_id_call(const runtime_install_definition 
         cache_add_text(*tree, "id", answer.id);
         cache_add_text(*tree, "name", answer.name);
         cache_add_text(*tree, "fullName", answer.full_name);
-        CHECK(cJSON_AddItemToObject(*tree, "ids", cache_texts_json(answer.ids, answer.id_count)));
+        CHECK(cJSON_AddItemToObject(*tree, "homes", cache_texts_json(answer.homes, answer.home_count)));
         cache_add_text(*tree, "primary", answer.primary);
-        CHECK(cJSON_AddBoolToObject(*tree, "primaryConfirmed", answer.primary_confirmed != 0) != NULL);
         if (answer.needs_user_acceptance) {
             cache_add_text(*tree, "recordedPrimary", answer.recorded_primary);
             CHECK(cJSON_AddTrueToObject(*tree, "needsUserAcceptance") != NULL);
+        }
+        if (answer.needs_number_acceptance) {
+            cache_add_text(*tree, "disputedAccount", answer.disputed_account);
+            cache_add_text(*tree, "recordedNumber", answer.recorded_number);
+            cache_add_text(*tree, "offeredNumber", answer.offered_number);
+            CHECK(cJSON_AddTrueToObject(*tree, "needsNumberAcceptance") != NULL);
         }
         cache_add_text(*tree, "version", answer.version);
         cache_add_text(*tree, "commit", answer.commit);

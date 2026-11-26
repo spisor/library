@@ -2,33 +2,27 @@
 #define RUNTIME_IDENTITY_H
 
 #include <stddef.h>
-#include <stdint.h>
 
-/** One part of a parsed id: a view into the id's own text, empty when the id has no such part. */
-typedef struct runtime_identity_part {
-    const char *start;
-    size_t length;
-} runtime_identity_part;
-
-/** The parts of a valid id. A local id has only a resolver, "local", and a path, its name and anything below it. */
-typedef struct runtime_identity {
-    runtime_identity_part resolver;
-    runtime_identity_part host;
-    runtime_identity_part number;
-    runtime_identity_part path;
-} runtime_identity;
+typedef enum runtime_identity_kind {
+    RUNTIME_IDENTITY_NOT_AN_ID,
+    RUNTIME_IDENTITY_GIT,
+    RUNTIME_IDENTITY_LOCAL,
+    RUNTIME_IDENTITY_OUT_OF_MEMORY
+} runtime_identity_kind;
 
 /**
- * Whether id satisfies the id grammar, filling parsed from it when it does.
+ * What text is as naula reads an id: `git:<40 or 64 lowercase hex>` or `local:<name>`, then any `/<segment>`.
  *
- * @implNote Hand-written to `^(local:[^/\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\.{1,2}(/|(?![\s\S])))[a-z0-9._-]+)*$`.
- * The whitespace a local name refuses is ASCII whitespace only; a byte above 0x7F is allowed, so a local name
- * holding a Unicode space is accepted here where the JavaScript engine, whose \s includes it, refuses it.
+ * @implNote naula checks the whole grammar before it allocates, so OUT_OF_MEMORY says the text is an id whose kind
+ * could not be told; a caller answers it as running out of memory, never as no id.
  */
-int runtime_identity_parse_id(const char *id, runtime_identity *parsed);
+runtime_identity_kind runtime_identity_kind_of(const char *text);
 
-/** Whether text is a repo id: valid, not local, and with no folder below the repo. */
-int runtime_identity_is_repo_id(const char *text);
+/** Whether text is an id with no folder below its repo. Only for a text runtime_identity_kind_of answered an id. */
+int runtime_identity_names_a_whole_repo(const char *id);
+
+/** The id's repo part, freed: the id up to its first folder. NULL when memory runs out. */
+char *runtime_identity_repo_of(const char *id);
 
 typedef enum runtime_identity_folder_status {
     RUNTIME_IDENTITY_FOLDER_NAMED,

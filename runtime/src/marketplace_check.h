@@ -23,11 +23,11 @@ extern const runtime_marketplace_held_value runtime_marketplace_held_values[];
 extern const size_t runtime_marketplace_held_value_count;
 
 /**
- * Whether list satisfies marketplace.schema.json; 0 with a sentence naming the first thing wrong written into
- * problem, of size bytes.
+ * 1 when list satisfies marketplace.schema.json; 0 with a sentence naming the first thing wrong written into
+ * problem, of size bytes; -1 when memory runs out.
  *
- * @implNote The schemas' patterns are hand-written here as the id grammar, the import name grammar and the two
- * checks below, since the library carries no regular expression engine.
+ * @implNote The schemas' patterns are checked here by naula's id and place readers, the import name grammar and the
+ * two checks below, since the library carries no regular expression engine.
  */
 int runtime_marketplace_check_list(const cJSON *list, char *problem, size_t size);
 

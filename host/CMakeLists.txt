@@ -40,7 +40,7 @@ spisor_strict_warnings(host_ready_timeout_test_hook)
 set_target_properties(host_ready_timeout_test_hook PROPERTIES SPISOR_TEST_ONLY TRUE)
 
 set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>
-    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
@@ -73,7 +73,7 @@ else()
 endif()
 set(host_boot_runtime_sources alive_stamp.c boot.c boot_hint.c boot_resolve.c cache_folders.c cache_marker.c cache_place.c cache_refusal.c
     catalog_answer.c catalog_path.c catalog_text.c directory_tree.c file_stream.c file_times.c process_alive.c host_references.c hosts_lock.c
-    identity_parse.c json_service.c node_json_file.c platform_key.c run_records.c segment.c sha256_file.c atomic.c user_home.c)
+    identity_id.c json_service.c node_json_file.c platform_key.c run_records.c segment.c sha256_file.c atomic.c user_home.c)
 list(TRANSFORM host_boot_runtime_sources PREPEND ${PROJECT_SOURCE_DIR}/runtime/src/)
 
 # spisor-boot changes almost never once published, so it carries only what boot.resolve needs.

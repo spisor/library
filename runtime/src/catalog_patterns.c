@@ -19,8 +19,11 @@ int runtime_catalog_is_item_name(const char *key) {
 }
 
 int runtime_catalog_is_item_id(const char *key) {
-    runtime_identity identity;
-    return runtime_catalog_is_item_name(key) || runtime_identity_parse_id(key, &identity);
+    if (runtime_catalog_is_item_name(key)) {
+        return 1;
+    }
+    runtime_identity_kind kind = runtime_identity_kind_of(key);
+    return kind == RUNTIME_IDENTITY_OUT_OF_MEMORY ? -1 : kind != RUNTIME_IDENTITY_NOT_AN_ID;
 }
 
 static const char *after_digits(const char *at) {

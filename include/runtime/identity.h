@@ -3,10 +3,11 @@
 
 /**
  * @file
- * runtime's `identity` service: a plugin's id, as `github:<number>[/<path>]`, `<resolver>@<host>:<number>[/<path>]` or
- * `local:<name>`; the repo it names on its host; and the set of copies of one repo that agree on a primary. A
- * size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the
- * call; what an answer or a refusal points at is the provider's until the release for its kind.
+ * runtime's `identity` service: a plugin's id, as `git:<root commit>[/<path>]` or `local:<name>`, read by naula; and
+ * the homes that speak for a repo, which naula confirms from the places a consumer recorded for it (`at`), such as
+ * `github:<number>`, `gitea@git.example.com:<number>` or `web:example.org`. A size-prefixed struct is read only up to
+ * its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what an answer or a refusal
+ * points at is the provider's until the release for its kind.
  */
 
 #include <stddef.h>
@@ -14,7 +15,6 @@
 
 #include "runtime/definition.h"
 #include "spisor/status.h"
-#include "spisor/value.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,15 +27,15 @@ typedef struct runtime_identity_id_argument {
 } runtime_identity_id_argument;
 
 /**
- * A valid id's parts: `resolver` always, `host` only for a host-qualified id, `number` (a digit string) for any id but
- * a local one, and `path` for an id with a path or a local id, whose name it is; each NULL when the id has none. First
- * shape ends at `storage`.
+ * A valid id's parts: `kind`, "git" or "local"; `commit`, the root commit's hex of a git id; `name`, a local id's
+ * name; and `path`, the folders below the repo joined by "/". Each NULL when the id has none. First shape ends at
+ * `storage`.
  */
 typedef struct runtime_identity_parts {
     uint32_t size;
-    const char *resolver;
-    const char *host;
-    const char *number;
+    const char *kind;
+    const char *commit;
+    const char *name;
     const char *path;
     void *storage;
 } runtime_identity_parts;
@@ -48,92 +48,56 @@ typedef struct runtime_identity_folder_answer {
 } runtime_identity_folder_answer;
 
 /**
- * A repo to look up. `last_known` is an owner/name a previous lookup saw, or NULL; `token` an access token sent to the
- * host the id names and to no other, or NULL; `api_base` replaces the host's API root, or NULL, and is refused unless
- * the library was built with its fetch test hooks, so only a test can aim a lookup. First shape ends at `api_base`.
+ * A repo to resolve: its repo `id` and the `at` places the consumer recorded for it, at least one. `cache` is the
+ * absolute cache place naula keeps its confirmations in, under `identities`, or NULL to keep none. `token` is an access
+ * token sent only to `token_host`, which names the host it belongs to (github.com for GitHub), or both NULL.
+ * `accept_primary` is the place the user accepted as the repo's new primary and `accept_number` the place the user
+ * accepted as an account's new number, each NULL when none was. First shape ends at `accept_number`.
  */
 typedef struct runtime_identity_resolve_argument {
     uint32_t size;
     const char *id;
-    const char *last_known;
+    const char *const *at;
+    size_t at_count;
+    const char *cache;
     const char *token;
-    const char *api_base;
+    const char *token_host;
+    const char *accept_primary;
+    const char *accept_number;
 } runtime_identity_resolve_argument;
 
-/** The repo an id names: its name, its owner/name, and its default branch or NULL. First shape ends at `storage`. */
-typedef struct runtime_identity_repository {
+/**
+ * The homes that speak for a repo. `state` is "confirmed", "stale" (answered from the cache, since a home could not
+ * be heard) or "domain-only"; `homes` are those homes as places and `primary` the one new versions come from;
+ * `full_name` (account/name), `name` and `default_branch` are the primary's, NULL when it is a domain or the answer is
+ * stale. When the repo's primary changed and the user has not accepted it, `needs_user_acceptance` is 1,
+ * `recorded_primary` names the primary confirmed before, `primary` the new one, and nothing else is set. When an
+ * account's number is disputed (records of this repo hold another number for it, which a re-registered account would
+ * also cause) and the user has not accepted it, `needs_number_acceptance` is 1, `disputed_account` names the account
+ * as `<provider>[@host]:<account>`, `recorded_number` the place it was confirmed at and `offered_number` the place it
+ * answers now, and nothing else is set. First shape ends at `storage`.
+ */
+typedef struct runtime_identity_resolution {
     uint32_t size;
-    const char *name;
+    const char *state;
+    const char *const *homes;
+    size_t home_count;
+    const char *primary;
     const char *full_name;
+    const char *name;
     const char *default_branch;
+    uint32_t needs_user_acceptance;
+    const char *recorded_primary;
+    uint32_t needs_number_acceptance;
+    const char *disputed_account;
+    const char *recorded_number;
+    const char *offered_number;
     void *storage;
-} runtime_identity_repository;
-
-/**
- * One copy's also-at file, as a reader found it: `file` the file's parsed content, NULL when the copy has no file or
- * could not be reached, or `read_failed` 1 when reading it failed in any other way. An element of an array, so it has
- * no size.
- */
-typedef struct runtime_identity_copy {
-    const char *id;
-    uint32_t read_failed;
-    const spisor_value *file;
-} runtime_identity_copy;
-
-/** The repo `id` and the also-at files of it and of its copies, each id once. First shape ends at `copy_count`. */
-typedef struct runtime_identity_agree_argument {
-    uint32_t size;
-    const char *id;
-    const runtime_identity_copy *copies;
-    size_t copy_count;
-} runtime_identity_agree_argument;
-
-/**
- * A repo whose copies to read, `api_base` as runtime_identity_resolve_argument has it. First shape ends at
- * `api_base`.
- */
-typedef struct runtime_identity_also_at_argument {
-    uint32_t size;
-    const char *id;
-    const char *api_base;
-} runtime_identity_also_at_argument;
-
-/**
- * The copies that agree: `ids` the starting id first and then each counted copy, `primary` the primary the starting
- * file names (the starting id when it names none), `primary_confirmed` 1 when a counted id is that primary,
- * `start_file_malformed` 1 when the starting file was not usable, and `start_file_unavailable` 1 when it could not be
- * read. First shape ends at `storage`.
- */
-typedef struct runtime_identity_agreement {
-    uint32_t size;
-    const char *const *ids;
-    size_t id_count;
-    const char *primary;
-    uint32_t primary_confirmed;
-    uint32_t start_file_malformed;
-    uint32_t start_file_unavailable;
-    void *storage;
-} runtime_identity_agreement;
-
-/** The primary recorded at install and the one a new version comes from. First shape ends at `primary`. */
-typedef struct runtime_identity_version_argument {
-    uint32_t size;
-    const char *recorded;
-    const char *primary;
-} runtime_identity_version_argument;
-
-/**
- * Whether a new version's primary is accepted without asking: 1 when it is the recorded one, else 0, and then only the
- * user accepts it. It owns nothing. First shape ends at `accepted`.
- */
-typedef struct runtime_identity_version_answer {
-    uint32_t size;
-    uint32_t accepted;
-} runtime_identity_version_answer;
+} runtime_identity_resolution;
 
 /**
  * The identity service. Every answer and refusal argument is required but the refusal, which may be NULL for none, and
- * a repo id is a valid id that is not local and names no folder. First shape ends at `release_refusal`.
+ * a repo id is a git id that names no folder. First shape ends at `release_refusal`.
  */
 typedef struct runtime_identity_definition {
     uint32_t size;
@@ -141,7 +105,6 @@ typedef struct runtime_identity_definition {
     /**
      * Splits an id into its parts.
      *
-     * @implNote The whitespace a local name refuses is ASCII whitespace only; a byte above 0x7F is allowed.
      * @return OK; NONE for an id outside the id grammar, the answer left empty; MALFORMED for no id; OUT_OF_MEMORY.
      */
     spisor_status (*parse)(void *context, const runtime_identity_id_argument *argument,
@@ -155,47 +118,19 @@ typedef struct runtime_identity_definition {
     spisor_status (*folder)(void *context, const runtime_identity_id_argument *argument,
                             runtime_identity_folder_answer *answer, spisor_refusal *refusal);
     /**
-     * Looks the repo up on its host by number, which survives a rename; a local id answers from its own text. Only
-     * when the host cannot answer by number is `last_known` asked, and its answer is accepted only with the same
-     * number.
+     * Resolves a repo through naula: from `at`, never from a name, to every home linked both ways to the first place
+     * of `at` that confirms, so a rename, a transfer, a fork or a copy at an old name cannot redirect it. A provider
+     * word with no provider is refused with the fix to install a plugin that provides a resolver.
      *
-     * @return OK; MALFORMED for an id outside the grammar or a token that is not one to 512 printable ASCII characters
-     * without a space; REFUSED when the host cannot be asked, answers no such repo, or `api_base` is set in a shipped
-     * library; OUT_OF_MEMORY.
+     * @return OK, also when the user's acceptance is needed; MALFORMED for an id that is not a repo id, no `at`, a
+     * place that is not one, a relative cache, or a token that is not one to 512 printable ASCII characters without a
+     * space or that has no token host; REFUSED with naula's code and fix when nothing confirms the id; OUT_OF_MEMORY.
      */
     spisor_status (*resolve)(void *context, const runtime_identity_resolve_argument *argument,
-                             runtime_identity_repository *answer, spisor_refusal *refusal);
-    /**
-     * Which copies agree, from files already read; it reads nothing. An id is counted only when the starting file
-     * lists it and its own file lists the starting id back, and only ids the starting file lists are considered. A file
-     * that is not a record of a repo id `primary` and at most 16 repo ids `ids` is malformed: on a copy that leaves the
-     * copy out, and on the starting id it counts nothing beyond the id itself.
-     *
-     * @return OK; MALFORMED for an id that is not a repo id, a copy without an id or listed twice, or a file that is
-     * not a well-formed value; REFUSED when counted copies name different primaries; OUT_OF_MEMORY.
-     */
-    spisor_status (*agree)(void *context, const runtime_identity_agree_argument *argument,
-                           runtime_identity_agreement *answer, spisor_refusal *refusal);
-    /**
-     * Reads `.weivel/also-at.json` at the default branch of the repo and of each copy it lists, then answers as
-     * `agree`. A copy that cannot be reached is left out.
-     *
-     * @return OK; MALFORMED for an id that is not a repo id; REFUSED when the repo itself cannot be resolved, or as
-     * `agree` refuses; OUT_OF_MEMORY.
-     */
-    spisor_status (*also_at)(void *context, const runtime_identity_also_at_argument *argument,
-                             runtime_identity_agreement *answer, spisor_refusal *refusal);
-    /**
-     * Whether a new version's primary is accepted without the user.
-     *
-     * @return OK; MALFORMED for a recorded or new primary that is not a repo id.
-     */
-    spisor_status (*accepts_version)(void *context, const runtime_identity_version_argument *argument,
-                                     runtime_identity_version_answer *answer, spisor_refusal *refusal);
+                             runtime_identity_resolution *answer, spisor_refusal *refusal);
     void (*release_parts)(void *context, runtime_identity_parts *answer);
     void (*release_folder_answer)(void *context, runtime_identity_folder_answer *answer);
-    void (*release_repository)(void *context, runtime_identity_repository *answer);
-    void (*release_agreement)(void *context, runtime_identity_agreement *answer);
+    void (*release_resolution)(void *context, runtime_identity_resolution *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
 } runtime_identity_definition;
 

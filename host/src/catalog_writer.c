@@ -69,9 +69,12 @@ static int check_files(const catalog_input *input, const char *label, cJSON **re
 
 /** The folder an item's files live in: its id when that is a name, the id's folder, which holds no ":", when it is an id. */
 static char *folder_of(const catalog_input *input) {
-    runtime_identity identity;
     char *folder = NULL;
-    if (runtime_identity_parse_id(input->id, &identity)) {
+    runtime_identity_kind kind = runtime_identity_kind_of(input->id);
+    if (kind == RUNTIME_IDENTITY_OUT_OF_MEMORY) {
+        return NULL;
+    }
+    if (kind != RUNTIME_IDENTITY_NOT_AN_ID) {
         runtime_identity_folder_name(input->id, &folder);
         return folder;
     }
@@ -87,10 +90,12 @@ static int names_a_folder(const catalog_input *input) {
 static int check_input(const catalog_input *input, cJSON **refusal) {
     char *label = label_of(input);
     int checked = label != NULL;
+    int is_item_id = checked ? runtime_catalog_is_item_id(input->id) : 0;
+    checked = checked && is_item_id >= 0;
     if (checked && input->application != NULL && strcmp(input->kind, "host") != 0) {
         const char *parts[2] = {label, " declares an application, which only a host may"};
         checked = refuse(refusal, parts, 2, "give the application to a host, or remove it from this build");
-    } else if (checked && !runtime_catalog_is_item_id(input->id)) {
+    } else if (checked && !is_item_id) {
         char *id = shown(input->id);
         const char *parts[2] = {id, " is not an id a catalog accepts"};
         checked = refuse(refusal, parts, 2, "use lowercase letters and digits joined by single hyphens");

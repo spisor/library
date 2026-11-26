@@ -165,12 +165,18 @@ static int is_list_instead_of_copy(const cJSON *document) {
     return runtime_marketplace_check_list(document, problem, sizeof problem);
 }
 
+/** 1 for a copy; 0 with a refusal, or without one when memory runs out. */
 static int check_shape(const runtime_marketplace_read_request *order, const cJSON *document, cJSON **refusal) {
     char problem[PROBLEM_SIZE];
-    if (runtime_marketplace_check_copy(document, problem, sizeof problem)) {
-        return 1;
+    int verdict = runtime_marketplace_check_copy(document, problem, sizeof problem);
+    if (verdict != 0) {
+        return verdict > 0;
     }
-    if (is_list_instead_of_copy(document)) {
+    int is_list = is_list_instead_of_copy(document);
+    if (is_list < 0) {
+        return 0;
+    }
+    if (is_list) {
         refuse(refusal, BUILD_FIX, "%s answered a marketplace list where a copy is expected", order->source_id);
     } else {
         refuse(refusal, "serve the copy marketplace build writes", "%s is not a marketplace copy: %s", order->source_id,

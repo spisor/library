@@ -302,41 +302,50 @@ typedef struct runtime_install_register_loader_answer {
 } runtime_install_register_loader_answer;
 
 /**
- * The plugin to install by its repo `id`, such as github:5 or github:5/kernel, the absolute `cache` place it is
- * installed into and the absolute `plugin_directory` it is deployed into. `version` is the one to install, or NULL for
- * the release index's latest; `last_known` the owner/name a previous lookup saw, asked only when the number cannot be
- * looked up, or NULL; `accept_primary` the new primary the user accepted, or NULL; `api_base` the repo host's API
- * address, honoured only by a test build, or NULL. First shape ends at `api_base`.
+ * The plugin to install by its repo `id`, such as git:dd92836cca7c292258635112ecfe1acb7b4f6ecd or that id followed by
+ * /kernel, the `at` places the consumer recorded for its repo, at least one, the absolute `cache` place it is
+ * installed into, where naula also keeps what confirmed the repo, and the absolute `plugin_directory` it is deployed
+ * into. `version` is the one to install, or NULL for the release index's latest; `accept_primary` the place the user
+ * accepted as the repo's new primary, or NULL; `accept_number` the place the user accepted as an account's new
+ * number, or NULL; `api_base` the release host's API address, honoured only by a test build, or NULL. First shape ends
+ * at `api_base`.
  */
 typedef struct runtime_install_by_id_argument {
     uint32_t size;
     const char *id;
+    const char *const *at;
+    size_t at_count;
     const char *cache;
     const char *plugin_directory;
     const char *version;
-    const char *last_known;
     const char *accept_primary;
+    const char *accept_number;
     const char *api_base;
 } runtime_install_by_id_argument;
 
 /**
- * The repo installed from, which is the verified primary and so can differ from the id asked for: its `id`, `name`
- * and `full_name`, the `ids` of its verified set, its `primary`, and whether a copy confirmed that primary. When the
- * primary differs from the one recorded for the id and the user has not accepted it, `needs_user_acceptance` is set,
- * `recorded_primary` names the recorded one and nothing was installed; otherwise `version`, `commit` (empty when the
- * index states none) and `sha256`, the release index's digest, say what was. First shape ends at `storage`.
+ * What was installed: the `id` asked for, the `name` and `full_name` (owner/name) of the primary it was installed
+ * from, the `homes` that confirmed the id as places, and its `primary`; then `version`, `commit` (empty when the index
+ * states none) and `sha256`, the release index's digest. When the primary changed and the user has not accepted it,
+ * `needs_user_acceptance` is set, `recorded_primary` names the primary confirmed before and `primary` the new one;
+ * when an account's number changed and the user has not accepted it, `needs_number_acceptance` is set,
+ * `disputed_account` names the account as `<provider>[@host]:<account>`, `recorded_number` the place it was confirmed
+ * at and `offered_number` the place it answers now. Either way nothing was installed. First shape ends at `storage`.
  */
 typedef struct runtime_install_by_id_answer {
     uint32_t size;
     const char *id;
     const char *name;
     const char *full_name;
-    const char *const *ids;
-    size_t id_count;
+    const char *const *homes;
+    size_t home_count;
     const char *primary;
-    uint32_t primary_confirmed;
     uint32_t needs_user_acceptance;
     const char *recorded_primary;
+    uint32_t needs_number_acceptance;
+    const char *disputed_account;
+    const char *recorded_number;
+    const char *offered_number;
     const char *version;
     const char *commit;
     const char *sha256;
@@ -564,19 +573,19 @@ typedef struct runtime_install_definition {
     spisor_status (*register_loader)(void *context, const runtime_install_register_loader_argument *argument,
                                      runtime_install_register_loader_answer *answer, spisor_refusal *refusal);
     /**
-     * Installs the plugin the repo id names into the cache from its primary's latest release, checking every file
-     * against the release index's digest, deploys it into the plugin directory under its import name, and records the
-     * verified set and primary under the cache's identities for the id asked for. A new version comes only from a
-     * confirmed primary, never a mirror; when the set cannot be read, or names a primary no copy confirms, the id asked
-     * for is the primary, unconfirmed. A primary that differs from the recorded one installs nothing until
-     * `accept_primary` names it. A REFUSED or OUT_OF_MEMORY answer may leave the version in the cache, where a later
-     * install finds it, and, once deployed, the plugin, which the next install replaces; the record is written only
-     * after the plugin is deployed.
+     * Installs the plugin the repo id names into the cache from the latest release of its primary, which naula
+     * confirms from the `at` places, checking every file against the release index's digest, and deploys it into the
+     * plugin directory under its import name. A new version comes only from the confirmed primary, never a copy, a
+     * fork or a name. naula keeps what confirmed the repo under the cache's identities when it resolves, before any
+     * release is read. A primary other than the one confirmed before installs nothing until `accept_primary` names it,
+     * and an account's number other than the one confirmed before nothing until `accept_number` names it. A REFUSED or
+     * OUT_OF_MEMORY answer may leave the version in the cache, where a later install finds it; the answer is taken
+     * before the plugin is deployed, the last write, so OUT_OF_MEMORY never follows a deploy.
      *
-     * @return OK; MALFORMED, also for an id that is not an id at all; REFUSED for a local id, which has no host to
-     * install from, a repo that cannot be looked up or was renamed during the install, copies naming different
-     * primaries, a release without an index, a file failing its digest, or a deploy or record the disk refuses;
-     * OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for an id that is not an id at all; REFUSED for a local id, which has no home to
+     * install from, a repo naula does not confirm or whose primary was renamed during the install, a primary that is
+     * not on GitHub, Gitea or Forgejo, a release without an index, a file failing its digest, or a deploy the disk
+     * refuses; OUT_OF_MEMORY.
      */
     spisor_status (*by_id)(void *context, const runtime_install_by_id_argument *argument,
                            runtime_install_by_id_answer *answer, spisor_refusal *refusal);

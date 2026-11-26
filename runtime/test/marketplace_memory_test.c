@@ -49,12 +49,12 @@ static int is_remembered(const catalog_answer answer) {
 
 static void remembers_a_first_install(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "first");
-    catalog_answer answer = remember("spisor", "runtime", "github:1", NULL);
+    catalog_answer answer = remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL);
     CHECK(is_remembered(answer));
     char *text = store_text();
     cJSON *store = text == NULL ? NULL : parsed(text);
     CHECK(store != NULL);
-    check_text(text_at(value_at(store, "names"), "spisor/runtime"), "github:1", "the recorded id");
+    check_text(text_at(value_at(store, "names"), "spisor/runtime"), "git:0000000000000000000000000000000000000001", "the recorded id");
     CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(store, "format")) == 1);
     cJSON_Delete(store);
     spisor_memory_release(text);
@@ -63,16 +63,16 @@ static void remembers_a_first_install(void) {
 
 static void the_same_id_again_is_fine(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "same");
-    cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
-    catalog_answer again = remember("spisor", "runtime", "github:1", NULL);
+    cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    catalog_answer again = remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL);
     CHECK(is_remembered(again));
     cJSON_Delete(again.tree);
 }
 
 static void one_name_in_two_marketplaces_is_two_memories(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "two");
-    cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
-    catalog_answer other = remember("other", "runtime", "github:9", NULL);
+    cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    catalog_answer other = remember("other", "runtime", "git:0000000000000000000000000000000000000009", NULL);
     CHECK(is_remembered(other));
     char *text = store_text();
     CHECK(text != NULL && strstr(text, "spisor/runtime") != NULL && strstr(text, "other/runtime") != NULL);
@@ -82,17 +82,17 @@ static void one_name_in_two_marketplaces_is_two_memories(void) {
 
 static void a_different_id_for_a_remembered_name_needs_the_user_naming_both(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "different");
-    cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
-    catalog_answer answer = remember("spisor", "runtime", "github:2", NULL);
+    cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    catalog_answer answer = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", NULL);
     CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "needsUserAcceptance")));
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "remembered") == NULL);
-    check_text(text_at(answer.tree, "was"), "github:1", "the remembered id");
-    check_text(text_at(answer.tree, "now"), "github:2", "the offered id");
+    check_text(text_at(answer.tree, "was"), "git:0000000000000000000000000000000000000001", "the remembered id");
+    check_text(text_at(answer.tree, "now"), "git:0000000000000000000000000000000000000002", "the offered id");
     char *text = store_text();
-    CHECK(text != NULL && strstr(text, "github:1") != NULL && strstr(text, "github:2") == NULL);
+    CHECK(text != NULL && strstr(text, "git:0000000000000000000000000000000000000001") != NULL && strstr(text, "git:0000000000000000000000000000000000000002") == NULL);
     spisor_memory_release(text);
-    catalog_answer wrong = remember("spisor", "runtime", "github:2", "github:3");
+    catalog_answer wrong = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", "git:0000000000000000000000000000000000000003");
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(wrong.tree, "needsUserAcceptance")));
     cJSON_Delete(wrong.tree);
     cJSON_Delete(answer.tree);
@@ -100,13 +100,13 @@ static void a_different_id_for_a_remembered_name_needs_the_user_naming_both(void
 
 static void accept_records_the_new_id(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "accept");
-    cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
-    catalog_answer accepted = remember("spisor", "runtime", "github:2", "github:2");
+    cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    catalog_answer accepted = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", "git:0000000000000000000000000000000000000002");
     CHECK(is_remembered(accepted));
     char *text = store_text();
-    CHECK(text != NULL && strstr(text, "github:2") != NULL && strstr(text, "github:1") == NULL);
+    CHECK(text != NULL && strstr(text, "git:0000000000000000000000000000000000000002") != NULL && strstr(text, "git:0000000000000000000000000000000000000001") == NULL);
     spisor_memory_release(text);
-    catalog_answer after = remember("spisor", "runtime", "github:2", NULL);
+    catalog_answer after = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", NULL);
     CHECK(is_remembered(after));
     cJSON_Delete(after.tree);
     cJSON_Delete(accepted.tree);
@@ -123,7 +123,7 @@ static void a_corrupt_store_is_refused_not_overwritten(void) {
     for (size_t index = 0; index < sizeof corrupt / sizeof corrupt[0]; index++) {
         scratch_in(scratch, sizeof scratch, "marketplace-memory", "corrupt");
         write_store(corrupt[index]);
-        catalog_answer answer = remember("spisor", "runtime", "github:1", NULL);
+        catalog_answer answer = remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL);
         CHECK(expect_refusal(answer, "marketplace-names.json", "a corrupt store"));
         CHECK(marketplace_last_status == SPISOR_REFUSED);
         char *text = store_text();
@@ -143,7 +143,7 @@ static void refuses_an_argument_without_what_it_needs(void) {
     cJSON_AddStringToObject(argument, "state", "relative/state");
     cJSON_AddStringToObject(argument, "marketplace", "spisor");
     cJSON_AddStringToObject(argument, "name", "runtime");
-    cJSON_AddStringToObject(argument, "id", "github:1");
+    cJSON_AddStringToObject(argument, "id", "git:0000000000000000000000000000000000000001");
     expect_refusal_released(marketplace_call(MARKETPLACE_REMEMBER, argument), "state", "a relative state");
     CHECK(marketplace_last_status == SPISOR_MALFORMED);
 }
@@ -155,19 +155,19 @@ static int is_settled(const catalog_answer answer) {
 static void a_check_writes_nothing_and_still_finds_a_change(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "check");
     is_checking_only = 1;
-    catalog_answer first = remember("spisor", "runtime", "github:1", NULL);
+    catalog_answer first = remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL);
     CHECK(is_settled(first));
     char *text = store_text();
     CHECK(text == NULL);
     is_checking_only = 0;
-    cJSON_Delete(remember("spisor", "runtime", "github:1", NULL).tree);
+    cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
     is_checking_only = 1;
-    catalog_answer changed = remember("spisor", "runtime", "github:2", NULL);
+    catalog_answer changed = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", NULL);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(changed.tree, "needsUserAcceptance")));
-    catalog_answer accepted = remember("spisor", "runtime", "github:2", "github:2");
+    catalog_answer accepted = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", "git:0000000000000000000000000000000000000002");
     CHECK(is_settled(accepted));
     text = store_text();
-    CHECK(text != NULL && strstr(text, "github:1") != NULL && strstr(text, "github:2") == NULL);
+    CHECK(text != NULL && strstr(text, "git:0000000000000000000000000000000000000001") != NULL && strstr(text, "git:0000000000000000000000000000000000000002") == NULL);
     is_checking_only = 0;
     spisor_memory_release(text);
     cJSON_Delete(accepted.tree);
@@ -177,18 +177,18 @@ static void a_check_writes_nothing_and_still_finds_a_change(void) {
 
 static void a_bare_name_is_remembered_beside_the_qualified_ones(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "bare");
-    cJSON_Delete(remember("first", "runtime", "github:1", NULL).tree);
-    catalog_answer bare = remember(NULL, "runtime", "github:1", NULL);
+    cJSON_Delete(remember("first", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    catalog_answer bare = remember(NULL, "runtime", "git:0000000000000000000000000000000000000001", NULL);
     CHECK(is_remembered(bare));
     char *text = store_text();
     cJSON *store = parsed(text);
-    check_text(text_at(value_at(store, "names"), "runtime"), "github:1", "the bare key");
-    check_text(text_at(value_at(store, "names"), "first/runtime"), "github:1", "the qualified key");
+    check_text(text_at(value_at(store, "names"), "runtime"), "git:0000000000000000000000000000000000000001", "the bare key");
+    check_text(text_at(value_at(store, "names"), "first/runtime"), "git:0000000000000000000000000000000000000001", "the qualified key");
     cJSON_Delete(store);
     spisor_memory_release(text);
-    catalog_answer moved = remember(NULL, "runtime", "github:2", NULL);
+    catalog_answer moved = remember(NULL, "runtime", "git:0000000000000000000000000000000000000002", NULL);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(moved.tree, "needsUserAcceptance")));
-    check_text(text_at(moved.tree, "was"), "github:1", "the bare name's remembered id");
+    check_text(text_at(moved.tree, "was"), "git:0000000000000000000000000000000000000001", "the bare name's remembered id");
     cJSON_Delete(moved.tree);
     cJSON_Delete(bare.tree);
 }

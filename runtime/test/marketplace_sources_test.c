@@ -29,18 +29,18 @@
 #define BUILT "2026-11-10T12:00:00Z"
 #define COPY_ONE                                                                                                    \
     "{\"format\":1,\"title\":\"One\",\"built\":\"" BUILT "\",\"entries\":["                                       \
-    "{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\",\"lastKnown\":\"spisor/runtime\"},"   \
-    "{\"id\":\"github:2\",\"name\":\"weivel\",\"fullName\":\"spisor/weivel\",\"lastKnown\":\"spisor/weivel\"}]}"
+    "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"},"   \
+    "{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"],\"name\":\"weivel\",\"fullName\":\"spisor/weivel\"}]}"
 #define COPY_TWO                                                                                                    \
     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
-    "{\"id\":\"github:9\",\"name\":\"runtime\",\"fullName\":\"other/runtime\",\"lastKnown\":\"other/runtime\"},"     \
-    "{\"id\":\"github:10\",\"name\":\"extra\",\"fullName\":\"other/extra\",\"lastKnown\":\"other/extra\"}]}"
-#define COPY_MIRROR                                                                                                     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                              "{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"mirror/runtime\",\"lastKnown\":\"mirror/runtime\"}]}"
+    "{\"id\":\"git:0000000000000000000000000000000000000009\",\"at\":[\"forge:9\"],\"name\":\"runtime\",\"fullName\":\"other/runtime\"},"     \
+    "{\"id\":\"git:000000000000000000000000000000000000000a\",\"at\":[\"forge:10\"],\"name\":\"extra\",\"fullName\":\"other/extra\"}]}"
+#define COPY_MIRROR                                                                                                     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                              "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"runtime\",\"fullName\":\"mirror/runtime\"}]}"
 #define COPY_SAME_NAME                                                                                              \
     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
-    "{\"id\":\"github:1\",\"name\":\"same\",\"fullName\":\"a/same\",\"lastKnown\":\"a/same\"},"                     \
-    "{\"id\":\"github:2\",\"name\":\"same\",\"fullName\":\"b/same\",\"lastKnown\":\"b/same\"}]}"
-#define LIST_TEXT "{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}"
+    "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"same\",\"fullName\":\"a/same\"},"                     \
+    "{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"],\"name\":\"same\",\"fullName\":\"b/same\"}]}"
+#define LIST_TEXT "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}"
 #define HTML_TEXT "<!doctype html><html><body>not a copy</body></html>"
 #define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
 
@@ -278,7 +278,7 @@ static void refuses_text_that_is_not_json_and_a_broken_copy(void) {
     expect_refusal(not_json, "spisor", "not json");
     cJSON_Delete(not_json.tree);
     catalog_answer broken =
-        read_text("spisor", "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"github:1\"}]}");
+        read_text("spisor", "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     expect_refusal(broken, "spisor", "broken copy");
     cJSON_Delete(broken.tree);
     catalog_answer array = read_text("spisor", "[]");
@@ -288,8 +288,8 @@ static void refuses_text_that_is_not_json_and_a_broken_copy(void) {
 
 static void refuses_a_copy_naming_two_entries_alike(void) {
     catalog_answer answer = read_text("spisor", COPY_SAME_NAME);
-    expect_refusal(answer, "github:1", "same name names both ids");
-    CHECK(message_names(answer, "github:2"));
+    expect_refusal(answer, "git:0000000000000000000000000000000000000001", "same name names both ids");
+    CHECK(message_names(answer, "git:0000000000000000000000000000000000000002"));
     cJSON_Delete(answer.tree);
 }
 
@@ -333,7 +333,7 @@ static void one_bad_source_does_not_stop_the_others(void) {
 static void a_bare_name_in_one_marketplace_settles(void) {
     catalog_answer answer = lookup_in("weivel");
     CHECK(answer.status == SPISOR_OK);
-    check_text(text_at(answer.tree, "id"), "github:2", "id");
+    check_text(text_at(answer.tree, "id"), "git:0000000000000000000000000000000000000002", "id");
     check_text(text_at(answer.tree, "marketplace"), "spisor", "marketplace");
     cJSON_Delete(answer.tree);
 }
@@ -357,7 +357,7 @@ static void the_same_id_in_two_marketplaces_settles_on_the_first(void) {
     cJSON_AddStringToObject(argument, "name", "runtime");
     catalog_answer answer = marketplace_call(MARKETPLACE_LOOKUP, argument);
     CHECK(answer.status == SPISOR_OK);
-    check_text(text_at(answer.tree, "id"), "github:1", "id");
+    check_text(text_at(answer.tree, "id"), "git:0000000000000000000000000000000000000001", "id");
     check_text(text_at(answer.tree, "marketplace"), "spisor", "first marketplace in source order");
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "ambiguous") == NULL);
     cJSON_Delete(answer.tree);
@@ -376,11 +376,11 @@ static void two_copies_sharing_an_id_and_a_third_with_another_are_ambiguous(void
 
 static void a_qualified_name_picks_its_marketplace(void) {
     catalog_answer first = lookup_in("spisor/runtime");
-    check_text(text_at(first.tree, "id"), "github:1", "spisor id");
+    check_text(text_at(first.tree, "id"), "git:0000000000000000000000000000000000000001", "spisor id");
     check_text(text_at(first.tree, "marketplace"), "spisor", "spisor marketplace");
     cJSON_Delete(first.tree);
     catalog_answer second = lookup_in("other/runtime");
-    check_text(text_at(second.tree, "id"), "github:9", "other id");
+    check_text(text_at(second.tree, "id"), "git:0000000000000000000000000000000000000009", "other id");
     check_text(text_at(second.tree, "marketplace"), "other", "other marketplace");
     cJSON_Delete(second.tree);
 }

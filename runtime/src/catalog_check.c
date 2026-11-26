@@ -196,7 +196,10 @@ static int check_map(checker *check, const cJSON *object, key_rule key_valid, ru
     }
     int valid = 1;
     for (size_t index = 0; valid && key_valid != NULL && index < count; index++) {
-        if (!key_valid(members[index]->string)) {
+        int verdict = key_valid(members[index]->string);
+        if (verdict < 0) {
+            valid = fail_out_of_memory(check);
+        } else if (!verdict) {
             valid = fail_pattern(check, key_pattern, members[index]->string);
         }
     }

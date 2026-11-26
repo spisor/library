@@ -27,8 +27,7 @@ extern "C" {
 /**
  * A list to build a copy of: `built` the RFC 3339 time the copy states, from the caller so the same inputs build the
  * same copy; `previous` the copy this build replaces, or NULL; `token` an access token sent only to `token_host`, the
- * one host the list's ids name, both NULL or both set; `api_base` replaces each host's API root and is refused unless
- * the library was built with its fetch test hooks. First shape ends at `api_base`.
+ * one host the list's places name, both NULL or both set. First shape ends at `token_host`.
  */
 typedef struct runtime_marketplace_build_argument {
     uint32_t size;
@@ -37,7 +36,6 @@ typedef struct runtime_marketplace_build_argument {
     const spisor_value *previous;
     const char *token;
     const char *token_host;
-    const char *api_base;
 } runtime_marketplace_build_argument;
 
 /** An entry left out of a copy, and why. An element of an array, so it has no size. */
@@ -136,7 +134,7 @@ typedef struct runtime_marketplace_lookup_argument {
 
 /** What a lookup found. Append-only: a published value keeps its number. */
 typedef enum runtime_marketplace_match {
-    /** One entry: `id`, first found in the source `marketplace`. */
+    /** One entry: `id` and its `at` places, first found in the source `marketplace`. */
     RUNTIME_MARKETPLACE_FOUND = 1,
     /** A bare name under more than one id: `ambiguous` lists every match as the marketplace/name that settles it. */
     RUNTIME_MARKETPLACE_AMBIGUOUS = 2
@@ -150,6 +148,8 @@ typedef struct runtime_marketplace_lookup_answer {
     const char *marketplace;
     const char *const *ambiguous;
     size_t ambiguous_count;
+    const char *const *at;
+    size_t at_count;
     void *storage;
 } runtime_marketplace_lookup_answer;
 
@@ -199,14 +199,14 @@ typedef struct runtime_marketplace_definition {
     uint32_t size;
     void *context;
     /**
-     * Builds the copy of a list: each entry carries the full name its repository has now and a name, the list's alias
-     * or else the repository's or its folder's name, derived as an import name. An entry whose repository cannot be
-     * looked up is carried over from `previous`, or left out; an entry whose name cannot be made an import name is left
-     * out. The token is never written into the copy or a refusal.
+     * Builds the copy of a list: each entry carries its id and `at` places, the full name its repository's primary has
+     * now and a name, the list's alias or else the repository's or its folder's name, derived as an import name. An
+     * entry naula does not confirm from its places is carried over from `previous`, or left out; an entry whose name
+     * cannot be made an import name is left out. The token is never written into the copy or a refusal.
      *
      * @return OK; REFUSED for a list or previous copy that breaks its schema, a built that is not RFC 3339, a local or
-     * repeated id, two entries of one name, a token for another host, or a list of entries none of which a copy would
-     * hold.
+     * repeated id, two entries of one name, a token for another host than a place names, or a list of entries none of
+     * which a copy would hold.
      */
     spisor_status (*build)(void *context, const runtime_marketplace_build_argument *argument,
                            runtime_marketplace_build_answer *answer, spisor_refusal *refusal);

@@ -160,15 +160,17 @@ static int read_request(const runtime_cache_deploy_request *request, deployment 
     plan->identity_id = nonempty(request->identity_id);
     plan->identity_name = nonempty(request->identity_name);
     plan->replaces = nonempty(request->replaces);
-    runtime_identity parsed;
     if (plan->directory == NULL || plan->plugin_directory == NULL || plan->identity_id == NULL ||
         plan->identity_name == NULL) {
         refuse(refusal, "the call needs a directory, a pluginDir and an identity with an id and a name",
                "pass the installed bundle's directory, the plugins directory, and the identity's id and owner/name");
         return 0;
     }
-    if (!runtime_identity_parse_id(plan->identity_id, &parsed)) {
-        refuse(refusal, "the identity id is not a valid id", "send an id such as github:<number> or local:<name>");
+    runtime_identity_kind kind = runtime_identity_kind_of(plan->identity_id);
+    if (kind == RUNTIME_IDENTITY_NOT_AN_ID) {
+        refuse(refusal, "the identity id is not a valid id", "send an id such as git:<root commit> or local:<name>");
+    }
+    if (kind == RUNTIME_IDENTITY_NOT_AN_ID || kind == RUNTIME_IDENTITY_OUT_OF_MEMORY) {
         return 0;
     }
     return resolve_directories(plan, refusal);

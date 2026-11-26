@@ -787,61 +787,59 @@ static uint32_t is_true(const cJSON *answered, const char *name) {
     return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, name)) ? 1u : 0u;
 }
 
+#define BY_ID_TEXT_COUNT 11
+
 static spisor_status fill_by_id(const cJSON *answered, void *filled) {
-    static const char *const names[7] = {"id", "name", "fullName", "primary", "recordedPrimary", "version", "commit"};
+    static const char *const names[BY_ID_TEXT_COUNT] = {
+        "id",           "name",           "fullName",      "primary", "recordedPrimary", "disputedAccount",
+        "recordedNumber", "offeredNumber", "version",       "commit",  "sha256"};
     runtime_install_by_id_answer *answer = filled;
-    const char **copies[7];
+    const char **copies[BY_ID_TEXT_COUNT] = {&answer->id,          &answer->name,           &answer->full_name,
+                                             &answer->primary,     &answer->recorded_primary, &answer->disputed_account,
+                                             &answer->recorded_number, &answer->offered_number, &answer->version,
+                                             &answer->commit,      &answer->sha256};
     spisor_status status = runtime_start_storage(&answer->storage);
-    copies[0] = &answer->id;
-    copies[1] = &answer->name;
-    copies[2] = &answer->full_name;
-    copies[3] = &answer->primary;
-    copies[4] = &answer->recorded_primary;
-    copies[5] = &answer->version;
-    copies[6] = &answer->commit;
-    for (size_t index = 0; status == SPISOR_OK && index < 7; index++) {
+    for (size_t index = 0; status == SPISOR_OK && index < BY_ID_TEXT_COUNT; index++) {
         status = copy_member(&answer->storage, answered, names[index], copies[index]);
     }
-    if (status == SPISOR_OK) {
-        status = copy_member(&answer->storage, answered, "sha256", &answer->sha256);
-    }
     if (status == SPISOR_OK &&
-        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "ids"), &answer->ids,
-                               &answer->id_count)) {
+        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "homes"), &answer->homes,
+                               &answer->home_count)) {
         status = SPISOR_OUT_OF_MEMORY;
     }
-    answer->primary_confirmed = is_true(answered, "primaryConfirmed");
     answer->needs_user_acceptance = is_true(answered, "needsUserAcceptance");
+    answer->needs_number_acceptance = is_true(answered, "needsNumberAcceptance");
     return status;
 }
 
-static int is_repo_id(const char *id) {
-    runtime_identity parsed;
-    return runtime_is_text(id) && runtime_identity_parse_id(id, &parsed);
+/** OK for a git id, MALFORMED for no id or another text; a local id is the operation's to refuse. */
+static spisor_status check_by_id_id(const char *id, spisor_refusal *refusal) {
+    runtime_identity_kind kind = runtime_is_text(id) ? runtime_identity_kind_of(id) : RUNTIME_IDENTITY_NOT_AN_ID;
+    if (kind == RUNTIME_IDENTITY_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return kind == RUNTIME_IDENTITY_NOT_AN_ID ? runtime_refuse_member(refusal, "id", HEADER) : SPISOR_OK;
 }
 
-/** Whether every optional text of the argument is NULL or not empty. */
+/** Whether every optional text of the argument is NULL or not empty, and `at` holds texts. */
 static int are_optional_texts(const runtime_install_by_id_argument *argument) {
-    const char *const optional[4] = {argument->version, argument->last_known, argument->accept_primary,
+    const char *const optional[4] = {argument->version, argument->accept_primary, argument->accept_number,
                                      argument->api_base};
     for (size_t index = 0; index < 4; index++) {
         if (optional[index] != NULL && optional[index][0] == '\0') {
             return 0;
         }
     }
-    return 1;
+    return argument->at_count == 0 || runtime_are_texts(argument->at, argument->at_count, 0);
 }
 
-/**
- * Serves byId, its answer filled before the record of the primary is written whenever there is one to write, so an
- * answer that runs out of memory leaves no record; one answered without a record, a user acceptance, fills after.
- */
+/** Serves byId, its answer filled before the answer is handed back whenever there is one to fill. */
 static spisor_status serve_by_id(const runtime_install_by_id_argument *argument, runtime_install_by_id_answer *answer,
                                  spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
-    runtime_install_by_id_request request = {argument->id,      argument->cache,          argument->plugin_directory,
-                                             argument->version, argument->last_known,     argument->accept_primary,
-                                             argument->api_base};
+    runtime_install_by_id_request request = {argument->id,     argument->at,          argument->at_count,
+                                             argument->cache,  argument->plugin_directory, argument->version,
+                                             argument->accept_primary, argument->accept_number, argument->api_base};
     cJSON *answered = runtime_install_by_id(&request, fill_by_id, answer, &operation_refusal);
     spisor_status status = SPISOR_OK;
     if (answered == NULL) {
@@ -864,17 +862,17 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, BY_ID_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->id_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->home_count)) {
         return spisor_refuse_shape(refusal, "install's by_id");
     }
     places[0] = argument->cache;
     places[1] = argument->plugin_directory;
     status = check_places(names, places, 2, refusal);
-    if (status == SPISOR_OK && !is_repo_id(argument->id)) {
-        status = runtime_refuse_member(refusal, "id", HEADER);
+    if (status == SPISOR_OK) {
+        status = check_by_id_id(argument->id, refusal);
     }
-    if (status == SPISOR_OK && !are_optional_texts(argument)) {
-        status = runtime_refuse_member(refusal, "version, last known name, accepted primary or api base", HEADER);
+    if (status == SPISOR_OK && (!are_optional_texts(argument) || (argument->at_count > 0 && argument->at == NULL))) {
+        status = runtime_refuse_member(refusal, "at, version, accepted primary, accepted number or api base", HEADER);
     }
     return status != SPISOR_OK ? status : serve_by_id(argument, answer, refusal);
 }

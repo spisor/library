@@ -1110,12 +1110,12 @@ static void it_keeps_an_old_unmarked_bundle_version_a_host_references(void) {
 
 static void it_keys_an_abandoned_id_folder_by_its_id_when_it_checks_references_and_names_what_it_removes(void) {
     start_cache("sweep-id-abandoned");
-    installed_bundle("github+5", "2.0.0", 0);
-    age_in_cache("bundles/github+5/2.0.0", 25);
-    record_references("claude-code", "{\"run\":{},\"next\":{\"github:5\":\"2.0.0\"}}");
+    installed_bundle("git+0000000000000000000000000000000000000005", "2.0.0", 0);
+    age_in_cache("bundles/git+0000000000000000000000000000000000000005/2.0.0", 25);
+    record_references("claude-code", "{\"run\":{},\"next\":{\"git:0000000000000000000000000000000000000005\":\"2.0.0\"}}");
     expect_removed("[]", "referenced id key");
     record_references("claude-code", "{\"run\":{},\"next\":{}}");
-    expect_removed("[\"github:5@2.0.0\"]", "unreferenced id key");
+    expect_removed("[\"git:0000000000000000000000000000000000000005@2.0.0\"]", "unreferenced id key");
     finish_cache();
 }
 

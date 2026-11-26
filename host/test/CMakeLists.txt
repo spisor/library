@@ -22,7 +22,7 @@ endif()
 spisor_strict_warnings(fake_application)
 
 set(c_host_runtime_objects $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> $<TARGET_OBJECTS:runtime_commands> $<TARGET_OBJECTS:runtime_secret_store>
-    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity_resolve> $<TARGET_OBJECTS:runtime_identity_also_at>
+    $<TARGET_OBJECTS:runtime_fetch> $<TARGET_OBJECTS:runtime_identity>
     $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_hosts_definition>
@@ -93,7 +93,8 @@ set(host_marketplace_test_objects ${host_test_runtime_objects})
 list(REMOVE_ITEM host_marketplace_test_objects $<TARGET_OBJECTS:runtime_fetch>)
 list(APPEND host_marketplace_test_objects $<TARGET_OBJECTS:runtime_fetch_test_hooks>)
 host_executable(marketplace_command_test marketplace_command_test TEST_HOOKS marketplace_command_test.c
-    ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
+    ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c ${PROJECT_SOURCE_DIR}/runtime/test/fake_forge.c
+    $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
 if(WIN32)
     target_link_libraries(marketplace_command_test PRIVATE Ws2_32)
 endif()
@@ -105,7 +106,8 @@ add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77)
 
 host_executable(install_by_name_test install_by_name_test TEST_HOOKS install_by_name_test.c
-    ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
+    ${PROJECT_SOURCE_DIR}/runtime/test/http_fixture.c ${PROJECT_SOURCE_DIR}/runtime/test/fake_forge.c
+    $<TARGET_OBJECTS:host_objects> ${host_marketplace_test_objects})
 if(WIN32)
     target_link_libraries(install_by_name_test PRIVATE Ws2_32)
 endif()

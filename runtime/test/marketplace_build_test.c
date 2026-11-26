@@ -1,7 +1,3 @@
-#if !defined(_WIN32)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,252 +5,55 @@
 #include "catalog_call.h"
 #include "spisor/allocation.h"
 #include "check.h"
+#include "fake_forge.h"
 #include "marketplace_call.h"
-#include "http_fixture.h"
 #include "marketplace_build.h"
 #include "marketplace_check.h"
-#include "transport_hooks.h"
 
 #define BUILT "2026-11-10T12:00:00Z"
-#define REPOSITORY(identifier, name_text, full_name_text) \
-    "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"" full_name_text "\",\"default_branch\":\"main\"}"
-#define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
-#define EMPTY_ROUTE(path, status) {path, status, NULL, "", 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
-#define LIMITED_ROUTE(path, body) {path, 200, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 1}
+#define ROOT_RUNTIME "1000000000000000000000000000000000000001"
+#define ROOT_WEIVEL "2000000000000000000000000000000000000002"
+#define ROOT_OTHER "3000000000000000000000000000000000000003"
+#define ROOT_MIXED "5000000000000000000000000000000000000005"
+#define ROOT_RESERVED "6000000000000000000000000000000000000006"
+#define ROOT_GONE "7000000000000000000000000000000000000007"
+#define RUNTIME_ID "git:" ROOT_RUNTIME
+#define WEIVEL_ID "git:" ROOT_WEIVEL
+#define OTHER_ID "git:" ROOT_OTHER
+#define MIXED_ID "git:" ROOT_MIXED
+#define RESERVED_ID "git:" ROOT_RESERVED
+#define GONE_ID "git:" ROOT_GONE
+#define ENTRY(id, place) "{\"id\":\"" id "\",\"at\":[\"" place "\"]"
+#define LIST(entries) "{\"format\":1,\"entries\":[" entries "]}"
+#define TOKEN "tok-1234567890abcdef"
+#define KEPT_ENTRY                                                                                                     \
+    "{\"id\":\"" GONE_ID "\",\"at\":[\"forge:70\"],\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"description\":\"Old.\"}"
+#define PREVIOUS_COPY(entries) "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[" entries "]}"
 
-static unsigned short server_port;
+static fake_repo *add(uint64_t number, const char *account, const char *name, const char *root) {
+    fake_repo *repo = fake_forge_add(number, account, name, NULL);
+    char homes[128];
+    snprintf(homes, sizeof homes, "{\"provider\":\"forge\",\"account\":\"%s\"}", account);
+    repo->file = fake_forge_file(name, homes);
+    repo->root = root;
+    return repo;
+}
 
-static catalog_answer build_with(const char *list_json, const char *built) {
-    char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
+/** The repos most cases list: runtime at 1, weivel at 2, a repo named after runtime at 4, two awkward names. */
+static void start_forge(void) {
+    fake_forge_reset();
+    add(1, "spisor", "runtime", ROOT_RUNTIME);
+    add(2, "spisor", "weivel", ROOT_WEIVEL);
+    add(4, "other", "runtime", ROOT_OTHER);
+    add(5, "spisor", "My_Runtime.JS", ROOT_MIXED);
+    add(6, "spisor", "package", ROOT_RESERVED);
+}
+
+static catalog_answer build_with_options(const char *list_json, const char *token, const char *token_host,
+                                         const char *previous_json, const char *built) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "list", parsed(list_json));
     cJSON_AddStringToObject(argument, "built", built);
-    cJSON_AddStringToObject(argument, "apiBase", api_base);
-    return marketplace_call(MARKETPLACE_BUILD, argument);
-}
-
-static catalog_answer build(const char *list_json) {
-    return build_with(list_json, BUILT);
-}
-
-static const cJSON *entry_at(const catalog_answer answer, int index) {
-    return cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries"), index);
-}
-
-static int entry_member_is(const catalog_answer answer, int index, const char *member, const char *expected) {
-    return check_text(text_at(entry_at(answer, index), member), expected, member);
-}
-
-static void builds_a_copy_with_current_names(void) {
-    catalog_answer answer = build("{\"format\":1,\"title\":\"Spisor\",\"entries\":["
-                                  "{\"id\":\"github:1\",\"description\":\"The runtime.\",\"categories\":[\"core\"]},"
-                                  "{\"id\":\"github:2\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    const cJSON *copy = value_at(answer.tree, "copy");
-    CHECK(cJSON_GetObjectItemCaseSensitive(copy, "format")->valueint == 1);
-    check_text(text_at(copy, "title"), "Spisor", "title");
-    check_text(text_at(copy, "built"), BUILT, "built");
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(copy, "entries")) == 2);
-    entry_member_is(answer, 0, "id", "github:1");
-    entry_member_is(answer, 0, "name", "runtime");
-    entry_member_is(answer, 0, "fullName", "spisor/runtime");
-    entry_member_is(answer, 0, "lastKnown", "spisor/runtime");
-    entry_member_is(answer, 0, "description", "The runtime.");
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(entry_at(answer, 0), "categories")) == 1);
-    entry_member_is(answer, 1, "name", "weivel");
-    CHECK(cJSON_GetObjectItemCaseSensitive(entry_at(answer, 1), "description") == NULL);
-    char problem[256];
-    CHECK(runtime_marketplace_check_copy(copy, problem, sizeof problem));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_renamed_repo_gets_its_new_name_with_no_change_to_the_list(void) {
-    const char *list = "{\"format\":1,\"entries\":[{\"id\":\"github:3\"}]}";
-    catalog_answer before = build(list);
-    catalog_answer after = build(list);
-    CHECK(before.status == SPISOR_OK && after.status == SPISOR_OK);
-    entry_member_is(before, 0, "name", "old-name");
-    entry_member_is(before, 0, "fullName", "spisor/old-name");
-    entry_member_is(after, 0, "name", "new-name");
-    entry_member_is(after, 0, "fullName", "spisor/new-name");
-    entry_member_is(after, 0, "lastKnown", "spisor/new-name");
-    cJSON_Delete(before.tree);
-    cJSON_Delete(after.tree);
-}
-
-static void an_alias_replaces_the_name(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"core\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "core");
-    entry_member_is(answer, 0, "fullName", "spisor/runtime");
-    cJSON_Delete(answer.tree);
-}
-
-static void two_entries_with_one_name_and_no_alias_are_refused_naming_both_ids(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:4\"}]}");
-    CHECK(expect_refusal(answer, "github:1", "a clash names the first id"));
-    CHECK(strstr(text_at(answer.tree, "message"), "github:4") != NULL);
-    CHECK(strstr(text_at(answer.tree, "message"), "runtime") != NULL);
-    CHECK(strstr(text_at(answer.tree, "fix"), "alias") != NULL);
-    cJSON_Delete(answer.tree);
-}
-
-static void an_alias_settles_a_clash(void) {
-    catalog_answer answer =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:4\",\"alias\":\"other-runtime\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "runtime");
-    entry_member_is(answer, 1, "name", "other-runtime");
-    cJSON_Delete(answer.tree);
-}
-
-static void a_clash_is_checked_after_aliases_apply(void) {
-    catalog_answer clash =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"weivel\"},{\"id\":\"github:2\"}]}");
-    CHECK(expect_refusal(clash, "weivel", "an alias that equals another entry's name clashes"));
-    cJSON_Delete(clash.tree);
-    catalog_answer freed =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"core\"},{\"id\":\"github:4\"}]}");
-    CHECK(freed.status == SPISOR_OK);
-    cJSON_Delete(freed.tree);
-}
-
-static void a_duplicate_id_is_refused(void) {
-    catalog_answer answer =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:1\",\"alias\":\"again\"}]}");
-    CHECK(expect_refusal(answer, "github:1", "a duplicate id"));
-    CHECK(strstr(text_at(answer.tree, "message"), "twice") != NULL);
-    cJSON_Delete(answer.tree);
-}
-
-static void a_local_id_is_refused(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"local:tool\"}]}");
-    CHECK(expect_refusal(answer, "local:tool", "a local id"));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_folder_id_builds_with_the_last_segment_as_its_name(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/tools/config_ledger\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "id", "github:1/tools/config_ledger");
-    entry_member_is(answer, 0, "name", "config-ledger");
-    entry_member_is(answer, 0, "fullName", "spisor/runtime");
-    entry_member_is(answer, 0, "lastKnown", "spisor/runtime");
-    cJSON_Delete(answer.tree);
-}
-
-static void two_folders_of_one_repo_build(void) {
-    catalog_answer answer = build(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:1/first\"},{\"id\":\"github:1/second\"},{\"id\":\"github:1\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "first");
-    entry_member_is(answer, 1, "name", "second");
-    entry_member_is(answer, 2, "name", "runtime");
-    cJSON_Delete(answer.tree);
-}
-
-static void an_alias_replaces_a_folders_name(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1/first\",\"alias\":\"chosen\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "chosen");
-    cJSON_Delete(answer.tree);
-}
-
-static void two_folders_with_one_last_segment_clash(void) {
-    catalog_answer answer =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:1/a/same\"},{\"id\":\"github:2/b/same\"}]}");
-    CHECK(expect_refusal(answer, "github:1/a/same", "a clash between folders"));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_local_folder_id_is_still_refused(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"local:tool/sub\"}]}");
-    CHECK(expect_refusal(answer, "local:tool/sub", "a local folder id"));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_host_name_is_derived_into_an_import_name(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"},{\"id\":\"github:9\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "my-runtime");
-    entry_member_is(answer, 0, "fullName", "spisor/My_Runtime");
-    entry_member_is(answer, 1, "name", "a.b-c");
-    char problem[256];
-    CHECK(runtime_marketplace_check_copy(value_at(answer.tree, "copy"), problem, sizeof problem));
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 0);
-    cJSON_Delete(answer.tree);
-}
-
-static void an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built(void) {
-    catalog_answer answer =
-        build("{\"format\":1,\"entries\":[{\"id\":\"github:2\"},{\"id\":\"github:6\"},{\"id\":\"github:10\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries");
-    CHECK(cJSON_GetArraySize(entries) == 1);
-    entry_member_is(answer, 0, "id", "github:2");
-    const cJSON *skipped = cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped");
-    CHECK(cJSON_GetArraySize(skipped) == 2);
-    check_text(text_at(cJSON_GetArrayItem(skipped, 0), "id"), "github:6", "skipped id");
-    CHECK(strstr(text_at(cJSON_GetArrayItem(skipped, 0), "reason"), "Con") != NULL);
-    check_text(text_at(cJSON_GetArrayItem(skipped, 1), "id"), "github:10", "an empty derived name");
-    cJSON_Delete(answer.tree);
-}
-
-static void an_alias_lists_an_entry_whose_name_cannot_be_derived(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:6\",\"alias\":\"console\"}]}");
-    CHECK(answer.status == SPISOR_OK);
-    entry_member_is(answer, 0, "name", "console");
-    cJSON_Delete(answer.tree);
-}
-
-static void a_clash_after_derivation_refuses_the_whole_build(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:5\"},{\"id\":\"github:8\"}]}");
-    CHECK(expect_refusal(answer, "github:5", "a derived clash"));
-    CHECK(strstr(text_at(answer.tree, "message"), "github:8") != NULL);
-    CHECK(strstr(text_at(answer.tree, "message"), "my-runtime") != NULL);
-    cJSON_Delete(answer.tree);
-}
-
-static void a_list_that_breaks_the_schema_is_refused(void) {
-    const char *lists[] = {"{\"format\":1}", "{\"format\":2,\"entries\":[]}", "{\"format\":1,\"entries\":[{}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"Github:1\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"name\":\"runtime\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"Runtime\"}]}", "[]"};
-    for (size_t index = 0; index < sizeof lists / sizeof lists[0]; index++) {
-        catalog_answer answer = build(lists[index]);
-        CHECK(expect_refusal(answer, "list", lists[index]));
-        CHECK(marketplace_last_status == (lists[index][0] == '[' ? SPISOR_MALFORMED : SPISOR_REFUSED));
-        cJSON_Delete(answer.tree);
-    }
-}
-
-static void a_built_time_that_is_not_rfc_3339_is_refused(void) {
-    catalog_answer answer = build_with("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", "yesterday");
-    CHECK(expect_refusal(answer, "built", "a built time"));
-    cJSON_Delete(answer.tree);
-}
-
-static void an_empty_list_builds_an_empty_copy(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[]}");
-    CHECK(answer.status == SPISOR_OK);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 0);
-    cJSON_Delete(answer.tree);
-}
-
-#define TOKEN "tok-1234567890abcdef"
-#define AUTHORIZATION_LINE "Authorization: token " TOKEN
-#define KEPT_ENTRY "{\"id\":\"github:60\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\",\"description\":\"Old.\"}"
-#define PREVIOUS_COPY(entries) "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[" entries "]}"
-
-static catalog_answer build_with_options(const char *list_json, const char *token, const char *token_host,
-                                         const char *previous_json) {
-    char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)server_port);
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddItemToObject(argument, "list", parsed(list_json));
-    cJSON_AddStringToObject(argument, "built", BUILT);
-    cJSON_AddStringToObject(argument, "apiBase", api_base);
     if (token != NULL) {
         cJSON_AddStringToObject(argument, "token", token);
     }
@@ -267,398 +66,261 @@ static catalog_answer build_with_options(const char *list_json, const char *toke
     return marketplace_call(MARKETPLACE_BUILD, argument);
 }
 
-static int count_of(const char *text, const char *fragment) {
-    int count = 0;
-    for (const char *at = strstr(text, fragment); at != NULL; at = strstr(at + 1, fragment)) {
-        count++;
-    }
-    return count;
+static catalog_answer build(const char *list_json) {
+    return build_with_options(list_json, NULL, NULL, NULL, BUILT);
+}
+
+static const cJSON *entry_at(const catalog_answer answer, int index) {
+    return cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries"), index);
+}
+
+static int entry_member_is(const catalog_answer answer, int index, const char *member, const char *expected) {
+    return check_text(text_at(entry_at(answer, index), member), expected, member);
+}
+
+static int entry_count(const catalog_answer answer) {
+    return cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries"));
 }
 
 static int contains(const char *text, const char *fragment) {
     return text != NULL && strstr(text, fragment) != NULL;
 }
 
-static void an_id_that_does_not_resolve_is_skipped_and_the_rest_built(void) {
-    catalog_answer answer = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\"},{\"id\":\"github:2\"}]}");
+static void builds_a_copy_with_current_names_and_the_places(void) {
+    start_forge();
+    catalog_answer answer = build("{\"format\":1,\"title\":\"Spisor\",\"entries\":["
+                                  ENTRY(RUNTIME_ID, "forge:1") ",\"description\":\"The runtime.\",\"categories\":[\"core\"]},"
+                                  ENTRY(WEIVEL_ID, "forge:2") "}]}");
     CHECK(answer.status == SPISOR_OK);
-    const cJSON *entries = cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries");
-    CHECK(cJSON_GetArraySize(entries) == 2);
-    entry_member_is(answer, 0, "id", "github:1");
-    entry_member_is(answer, 1, "id", "github:2");
-    const cJSON *skipped = cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped");
-    CHECK(cJSON_GetArraySize(skipped) == 1);
-    check_text(text_at(cJSON_GetArrayItem(skipped, 0), "id"), "github:60", "skipped id");
-    CHECK(contains(text_at(cJSON_GetArrayItem(skipped, 0), "reason"), "cannot be looked up"));
-    CHECK(contains(text_at(cJSON_GetArrayItem(skipped, 0), "reason"), "not found"));
-    cJSON_Delete(answer.tree);
-}
-
-static void an_id_that_does_not_resolve_is_carried_over_from_the_previous_copy(void) {
-    catalog_answer answer = build_with_options(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:60\",\"description\":\"New.\"}]}", NULL, NULL,
-        PREVIOUS_COPY(KEPT_ENTRY));
-    CHECK(answer.status == SPISOR_OK);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 2);
+    const cJSON *copy = value_at(answer.tree, "copy");
+    CHECK(cJSON_GetObjectItemCaseSensitive(copy, "format")->valueint == 1);
+    check_text(text_at(copy, "title"), "Spisor", "title");
+    check_text(text_at(copy, "built"), BUILT, "built");
+    CHECK(entry_count(answer) == 2);
+    entry_member_is(answer, 0, "id", RUNTIME_ID);
     entry_member_is(answer, 0, "name", "runtime");
-    entry_member_is(answer, 1, "id", "github:60");
-    entry_member_is(answer, 1, "name", "kept");
-    entry_member_is(answer, 1, "fullName", "spisor/kept");
-    entry_member_is(answer, 1, "description", "Old.");
+    entry_member_is(answer, 0, "fullName", "spisor/runtime");
+    entry_member_is(answer, 0, "description", "The runtime.");
+    check_text(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(entry_at(answer, 0), "at"), 0)->valuestring,
+               "forge:1", "the places are carried");
+    CHECK(!cJSON_HasObjectItem(entry_at(answer, 0), "lastKnown"));
+    entry_member_is(answer, 1, "name", "weivel");
     CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 0);
     cJSON_Delete(answer.tree);
 }
 
-static void a_previous_copy_without_the_entry_leaves_a_list_of_only_it_refused(void) {
-    catalog_answer answer = build_with_options(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:60\"}]}", NULL, NULL,
-        PREVIOUS_COPY("{\"id\":\"github:2\",\"name\":\"weivel\",\"fullName\":\"spisor/weivel\",\"lastKnown\":\"spisor/weivel\"}"));
-    CHECK(expect_refusal(answer, "github:60", "nothing could be built"));
+static void a_renamed_repo_gets_its_new_name_with_no_change_to_the_list(void) {
+    start_forge();
+    fake_repo *runtime = add(1, "spisor", "runtime-next", ROOT_RUNTIME);
+    (void)runtime;
+    catalog_answer answer = build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"));
+    CHECK(answer.status == SPISOR_OK);
+    entry_member_is(answer, 0, "name", "runtime-next");
+    entry_member_is(answer, 0, "fullName", "spisor/runtime-next");
     cJSON_Delete(answer.tree);
 }
 
-static void a_previous_that_is_not_a_copy_is_refused(void) {
-    catalog_answer answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", NULL, NULL, "{\"format\":1}");
-    CHECK(expect_refusal(answer, "previous", "a previous that is not a copy"));
-    cJSON_Delete(answer.tree);
+static void names_clash_unless_an_alias_settles_it(void) {
+    start_forge();
+    catalog_answer clash = build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY(OTHER_ID, "forge:4") "}"));
+    CHECK(expect_refusal(clash, "both named runtime", "two entries of one name"));
+    CHECK(contains(text_at(clash.tree, "message"), RUNTIME_ID) && contains(text_at(clash.tree, "message"), OTHER_ID));
+    cJSON_Delete(clash.tree);
+    catalog_answer settled =
+        build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY(OTHER_ID, "forge:4") ",\"alias\":\"other-runtime\"}"));
+    CHECK(settled.status == SPISOR_OK);
+    entry_member_is(settled, 1, "name", "other-runtime");
+    cJSON_Delete(settled.tree);
+    catalog_answer after = build(LIST(ENTRY(RUNTIME_ID, "forge:1") ",\"alias\":\"weivel\"}," ENTRY(WEIVEL_ID, "forge:2") "}"));
+    CHECK(expect_refusal(after, "both named weivel", "a clash once aliases apply"));
+    cJSON_Delete(after.tree);
 }
 
-static void a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
-    const http_route routes[] = {ROUTE("/repositories/1", 200, runtime), ROUTE("/repositories/2", 200, weivel),
-                                 EMPTY_ROUTE("/repositories/60", 404)};
-    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    server_port = http_fixture_port(server);
-    catalog_answer built = build_with_options(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:2\"},{\"id\":\"github:60\"}]}", TOKEN, "github.com", NULL);
-    CHECK(built.status == SPISOR_OK);
-    char *printed = cJSON_PrintUnformatted(built.tree);
-    CHECK(strstr(printed, TOKEN) == NULL);
-    cJSON_free(printed);
+static void a_duplicate_a_local_or_an_old_id_is_refused_before_anything_resolves(void) {
+    start_forge();
+    catalog_answer duplicate = build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY(RUNTIME_ID, "forge:1") "}"));
+    CHECK(expect_refusal(duplicate, "twice", "a duplicate"));
+    cJSON_Delete(duplicate.tree);
+    catalog_answer local = build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY("local:tool", "forge:1") "}"));
+    CHECK(expect_refusal(local, "local:tool", "a local id"));
+    cJSON_Delete(local.tree);
+    catalog_answer old = build(LIST(ENTRY("forge:1", "forge:1") "}"));
+    CHECK(expect_refusal(old, "list", "an id of the old grammar"));
+    cJSON_Delete(old.tree);
+    CHECK(fake_forge_calls() == 0);
+}
+
+static void a_folder_id_builds_with_the_last_segment_as_its_name(void) {
+    start_forge();
+    catalog_answer answer =
+        build(LIST(ENTRY(RUNTIME_ID "/kernel", "forge:1") "}," ENTRY(RUNTIME_ID "/tools/lint", "forge:1") "}"));
+    CHECK(answer.status == SPISOR_OK);
+    entry_member_is(answer, 0, "name", "kernel");
+    entry_member_is(answer, 0, "fullName", "spisor/runtime");
+    entry_member_is(answer, 1, "name", "lint");
+    cJSON_Delete(answer.tree);
+    catalog_answer clash = build(LIST(ENTRY(RUNTIME_ID "/a/kernel", "forge:1") "}," ENTRY(RUNTIME_ID "/b/kernel", "forge:1") "}"));
+    CHECK(expect_refusal(clash, "both named kernel", "two folders with one last segment"));
+    cJSON_Delete(clash.tree);
+}
+
+static void a_name_is_derived_or_the_entry_is_skipped(void) {
+    start_forge();
+    catalog_answer answer = build(LIST(ENTRY(MIXED_ID, "forge:5") "}," ENTRY(RESERVED_ID, "forge:6") "}," ENTRY(RUNTIME_ID, "forge:1") "}"));
+    CHECK(answer.status == SPISOR_OK);
+    CHECK(entry_count(answer) == 2);
+    entry_member_is(answer, 0, "name", "my-runtime.js");
+    entry_member_is(answer, 1, "name", "runtime");
+    const cJSON *skipped = cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped");
+    CHECK(cJSON_GetArraySize(skipped) == 1);
+    check_text(text_at(cJSON_GetArrayItem(skipped, 0), "id"), RESERVED_ID, "skipped id");
+    CHECK(contains(text_at(cJSON_GetArrayItem(skipped, 0), "reason"), "cannot be made an import name"));
+    cJSON_Delete(answer.tree);
+    catalog_answer aliased = build(LIST(ENTRY(RESERVED_ID, "forge:6") ",\"alias\":\"packaged\"}"));
+    CHECK(aliased.status == SPISOR_OK);
+    entry_member_is(aliased, 0, "name", "packaged");
+    cJSON_Delete(aliased.tree);
+}
+
+static void a_list_or_time_that_breaks_its_shape_is_refused(void) {
+    start_forge();
+    catalog_answer no_at = build(LIST("{\"id\":\"" RUNTIME_ID "\"}"));
+    CHECK(expect_refusal(no_at, "at", "an entry without places"));
+    cJSON_Delete(no_at.tree);
+    catalog_answer bad_place = build(LIST(ENTRY(RUNTIME_ID, "forge:0") "}"));
+    CHECK(expect_refusal(bad_place, "at", "a place that is none"));
+    cJSON_Delete(bad_place.tree);
+    catalog_answer built = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), NULL, NULL, NULL, "yesterday");
+    CHECK(expect_refusal(built, "RFC 3339", "a built that is no time"));
     cJSON_Delete(built.tree);
-    catalog_answer refused =
-        build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:1\"}]}", TOKEN, "github.com", NULL);
-    CHECK(expect_refusal(refused, "twice", "a refusal with a token"));
-    printed = cJSON_PrintUnformatted(refused.tree);
-    CHECK(strstr(printed, TOKEN) == NULL);
+    catalog_answer empty = build("{\"format\":1,\"entries\":[]}");
+    CHECK(empty.status == SPISOR_OK && entry_count(empty) == 0);
+    cJSON_Delete(empty.tree);
+}
+
+static void an_entry_naula_does_not_confirm_is_skipped_or_carried_over(void) {
+    start_forge();
+    catalog_answer skipped = build(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY(GONE_ID, "forge:70") "}"));
+    CHECK(skipped.status == SPISOR_OK && entry_count(skipped) == 1);
+    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(skipped.tree, "skipped"), 0);
+    check_text(text_at(row, "id"), GONE_ID, "skipped id");
+    CHECK(contains(text_at(row, "reason"), "cannot be resolved"));
+    cJSON_Delete(skipped.tree);
+    catalog_answer kept = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}," ENTRY(GONE_ID, "forge:70") "}"), NULL,
+                                             NULL, PREVIOUS_COPY(KEPT_ENTRY), BUILT);
+    CHECK(kept.status == SPISOR_OK && entry_count(kept) == 2);
+    entry_member_is(kept, 1, "name", "kept");
+    entry_member_is(kept, 1, "description", "Old.");
+    cJSON_Delete(kept.tree);
+    catalog_answer only = build(LIST(ENTRY(GONE_ID, "forge:70") "}"));
+    CHECK(expect_refusal(only, "no listed repository could be built", "a list of only a gone repo"));
+    cJSON_Delete(only.tree);
+    catalog_answer not_a_copy =
+        build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), NULL, NULL, "{\"format\":1,\"entries\":[]}", BUILT);
+    CHECK(expect_refusal(not_a_copy, "previous is not a marketplace copy", "a previous that is no copy"));
+    cJSON_Delete(not_a_copy.tree);
+}
+
+static void a_list_every_host_rate_limits_says_so(void) {
+    start_forge();
+    fake_repo *limited = add(80, "spisor", "limited", ROOT_GONE);
+    limited->refused_with = "rate_limited";
+    catalog_answer answer = build(LIST(ENTRY(GONE_ID, "forge:80") "}"));
+    CHECK(expect_refusal(answer, "no listed repository could be built", "a rate limited list"));
+    CHECK(contains(text_at(answer.tree, "fix"), "rate limiting"));
+    cJSON_Delete(answer.tree);
+}
+
+static void a_token_goes_only_to_its_host_and_into_neither_the_copy_nor_a_refusal(void) {
+    fake_forge_reset();
+    fake_forge_add(1, "spisor", "runtime",
+                   fake_forge_file("runtime", "{\"provider\":\"forge\",\"host\":\"git.example.com\",\"account\":\"spisor\"}"))
+        ->root = ROOT_RUNTIME;
+    catalog_answer answer = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge@git.example.com:1") "}"), TOKEN,
+                                               "git.example.com", NULL, BUILT);
+    CHECK(answer.status == SPISOR_OK && entry_count(answer) == 1);
+    CHECK(fake_forge_calls_with_token(TOKEN) > 0);
+    char *printed = cJSON_PrintUnformatted(answer.tree);
+    CHECK(!contains(printed, TOKEN));
     cJSON_free(printed);
-    cJSON_Delete(refused.tree);
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 3 && count_of(requests, "GET /repositories/") == 3);
-    spisor_memory_release(requests);
-}
-
-static http_fixture *start_server(const http_route *routes, size_t count) {
-    http_fixture *server = http_fixture_start(routes, count);
-    CHECK(server != NULL);
-    if (server != NULL) {
-        server_port = http_fixture_port(server);
-    }
-    return server;
-}
-
-static void expect_no_request(http_fixture *server) {
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && requests[0] == 0);
-    spisor_memory_release(requests);
-}
-
-static void a_token_is_refused_for_an_id_on_another_host_before_any_lookup(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/1", 404)};
-    http_fixture *server = start_server(routes, 1);
-    if (server == NULL) {
-        return;
-    }
-    const char *lists[] = {"{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"gitea@codeberg.org:3\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"},{\"id\":\"gitea@gitea.example:4\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"}]}",
-                           "{\"format\":1,\"entries\":[{\"id\":\"github@codeberg.org:5\"}]}"};
-    const char *hosts[] = {"github.com", "codeberg.org", "github.com", "github.com"};
-    for (size_t index = 0; index < 4; index++) {
-        catalog_answer answer = build_with_options(lists[index], TOKEN, hosts[index], NULL);
-        CHECK(expect_refusal(answer, "@", lists[index]));
-        CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
-        cJSON_Delete(answer.tree);
-    }
-    expect_no_request(server);
-}
-
-static void a_token_goes_to_an_instance_host_the_ids_name(void) {
-    static const char runtime[] = REPOSITORY("3", "runtime", "spisor/runtime");
-    const http_route routes[] = {ROUTE("/repositories/3", 200, runtime)};
-    http_fixture *server = start_server(routes, 1);
-    if (server == NULL) {
-        return;
-    }
-    catalog_answer answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"gitea@codeberg.org:3\"}]}", TOKEN,
-                                               "codeberg.org", NULL);
-    CHECK(answer.status == SPISOR_OK);
     cJSON_Delete(answer.tree);
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && count_of(requests, AUTHORIZATION_LINE) == 1);
-    spisor_memory_release(requests);
-}
-
-static void a_token_without_its_host_is_refused_before_any_lookup(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/1", 404)};
-    http_fixture *server = start_server(routes, 1);
-    if (server == NULL) {
-        return;
-    }
-    catalog_answer answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", TOKEN, NULL, NULL);
-    CHECK(expect_refusal(answer, "token_host", "a token with no host"));
-    CHECK(marketplace_last_status == SPISOR_MALFORMED);
-    CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
-    cJSON_Delete(answer.tree);
-    answer = build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", NULL, "github.com", NULL);
-    CHECK(expect_refusal(answer, "token_host", "a host with no token"));
-    CHECK(marketplace_last_status == SPISOR_MALFORMED);
-    cJSON_Delete(answer.tree);
-    expect_no_request(server);
-}
-
-static void an_unusable_token_refuses_the_whole_build_without_naming_it(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/1", 404)};
-    http_fixture *server = start_server(routes, 1);
-    if (server == NULL) {
-        return;
-    }
-    const char *tokens[] = {TOKEN "\n", "", "two words"};
-    for (size_t index = 0; index < 3; index++) {
-        catalog_answer answer =
-            build_with_options("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}", tokens[index], "github.com", NULL);
-        CHECK(expect_refusal(answer, "token", "an unusable token"));
-        CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
-        cJSON_Delete(answer.tree);
-    }
-    expect_no_request(server);
-}
-
-static const char *const FAILING_IDS[] = {"github:70", "github:71", "github:72", "github:73", "github:74"};
-static const char *const FAILURE_NAMES[] = {"401", "403", "429", "not found", "500"};
-
-static char *list_of_one(const char *id) {
-    char *list = spisor_memory_allocate(128);
-    snprintf(list, 128, "{\"format\":1,\"entries\":[{\"id\":\"%s\"}]}", id);
-    return list;
-}
-
-static void a_list_whose_every_entry_fails_to_look_up_is_refused_naming_the_reason(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/70", 401), EMPTY_ROUTE("/repositories/71", 403),
-                                 EMPTY_ROUTE("/repositories/72", 429), EMPTY_ROUTE("/repositories/73", 404),
-                                 EMPTY_ROUTE("/repositories/74", 500)};
-    http_fixture *server = start_server(routes, 5);
-    if (server == NULL) {
-        return;
-    }
-    for (size_t index = 0; index < 5; index++) {
-        char *list = list_of_one(FAILING_IDS[index]);
-        catalog_answer answer = build_with_options(list, TOKEN, "github.com", NULL);
-        CHECK(expect_refusal(answer, FAILING_IDS[index], FAILURE_NAMES[index]));
-        CHECK(contains(text_at(answer.tree, "message"), FAILURE_NAMES[index]) || strcmp(FAILURE_NAMES[index], "not found") == 0);
-        CHECK(!contains(text_at(answer.tree, "message"), TOKEN) && !contains(text_at(answer.tree, "fix"), TOKEN));
-        CHECK(strcmp(FAILING_IDS[index], "github:72") != 0 || contains(text_at(answer.tree, "fix"), "rate limiting"));
-        CHECK(strcmp(FAILING_IDS[index], "github:70") != 0 || !contains(text_at(answer.tree, "fix"), "rate limiting"));
-        cJSON_Delete(answer.tree);
-        spisor_memory_release(list);
-    }
-    catalog_answer not_found = build("{\"format\":1,\"entries\":[{\"id\":\"github:73\"}]}");
-    CHECK(expect_refusal(not_found, "not found", "an anonymous build of only a missing repo"));
-    cJSON_Delete(not_found.tree);
-    spisor_memory_release(http_fixture_stop(server));
-}
-
-static void a_list_whose_every_entry_is_lost_to_the_network_is_refused(void) {
-    cJSON *argument = cJSON_CreateObject();
-    cJSON_AddItemToObject(argument, "list", parsed("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}"));
-    cJSON_AddStringToObject(argument, "built", BUILT);
-    cJSON_AddStringToObject(argument, "apiBase", "http://127.0.0.1:1");
-    catalog_answer answer = marketplace_call(MARKETPLACE_BUILD, argument);
-    CHECK(expect_refusal(answer, "github:1", "an unreachable host"));
-    CHECK(contains(text_at(answer.tree, "message"), "cannot be looked up"));
-    cJSON_Delete(answer.tree);
-}
-
-static void a_previous_copy_holding_the_failed_entry_still_writes_it(void) {
-    const http_route routes[] = {EMPTY_ROUTE("/repositories/70", 401)};
-    http_fixture *server = start_server(routes, 1);
-    if (server == NULL) {
-        return;
-    }
-    catalog_answer carried = build_with_options(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:70\"}]}", TOKEN, "github.com",
-        PREVIOUS_COPY("{\"id\":\"github:70\",\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"lastKnown\":\"spisor/kept\"}"));
-    CHECK(carried.status == SPISOR_OK);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(carried.tree, "copy"), "entries")) == 1);
-    cJSON_Delete(carried.tree);
-    spisor_memory_release(http_fixture_stop(server));
-}
-
-static void one_success_beside_a_refused_lookup_still_writes_and_skips(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    const http_route routes[] = {ROUTE("/repositories/1", 200, runtime), EMPTY_ROUTE("/repositories/70", 401)};
-    http_fixture *server = start_server(routes, 2);
-    if (server == NULL) {
-        return;
-    }
-    catalog_answer answer = build_with_options(
-        "{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:70\"}]}", TOKEN, "github.com", NULL);
-    CHECK(answer.status == SPISOR_OK);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(value_at(answer.tree, "copy"), "entries")) == 1);
-    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(answer.tree, "skipped")) == 1);
-    cJSON_Delete(answer.tree);
-    spisor_memory_release(http_fixture_stop(server));
-}
-
-static void run_against_the_server(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    static const char weivel[] = REPOSITORY("2", "weivel", "spisor/weivel");
-    static const char old_name[] = REPOSITORY("3", "old-name", "spisor/old-name");
-    static const char new_name[] = REPOSITORY("3", "new-name", "spisor/new-name");
-    static const char another_runtime[] = REPOSITORY("4", "runtime", "other/runtime");
-    static const char mixed[] = REPOSITORY("5", "My_Runtime", "spisor/My_Runtime");
-    static const char reserved[] = REPOSITORY("6", "Con", "spisor/Con");
-    static const char clashing[] = REPOSITORY("8", "My-Runtime", "other/My-Runtime");
-    static const char dotted[] = REPOSITORY("9", "__A..B__c", "spisor/__A..B__c");
-    static const char unnamed[] = REPOSITORY("10", "___", "spisor/___");
-    const http_route routes[] = {
-        ROUTE("/repositories/1", 200, runtime),
-        ROUTE("/repositories/2", 200, weivel),
-        LIMITED_ROUTE("/repositories/3", old_name),
-        ROUTE("/repositories/3", 200, new_name),
-        ROUTE("/repositories/4", 200, another_runtime),
-        ROUTE("/repositories/5", 200, mixed),
-        ROUTE("/repositories/6", 200, reserved),
-        ROUTE("/repositories/8", 200, clashing),
-        ROUTE("/repositories/9", 200, dotted),
-        ROUTE("/repositories/10", 200, unnamed),
-        EMPTY_ROUTE("/repositories/60", 404),
-    };
-    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    server_port = http_fixture_port(server);
-    builds_a_copy_with_current_names();
-    a_renamed_repo_gets_its_new_name_with_no_change_to_the_list();
-    an_alias_replaces_the_name();
-    two_entries_with_one_name_and_no_alias_are_refused_naming_both_ids();
-    an_alias_settles_a_clash();
-    a_clash_is_checked_after_aliases_apply();
-    a_duplicate_id_is_refused();
-    an_id_that_does_not_resolve_is_skipped_and_the_rest_built();
-    an_id_that_does_not_resolve_is_carried_over_from_the_previous_copy();
-    a_previous_copy_without_the_entry_leaves_a_list_of_only_it_refused();
-    a_previous_that_is_not_a_copy_is_refused();
-    a_local_id_is_refused();
-    a_folder_id_builds_with_the_last_segment_as_its_name();
-    two_folders_of_one_repo_build();
-    an_alias_replaces_a_folders_name();
-    two_folders_with_one_last_segment_clash();
-    a_local_folder_id_is_still_refused();
-    a_host_name_is_derived_into_an_import_name();
-    an_entry_whose_name_cannot_be_derived_is_skipped_and_the_rest_built();
-    an_alias_lists_an_entry_whose_name_cannot_be_derived();
-    a_clash_after_derivation_refuses_the_whole_build();
-    a_list_that_breaks_the_schema_is_refused();
-    a_built_time_that_is_not_rfc_3339_is_refused();
-    an_empty_list_builds_an_empty_copy();
-    spisor_memory_release(http_fixture_stop(server));
+    start_forge();
+    catalog_answer elsewhere = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge@other.example:1") "}"), TOKEN,
+                                                  "git.example.com", NULL, BUILT);
+    CHECK(expect_refusal(elsewhere, "the one host the token is sent to", "a place on another host"));
+    CHECK(!contains(text_at(elsewhere.tree, "message"), TOKEN) && fake_forge_calls() == 0);
+    cJSON_Delete(elsewhere.tree);
+    catalog_answer bare = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), TOKEN, "git.example.com", NULL, BUILT);
+    CHECK(expect_refusal(bare, "the one host the token is sent to", "a place naming no host"));
+    cJSON_Delete(bare.tree);
+    catalog_answer unusable =
+        build_with_options(LIST(ENTRY(RUNTIME_ID, "forge@git.example.com:1") "}"), "two words", "git.example.com", NULL, BUILT);
+    CHECK(expect_refusal(unusable, "token is not usable", "an unusable token"));
+    CHECK(!contains(text_at(unusable.tree, "message"), "two words") && fake_forge_calls() == 0);
+    cJSON_Delete(unusable.tree);
 }
 
 static char *list_of_repositories(size_t count) {
-    size_t size = count * 32 + 64;
+    size_t size = count * 80 + 64;
     char *text = spisor_memory_allocate(size);
     size_t used = (size_t)snprintf(text, size, "{\"format\":1,\"entries\":[");
     for (size_t index = 1; index <= count; index++) {
-        used += (size_t)snprintf(text + used, size - used, "%s{\"id\":\"github:%zu\"}", index == 1 ? "" : ",", index);
+        used += (size_t)snprintf(text + used, size - used, "%s" ENTRY(RUNTIME_ID, "forge:1") "}", index == 1 ? "" : ",");
     }
     snprintf(text + used, size - used, "]}");
     return text;
 }
 
-static void a_list_over_the_limit_is_refused_before_any_lookup(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    const http_route routes[] = {ROUTE("/repositories/1", 200, runtime)};
-    http_fixture *server = http_fixture_start(routes, 1);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    server_port = http_fixture_port(server);
+static void a_list_over_the_limit_is_refused_before_anything_resolves(void) {
+    start_forge();
     char *list = list_of_repositories(RUNTIME_MARKETPLACE_MAXIMUM_ENTRIES + 1);
     catalog_answer answer = build(list);
     CHECK(expect_refusal(answer, "list", "a list over the limit"));
+    CHECK(fake_forge_calls() == 0);
     cJSON_Delete(answer.tree);
     spisor_memory_release(list);
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && requests[0] == 0);
-    spisor_memory_release(requests);
-}
-
-static void a_refusal_that_needs_no_lookup_makes_none(void) {
-    static const char runtime[] = REPOSITORY("1", "runtime", "spisor/runtime");
-    const http_route routes[] = {ROUTE("/repositories/1", 200, runtime)};
-    http_fixture *server = http_fixture_start(routes, 1);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    server_port = http_fixture_port(server);
-    catalog_answer local = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"local:tool\"}]}");
-    CHECK(expect_refusal(local, "local:tool", "a local id after a listed repo"));
-    cJSON_Delete(local.tree);
-    catalog_answer duplicate = build("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:1\"}]}");
-    CHECK(expect_refusal(duplicate, "twice", "a duplicate"));
-    cJSON_Delete(duplicate.tree);
-    char *requests = http_fixture_stop(server);
-    CHECK(requests != NULL && requests[0] == 0);
-    spisor_memory_release(requests);
 }
 
 static void the_list_checker_follows_the_schema(void) {
     char problem[256];
-    cJSON *minimal = parsed("{\"format\":1,\"entries\":[{\"id\":\"github:1\"}]}");
-    CHECK(runtime_marketplace_check_list(minimal, problem, sizeof problem));
+    cJSON *minimal = parsed(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"));
+    CHECK(runtime_marketplace_check_list(minimal, problem, sizeof problem) == 1);
     cJSON_Delete(minimal);
-    cJSON *repeated = parsed("{\"format\":1,\"entries\":[{\"id\":\"github:1\"},{\"id\":\"github:1\"}]}");
-    CHECK(runtime_marketplace_check_list(repeated, problem, sizeof problem));
-    cJSON_Delete(repeated);
-    const char *refused[] = {"{\"format\":1,\"entries\":[{\"alias\":\"core\"}]}",
-                             "{\"format\":1,\"entries\":[{\"id\":\"../github:1\"}]}",
-                             "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"name\":\"runtime\"}]}",
-                             "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"categories\":[\"a\",\"a\"]}]}",
-                             "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"categories\":[\"A\"]}]}",
-                             "{\"format\":1,\"entries\":[{\"id\":\"github:1\",\"alias\":\"package\"}]}",
-                             "{\"format\":1,\"entries\":[],\"extra\":true}", "{\"entries\":[]}"};
+    const char *refused[] = {LIST("{\"alias\":\"core\",\"at\":[\"forge:1\"]}"),
+                             LIST(ENTRY("../" RUNTIME_ID, "forge:1") "}"),
+                             LIST(ENTRY(RUNTIME_ID, "forge:1") ",\"name\":\"runtime\"}"),
+                             LIST(ENTRY(RUNTIME_ID, "forge:1") ",\"categories\":[\"a\",\"a\"]}"),
+                             LIST(ENTRY(RUNTIME_ID, "forge:1") ",\"alias\":\"package\"}"),
+                             LIST("{\"id\":\"" RUNTIME_ID "\",\"at\":[]}"),
+                             LIST("{\"id\":\"" RUNTIME_ID "\",\"at\":\"forge:1\"}"),
+                             "{\"format\":1,\"entries\":[],\"extra\":true}",
+                             "{\"entries\":[]}"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         cJSON *list = parsed(refused[index]);
-        CHECK(!runtime_marketplace_check_list(list, problem, sizeof problem) && problem[0] != 0);
+        CHECK(runtime_marketplace_check_list(list, problem, sizeof problem) == 0 && problem[0] != 0);
         cJSON_Delete(list);
     }
 }
 
 static void the_copy_checker_follows_the_schema(void) {
     char problem[256];
-    cJSON *copy = parsed("{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"github:1\",\"name\":\"runtime\","
-                         "\"fullName\":\"spisor/runtime\",\"lastKnown\":\"spisor/runtime\"}]}");
-    CHECK(runtime_marketplace_check_copy(copy, problem, sizeof problem));
+    cJSON *copy = parsed("{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+                         ",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"}]}");
+    CHECK(runtime_marketplace_check_copy(copy, problem, sizeof problem) == 1);
     cJSON_Delete(copy);
     const char *refused[] = {
         "{\"format\":1,\"entries\":[]}",
         "{\"format\":1,\"built\":\"2026-13-10T12:00:00Z\",\"entries\":[]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"}]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"github:1\",\"name\":\"runtime\",\"fullName\":\"runtime\",\"lastKnown\":\"a/b\"}]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"github:1\",\"name\":\"Runtime\",\"fullName\":\"a/b\",\"lastKnown\":\"a/b\"}]}"};
+        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1") ",\"name\":\"runtime\"}]}",
+        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        ",\"name\":\"runtime\",\"fullName\":\"runtime\"}]}",
+        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        ",\"name\":\"Runtime\",\"fullName\":\"a/b\"}]}",
+        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        ",\"name\":\"runtime\",\"fullName\":\"a/b\",\"lastKnown\":\"a/b\"}]}"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         cJSON *bad = parsed(refused[index]);
-        CHECK(!runtime_marketplace_check_copy(bad, problem, sizeof problem) && problem[0] != 0);
+        CHECK(runtime_marketplace_check_copy(bad, problem, sizeof problem) == 0 && problem[0] != 0);
         cJSON_Delete(bad);
     }
 }
@@ -708,33 +370,19 @@ static void the_checkers_hold_what_the_schemas_say(void) {
     cJSON_Delete(copy_schema);
 }
 
-#if !defined(_WIN32)
-static void clear_proxy_environment(void) {
-    const char *names[] = {"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy",
-                           "ALL_PROXY",  "no_proxy",   "NO_PROXY"};
-    for (size_t index = 0; index < sizeof names / sizeof names[0]; index++) {
-        unsetenv(names[index]);
-    }
-}
-#endif
-
 int main(void) {
-#if !defined(_WIN32)
-    clear_proxy_environment();
-#endif
-    naula_fetch_allow_plain_http(1);
-    run_against_the_server();
-    a_list_over_the_limit_is_refused_before_any_lookup();
-    a_refusal_that_needs_no_lookup_makes_none();
-    a_token_goes_to_each_lookup_and_into_neither_the_copy_nor_a_refusal();
-    a_token_is_refused_for_an_id_on_another_host_before_any_lookup();
-    a_token_goes_to_an_instance_host_the_ids_name();
-    a_token_without_its_host_is_refused_before_any_lookup();
-    an_unusable_token_refuses_the_whole_build_without_naming_it();
-    a_list_whose_every_entry_fails_to_look_up_is_refused_naming_the_reason();
-    a_list_whose_every_entry_is_lost_to_the_network_is_refused();
-    a_previous_copy_holding_the_failed_entry_still_writes_it();
-    one_success_beside_a_refused_lookup_still_writes_and_skips();
+    fake_forge_install();
+    builds_a_copy_with_current_names_and_the_places();
+    a_renamed_repo_gets_its_new_name_with_no_change_to_the_list();
+    names_clash_unless_an_alias_settles_it();
+    a_duplicate_a_local_or_an_old_id_is_refused_before_anything_resolves();
+    a_folder_id_builds_with_the_last_segment_as_its_name();
+    a_name_is_derived_or_the_entry_is_skipped();
+    a_list_or_time_that_breaks_its_shape_is_refused();
+    an_entry_naula_does_not_confirm_is_skipped_or_carried_over();
+    a_list_every_host_rate_limits_says_so();
+    a_token_goes_only_to_its_host_and_into_neither_the_copy_nor_a_refusal();
+    a_list_over_the_limit_is_refused_before_anything_resolves();
     the_list_checker_follows_the_schema();
     the_copy_checker_follows_the_schema();
     the_time_and_full_name_checks_follow_their_patterns();

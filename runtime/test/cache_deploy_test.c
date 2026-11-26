@@ -15,7 +15,7 @@
 #include "service_scratch.h"
 #include "tree_snapshot.h"
 
-#define IDENTITY_ARGUMENT "{\"id\":\"github:5\",\"name\":\"greeter\"}"
+#define IDENTITY_ARGUMENT "{\"id\":\"git:0000000000000000000000000000000000000005\",\"name\":\"greeter\"}"
 
 static char scratch[1024];
 
@@ -93,7 +93,7 @@ static void deploys_under_the_import_name(void) {
                                             : spisor_parse_json_reporting((const uint8_t *)identity_text,
                                                                           strlen(identity_text), &(int){0});
     CHECK(identity != NULL);
-    check_text(text_at(identity, "id"), "github:5", "identity id");
+    check_text(text_at(identity, "id"), "git:0000000000000000000000000000000000000005", "identity id");
     check_text(text_at(identity, "name"), "greeter", "identity name");
     cJSON_Delete(identity);
     spisor_memory_release(identity_text);
@@ -116,15 +116,15 @@ static void writes_no_entry_file_for_a_plugin_without_an_entry(void) {
 
 static void writes_the_identity_from_its_argument_ignoring_a_stated_id(void) {
     start_case("stated-id");
-    write_bundle("{\"importName\":\"greeter\",\"id\":\"github:999\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
-    write_in_scratch("bundle/greeter_identity.json", "{\"id\":\"github:999\",\"name\":\"stolen\"}");
+    write_bundle("{\"importName\":\"greeter\",\"id\":\"git:00000000000000000000000000000000000003e7\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
+    write_in_scratch("bundle/greeter_identity.json", "{\"id\":\"git:00000000000000000000000000000000000003e7\",\"name\":\"stolen\"}");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(answer.status == SPISOR_OK);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
     cJSON *identity = identity_text == NULL ? NULL
                                             : spisor_parse_json_reporting((const uint8_t *)identity_text,
                                                                           strlen(identity_text), &(int){0});
-    check_text(text_at(identity, "id"), "github:5", "argument id wins");
+    check_text(text_at(identity, "id"), "git:0000000000000000000000000000000000000005", "argument id wins");
     check_text(text_at(identity, "name"), "greeter", "argument name wins");
     cJSON_Delete(identity);
     spisor_memory_release(identity_text);
@@ -192,8 +192,8 @@ static void refuses_an_entry_that_leaves_the_bundle_or_is_named_like_an_identity
 static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     start_case("identity-like");
     write_bundle("{\"importName\":\"greeter\",\"api\":1,\"entry\":\"index.js\"}", "index.js", "export default {};");
-    write_in_scratch("bundle/other_identity.json", "{\"id\":\"github:7\",\"name\":\"other\"}");
-    write_in_scratch("bundle/dist/third_identity.json", "{\"id\":\"github:8\",\"name\":\"third\"}");
+    write_in_scratch("bundle/other_identity.json", "{\"id\":\"git:0000000000000000000000000000000000000007\",\"name\":\"other\"}");
+    write_in_scratch("bundle/dist/third_identity.json", "{\"id\":\"git:0000000000000000000000000000000000000008\",\"name\":\"third\"}");
     catalog_answer answer = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(answer.status == SPISOR_OK);
     char *copied = in_scratch("plugins/other_identity.json");
@@ -203,13 +203,13 @@ static void a_bundle_file_named_like_an_identity_file_is_never_copied(void) {
     CHECK(spisor_probe_file(copied) != SPISOR_FILE_PRESENT);
     spisor_memory_release(copied);
     char *identity_text = read_from_scratch("plugins/greeter_identity.json");
-    CHECK(identity_text != NULL && strstr(identity_text, "github:7") == NULL);
+    CHECK(identity_text != NULL && strstr(identity_text, "git:0000000000000000000000000000000000000007") == NULL);
     spisor_memory_release(identity_text);
     cJSON_Delete(answer.tree);
 }
 
 static void refuses_an_identity_id_outside_the_grammar_as_malformed_and_writes_nothing(void) {
-    const char *ids[] = {"calendar", "github:../x", "github:1/..", ""};
+    const char *ids[] = {"calendar", "git:../x", "git:0000000000000000000000000000000000000001/..", ""};
     for (size_t index = 0; index < sizeof ids / sizeof ids[0]; index++) {
         start_case("bad-identity");
         write_bundle("{\"importName\":\"greeter\",\"api\":1}", NULL, NULL);
@@ -240,9 +240,9 @@ static void refuses_to_replace_another_plugin_and_changes_nothing(void) {
     CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
     char *before = tree_snapshot(scratch, NULL);
-    catalog_answer other = deploy_with("{\"id\":\"github:6\",\"name\":\"intruder\"}", NULL);
-    CHECK(expect_cache_refusal_refused(other, "github:5", "names the recorded id"));
-    CHECK(text_at(other.tree, "fix") != NULL && strstr(text_at(other.tree, "fix"), "github:6") != NULL);
+    catalog_answer other = deploy_with("{\"id\":\"git:0000000000000000000000000000000000000006\",\"name\":\"intruder\"}", NULL);
+    CHECK(expect_cache_refusal_refused(other, "git:0000000000000000000000000000000000000005", "names the recorded id"));
+    CHECK(text_at(other.tree, "fix") != NULL && strstr(text_at(other.tree, "fix"), "git:0000000000000000000000000000000000000006") != NULL);
     expect_nothing_written_beside_the_bundle(before, "nothing changed");
     spisor_memory_release(before);
     cJSON_Delete(other.tree);
@@ -327,21 +327,21 @@ static void replaces_the_plugin_of_the_id_it_is_told_to_and_no_other(void) {
     catalog_answer first = deploy_with(IDENTITY_ARGUMENT, NULL);
     CHECK(first.status == SPISOR_OK);
     cJSON_Delete(first.tree);
-    catalog_answer moved = deploy_with("{\"id\":\"github:6\",\"name\":\"moved\"}", "github:5");
+    catalog_answer moved = deploy_with("{\"id\":\"git:0000000000000000000000000000000000000006\",\"name\":\"moved\"}", "git:0000000000000000000000000000000000000005");
     CHECK(moved.status == SPISOR_OK);
     char *identity = read_from_scratch("plugins/greeter_identity.json");
-    CHECK(identity != NULL && strstr(identity, "github:6") != NULL && strstr(identity, "moved") != NULL);
+    CHECK(identity != NULL && strstr(identity, "git:0000000000000000000000000000000000000006") != NULL && strstr(identity, "moved") != NULL);
     spisor_memory_release(identity);
     cJSON_Delete(moved.tree);
     char *before = tree_snapshot(scratch, NULL);
-    catalog_answer stale = deploy_with("{\"id\":\"github:7\",\"name\":\"other\"}", "github:5");
-    CHECK(expect_cache_refusal_refused(stale, "github:6", "the recorded id is no longer github:5"));
+    catalog_answer stale = deploy_with("{\"id\":\"git:0000000000000000000000000000000000000007\",\"name\":\"other\"}", "git:0000000000000000000000000000000000000005");
+    CHECK(expect_cache_refusal_refused(stale, "git:0000000000000000000000000000000000000006", "the recorded id is no longer git:0000000000000000000000000000000000000005"));
     expect_nothing_written_beside_the_bundle(before, "stale replaces");
     spisor_memory_release(before);
     cJSON_Delete(stale.tree);
 }
 
-#define OTHER_IDENTITY "{\"id\":\"github:9\",\"name\":\"other\"}"
+#define OTHER_IDENTITY "{\"id\":\"git:0000000000000000000000000000000000000009\",\"name\":\"other\"}"
 #define LAST_MOVE 5
 
 static void expect_deployed(catalog_answer answer, const char *label) {
@@ -418,9 +418,9 @@ static void finishes_a_stopped_deploy_of_another_identity_before_refusing_it(voi
     runtime_cache_stop_deploys_after(-1);
     cJSON_Delete(stopped.tree);
     catalog_answer refused = deploy_with(IDENTITY_ARGUMENT, NULL);
-    CHECK(expect_cache_refusal_refused(refused, "github:9", "the finished deploy's identity"));
+    CHECK(expect_cache_refusal_refused(refused, "git:0000000000000000000000000000000000000009", "the finished deploy's identity"));
     cJSON_Delete(refused.tree);
-    expect_file("plugins/greeter_identity.json", "{\n\t\"id\":\t\"github:9\",\n\t\"name\":\t\"other\"\n}", "finished");
+    expect_file("plugins/greeter_identity.json", "{\n\t\"id\":\t\"git:0000000000000000000000000000000000000009\",\n\t\"name\":\t\"other\"\n}", "finished");
 }
 
 int main(void) {

@@ -350,8 +350,13 @@ static void transfer(const fetch_order *order, url_scheme scheme, naula_fetch_si
         runtime_fetch_file_url(order->url, sink, answer);
         return;
     }
-    naula_fetch_request request = {sizeof request, order->url, order->etag, order->last_modified,
-                                   order->deadline_milliseconds, NULL};
+    naula_fetch_request request;
+    memset(&request, 0, sizeof request);
+    request.size = sizeof request;
+    request.url = order->url;
+    request.etag = order->etag;
+    request.last_modified = order->last_modified;
+    request.deadline_milliseconds = order->deadline_milliseconds;
     naula_fetch_over_network(&request, sink, answer);
 }
 

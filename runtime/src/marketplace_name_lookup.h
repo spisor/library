@@ -7,8 +7,8 @@
 #include "cJSON.h"
 
 /**
- * marketplace.lookup: in copies, an array of {source, copy}, answers for name {id, marketplace}, the id of the one
- * entry the name means and the id of the first source, in the order of copies, it was found in; {ambiguous:
+ * marketplace.lookup: in copies, an array of {source, copy}, answers for name {id, at, marketplace}, the id and places
+ * of the one entry the name means and the id of the first source, in the order of copies, it was found in; {ambiguous:
  * ["marketplace/name", ...]} when a bare name is found under more than one id, every match listed in the form that
  * settles it; or {notFound: true}. The same id in several marketplaces is the same plugin and settles.
  *

@@ -5,11 +5,17 @@
 
 #include "identity.h"
 #include "import_name.h"
+#include "naula/home.h"
 
 #define LIST_SCHEMA "marketplace.schema.json"
 #define COPY_SCHEMA "marketplace-copy.schema.json"
 #define ID_PATTERN                                                                                               \
-    "^(local:[^/\\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\\.{1,2}(/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])"
+    "^(?:git:(?:[0-9a-f]{40}|[0-9a-f]{64})|local:[^/\\u0000\\t\\n\\u000b\\f\\r ]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))" \
+    "[a-z0-9._-]+)*(?![\\s\\S])"
+#define PLACE_PATTERN                                                                                            \
+    "^(?:(?!web[@:])[a-z][a-z0-9-]{0,31}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,254}(?::[0-9]{1,5})?)?:(?=[0-9]{1,19}"     \
+    "(?![\\s\\S]))0*[1-9][0-9]*|web:[A-Za-z0-9][A-Za-z0-9.-]{0,254}|https://[\\x21-\\x7e]{1,2040}|ssh://"          \
+    "[\\x21-\\x7e]{1,2042})(?![\\s\\S])"
 #define IMPORT_NAME_PATTERN                                                                                       \
     "^(?!package(?![\\s\\S]))(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\\.]|(?![\\s\\S])))[a-z0-9]+([-.][a-z0-9]+)*" \
     "(?![\\s\\S])"
@@ -25,9 +31,11 @@ const runtime_marketplace_held_value runtime_marketplace_held_values[] = {
     {LIST_SCHEMA, "additionalProperties", "false"},
     {LIST_SCHEMA, "properties/format/const", "1"},
     {LIST_SCHEMA, "properties/entries/maxItems", "10000"},
-    {LIST_SCHEMA, "properties/entries/items/required", "[\"id\"]"},
+    {LIST_SCHEMA, "properties/entries/items/required", "[\"id\",\"at\"]"},
     {LIST_SCHEMA, "properties/entries/items/additionalProperties", "false"},
     {LIST_SCHEMA, ENTRY_PROPERTY "id/pattern", ID_PATTERN},
+    {LIST_SCHEMA, ENTRY_PROPERTY "at/minItems", "1"},
+    {LIST_SCHEMA, ENTRY_PROPERTY "at/items/pattern", PLACE_PATTERN},
     {LIST_SCHEMA, ENTRY_PROPERTY "alias/pattern", IMPORT_NAME_PATTERN},
     {LIST_SCHEMA, ENTRY_PROPERTY CATEGORY_ITEM, IMPORT_NAME_PATTERN},
     {LIST_SCHEMA, ENTRY_PROPERTY "categories/uniqueItems", "true"},
@@ -36,12 +44,13 @@ const runtime_marketplace_held_value runtime_marketplace_held_values[] = {
     {COPY_SCHEMA, "properties/format/const", "1"},
     {COPY_SCHEMA, "properties/built/pattern", BUILT_PATTERN},
     {COPY_SCHEMA, "properties/entries/maxItems", "10000"},
-    {COPY_SCHEMA, "properties/entries/items/required", "[\"id\",\"name\",\"fullName\",\"lastKnown\"]"},
+    {COPY_SCHEMA, "properties/entries/items/required", "[\"id\",\"at\",\"name\",\"fullName\"]"},
     {COPY_SCHEMA, "properties/entries/items/additionalProperties", "false"},
     {COPY_SCHEMA, ENTRY_PROPERTY "id/pattern", ID_PATTERN},
+    {COPY_SCHEMA, ENTRY_PROPERTY "at/minItems", "1"},
+    {COPY_SCHEMA, ENTRY_PROPERTY "at/items/pattern", PLACE_PATTERN},
     {COPY_SCHEMA, ENTRY_PROPERTY "name/pattern", IMPORT_NAME_PATTERN},
     {COPY_SCHEMA, ENTRY_PROPERTY "fullName/pattern", FULL_NAME_PATTERN},
-    {COPY_SCHEMA, ENTRY_PROPERTY "lastKnown/pattern", FULL_NAME_PATTERN},
     {COPY_SCHEMA, ENTRY_PROPERTY CATEGORY_ITEM, IMPORT_NAME_PATTERN},
     {COPY_SCHEMA, ENTRY_PROPERTY "categories/uniqueItems", "true"},
 };
@@ -142,9 +151,40 @@ static int is_string_matching(const cJSON *value, int (*matches)(const char *)) 
     return cJSON_IsString(value) && matches(value->valuestring);
 }
 
-static int is_repository_id(const char *text) {
-    runtime_identity parsed;
-    return runtime_identity_parse_id(text, &parsed);
+/** 1 for a text that is a repository id as naula reads one, 0 for any other value, -1 when memory runs out. */
+static int is_repository_id(const cJSON *value) {
+    if (!cJSON_IsString(value)) {
+        return 0;
+    }
+    runtime_identity_kind kind = runtime_identity_kind_of(value->valuestring);
+    return kind == RUNTIME_IDENTITY_OUT_OF_MEMORY ? -1 : kind != RUNTIME_IDENTITY_NOT_AN_ID;
+}
+
+/** 1 for a text that is a place as naula reads one, 0 for any other value, -1 when memory runs out. */
+static int is_place(const cJSON *value) {
+    if (!cJSON_IsString(value)) {
+        return 0;
+    }
+    naula_place place;
+    memset(&place, 0, sizeof place);
+    place.size = sizeof place;
+    naula_status status = naula_place_parse(value->valuestring, &place, NULL);
+    naula_place_release(&place);
+    return status == NAULA_OUT_OF_MEMORY ? -1 : status == NAULA_OK;
+}
+
+/** 1 for a list of at least one place, 0 for anything else, -1 when memory runs out. */
+static int has_places(const cJSON *at) {
+    if (!cJSON_IsArray(at) || at->child == NULL) {
+        return 0;
+    }
+    for (const cJSON *place = at->child; place != NULL; place = place->next) {
+        int verdict = is_place(place);
+        if (verdict != 1) {
+            return verdict;
+        }
+    }
+    return 1;
 }
 
 static int has_only_members(const cJSON *object, const char *const *allowed, size_t count) {
@@ -207,19 +247,36 @@ static int check_shared_members(const cJSON *entry, size_t position, char *probl
     if (categories != NULL && !has_import_name_categories(categories)) {
         return refuse(problem, size, "entries[%zu].%s is not a list of distinct import names", position, "categories");
     }
-    if (!is_string_matching(cJSON_GetObjectItemCaseSensitive(entry, "id"), is_repository_id)) {
-        return refuse(problem, size, "entries[%zu].%s is not a repository id", position, "id");
+    int verdict = is_repository_id(cJSON_GetObjectItemCaseSensitive(entry, "id"));
+    if (verdict != 1) {
+        return verdict < 0 ? verdict : refuse(problem, size, "entries[%zu].%s is not a repository id", position, "id");
+    }
+    verdict = has_places(cJSON_GetObjectItemCaseSensitive(entry, "at"));
+    if (verdict != 1) {
+        return verdict < 0 ? verdict : refuse(problem, size, "entries[%zu].%s is not a list of places", position, "at");
+    }
+    return 1;
+}
+
+static int has_members(const cJSON *entry, const char *const *required, size_t count, size_t position, char *problem,
+                       size_t size) {
+    for (size_t index = 0; index < count; index++) {
+        if (cJSON_GetObjectItemCaseSensitive(entry, required[index]) == NULL) {
+            return refuse(problem, size, "entries[%zu] has no %s", position, required[index]);
+        }
     }
     return 1;
 }
 
 static int check_list_entry(const cJSON *entry, size_t position, char *problem, size_t size) {
-    static const char *const allowed[] = {"id", "alias", "description", "categories"};
-    if (!cJSON_IsObject(entry) || !has_only_members(entry, allowed, 4)) {
-        return refuse(problem, size, "entries[%zu] is not an object with only %s", position, "id, alias, description and categories");
+    static const char *const allowed[] = {"id", "at", "alias", "description", "categories"};
+    static const char *const required[] = {"id", "at"};
+    if (!cJSON_IsObject(entry) || !has_only_members(entry, allowed, 5)) {
+        return refuse(problem, size, "entries[%zu] is not an object with only %s", position,
+                      "id, at, alias, description and categories");
     }
-    if (cJSON_GetObjectItemCaseSensitive(entry, "id") == NULL) {
-        return refuse(problem, size, "entries[%zu] has no %s", position, "id");
+    if (!has_members(entry, required, 2, position, problem, size)) {
+        return 0;
     }
     if (!has_optional_import_name(entry, "alias")) {
         return refuse(problem, size, "entries[%zu].%s is not an import name", position, "alias");
@@ -232,22 +289,20 @@ static int has_full_name(const cJSON *entry, const char *member) {
 }
 
 static int check_copy_entry(const cJSON *entry, size_t position, char *problem, size_t size) {
-    static const char *const allowed[] = {"id", "name", "fullName", "lastKnown", "description", "categories"};
-    static const char *const required[] = {"id", "name", "fullName", "lastKnown"};
+    static const char *const allowed[] = {"id", "at", "name", "fullName", "description", "categories"};
+    static const char *const required[] = {"id", "at", "name", "fullName"};
     if (!cJSON_IsObject(entry) || !has_only_members(entry, allowed, 6)) {
         return refuse(problem, size, "entries[%zu] is not an object with only %s", position,
-                      "id, name, fullName, lastKnown, description and categories");
+                      "id, at, name, fullName, description and categories");
     }
-    for (size_t index = 0; index < 4; index++) {
-        if (cJSON_GetObjectItemCaseSensitive(entry, required[index]) == NULL) {
-            return refuse(problem, size, "entries[%zu] has no %s", position, required[index]);
-        }
+    if (!has_members(entry, required, 4, position, problem, size)) {
+        return 0;
     }
     if (!is_string_matching(cJSON_GetObjectItemCaseSensitive(entry, "name"), runtime_is_import_name)) {
         return refuse(problem, size, "entries[%zu].%s is not an import name", position, "name");
     }
-    if (!has_full_name(entry, "fullName") || !has_full_name(entry, "lastKnown")) {
-        return refuse(problem, size, "entries[%zu].%s is not owner/name", position, "fullName and lastKnown");
+    if (!has_full_name(entry, "fullName")) {
+        return refuse(problem, size, "entries[%zu].%s is not owner/name", position, "fullName");
     }
     return check_shared_members(entry, position, problem, size);
 }
@@ -265,8 +320,9 @@ static int check_entries(const cJSON *entries, entry_check check, char *problem,
     }
     size_t position = 0;
     for (const cJSON *entry = entries->child; entry != NULL; entry = entry->next, position++) {
-        if (!check(entry, position, problem, size)) {
-            return 0;
+        int verdict = check(entry, position, problem, size);
+        if (verdict != 1) {
+            return verdict;
         }
     }
     return 1;
@@ -292,8 +348,10 @@ static int check_document_head(const cJSON *document, const char *const *allowed
 
 int runtime_marketplace_check_list(const cJSON *list, char *problem, size_t size) {
     static const char *const allowed[] = {"$schema", "format", "title", "entries"};
-    return check_document_head(list, allowed, 4, problem, size) &&
-           check_entries(cJSON_GetObjectItemCaseSensitive(list, "entries"), check_list_entry, problem, size);
+    if (!check_document_head(list, allowed, 4, problem, size)) {
+        return 0;
+    }
+    return check_entries(cJSON_GetObjectItemCaseSensitive(list, "entries"), check_list_entry, problem, size);
 }
 
 int runtime_marketplace_check_copy(const cJSON *copy, char *problem, size_t size) {

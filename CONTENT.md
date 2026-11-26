@@ -124,7 +124,7 @@ off the include path.
 | service | header | operations |
 |---|---|---|
 | `paths` | `include/runtime/paths.h` | `resolve` |
-| `identity` | `include/runtime/identity.h` | `parse`, `folder`, `resolve`, `agree`, `also_at`, `accepts_version` |
+| `identity` | `include/runtime/identity.h` | `parse`, `folder`, `resolve` |
 | `marketplace` | `include/runtime/marketplace.h` | `build`, `sources`, `read`, `lookup`, `remember` |
 | `places` | `include/runtime/places.h` | `resolve` |
 | `config` | `include/runtime/config.h` | `all`, `get`, `set` |
@@ -521,19 +521,21 @@ powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.js
 
 `spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
-it lies in. `--out` may not be the list itself. A copy already at `--out` is the previous copy: an entry whose repository cannot
-be looked up is carried over from it unchanged, or, when it has none, printed as skipped with its reason, and the copy is
-still written. `--token-env` names an environment variable holding an access token, which `identity.resolve` sends as an
-authorization header only to the host the ids name (never to another host, a redirect included) and which is never printed or
-written. `--token-host` is required with `--token-env` and names the one host the token is for, `github.com` for github ids or the
-instance host for gitea and forgejo ids; a variable that is unset, empty or not usable as a token is refused, and so is a list
-holding an id on another host, before any lookup. A list with entries whose copy would hold none (every lookup refused, rate limited, not found or lost to the
-network) is refused with the reasons seen and writes nothing; an empty list still writes an empty copy.
-Gitea, Forgejo and Codeberg answer 401 to a lookup by number without a token. A refusal writes nothing, leaves an existing
+it lies in. `--out` may not be the list itself. Each entry is resolved through naula from its `at` places, and the copy
+carries the places beside the name and the owner/name of the primary. A copy already at `--out` is the previous copy: an
+entry naula does not confirm is carried over from it unchanged, or, when it has none, printed as skipped with its reason, and
+the copy is still written. `--token-env` names an environment variable holding an access token, which naula's providers send
+only to the host the places name (never to another host, a redirect included) and which is never printed or written.
+`--token-host` is required with `--token-env` and names the one host the token is for, `github.com` for places on GitHub or
+the instance host; a variable that is unset, empty or not usable as a token is refused, and so is a list holding a place on
+another host, before anything is resolved. A list with entries whose copy would hold none (every home refused, rate limited,
+not found or lost to the network) is refused with the reasons seen and writes nothing; an empty list still writes an empty
+copy. Gitea, Forgejo and Codeberg answer 401 to a lookup by number without a token. A refusal writes nothing, leaves an existing
 copy as it was and exits 1; a name in a message is printed with its control characters escaped, and the JSON the commands
 print has 0x7F and U+0080 to U+009F escaped as well.
 
-`spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]` installs one
+`spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <place>]
+[--accept-number <place>]` installs one
 plugin by the name a marketplace gives it, from the marketplaces listed under `marketplaces` in the portable `settings.json`,
 into the `plugin` folder (from `paths.resolve`) of the home of the registered application `--application` names; without
 `--application` it is refused. No host runs a plugin deployed this way yet, since hosts move to deployed plugins in plan four.
@@ -543,10 +545,12 @@ is printed as skipped, since only a plugin can ask it. `marketplace.lookup` sett
 each `<marketplace>/<name>` form and installs nothing, and one found nowhere says so. `marketplace.remember` checks the id
 against the one on record for that marketplace and name, and, for a bare name, for the bare name too, so a name that moves
 to another marketplace asks as a changed id does; a different one prints both ids and installs nothing until the command is
-run again with `--accept` naming the new id. `install.by_id` then installs the id into the cache and deploys it, and only
-once that has succeeded are the names recorded, so a failed first install records nothing. A primary that the repo's
-copies newly name prints the recorded and new primary and installs nothing until `--accept-primary` names it; the two flags
-are never taken for each other. The JSON of what was installed is printed, then what `install.warnings` finds the plugin
+run again with `--accept` naming the new id. `install.by_id` then resolves the id from the entry's `at` places through
+naula, installs it into the cache from its primary's latest release and deploys it, and only once that has succeeded are the
+names recorded, so a failed first install records nothing. A primary other than the one naula confirmed before prints both
+and installs nothing until `--accept-primary` names the new one; an account whose number the repo's records disagree on,
+which a deleted and re-registered account also causes, prints the account and both numbers and installs nothing until
+`--accept-number` names the offered one; the three flags are never taken for each other. The JSON of what was installed is printed, then what `install.warnings` finds the plugin
 depends on by a name. Everything printed that came from a source, a copy or a refusal is printed with its control characters
 escaped; the command takes no `--catalog` or `--plugin`.
 

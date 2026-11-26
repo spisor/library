@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://spisor.github.io/library/marketplace-copy.schema.json",
   "title": "spisor marketplace copy",
-  "description": "The generated copy of a marketplace list, carrying each entry's name and last known location so a host need not look up every id. Nobody edits it.",
+  "description": "The generated copy of a marketplace list, carrying each entry's places and name and the owner/name of its primary when the copy was built, so a host need not resolve every id to list it. Nobody edits it.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -41,16 +41,28 @@
         "additionalProperties": false,
         "required": [
           "id",
+          "at",
           "name",
-          "fullName",
-          "lastKnown"
+          "fullName"
         ],
         "properties": {
           "id": {
             "description": "The repository identity of the listed repository, which survives a rename.",
             "type": "string",
-            "pattern": "^(local:[^/\\s]+|[a-z][a-z0-9-]*(@[a-z0-9.-]+)?:[0-9]+)(/(?!\\.{1,2}(/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
-            "fix": "write the id as a repository id, for example \"github:123\" or \"gitea@git.example.com:12/runtime\""
+            "pattern": "^(?:git:(?:[0-9a-f]{40}|[0-9a-f]{64})|local:[^/\\u0000\\t\\n\\u000b\\f\\r ]+)(?:/(?!\\.{1,2}(?:/|(?![\\s\\S])))[a-z0-9._-]+)*(?![\\s\\S])",
+            "fix": "write the id as a repository id, for example \"git:dd92836cca7c292258635112ecfe1acb7b4f6ecd\" or that id followed by \"/runtime\""
+          },
+          "at": {
+            "description": "Where to start looking for the repository: the places the list's owner recorded for it, provider numbers, web domains or git urls, which survive a rename.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "description": "One place.",
+              "type": "string",
+              "pattern": "^(?:(?!web[@:])[a-z][a-z0-9-]{0,31}(?:@[A-Za-z0-9][A-Za-z0-9.-]{0,254}(?::[0-9]{1,5})?)?:(?=[0-9]{1,19}(?![\\s\\S]))0*[1-9][0-9]*|web:[A-Za-z0-9][A-Za-z0-9.-]{0,254}|https://[\\x21-\\x7e]{1,2040}|ssh://[\\x21-\\x7e]{1,2042})(?![\\s\\S])",
+              "fix": "write the place as <provider>:<number>, <provider>@<host>:<number>, web:<domain> or an https url"
+            },
+            "fix": "list at least one place, for example [\"gitea@git.example.com:12\"]"
           },
           "name": {
             "description": "The name the entry is shown under: the list's alias when one is set, otherwise the repository's own name.",
@@ -59,13 +71,7 @@
             "fix": "use lowercase words joined by single hyphens or dots, for example \"config-ledger\" or \"api.http\""
           },
           "fullName": {
-            "description": "The owner and name of the repository when the copy was built.",
-            "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9._-]+(?![\\s\\S])",
-            "fix": "write owner/name, for example \"spisor/runtime\""
-          },
-          "lastKnown": {
-            "description": "The location to try first when the id cannot be resolved, which is the full name at build time.",
+            "description": "The owner and name of the repository's primary when the copy was built, for a surface to show.",
             "type": "string",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9._-]+(?![\\s\\S])",
             "fix": "write owner/name, for example \"spisor/runtime\""

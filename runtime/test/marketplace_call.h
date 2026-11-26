@@ -71,7 +71,6 @@ static inline cJSON *marketplace_build_tree(const cJSON *argument, spisor_refusa
     call.previous = marketplace_value(argument, "previous", &previous);
     call.token = marketplace_text(argument, "token");
     call.token_host = marketplace_text(argument, "tokenHost");
-    call.api_base = marketplace_text(argument, "apiBase");
     marketplace_last_status = marketplace()->build(marketplace()->context, &call, &answer, refusal);
     if (marketplace_last_status == SPISOR_OK) {
         cJSON *skipped;
@@ -176,6 +175,10 @@ static inline cJSON *marketplace_lookup_tree(const cJSON *argument, spisor_refus
         tree = cJSON_CreateObject();
         marketplace_add_text(tree, "id", answer.id);
         marketplace_add_text(tree, "marketplace", answer.marketplace);
+        cJSON *at = cJSON_AddArrayToObject(tree, "at");
+        for (size_t index = 0; index < answer.at_count; index++) {
+            cJSON_AddItemToArray(at, cJSON_CreateString(answer.at[index]));
+        }
     }
     marketplace()->release_lookup_answer(marketplace()->context, &answer);
     for (size_t index = 0; index < count; index++) {

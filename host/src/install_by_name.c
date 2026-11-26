@@ -21,10 +21,12 @@
 #define NO_MARKETPLACE_FIX "list marketplaces in the portable settings.json as marketplaces: [{id, url}], or fix the ones refused above"
 #define RUN_AGAIN_FIX "run the command again"
 
-/** The name as it was found: which marketplace gave which id, and how the user asked for it. */
+/** The name as it was found: which marketplace gave which id and places, and how the user asked for it. */
 typedef struct found_name {
     const char *marketplace;
     const char *id;
+    const char *const *at;
+    size_t at_count;
     const char *bare;
     int was_asked_bare;
 } found_name;
@@ -84,11 +86,22 @@ static int refuse_changed_name(const char *label, const char *was, const char *n
 static int refuse_changed_primary(const char *name, const char *application,
                                   const runtime_install_by_id_answer *answer) {
     const char *primary = answer->primary;
-    const char *parts[5] = {name, " is recorded as installed from ", answer->recorded_primary,
-                            ", and its repo's copies now name this as the primary: ", primary};
+    const char *parts[5] = {name, " was confirmed with the primary ", answer->recorded_primary,
+                            ", and its repo's homes now name this as the primary: ", primary};
     const char *fix_parts[8] = {"check that ", primary, " is the plugin you mean, then run spisor-host install --name ", name,
                                 " --application ", application, " --accept-primary ", primary};
     return refuse_with_fix_parts(parts, 5, fix_parts, 8);
+}
+
+static int refuse_changed_number(const char *name, const char *application,
+                                 const runtime_install_by_id_answer *answer) {
+    const char *offered = answer->offered_number;
+    const char *parts[7] = {name, ": the account ", answer->disputed_account, " was confirmed as ", answer->recorded_number,
+                            " and now answers as ", offered};
+    const char *fix_parts[8] = {"check that ", answer->disputed_account,
+                                " still belongs to the plugin's owner, then run spisor-host install --name ", name,
+                                " --application ", application, " --accept-number ", offered};
+    return refuse_with_fix_parts(parts, 7, fix_parts, 8);
 }
 
 static int refuse_no_marketplace(const char *name) {
@@ -129,26 +142,25 @@ static char *plugin_directory_of(const host_context *context, const char *applic
 /** What install.byId answered, as it is printed: unset texts as empty ones. NULL when memory runs out. */
 static cJSON *installed_json(const runtime_install_by_id_answer *installed) {
     cJSON *json = cJSON_CreateObject();
-    cJSON *ids = json == NULL ? NULL : cJSON_CreateArray();
-    int built = ids != NULL;
-    for (size_t index = 0; built && index < installed->id_count; index++) {
-        cJSON *id = cJSON_CreateString(installed->ids[index]);
-        built = id != NULL && cJSON_AddItemToArray(ids, id);
+    cJSON *homes = json == NULL ? NULL : cJSON_CreateArray();
+    int built = homes != NULL;
+    for (size_t index = 0; built && index < installed->home_count; index++) {
+        cJSON *home = cJSON_CreateString(installed->homes[index]);
+        built = home != NULL && cJSON_AddItemToArray(homes, home);
         if (!built) {
-            cJSON_Delete(id);
+            cJSON_Delete(home);
         }
     }
     built = built && cJSON_AddStringToObject(json, "id", text_or_empty(installed->id)) != NULL &&
             cJSON_AddStringToObject(json, "name", text_or_empty(installed->name)) != NULL &&
             cJSON_AddStringToObject(json, "fullName", text_or_empty(installed->full_name)) != NULL &&
-            cJSON_AddItemToObject(json, "ids", ids);
+            cJSON_AddItemToObject(json, "homes", homes);
     if (!built) {
-        cJSON_Delete(ids);
+        cJSON_Delete(homes);
         cJSON_Delete(json);
         return NULL;
     }
     built = cJSON_AddStringToObject(json, "primary", text_or_empty(installed->primary)) != NULL &&
-            cJSON_AddBoolToObject(json, "primaryConfirmed", installed->primary_confirmed != 0) != NULL &&
             cJSON_AddStringToObject(json, "version", text_or_empty(installed->version)) != NULL &&
             cJSON_AddStringToObject(json, "commit", text_or_empty(installed->commit)) != NULL &&
             cJSON_AddStringToObject(json, "sha256", text_or_empty(installed->sha256)) != NULL;
@@ -242,9 +254,12 @@ static int install_found(const host_context *context, const host_name_request *r
     runtime_install_by_id_answer installed = SPISOR_INIT(runtime_install_by_id_answer);
     spisor_refusal declined = SPISOR_INIT(spisor_refusal);
     argument.id = found->id;
+    argument.at = found->at;
+    argument.at_count = found->at_count;
     argument.cache = context->cache;
     argument.plugin_directory = plugin_directory;
     argument.accept_primary = request->accepted_primary;
+    argument.accept_number = request->accepted_number;
     argument.api_base = host_marketplace_lookup_api_base();
     spisor_status status = install->by_id(install->context, &argument, &installed, &declined);
     spisor_memory_release(plugin_directory);
@@ -252,6 +267,8 @@ static int install_found(const host_context *context, const host_name_request *r
         code = host_refuse_printably(host_refusal_json(&declined));
     } else if (installed.needs_user_acceptance) {
         code = refuse_changed_primary(request->name, request->application, &installed);
+    } else if (installed.needs_number_acceptance) {
+        code = refuse_changed_number(request->name, request->application, &installed);
     } else if (settles_names(context, request, found, 1, &code)) {
         code = print_installed(context, &installed);
     }
@@ -265,8 +282,8 @@ static int install_looked_up(const host_context *context, const host_name_reques
     if (answer->match == RUNTIME_MARKETPLACE_AMBIGUOUS) {
         return refuse_ambiguous(request->name, answer->ambiguous, answer->ambiguous_count);
     }
-    found_name found = {answer->marketplace, answer->id, bare_name_of(request->name),
-                        strchr(request->name, '/') == NULL};
+    found_name found = {answer->marketplace, answer->id,          answer->at, answer->at_count,
+                        bare_name_of(request->name), strchr(request->name, '/') == NULL};
     return found.id == NULL || found.marketplace == NULL ? refuse_not_found(request->name)
                                                          : install_found(context, request, &found);
 }

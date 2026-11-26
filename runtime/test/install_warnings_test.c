@@ -34,19 +34,19 @@ static void warns_for_a_dependency_by_name(void) {
 
 static void warns_for_a_namespaced_service_with_no_provider(void) {
     catalog_answer answer =
-        warnings_of("{\"services\":{\"consumes\":[\"github:12/files:read\",{\"id\":\"github:12/files:write\"}]}}");
+        warnings_of("{\"services\":{\"consumes\":[\"git:000000000000000000000000000000000000000c/files:read\",{\"id\":\"git:000000000000000000000000000000000000000c/files:write\"}]}}");
     CHECK(answer.status == 0);
     CHECK(cJSON_GetArraySize(warning_list(answer)) == 2);
     const cJSON *warning = cJSON_GetArrayItem(warning_list(answer), 1);
     check_text(text_at(warning, "kind"), "unbound-service", "kind");
-    check_text(text_at(warning, "subject"), "github:12/files:write", "subject");
+    check_text(text_at(warning, "subject"), "git:000000000000000000000000000000000000000c/files:write", "subject");
     expect_contains_text(text_at(warning, "detail"), "takes that name", "says whoever takes the name can replace it");
     cJSON_Delete(answer.tree);
 }
 
 static void says_nothing_for_a_dependency_by_id(void) {
     catalog_answer answer =
-        warnings_of("{\"dependencies\":[{\"importName\":\"left-pad\",\"id\":\"github:5\",\"commit\":\"abc\"}]}");
+        warnings_of("{\"dependencies\":[{\"importName\":\"left-pad\",\"id\":\"git:0000000000000000000000000000000000000005\",\"commit\":\"abc\"}]}");
     CHECK(answer.status == 0);
     CHECK(cJSON_GetArraySize(warning_list(answer)) == 0);
     cJSON_Delete(answer.tree);
@@ -54,7 +54,7 @@ static void says_nothing_for_a_dependency_by_id(void) {
 
 static void says_nothing_for_a_bare_shared_service_or_a_bound_one(void) {
     catalog_answer answer = warnings_of(
-        "{\"services\":{\"consumes\":[\"files\",{\"id\":\"files\"},{\"id\":\"github:12/files\",\"provider\":\"github:12\"}]}}");
+        "{\"services\":{\"consumes\":[\"files\",{\"id\":\"files\"},{\"id\":\"git:000000000000000000000000000000000000000c/files\",\"provider\":\"git:000000000000000000000000000000000000000c\"}]}}");
     CHECK(answer.status == 0);
     CHECK(cJSON_GetArraySize(warning_list(answer)) == 0);
     cJSON_Delete(answer.tree);
