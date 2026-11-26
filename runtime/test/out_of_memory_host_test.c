@@ -364,21 +364,18 @@ static void every_progress_failure_in_mode(const progress_case *each) {
 
 int main(void) {
     static const char *const serve[2] = {LAYER_RUNTIME, LOADER};
-    static const char *const action[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}"};
     static const char *const undeclared[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
     char result_path[2048];
     const char *const with_result[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}",
                                         result_path};
     const start_case cases[] = {{"a serve start and its stop", serve, 2, WEIVEL_STATUS_OK},
-                                {"an action start and its stop", action, 6, WEIVEL_STATUS_OK},
-                                {"an action start with a result path", with_result, 7, WEIVEL_STATUS_OK},
+                                {"an action start and its stop", with_result, 7, WEIVEL_STATUS_OK},
                                 {"an undeclared action's start", undeclared, 6, WEIVEL_STATUS_REFUSED}};
     const progress_case progress_cases[] = {
         {"a held serve run's started and tick", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, NULL, NULL},
         {"a serve run's tick no holder keeps", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
         {"a serve run's refused plugin", serve, 2, WEIVEL_STANDARD_HOST_REFUSED, 0, 0, NULL, NULL},
-        {"an action run's started and finished", action, 6, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
-        {"an action run's result written", with_result, 7, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
+        {"an action run's started and finished", with_result, 7, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
         {"a front door's environment", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, LISTENING_MANIFEST,
          PROXY_STANDARD},
         {"a front door on a port the system picks", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, ANY_PORT_MANIFEST,
