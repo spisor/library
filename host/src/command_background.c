@@ -28,7 +28,7 @@ static void stamp(void *context) {
  */
 static int run_background(const host_context *context, const char *id) {
     cJSON *refusal = NULL;
-    cJSON *start = host_start_of(context, id, &refusal);
+    cJSON *start = host_start_of(context, id, NULL, 0, &refusal);
     if (start == NULL) {
         return host_refuse(refusal);
     }

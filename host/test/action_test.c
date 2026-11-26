@@ -86,7 +86,7 @@ static void runs_the_session_host_of_a_loader_that_records_no_start(void) {
     const char *arguments[] = {LOADER_ID, SESSION_PLUGIN, "render", NULL};
     CHECK(run_action(&world, &run, arguments) == 0);
     char *starts = await_starts_holding(&world, "action");
-    expect_contains(starts, "host.js javascript " LOADER_ID " action " SESSION_PLUGIN " render", "the session host ran the action");
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID " action " SESSION_PLUGIN " render", "the session host ran the action");
     spisor_memory_release(starts);
     program_free(&run);
     finish_world(&world);

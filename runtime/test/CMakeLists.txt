@@ -222,7 +222,7 @@ set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
 set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
-foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test)
+foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test hosts_layer_start_test)
     runtime_test(${name} TEST_HOOKS ${runtime_install_plain_http_test_objects})
 endforeach()
 runtime_test(runtime_testing_test TEST_HOOKS ${runtime_install_plain_http_test_objects})

@@ -305,6 +305,30 @@ static void a_layer_with_no_hinted_version_is_refused_and_published(void) {
     finish_base();
 }
 
+/**
+ * The native layer of a loader whose front door is javascript runs as `<loader>.native`, so its refusal goes to that
+ * record, the one a launch waits on for it, and leaves the front door's alone.
+ */
+static void a_layer_with_no_hint_publishes_under_its_own_identity(void) {
+    const char *arguments[2] = {"native", LOADER};
+    char *problem = NULL;
+    char *own;
+    char *front_door;
+    started_run run;
+    start_host_world("no-native-layer");
+    run = start_with(arguments, 2);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, "no spisor-interface version is recorded", "a native layer unhinted");
+    release_run(&run);
+    own = runtime_holders_path(state, LOADER ".native", ".ready.json", &problem);
+    front_door = runtime_holders_path(state, LOADER, ".ready.json", &problem);
+    CHECK(own != NULL && spisor_probe_file(own) == SPISOR_FILE_PRESENT);
+    CHECK(front_door != NULL && spisor_probe_file(front_door) == SPISOR_FILE_MISSING);
+    spisor_memory_release(front_door);
+    spisor_memory_release(own);
+    spisor_memory_release(problem);
+    finish_base();
+}
+
 static void an_unregistered_loader_is_refused(void) {
     const char *arguments[2] = {LAYER_RUNTIME, "other-host"};
     started_run run;
@@ -356,6 +380,7 @@ int main(void) {
     a_located_plugin_with_no_entry_is_refused();
     an_undeclared_action_is_refused();
     a_layer_with_no_hinted_version_is_refused_and_published();
+    a_layer_with_no_hint_publishes_under_its_own_identity();
     an_unregistered_loader_is_refused();
     a_second_start_before_its_stop_is_refused();
     every_later_operation_refuses_with_no_run();

@@ -141,7 +141,7 @@ off the include path.
 | `updates` | `include/runtime/updates.h` | `apply`, `check`, `rollback`, `recorded`, `run` |
 | `boot` | `include/runtime/boot.h` | `read`, `write`, `resolve`, `place` |
 | `processes` | `include/runtime/processes.h` | `hold`, `release`, `prune`, `ready`, `await_ready`, `record_run`, `live_runs`, `remove_runs` |
-| `hosts` | `include/runtime/hosts.h` | `register_host`, `list`, `remove`, `provenance`, `start` |
+| `hosts` | `include/runtime/hosts.h` | `register_host`, `list`, `remove`, `provenance`, `start`, `layer_start` |
 | `loader` | `include/runtime/loader.h` | `check`, `home`, `installed` |
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
@@ -149,7 +149,7 @@ off the include path.
 | `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
 | `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`, `settings_file`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
-25 services, 111 operations.
+25 services, 112 operations.
 
 A `places` argument is what `places.resolve` answers.
 
@@ -163,13 +163,18 @@ standard's own descriptions. runtime serves `weivel.host` and `weivel.scope` and
 `weivel.secrets`, `weivel.paths` and `weivel.log`, which a plugin reaches only through its own scope.
 
 `weivel.host` is what weivel's host program runs a loader's plugins on, one run a process, from a `start` answering
-OK to its `stop`. `start` takes the program's arguments, `<loader id>` for a SERVE run, `<loader id> in-process`
-for a SERVE run that serves the process it runs in alone, or `<loader id> action <plugin> <action> <input JSON>` for
-an ACTION run, and this process's environment. An in-process run, as a host started inside another application's
+OK to its `stop`. `start` takes the program's arguments, each form led by its layer's runtime, `javascript` or
+`native`: `<runtime> <loader id>` for a SERVE run, `<runtime> <loader id> in-process` for a SERVE run that serves the
+process it runs in alone, or `<runtime> <loader id> action <plugin> <action> <input JSON>` for an ACTION run, and this
+process's environment. An in-process run, as a host started inside another application's
 process makes, never reads or writes the loader's holders and ready records, so any number of them serve at once,
 each in its own process; it publishes no ready record, its ticks run no prune, and only a stop request ends it. The
-layer is the javascript-host at the version its boot hint names, beside every library the hint names, and `hosts.start`
-plans the run, a SERVE run as the loader's session start. The plan loads every hinted library with a binary but runtime
+layer is the item that runtime names, `javascript-host` or `spisor-interface`, at the version its boot hint names,
+beside every library the hint names, and `hosts.start` plans the run, a SERVE run as the loader's session start: only
+the enabled plugins of that runtime, and for an ACTION only the action's plugin and the providers of what it consumes.
+The layer holding the front door, that of the first plugin the loader standard requires, else javascript unless only
+native plugins run, runs as the loader; the other runs as `<loader id>.<runtime>`, and publishes its ready record and
+is held under that identity. The plan loads every hinted library with a binary but runtime
 itself, which the program was started with, and activates every plugin of that plan `cache.locate` finds installed. An
 ACTION plan names its plugin by that plugin's manifest path, the very text the plan's plugin carries, since the program
 matches it exactly; it names the service and method the action's declared `call` names, which the program calls on the
@@ -177,8 +182,17 @@ service the plugin registered, and its arguments are what `ui.action` merges fro
 whose manifest names no entry installed beside it, a plugin the plan does not run, an undeclared action, arguments
 naming no run, a layer with no hinted version, an ACTION run from a program too old for its plan to hold the service
 and method, and a second start before a stop are refused at start, which then leaves no run record and no scopes
-begun; a refused SERVE start that is not in-process publishes its refusal to the loader's ready record. The start begins
-the scopes last, over the loader's home and the places.
+begun; a refused SERVE start that is not in-process publishes its refusal to the ready record of its identity. The
+start begins the scopes last, over the loader's home and the places.
+
+`hosts.layer_start` is how anything starts those runs, so no caller decides a layer, an argument order or an
+identity: for a loader and a mode it answers each layer's runtime, identity, executable, arguments and environment, a
+SERVE start one layer per runtime of the plugins a start resolves with the front door's last, an ACTION one, its
+plugin's. A native layer runs `spisor-interface`'s entry as `host <runtime binary> native <loader id>`, a javascript
+one runs Node with `javascript-host`'s entry and `<runtime binary> javascript <loader id>`. A layer reads each plugin's
+runtime from the catalog spisor-host's settings name, since install records the catalog source there alone.
+`spisor-host launch` holds every layer and starts the application once each is ready, with the front door's environment;
+`spisor-host action` runs the one layer an action answers.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries
 on with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
@@ -186,8 +200,8 @@ on with the rest, as the archived host quarantined one; an ACTION run whose own 
 with an empty environment, when every plugin activated, and otherwise a refusal naming the first that did not.
 `tick` is a SERVE run's alone, since an ACTION run never ticks (rev 224), and acts only through its `now`: at
 hosts.start's timers it stamps the run record and runs `processes.prune`, every 5 seconds, and `updates.check` with the
-versions `cache.locate` could not run as damaged, every hour, the first tick taking both, and answers the earlier due
-time as its next tick. A prune that finds no holder alive or another live process recorded as the loader's host,
+versions `cache.locate` could not run as damaged, every hour in the layer holding the front door alone, the first tick
+taking both, and answers the earlier due time as its next tick. A prune that finds no holder alive or another live process recorded as the loader's host,
 or six failed turns in a row, ends the run; a recorded host whose process is dead counts as none, so a host that
 crashed or ended never ends the next one. Each failed turn,
 a refused check and each version a check refused are written as a warning to the loader's own log. `finished` records

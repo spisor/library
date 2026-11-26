@@ -645,7 +645,40 @@ static void the_layer_without_the_front_door_runs_under_its_own_identity(void) {
     finish_base();
 }
 
+/** Two layers each checking for updates would schedule and fetch the same versions into one cache at once. */
+static void only_the_front_door_layer_checks_for_updates(void) {
+    lay_out_two_layers("start-update-check");
+    catalog_answer front = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
+    catalog_answer other = start_layer_in(environment_json(), 1, NATIVE, NULL);
+    expect_success(front, "the front door's session start");
+    expect_success(other, "the other layer's session start");
+    CHECK(cJSON_GetNumberValue(value_at(front.tree, "timers/updateCheckMilliseconds")) ==
+          RUNTIME_UPDATE_CHECK_MILLISECONDS);
+    CHECK(cJSON_GetNumberValue(value_at(other.tree, "timers/updateCheckMilliseconds")) == 0);
+    cJSON_Delete(front.tree);
+    cJSON_Delete(other.tree);
+    finish_base();
+}
+
+static void an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer(void) {
+    start_world("start-action-other-layer");
+    register_test_host("1.0.0");
+    install_layered_plugin("scripted", JAVASCRIPT, NO_CAPABILITIES, NULL);
+    install_layered_plugin("compiled", NATIVE, NO_CAPABILITIES, GREET_ACTION);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "compiled");
+    CHECK(started.status == SPISOR_REFUSED);
+    const char *message = text_at(started.tree, "message");
+    CHECK(message != NULL && strstr(message, "compiled runs in the native layer") != NULL);
+    expect_fix(started, "start the action in the native layer, as spisor-host action does", "the misplaced fix");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 int main(void) {
+    only_the_front_door_layer_checks_for_updates();
+    an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer();
     a_run_identity_may_carry_its_layer_after_a_dot();
     each_layer_plans_only_the_plugins_of_its_runtime();
     a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused();

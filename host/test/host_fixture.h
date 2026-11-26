@@ -315,6 +315,7 @@ typedef struct host_world {
     const char *layer_delay;
     const char *fixture_ready;
     const char *ready_timeout;
+    const char *refusing_runtime;
 } host_world;
 
 static inline void start_world_at(host_world *world, const char *suite, const char *label) {
@@ -328,6 +329,7 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->layer_delay = NULL;
     world->fixture_ready = NULL;
     world->ready_timeout = NULL;
+    world->refusing_runtime = NULL;
     CHECK(spisor_make_directories(world->bin) == SPISOR_OK && spisor_make_directories(world->signals) == SPISOR_OK &&
           spisor_make_directories(world->streams) == SPISOR_OK);
 }
@@ -377,6 +379,9 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     }
     if (world->ready_timeout != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_TEST_READY_TIMEOUT", world->ready_timeout);
+    }
+    if (world->refusing_runtime != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REFUSING", world->refusing_runtime);
     }
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "ComSpec");
@@ -462,6 +467,25 @@ static inline void list_native_background(install_base *base, const char *id, in
                           served_copy(base, id, "1.0.0", "background-host" EXECUTABLE_ENDING, LAYER_FIXTURE_PATH));
 }
 
+#if defined(_WIN32)
+#define RUNTIME_FIXTURE_BINARY "runtime.dll"
+#elif defined(__APPLE__)
+#define RUNTIME_FIXTURE_BINARY "runtime.dylib"
+#else
+#define RUNTIME_FIXTURE_BINARY "runtime.so"
+#endif
+
+/** The runtime library with its declaration and a binary, so a layer's hint names the binary its start passes on. */
+static inline void list_runtime_library(install_base *base) {
+    cJSON *item = catalog_item(base, "runtime", "library", NULL, "0.1.0");
+    cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), "0.1.0");
+    cJSON *platform = cJSON_AddObjectToObject(cJSON_AddObjectToObject(entry, "platforms"), runtime_platform_key());
+    cJSON *files = cJSON_AddObjectToObject(platform, "files");
+    cJSON_AddItemToObject(files, "library.json", served_reference(base, "runtime", "0.1.0", "library.json", "{}"));
+    cJSON_AddItemToObject(files, RUNTIME_FIXTURE_BINARY,
+                          served_reference(base, "runtime", "0.1.0", RUNTIME_FIXTURE_BINARY, "runtime"));
+}
+
 /**
  * The launch ecosystem: spisor-host, the runtime, the fixture loader for application, served by the fake
  * application's binary, naming commands and the background host.
@@ -470,7 +494,7 @@ static inline void list_launch_catalog_requiring(host_world *world, const char *
                                                   int javascript_plugin, const char *plugins_json) {
     install_base *base = &world->base;
     list_native_spisor_host(base, "1.0.0");
-    list_library(base, "runtime", "0.1.0");
+    list_runtime_library(base);
     int declares_entry = strcmp(application, APPLICATION_ID) != 0;
     list_loader_requiring(base, LOADER_ID, "1.0.0",
                           (declares_entry ? application_with_hook_entry : application_json)(application, APPLICATION_ID,

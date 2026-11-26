@@ -14,6 +14,7 @@
 #include "own_run.h"
 #include "paths.h"
 #include "required_plugins.h"
+#include "runtime/hosts.h"
 #include "session_ready.h"
 
 #define HOLD_FIX "nothing is needed now; the application runs, and a background host it lacks starts with the next launch"
@@ -50,30 +51,35 @@ static char *application_binary(const host_context *context, const cJSON *standa
     return found;
 }
 
+static cJSON *serving_layers(const host_context *context, const char *loader_id, cJSON **refusal) {
+    return host_layer_starts(context, loader_id, RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL, refusal);
+}
+
 /**
- * The start of the loader's session host on javascript-host, or NULL after writing to stderr why it cannot
- * be started.
+ * The starts of the loader's layers, or an empty array after writing to stderr why they cannot be started; NULL when
+ * memory runs out.
  *
  * @implNote Never refuses the launch (RULES section 2): the application runs without its plugins rather
  * than not at all, and the next launch tries again.
  */
-static cJSON *session_start_or_report(const host_context *context, const char *loader_id) {
+static cJSON *layers_or_report(const host_context *context, const char *loader_id) {
     cJSON *refusal = NULL;
-    cJSON *session = host_session_start_of(context, loader_id, &refusal);
-    if (session == NULL) {
+    cJSON *layers = serving_layers(context, loader_id, &refusal);
+    if (layers == NULL && refusal != NULL) {
         host_write(1, "spisor could not start the session host of ");
         host_write(1, loader_id);
         host_write(1, ", so the application runs without its plugins: ");
         host_print_refusal(refusal);
+        layers = cJSON_CreateArray();
     }
     cJSON_Delete(refusal);
-    return session;
+    return layers;
 }
 
-/** The start of the session host of a loader that requires plugins, which cannot run without it; NULL with *refusal set. */
-static cJSON *session_start_or_refuse(const host_context *context, const char *loader_id, cJSON **refusal) {
-    cJSON *session = host_session_start_of(context, loader_id, refusal);
-    if (session == NULL && *refusal != NULL) {
+/** The starts of the layers of a loader that requires plugins, which cannot run without them; NULL with *refusal set. */
+static cJSON *layers_or_refuse(const host_context *context, const char *loader_id, cJSON **refusal) {
+    cJSON *layers = serving_layers(context, loader_id, refusal);
+    if (layers == NULL && *refusal != NULL) {
         const char *message = host_text(*refusal, "message");
         const char *fix = host_text(*refusal, "fix");
         const char *parts[4] = {"spisor could not start the session host of ", loader_id,
@@ -82,43 +88,60 @@ static cJSON *session_start_or_refuse(const host_context *context, const char *l
         cJSON_Delete(*refusal);
         *refusal = explained;
     }
-    return session;
+    return layers;
 }
 
 static int requires_plugins(const loader_start *loader) {
     return cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(loader->standard, "plugins")) > 0;
 }
 
+/** The layers the loader's plugins run in, which a loader with required plugins cannot do without; NULL with *refusal set. */
+static cJSON *layers_of(const host_context *context, const char *loader_id, const loader_start *loader,
+                        cJSON **refusal) {
+    if (requires_plugins(loader)) {
+        return layers_or_refuse(context, loader_id, refusal);
+    }
+    return cJSON_GetArraySize(loader->plugins) > 0 ? layers_or_report(context, loader_id) : cJSON_CreateArray();
+}
+
+/** Adds each layer's start to starts under the identity hosts' layer_start answered for it; 0 when memory runs out. */
+static int add_layer_starts(cJSON *starts, const cJSON *layers) {
+    const cJSON *layer;
+    cJSON_ArrayForEach(layer, layers) {
+        cJSON *start = cJSON_Duplicate(layer, 1);
+        cJSON_DeleteItemFromObjectCaseSensitive(start, "runtime");
+        cJSON_DeleteItemFromObjectCaseSensitive(start, "hostId");
+        if (start == NULL || !cJSON_AddItemToObject(starts, host_text(layer, "hostId"), start)) {
+            cJSON_Delete(start);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /**
- * {host id: start} for every background host the loader's host.json names, and its session host on
- * javascript-host when its settings enable plugins of its own and it can be started, which a loader with
- * required plugins cannot do without; NULL with *refusal set when a background host or such a session host
- * cannot be started, before anything is.
+ * {host id: start} for every background host the loader's host.json names, then for each layer its plugins run in,
+ * under that layer's identity; NULL with *refusal set when a background host or a layer of a loader with required
+ * plugins cannot be started, before anything is. *layers is the layers, in the order hosts' layer_start answered them.
  */
-static cJSON *starts_of(const host_context *context, const char *loader_id, const loader_start *loader, cJSON **refusal) {
+static cJSON *starts_of(const host_context *context, const char *loader_id, const loader_start *loader, cJSON **layers,
+                        cJSON **refusal) {
     cJSON *starts = cJSON_CreateObject();
     const cJSON *background = cJSON_GetObjectItemCaseSensitive(loader->standard, "background");
+    *layers = NULL;
     for (const cJSON *id = starts == NULL || background == NULL ? NULL : background->child; id != NULL; id = id->next) {
-        cJSON *start = cJSON_IsString(id) ? host_start_of(context, id->valuestring, refusal) : NULL;
+        cJSON *start = cJSON_IsString(id) ? host_start_of(context, id->valuestring, NULL, 0, refusal) : NULL;
         if (start == NULL || !cJSON_AddItemToObject(starts, id->valuestring, start)) {
             cJSON_Delete(start);
             cJSON_Delete(starts);
             return NULL;
         }
     }
-    cJSON *session = NULL;
-    if (starts != NULL && requires_plugins(loader)) {
-        session = session_start_or_refuse(context, loader_id, refusal);
-        if (session == NULL) {
-            cJSON_Delete(starts);
-            return NULL;
-        }
-    } else if (starts != NULL && cJSON_GetArraySize(loader->plugins) > 0) {
-        session = session_start_or_report(context, loader_id);
-    }
-    if (session != NULL && !cJSON_AddItemToObject(starts, loader_id, session)) {
-        cJSON_Delete(session);
+    *layers = starts == NULL ? NULL : layers_of(context, loader_id, loader, refusal);
+    if (*layers == NULL || !add_layer_starts(starts, *layers)) {
+        cJSON_Delete(*layers);
         cJSON_Delete(starts);
+        *layers = NULL;
         return NULL;
     }
     return starts;
@@ -160,16 +183,35 @@ static cJSON *application_arguments(int count, char **arguments) {
     return list;
 }
 
+/** What layer, held as pids records it, publishes once ready; NULL with *refusal set as the await refuses. */
+static cJSON *published_by(const host_context *context, const cJSON *layer, const cJSON *pids, cJSON **refusal) {
+    const char *identity = host_text(layer, "hostId");
+    const cJSON *pid = cJSON_GetObjectItemCaseSensitive(pids, identity);
+    return cJSON_IsNumber(pid) ? host_await_session_environment(context, identity, pid->valuedouble, refusal)
+                               : cJSON_CreateObject();
+}
+
 /**
- * The environment the application starts with: this process's own, with the variables the loader's session
- * host publishes set over it. NULL with *refusal set when that host publishes a refusal or is not ready in
- * time, which never happens for a launch that starts no session host.
+ * The environment the application starts with: this process's own, with the variables the layer holding the front
+ * door publishes set over it, once every layer is ready. NULL with *refusal set when a layer publishes a refusal or is
+ * not ready in time, which never happens for a launch that starts no layer.
+ *
+ * @implNote The front door's record is awaited first: a refusal every layer would share is published there, so it is
+ * read before another layer's record is waited on.
  */
-static cJSON *application_environment(const host_context *context, const char *loader_id, const cJSON *pids,
-                                       cJSON **refusal) {
-    const cJSON *session = cJSON_GetObjectItemCaseSensitive(pids, loader_id);
-    cJSON *published = cJSON_IsNumber(session) ? host_await_session_environment(context, loader_id, session->valuedouble, refusal)
-                                               : cJSON_CreateObject();
+static cJSON *application_environment(const host_context *context, const cJSON *layers, const cJSON *pids,
+                                      cJSON **refusal) {
+    int count = cJSON_GetArraySize(layers);
+    cJSON *published = count == 0 ? cJSON_CreateObject()
+                                  : published_by(context, cJSON_GetArrayItem(layers, count - 1), pids, refusal);
+    for (int index = 0; published != NULL && index < count - 1; index++) {
+        cJSON *other = published_by(context, cJSON_GetArrayItem(layers, index), pids, refusal);
+        if (other == NULL) {
+            cJSON_Delete(published);
+            published = NULL;
+        }
+        cJSON_Delete(other);
+    }
     cJSON *environment = published == NULL ? NULL : host_overlay_environment(context->environment, published);
     cJSON_Delete(published);
     return environment;
@@ -193,7 +235,7 @@ static int run_application(const host_context *context, const char *binary, cJSO
     return ran ? exit_code : host_refuse(refusal);
 }
 
-static int run_held(const host_context *context, const char *loader_id, const char *binary, cJSON *starts,
+static int run_held(const host_context *context, const cJSON *layers, const char *binary, cJSON *starts,
                     const cJSON *arguments) {
     cJSON *refusal = NULL;
     double self = host_process_id();
@@ -202,7 +244,7 @@ static int run_held(const host_context *context, const char *loader_id, const ch
         cJSON_Delete(pids);
         return host_refuse(refusal);
     }
-    cJSON *environment = application_environment(context, loader_id, pids, &refusal);
+    cJSON *environment = application_environment(context, layers, pids, &refusal);
     cJSON_Delete(pids);
     if (environment == NULL) {
         host_release_all(context, starts, self);
@@ -226,11 +268,13 @@ static int launch(const host_context *context, const char *loader_id, int count,
                                                                              : NULL;
     int required = binary != NULL && host_check_required_plugins(context, loader_id, host_text(loader.registration, "home"),
                                                                  loader.standard, &refusal);
-    cJSON *starts = required ? starts_of(context, loader_id, &loader, &refusal) : NULL;
+    cJSON *layers = NULL;
+    cJSON *starts = required ? starts_of(context, loader_id, &loader, &layers, &refusal) : NULL;
     cJSON *passed = starts == NULL ? NULL : application_arguments(count, arguments);
-    int code = passed == NULL ? host_refuse(refusal) : run_held(context, loader_id, binary, starts, passed);
+    int code = passed == NULL ? host_refuse(refusal) : run_held(context, layers, binary, starts, passed);
     cJSON_Delete(passed);
     cJSON_Delete(starts);
+    cJSON_Delete(layers);
     spisor_memory_release(binary);
     host_finish_loader(&loader);
     return code;

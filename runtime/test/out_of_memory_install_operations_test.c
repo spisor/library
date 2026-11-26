@@ -8,6 +8,7 @@
 
 #include "allocation.h"
 #include "allocation_failure.h"
+#include "cache_marker.h"
 #include "catalog_text.h"
 #include "child_process.h"
 #include "definition_fixture.h"
@@ -1355,6 +1356,83 @@ static int kept_the_session_run_unless_applied(void) {
     return kept;
 }
 
+/**
+ * hosts' start world with javascript-host installed and hinted with the runtime binary, and a JavaScript runtime
+ * recorded, so an action's layer start reads the loader's layers, its hint and bundle, and finds its runtime.
+ */
+static void prepare_layer_start(void) {
+    char *bundle;
+    char *node;
+    cJSON *hashes = cJSON_CreateObject();
+    cJSON *sizes = cJSON_CreateObject();
+    prepare_start();
+    bundle = joined(base.cache, "bundles/javascript-host/1.0.0");
+    node = joined(base.user, "node");
+    write_in(bundle, "host.json", "{\"entry\":\"weivel-host.mjs\"}");
+    write_in(bundle, "weivel-host.mjs", "layer");
+    write_in(base.user, "node", "node");
+    const char *names[2] = {"host.json", "weivel-host.mjs"};
+    for (size_t index = 0; index < 2; index++) {
+        char *path = joined(bundle, names[index]);
+        char sha256[NAULA_SHA256_HEX_SIZE];
+        uint64_t size = 0;
+        CHECK(runtime_sha256_file_sized(path, sha256, &size) == SPISOR_OK);
+        cJSON_AddStringToObject(hashes, names[index], sha256);
+        cJSON_AddNumberToObject(sizes, names[index], (double)size);
+        spisor_memory_release(path);
+    }
+    CHECK(runtime_cache_write_marker(bundle, hashes, sizes) == SPISOR_OK);
+    cJSON *hint = cJSON_CreateObject();
+    cJSON *runtime = cJSON_AddObjectToObject(cJSON_AddObjectToObject(hint, "libraries"), "runtime");
+    cJSON_AddStringToObject(runtime, "version", "0.1.0");
+    cJSON_AddStringToObject(runtime, "directory", base.user);
+    cJSON_AddStringToObject(runtime, "binary", node);
+    cJSON_AddStringToObject(hint, "host", "1.0.0");
+    char *hint_text = cJSON_PrintUnformatted(hint);
+    write_in(base.cache, "hosts/javascript-host.json", hint_text);
+    cJSON *record = cJSON_CreateObject();
+    cJSON_AddStringToObject(record, "executable", node);
+    char *record_text = cJSON_PrintUnformatted(record);
+    write_in(base.cache, "runtimes/javascript.json", record_text);
+    cJSON_free(record_text);
+    cJSON_Delete(record);
+    cJSON_free(hint_text);
+    cJSON_Delete(hint);
+    cJSON_Delete(sizes);
+    cJSON_Delete(hashes);
+    spisor_memory_release(node);
+    spisor_memory_release(bundle);
+}
+
+/** An action's layer start for spisor-host; WRONG_RUN for an OK answering other than its one layer. */
+static spisor_status run_layer_start(void) {
+    const runtime_hosts_definition *hosts = hosts_service();
+    runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
+    runtime_hosts_layer_start_answer answer;
+    start_empty(&answer, sizeof answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    runtime_variable environment[5] = {{"HOME", base.user},
+                                       {"USERPROFILE", base.user},
+                                       {"SPISOR_HOME", base.portable},
+                                       {"SPISOR_STATE", base.state},
+                                       {"SPISOR_CACHE", base.cache}};
+    argument.environment = environment;
+    argument.environment_count = 5;
+    argument.loader_id = "spisor-host";
+    argument.mode = RUNTIME_HOSTS_LAYER_ACTION;
+    argument.plugin = "p";
+    argument.action = "a";
+    argument.input = "{}";
+    last_status = hosts->layer_start(hosts->context, &argument, &answer, &refusal);
+    if (last_status == SPISOR_OK && (answer.layer_count != 1 || answer.layers[0].argument_count != 8)) {
+        last_status = WRONG_RUN;
+    }
+    last_status = empty_unless_answered(last_status, &answer, sizeof answer);
+    hosts->release_layer_start_answer(hosts->context, &answer);
+    keep_refusal(&refusal);
+    return last_status;
+}
+
 #define LOADER_STANDARD_JSON                                                                                   \
     "{\"application\": {\"id\": \"sample\", \"label\": \"Sample\", \"binary\": \"sample\", \"home\": "        \
     "{\"envOverride\": \"SAMPLE_HOME\", \"candidates\": [\"~/.sample\"]}, \"packages\": {\"npm\": \"sample\"}}, " \
@@ -1617,14 +1695,15 @@ int main(int argc, char **argv) {
         {"loader's check", prepare_loader_check, run_loader_check, NULL},
         {"loader's home", prepare_loader_home, run_loader_home, NULL},
         {"loader's installed", prepare_path_application, run_loader_installed, NULL}};
-    static const operation_case hosts_cases[6] = {
+    static const operation_case hosts_cases[7] = {
         {"hosts' register_host", prepare_register, run_register, NULL},
         {"hosts' list", prepare_list, run_list, NULL},
         {"hosts' remove", prepare_remove, run_remove, kept_the_registration_unless_removed},
         {"hosts' provenance", prepare_provenance, run_provenance, NULL},
         {"hosts' start", prepare_start, run_start, recorded_no_run_unless_applied},
         {"hosts' start beside a session", prepare_start_beside_session, run_start_beside_session,
-         kept_the_session_run_unless_applied}};
+         kept_the_session_run_unless_applied},
+        {"hosts' layer_start", prepare_layer_start, run_layer_start, NULL}};
     static const operation_case hold_start = {"processes' hold starting", prepare_hold_start, run_hold_start,
                                               started_and_recorded_or_nothing};
     const char *only = argc > 1 ? argv[1] : "";

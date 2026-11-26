@@ -33,18 +33,8 @@ typedef struct start_record {
 } start_record;
 
 static int plan_start(const runtime_updates_apply_request *request, start_plan *plan, cJSON **refusal) {
-    const cJSON *settings = request->settings;
-    cJSON *sources = runtime_updates_sources(settings, refusal);
-    plan->catalog = sources == NULL ? NULL : runtime_catalog_current(sources, request->target.cache, refusal);
-    cJSON *candidates =
-        runtime_plugin_candidates(settings, request->defaults);
-    cJSON *installed = runtime_cache_installed_bundles(request->target.cache);
-    plan->plugins = plan->catalog == NULL || candidates == NULL || installed == NULL
-                        ? NULL
-                        : runtime_catalog_resolve(plan->catalog, candidates, installed, "plugin", refusal);
-    cJSON_Delete(installed);
-    cJSON_Delete(candidates);
-    cJSON_Delete(sources);
+    plan->plugins = runtime_updates_resolve_plugins(request->settings, request->defaults, request->target.cache,
+                                                    &plan->catalog, refusal);
     return plan->plugins != NULL;
 }
 

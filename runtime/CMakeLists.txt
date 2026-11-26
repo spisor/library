@@ -209,7 +209,7 @@ target_compile_definitions(runtime_cache_test_hooks PRIVATE SPISOR_CACHE_TEST_HO
 spisor_strict_warnings(runtime_cache_test_hooks)
 set_target_properties(runtime_cache_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
-set(runtime_updates_sources src/boot.c src/boot_resolve.c src/hosts_start.c src/plugin_choices.c src/updates.c
+set(runtime_updates_sources src/boot.c src/boot_resolve.c src/hosts_layers.c src/hosts_start.c src/plugin_choices.c src/updates.c
     src/updates_apply.c src/updates_catalog.c src/updates_check.c src/updates_recorded.c src/updates_rollback.c src/version_map.c)
 add_library(runtime_updates OBJECT ${runtime_updates_sources})
 target_link_libraries(runtime_updates PUBLIC runtime_objects)
@@ -239,7 +239,7 @@ target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_hosts PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts)
 
-add_library(runtime_hosts_definition OBJECT src/hosts_definition.c)
+add_library(runtime_hosts_definition OBJECT src/hosts_definition.c src/hosts_layer_start.c src/runnable.c)
 target_link_libraries(runtime_hosts_definition PUBLIC runtime_objects)
 target_include_directories(runtime_hosts_definition PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_hosts_definition PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)

@@ -9,6 +9,14 @@
  */
 cJSON *runtime_updates_sources(const cJSON *settings, cJSON **refusal);
 
+/**
+ * The plugins a start of a host with settings and defaults, as updates.apply takes them, runs: {run, fetch}, as
+ * catalog.resolve answers it over the candidates they choose and the versions installed under cache; *catalog the
+ * merged current catalog it read, NULL unless the answer is.
+ */
+cJSON *runtime_updates_resolve_plugins(const cJSON *settings, const cJSON *defaults, const char *cache, cJSON **catalog,
+                                       cJSON **refusal);
+
 /** One source checked as catalog.check answers it, {kind, detail?}, the catalog it read left out. */
 cJSON *runtime_updates_check_source(const cJSON *source, const char *cache, const char *now, double interval_hours,
                                     cJSON **refusal);
