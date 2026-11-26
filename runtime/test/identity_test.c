@@ -337,11 +337,13 @@ static void a_refusal_that_asks_nothing_wins_over_a_declined_acceptance(void) {
     runtime_identity_acceptance acceptance;
     memset(&acceptance, 0, sizeof acceptance);
     acceptance.dispute_count = 1;
-    naula_refusal for_the_number = refusal_of("number-changed", "accept the new number through accept_number");
+    naula_refusal for_the_number = refusal_of("number-disputed", NULL);
+    naula_refusal fix_naming_the_callback = refusal_of("number-changed", "accept the new number through accept_number");
     naula_refusal copy = refusal_of("copy-of", "depend on the original");
     naula_refusal none = refusal_of("", NULL);
     CHECK(runtime_identity_needs_the_user(NAULA_OK, &none, &acceptance));
     CHECK(runtime_identity_needs_the_user(NAULA_REFUSED, &for_the_number, &acceptance));
+    CHECK(!runtime_identity_needs_the_user(NAULA_REFUSED, &fix_naming_the_callback, &acceptance));
     CHECK(!runtime_identity_needs_the_user(NAULA_REFUSED, &copy, &acceptance));
     CHECK(!runtime_identity_needs_the_user(NAULA_UNREACHABLE, &copy, &acceptance));
     acceptance.dispute_count = 0;

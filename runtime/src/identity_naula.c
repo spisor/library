@@ -104,8 +104,7 @@ int runtime_identity_needs_the_user(naula_status status, const naula_refusal *re
     if (acceptance->primary_needed && status == NAULA_REFUSED && strcmp(refusal->code, "primary-changed") == 0) {
         return 1;
     }
-    int refused_for_the_number = status == NAULA_REFUSED && refusal->fix != NULL &&
-                                 strstr(refusal->fix, "accept_number") != NULL;
+    int refused_for_the_number = status == NAULA_REFUSED && strcmp(refusal->code, "number-disputed") == 0;
     return acceptance->dispute_count > 0 && (status == NAULA_OK || refused_for_the_number);
 }
 
