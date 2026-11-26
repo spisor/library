@@ -159,9 +159,9 @@ static int add_proxy_variables(cJSON *environment, const cJSON *proxy, int port)
                NULL;
 }
 
-/** The proxy's variables for the front door the standard requires first, or NULL as the public function answers. */
-static cJSON *proxy_environment(const runtime_host_run *run, const cJSON *standard, cJSON **refusal) {
-    const cJSON *proxy = member(member(standard, "application"), "proxy");
+/** The variables of proxy, which holds every member they need, for the front door the standard requires first. */
+static cJSON *front_door_environment(const runtime_host_run *run, const cJSON *standard, const cJSON *proxy,
+                                     cJSON **refusal) {
     const char *plugin = cJSON_GetStringValue(cJSON_GetArrayItem(member(standard, "plugins"), 0));
     const char *path = plugin == NULL ? NULL : located_manifest(run, plugin);
     int port = path == NULL ? 0 : declared_port(run, plugin, path, refusal);
@@ -181,6 +181,37 @@ static cJSON *proxy_environment(const runtime_host_run *run, const cJSON *standa
     return environment;
 }
 
+/**
+ * The path of the first member the environment needs that the proxy does not hold as text, NULL when it holds all.
+ *
+ * @implNote The standard is read as JSON alone (runtime_loader_standard), so a standard install would refuse can still
+ * reach a run, and a missing name would otherwise read as memory running out.
+ */
+static const char *missing_member(const cJSON *proxy) {
+    const cJSON *placeholder = member(proxy, "placeholder");
+    if (text_of(proxy, "baseUrlVariable") == NULL) {
+        return "application.proxy.baseUrlVariable";
+    }
+    if (text_of(placeholder, "variable") == NULL) {
+        return "application.proxy.placeholder.variable";
+    }
+    return text_of(placeholder, "value") == NULL ? "application.proxy.placeholder.value" : NULL;
+}
+
+/** The proxy's variables for the front door the standard requires first, or NULL as the public function answers. */
+static cJSON *proxy_environment(const runtime_host_run *run, const cJSON *standard, cJSON **refusal) {
+    const cJSON *proxy = member(member(standard, "application"), "proxy");
+    const char *missing = missing_member(proxy);
+    if (missing != NULL) {
+        const char *parts[4] = {"the standard of ", run->host_id, " declares a proxy whose ", missing};
+        char *start = runtime_cache_text(parts, 4);
+        const char *whole[2] = {start, " is not text"};
+        *refusal = start == NULL ? NULL : runtime_cache_refusal(whole, 2, RUNTIME_REINSTALL_FIX);
+        spisor_memory_release(start);
+        return NULL;
+    }
+    return front_door_environment(run, standard, proxy, refusal);
+}
 cJSON *runtime_front_door_environment(const runtime_host_run *run, cJSON **refusal) {
     const cJSON *identity = member(run->started, "identity");
     const char *cache = text_of(member(run->started, "places"), "cache");

@@ -198,20 +198,26 @@ static void write_loader_standard(const char *standard) {
 }
 
 /**
- * A SERVE run of a loader whose standard requires `a` as its front door, installed with `manifest`, its portable
- * settings `settings`, told it activated.
+ * A SERVE run of a loader with `standard`, `a` installed with `manifest` and its portable settings `settings`, told
+ * `a` activated.
  */
-static started_run serving_front_door_set(const char *label, const char *manifest, const char *settings) {
+static started_run serving_with_standard(const char *label, const char *manifest, const char *settings,
+                                         const char *standard) {
     weivel_standard_host_outcome outcome;
     started_run run;
     start_held_host_world(label);
     install_plugin("a", manifest);
-    write_loader_standard(PROXY_STANDARD);
+    write_loader_standard(standard);
     write_in(portable, "plugins/a/config.json", settings);
     run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     return run;
+}
+
+/** A SERVE run of a loader whose standard requires `a` as its front door, as serving_with_standard runs it. */
+static started_run serving_front_door_set(const char *label, const char *manifest, const char *settings) {
+    return serving_with_standard(label, manifest, settings, PROXY_STANDARD);
 }
 
 /** serving_front_door_set with the user's port 43123 over the manifest's default. */
@@ -285,6 +291,45 @@ static void a_front_door_with_no_port_to_hand_publishes_a_refusal(void) {
                               "which is no port from 1 to 65535",
                               "set proxy.port of a to a port from 1 to 65535",
                               "a front door whose setting holds no port");
+}
+
+#define PORT_SETTING "{\"proxy\": {\"port\": 43123}}"
+
+/** A standard whose proxy lacks a member the environment needs names it, rather than answering out of memory. */
+static void a_proxy_the_standard_cannot_describe_publishes_a_refusal_naming_the_member(void) {
+    const char *standards[3] = {
+        "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"placeholder\": {\"variable\": \"TOKEN\", "
+        "\"value\": \"placeholder\"}}}}",
+        "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+        "\"placeholder\": {\"value\": \"placeholder\"}}}}",
+        "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+        "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": 7}}}}"};
+    const char *members[3] = {"application.proxy.baseUrlVariable", "application.proxy.placeholder.variable",
+                              "application.proxy.placeholder.value"};
+    for (size_t index = 0; index < 3; index++) {
+        char expected[256];
+        snprintf(expected, sizeof expected, "the standard of " LOADER " declares a proxy whose %s is not text",
+                 members[index]);
+        expect_front_door_refused(serving_with_standard(members[index], LISTENING_MANIFEST, PORT_SETTING,
+                                                        standards[index]),
+                                  expected, "run spisor-host install --catalog <path or url> again", members[index]);
+    }
+}
+
+/** A front door the run does not hold, or a standard requiring no plugin, leaves no address to hand. */
+static void a_proxy_with_no_front_door_to_read_publishes_a_refusal(void) {
+    expect_front_door_refused(
+        serving_with_standard("front-door-not-installed", LISTENING_MANIFEST, PORT_SETTING,
+                              "{\"plugins\": [\"z\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+                              "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}"),
+        "z, the front door of " LOADER ", is not installed, so its application cannot be handed the address",
+        "run spisor-host install --catalog <path or url> again", "a front door that is not installed");
+    expect_front_door_refused(
+        serving_with_standard("standard-requiring-no-plugin", LISTENING_MANIFEST, PORT_SETTING,
+                              "{\"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+                              "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}"),
+        LOADER "'s standard declares a proxy but requires no plugin to serve it",
+        "run spisor-host install --catalog <path or url> again", "a standard requiring no plugin");
 }
 
 /**
@@ -811,6 +856,8 @@ int main(void) {
     a_serve_run_started_publishes_that_it_is_ready();
     a_front_door_serve_run_publishes_its_applications_variables();
     a_front_door_with_no_port_to_hand_publishes_a_refusal();
+    a_proxy_the_standard_cannot_describe_publishes_a_refusal_naming_the_member();
+    a_proxy_with_no_front_door_to_read_publishes_a_refusal();
     a_layer_not_holding_the_front_door_publishes_an_empty_environment();
     in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
     a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();

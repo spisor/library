@@ -16,7 +16,9 @@
  * on the port its declaration names, so once `started` is told it activated the declared port is the bound one. A
  * port the system picks (`any`) cannot be read this way, so it is refused like a missing declaration.
  *
- * @return a new object; NULL with *refusal set to {message, fix} when the front door is not among the run's plugins,
+ * @return a new object; NULL with *refusal set to {message, fix} when the proxy does not hold its `baseUrlVariable`
+ * or its placeholder's `variable` or `value` as text, the standard requires no plugin, the front door is not among the
+ * run's plugins,
  * declares no fixed port it listens on, or names a setting holding no port; or with it NULL when memory runs out.
  */
 cJSON *runtime_front_door_environment(const runtime_host_run *run, cJSON **refusal);
