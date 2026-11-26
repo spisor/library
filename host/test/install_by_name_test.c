@@ -238,8 +238,9 @@ static void a_cache_naula_cannot_keep_records_in_is_printed_as_a_warning(void) {
     list_one_marketplace(COPY_OF(ENTRY_OF("git:0000000000000000000000000000000000000005", "forge:5", "greeter")));
     command_run run = install_name("greeter", NULL);
     CHECK(run.code == 0);
-    expect_contains(run.err, "warning: the cache record ", "the cache problem as a warning");
-    expect_contains(run.err, "identities", "the record naula could not keep");
+    expect_contains(run.err, "warning: the cache record identities/0000000000000000000000000000000000000005-",
+                    "the cache problem as a warning, naming the record by its file name");
+    expect_contains(run.err, ".json could not be written\n", "the whole problem, untruncated");
     expect_contains(run.out, "\"id\": \"git:0000000000000000000000000000000000000005\"", "installed all the same");
     free_run(&run);
     finish_world(&world);
