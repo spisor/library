@@ -1,5 +1,6 @@
-#include "action_result.h"
 #include "host_fixture.h"
+
+#include "action_result.h"
 #include "spisor/allocation.h"
 
 /** What layer_fixture writes as an action's result when it is given a path for one. */
