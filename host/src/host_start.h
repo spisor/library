@@ -19,7 +19,7 @@ cJSON *host_start_of(const host_context *context, const char *id, const char *co
 /**
  * The layers hosts' layer_start answers for loader_id in mode, a runtime_hosts_layer_mode, with plugin, action and
  * input for an ACTION and NULL for any other mode: an array of {runtime, hostId, executable, arguments, environment}, in
- * the order to start them, the front door's last; NULL with *refusal set when it refuses, or with it NULL when memory
+ * the order to start them, the front door's first; NULL with *refusal set when it refuses, or with it NULL when memory
  * runs out.
  */
 cJSON *host_layer_starts(const host_context *context, const char *loader_id, uint32_t mode, const char *plugin,
