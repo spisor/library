@@ -20,6 +20,7 @@
 #include "install_support.h"
 #include "process_run.h"
 #include "registry.h"
+#include "tree_snapshot.h"
 
 #define PLUGINS "[\"announcer\", \"viewer\"]"
 
@@ -396,6 +397,23 @@ static void records_an_https_source_in_the_portable_layer_even_when_its_check_fa
     cJSON_Delete(merged);
     cJSON_Delete(portable);
     cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void refuses_having_written_nothing_when_no_source_yields_a_catalog(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "no-catalog");
+    char *before = tree_snapshot(base.root, "/cache");
+    catalog_answer answer = install_with(&base, "{\"defaults\": " PLUGINS "}", NULL);
+    char *after = tree_snapshot(base.root, "/cache");
+    CHECK(answer.status == SPISOR_REFUSED);
+    CHECK(strstr(text_at(answer.tree, "message") == NULL ? "" : text_at(answer.tree, "message"),
+                 "no catalog source yields a catalog") != NULL);
+    check_text(after, before, "everything but the catalog cache after a refused install");
+    CHECK(!exists_in(base.root, "state"));
+    spisor_memory_release(after);
+    spisor_memory_release(before);
+    cJSON_Delete(answer.tree);
     finish_install_base(&base);
 }
 
@@ -785,6 +803,7 @@ int main(int argc, char **argv) {
     registers_the_host_at_install_keeping_its_provenance_on_a_later_install();
     installs_beside_a_cache_laid_out_under_the_old_names();
     records_an_https_source_in_the_portable_layer_even_when_its_check_fails();
+    refuses_having_written_nothing_when_no_source_yields_a_catalog();
     answers_malformed_for_a_source_that_is_neither_local_nor_https();
     acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item();
     acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin();

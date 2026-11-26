@@ -96,12 +96,13 @@ static int check_source(ecosystem *install, const cJSON *source, const char *now
     return recorded;
 }
 
-static cJSON *current_catalog(const ecosystem *install, const cJSON *sources, cJSON **refusal) {
-    return runtime_catalog_current(sources, install->run.cache, refusal);
-}
-
+/**
+ * Reads the catalog every source yields, each checked first; 0 with *refusal set when none yields one, so a source
+ * that failed beside one that yields stays under `unavailable` and an install with no catalog writes nothing.
+ */
 static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusal) {
     char now[RUNTIME_CATALOG_TIME_SIZE];
+    size_t yielding = 0;
     if (!runtime_catalog_format_time(runtime_now_milliseconds(), now)) {
         return 0;
     }
@@ -110,7 +111,12 @@ static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusa
             return 0;
         }
     }
-    install->run.catalog = current_catalog(install, sources, refusal);
+    install->run.catalog = runtime_catalog_current_counted(sources, install->run.cache, &yielding, refusal);
+    if (install->run.catalog != NULL && yielding == 0) {
+        cJSON_Delete(install->run.catalog);
+        install->run.catalog = NULL;
+        *refusal = runtime_refusal("no catalog source yields a catalog, so nothing can be installed", CATALOG_FIX);
+    }
     return install->run.catalog != NULL;
 }
 
