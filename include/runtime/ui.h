@@ -71,16 +71,80 @@ typedef struct runtime_ui_settings_view_argument {
     const spisor_value *description;
 } runtime_ui_settings_view_argument;
 
-/** A node of a settings view. Append-only: a published value keeps its number. */
-typedef enum runtime_ui_settings_component {
-    RUNTIME_UI_COMPONENT_FORM = 1,
-    RUNTIME_UI_COMPONENT_FIELD = 2
-} runtime_ui_settings_component;
+/**
+ * Every component a view's node may name, the name being the value's in lower snake case, such as `key_value`. render
+ * answers a node naming any other UNAVAILABLE. Append-only: a published value keeps its number.
+ *
+ * @implNote Each value stays on one line of exactly this form, because a renderer generates its own enum by reading
+ * these lines and fails its build on any it cannot read.
+ */
+typedef enum runtime_ui_component {
+    /** Children one after another. */
+    RUNTIME_UI_COMPONENT_STACK = 1,
+    /** Children in rows and columns. */
+    RUNTIME_UI_COMPONENT_GRID = 2,
+    /** Two children side by side, resizable. */
+    RUNTIME_UI_COMPONENT_SPLIT = 3,
+    /** One child shown at a time, chosen by its tab. */
+    RUNTIME_UI_COMPONENT_TABS = 4,
+    /** Children under a heading. */
+    RUNTIME_UI_COMPONENT_SECTION = 5,
+    /** Children framed as one unit. */
+    RUNTIME_UI_COMPONENT_CARD = 6,
+    /** A line between siblings. */
+    RUNTIME_UI_COMPONENT_DIVIDER = 7,
+    /** Text. */
+    RUNTIME_UI_COMPONENT_TEXT = 8,
+    /** Items one per row. */
+    RUNTIME_UI_COMPONENT_LIST = 9,
+    /** Items in columns, sortable, filterable and selectable. */
+    RUNTIME_UI_COMPONENT_TABLE = 10,
+    /** Items nested under their parents. */
+    RUNTIME_UI_COMPONENT_TREE = 11,
+    /** A detail of names and their values. */
+    RUNTIME_UI_COMPONENT_KEY_VALUE = 12,
+    /** A line, bar, sparkline or meter. */
+    RUNTIME_UI_COMPONENT_CHART = 13,
+    /** Log lines as they arrive. */
+    RUNTIME_UI_COMPONENT_LOG_STREAM = 14,
+    /** Code, monospaced. */
+    RUNTIME_UI_COMPONENT_CODE_BLOCK = 15,
+    /** What changed between two texts. */
+    RUNTIME_UI_COMPONENT_DIFF = 16,
+    /** A short status label. */
+    RUNTIME_UI_COMPONENT_BADGE = 17,
+    /** An icon or avatar. */
+    RUNTIME_UI_COMPONENT_ICON = 18,
+    /** One setting's input, of a runtime_ui_field_kind. */
+    RUNTIME_UI_COMPONENT_FIELD = 19,
+    /** A search input. */
+    RUNTIME_UI_COMPONENT_SEARCH = 20,
+    /** Fields submitted together. */
+    RUNTIME_UI_COMPONENT_FORM = 21,
+    /** An entry of the command palette. */
+    RUNTIME_UI_COMPONENT_COMMAND_ENTRY = 22,
+    /** A dialog asking to confirm. */
+    RUNTIME_UI_COMPONENT_CONFIRMATION = 23,
+    /** A passing notice. */
+    RUNTIME_UI_COMPONENT_TOAST = 24,
+    /** How far something has come. */
+    RUNTIME_UI_COMPONENT_PROGRESS = 25,
+    /** Something under way, of no known length. */
+    RUNTIME_UI_COMPONENT_SPINNER = 26,
+    /** Nothing to show. */
+    RUNTIME_UI_COMPONENT_EMPTY = 27,
+    /** Waiting for what to show. */
+    RUNTIME_UI_COMPONENT_LOADING = 28,
+    /** Why what should show cannot. */
+    RUNTIME_UI_COMPONENT_ERROR = 29,
+    /** Greyed, with an install action. */
+    RUNTIME_UI_COMPONENT_UNAVAILABLE = 30,
+} runtime_ui_component;
 
 /**
- * One node of a settings view: its `id`, its `parent`'s id, NULL for the form itself, its `component`, a
- * runtime_ui_settings_component, and for a field the setting's key as `field` and its `label`, each NULL for none. An
- * element of an array, so it has no size.
+ * One node of a settings view: its `id`, its `parent`'s id, NULL for the form itself, its `component`, the
+ * runtime_ui_component FORM or FIELD, and for a field the setting's key as `field` and its `label`, each NULL for
+ * none. An element of an array, so it has no size.
  */
 typedef struct runtime_ui_settings_node {
     const char *id;
@@ -91,7 +155,36 @@ typedef struct runtime_ui_settings_node {
 } runtime_ui_settings_node;
 
 /**
- * The view that edits a plugin's settings: its `title` and its nodes, the form first. First shape ends at `storage`.
+ * What a setting's field edits, named by its declaration's `type` in lower kebab case, such as `multi-choice`; a
+ * declaration with no type is TEXT. Append-only: a published value keeps its number.
+ */
+typedef enum runtime_ui_field_kind {
+    RUNTIME_UI_FIELD_TEXT = 1,
+    RUNTIME_UI_FIELD_SECRET = 2,
+    RUNTIME_UI_FIELD_NUMBER = 3,
+    RUNTIME_UI_FIELD_TOGGLE = 4,
+    RUNTIME_UI_FIELD_CHOICE = 5,
+    RUNTIME_UI_FIELD_MULTI_CHOICE = 6,
+    RUNTIME_UI_FIELD_PATH = 7,
+    RUNTIME_UI_FIELD_LIST = 8,
+    RUNTIME_UI_FIELD_KEY_VALUE = 9
+} runtime_ui_field_kind;
+
+/**
+ * The type of one settings node: for a field its `type`, a runtime_ui_field_kind, the `choices` its declaration lists,
+ * none when it lists none, and its `default_value`, the manifest's `config.defaults` at its key, NULL for none; for the
+ * form all zero. An element of an array, so it has no size.
+ */
+typedef struct runtime_ui_field_type {
+    uint32_t type;
+    const char *const *choices;
+    size_t choice_count;
+    const spisor_value *default_value;
+} runtime_ui_field_type;
+
+/**
+ * The view that edits a plugin's settings: its `title` and its nodes, the form first, and when its size reaches them
+ * the `fields`, one per node in the same order. First shape ends at `storage`.
  */
 typedef struct runtime_ui_settings_view_answer {
     uint32_t size;
@@ -99,6 +192,8 @@ typedef struct runtime_ui_settings_view_answer {
     const runtime_ui_settings_node *nodes;
     size_t node_count;
     void *storage;
+    const runtime_ui_field_type *fields;
+    size_t field_count;
 } runtime_ui_settings_view_answer;
 
 /**
@@ -323,9 +418,11 @@ typedef struct runtime_ui_definition {
     spisor_status (*navigation)(void *context, const runtime_ui_navigation_argument *argument,
                                 runtime_ui_navigation_answer *answer, spisor_refusal *refusal);
     /**
-     * The view that edits a plugin's settings, one form holding one field per setting in key order.
+     * The view that edits a plugin's settings, one form holding one field per setting in key order, each field's type
+     * from its declaration's `type` and `choices` and its default from the manifest's `config.defaults`.
      *
-     * @return OK; MALFORMED; OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for a declaration that is not a record, whose type names no runtime_ui_field_kind or
+     * whose choices are not a list of texts; OUT_OF_MEMORY.
      */
     spisor_status (*settings_view)(void *context, const runtime_ui_settings_view_argument *argument,
                                    runtime_ui_settings_view_answer *answer, spisor_refusal *refusal);
@@ -346,8 +443,9 @@ typedef struct runtime_ui_definition {
      *
      * @return OK; MALFORMED; REFUSED as plan refuses, and for a bound node whose call has no reply or whose answer
      * lacks a check plan named; OUT_OF_MEMORY.
-     * @implNote A failed, late or misshapen answer puts only its own node in error; the rest render. A chart node's
-     * own chart picks which members of its answer it carries, never the answer.
+     * @implNote A failed, late or misshapen answer puts only its own node in error, and a node naming no
+     * runtime_ui_component renders UNAVAILABLE and is never planned; the rest render. A chart node's own chart picks
+     * which members of its answer it carries, never the answer.
      */
     spisor_status (*render)(void *context, const runtime_ui_screen_argument *argument, runtime_ui_screen *answer,
                             spisor_refusal *refusal);

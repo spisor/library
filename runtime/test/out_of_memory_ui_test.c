@@ -25,7 +25,8 @@ static const char *const VIEWER =
     " \"bind\": {\"service\": \"viewer:status\", \"method\": \"fails\"}},"
     "{\"id\": \"quiet\", \"component\": \"text\","
     " \"bind\": {\"service\": \"viewer:status\", \"method\": \"sleeps\"}}"
-    "]}}, \"settings\": {\"depth\": {\"type\": \"number\", \"label\": \"Depth\"}, \"name\": {\"type\": \"string\"}},"
+    "]}}, \"settings\": {\"depth\": {\"type\": \"number\", \"label\": \"Depth\"}, \"name\": {\"type\": \"text\"},"
+    " \"mode\": {\"type\": \"choice\", \"choices\": [\"a\", \"b\"]}}, \"config\": {\"defaults\": {\"mode\": \"a\"}},"
     " \"actions\": {\"sync\": {\"label\": \"Sync\", \"call\": {\"service\": \"viewer:main\", \"method\": \"sync\","
     " \"argument\": {\"force\": true, \"note\": \"declared\"}}}}}]";
 
@@ -191,7 +192,14 @@ static spisor_status run_settings_view(void) {
         put_text(answer.nodes[index].field);
         put_text(answer.nodes[index].label);
     }
-    if (status == SPISOR_OK && answer.node_count != 3) {
+    for (size_t index = 0; answer.fields != NULL && index < answer.field_count; index++) {
+        put_count(answer.fields[index].type);
+        for (size_t choice = 0; choice < answer.fields[index].choice_count; choice++) {
+            put_text(answer.fields[index].choices[choice]);
+        }
+        put_count(answer.fields[index].default_value == NULL ? 0 : answer.fields[index].default_value->kind);
+    }
+    if (status == SPISOR_OK && (answer.node_count != 4 || answer.field_count != 4)) {
         status = WRONG_RUN;
     }
     status = empty_unless_answered(status, &answer, sizeof answer);

@@ -154,7 +154,8 @@ typedef enum runtime_hosts_layer_mode {
 /**
  * The starts of `loader_id`'s layers in the user's `environment`, whose places are the ones read, in `mode`, a
  * runtime_hosts_layer_mode; for an ACTION, the `plugin` whose `action` runs with `input`, a JSON object's text, all
- * three NULL for any other mode. First shape ends at `input`.
+ * three NULL for any other mode; and when its size reaches it the `result`, for an ACTION the path its run writes the
+ * action's result to, NULL for none and for any other mode. First shape ends at `input`.
  */
 typedef struct runtime_hosts_layer_start_argument {
     uint32_t size;
@@ -165,6 +166,7 @@ typedef struct runtime_hosts_layer_start_argument {
     const char *plugin;
     const char *action;
     const char *input;
+    const char *result;
 } runtime_hosts_layer_start_argument;
 
 /**
@@ -284,11 +286,12 @@ typedef struct runtime_hosts_definition {
      * bundle as `host <runtime binary> native <loader id>`, a `javascript` one runs the JavaScript runtime with the
      * entry of `javascript-host`'s bundle and `<runtime binary> javascript <loader id>`, each at the version its boot
      * hint names and its runtime binary the one that hint names for `runtime`; `in-process`, or `action <plugin>
-     * <action> <input>`, follows for those modes. Each start's environment is the argument's. It writes nothing but
-     * the JavaScript runtime's record when it acquires one.
+     * <action> <input>` followed by the result path when one is given, follows for those modes. Each start's
+     * environment is the argument's. It writes nothing but the JavaScript runtime's record when it acquires one.
      *
      * @return OK, with no layer for a loader whose settings enable no plugin it can run; MALFORMED, also for a mode
-     * that is none of the three, or an ACTION without its plugin, action and input or another mode with any of them;
+     * that is none of the three, or an ACTION without its plugin, action and input or another mode with any of them
+     * or with a result, or a result that is empty;
      * REFUSED when the loader is not registered or its settings or catalog cannot be read, its first required plugin
      * runs on a runtime no layer runs, an IN_PROCESS start finds no javascript plugin, a layer's item has no
      * hinted version or runtime binary or is not installed intact, its bundle names no entry inside it or a native one

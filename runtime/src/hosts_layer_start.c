@@ -160,7 +160,8 @@ static cJSON *layer_arguments(const layer_context *context, const char *runtime,
         built = built && add_text(arguments, IN_PROCESS_WORD);
     } else if (request->mode == RUNTIME_HOSTS_LAYER_ACTION) {
         built = built && add_text(arguments, ACTION_WORD) && add_text(arguments, request->plugin) &&
-                add_text(arguments, request->action) && add_text(arguments, request->input);
+                add_text(arguments, request->action) && add_text(arguments, request->input) &&
+                (request->result == NULL || add_text(arguments, request->result));
     }
     if (!built) {
         cJSON_Delete(arguments);

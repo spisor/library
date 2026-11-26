@@ -3,6 +3,7 @@
 #include "json_service.h"
 #include "ui.h"
 #include "ui_binding.h"
+#include "ui_components.h"
 #include "ui_items.h"
 #include "ui_refusal.h"
 #include "ui_screen.h"
@@ -16,6 +17,11 @@ static const char *const ITEMS_FAMILY[] = {"list", "table", "tree"};
 
 static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
+}
+
+/** Whether the node names a runtime_ui_component; one that names none renders unavailable and binds nothing. */
+static int is_known_component(const cJSON *node) {
+    return runtime_ui_component_of(text_of(node, "component")) != 0;
 }
 
 static const cJSON *nodes_of(const ui_screen *screen) {
@@ -90,7 +96,8 @@ static cJSON *planned(const ui_screen *screen, const cJSON *answers) {
     const cJSON *source = calls == NULL ? NULL : nodes_of(screen);
     const cJSON *node;
     cJSON_ArrayForEach(node, source) {
-        if (runtime_ui_is_bound(node) && !plan_node(calls, screen->plugin, node, answers)) {
+        int binds = is_known_component(node) && runtime_ui_is_bound(node);
+        if (binds && !plan_node(calls, screen->plugin, node, answers)) {
             cJSON_Delete(calls);
             return NULL;
         }
@@ -220,6 +227,9 @@ static cJSON *unanswered(const cJSON *node, const cJSON *call) {
 }
 
 static int add_outcome(cJSON *rendered, const char *plugin, const cJSON *node, const cJSON *answers, cJSON **refusal) {
+    if (!is_known_component(node)) {
+        return cJSON_AddStringToObject(rendered, "state", "unavailable") != NULL;
+    }
     if (!runtime_ui_is_bound(node)) {
         return cJSON_AddStringToObject(rendered, "state", "ready") != NULL;
     }

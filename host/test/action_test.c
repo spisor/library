@@ -1,6 +1,9 @@
 #include "host_fixture.h"
 #include "spisor/allocation.h"
 
+/** What layer_fixture writes as an action's result when it is given a path for one. */
+#define LAYER_FIXTURE_RESULT "{\"fixture\":\"result\"}"
+
 static int run_action(host_world *world, program *run, const char *const *arguments) {
     const char *command[16] = {"action"};
     size_t count = 1;
@@ -92,6 +95,31 @@ static void runs_the_session_host_of_a_loader_that_records_no_start(void) {
     finish_world(&world);
 }
 
+static size_t results_left(const host_world *world) {
+    char *results = joined(world->base.state, "results");
+    runtime_directory_listing listing;
+    CHECK(runtime_list_directory(results, &listing) == SPISOR_OK);
+    size_t count = listing.count;
+    runtime_free_directory_listing(&listing);
+    spisor_memory_release(results);
+    return count;
+}
+
+static void prints_the_result_the_session_host_wrote_and_leaves_no_file(void) {
+    host_world world;
+    install_launch_world_requiring_session_plugin(&world, "action", "result");
+    program run;
+    const char *arguments[] = {LOADER_ID, SESSION_PLUGIN, "render", NULL};
+    CHECK(run_action(&world, &run, arguments) == 0);
+    expect_contains(run.out, LAYER_FIXTURE_RESULT, "the action's result printed");
+    char *starts = await_starts_holding(&world, "action");
+    expect_contains(starts, "results", "the result path named in the start");
+    spisor_memory_release(starts);
+    CHECK(results_left(&world) == 0);
+    program_free(&run);
+    finish_world(&world);
+}
+
 static void refuses_a_host_that_is_not_registered(void) {
     host_world world;
     install_launch_world(&world, "action", "unregistered", 0);
@@ -129,6 +157,7 @@ int main(void) {
     answers_the_exit_code_of_the_action();
     is_misused_by_a_repeated_input_name_a_missing_name_or_missing_arguments();
     runs_the_session_host_of_a_loader_that_records_no_start();
+    prints_the_result_the_session_host_wrote_and_leaves_no_file();
     refuses_a_host_that_is_not_registered();
     refuses_a_host_registered_without_a_home();
     expect_user_path_unchanged(&guard);

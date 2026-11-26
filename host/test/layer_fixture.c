@@ -139,23 +139,30 @@ static int prune_says_exit(const host_context *context, const char *host_id, dou
     return exit_now;
 }
 
+#define FIXTURE_RESULT "{\"fixture\":\"result\"}"
+
 /**
- * Run as <host-id> action <plugin> <action> <input-json>: prints the arguments after the host id, one per
- * line, and exits with the number after "exit-" when the action starts with it, 0 otherwise.
+ * Run as <host-id> action <plugin> <action> <input-json>, the result's path after the input when `with_result`:
+ * prints the arguments from the action word to the input, one per line, writes FIXTURE_RESULT to the result's path,
+ * and exits with the number after "exit-" when the action starts with it, 0 otherwise.
  */
-static int run_action(int count, char **arguments) {
+static int run_action(int count, char **arguments, int with_result) {
     host_context context;
     cJSON *refusal = NULL;
+    int last = with_result ? count - 1 : count;
     if (!host_open_context(&context, &refusal)) {
         cJSON_Delete(refusal);
         return 2;
     }
     record_start(&context, count, arguments);
-    for (int index = count - 4; index < count; index++) {
+    for (int index = last - 4; index < last; index++) {
         fputs(arguments[index], stdout);
         fputs("\n", stdout);
     }
-    const char *action = arguments[count - 2];
+    if (with_result) {
+        spisor_append_file(arguments[count - 1], (const uint8_t *)FIXTURE_RESULT, strlen(FIXTURE_RESULT));
+    }
+    const char *action = arguments[last - 2];
     int code = strncmp(action, "exit-", 5) == 0 ? atoi(action + 5) : 0;
     host_close_context(&context);
     return code;
@@ -173,7 +180,10 @@ static int run(int count, char **arguments) {
         return 0;
     }
     if (count >= 6 && strcmp(arguments[count - 4], "action") == 0) {
-        return run_action(count, arguments);
+        return run_action(count, arguments, 0);
+    }
+    if (count >= 7 && strcmp(arguments[count - 5], "action") == 0) {
+        return run_action(count, arguments, 1);
     }
     host_context context;
     cJSON *refusal = NULL;

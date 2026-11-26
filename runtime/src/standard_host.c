@@ -259,6 +259,10 @@ static weivel_status tick(void *context, int64_t now, weivel_standard_host_next 
     return runtime_answer_service(status, &filled, refusal);
 }
 
+/**
+ * @implNote spisor_value is weivel_standard_value field for field (restatement_test), so the result is handed on as
+ * runtime's own tree.
+ */
 static weivel_status finished(void *context, const weivel_standard_value *result, const char *failure,
                               weivel_standard_service_refusal *refusal) {
     spisor_refusal filled = SPISOR_INIT(spisor_refusal);
@@ -276,7 +280,8 @@ static weivel_status finished(void *context, const weivel_standard_value *result
     }
     runtime_mutex_lock(&run_lock);
     status = current_run == NULL ? refuse_without_run(&filled, "finished")
-                                 : runtime_host_run_finished(current_run, failure, &filled);
+                                 : runtime_host_run_finished(current_run, (const spisor_value *)result, failure,
+                                                             &filled);
     runtime_mutex_unlock(&run_lock);
     return runtime_answer_service(status, &filled, refusal);
 }

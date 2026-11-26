@@ -203,7 +203,7 @@ static void put_ready_record(void) {
 /** Tells the started run its outcome, then ticks a SERVE run or finishes an ACTION run, `*failed` set on OOM. */
 static void tell_progress(const progress_case *each, const weivel_standard_host_plan *plan, int *failed) {
     const weivel_standard_host *host = host_definition();
-    weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_TEXT, 0, 0.0, "hello", 5, NULL, NULL, 0};
     weivel_standard_host_outcome outcome = {plan->plugins[0].manifest, each->outcome, "its scope was refused"};
     weivel_standard_service_refusal refusal = WEIVEL_INIT(weivel_standard_service_refusal);
     weivel_standard_service_refusal later = WEIVEL_INIT(weivel_standard_service_refusal);
@@ -252,6 +252,20 @@ static void write_the_standard(const char *standard) {
     }
 }
 
+/** Removes the results folder, so each run writes its result where none stands. */
+static void remove_the_results(void) {
+    char *path = joined(state, "results");
+    CHECK(runtime_remove_tree(path) == SPISOR_OK);
+    spisor_memory_release(path);
+}
+
+/** Prints the result a run wrote, so a failure that wrote another differs from the clean run. */
+static void put_the_result(void) {
+    char *text = exists_in(state, "results/7-1.json") ? text_in(state, "results/7-1.json") : NULL;
+    put(text == NULL ? "no result" : text);
+    spisor_memory_release(text);
+}
+
 static void place_the_holders(int held) {
     char *path = processes_file(".json");
     if (held) {
@@ -274,6 +288,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     place_the_holders(each->held);
     remove_the_newer_plugin();
     remove_the_ready_record();
+    remove_the_results();
     install_plugin("a", each->manifest == NULL ? PLUGIN_MANIFEST : each->manifest);
     write_the_standard(each->standard);
     start_empty(&plan, sizeof plan);
@@ -288,6 +303,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     spisor_memory_fail_at(0);
     put_ready_record();
     put(exists_in(cache, "bundles/a/1.1.0/.installed.json") ? "installed" : "not installed");
+    put_the_result();
     host->release_plan(host->context, &plan);
     if (host->stop(host->context, &exit_code, NULL) != WEIVEL_STATUS_OK) {
         put("the stop failed");
@@ -350,20 +366,26 @@ int main(void) {
     static const char *const serve[2] = {LAYER_RUNTIME, LOADER};
     static const char *const action[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}"};
     static const char *const undeclared[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
-    static const start_case cases[] = {{"a serve start and its stop", serve, 2, WEIVEL_STATUS_OK},
-                                       {"an action start and its stop", action, 6, WEIVEL_STATUS_OK},
-                                       {"an undeclared action's start", undeclared, 6, WEIVEL_STATUS_REFUSED}};
-    static const progress_case progress_cases[] = {
+    char result_path[2048];
+    const char *const with_result[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}",
+                                        result_path};
+    const start_case cases[] = {{"a serve start and its stop", serve, 2, WEIVEL_STATUS_OK},
+                                {"an action start and its stop", action, 6, WEIVEL_STATUS_OK},
+                                {"an action start with a result path", with_result, 7, WEIVEL_STATUS_OK},
+                                {"an undeclared action's start", undeclared, 6, WEIVEL_STATUS_REFUSED}};
+    const progress_case progress_cases[] = {
         {"a held serve run's started and tick", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, NULL, NULL},
         {"a serve run's tick no holder keeps", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
         {"a serve run's refused plugin", serve, 2, WEIVEL_STANDARD_HOST_REFUSED, 0, 0, NULL, NULL},
         {"an action run's started and finished", action, 6, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
+        {"an action run's result written", with_result, 7, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
         {"a front door's environment", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, LISTENING_MANIFEST,
          PROXY_STANDARD},
         {"a front door on a port the system picks", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, ANY_PORT_MANIFEST,
          PROXY_STANDARD}};
     spisor_json_use_library_allocator();
     start_host_world("out-of-memory-host");
+    snprintf(result_path, sizeof result_path, "%s/results/7-1.json", state);
     write_in(portable, "plugins/a/config.json", "{\"proxy\": {\"port\": 43123}}");
     list_plugin("a", "1.1.0", "1.1.0");
     write_catalog();

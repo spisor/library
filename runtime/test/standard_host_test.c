@@ -237,6 +237,53 @@ static void arguments_that_name_no_run_are_refused(void) {
     finish_base();
 }
 
+#define NOT_A_RESULT_PATH "is not a file directly inside"
+
+static void expect_result_path_refused(const char *path, const char *label) {
+    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", path};
+    started_run run = start_with(arguments, 7);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, NOT_A_RESULT_PATH, label);
+    release_run(&run);
+}
+
+/** Refuses `<state>/<rest>` as written, never joined, since a join would resolve the dots it is to be refused for. */
+static void expect_result_path_refused_in_state(const char *rest, const char *label) {
+    char path[2048];
+    snprintf(path, sizeof path, "%s/%s", state, rest);
+    expect_result_path_refused(path, label);
+}
+
+static void an_action_takes_a_result_path_only_directly_inside_the_results_folder(void) {
+    char *path;
+    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", NULL};
+    started_run run;
+    start_host_world("result-path");
+    path = joined(state, "results/7-1.json");
+    arguments[6] = path;
+    run = start_with(arguments, 7);
+    CHECK(run.status == WEIVEL_STATUS_OK && run.plan.mode == WEIVEL_STANDARD_HOST_ACTION);
+    release_run(&run);
+    if (run.status == WEIVEL_STATUS_OK) {
+        stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run with a result path whose action never ran");
+    }
+    spisor_memory_release(path);
+    expect_result_path_refused("results/7-1.json", "a relative result path");
+    expect_result_path_refused("", "an empty result path");
+    expect_result_path_refused_in_state("7-1.json", "a result path beside the results folder");
+    expect_result_path_refused_in_state("results", "the results folder itself");
+    expect_result_path_refused_in_state("results/sub/7-1.json", "a result path below a folder of the results folder");
+    expect_result_path_refused_in_state("results/../results/7-1.json", "a result path climbing out and back");
+    expect_result_path_refused_in_state("results/./7-1.json", "a result path through a dot");
+    expect_result_path_refused_in_state("results/..", "a result path naming the folder above");
+    expect_result_path_refused_in_state("results/7:1.json", "a result name that is no portable file name");
+#if defined(_WIN32)
+    expect_result_path_refused("C:7-1.json", "a drive-relative result path");
+    expect_result_path_refused_in_state("results\\sub/7-1.json", "a result path below a folder by a backslash");
+#endif
+    CHECK(run_record_count() == 0);
+    finish_base();
+}
+
 static void a_null_argument_is_malformed(void) {
     const char *holding_null[3] = {LAYER_RUNTIME, LOADER, NULL};
     started_run run = start_with(holding_null, 3);
@@ -375,6 +422,7 @@ int main(void) {
     an_action_start_names_the_plugins_own_manifest_and_merges_its_arguments();
     an_action_start_refuses_a_plan_too_small_for_its_service_and_method();
     arguments_that_name_no_run_are_refused();
+    an_action_takes_a_result_path_only_directly_inside_the_results_folder();
     a_null_argument_is_malformed();
     an_action_of_a_plugin_the_plan_does_not_run_is_refused();
     a_located_plugin_with_no_entry_is_refused();

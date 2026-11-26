@@ -5,6 +5,7 @@
 #include "host_fixture.h"
 
 #include "child_process.h"
+#include "links.h"
 
 #include "spisor/json_allocation.h"
 
@@ -580,6 +581,84 @@ static void an_action_answers_its_exit_code_as_it_ended(void) {
     finish_base();
 }
 
+#define RESULT_REST "results/7-1.json"
+
+/** An ACTION run of `a`'s greet given `<state>/results/7-1.json` for its result, told its one plugin activated. */
+static started_run acting_with_result(const char *label) {
+    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", NULL};
+    weivel_standard_host_outcome outcome;
+    char *path;
+    started_run run;
+    start_host_world(label);
+    path = joined(state, RESULT_REST);
+    arguments[6] = path;
+    run = start_one(arguments, 7);
+    spisor_memory_release(path);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    return run;
+}
+
+static void an_action_writes_its_result_as_json_to_the_path_it_was_given(void) {
+    weivel_standard_value hello = {WEIVEL_STANDARD_VALUE_TEXT, 0, 0.0, "hello", 5, NULL, NULL, 0};
+    weivel_standard_value nothing = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
+    started_run run = acting_with_result("action-result-written");
+    CHECK(tell_finished(&hello, NULL, NULL) == WEIVEL_STATUS_OK);
+    release_run(&run);
+    stop_expecting(0, "an action whose result was written");
+    expect_text_in(state, RESULT_REST, "\"hello\"", "the action's result");
+    finish_base();
+
+    run = acting_with_result("action-result-none");
+    CHECK(tell_finished(&nothing, NULL, NULL) == WEIVEL_STATUS_OK);
+    release_run(&run);
+    stop_expecting(0, "an action that answered nothing");
+    expect_text_in(state, RESULT_REST, "null", "an action's result of none");
+    finish_base();
+
+    run = acting_with_result("action-result-threw");
+    CHECK(tell_finished(NULL, "it threw", NULL) == WEIVEL_STATUS_OK);
+    release_run(&run);
+    stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action with a result path that threw");
+    CHECK(!exists_in(state, RESULT_REST));
+    finish_base();
+}
+
+static void expect_result_refused(started_run *run, const char *part, const char *label) {
+    weivel_standard_value hello = {WEIVEL_STANDARD_VALUE_TEXT, 0, 0.0, "hello", 5, NULL, NULL, 0};
+    weivel_standard_service_refusal refusal;
+    CHECK(tell_finished(&hello, NULL, &refusal) == WEIVEL_STATUS_REFUSED);
+    expect_detail(&refusal, part, label);
+    release_refusal(&refusal);
+    release_run(run);
+    stop_expecting(RUNTIME_HOST_EXIT_FAILED, label);
+}
+
+static void an_action_writes_no_result_over_anything_already_at_its_path(void) {
+    started_run run = acting_with_result("action-result-taken");
+    write_in(state, RESULT_REST, "\"older\"");
+    expect_result_refused(&run, "already stands", "a result path something already stands at");
+    expect_text_in(state, RESULT_REST, "\"older\"", "what stood at the result path");
+    finish_base();
+}
+
+static void an_action_writes_no_result_through_a_results_folder_that_is_a_link(void) {
+    started_run run = acting_with_result("action-result-link");
+    char *elsewhere = joined(state, "elsewhere");
+    char *results = joined(state, "results");
+    CHECK(spisor_make_directories(elsewhere) == SPISOR_OK);
+    if (create_link_or_skip(results, elsewhere)) {
+        expect_result_refused(&run, "is not a folder of its own", "a results folder that is a link");
+        CHECK(!exists_in(elsewhere, "7-1.json"));
+    } else {
+        release_run(&run);
+        stop_expecting(RUNTIME_HOST_EXIT_FAILED, "an action run whose link was refused");
+    }
+    spisor_memory_release(results);
+    spisor_memory_release(elsewhere);
+    finish_base();
+}
+
 static void finished_is_refused_in_a_serve_run_and_before_started(void) {
     weivel_standard_value answered = {WEIVEL_STANDARD_VALUE_NONE, 0, 0.0, NULL, 0, NULL, NULL, 0};
     weivel_standard_service_refusal refusal;
@@ -931,6 +1010,9 @@ int main(void) {
     outcomes_that_are_not_the_plans_are_malformed();
     a_second_started_is_refused_and_fails_the_run();
     an_action_answers_its_exit_code_as_it_ended();
+    an_action_writes_its_result_as_json_to_the_path_it_was_given();
+    an_action_writes_no_result_over_anything_already_at_its_path();
+    an_action_writes_no_result_through_a_results_folder_that_is_a_link();
     finished_is_refused_in_a_serve_run_and_before_started();
     a_tick_acts_on_each_timer_when_it_is_due();
     a_late_tick_runs_each_timer_once();
@@ -939,5 +1021,5 @@ int main(void) {
     a_serve_run_no_holder_keeps_ends_with_exit_code_zero();
     failed_prunes_end_the_run_only_once_enough_fail_in_a_row();
     a_now_no_check_can_carry_fails_the_run();
-    return check_summary("host_progress_test");
+    return summary_with_links("host_progress_test");
 }

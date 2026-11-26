@@ -16,6 +16,7 @@
 #include "catalog_url.h"
 #include "check.h"
 #include "directory_tree.h"
+#include "file_age.h"
 #include "hosts_lock.h"
 #include "paths.h"
 #include "scratch_directory.h"
@@ -908,26 +909,6 @@ static void record_references(const char *host, const char *json) {
     write_in(state, rest, json);
 }
 
-static void set_modified(const char *path, double milliseconds) {
-#if defined(_WIN32)
-    wchar_t wide[2048];
-    CHECK(MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, 2048) > 0);
-    HANDLE handle = CreateFileW(wide, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-    CHECK(handle != INVALID_HANDLE_VALUE);
-    ULONGLONG ticks = (ULONGLONG)(milliseconds * 10000.0) + 116444736000000000ULL;
-    FILETIME time = {(DWORD)ticks, (DWORD)(ticks >> 32)};
-    CHECK(SetFileTime(handle, NULL, &time, &time) != 0);
-    CloseHandle(handle);
-#else
-    struct timespec times[2];
-    times[0].tv_sec = (time_t)(milliseconds / 1000.0);
-    times[0].tv_nsec = 0;
-    times[1] = times[0];
-    CHECK(utimensat(AT_FDCWD, path, times, 0) == 0);
-#endif
-}
-
 static double now_milliseconds(void) {
 #if defined(_WIN32)
     FILETIME time;
@@ -1084,6 +1065,36 @@ static void it_removes_an_unmarked_bundle_version_whose_newest_file_is_more_than
     age_in_cache("bundles/a/2.0.0", 25);
     expect_removed("[\"a@2.0.0\"]", "abandoned");
     CHECK(!bundle_present("a", "2.0.0") && bundle_present("a", "1.0.0"));
+    finish_cache();
+}
+
+static int exists_in_state(const char *rest) {
+    char *path = joined(state, rest);
+    int exists = spisor_probe_file(path) == SPISOR_FILE_PRESENT;
+    spisor_memory_release(path);
+    return exists;
+}
+
+static void age_in_state(const char *rest, double hours) {
+    char *path = joined(state, rest);
+    set_modified(path, now_milliseconds() - hours * HOUR_MILLISECONDS);
+    spisor_memory_release(path);
+}
+
+/** A result file a killed caller left behind goes a day later, and one a caller may still read stays. */
+static void it_removes_a_result_file_untouched_for_a_day_and_keeps_a_fresh_one(void) {
+    start_cache("sweep-results");
+    write_in(state, "results/1-1.json", "\"left\"");
+    write_in(state, "results/2-1.json", "\"fresh\"");
+    write_in(state, "results/kept/3-1.json", "\"inside a folder\"");
+    age_in_state("results/1-1.json", 25);
+    age_in_state("results/2-1.json", 23);
+    age_in_state("results/kept/3-1.json", 25);
+    age_in_state("results/kept", 25);
+    expect_removed("[]", "result files");
+    CHECK(!exists_in_state("results/1-1.json"));
+    CHECK(exists_in_state("results/2-1.json"));
+    CHECK(exists_in_state("results/kept/3-1.json"));
     finish_cache();
 }
 
@@ -1479,6 +1490,7 @@ int main(void) {
     it_does_not_follow_a_reference_file_s_names_out_of_the_bundles_folder();
     it_answers_nothing_removed_for_a_cache_with_no_bundles();
     it_sweeps_library_versions_per_platform_like_bundles();
+    it_removes_a_result_file_untouched_for_a_day_and_keeps_a_fresh_one();
     it_leaves_a_library_version_with_no_completion_marker_alone();
     it_removes_an_unmarked_bundle_version_whose_newest_file_is_more_than_a_day_old();
     it_keeps_an_unmarked_bundle_version_while_any_one_of_its_files_is_recent();

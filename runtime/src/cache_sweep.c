@@ -14,6 +14,7 @@
 #include "directory_tree.h"
 #include "file_times.h"
 #include "identity.h"
+#include "run_result.h"
 
 #define ABANDONED_AFTER_MILLISECONDS (24.0 * 3600000.0)
 
@@ -186,6 +187,38 @@ static cJSON *remove_all(const char *cache, const cJSON *doomed) {
     return removed;
 }
 
+static int is_abandoned_result(const char *path, double now, int *out_of_memory) {
+    double changed = 0;
+    return runtime_own_change(path, &changed, out_of_memory) && now - changed > ABANDONED_AFTER_MILLISECONDS;
+}
+
+/**
+ * Removes each file directly inside the results folder a day untouched; 0 when memory runs out.
+ *
+ * @implNote A results folder that is a link is left alone, so a sweep never deletes outside the state place.
+ */
+static int remove_abandoned_results(const char *state, double now) {
+    const char *segments[2] = {state, RUNTIME_RESULTS_FOLDER};
+    char *results = runtime_cache_joined(segments, 2);
+    runtime_entry_kind kind = results == NULL ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : runtime_probe_entry(results);
+    runtime_directory_listing listing = {NULL, 0};
+    int listed = kind != RUNTIME_ENTRY_DIRECTORY || runtime_list_directory(results, &listing) != SPISOR_OUT_OF_MEMORY;
+    int swept = kind != RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY && listed;
+    for (size_t index = 0; swept && index < listing.count; index++) {
+        const char *file[2] = {results, listing.entries[index].name};
+        char *path = listing.entries[index].is_file ? runtime_cache_joined(file, 2) : NULL;
+        int out_of_memory = listing.entries[index].is_file && path == NULL;
+        if (path != NULL && is_abandoned_result(path, now, &out_of_memory)) {
+            out_of_memory = runtime_remove_file_entry(path) == RUNTIME_ENTRY_OUT_OF_MEMORY;
+        }
+        swept = !out_of_memory;
+        spisor_memory_release(path);
+    }
+    runtime_free_directory_listing(&listing);
+    spisor_memory_release(results);
+    return swept;
+}
+
 cJSON *runtime_cache_sweep_versions(const char *cache, const char *state, double now) {
     cJSON *referenced = runtime_cache_referenced(cache, state, now);
     sweep_scope scope = {cache, referenced, now, cJSON_CreateArray(), 0};
@@ -193,6 +226,10 @@ cJSON *runtime_cache_sweep_versions(const char *cache, const char *state, double
     if (referenced != NULL && scope.doomed != NULL && doom_bundles(&scope) && doom_libraries(&scope) &&
         !scope.out_of_memory) {
         removed = remove_all(cache, scope.doomed);
+    }
+    if (removed != NULL && !remove_abandoned_results(state, now)) {
+        cJSON_Delete(removed);
+        removed = NULL;
     }
     cJSON_Delete(scope.doomed);
     cJSON_Delete(referenced);

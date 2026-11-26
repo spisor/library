@@ -1451,6 +1451,7 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_layer_start_argument, plugin);
     FIELD(runtime_hosts_layer_start_argument, action);
     FIELD(runtime_hosts_layer_start_argument, input);
+    FIELD(runtime_hosts_layer_start_argument, result);
     SIZE(runtime_hosts_layer_start_argument);
     FIELD(runtime_hosts_layer, runtime);
     FIELD(runtime_hosts_layer, host_id);
@@ -1617,11 +1618,18 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_settings_node, field);
     FIELD(runtime_ui_settings_node, label);
     SIZE(runtime_ui_settings_node);
+    FIELD(runtime_ui_field_type, type);
+    FIELD(runtime_ui_field_type, choices);
+    FIELD(runtime_ui_field_type, choice_count);
+    FIELD(runtime_ui_field_type, default_value);
+    SIZE(runtime_ui_field_type);
     FIELD(runtime_ui_settings_view_answer, size);
     FIELD(runtime_ui_settings_view_answer, title);
     FIELD(runtime_ui_settings_view_answer, nodes);
     FIELD(runtime_ui_settings_view_answer, node_count);
     FIELD(runtime_ui_settings_view_answer, storage);
+    FIELD(runtime_ui_settings_view_answer, fields);
+    FIELD(runtime_ui_settings_view_answer, field_count);
     SIZE(runtime_ui_settings_view_answer);
     FIELD(runtime_ui_target, plugin);
     FIELD(runtime_ui_target, service);

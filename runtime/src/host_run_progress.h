@@ -8,6 +8,7 @@
 
 #include "host_run.h"
 #include "spisor/status.h"
+#include "spisor/value.h"
 
 /**
  * @file
@@ -61,13 +62,16 @@ spisor_status runtime_host_run_tick(runtime_host_run *run, int64_t now, runtime_
                                     spisor_refusal *refusal);
 
 /**
- * Records how the ACTION run's action ended, `failure` NULL when it answered: the run's exit code becomes 0 when it
- * answered and RUNTIME_HOST_EXIT_FAILED when it threw.
+ * Records how the ACTION run's action ended, `failure` NULL when it answered with `result`: a run given a result path
+ * first writes the result there as runtime_write_result does, and the run's exit code becomes 0 when it answered and
+ * its result was written, and RUNTIME_HOST_EXIT_FAILED when it threw.
  *
- * @return OK; REFUSED for a SERVE run, which runs no action, a run whose started has not answered OK, and a second
- * finished.
+ * @return OK; MALFORMED for a result that is no well-formed value tree; REFUSED for a SERVE run, which runs no action,
+ * a run whose started has not answered OK, a second finished, and a result that cannot be written to its path;
+ * OUT_OF_MEMORY.
  */
-spisor_status runtime_host_run_finished(runtime_host_run *run, const char *failure, spisor_refusal *refusal);
+spisor_status runtime_host_run_finished(runtime_host_run *run, const spisor_value *result, const char *failure,
+                                        spisor_refusal *refusal);
 
 /**
  * Ends the run, so no further call acts on it: a run that had not ended fails, its exit code becoming

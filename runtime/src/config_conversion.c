@@ -4,11 +4,14 @@
 #include <string.h>
 
 #include "definition_support.h"
+#include "runtime/ui.h"
 #include "spisor/json_value.h"
 
 #define CHANGE_SHAPE SPISOR_SHAPE_THROUGH(runtime_settings_change, layer)
 
 static const char *const LAYER_NAMES[] = {NULL, "application", "portable"};
+static const char *const FIELD_KIND_NAMES[] = {NULL,     "text",         "secret", "number", "toggle",
+                                               "choice", "multi-choice", "path",   "list",   "key-value"};
 
 int runtime_is_empty_tree(const spisor_value_tree *tree) {
     return tree != NULL && spisor_has_shape(tree->size, SPISOR_SHAPE_THROUGH(spisor_value_tree, storage)) &&
@@ -17,6 +20,31 @@ int runtime_is_empty_tree(const spisor_value_tree *tree) {
 
 static int is_known_layer(uint32_t layer) {
     return layer <= RUNTIME_SETTINGS_LAYER_PORTABLE;
+}
+
+uint32_t runtime_field_kind_named(const char *name) {
+    for (uint32_t kind = RUNTIME_UI_FIELD_TEXT; kind <= RUNTIME_UI_FIELD_KEY_VALUE; kind++) {
+        if (strcmp(FIELD_KIND_NAMES[kind], name) == 0) {
+            return kind;
+        }
+    }
+    return 0;
+}
+
+int runtime_are_setting_choices(const cJSON *choices) {
+    const cJSON *choice;
+    if (choices == NULL) {
+        return 1;
+    }
+    if (!cJSON_IsArray(choices)) {
+        return 0;
+    }
+    cJSON_ArrayForEach(choice, choices) {
+        if (!cJSON_IsString(choice)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 int runtime_is_settings_layer_name(const char *name) {

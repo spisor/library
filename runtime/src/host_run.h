@@ -34,7 +34,8 @@ typedef struct runtime_host_timers {
  * run until its action answered; its `timers`; and `in_process`, 1 for a SERVE run that serves the process it runs
  * in alone, as a host started inside another application's process does, which never reads or writes the loader's
  * holders and ready records, so any number of such runs serve at once, each in its own process; and `run_id`, the
- * identity hosts.start answered, under which the run publishes its ready record and prunes its holders.
+ * identity hosts.start answered, under which the run publishes its ready record and prunes its holders; and for an
+ * ACTION run `result_path`, the file its action's result is written to, NULL for none.
  */
 typedef struct runtime_host_run {
     uint32_t mode;
@@ -48,12 +49,14 @@ typedef struct runtime_host_run {
     runtime_host_timers timers;
     int in_process;
     char *run_id;
+    char *result_path;
 } runtime_host_run;
 
 /**
  * Starts the run `arguments` name in `environment`, an object of variable names to values, each form led by the
  * layer's runtime, javascript or native: `<runtime> <loader id>` serves, `<runtime> <loader id> in-process` serves
- * in-process, `<runtime> <loader id> action <plugin> <action> <input>` runs one action, the input a JSON object. The
+ * in-process, `<runtime> <loader id> action <plugin> <action> <input> [<result>]` runs one action, the input a JSON
+ * object and the result, when given, a path runtime_is_result_path accepts in the state place. The
  * layer is the item that runtime names, javascript-host or spisor-interface, at the version its boot hint names,
  * beside every library the hint names; hosts.start plans the layer's run,
  * a SERVE run as the loader's session start; the plan's libraries are the hinted ones with a binary but runtime
@@ -62,8 +65,8 @@ typedef struct runtime_host_run {
  * last, over the loader's home and the places.
  *
  * @return the run, freed with runtime_host_run_end; NULL with `*refusal` set to {message, fix} for arguments that name
- * no run, a layer with no hinted version, a refused hosts.start, a located plugin with no entry, a plugin the plan does
- * not run, a manifest that cannot be read, an action ui.action refuses, or scopes that cannot begin, or with it NULL
+ * no run, a result path outside the results folder, a layer with no hinted version, a refused hosts.start, a located
+ * plugin with no entry, a plugin the plan does not run, a manifest that cannot be read, an action ui.action refuses, or scopes that cannot begin, or with it NULL
  * when memory runs out. A run that is not answered leaves no run record of its own and no scopes begun, and a refused
  * SERVE run that is not in-process publishes its refusal to the ready record of the identity its layer runs as once
  * its places resolved, the loader's when that identity cannot be read.

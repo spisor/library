@@ -45,9 +45,11 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * The static weivel_standard_host (`weivel/host.h`), living until the library is unloaded, which runs a loader's
  * plugins: a process makes one run at a time, from a `start` answering OK until its `stop`.
  *
- * `start` reads its arguments as `<loader id>` for a SERVE run, `<loader id> in-process` for a SERVE run that serves
- * the process it runs in alone, or `<loader id> action <plugin> <action> <input>` for an ACTION run, the input a JSON
- * object, and reads this process's environment. An in-process run, as a host started inside another application's
+ * `start` reads its arguments, after the layer's runtime, `javascript` or `native`, as `<loader id>` for a SERVE run,
+ * `<loader id> in-process` for a SERVE run that serves the process it runs in alone, or `<loader id> action <plugin>
+ * <action> <input> [<result>]` for an ACTION run, the input a JSON object and the result, when given, the absolute
+ * path of a file directly inside the state place's `results` folder, no segment of it `.` or `..`, and reads this
+ * process's environment. An in-process run, as a host started inside another application's
  * process makes, never reads or writes the loader's holders and ready records, so any number of them serve at once,
  * each in its own process: its `started` publishes nothing, its `tick` stamps its run record and runs no prune, and
  * only a stop request ends it. The layer is the javascript-host at
@@ -64,10 +66,10 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * over the loader's home and the places, so `weivel.scope` opens the plan's plugins' scopes until `stop`.
  *
  * `start` answers MALFORMED for a refusal or plan short of its first shape, a plan that is not empty, and arguments
- * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a second start before
- * a `stop`, a layer with no hinted version, a start hosts' start refuses, a located plugin whose manifest names no
- * entry installed beside it, a plugin the plan does not run, a manifest that cannot be read, an action ui's action
- * refuses, as one the manifest does not declare, an ACTION run whose plan's `size` cannot hold `action_service` and
+ * that are NULL beside a count or hold a NULL. It answers REFUSED for arguments naming no run, a result path that is
+ * no such file, a second start before a `stop`, a layer with no hinted version, a start hosts' start refuses, a
+ * located plugin whose manifest names no entry installed beside it, a plugin the plan does not run, a manifest that
+ * cannot be read, an action ui's action refuses, as one the manifest does not declare, an ACTION run whose plan's `size` cannot hold `action_service` and
  * `action_method`, the program too old for the run, and nothing written past that size, and scopes that cannot
  * begin; and OUT_OF_MEMORY. A start that does not answer OK leaves no run record of its own and no scopes begun, and
  * a refused SERVE start that is not in-process publishes its refusal to the loader's ready record once the places
@@ -101,7 +103,11 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * log, under the loader's id at `now`, as the archived host wrote them to stderr.
  * A tick holds the run's lock while it waits on the network, and a scope's operations never take that lock.
  *
- * `finished` is an ACTION run's alone, once, after its `started` answered OK. `stop` ends the scopes, removes the run
+ * `finished` is an ACTION run's alone, once, after its `started` answered OK. An action that answered, in a run given
+ * a result path, has its result written there as compact JSON, `null` for a value of kind NONE, as a new file in a
+ * results folder made when missing; `finished` answers MALFORMED for a result that is no well-formed value tree and
+ * REFUSED when the results folder is not a real folder, a link to one included, or anything already stands at the
+ * path, and the run then fails. `stop` ends the scopes, removes the run
  * record the plan wrote, ends the run and answers its exit code, all under the lock a start takes, so a start racing
  * it begins its scopes only after they ended. The exit code is 0 for a SERVE run that ends on a stop request or its
  * holders' word and for an action that answered, and 1 for an action that threw or never ran and for a run a call of

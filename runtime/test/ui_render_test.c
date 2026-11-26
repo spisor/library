@@ -199,6 +199,17 @@ static void puts_a_node_answering_a_bare_string_in_error(void) {
     cJSON_Delete(screen);
 }
 
+static void renders_a_node_naming_no_component_unavailable_unplanned_and_its_sibling_ready(void) {
+    cJSON *screen = viewer_view("unknown");
+    check_state(screen, "blinking", "unavailable");
+    check_text(text_at(node_of(screen, "blinking"), "component"), "blink", "the unknown component as named");
+    check_absent(screen, "blinking", "data");
+    check_absent(screen, "blinking", "error");
+    check_state(screen, "greeting", "ready");
+    check_json_at(node_of(screen, "greeting"), "data", "{\"text\": \"hello\"}", "the greeting");
+    cJSON_Delete(screen);
+}
+
 static void puts_a_node_whose_binding_failed_in_error_and_renders_its_sibling(void) {
     cJSON *screen = viewer_view("failing");
     check_state(screen, "broken", "error");
@@ -703,6 +714,7 @@ int main(void) {
     renders_a_bound_table_ready_with_what_its_binding_answered();
     puts_only_the_node_whose_answer_has_the_wrong_shape_in_error_with_the_path_at_fault();
     puts_a_node_answering_a_bare_string_in_error();
+    renders_a_node_naming_no_component_unavailable_unplanned_and_its_sibling_ready();
     puts_a_node_whose_binding_failed_in_error_and_renders_its_sibling();
     puts_a_node_whose_binding_never_answered_in_error();
     reads_the_branch_the_nodes_chart_names_never_the_one_the_answer_carries();

@@ -18,6 +18,8 @@
 #include "allocation_failure.h"
 #include "check.h"
 #include "definition_fixture.h"
+#include "file_age.h"
+#include "file_times.h"
 #include "spisor/json_allocation.h"
 #include "runtime/cache.h"
 #include "runtime/catalog.h"
@@ -1130,18 +1132,28 @@ static void marked_version(const char *version) {
     cJSON_Delete(none);
 }
 
-/** a@1.0.0, a@1.1.0 and a@2.0.0 installed, and a host's run naming a@1.1.0, so a sweep removes 1.0.0 alone. */
+/**
+ * a@1.0.0, a@1.1.0 and a@2.0.0 installed, and a host's run naming a@1.1.0, so a sweep removes 1.0.0 alone; and two
+ * result files, one a day untouched, which the sweep removes, and one fresh, which it keeps.
+ */
 static void three_versions_one_referenced(void) {
     char bundles[1300];
+    char results[1300];
+    char old[1400];
     marked_version("1.1.0");
     marked_version("2.0.0");
     under_base(bundles, sizeof bundles, "sweep-state/bundles");
     write_text(bundles, "claude-code.json", "{\"run\":{\"a\":\"1.1.0\"},\"next\":{}}");
+    under_base(results, sizeof results, "sweep-state/results");
+    write_text(results, "1-1.json", "\"left\"");
+    write_text(results, "2-1.json", "\"fresh\"");
+    snprintf(old, sizeof old, "%s/1-1.json", results);
+    set_modified(old, runtime_now_milliseconds() - 25.0 * 3600000.0);
 }
 
 static int kept_the_referenced_and_the_newest(void) {
     return exists_under_base("cache/bundles/a/1.1.0/plugin.json") &&
-           exists_under_base("cache/bundles/a/2.0.0/plugin.json");
+           exists_under_base("cache/bundles/a/2.0.0/plugin.json") && exists_under_base("sweep-state/results/2-1.json");
 }
 
 static spisor_status sweep_the_cache(void) {
@@ -1158,6 +1170,7 @@ static spisor_status sweep_the_cache(void) {
     argument.state = state_place;
     spisor_status status = cache->sweep(cache->context, &argument, &answer, &refusal);
     if (status == SPISOR_OK && (answer.removed_count != 1 || exists_under_base("cache/bundles/a/1.0.0/plugin.json") ||
+                                exists_under_base("sweep-state/results/1-1.json") ||
                                 !kept_the_referenced_and_the_newest())) {
         status = WRONG_ANSWER;
     }
