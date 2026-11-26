@@ -12,6 +12,7 @@
 #include "cache_refusal.h"
 #include "catalog_time.h"
 #include "definition_support.h"
+#include "host_front_door.h"
 #include "log.h"
 #include "platform_key.h"
 #include "processes.h"
@@ -128,20 +129,27 @@ static spisor_status publish_not_started(const runtime_host_run *run, const weiv
 }
 
 /**
- * Publishes a SERVE run's ready record: ready, with the empty environment a loader with no session service gives,
- * when every plugin activated, else a refusal naming the first that did not.
+ * Publishes a SERVE run's ready record: ready, with the environment its front door hands the application, when every
+ * plugin activated, else a refusal naming the first that did not, or why the front door's address cannot be handed.
  */
 static spisor_status publish_serving(const runtime_host_run *run, const weivel_standard_host_outcome *outcomes,
                                      spisor_refusal *refusal) {
     const char *plugin_id = NULL;
     const weivel_standard_host_outcome *stopped = first_not_activated(run, outcomes, &plugin_id);
+    cJSON *unhanded = NULL;
     cJSON *environment;
     spisor_status status;
     if (stopped != NULL) {
         return publish_not_started(run, stopped, plugin_id, refusal);
     }
-    environment = cJSON_CreateObject();
-    status = environment == NULL ? SPISOR_OUT_OF_MEMORY : publish(run, environment, NULL, NULL, refusal);
+    environment = runtime_front_door_environment(run, &unhanded);
+    if (environment != NULL) {
+        status = publish(run, environment, NULL, NULL, refusal);
+    } else {
+        status = unhanded == NULL ? SPISOR_OUT_OF_MEMORY
+                                  : publish(run, NULL, text_of(unhanded, "message"), text_of(unhanded, "fix"), refusal);
+    }
+    cJSON_Delete(unhanded);
     cJSON_Delete(environment);
     return status;
 }

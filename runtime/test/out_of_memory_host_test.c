@@ -18,6 +18,16 @@
  */
 
 #define PRINT_CAPACITY 4096
+#define PROXY_STANDARD                                                                                           \
+    "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"ANTHROPIC_BASE_URL\", "        \
+    "\"placeholder\": {\"variable\": \"ANTHROPIC_AUTH_TOKEN\", \"value\": \"sk-ant-loader-proxy\"}}}}"
+#define LISTENING_MANIFEST                                                                                        \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "\"config\": {\"name\": \"a\", \"defaults\": {\"proxy\": {\"port\": 34567}}}, "                             \
+    "\"access\": [{\"kind\": \"port\", \"target\": \"setting:proxy.port\", \"mode\": \"listen\"}]}"
+#define ANY_PORT_MANIFEST                                                                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "\"access\": [{\"kind\": \"port\", \"target\": \"any\", \"mode\": \"listen\"}]}"
 
 typedef struct start_case {
     const char *label;
@@ -159,12 +169,35 @@ typedef struct progress_case {
     int held;
     /** What a clean run's stop answers. */
     uint32_t exit_code;
+    /** The manifest plugin `a` is installed with, and the loader standard written for the run, NULL for none. */
+    const char *manifest;
+    const char *standard;
 } progress_case;
 
 static void put_status(const char *call, weivel_status status) {
     char text[64];
     snprintf(text, sizeof text, "%s %d", call, (int)status);
     put(text);
+}
+
+/**
+ * Prints the loader's ready record, so an allocation failure that `started` turned into another environment or a
+ * refusal of its own, rather than answering OUT_OF_MEMORY, differs from the clean run.
+ */
+static void put_ready_record(void) {
+    char *path = processes_file(".ready.json");
+    size_t length = 0;
+    char *text = path == NULL ? NULL
+                              : (char *)spisor_read_file_reporting(path, &length,
+                                                                   &(spisor_read_outcome){SPISOR_READ_FAILED});
+    cJSON *record = text == NULL ? NULL : spisor_parse_json_reporting((const uint8_t *)text, length, &(int){0});
+    char *environment = cJSON_PrintUnformatted(cJSON_GetObjectItemCaseSensitive(record, "environment"));
+    put(environment == NULL ? "no environment" : environment);
+    put(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(record, "refused")));
+    cJSON_free(environment);
+    cJSON_Delete(record);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
 }
 
 /** Tells the started run its outcome, then ticks a SERVE run or finishes an ACTION run, `*failed` set on OOM. */
@@ -202,6 +235,23 @@ static void remove_the_newer_plugin(void) {
     spisor_memory_release(folder);
 }
 
+static void remove_the_ready_record(void) {
+    char *path = processes_file(".ready.json");
+    CHECK(runtime_remove_tree(path) == SPISOR_OK);
+    spisor_memory_release(path);
+}
+
+/** Writes the loader's standard at its registered version, or removes it for NULL. */
+static void write_the_standard(const char *standard) {
+    if (standard != NULL) {
+        write_in(cache, "bundles/" LOADER "/1.0.0/host.json", standard);
+    } else {
+        char *path = joined(cache, "bundles/" LOADER "/1.0.0/host.json");
+        CHECK(runtime_remove_tree(path) == SPISOR_OK);
+        spisor_memory_release(path);
+    }
+}
+
 static void place_the_holders(int held) {
     char *path = processes_file(".json");
     if (held) {
@@ -223,7 +273,9 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     char code[32];
     place_the_holders(each->held);
     remove_the_newer_plugin();
-    install_plugin("a", PLUGIN_MANIFEST);
+    remove_the_ready_record();
+    install_plugin("a", each->manifest == NULL ? PLUGIN_MANIFEST : each->manifest);
+    write_the_standard(each->standard);
     start_empty(&plan, sizeof plan);
     *failed = 0;
     if (host->start(host->context, each->arguments, each->argument_count, &plan, NULL) != WEIVEL_STATUS_OK) {
@@ -234,6 +286,7 @@ static void run_progress(const progress_case *each, uint64_t attempt, int *faile
     tell_progress(each, &plan, failed);
     *allocations = spisor_memory_attempts();
     spisor_memory_fail_at(0);
+    put_ready_record();
     put(exists_in(cache, "bundles/a/1.1.0/.installed.json") ? "installed" : "not installed");
     host->release_plan(host->context, &plan);
     if (host->stop(host->context, &exit_code, NULL) != WEIVEL_STATUS_OK) {
@@ -301,12 +354,17 @@ int main(void) {
                                        {"an action start and its stop", action, 6, WEIVEL_STATUS_OK},
                                        {"an undeclared action's start", undeclared, 6, WEIVEL_STATUS_REFUSED}};
     static const progress_case progress_cases[] = {
-        {"a held serve run's started and tick", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0},
-        {"a serve run's tick no holder keeps", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0},
-        {"a serve run's refused plugin", serve, 2, WEIVEL_STANDARD_HOST_REFUSED, 0, 0},
-        {"an action run's started and finished", action, 6, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0}};
+        {"a held serve run's started and tick", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, NULL, NULL},
+        {"a serve run's tick no holder keeps", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
+        {"a serve run's refused plugin", serve, 2, WEIVEL_STANDARD_HOST_REFUSED, 0, 0, NULL, NULL},
+        {"an action run's started and finished", action, 6, WEIVEL_STANDARD_HOST_ACTIVATED, 0, 0, NULL, NULL},
+        {"a front door's environment", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, LISTENING_MANIFEST,
+         PROXY_STANDARD},
+        {"a front door on a port the system picks", serve, 2, WEIVEL_STANDARD_HOST_ACTIVATED, 1, 0, ANY_PORT_MANIFEST,
+         PROXY_STANDARD}};
     spisor_json_use_library_allocator();
     start_host_world("out-of-memory-host");
+    write_in(portable, "plugins/a/config.json", "{\"proxy\": {\"port\": 43123}}");
     list_plugin("a", "1.1.0", "1.1.0");
     write_catalog();
     for (size_t index = 0; index < sizeof cases / sizeof cases[0]; index++) {
