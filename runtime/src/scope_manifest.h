@@ -2,6 +2,7 @@
 #define RUNTIME_SCOPE_MANIFEST_H
 
 #include "cJSON.h"
+#include "config.h"
 #include "spisor/status.h"
 
 /**
@@ -25,6 +26,15 @@ typedef struct runtime_scope_manifest {
  */
 spisor_status runtime_read_scope_manifest(const char *path, runtime_scope_manifest *manifest,
                                           spisor_refusal *refusal);
+
+/**
+ * The checks every config operation of the plugin `request` reads makes, made once over the manifest at
+ * `manifest_path`, so a config name or id no operation could use is refused naming the manifest.
+ *
+ * @return OK; REFUSED naming the manifest; OUT_OF_MEMORY.
+ */
+spisor_status runtime_check_scope_plugin(const runtime_config_request *request, const char *manifest_path,
+                                         spisor_refusal *refusal);
 
 /** Frees what a manifest holds and leaves it empty. */
 void runtime_scope_manifest_free(runtime_scope_manifest *manifest);

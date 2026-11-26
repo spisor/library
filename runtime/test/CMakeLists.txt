@@ -195,16 +195,6 @@ foreach(name loader_test entry_template_test detect_test lists_test)
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
 
-foreach(name ui_navigation_test ui_settings_view_test ui_render_test ui_action_test)
-    runtime_test(${name} $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
-    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    target_compile_definitions(${name} PRIVATE RUNTIME_UI_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/ui")
-endforeach()
-
-runtime_test(ui_component_enum_test $<TARGET_OBJECTS:runtime_ui> ${runtime_hosts_test_objects})
-target_compile_definitions(ui_component_enum_test PRIVATE
-    RUNTIME_UI_HEADER_PATH="${PROJECT_SOURCE_DIR}/include/runtime/ui.h")
-
 runtime_test(processes_test ${runtime_processes_test_objects})
 target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
 add_dependencies(processes_test background_fixture)
@@ -226,6 +216,25 @@ set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
 set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
+# ui's session reads a host's layers, so every test of the ui definition links what those reads stand on.
+set(runtime_ui_test_objects $<TARGET_OBJECTS:runtime_ui> ${runtime_install_plain_http_test_objects})
+foreach(name ui_navigation_test ui_settings_view_test ui_render_test ui_action_test)
+    runtime_test(${name} TEST_HOOKS ${runtime_ui_test_objects})
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_compile_definitions(${name} PRIVATE RUNTIME_UI_FIXTURES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/ui")
+endforeach()
+
+runtime_test(ui_component_enum_test TEST_HOOKS ${runtime_ui_test_objects})
+target_compile_definitions(ui_component_enum_test PRIVATE
+    RUNTIME_UI_HEADER_PATH="${PROJECT_SOURCE_DIR}/include/runtime/ui.h")
+
+runtime_test(ui_session_test TEST_HOOKS ${runtime_ui_test_objects})
+target_link_libraries(ui_session_test PRIVATE runtime_testing_objects)
+runtime_test_with_allocator(out_of_memory_ui_session_test spisor_allocator_counting TEST_HOOKS
+    ${runtime_ui_test_objects})
+target_link_libraries(out_of_memory_ui_session_test PRIVATE runtime_testing_objects)
+set_tests_properties(out_of_memory_ui_session_test PROPERTIES TIMEOUT 1800)
+
 foreach(name updates_test boot_hint_test boot_unlistable_test hosts_start_test hosts_layer_start_test)
     runtime_test(${name} TEST_HOOKS ${runtime_install_plain_http_test_objects})
 endforeach()
@@ -334,8 +343,7 @@ if(WIN32)
     add_dependencies(out_of_memory_install_operations_test runtime_launcher)
 endif()
 
-runtime_test_with_allocator(out_of_memory_ui_test spisor_allocator_counting $<TARGET_OBJECTS:runtime_ui>
-    ${runtime_hosts_test_objects})
+runtime_test_with_allocator(out_of_memory_ui_test spisor_allocator_counting TEST_HOOKS ${runtime_ui_test_objects})
 
 runtime_test_with_allocator(json_hooks_race_test spisor_allocator_counting ${runtime_definition_test_objects})
 target_include_directories(json_hooks_race_test PRIVATE ${PROJECT_SOURCE_DIR}/src)

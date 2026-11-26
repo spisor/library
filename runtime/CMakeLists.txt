@@ -6,7 +6,7 @@ set(runtime_objects_sources src/segment.c src/paths.c src/merge.c src/config.c s
     src/definition_support.c src/answer_storage.c src/paths_definition.c src/places_definition.c
     src/secrets_definition.c src/config_conversion.c src/config_definition.c src/settings_definition.c
     src/log_definition.c src/registry_definition.c src/catalog_time.c src/file_times.c src/thread.c src/atomic.c
-    src/process_environment.c)
+    src/process_environment.c src/scope_manifest.c)
 add_library(runtime_objects OBJECT ${runtime_objects_sources})
 target_include_directories(runtime_objects PUBLIC src)
 target_include_directories(runtime_objects PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -246,7 +246,8 @@ set_target_properties(runtime_hosts_definition PROPERTIES POSITION_INDEPENDENT_C
 spisor_strict_warnings(runtime_hosts_definition)
 
 set(runtime_ui_sources src/ui_action.c src/ui_binding.c src/ui_components.c src/ui_definition.c src/ui_items.c
-    src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_settings_view.c)
+    src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_session.c
+    src/ui_session_definition.c src/ui_settings_view.c)
 add_library(runtime_ui OBJECT ${runtime_ui_sources})
 target_link_libraries(runtime_ui PUBLIC runtime_objects)
 target_include_directories(runtime_ui PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -270,7 +271,7 @@ target_compile_definitions(runtime_install_test_hooks PRIVATE SPISOR_INSTALL_TES
 spisor_strict_warnings(runtime_install_test_hooks)
 set_target_properties(runtime_install_test_hooks PROPERTIES SPISOR_TEST_ONLY TRUE)
 
-set(runtime_standard_sources src/standard_refusal.c src/scope_host.c src/scope_manifest.c src/plugin_scope.c
+set(runtime_standard_sources src/standard_refusal.c src/scope_host.c src/plugin_scope.c
     src/scope_config.c src/scope_secrets.c src/scope_paths.c src/scope_log.c src/log_queue.c src/log_writer.c
     src/standard_scope.c)
 add_library(runtime_standard OBJECT ${runtime_standard_sources})

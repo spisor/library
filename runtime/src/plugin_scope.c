@@ -1,7 +1,5 @@
 #include "plugin_scope.h"
 
-#include <stdio.h>
-
 #include "allocation.h"
 #include "spisor/definition.h"
 #include "atomic.h"
@@ -46,18 +44,7 @@ static spisor_status refuse_unstarted(spisor_refusal *refusal) {
 static spisor_status check_plugin(const runtime_plugin_scope *scope, const char *manifest_path,
                                   spisor_refusal *refusal) {
     runtime_config_request request = runtime_plugin_scope_request(scope);
-    spisor_refusal checked = SPISOR_INIT(spisor_refusal);
-    spisor_status status = runtime_config_check_request(&request, &checked);
-    char detail[4096];
-    if (status != SPISOR_MALFORMED) {
-        spisor_refusal_release(&checked);
-        return status;
-    }
-    snprintf(detail, sizeof detail, "the manifest at %s is refused: %s", manifest_path,
-             checked.detail == NULL ? "its plugin cannot be located" : checked.detail);
-    status = spisor_refuse_as(refusal, SPISOR_REFUSED, detail, checked.fix);
-    spisor_refusal_release(&checked);
-    return status;
+    return runtime_check_scope_plugin(&request, manifest_path, refusal);
 }
 
 static void fill_definitions(runtime_plugin_scope *scope) {

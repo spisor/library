@@ -145,7 +145,7 @@ off the include path.
 | `loader` | `include/runtime/loader.h` | `check`, `home`, `installed` |
 | `detect` | `include/runtime/detect.h` | `on_path` |
 | `lists` | `include/runtime/lists.h` | `plugins`, `applications` |
-| `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action` |
+| `ui` | `include/runtime/ui.h` | `navigation`, `settings_view`, `plan`, `render`, `plugin_list`, `action`, `session` |
 | `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
 | `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`, `settings_file`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
@@ -254,6 +254,14 @@ A host opens a screen by calling `ui.plan` in rounds, answering the calls each n
 `ui.render` once a plan names none; `ui.plan` refuses a seventeenth round, so a screen whose bindings chain deeper
 than 16 is never rendered. `ui.action` answers the call a declared action makes, its arguments the declared
 argument, then the input, then the row's `item` and `items`, and refuses an action the manifest does not declare.
+`ui.session` answers everything an interface draws a host's home from, so the interface reads no manifest and no
+settings file: given the places and a loader id, or none for spisor-host's own, the plugins that host's settings
+enable with a version the cache holds, each with its manifest checked as its scope checks it and the
+`runtime_config_plugin` its settings are read and written through, the host's `ui` settings, the three groups
+`ui.plugin_list` takes (the plugins, every other catalog plugin with a version cached, every catalog plugin with none)
+and the catalog sources they were read from. It writes nothing, and refuses as the host's start, the cache's locate and
+a plugin's scope refuse, naming the plugin's manifest. `ui_session_test` and `out_of_memory_ui_session_test` hold it
+over a home `runtime-testing` lays out.
 
 ### Bound from TypeScript and Java
 
