@@ -24,11 +24,11 @@
 #define RESERVED_ID "git:" ROOT_RESERVED
 #define GONE_ID "git:" ROOT_GONE
 #define ENTRY(id, place) "{\"id\":\"" id "\",\"at\":[\"" place "\"]"
-#define LIST(entries) "{\"format\":1,\"entries\":[" entries "]}"
+#define LIST(entries) "{\"format\":2,\"entries\":[" entries "]}"
 #define TOKEN "tok-1234567890abcdef"
 #define KEPT_ENTRY                                                                                                     \
     "{\"id\":\"" GONE_ID "\",\"at\":[\"forge:70\"],\"name\":\"kept\",\"fullName\":\"spisor/kept\",\"description\":\"Old.\"}"
-#define PREVIOUS_COPY(entries) "{\"format\":1,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[" entries "]}"
+#define PREVIOUS_COPY(entries) "{\"format\":2,\"built\":\"2026-11-01T12:00:00Z\",\"entries\":[" entries "]}"
 
 static fake_repo *add(uint64_t number, const char *account, const char *name, const char *root) {
     fake_repo *repo = fake_forge_add(number, account, name, NULL);
@@ -88,12 +88,12 @@ static int contains(const char *text, const char *fragment) {
 
 static void builds_a_copy_with_current_names_and_the_places(void) {
     start_forge();
-    catalog_answer answer = build("{\"format\":1,\"title\":\"Spisor\",\"entries\":["
+    catalog_answer answer = build("{\"format\":2,\"title\":\"Spisor\",\"entries\":["
                                   ENTRY(RUNTIME_ID, "forge:1") ",\"description\":\"The runtime.\",\"categories\":[\"core\"]},"
                                   ENTRY(WEIVEL_ID, "forge:2") "}]}");
     CHECK(answer.status == SPISOR_OK);
     const cJSON *copy = value_at(answer.tree, "copy");
-    CHECK(cJSON_GetObjectItemCaseSensitive(copy, "format")->valueint == 1);
+    CHECK(cJSON_GetObjectItemCaseSensitive(copy, "format")->valueint == 2);
     check_text(text_at(copy, "title"), "Spisor", "title");
     check_text(text_at(copy, "built"), BUILT, "built");
     CHECK(entry_count(answer) == 2);
@@ -193,7 +193,7 @@ static void a_list_or_time_that_breaks_its_shape_is_refused(void) {
     catalog_answer built = build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), NULL, NULL, NULL, "yesterday");
     CHECK(expect_refusal(built, "RFC 3339", "a built that is no time"));
     cJSON_Delete(built.tree);
-    catalog_answer empty = build("{\"format\":1,\"entries\":[]}");
+    catalog_answer empty = build("{\"format\":2,\"entries\":[]}");
     CHECK(empty.status == SPISOR_OK && entry_count(empty) == 0);
     cJSON_Delete(empty.tree);
 }
@@ -216,7 +216,7 @@ static void an_entry_naula_does_not_confirm_is_skipped_or_carried_over(void) {
     CHECK(expect_refusal(only, "no listed repository could be built", "a list of only a gone repo"));
     cJSON_Delete(only.tree);
     catalog_answer not_a_copy =
-        build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), NULL, NULL, "{\"format\":1,\"entries\":[]}", BUILT);
+        build_with_options(LIST(ENTRY(RUNTIME_ID, "forge:1") "}"), NULL, NULL, "{\"format\":2,\"entries\":[]}", BUILT);
     CHECK(expect_refusal(not_a_copy, "previous is not a marketplace copy", "a previous that is no copy"));
     cJSON_Delete(not_a_copy.tree);
 }
@@ -263,7 +263,7 @@ static void a_token_goes_only_to_its_host_and_into_neither_the_copy_nor_a_refusa
 static char *list_of_repositories(size_t count) {
     size_t size = count * 80 + 64;
     char *text = spisor_memory_allocate(size);
-    size_t used = (size_t)snprintf(text, size, "{\"format\":1,\"entries\":[");
+    size_t used = (size_t)snprintf(text, size, "{\"format\":2,\"entries\":[");
     for (size_t index = 1; index <= count; index++) {
         used += (size_t)snprintf(text + used, size - used, "%s" ENTRY(RUNTIME_ID, "forge:1") "}", index == 1 ? "" : ",");
     }
@@ -293,7 +293,7 @@ static void the_list_checker_follows_the_schema(void) {
                              LIST(ENTRY(RUNTIME_ID, "forge:1") ",\"alias\":\"package\"}"),
                              LIST("{\"id\":\"" RUNTIME_ID "\",\"at\":[]}"),
                              LIST("{\"id\":\"" RUNTIME_ID "\",\"at\":\"forge:1\"}"),
-                             "{\"format\":1,\"entries\":[],\"extra\":true}",
+                             "{\"format\":2,\"entries\":[],\"extra\":true}",
                              "{\"entries\":[]}"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         cJSON *list = parsed(refused[index]);
@@ -304,19 +304,19 @@ static void the_list_checker_follows_the_schema(void) {
 
 static void the_copy_checker_follows_the_schema(void) {
     char problem[256];
-    cJSON *copy = parsed("{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+    cJSON *copy = parsed("{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
                          ",\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"}]}");
     CHECK(runtime_marketplace_check_copy(copy, problem, sizeof problem) == 1);
     cJSON_Delete(copy);
     const char *refused[] = {
-        "{\"format\":1,\"entries\":[]}",
-        "{\"format\":1,\"built\":\"2026-13-10T12:00:00Z\",\"entries\":[]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1") ",\"name\":\"runtime\"}]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        "{\"format\":2,\"entries\":[]}",
+        "{\"format\":2,\"built\":\"2026-13-10T12:00:00Z\",\"entries\":[]}",
+        "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1") ",\"name\":\"runtime\"}]}",
+        "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
         ",\"name\":\"runtime\",\"fullName\":\"runtime\"}]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
         ",\"name\":\"Runtime\",\"fullName\":\"a/b\"}]}",
-        "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
+        "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[" ENTRY(RUNTIME_ID, "forge:1")
         ",\"name\":\"runtime\",\"fullName\":\"a/b\",\"lastKnown\":\"a/b\"}]}"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; index++) {
         cJSON *bad = parsed(refused[index]);

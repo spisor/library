@@ -521,8 +521,8 @@ powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.js
 
 `spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
-it lies in. `--out` may not be the list itself. Each entry is resolved through naula from its `at` places, and the copy
-carries the places beside the name and the owner/name of the primary. A copy already at `--out` is the previous copy: an
+it lies in. `--out` may not be the list itself. A list and its copy are format 2. Each entry is resolved through naula from
+its `at` places, and the copy carries the places beside the name and the owner/name of the primary. A copy already at `--out` is the previous copy: an
 entry naula does not confirm is carried over from it unchanged, or, when it has none, printed as skipped with its reason, and
 the copy is still written. `--token-env` names an environment variable holding an access token, which naula's providers send
 only to the host the places name (never to another host, a redirect included) and which is never printed or written.
@@ -535,7 +535,7 @@ copy as it was and exits 1; a name in a message is printed with its control char
 print has 0x7F and U+0080 to U+009F escaped as well.
 
 `spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <place>]
-[--accept-number <place>]` installs one
+[--accept-number <account>=<number>,...] [--accept-at <place>,...]` installs one
 plugin by the name a marketplace gives it, from the marketplaces listed under `marketplaces` in the portable `settings.json`,
 into the `plugin` folder (from `paths.resolve`) of the home of the registered application `--application` names; without
 `--application` it is refused. No host runs a plugin deployed this way yet, since hosts move to deployed plugins in plan four.
@@ -543,14 +543,19 @@ It reads each source's copy with `marketplace.read` into a fresh folder under th
 that cannot be read is printed with its fix and skipped while the others are still searched; a source that names a `provider`
 is printed as skipped, since only a plugin can ask it. `marketplace.lookup` settles the name: a name found under two ids lists
 each `<marketplace>/<name>` form and installs nothing, and one found nowhere says so. `marketplace.remember` checks the id
-against the one on record for that marketplace and name, and, for a bare name, for the bare name too, so a name that moves
-to another marketplace asks as a changed id does; a different one prints both ids and installs nothing until the command is
-run again with `--accept` naming the new id. `install.by_id` then resolves the id from the entry's `at` places through
-naula, installs it into the cache from its primary's latest release and deploys it, and only once that has succeeded are the
-names recorded, so a failed first install records nothing. A primary other than the one naula confirmed before prints both
-and installs nothing until `--accept-primary` names the new one; an account whose number the repo's records disagree on,
-which a deleted and re-registered account also causes, prints the account and both numbers and installs nothing until
-`--accept-number` names the offered one; the three flags are never taken for each other. The JSON of what was installed is printed, then what `install.warnings` finds the plugin
+and its places against the ones on record for that marketplace and name, and, for a bare name, for the bare name too, so a
+name that moves to another marketplace asks as a changed id does; a different id prints both ids and installs nothing until
+the command is run again with `--accept` naming the new id, and the same id at other places prints both lists and installs
+nothing until `--accept-at` names the offered places, so a copy that keeps an id and points it at a copy of the repo never
+installs unasked. The record, `<state>/marketplace-names.json`, is format 2; a record of format 1 is refused, with the fix to
+remove it. `install.by_id` then resolves the id from the remembered places through naula, reads the index of its primary's
+latest release through the primary's provider, by number, installs it into the cache and deploys it, and only once that has
+succeeded are the names recorded, so a failed first install records nothing. A primary other than the one naula confirmed
+before prints both and installs nothing until `--accept-primary` names the new one; accounts whose numbers the repo's
+records disagree on, which a deleted and re-registered account also causes, print each account and both numbers and install
+nothing until `--accept-number` lists each one as `<account>=<number>`; a refusal that is neither is printed as a refusal,
+and the four flags are never taken for each other. A cache naula could not keep its confirmations in is printed as a
+warning. The JSON of what was installed is printed, then what `install.warnings` finds the plugin
 depends on by a name. Everything printed that came from a source, a copy or a refusal is printed with its control characters
 escaped; the command takes no `--catalog` or `--plugin`.
 

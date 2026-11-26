@@ -198,9 +198,21 @@ static int fill_asked(const runtime_identity_acceptance *acceptance, runtime_ide
                runtime_storage_copy(storage, acceptance->offered_primary, &answer->primary);
     }
     answer->needs_number_acceptance = 1;
-    return runtime_storage_copy(storage, acceptance->disputed_account, &answer->disputed_account) &&
-           runtime_storage_copy(storage, acceptance->recorded_number, &answer->recorded_number) &&
-           runtime_storage_copy(storage, acceptance->offered_number, &answer->offered_number);
+    runtime_identity_dispute *disputes = NULL;
+    if (!runtime_storage_take_array(storage, acceptance->dispute_count, sizeof *disputes, (void **)&disputes)) {
+        return 0;
+    }
+    for (size_t index = 0; index < acceptance->dispute_count; index++) {
+        if (!runtime_storage_copy(storage, acceptance->disputes[index].account, &disputes[index].account) ||
+            !runtime_storage_copy(storage, acceptance->disputes[index].recorded_number, &disputes[index].recorded_number) ||
+            !runtime_storage_copy(storage, acceptance->disputes[index].offered_number, &disputes[index].offered_number) ||
+            !runtime_storage_copy(storage, acceptance->disputes[index].accept, &disputes[index].accept)) {
+            return 0;
+        }
+    }
+    answer->disputes = disputes;
+    answer->dispute_count = acceptance->dispute_count;
+    return 1;
 }
 
 static spisor_status check_resolve_argument(const runtime_identity_resolve_argument *argument,
@@ -220,8 +232,7 @@ static spisor_status check_resolve_argument(const runtime_identity_resolve_argum
 }
 
 static spisor_status fill_resolution(const naula_resolution *found, const runtime_identity_acceptance *acceptance,
-                                     runtime_identity_resolution *answer) {
-    int asked = acceptance->primary_needed || acceptance->number_needed;
+                                     int asked, runtime_identity_resolution *answer) {
     int filled = asked ? fill_asked(acceptance, answer) : fill_found(found, answer);
     if (!filled) {
         runtime_release_stored_answer(answer, RESOLUTION_SHAPE);
@@ -234,7 +245,7 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
                              runtime_identity_resolution *answer, spisor_refusal *refusal) {
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, RESOLVE_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RESOLUTION_SHAPE, answer->home_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, RESOLUTION_SHAPE, answer->home_count | answer->dispute_count)) {
         return spisor_refuse_shape(refusal, "identity's resolve");
     }
     spisor_status status = check_resolve_argument(argument, refusal);
@@ -252,14 +263,14 @@ static spisor_status resolve(void *context, const runtime_identity_resolve_argum
     memset(&naula_refused, 0, sizeof naula_refused);
     naula_refused.size = sizeof naula_refused;
     naula_status resolved = runtime_identity_resolve(&request, &found, &acceptance, &naula_refused);
-    int asked = acceptance.primary_needed || acceptance.number_needed;
-    if (resolved != NAULA_OK && !(asked && resolved != NAULA_OUT_OF_MEMORY)) {
+    int asked = runtime_identity_needs_the_user(resolved, &naula_refused, &acceptance);
+    if (resolved != NAULA_OK && !asked) {
         naula_resolution_release(&found);
         return refuse_naula(resolved, &naula_refused, refusal);
     }
     status = runtime_start_storage(&answer->storage);
     if (status == SPISOR_OK) {
-        status = fill_resolution(&found, &acceptance, answer);
+        status = fill_resolution(&found, &acceptance, asked, answer);
     }
     naula_resolution_release(&found);
     return status;

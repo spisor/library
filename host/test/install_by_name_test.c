@@ -6,8 +6,6 @@
 
 #include "host_commands.h"
 #include "host_output.h"
-#include "http_fixture.h"
-#include "marketplace_lookup.h"
 #include "fake_forge.h"
 #include "transport_hooks.h"
 
@@ -31,10 +29,11 @@
 #define ENTRY "export default {};"
 #define ENTRY_OF(id_text, place, name_text) \
     "{\"id\":\"" id_text "\",\"at\":[\"" place "\"],\"name\":\"" name_text "\",\"fullName\":\"o/" name_text "\"}"
-#define COPY_OF(entries) "{\"format\":1,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":[" entries "]}"
+#define COPY_OF(entries) "{\"format\":2,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":[" entries "]}"
 
 static char fixture_root[1024];
-static char release_json[1600];
+static char *index_text;
+static char *index_url;
 static host_world world;
 static char *saved_out_path;
 static char *saved_err_path;
@@ -148,9 +147,12 @@ static command_run run_install(const char *const *arguments, int count) {
     return run;
 }
 
+/** The places every install of a case accepts with --accept-at, or NULL for none. */
+static const char *accepting_at;
+
 static command_run install_with_all_flags(const char *name, const char *accept, const char *accept_primary,
                                           const char *accept_number) {
-    const char *arguments[10] = {"--name", name, "--application", APPLICATION_HOST};
+    const char *arguments[12] = {"--name", name, "--application", APPLICATION_HOST};
     int count = 4;
     if (accept != NULL) {
         arguments[count++] = "--accept";
@@ -164,11 +166,20 @@ static command_run install_with_all_flags(const char *name, const char *accept, 
         arguments[count++] = "--accept-number";
         arguments[count++] = accept_number;
     }
+    if (accepting_at != NULL) {
+        arguments[count++] = "--accept-at";
+        arguments[count++] = accepting_at;
+    }
     return run_install(arguments, count);
 }
 
 static command_run install_with_flags(const char *name, const char *accept, const char *accept_primary) {
     return install_with_all_flags(name, accept, accept_primary, NULL);
+}
+
+static command_run install_with_flags_at(const char *name, const char *accept_at) {
+    const char *arguments[6] = {"--name", name, "--application", APPLICATION_HOST, "--accept-at", accept_at};
+    return run_install(arguments, 6);
 }
 
 static command_run install_name(const char *name, const char *accept) {
@@ -212,7 +223,7 @@ static void installs_by_name_and_prints_the_warnings(void) {
     CHECK(exists_in(world.base.cache, "bundles/git+0000000000000000000000000000000000000005/1.0.0/plugin.json"));
     CHECK(exists_in(world.base.root, "app-home/plugin/greeter.json"));
     char *remembered = remembered_text();
-    expect_contains(remembered, "\"spisor/greeter\": \"git:0000000000000000000000000000000000000005\"", "the name is remembered");
+    expect_contains(remembered, "\"id\": \"git:0000000000000000000000000000000000000005\"", "the name is remembered");
     spisor_memory_release(remembered);
     free_run(&run);
     command_run again = install_name("spisor/greeter", NULL);
@@ -259,7 +270,7 @@ static void a_name_that_is_listed_nowhere_installs_nothing(void) {
 
 static void a_remembered_name_that_points_elsewhere_needs_the_user(void) {
     start_world("changed");
-    write_in(world.base.state, "marketplace-names.json", "{\"format\":1,\"names\":{\"spisor/greeter\":\"git:0000000000000000000000000000000000000005\"}}");
+    write_in(world.base.state, "marketplace-names.json", "{\"format\":2,\"names\":{\"spisor/greeter\":{\"id\":\"git:0000000000000000000000000000000000000005\",\"at\":[\"forge:5\"]}}}");
     list_one_marketplace(COPY_OF(ENTRY_OF("git:000000000000000000000000000000000000000b", "forge:11", "greeter")));
     command_run run = install_name("greeter", NULL);
     CHECK(run.code == 1);
@@ -280,7 +291,7 @@ static void a_remembered_name_that_points_elsewhere_needs_the_user(void) {
     CHECK(accepted.code == 0);
     CHECK(exists_in(world.base.cache, "bundles/git+000000000000000000000000000000000000000b/1.0.0/plugin.json"));
     remembered = remembered_text();
-    expect_contains(remembered, "\"spisor/greeter\": \"git:000000000000000000000000000000000000000b\"", "the accepted id replaces the old one");
+    expect_contains(remembered, "\"id\": \"git:000000000000000000000000000000000000000b\"", "the accepted id replaces the old one");
     spisor_memory_release(remembered);
     free_run(&accepted);
     finish_world(&world);
@@ -411,29 +422,33 @@ static void a_disputed_number_asks_with_its_own_flag(void) {
     fake_forge_add(21, "bee", "greeter", file)->root = "00000000000000000000000000000000000000aa";
     list_one_marketplace(COPY_OF("{\"id\":\"git:00000000000000000000000000000000000000aa\",\"at\":[\"forge:21\",\"forge:30\"],"
                                  "\"name\":\"greeter\",\"fullName\":\"alpha/greeter\"}"));
+    accepting_at = "forge:21,forge:30";
     command_run contact = install_with_flags("greeter", NULL, "forge:10");
+    CHECK(contact.code == 0);
     free_run(&contact);
     list_one_marketplace(COPY_OF("{\"id\":\"git:00000000000000000000000000000000000000aa\",\"at\":[\"forge:10\",\"forge:30\"],"
                                  "\"name\":\"greeter\",\"fullName\":\"alpha/greeter\"}"));
+    accepting_at = "forge:10,forge:30";
     command_run run = install_name("greeter", NULL);
     CHECK(run.code == 1);
     expect_contains(run.err, "the account forge:bee was confirmed as forge:20 and now answers as forge:21", "the dispute");
-    expect_contains(run.err, "--accept-number forge:21", "how to accept the number");
+    expect_contains(run.err, "--accept-number forge:bee=21", "how to accept the number");
     free_run(&run);
-    command_run wrong_flag = install_with_flags("greeter", NULL, "forge:21");
+    command_run wrong_flag = install_with_all_flags("greeter", NULL, "forge:21", "forge:gamma=21");
     CHECK(wrong_flag.code == 1);
     free_run(&wrong_flag);
-    command_run accepted = install_with_all_flags("greeter", NULL, NULL, "forge:21");
+    command_run accepted = install_with_all_flags("greeter", NULL, NULL, "forge:bee=21");
     CHECK(accepted.code == 0);
     expect_contains(accepted.out, id, "installed once the number is accepted");
     free_run(&accepted);
+    accepting_at = NULL;
     finish_world(&world);
     restore_forge();
 }
 
 static void accept_primary_does_not_accept_a_changed_name(void) {
     start_world("flags");
-    write_in(world.base.state, "marketplace-names.json", "{\"format\":1,\"names\":{\"spisor/greeter\":\"git:0000000000000000000000000000000000000005\"}}");
+    write_in(world.base.state, "marketplace-names.json", "{\"format\":2,\"names\":{\"spisor/greeter\":{\"id\":\"git:0000000000000000000000000000000000000005\",\"at\":[\"forge:5\"]}}}");
     list_one_marketplace(COPY_OF(ENTRY_OF("git:000000000000000000000000000000000000000b", "forge:11", "greeter")));
     command_run run = install_with_flags("greeter", NULL, "git:000000000000000000000000000000000000000b");
     CHECK(run.code == 1);
@@ -481,8 +496,9 @@ static void write_release(void) {
     char *index_path = joined(fixture_root, "release/weivel-index.json");
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, index_path, &url);
-    snprintf(release_json, sizeof release_json, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
-    spisor_memory_release(url);
+    index_url = url;
+    index_text = text_in(fixture_root, "release/weivel-index.json");
+    fake_forge_release_everything(index_text, index_url);
     spisor_memory_release(index_path);
 }
 
@@ -503,26 +519,42 @@ static void printed_json_escapes_every_control_character(void) {
     finish_world(&world);
 }
 
-static void run_against_the_server(void) {
-    http_route routes[] = {
-        {"/repos/o/greeter/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-        {"/repos/o/eleven/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-        {"/repos/p/greeter/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-        {"/repos/alpha/greeter/releases/latest", 200, NULL, release_json, 0, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0},
-    };
-    for (size_t index = 0; index < sizeof routes / sizeof routes[0]; index++) {
-        if (routes[index].body_length == 0 && routes[index].body != NULL && routes[index].body[0] != '\0') {
-            routes[index].body_length = strlen(routes[index].body);
-        }
-    }
-    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
-    char api_base[128];
-    snprintf(api_base, sizeof api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
-    host_marketplace_aim_lookups(api_base);
+/**
+ * A copy that keeps greeter's id and points its places at a self-listing copy of the repo is refused for a remembered
+ * name, and installs only once the user accepts those places; the remembered places are what a matching copy uses.
+ */
+static void places_swapped_under_a_remembered_name_need_the_user(void) {
+    start_world("swapped");
+    list_one_marketplace(COPY_OF(ENTRY_OF("git:0000000000000000000000000000000000000005", "forge:5", "greeter")));
+    command_run first = install_name("greeter", NULL);
+    CHECK(first.code == 0);
+    free_run(&first);
+    fake_forge_add(66, "mallory", "greeter", fake_forge_file("greeter", FAKE_HOME("mallory")))->root =
+        "0000000000000000000000000000000000000005";
+    list_one_marketplace(COPY_OF(ENTRY_OF("git:0000000000000000000000000000000000000005", "forge:66", "greeter")));
+    command_run swapped = install_name("greeter", NULL);
+    CHECK(swapped.code == 1);
+    expect_contains(swapped.err, "was installed from the places forge:5", "the remembered places");
+    expect_contains(swapped.err, "now lists it at forge:66", "the offered places");
+    expect_contains(swapped.err, "--accept-at forge:66", "how to accept them");
+    free_run(&swapped);
+    char *remembered = remembered_text();
+    expect_contains(remembered, "forge:5", "the remembered places are kept");
+    CHECK(strstr(remembered, "forge:66") == NULL);
+    spisor_memory_release(remembered);
+    command_run accepted = install_with_flags_at("greeter", "forge:66");
+    CHECK(accepted.code == 0);
+    expect_contains(accepted.out, "mallory/greeter", "installed from the accepted places");
+    free_run(&accepted);
+    list_one_marketplace(COPY_OF(ENTRY_OF("git:0000000000000000000000000000000000000005", "forge:66", "greeter")));
+    command_run matching = install_name("greeter", NULL);
+    CHECK(matching.code == 0);
+    free_run(&matching);
+    finish_world(&world);
+    restore_forge();
+}
+
+static void run_against_the_forge(void) {
     installs_by_name_and_prints_the_warnings();
     an_ambiguous_name_lists_the_qualified_forms_and_installs_nothing();
     a_name_that_is_listed_nowhere_installs_nothing();
@@ -532,11 +564,10 @@ static void run_against_the_server(void) {
     a_bare_name_that_moves_to_another_marketplace_asks();
     a_changed_primary_asks_with_the_two_flags_kept_apart();
     a_disputed_number_asks_with_its_own_flag();
+    places_swapped_under_a_remembered_name_need_the_user();
     accept_primary_does_not_accept_a_changed_name();
     answers_2_for_an_accept_without_a_name_and_for_a_name_with_a_catalog();
     printed_json_escapes_every_control_character();
-    host_marketplace_aim_lookups(NULL);
-    spisor_memory_release(http_fixture_stop(server));
 }
 
 #if !defined(_WIN32)
@@ -557,6 +588,8 @@ int main(void) {
     write_release();
     fake_forge_install();
     restore_forge();
-    run_against_the_server();
+    run_against_the_forge();
+    spisor_memory_release(index_text);
+    spisor_memory_release(index_url);
     return check_summary("install_by_name_test");
 }

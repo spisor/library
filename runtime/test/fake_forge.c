@@ -16,6 +16,8 @@ static fake_repo repos[REPO_LIMIT];
 static size_t repo_count;
 static char texts[TEXT_LIMIT][TEXT_SIZE];
 static size_t text_count;
+static const char *default_index;
+static const char *default_index_url;
 static unsigned calls;
 static unsigned calls_with_token;
 static char last_token[128];
@@ -57,7 +59,14 @@ fake_repo *fake_forge_add(uint64_t number, const char *account, const char *name
     repo->account = account;
     repo->name = name;
     repo->file = file;
+    repo->index = default_index;
+    repo->index_url = default_index_url;
     return repo;
+}
+
+void fake_forge_release_everything(const char *index, const char *url) {
+    default_index = index;
+    default_index_url = url;
 }
 
 const char *fake_forge_file(const char *name, const char *homes) {
@@ -89,6 +98,9 @@ static naula_status reach(const fake_repo *repo, naula_refusal *refusal) {
     if (repo == NULL || repo->gone) {
         return refuse(refusal, NAULA_NOT_FOUND, "not_found");
     }
+    if (repo->times_out) {
+        return refuse(refusal, NAULA_TIMED_OUT, "timed_out");
+    }
     return repo->refused_with != NULL ? refuse(refusal, NAULA_REFUSED, repo->refused_with) : NAULA_OK;
 }
 
@@ -98,7 +110,8 @@ static const char *root_of(const fake_repo *repo) {
 
 static naula_status describe(void *context, uint32_t *supported, int *anonymous_lookup) {
     (void)context;
-    *supported = NAULA_OP_LOOKUP | NAULA_OP_FIND | NAULA_OP_READ_FILE | NAULA_OP_CONTAINS | NAULA_OP_PARENT_COUNT;
+    *supported = NAULA_OP_LOOKUP | NAULA_OP_FIND | NAULA_OP_READ_FILE | NAULA_OP_CONTAINS | NAULA_OP_PARENT_COUNT |
+                 NAULA_OP_RELEASE_INDEX;
     *anonymous_lookup = 1;
     return NAULA_OK;
 }
@@ -108,19 +121,17 @@ static naula_status lookup(void *context, const char *host, uint64_t number, con
     (void)context;
     (void)host;
     note(token);
-    fake_repo *repo = by_number(number);
+    const fake_repo *repo = by_number(number);
     naula_status status = reach(repo, refusal);
     if (status != NAULA_OK) {
         return status;
     }
-    repo->lookups++;
-    int renamed = repo->renamed_to != NULL && repo->lookups > repo->lookups_before_rename;
     uint32_t size = out->size;
     memset(out, 0, sizeof *out);
     out->size = size;
     out->number = number;
     out->fork_parent = repo->fork_parent;
-    out->account = naula_memory_duplicate_text(renamed ? repo->renamed_to : repo->account);
+    out->account = naula_memory_duplicate_text(repo->account);
     out->name = naula_memory_duplicate_text(repo->name);
     out->default_branch = naula_memory_duplicate_text("main");
     if (out->account == NULL || out->name == NULL || out->default_branch == NULL) {
@@ -212,15 +223,31 @@ static naula_status list_repos(void *context, const char *host, const char *acco
 }
 
 static naula_status release_index(void *context, const char *host, uint64_t number, const char *tag,
-                                  const char *token, uint8_t **bytes, size_t *length, naula_refusal *refusal) {
+                                  const char *asset, const char *token, naula_release_index *out,
+                                  naula_refusal *refusal) {
     (void)context;
     (void)host;
-    (void)number;
-    (void)tag;
-    (void)token;
-    *bytes = NULL;
-    *length = 0;
-    return refuse(refusal, NAULA_REFUSED, "unsupported_operation");
+    note(token);
+    out->bytes = NULL;
+    out->length = 0;
+    out->url = NULL;
+    const fake_repo *repo = by_number(number);
+    naula_status status = reach(repo, refusal);
+    if (status != NAULA_OK) {
+        return status;
+    }
+    if (tag != NULL || strcmp(asset, "weivel-index.json") != 0 || repo->index == NULL) {
+        return refuse(refusal, NAULA_REFUSED, "no_index_asset");
+    }
+    out->length = strlen(repo->index);
+    out->bytes = naula_memory_allocate(out->length + 1);
+    out->url = naula_memory_duplicate_text(repo->index_url);
+    if (out->bytes == NULL || out->url == NULL) {
+        naula_release_index_release(out);
+        return NAULA_OUT_OF_MEMORY;
+    }
+    memcpy(out->bytes, repo->index, out->length + 1);
+    return NAULA_OK;
 }
 
 /** A reader only: its size ends at the first shape, so the registry asks it for no writes. */

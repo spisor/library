@@ -29,7 +29,7 @@
 const runtime_marketplace_held_value runtime_marketplace_held_values[] = {
     {LIST_SCHEMA, "required", "[\"format\",\"entries\"]"},
     {LIST_SCHEMA, "additionalProperties", "false"},
-    {LIST_SCHEMA, "properties/format/const", "1"},
+    {LIST_SCHEMA, "properties/format/const", "2"},
     {LIST_SCHEMA, "properties/entries/maxItems", "10000"},
     {LIST_SCHEMA, "properties/entries/items/required", "[\"id\",\"at\"]"},
     {LIST_SCHEMA, "properties/entries/items/additionalProperties", "false"},
@@ -41,7 +41,7 @@ const runtime_marketplace_held_value runtime_marketplace_held_values[] = {
     {LIST_SCHEMA, ENTRY_PROPERTY "categories/uniqueItems", "true"},
     {COPY_SCHEMA, "required", "[\"format\",\"built\",\"entries\"]"},
     {COPY_SCHEMA, "additionalProperties", "false"},
-    {COPY_SCHEMA, "properties/format/const", "1"},
+    {COPY_SCHEMA, "properties/format/const", "2"},
     {COPY_SCHEMA, "properties/built/pattern", BUILT_PATTERN},
     {COPY_SCHEMA, "properties/entries/maxItems", "10000"},
     {COPY_SCHEMA, "properties/entries/items/required", "[\"id\",\"at\",\"name\",\"fullName\"]"},
@@ -335,8 +335,8 @@ static int check_document_head(const cJSON *document, const char *const *allowed
         snprintf(problem, size, "the document is not an object holding only the members its schema lists");
         return 0;
     }
-    if (!cJSON_IsNumber(format) || format->valuedouble != 1) {
-        snprintf(problem, size, "format is not 1");
+    if (!cJSON_IsNumber(format) || format->valuedouble != RUNTIME_MARKETPLACE_FORMAT) {
+        snprintf(problem, size, "format is not %d", RUNTIME_MARKETPLACE_FORMAT);
         return 0;
     }
     if (!has_text_members(document, text_members, 2)) {

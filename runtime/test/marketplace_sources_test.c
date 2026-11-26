@@ -28,19 +28,19 @@
 
 #define BUILT "2026-11-10T12:00:00Z"
 #define COPY_ONE                                                                                                    \
-    "{\"format\":1,\"title\":\"One\",\"built\":\"" BUILT "\",\"entries\":["                                       \
+    "{\"format\":2,\"title\":\"One\",\"built\":\"" BUILT "\",\"entries\":["                                       \
     "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"},"   \
     "{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"],\"name\":\"weivel\",\"fullName\":\"spisor/weivel\"}]}"
 #define COPY_TWO                                                                                                    \
-    "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
+    "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":["                                                          \
     "{\"id\":\"git:0000000000000000000000000000000000000009\",\"at\":[\"forge:9\"],\"name\":\"runtime\",\"fullName\":\"other/runtime\"},"     \
     "{\"id\":\"git:000000000000000000000000000000000000000a\",\"at\":[\"forge:10\"],\"name\":\"extra\",\"fullName\":\"other/extra\"}]}"
-#define COPY_MIRROR                                                                                                     "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                              "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"runtime\",\"fullName\":\"mirror/runtime\"}]}"
+#define COPY_MIRROR                                                                                                     "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":["                                                              "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"runtime\",\"fullName\":\"mirror/runtime\"}]}"
 #define COPY_SAME_NAME                                                                                              \
-    "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":["                                                          \
+    "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":["                                                          \
     "{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"],\"name\":\"same\",\"fullName\":\"a/same\"},"                     \
     "{\"id\":\"git:0000000000000000000000000000000000000002\",\"at\":[\"forge:2\"],\"name\":\"same\",\"fullName\":\"b/same\"}]}"
-#define LIST_TEXT "{\"format\":1,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}"
+#define LIST_TEXT "{\"format\":2,\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}"
 #define HTML_TEXT "<!doctype html><html><body>not a copy</body></html>"
 #define ROUTE(path, status, body) {path, status, NULL, body, sizeof body - 1, HTTP_ROUTE_BODY_LENGTH, NULL, NULL, 0, 0}
 
@@ -278,7 +278,7 @@ static void refuses_text_that_is_not_json_and_a_broken_copy(void) {
     expect_refusal(not_json, "spisor", "not json");
     cJSON_Delete(not_json.tree);
     catalog_answer broken =
-        read_text("spisor", "{\"format\":1,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
+        read_text("spisor", "{\"format\":2,\"built\":\"" BUILT "\",\"entries\":[{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}]}");
     expect_refusal(broken, "spisor", "broken copy");
     cJSON_Delete(broken.tree);
     catalog_answer array = read_text("spisor", "[]");

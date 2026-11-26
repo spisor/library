@@ -10,6 +10,7 @@ typedef struct host_name_request {
     const char *accepted_name_id;
     const char *accepted_primary;
     const char *accepted_number;
+    const char *accepted_at;
 } host_name_request;
 
 /**
@@ -20,8 +21,9 @@ typedef struct host_name_request {
  *
  * accepted_name_id is the id the user accepted in place of the one remembered for the name, accepted_primary the
  * primary the user accepted in place of the one confirmed for the repo, and accepted_number the place the user accepted
- * as a disputed account's number; each changes nothing unless it is what is now offered, and none is ever taken for
- * another.
+ * as a disputed account's number, and accepted_at the places the user accepted in place of the ones remembered for
+ * the name; each changes nothing unless it is what is now offered, and none is ever taken for another. A remembered
+ * name installs only from the places it was remembered with.
  *
  * @implNote A name is remembered only once its install has succeeded, so a failed first install records nothing that
  * a later prompt could claim was installed. A bare name is remembered under the bare name as well as under its marketplace,

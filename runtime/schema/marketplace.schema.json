@@ -16,8 +16,8 @@
     },
     "format": {
       "description": "The version of this document's shape.",
-      "const": 1,
-      "fix": "set \"format\" to 1"
+      "const": 2,
+      "fix": "set \"format\" to 2"
     },
     "title": {
       "description": "What this marketplace is called, for a surface to show.",

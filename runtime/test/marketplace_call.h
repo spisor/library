@@ -197,15 +197,34 @@ static inline cJSON *marketplace_remember_tree(const cJSON *argument, spisor_ref
     call.marketplace = marketplace_text(argument, "marketplace");
     call.name = marketplace_text(argument, "name");
     call.id = marketplace_text(argument, "id");
+    const char *at[8];
+    const cJSON *place;
+    cJSON_ArrayForEach(place, cJSON_GetObjectItemCaseSensitive(argument, "at")) {
+        if (call.at_count < 8) {
+            at[call.at_count++] = cJSON_GetStringValue(place);
+        }
+    }
+    call.at = call.at_count == 0 ? NULL : at;
     call.accept = marketplace_text(argument, "accept");
+    call.accept_at = marketplace_text(argument, "acceptAt");
     call.check_only = cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(argument, "record")) ? 1 : 0;
     marketplace_last_status = marketplace()->remember(marketplace()->context, &call, &answer, refusal);
     if (marketplace_last_status == SPISOR_OK) {
-        static const char *const memories[] = {"", "remembered", "settled", "needsUserAcceptance"};
+        static const char *const memories[] = {"", "remembered", "settled", "needsUserAcceptance", "needsAtAcceptance"};
         tree = cJSON_CreateObject();
-        cJSON_AddTrueToObject(tree, memories[answer.memory <= 3 ? answer.memory : 0]);
+        cJSON_AddTrueToObject(tree, memories[answer.memory <= 4 ? answer.memory : 0]);
         marketplace_add_text(tree, "was", answer.was);
         marketplace_add_text(tree, "now", answer.now);
+        if (answer.memory == RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE) {
+            cJSON *was_at = cJSON_AddArrayToObject(tree, "wasAt");
+            for (size_t index = 0; index < answer.was_at_count; index++) {
+                cJSON_AddItemToArray(was_at, cJSON_CreateString(answer.was_at[index]));
+            }
+            cJSON *now_at = cJSON_AddArrayToObject(tree, "nowAt");
+            for (size_t index = 0; index < answer.now_at_count; index++) {
+                cJSON_AddItemToArray(now_at, cJSON_CreateString(answer.now_at[index]));
+            }
+        }
     }
     marketplace()->release_remember_answer(marketplace()->context, &answer);
     return tree;

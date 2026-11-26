@@ -15,7 +15,7 @@
     "usage:\n"                                                                                                        \
     "  spisor-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"       \
     "  spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <place>] "\
-    "[--accept-number <place>]\n"                                                                                     \
+    "[--accept-number <account>=<number>,...] [--accept-at <place>,...]\n"                                                                                     \
     "  spisor-host status\n"                                                                                          \
     "  spisor-host update\n"                                                                                          \
     "  spisor-host remove <host-id>\n"                                                                                \

@@ -14,9 +14,8 @@
 #include "spisor/path.h"
 
 #define STORE_FILE "marketplace-names.json"
-#define STORE_FORMAT 1
+#define STORE_FORMAT 2
 #define MESSAGE_SIZE 2048
-
 
 static cJSON *refuse(cJSON **refusal, const char *fix, const char *format, ...) {
     char message[MESSAGE_SIZE];
@@ -37,12 +36,26 @@ static int is_text(const char *text) {
     return text != NULL && text[0] != '\0';
 }
 
+static int are_places(const char *const *at, size_t count) {
+    if (at == NULL || count == 0) {
+        return 0;
+    }
+    for (size_t index = 0; index < count; index++) {
+        if (!is_text(at[index]) || strchr(at[index], ',') != NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int is_usable_request(const runtime_marketplace_remember_request *request, cJSON **refusal) {
     if (!is_text(request->state) || !runtime_is_usable_home(request->state) || !is_text(request->name) ||
-        !is_text(request->id) || (request->marketplace != NULL && !is_text(request->marketplace)) ||
-        (request->accept != NULL && !is_text(request->accept))) {
-        refuse(refusal, "pass state, name and id and, when they are known, marketplace and accept",
-               "the call carries no usable state, name or id, or a marketplace or accept that is not usable");
+        !is_text(request->id) || !are_places(request->at, request->at_count) ||
+        (request->marketplace != NULL && !is_text(request->marketplace)) ||
+        (request->accept != NULL && !is_text(request->accept)) ||
+        (request->accept_at != NULL && !is_text(request->accept_at))) {
+        refuse(refusal, "pass state, name, id and at and, when they are known, marketplace, accept and acceptAt",
+               "the call carries no usable state, name, id or at, or a marketplace, accept or acceptAt that is not usable");
         return 0;
     }
     return 1;
@@ -63,6 +76,18 @@ static cJSON *empty_store(void) {
     return store;
 }
 
+static int is_place_list(const cJSON *at) {
+    if (!cJSON_IsArray(at) || at->child == NULL) {
+        return 0;
+    }
+    for (const cJSON *place = at->child; place != NULL; place = place->next) {
+        if (!cJSON_IsString(place) || place->valuestring[0] == '\0') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int is_store(const cJSON *store) {
     const cJSON *format = cJSON_GetObjectItemCaseSensitive(store, "format");
     const cJSON *names = cJSON_GetObjectItemCaseSensitive(store, "names");
@@ -70,7 +95,8 @@ static int is_store(const cJSON *store) {
         return 0;
     }
     for (const cJSON *entry = names->child; entry != NULL; entry = entry->next) {
-        if (!cJSON_IsString(entry)) {
+        if (!cJSON_IsObject(entry) || text_of(entry, "id") == NULL ||
+            !is_place_list(cJSON_GetObjectItemCaseSensitive(entry, "at"))) {
             return 0;
         }
     }
@@ -97,8 +123,11 @@ static cJSON *loaded_store(const char *path, cJSON **refusal) {
     }
     if (!is_store(store)) {
         cJSON_Delete(store);
-        return refuse(refusal, "repair the file or move it away, then run the command again; it is left as it was",
-                      "%s is not a record of marketplace names: it is not JSON of {format: 1, names: {name: id}}", path);
+        return refuse(refusal,
+                      "remove the file, whose names are then remembered again on their next install, or repair it; it "
+                      "is left as it was",
+                      "%s is not a record of marketplace names: it is not JSON of {format: 2, names: {name: {id, at}}}",
+                      path);
     }
     return store;
 }
@@ -137,18 +166,9 @@ static char *qualified_name(const runtime_marketplace_remember_request *request)
     return key;
 }
 
-static cJSON *remembered_answer(void) {
+static cJSON *flag_answer(const char *flag) {
     cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddTrueToObject(answer, "remembered") == NULL) {
-        cJSON_Delete(answer);
-        return NULL;
-    }
-    return answer;
-}
-
-static cJSON *settled_check_answer(void) {
-    cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddTrueToObject(answer, "settled") == NULL) {
+    if (answer == NULL || cJSON_AddTrueToObject(answer, flag) == NULL) {
         cJSON_Delete(answer);
         return NULL;
     }
@@ -156,37 +176,134 @@ static cJSON *settled_check_answer(void) {
 }
 
 static cJSON *needs_acceptance_answer(const char *was, const char *now) {
-    cJSON *answer = cJSON_CreateObject();
-    if (answer == NULL || cJSON_AddTrueToObject(answer, "needsUserAcceptance") == NULL ||
-        cJSON_AddStringToObject(answer, "was", was) == NULL || cJSON_AddStringToObject(answer, "now", now) == NULL) {
+    cJSON *answer = flag_answer("needsUserAcceptance");
+    if (answer != NULL &&
+        (cJSON_AddStringToObject(answer, "was", was) == NULL || cJSON_AddStringToObject(answer, "now", now) == NULL)) {
         cJSON_Delete(answer);
         return NULL;
     }
     return answer;
 }
 
-static int records_id(cJSON *store, const char *key, const char *id) {
+static cJSON *places_json(const char *const *at, size_t count) {
+    cJSON *places = cJSON_CreateArray();
+    for (size_t index = 0; places != NULL && index < count; index++) {
+        cJSON *place = cJSON_CreateString(at[index]);
+        if (place == NULL || !cJSON_AddItemToArray(places, place)) {
+            cJSON_Delete(place);
+            cJSON_Delete(places);
+            return NULL;
+        }
+    }
+    return places;
+}
+
+static cJSON *needs_at_acceptance_answer(const cJSON *was, const runtime_marketplace_remember_request *request) {
+    cJSON *answer = flag_answer("needsAtAcceptance");
+    cJSON *was_copy = answer == NULL ? NULL : cJSON_Duplicate(was, 1);
+    cJSON *now = was_copy == NULL ? NULL : places_json(request->at, request->at_count);
+    if (now == NULL || !cJSON_AddItemToObject(answer, "wasAt", was_copy)) {
+        cJSON_Delete(now);
+        cJSON_Delete(was_copy);
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    if (!cJSON_AddItemToObject(answer, "nowAt", now)) {
+        cJSON_Delete(now);
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
+}
+
+static int is_same_at(const cJSON *remembered, const char *const *at, size_t count) {
+    size_t index = 0;
+    for (const cJSON *place = remembered->child; place != NULL; place = place->next, index++) {
+        if (index == count || strcmp(place->valuestring, at[index]) != 0) {
+            return 0;
+        }
+    }
+    return index == count;
+}
+
+/** Whether `accepted`, places joined by commas, is the offered `at` exactly. */
+static int is_accepted_at(const char *accepted, const char *const *at, size_t count) {
+    const char *cursor = accepted;
+    for (size_t index = 0; index < count; index++) {
+        size_t length = strlen(at[index]);
+        if (strncmp(cursor, at[index], length) != 0 || (cursor[length] != ',' && cursor[length] != '\0')) {
+            return 0;
+        }
+        cursor += length;
+        if (*cursor == ',') {
+            cursor++;
+        } else if (index + 1 < count) {
+            return 0;
+        }
+    }
+    return *cursor == '\0';
+}
+
+static int records_entry(cJSON *store, const char *key, const runtime_marketplace_remember_request *request) {
     cJSON *names = cJSON_GetObjectItemCaseSensitive(store, "names");
     cJSON_DeleteItemFromObjectCaseSensitive(names, key);
-    return cJSON_AddStringToObject(names, key, id) != NULL;
+    cJSON *entry = cJSON_AddObjectToObject(names, key);
+    cJSON *at = entry == NULL || cJSON_AddStringToObject(entry, "id", request->id) == NULL
+                    ? NULL
+                    : places_json(request->at, request->at_count);
+    if (at == NULL || !cJSON_AddItemToObject(entry, "at", at)) {
+        cJSON_Delete(at);
+        return 0;
+    }
+    return 1;
+}
+
+/** NULL when the remembered entry settles the request; otherwise the answer asking the user, or NULL with *asked. */
+static cJSON *question_for(const cJSON *remembered, const runtime_marketplace_remember_request *request, int *asked,
+                           int *changed) {
+    *asked = 0;
+    *changed = remembered == NULL;
+    if (remembered == NULL) {
+        return NULL;
+    }
+    const char *was = text_of(remembered, "id");
+    const cJSON *was_at = cJSON_GetObjectItemCaseSensitive(remembered, "at");
+    if (strcmp(was, request->id) != 0) {
+        if (request->accept != NULL && strcmp(request->accept, request->id) == 0) {
+            *changed = 1;
+            return NULL;
+        }
+        *asked = 1;
+        return needs_acceptance_answer(was, request->id);
+    }
+    if (!is_same_at(was_at, request->at, request->at_count)) {
+        if (request->accept_at != NULL && is_accepted_at(request->accept_at, request->at, request->at_count)) {
+            *changed = 1;
+            return NULL;
+        }
+        *asked = 1;
+        return needs_at_acceptance_answer(was_at, request);
+    }
+    return NULL;
 }
 
 static cJSON *settled_answer(cJSON *store, const runtime_marketplace_remember_request *request, const char *key,
                              const char *path, cJSON **refusal) {
-    const char *was = text_of(cJSON_GetObjectItemCaseSensitive(store, "names"), key);
-    int is_remembered = was != NULL && strcmp(was, request->id) == 0;
-    int is_accepted = was != NULL && request->accept != NULL && strcmp(request->accept, request->id) == 0;
-    if (was != NULL && !is_remembered && !is_accepted) {
-        return needs_acceptance_answer(was, request->id);
+    const cJSON *remembered = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(store, "names"), key);
+    int asked = 0;
+    int changed = 0;
+    cJSON *question = question_for(remembered, request, &asked, &changed);
+    if (asked) {
+        return question;
     }
     if (!request->is_recording) {
-        return settled_check_answer();
+        return flag_answer("settled");
     }
-    cJSON *answer = remembered_answer();
-    if (answer == NULL || is_remembered) {
+    cJSON *answer = flag_answer("remembered");
+    if (answer == NULL || !changed) {
         return answer;
     }
-    if (!records_id(store, key, request->id)) {
+    if (!records_entry(store, key, request)) {
         cJSON_Delete(answer);
         return NULL;
     }

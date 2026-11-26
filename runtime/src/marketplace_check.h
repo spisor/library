@@ -5,6 +5,9 @@
 
 #include "cJSON.h"
 
+/** The format of a marketplace list and of a copy, the `format` const of both schemas. */
+#define RUNTIME_MARKETPLACE_FORMAT 2
+
 /** The entry limit of marketplace.schema.json and marketplace-copy.schema.json. */
 #define RUNTIME_MARKETPLACE_MAXIMUM_ENTRIES 10000
 

@@ -36,7 +36,7 @@
 #define APPLICATION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_application_answer, storage)
 #define REGISTER_LOADER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_register_loader_argument, version)
 #define REGISTER_LOADER_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_register_loader_answer, storage)
-#define BY_ID_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_argument, api_base)
+#define BY_ID_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_argument, accept_number)
 #define BY_ID_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_answer, storage)
 #define ECOSYSTEM_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_argument, platform)
 #define ECOSYSTEM_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_answer, storage)
@@ -787,17 +787,31 @@ static uint32_t is_true(const cJSON *answered, const char *name) {
     return cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, name)) ? 1u : 0u;
 }
 
-#define BY_ID_TEXT_COUNT 11
+#define BY_ID_TEXT_COUNT 9
+
+static spisor_status fill_dispute(void **storage, const cJSON *json, void *row) {
+    runtime_identity_dispute *dispute = row;
+    spisor_status status = copy_member(storage, json, "account", &dispute->account);
+    if (status == SPISOR_OK) {
+        status = copy_member(storage, json, "recordedNumber", &dispute->recorded_number);
+    }
+    if (status == SPISOR_OK) {
+        status = copy_member(storage, json, "offeredNumber", &dispute->offered_number);
+    }
+    return status == SPISOR_OK ? copy_member(storage, json, "accept", &dispute->accept) : status;
+}
+
+static spisor_status fill_rows(void **storage, const cJSON *array, size_t width,
+                               spisor_status (*fill)(void **storage, const cJSON *json, void *row), void **rows,
+                               size_t *count);
 
 static spisor_status fill_by_id(const cJSON *answered, void *filled) {
-    static const char *const names[BY_ID_TEXT_COUNT] = {
-        "id",           "name",           "fullName",      "primary", "recordedPrimary", "disputedAccount",
-        "recordedNumber", "offeredNumber", "version",       "commit",  "sha256"};
+    static const char *const names[BY_ID_TEXT_COUNT] = {"id",      "name",    "fullName", "primary", "recordedPrimary",
+                                                        "version", "commit",  "sha256",   "cacheProblem"};
     runtime_install_by_id_answer *answer = filled;
-    const char **copies[BY_ID_TEXT_COUNT] = {&answer->id,          &answer->name,           &answer->full_name,
-                                             &answer->primary,     &answer->recorded_primary, &answer->disputed_account,
-                                             &answer->recorded_number, &answer->offered_number, &answer->version,
-                                             &answer->commit,      &answer->sha256};
+    const char **copies[BY_ID_TEXT_COUNT] = {&answer->id,      &answer->name,   &answer->full_name,
+                                             &answer->primary, &answer->recorded_primary, &answer->version,
+                                             &answer->commit,  &answer->sha256, &answer->cache_problem};
     spisor_status status = runtime_start_storage(&answer->storage);
     for (size_t index = 0; status == SPISOR_OK && index < BY_ID_TEXT_COUNT; index++) {
         status = copy_member(&answer->storage, answered, names[index], copies[index]);
@@ -806,6 +820,11 @@ static spisor_status fill_by_id(const cJSON *answered, void *filled) {
         !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "homes"), &answer->homes,
                                &answer->home_count)) {
         status = SPISOR_OUT_OF_MEMORY;
+    }
+    const cJSON *disputes = cJSON_GetObjectItemCaseSensitive(answered, "disputes");
+    if (status == SPISOR_OK && disputes != NULL) {
+        status = fill_rows(&answer->storage, disputes, sizeof(runtime_identity_dispute), fill_dispute,
+                           (void **)&answer->disputes, &answer->dispute_count);
     }
     answer->needs_user_acceptance = is_true(answered, "needsUserAcceptance");
     answer->needs_number_acceptance = is_true(answered, "needsNumberAcceptance");
@@ -823,9 +842,8 @@ static spisor_status check_by_id_id(const char *id, spisor_refusal *refusal) {
 
 /** Whether every optional text of the argument is NULL or not empty, and `at` holds texts. */
 static int are_optional_texts(const runtime_install_by_id_argument *argument) {
-    const char *const optional[4] = {argument->version, argument->accept_primary, argument->accept_number,
-                                     argument->api_base};
-    for (size_t index = 0; index < 4; index++) {
+    const char *const optional[3] = {argument->version, argument->accept_primary, argument->accept_number};
+    for (size_t index = 0; index < 3; index++) {
         if (optional[index] != NULL && optional[index][0] == '\0') {
             return 0;
         }
@@ -839,7 +857,7 @@ static spisor_status serve_by_id(const runtime_install_by_id_argument *argument,
     cJSON *operation_refusal = NULL;
     runtime_install_by_id_request request = {argument->id,     argument->at,          argument->at_count,
                                              argument->cache,  argument->plugin_directory, argument->version,
-                                             argument->accept_primary, argument->accept_number, argument->api_base};
+                                             argument->accept_primary, argument->accept_number};
     cJSON *answered = runtime_install_by_id(&request, fill_by_id, answer, &operation_refusal);
     spisor_status status = SPISOR_OK;
     if (answered == NULL) {
@@ -862,7 +880,7 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
     spisor_status status;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, BY_ID_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->home_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, BY_ID_ANSWER_SHAPE, answer->home_count | answer->dispute_count)) {
         return spisor_refuse_shape(refusal, "install's by_id");
     }
     places[0] = argument->cache;
@@ -872,7 +890,7 @@ static spisor_status by_id(void *context, const runtime_install_by_id_argument *
         status = check_by_id_id(argument->id, refusal);
     }
     if (status == SPISOR_OK && (!are_optional_texts(argument) || (argument->at_count > 0 && argument->at == NULL))) {
-        status = runtime_refuse_member(refusal, "at, version, accepted primary, accepted number or api base", HEADER);
+        status = runtime_refuse_member(refusal, "at, version, accepted primary or accepted number", HEADER);
     }
     return status != SPISOR_OK ? status : serve_by_id(argument, answer, refusal);
 }

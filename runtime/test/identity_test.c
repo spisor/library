@@ -232,8 +232,9 @@ static void an_unknown_provider_is_refused_with_the_plugin_fix(void) {
     start_forge("unknown-provider");
     const char *at[] = {"nowhere:7", NULL};
     resolve_call call = resolve_with(FAKE_ID, at, NULL, NULL);
-    check_refused(call.status, SPISOR_REFUSED, &call.refusal, "install a plugin that provides a resolver",
-                  "an unknown provider");
+    CHECK(call.status == SPISOR_REFUSED && call.refusal.fix != NULL &&
+          strstr(call.refusal.fix, "install a plugin that provides a resolver") != NULL);
+    CHECK(call.refusal.detail != NULL && strstr(call.refusal.detail, "no provider is installed for nowhere") != NULL);
     release_resolve_call(&call);
 }
 
@@ -299,16 +300,19 @@ static void a_disputed_number_needs_the_user_until_accepted(void) {
     const char *at[] = {"forge:10", "forge:30", NULL};
     a_disagreeing_lineage("number");
     resolve_call asked = resolve_with(FAKE_ID, at, NULL, NULL);
-    CHECK(asked.status == SPISOR_OK && asked.answer.needs_number_acceptance == 1);
-    check_text(asked.answer.disputed_account, "forge:bee", "disputed account");
-    check_text(asked.answer.recorded_number, "forge:20", "recorded number");
-    check_text(asked.answer.offered_number, "forge:21", "offered number");
+    CHECK(asked.status == SPISOR_OK && asked.answer.needs_number_acceptance == 1 && asked.answer.dispute_count == 1);
+    if (asked.answer.dispute_count == 1) {
+        check_text(asked.answer.disputes[0].account, "forge:bee", "disputed account");
+        check_text(asked.answer.disputes[0].recorded_number, "forge:20", "recorded number");
+        check_text(asked.answer.disputes[0].offered_number, "forge:21", "offered number");
+        check_text(asked.answer.disputes[0].accept, "forge:bee=21", "how to accept it");
+    }
     CHECK(asked.answer.home_count == 0 && asked.answer.needs_user_acceptance == 0);
     release_resolve_call(&asked);
-    resolve_call wrong = resolve_with(FAKE_ID, at, NULL, "forge:22");
+    resolve_call wrong = resolve_with(FAKE_ID, at, NULL, "forge:gamma=21,forge:bee=22");
     CHECK(wrong.status == SPISOR_OK && wrong.answer.needs_number_acceptance == 1);
     release_resolve_call(&wrong);
-    resolve_call accepted = resolve_with(FAKE_ID, at, NULL, "forge:21");
+    resolve_call accepted = resolve_with(FAKE_ID, at, NULL, "forge:gamma=30,forge:bee=21");
     if (resolved(&accepted, "accepted number")) {
         int has_bee = 0;
         for (size_t index = 0; index < accepted.answer.home_count; index++) {

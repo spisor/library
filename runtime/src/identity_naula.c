@@ -10,6 +10,7 @@
 
 #define GITHUB_WORD "github"
 #define GITHUB_HOST "github.com"
+#define ACCEPT_NUMBER_FIX "accept a number as <provider>[@host]:<account>=<number>, several joined by commas"
 #define AT_FIX "record each place as <provider>[@host]:<number>, web:<domain> or a git url"
 
 static runtime_mutex registry_lock = RUNTIME_MUTEX_INIT;
@@ -91,13 +92,53 @@ int runtime_identity_is_token_text(const char *text) {
     return 1;
 }
 
-/** What the session's callbacks read and record: the request, the accepted places as at writes them, the declined. */
+/** What the session's callbacks read and record: the request, the accepted primary as at writes it, the declined. */
 typedef struct session_context {
     const runtime_identity_request *request;
     char accepted_primary[RUNTIME_PLACE_TEXT_SIZE];
-    char accepted_number[RUNTIME_PLACE_TEXT_SIZE];
     runtime_identity_acceptance *acceptance;
 } session_context;
+
+int runtime_identity_needs_the_user(naula_status status, const naula_refusal *refusal,
+                                    const runtime_identity_acceptance *acceptance) {
+    if (acceptance->primary_needed && status == NAULA_REFUSED && strcmp(refusal->code, "primary-changed") == 0) {
+        return 1;
+    }
+    int refused_for_the_number = status == NAULA_REFUSED && refusal->fix != NULL &&
+                                 strstr(refusal->fix, "accept_number") != NULL;
+    return acceptance->dispute_count > 0 && (status == NAULA_OK || refused_for_the_number);
+}
+
+/** Whether `accepted`, a comma-separated list, holds `item` whole. */
+static int lists(const char *accepted, const char *item) {
+    size_t length = strlen(item);
+    for (const char *at = accepted; at != NULL && *at != '\0'; at = strchr(at, ',') == NULL ? NULL : strchr(at, ',') + 1) {
+        size_t span = strcspn(at, ",");
+        if (span == length && strncmp(at, item, length) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** Whether every item of a comma-separated list is `<account place>=<number>` with an account and digits. */
+static int is_accept_number_list(const char *text) {
+    for (const char *at = text;; at += strcspn(at, ",") + 1) {
+        size_t span = strcspn(at, ",");
+        const char *equals = memchr(at, '=', span);
+        if (equals == NULL || equals == at || equals + 1 == at + span) {
+            return 0;
+        }
+        for (const char *digit = equals + 1; digit < at + span; digit++) {
+            if (*digit < '0' || *digit > '9') {
+                return 0;
+            }
+        }
+        if (at[span] == '\0') {
+            return 1;
+        }
+    }
+}
 
 static int equals_ignoring_case(const char *left, const char *right) {
     for (; *left != '\0' && *right != '\0'; left++, right++) {
@@ -140,19 +181,31 @@ static int accept_primary(void *context, const char *id, const naula_place *was,
     return 0;
 }
 
+static int is_kept(const runtime_identity_acceptance *acceptance, const char *accept, const char *recorded) {
+    for (size_t index = 0; index < acceptance->dispute_count; index++) {
+        if (strcmp(acceptance->disputes[index].accept, accept) == 0 &&
+            strcmp(acceptance->disputes[index].recorded_number, recorded) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int accept_number(void *context, const char *id, const naula_home *account, uint64_t was, uint64_t becomes) {
     session_context *session = context;
-    char offered[RUNTIME_PLACE_TEXT_SIZE];
+    runtime_identity_disputed dispute;
     (void)id;
-    number_text(account, becomes, offered, sizeof offered);
-    if (session->accepted_number[0] != '\0' && strcmp(offered, session->accepted_number) == 0) {
+    account_text(account, dispute.account, sizeof dispute.account);
+    snprintf(dispute.accept, sizeof dispute.accept, "%s=%llu", dispute.account, (unsigned long long)becomes);
+    if (session->request->accept_number != NULL && lists(session->request->accept_number, dispute.accept)) {
         return 1;
     }
+    number_text(account, was, dispute.recorded_number, sizeof dispute.recorded_number);
+    number_text(account, becomes, dispute.offered_number, sizeof dispute.offered_number);
     runtime_identity_acceptance *acceptance = session->acceptance;
-    acceptance->number_needed = 1;
-    account_text(account, acceptance->disputed_account, sizeof acceptance->disputed_account);
-    number_text(account, was, acceptance->recorded_number, sizeof acceptance->recorded_number);
-    snprintf(acceptance->offered_number, sizeof acceptance->offered_number, "%s", offered);
+    if (!is_kept(acceptance, dispute.accept, dispute.recorded_number) && acceptance->dispute_count < RUNTIME_DISPUTE_LIMIT) {
+        acceptance->disputes[acceptance->dispute_count++] = dispute;
+    }
     return 0;
 }
 
@@ -247,9 +300,9 @@ naula_status runtime_identity_resolve(const runtime_identity_request *request, n
     context.acceptance = acceptance;
     naula_status status = normalise_accepted(request->accept_primary, "the accepted primary", context.accepted_primary,
                                              sizeof context.accepted_primary, refusal);
-    if (status == NAULA_OK) {
-        status = normalise_accepted(request->accept_number, "the accepted number", context.accepted_number,
-                                    sizeof context.accepted_number, refusal);
+    if (status == NAULA_OK && request->accept_number != NULL && !is_accept_number_list(request->accept_number)) {
+        status = refuse_malformed(refusal, "invalid_accepted", ACCEPT_NUMBER_FIX, "the accepted number",
+                                  request->accept_number);
     }
     naula_place *places = status == NAULA_OK ? places_of(request, &status, refusal) : NULL;
     naula_session *session = NULL;

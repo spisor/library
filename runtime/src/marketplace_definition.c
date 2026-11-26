@@ -304,20 +304,26 @@ static spisor_status fill_remember(const cJSON *answered, void *answer_space) {
     runtime_marketplace_remember_answer *answer = answer_space;
     if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "needsUserAcceptance"))) {
         answer->memory = RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE;
+    } else if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "needsAtAcceptance"))) {
+        answer->memory = RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE;
     } else {
         answer->memory = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "settled"))
                              ? RUNTIME_MARKETPLACE_SETTLED
                              : RUNTIME_MARKETPLACE_REMEMBERED;
     }
     if (!runtime_storage_copy(&answer->storage, text_of(answered, "was"), &answer->was) ||
-        !runtime_storage_copy(&answer->storage, text_of(answered, "now"), &answer->now)) {
+        !runtime_storage_copy(&answer->storage, text_of(answered, "now"), &answer->now) ||
+        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "wasAt"), &answer->was_at,
+                               &answer->was_at_count) ||
+        !runtime_storage_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "nowAt"), &answer->now_at,
+                               &answer->now_at_count)) {
         return SPISOR_OUT_OF_MEMORY;
     }
     return SPISOR_OK;
 }
 
 /**
- * @implNote was and now are copied only for NEEDS_USER_ACCEPTANCE, which writes nothing, so a remember that wrote its
+ * @implNote was, now and the places are copied only for a question, which writes nothing, so a remember that wrote its
  * record allocates nothing after it.
  */
 static spisor_status remember(void *context, const runtime_marketplace_remember_argument *argument,
@@ -327,17 +333,19 @@ static spisor_status remember(void *context, const runtime_marketplace_remember_
     cJSON *answered;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, REMEMBER_SHAPE) ||
-        !SPISOR_IS_EMPTY_ANSWER(answer, REMEMBER_ANSWER_SHAPE)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, REMEMBER_ANSWER_SHAPE, answer->was_at_count | answer->now_at_count)) {
         return spisor_refuse_shape(refusal, "marketplace's remember");
     }
-    if (argument->state == NULL || argument->name == NULL || argument->id == NULL) {
-        return refuse_missing(refusal, "state, name or id");
+    if (argument->state == NULL || argument->name == NULL || argument->id == NULL || argument->at == NULL ||
+        argument->at_count == 0) {
+        return refuse_missing(refusal, "state, name, id or at");
     }
     if (!runtime_is_usable_home(argument->state)) {
         return runtime_refuse_place(refusal, "state");
     }
-    request = (runtime_marketplace_remember_request){argument->state, argument->marketplace, argument->name,
-                                                     argument->id,    argument->accept,      argument->check_only == 0};
+    request = (runtime_marketplace_remember_request){argument->state,    argument->marketplace, argument->name,
+                                                     argument->id,       argument->at,          argument->at_count,
+                                                     argument->accept,   argument->accept_at,   argument->check_only == 0};
     answered = runtime_marketplace_remember(&request, &operation_refusal);
     return runtime_serve_answered(answered, operation_refusal, fill_remember, answer, REMEMBER_ANSWER_SHAPE, refusal);
 }

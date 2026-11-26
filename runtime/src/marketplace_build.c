@@ -478,7 +478,7 @@ static cJSON *copied_entries(const runtime_marketplace_build_request *request, c
 static cJSON *copy_of(const runtime_marketplace_build_request *request, cJSON *entries) {
     cJSON *copy = cJSON_CreateObject();
     const cJSON *title = cJSON_GetObjectItemCaseSensitive(request->list, "title");
-    if (copy == NULL || cJSON_AddNumberToObject(copy, "format", 1) == NULL ||
+    if (copy == NULL || cJSON_AddNumberToObject(copy, "format", RUNTIME_MARKETPLACE_FORMAT) == NULL ||
         (title != NULL && cJSON_AddStringToObject(copy, "title", title->valuestring) == NULL) ||
         cJSON_AddStringToObject(copy, "built", request->built) == NULL || !cJSON_AddItemToObject(copy, "entries", entries)) {
         cJSON_Delete(copy);

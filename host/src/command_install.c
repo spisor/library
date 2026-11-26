@@ -177,7 +177,8 @@ static int install_through(const host_context *context, const cJSON *sources, co
 #define OPTION_ACCEPT 4
 #define OPTION_ACCEPT_PRIMARY 5
 #define OPTION_ACCEPT_NUMBER 6
-#define OPTION_COUNT 7
+#define OPTION_ACCEPT_AT 7
+#define OPTION_COUNT 8
 
 static int installs_from_catalog(const host_option *options) {
     const char *catalog = host_last_value(&options[OPTION_CATALOG]);
@@ -214,13 +215,15 @@ static int is_given(const host_option *option) {
 
 static int is_by_name(const host_option *options) {
     return is_given(&options[OPTION_NAME]) || is_given(&options[OPTION_ACCEPT]) ||
-           is_given(&options[OPTION_ACCEPT_PRIMARY]) || is_given(&options[OPTION_ACCEPT_NUMBER]);
+           is_given(&options[OPTION_ACCEPT_PRIMARY]) || is_given(&options[OPTION_ACCEPT_NUMBER]) ||
+           is_given(&options[OPTION_ACCEPT_AT]);
 }
 
 /** The misuse --name's other flags are in, or NULL when there is none. */
 static const char *by_name_misuse(const host_option *options) {
     if (!is_given(&options[OPTION_NAME])) {
-        return "--accept, --accept-primary and --accept-number are only meaningful with --name <[marketplace/]name>";
+        return "--accept, --accept-primary, --accept-number and --accept-at are only meaningful with --name "
+               "<[marketplace/]name>";
     }
     if (is_given(&options[OPTION_CATALOG]) || is_given(&options[OPTION_PLUGIN])) {
         return "--name installs from the marketplaces in the settings and takes no --catalog or --plugin";
@@ -238,7 +241,7 @@ static int installs_by_name(const host_option *options) {
     }
     host_name_request request = {host_last_value(&options[OPTION_NAME]), host_last_value(&options[OPTION_APPLICATION]),
                                  host_last_value(&options[OPTION_ACCEPT]), host_last_value(&options[OPTION_ACCEPT_PRIMARY]),
-                                 host_last_value(&options[OPTION_ACCEPT_NUMBER])};
+                                 host_last_value(&options[OPTION_ACCEPT_NUMBER]), host_last_value(&options[OPTION_ACCEPT_AT])};
     host_context context;
     cJSON *refusal = NULL;
     int code = host_open_context(&context, &refusal) ? host_install_by_name(&context, &request) : host_refuse(refusal);
@@ -247,7 +250,7 @@ static int installs_by_name(const host_option *options) {
 }
 
 int host_command_install(int count, char **arguments) {
-    host_option options[OPTION_COUNT] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}, {"name", NULL}, {"accept", NULL}, {"accept-primary", NULL}, {"accept-number", NULL}};
+    host_option options[OPTION_COUNT] = {{"catalog", NULL}, {"plugin", NULL}, {"application", NULL}, {"name", NULL}, {"accept", NULL}, {"accept-primary", NULL}, {"accept-number", NULL}, {"accept-at", NULL}};
     char *problem = NULL;
     int code = HOST_EXIT_DONE;
     if (!host_parse_options(count, arguments, options, OPTION_COUNT, NULL, &problem)) {

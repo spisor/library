@@ -68,7 +68,7 @@
 #define TIME "2026-10-27T19:34:53.123Z"
 #define WRONG_ANSWER ((spisor_status)99)
 #define MARKETPLACE_COPY                                                                                           \
-    "{\"format\":1,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":["                                              \
+    "{\"format\":2,\"built\":\"2026-11-10T12:00:00Z\",\"entries\":["                                              \
     "{\"id\":\"" FAKE_ID "\",\"at\":[\"forge:5\"],\"name\":\"runtime\",\"fullName\":\"spisor/runtime\"}]}"
 
 typedef struct scratch {
@@ -671,6 +671,9 @@ static spisor_status remember_a_name(void) {
     argument.marketplace = "spisor";
     argument.name = "calendar";
     argument.id = FAKE_ID;
+    static const char *const at[1] = {"forge:5"};
+    argument.at = at;
+    argument.at_count = 1;
     status = marketplace->remember(marketplace->context, &argument, &answer, &refusal);
     status = empty_unless_answered(status, &answer, sizeof answer);
     marketplace->release_remember_answer(marketplace->context, &answer);
@@ -1675,8 +1678,6 @@ static void every_cache_and_catalog_operation(void) {
     "\"dist/index.js\":{\"url\":\"index.js\",\"sha256\":"                                                          \
     "\"9f085b1079ab38f776bbb3930dfd067a838ca3e0483aff8625f88837e8ed964c\",\"size\":18}}}}}"
 
-static char by_id_api_base[64];
-
 static void a_release_to_install(void) {
     char release[1300];
     under_base(release, sizeof release, "release");
@@ -1705,7 +1706,6 @@ static spisor_status install_by_id(void) {
     argument.at_count = 1;
     argument.cache = cache_place;
     argument.plugin_directory = plugins;
-    argument.api_base = by_id_api_base;
     spisor_status status = install->by_id(install->context, &argument, &answer, &refusal);
     if (status == SPISOR_OK && (!installed_by_id() || answer.version == NULL || strcmp(answer.version, "1.0.0") != 0)) {
         status = WRONG_ANSWER;
@@ -1716,13 +1716,17 @@ static spisor_status install_by_id(void) {
     return status;
 }
 
-/** The release the loopback fake answers for the fake forge's repo, its index a file under the base. */
-static void release_json_of(char *json, size_t capacity) {
+/** Gives the fake forge's repos a latest release offering RELEASE_INDEX at its file under the base. */
+static void release_the_forge_repos(void) {
+    static char url[4200];
     char index[1300];
-    char url[4200];
     under_base(index, sizeof index, "release/weivel-index.json");
     file_url_of(index, url, sizeof url);
-    snprintf(json, capacity, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
+    fake_forge_release_everything(RELEASE_INDEX, url);
+    fake_forge_reset();
+    const char *forge_file = fake_forge_file("greeter", FAKE_HOME("alpha") "," FAKE_HOME("bee"));
+    fake_forge_add(5, "alpha", "greeter", forge_file);
+    fake_forge_add(6, "bee", "greeter", forge_file);
 }
 
 /** A catalog listing the plugin p, whose one file is source.txt, and the file itself. */
@@ -1809,23 +1813,11 @@ static spisor_status install_the_ecosystem(void) {
 }
 
 static void every_install_operation(void) {
-    static char release_json[4400];
-    release_json_of(release_json, sizeof release_json);
-    http_route routes[] = {
-        {"/repos/alpha/greeter/releases/latest", 200, NULL, release_json, strlen(release_json), HTTP_ROUTE_BODY_LENGTH,
-         NULL, NULL, 0, 0},
-    };
-    http_fixture *server = http_fixture_start(routes, sizeof routes / sizeof routes[0]);
-    CHECK(server != NULL);
-    if (server == NULL) {
-        return;
-    }
+    release_the_forge_repos();
     naula_fetch_allow_plain_http(1);
-    snprintf(by_id_api_base, sizeof by_id_api_base, "http://127.0.0.1:%u", (unsigned)http_fixture_port(server));
     failure_case by_id = {"install's by_id", install_by_id, a_release_to_install, NULL, installed_by_id, 0};
     every_failure_of(&by_id);
     naula_fetch_allow_plain_http(0);
-    spisor_memory_release(http_fixture_stop(server));
     failure_case ecosystem = {"install's ecosystem", install_the_ecosystem, a_catalog_with_one_plugin, NULL,
                               recorded_the_run, 1};
     every_failure_of(&ecosystem);

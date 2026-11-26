@@ -11,7 +11,6 @@
 #include "install_by_id.h"
 #include "install_warning_report.h"
 #include "marketplace_copies.h"
-#include "marketplace_lookup.h"
 #include "marketplace_memory.h"
 #include "marketplace_name_lookup.h"
 #include "runtime/install.h"
@@ -20,6 +19,7 @@
 
 #define NO_MARKETPLACE_FIX "list marketplaces in the portable settings.json as marketplaces: [{id, url}], or fix the ones refused above"
 #define RUN_AGAIN_FIX "run the command again"
+#define RUNTIME_DISPUTE_SHOWN 8
 
 /** The name as it was found: which marketplace gave which id and places, and how the user asked for it. */
 typedef struct found_name {
@@ -93,15 +93,61 @@ static int refuse_changed_primary(const char *name, const char *application,
     return refuse_with_fix_parts(parts, 5, fix_parts, 8);
 }
 
+/** The `count` texts joined by `separator`, freed; NULL when memory runs out. */
+static char *joined_texts(const char *const *texts, size_t count, const char *separator) {
+    char *joined = runtime_cache_text((const char *const[]){""}, 1);
+    for (size_t index = 0; joined != NULL && index < count; index++) {
+        const char *parts[3] = {joined, index == 0 ? "" : separator, texts[index]};
+        char *longer = runtime_cache_text(parts, 3);
+        spisor_memory_release(joined);
+        joined = longer;
+    }
+    return joined;
+}
+
 static int refuse_changed_number(const char *name, const char *application,
                                  const runtime_install_by_id_answer *answer) {
-    const char *offered = answer->offered_number;
-    const char *parts[7] = {name, ": the account ", answer->disputed_account, " was confirmed as ", answer->recorded_number,
-                            " and now answers as ", offered};
-    const char *fix_parts[8] = {"check that ", answer->disputed_account,
-                                " still belongs to the plugin's owner, then run spisor-host install --name ", name,
-                                " --application ", application, " --accept-number ", offered};
-    return refuse_with_fix_parts(parts, 7, fix_parts, 8);
+    const char *shown[RUNTIME_DISPUTE_SHOWN];
+    const char *accepts[RUNTIME_DISPUTE_SHOWN];
+    size_t count = answer->dispute_count < RUNTIME_DISPUTE_SHOWN ? answer->dispute_count : RUNTIME_DISPUTE_SHOWN;
+    char *lines[RUNTIME_DISPUTE_SHOWN] = {NULL};
+    for (size_t index = 0; index < count; index++) {
+        const runtime_identity_dispute *dispute = &answer->disputes[index];
+        const char *parts[6] = {"the account ", dispute->account, " was confirmed as ", dispute->recorded_number,
+                                " and now answers as ", dispute->offered_number};
+        lines[index] = runtime_cache_text(parts, 6);
+        shown[index] = lines[index] == NULL ? "" : lines[index];
+        accepts[index] = dispute->accept;
+    }
+    char *disputes = joined_texts(shown, count, "; ");
+    char *accept = joined_texts(accepts, count, ",");
+    const char *parts[3] = {name, ": ", disputes == NULL ? "" : disputes};
+    const char *fix_parts[8] = {"check that each account still belongs to the plugin's owner, then run spisor-host "
+                                "install --name ",
+                                name, " --application ", application, " --accept-number ", accept == NULL ? "" : accept,
+                                "", ""};
+    int code = refuse_with_fix_parts(parts, 3, fix_parts, 6);
+    for (size_t index = 0; index < count; index++) {
+        spisor_memory_release(lines[index]);
+    }
+    spisor_memory_release(accept);
+    spisor_memory_release(disputes);
+    return code;
+}
+
+static int refuse_changed_at(const char *label, const runtime_marketplace_remember_answer *answer,
+                             const char *application) {
+    char *was = joined_texts(answer->was_at, answer->was_at_count, ",");
+    char *now = joined_texts(answer->now_at, answer->now_at_count, ",");
+    const char *parts[5] = {label, " was installed from the places ", was == NULL ? "" : was,
+                            ", and its marketplace now lists it at ", now == NULL ? "" : now};
+    const char *fix_parts[8] = {"check that ", now == NULL ? "" : now,
+                                " are the places of the plugin you mean, then run spisor-host install --name ", label,
+                                " --application ", application, " --accept-at ", now == NULL ? "" : now};
+    int code = refuse_with_fix_parts(parts, 5, fix_parts, 8);
+    spisor_memory_release(now);
+    spisor_memory_release(was);
+    return code;
 }
 
 static int refuse_no_marketplace(const char *name) {
@@ -187,6 +233,13 @@ static cJSON *report_of(const runtime_install_by_id_answer *installed) {
 }
 
 static int print_installed(const host_context *context, const runtime_install_by_id_answer *installed) {
+    if (installed->cache_problem != NULL) {
+        char *shown = host_printable(installed->cache_problem);
+        host_write(1, "warning: ");
+        host_write(1, shown == NULL ? "" : shown);
+        host_write(1, "\n");
+        spisor_memory_release(shown);
+    }
     cJSON *printed = installed_json(installed);
     if (printed == NULL) {
         return refuse_out_of_memory();
@@ -213,17 +266,23 @@ static int settles_name(const host_context *context, const host_name_request *re
     argument.marketplace = marketplace;
     argument.name = found->bare;
     argument.id = found->id;
+    argument.at = found->at;
+    argument.at_count = found->at_count;
     argument.accept = request->accepted_name_id;
+    argument.accept_at = request->accepted_at;
     argument.check_only = is_recording ? 0 : 1;
     spisor_status status = names->remember(names->context, &argument, &answer, &declined);
-    int is_settled = status == SPISOR_OK && answer.memory != RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE;
+    int is_settled = status == SPISOR_OK && answer.memory != RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE &&
+                     answer.memory != RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE;
     if (status != SPISOR_OK) {
         *code = host_refuse_printably(host_refusal_json(&declined));
     } else if (!is_settled) {
         const char *label_parts[3] = {marketplace == NULL ? "" : marketplace, "/", found->bare};
         char *label = marketplace == NULL ? NULL : runtime_cache_text(label_parts, 3);
         const char *shown = marketplace == NULL || label == NULL ? found->bare : label;
-        *code = refuse_changed_name(shown, answer.was, answer.now, request->application);
+        *code = answer.memory == RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE
+                    ? refuse_changed_at(shown, &answer, request->application)
+                    : refuse_changed_name(shown, answer.was, answer.now, request->application);
         spisor_memory_release(label);
     }
     names->release_remember_answer(names->context, &answer);
@@ -260,7 +319,6 @@ static int install_found(const host_context *context, const host_name_request *r
     argument.plugin_directory = plugin_directory;
     argument.accept_primary = request->accepted_primary;
     argument.accept_number = request->accepted_number;
-    argument.api_base = host_marketplace_lookup_api_base();
     spisor_status status = install->by_id(install->context, &argument, &installed, &declined);
     spisor_memory_release(plugin_directory);
     if (status != SPISOR_OK) {

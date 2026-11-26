@@ -1,7 +1,7 @@
 spisor_bound_tests()
 
 set(host_test_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry_test_hooks>
-    $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook> $<TARGET_OBJECTS:host_marketplace_lookup_test_hook>)
+    $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:host_ready_timeout_test_hook>)
 
 host_executable(spisor_host_test spisor-host-test ${PROJECT_SOURCE_DIR}/host/src/main.c $<TARGET_OBJECTS:host_objects>
     ${host_test_runtime_objects})
@@ -100,7 +100,7 @@ if(WIN32)
 endif()
 target_include_directories(marketplace_command_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
 target_link_libraries(marketplace_command_test PRIVATE spisor_vector_reader)
-target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
+target_compile_definitions(marketplace_command_test PRIVATE ${host_test_fixture_definitions})
 add_dependencies(marketplace_command_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_marketplace_command_test COMMAND marketplace_command_test)
 set_tests_properties(host_marketplace_command_test PROPERTIES SKIP_RETURN_CODE 77)
@@ -113,7 +113,7 @@ if(WIN32)
 endif()
 target_include_directories(install_by_name_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/runtime/test)
 target_link_libraries(install_by_name_test PRIVATE spisor_vector_reader)
-target_compile_definitions(install_by_name_test PRIVATE ${host_test_fixture_definitions} HOST_MARKETPLACE_TEST_HOOK)
+target_compile_definitions(install_by_name_test PRIVATE ${host_test_fixture_definitions})
 add_dependencies(install_by_name_test spisor_host_test spisor_boot fake_application layer_fixture spisor_host_test_bundles)
 add_test(NAME host_install_by_name_test COMMAND install_by_name_test)
 set_tests_properties(host_install_by_name_test PROPERTIES SKIP_RETURN_CODE 77)

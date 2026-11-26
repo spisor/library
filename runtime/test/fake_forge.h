@@ -15,9 +15,9 @@
  * A repo the fake provider `forge` answers by number: its account and name, the repo.json its development branch
  * holds, the number it was forked from (0 for none), and whether it is gone, which answers NOT_FOUND by number and
  * nothing by name. `root` is the root commit it holds, FAKE_ROOT when NULL; `refused_with`, when set, is the code
- * every call by number is refused with, as a host that rate limits or wants a token. `lookups` counts the lookups by
- * number it answered; once it passes `lookups_before_rename`, a lookup answers the account `renamed_to` when that is
- * set, as a repo whose name someone took in between.
+ * every call by number is refused with, as a host that rate limits or wants a token. `index` and `index_url` are the latest release's
+ * weivel-index.json and the address it is offered at, NULL for a repo with no such asset; `times_out` makes every call
+ * by number time out, as a host that cannot be heard.
  */
 typedef struct fake_repo {
     uint64_t number;
@@ -26,11 +26,11 @@ typedef struct fake_repo {
     const char *file;
     uint64_t fork_parent;
     int gone;
-    unsigned lookups;
-    unsigned lookups_before_rename;
-    const char *renamed_to;
     const char *root;
     const char *refused_with;
+    const char *index;
+    const char *index_url;
+    int times_out;
 } fake_repo;
 
 /** Registers the fake provider `forge` with runtime's providers, once per process. */
@@ -38,6 +38,12 @@ void fake_forge_install(void);
 
 /** Forgets every repo and file the fake holds. */
 void fake_forge_reset(void);
+
+/**
+ * Gives every repo added from now on a latest release offering `index` at `url`, which outlive those repos; NULL for
+ * repos with no release.
+ */
+void fake_forge_release_everything(const char *index, const char *url);
 
 /** Adds a repo holding FAKE_ROOT, with no parents, and `file` on its development branch. */
 fake_repo *fake_forge_add(uint64_t number, const char *account, const char *name, const char *file);

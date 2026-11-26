@@ -355,7 +355,6 @@ static inline spisor_status install_by_id_call(const runtime_install_definition 
     argument.version = cache_member_text(request, "version");
     argument.accept_primary = cache_member_text(request, "acceptPrimary");
     argument.accept_number = cache_member_text(request, "acceptNumber");
-    argument.api_base = cache_member_text(request, "apiBase");
     status = install->by_id(install->context, &argument, &answer, refusal);
     if (status == SPISOR_OK) {
         *tree = cJSON_CreateObject();
@@ -369,10 +368,19 @@ static inline spisor_status install_by_id_call(const runtime_install_definition 
             CHECK(cJSON_AddTrueToObject(*tree, "needsUserAcceptance") != NULL);
         }
         if (answer.needs_number_acceptance) {
-            cache_add_text(*tree, "disputedAccount", answer.disputed_account);
-            cache_add_text(*tree, "recordedNumber", answer.recorded_number);
-            cache_add_text(*tree, "offeredNumber", answer.offered_number);
+            cJSON *disputes = cJSON_AddArrayToObject(*tree, "disputes");
+            for (size_t index = 0; index < answer.dispute_count; index++) {
+                cJSON *row = cJSON_CreateObject();
+                cache_add_text(row, "account", answer.disputes[index].account);
+                cache_add_text(row, "recordedNumber", answer.disputes[index].recorded_number);
+                cache_add_text(row, "offeredNumber", answer.disputes[index].offered_number);
+                cache_add_text(row, "accept", answer.disputes[index].accept);
+                CHECK(cJSON_AddItemToArray(disputes, row));
+            }
             CHECK(cJSON_AddTrueToObject(*tree, "needsNumberAcceptance") != NULL);
+        }
+        if (answer.cache_problem != NULL) {
+            cache_add_text(*tree, "cacheProblem", answer.cache_problem);
         }
         cache_add_text(*tree, "version", answer.version);
         cache_add_text(*tree, "commit", answer.commit);

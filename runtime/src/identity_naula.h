@@ -9,10 +9,12 @@
 #define RUNTIME_PLACE_TEXT_SIZE 512
 #define RUNTIME_TOKEN_LIMIT 512
 
+#define RUNTIME_DISPUTE_LIMIT 8
+
 /**
  * One resolve: the repo `id` and its `at` place texts; the absolute `cache` naula keeps confirmations in, or NULL;
- * a `token` sent only to `token_host`, or both NULL; and the places the user accepted as the new primary and as an
- * account's new number, or NULL.
+ * a `token` sent only to `token_host`, or both NULL; the place the user accepted as the new primary, or NULL; and the
+ * disputed numbers the user accepted, a comma-separated list of `<provider>[@host]:<account>=<number>`, or NULL.
  */
 typedef struct runtime_identity_request {
     const char *id;
@@ -26,19 +28,34 @@ typedef struct runtime_identity_request {
 } runtime_identity_request;
 
 /**
+ * An account whose number the records of a repo disagree on: the account as `<provider>[@host]:<account>`, the
+ * place it was confirmed at, the place it answers now, and `accept`, the text accept_number takes to accept it.
+ */
+typedef struct runtime_identity_disputed {
+    char account[RUNTIME_PLACE_TEXT_SIZE / 2];
+    char recorded_number[RUNTIME_PLACE_TEXT_SIZE];
+    char offered_number[RUNTIME_PLACE_TEXT_SIZE];
+    char accept[RUNTIME_PLACE_TEXT_SIZE];
+} runtime_identity_disputed;
+
+/**
  * What naula asked the user during a resolve and the request did not accept: a new primary, with the one confirmed
- * before, or a disputed account's number, with the number confirmed before and the one it answers now. Each text is
- * a place, the account `<provider>[@host]:<account>`.
+ * before, and every disputed number, each once; naula asks about at most RUNTIME_DISPUTE_LIMIT accounts a run.
  */
 typedef struct runtime_identity_acceptance {
     int primary_needed;
     char recorded_primary[RUNTIME_PLACE_TEXT_SIZE];
     char offered_primary[RUNTIME_PLACE_TEXT_SIZE];
-    int number_needed;
-    char disputed_account[RUNTIME_PLACE_TEXT_SIZE];
-    char recorded_number[RUNTIME_PLACE_TEXT_SIZE];
-    char offered_number[RUNTIME_PLACE_TEXT_SIZE];
+    size_t dispute_count;
+    runtime_identity_disputed disputes[RUNTIME_DISPUTE_LIMIT];
 } runtime_identity_acceptance;
+
+/**
+ * Whether a resolve answered with `status` and `refusal` is the user's to settle: a declined primary, or a declined
+ * number on an answer naula gave or refused only for want of that number. Any other refusal wins over a prompt.
+ */
+int runtime_identity_needs_the_user(naula_status status, const naula_refusal *refusal,
+                                    const runtime_identity_acceptance *acceptance);
 
 /**
  * Resolves the request through naula_resolve over the process's providers, reading history through each provider's

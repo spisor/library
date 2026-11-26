@@ -154,9 +154,10 @@ typedef struct runtime_marketplace_lookup_answer {
 } runtime_marketplace_lookup_answer;
 
 /**
- * The id a name was given: the `state` place holding the record; `marketplace` the source it came from, or NULL to
- * remember the bare name; `accept` the id the user accepted in place of the remembered one, or NULL; and `check_only` 1
- * to answer without writing. First shape ends at `check_only`.
+ * The id and the `at` places a name was given: the `state` place holding the record; `marketplace` the source it came
+ * from, or NULL to remember the bare name; `accept` the id the user accepted in place of the remembered one, or NULL;
+ * `accept_at` the places the user accepted in place of the remembered ones, joined by commas, or NULL; and
+ * `check_only` 1 to answer without writing. First shape ends at `check_only`.
  */
 typedef struct runtime_marketplace_remember_argument {
     uint32_t size;
@@ -164,7 +165,10 @@ typedef struct runtime_marketplace_remember_argument {
     const char *marketplace;
     const char *name;
     const char *id;
+    const char *const *at;
+    size_t at_count;
     const char *accept;
+    const char *accept_at;
     uint32_t check_only;
 } runtime_marketplace_remember_argument;
 
@@ -175,11 +179,14 @@ typedef enum runtime_marketplace_memory {
     /** A check only: recording would have remembered it. */
     RUNTIME_MARKETPLACE_SETTLED = 2,
     /** The host remembers `was` for the name, and the name now gives `now`; nothing was recorded. */
-    RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE = 3
+    RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE = 3,
+    /** The id is the remembered one, at the places `was_at`, and the name now gives `now_at`; nothing was recorded. */
+    RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE = 4
 } runtime_marketplace_memory;
 
 /**
- * What remembering found, with `was` and `now` for NEEDS_USER_ACCEPTANCE. First shape ends at `storage`.
+ * What remembering found, with `was` and `now` for NEEDS_USER_ACCEPTANCE and `was_at` and `now_at` for
+ * NEEDS_AT_ACCEPTANCE. First shape ends at `storage`.
  */
 typedef struct runtime_marketplace_remember_answer {
     uint32_t size;
@@ -187,6 +194,10 @@ typedef struct runtime_marketplace_remember_answer {
     uint32_t memory;
     const char *was;
     const char *now;
+    const char *const *was_at;
+    size_t was_at_count;
+    const char *const *now_at;
+    size_t now_at_count;
     void *storage;
 } runtime_marketplace_remember_answer;
 
@@ -235,8 +246,9 @@ typedef struct runtime_marketplace_definition {
     spisor_status (*lookup)(void *context, const runtime_marketplace_lookup_argument *argument,
                             runtime_marketplace_lookup_answer *answer, spisor_refusal *refusal);
     /**
-     * Keeps the id a name was given in the state place's marketplace-names.json, keyed by marketplace and name together
-     * and by the bare name, so a name quietly pointed elsewhere needs the user to accept it.
+     * Keeps the id and the places a name was given in the state place's marketplace-names.json, keyed by marketplace
+     * and name together and by the bare name, so a name, or the places of its id, quietly pointed elsewhere needs the
+     * user to accept it.
      *
      * @return OK; REFUSED for a record that is not that file's shape, which is left as it is, or one that cannot be
      * written.
