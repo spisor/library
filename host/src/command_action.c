@@ -9,6 +9,7 @@
 #include "host_options.h"
 #include "host_output.h"
 #include "host_start.h"
+#include "runtime/hosts.h"
 
 #define ACTION_USAGE "action needs the host id, the plugin and the action, and takes --input name=value as often as it needs"
 
@@ -64,17 +65,27 @@ static int runs_in_session_host(const host_context *context, const char *host_id
     return loader;
 }
 
+/** The one layer hosts' layer_start answers for an action of a loader's plugin; NULL with *refusal set. */
+static cJSON *action_layer(const host_context *context, const char *loader_id, const char *const *action_arguments,
+                           cJSON **refusal) {
+    cJSON *layers = host_layer_starts(context, loader_id, RUNTIME_HOSTS_LAYER_ACTION, action_arguments[1],
+                                      action_arguments[2], action_arguments[3], refusal);
+    cJSON *layer = cJSON_DetachItemFromArray(layers, 0);
+    cJSON_Delete(layers);
+    return layer;
+}
+
 /**
- * Runs the start the registration of host_id records, or a loader's session host when it records none,
+ * Runs the start the registration of host_id records, or the layer of a loader's plugin when it records none,
  * with the arguments action, plugin, action and input, as this process's child sharing its terminal, and
  * answers its exit code.
  */
 static int run_action(const host_context *context, const char *host_id, const char *const *action_arguments) {
     cJSON *refusal = NULL;
-    cJSON *start = runs_in_session_host(context, host_id) ? host_session_start_of(context, host_id, &refusal)
-                                                          : host_start_of(context, host_id, &refusal);
-    if (start == NULL || !host_start_append_arguments(start, action_arguments, 4)) {
-        cJSON_Delete(start);
+    cJSON *start = runs_in_session_host(context, host_id) ? action_layer(context, host_id, action_arguments, &refusal)
+                                                          : host_start_of(context, host_id, action_arguments, 4,
+                                                                          &refusal);
+    if (start == NULL) {
         return host_refuse(refusal);
     }
     int exit_code = 1;

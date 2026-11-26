@@ -54,16 +54,63 @@ static void record_start(const host_context *context, int count, char **argument
     }
 }
 
-/** Publishes the ready record a session host does on every start, through the library as the real one does. */
-static void publish_ready(const host_context *context, const char *host_id) {
+/** The layer's runtime when it runs as `<runtime> <loader id>`, as every layer start ends; NULL for a background host. */
+static const char *layer_runtime(int count, char **arguments) {
+    const char *runtime = count >= 3 ? arguments[count - 2] : NULL;
+    return runtime != NULL && (strcmp(runtime, "javascript") == 0 || strcmp(runtime, "native") == 0) ? runtime : NULL;
+}
+
+/**
+ * The identity the fixture publishes and is held under, as a real run's is: the loader's for the layer whose runtime
+ * SPISOR_FIXTURE_FRONT_DOOR names, javascript by default, `<loader>.<runtime>` for any other layer, and a background
+ * host's own id.
+ */
+static char *identity_of(const host_context *context, int count, char **arguments) {
+    const char *runtime = layer_runtime(count, arguments);
+    const char *configured = host_text(context->environment, "SPISOR_FIXTURE_FRONT_DOOR");
+    const char *door = configured == NULL ? "javascript" : configured;
+    const char *host_id = arguments[count - 1];
+    int own = runtime == NULL || strcmp(runtime, door) == 0;
+    size_t length = strlen(host_id) + (own ? 0 : strlen(runtime) + 1) + 1;
+    char *identity = spisor_memory_allocate(length);
+    if (identity != NULL) {
+        snprintf(identity, length, own ? "%s" : "%s.%s", host_id, runtime);
+    }
+    return identity;
+}
+
+/** Appends `@<runtime>` to every value of environment, so a test reads which layer published what it sees. */
+static void tag_with_runtime(cJSON *environment, const char *runtime) {
+    cJSON *variable;
+    cJSON_ArrayForEach(variable, environment) {
+        char tagged[1024];
+        if (cJSON_IsString(variable)) {
+            snprintf(tagged, sizeof tagged, "%s@%s", variable->valuestring, runtime);
+            cJSON_SetValuestring(variable, tagged);
+        }
+    }
+}
+
+/**
+ * Publishes the ready record a session host does on every start, through the library as the real one does: a refusal
+ * when SPISOR_FIXTURE_READY is refuse or SPISOR_FIXTURE_REFUSING names the layer's runtime, each value tagged with the
+ * layer's runtime when SPISOR_FIXTURE_TAG_LAYER is set.
+ */
+static void publish_ready(const host_context *context, const char *host_id, const char *runtime) {
     const char *configured = host_text(context->environment, "SPISOR_FIXTURE_READY");
-    const char *mode = configured == NULL ? "" : configured;
+    const char *refusing = host_text(context->environment, "SPISOR_FIXTURE_REFUSING");
+    const char *mode = refusing != NULL && runtime != NULL && strcmp(refusing, runtime) == 0 ? "refuse"
+                       : configured == NULL                                                 ? ""
+                                                                                            : configured;
     if (strcmp(mode, "none") == 0) {
         return;
     }
     const runtime_processes_definition *processes = runtime_processes_definition_of();
     runtime_processes_ready_argument argument = SPISOR_INIT(runtime_processes_ready_argument);
     cJSON *environment = strcmp(mode, "refuse") == 0 || mode[0] == 0 ? NULL : cJSON_Parse(mode);
+    if (environment != NULL && runtime != NULL && host_text(context->environment, "SPISOR_FIXTURE_TAG_LAYER") != NULL) {
+        tag_with_runtime(environment, runtime);
+    }
     runtime_variable *variables =
         environment == NULL ? NULL : host_variables_of(environment, &argument.environment_count);
     argument.state = context->state;
@@ -115,9 +162,9 @@ static int run_action(int count, char **arguments) {
 }
 
 /**
- * A host's language layer as the tests need one, run as a native background host <host-id>, or as the JS
- * runtime the cache records, <entry> <host-id>: loops on processes.prune for the host id it was given, its
- * last argument, until it is told to exit. SPISOR_FIXTURE_START_DELAY milliseconds pass before it records its
+ * A host's language layer as the tests need one, run as a native background host <host-id>, as the native layer
+ * <host> <runtime binary> native <loader id>, or as the JS runtime the cache records, <entry> <runtime binary>
+ * javascript <loader id>: loops on processes.prune for its identity until it is told to exit. SPISOR_FIXTURE_START_DELAY milliseconds pass before it records its
  * start, as a slow process start would let them. Asked -p for its version, as install asks a node, it answers one.
  */
 static int run(int count, char **arguments) {
@@ -139,18 +186,24 @@ static int run(int count, char **arguments) {
         pause_milliseconds(atol(delay));
     }
     record_start(&context, count, arguments);
-    publish_ready(&context, arguments[count - 1]);
+    char *identity = identity_of(&context, count, arguments);
+    if (identity == NULL) {
+        host_close_context(&context);
+        return 2;
+    }
+    publish_ready(&context, identity, layer_runtime(count, arguments));
     const char *configured = host_text(context.environment, "SPISOR_FIXTURE_INTERVAL");
     double interval = configured == NULL ? DEFAULT_INTERVAL : atof(configured);
     double started = runtime_now_milliseconds();
     int code = 3;
     while (runtime_now_milliseconds() - started < LONGEST_LIFE_MILLISECONDS) {
-        if (prune_says_exit(&context, arguments[count - 1], interval)) {
+        if (prune_says_exit(&context, identity, interval)) {
             code = 0;
             break;
         }
         pause_milliseconds((long)interval);
     }
+    spisor_memory_release(identity);
     host_close_context(&context);
     return code;
 }

@@ -1,183 +1,92 @@
 #include "host_start.h"
 #include "allocation.h"
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "runtime/boot.h"
-#include "cache.h"
-#include "cache_marker.h"
-#include "cache_place.h"
+#include "host_definition.h"
 #include "host_output.h"
-#include "install_runtime.h"
-#include "node_json_file.h"
-#include "paths.h"
-#include "spisor/path.h"
+#include "hosts_layer_start.h"
+#include "runtime/hosts.h"
 
-#define NATIVE_RUNTIME "native"
-#define JAVASCRIPT_RUNTIME "javascript"
-
-static char *joined(const char *const *segments, size_t count) {
-    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, count);
-}
-
-static cJSON *refused(const char *first, const char *second, const char *third) {
-    const char *parts[3] = {first, second, third};
-    return host_refusal_of(parts, 3, HOST_REINSTALL_FIX);
-}
-
-/**
- * cache/bundles/<id>/<version>, refused unless that version is installed with every file it lists at its
- * recorded size.
- *
- * @implNote Sizes only, as spisor-boot checks at every start: hashing is for install, update and status,
- * so a start never waits on it.
- */
-static char *installed_version(const host_context *context, const char *id, const char *version, cJSON **refusal) {
-    const char *segments[4] = {context->cache, "bundles", id, version};
-    char *directory = version == NULL ? NULL : joined(segments, 4);
-    cJSON *check = directory == NULL ? NULL : runtime_cache_check_version_sizes(directory);
-    const char *kind = host_text(check, "kind");
-    int intact = kind != NULL && strcmp(kind, "intact") == 0;
-    if (check != NULL && !intact) {
-        *refusal = refused(id, " is not installed intact in ", directory);
+static cJSON *arguments_of(const char *id, const char *const *extra, size_t count) {
+    cJSON *arguments = cJSON_CreateArray();
+    int built = arguments != NULL && cJSON_AddItemToArray(arguments, cJSON_CreateString(id));
+    for (size_t index = 0; built && index < count; index++) {
+        built = cJSON_AddItemToArray(arguments, cJSON_CreateString(extra[index]));
     }
-    if (!intact) {
-        spisor_memory_release(directory);
-        directory = NULL;
-    }
-    cJSON_Delete(check);
-    return directory;
-}
-
-/** The file entry names inside directory, refused when it would lie outside it. */
-static char *entry_inside(const char *directory, const char *id, const char *entry, cJSON **refusal) {
-    char *path = entry == NULL ? NULL : runtime_cache_resolve(directory, &entry, 1);
-    if (path != NULL && !runtime_cache_is_strictly_inside(directory, path)) {
-        spisor_memory_release(path);
-        path = NULL;
-    }
-    if (path == NULL) {
-        *refusal = refused("the start recorded for ", id, " names no entry inside its bundle");
-    }
-    return path;
-}
-
-static cJSON *start_with(const host_context *context, const char *executable, const char *script, const char *layer,
-                         const char *id) {
-    cJSON *start = cJSON_CreateObject();
-    cJSON *arguments = start == NULL ? NULL : cJSON_AddArrayToObject(start, "arguments");
-    int built = arguments != NULL && cJSON_AddStringToObject(start, "executable", executable) != NULL &&
-                (script == NULL || cJSON_AddItemToArray(arguments, cJSON_CreateString(script))) &&
-                (layer == NULL || cJSON_AddItemToArray(arguments, cJSON_CreateString(layer))) &&
-                cJSON_AddItemToArray(arguments, cJSON_CreateString(id)) &&
-                cJSON_AddItemToObject(start, "environment", cJSON_Duplicate(context->environment, 1));
     if (!built) {
-        cJSON_Delete(start);
+        cJSON_Delete(arguments);
         return NULL;
     }
-    return start;
+    return arguments;
 }
 
-/**
- * The start of the entry inside directory on runtime, with id as the host it starts, after layer, the runtime of the
- * plugins a session host runs, NULL for a host that runs none.
- */
-static cJSON *layer_start(const host_context *context, const char *runtime, const char *directory, const char *entry,
-                          const char *layer, const char *id, cJSON **refusal) {
-    char *path = entry_inside(directory, id, entry, refusal);
-    int native = runtime != NULL && strcmp(runtime, NATIVE_RUNTIME) == 0;
-    int javascript = runtime != NULL && strcmp(runtime, JAVASCRIPT_RUNTIME) == 0;
-    char *executable = path != NULL && javascript ? runtime_javascript_executable(context->cache, context->environment, refusal)
-                                                  : NULL;
-    cJSON *start = NULL;
-    if (path != NULL && native && !host_make_runnable(path)) {
-        *refusal = refused("the entry of ", id, " cannot be made runnable");
-    } else if (path != NULL && native) {
-        start = start_with(context, path, NULL, layer, id);
-    } else if (executable != NULL) {
-        start = start_with(context, executable, path, layer, id);
-    } else if (path != NULL && !javascript) {
-        *refusal = refused("the start recorded for ", id, " names a runtime this host cannot start");
-    }
-    spisor_memory_release(executable);
-    spisor_memory_release(path);
-    return start;
-}
-
-cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusal) {
+cJSON *host_start_of(const host_context *context, const char *id, const char *const *extra, size_t count,
+                     cJSON **refusal) {
     cJSON *registration = host_registration(context, id, refusal);
     const cJSON *recorded = cJSON_GetObjectItemCaseSensitive(registration, "start");
+    cJSON *arguments = cJSON_IsObject(recorded) ? arguments_of(id, extra, count) : NULL;
+    runtime_entry_start_request request = {context->cache, context->environment, id,
+                                           host_text(registration, "version"), host_text(recorded, "runtime"),
+                                           host_text(recorded, "entry"), arguments};
+    cJSON *start = arguments == NULL ? NULL : runtime_entry_start(&request, refusal);
     if (registration != NULL && !cJSON_IsObject(recorded)) {
-        *refusal = refused("the background host ", id, " records no start, so it cannot be started");
+        const char *parts[3] = {"the background host ", id, " records no start, so it cannot be started"};
+        *refusal = host_refusal_of(parts, 3, HOST_REINSTALL_FIX);
     }
-    char *directory = cJSON_IsObject(recorded) ? installed_version(context, id, host_text(registration, "version"), refusal) : NULL;
-    cJSON *start = directory == NULL ? NULL
-                                     : layer_start(context, host_text(recorded, "runtime"), directory,
-                                                   host_text(recorded, "entry"), NULL, id, refusal);
-    spisor_memory_release(directory);
+    cJSON_Delete(arguments);
     cJSON_Delete(registration);
     return start;
 }
 
-int host_start_append_arguments(cJSON *start, const char *const *extra, size_t count) {
-    cJSON *arguments = cJSON_GetObjectItemCaseSensitive(start, "arguments");
-    for (size_t index = 0; index < count; index++) {
-        if (!cJSON_AddItemToArray(arguments, cJSON_CreateString(extra[index]))) {
-            return 0;
-        }
+static cJSON *layer_json(const runtime_hosts_layer *layer) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *arguments = json == NULL ? NULL : cJSON_AddArrayToObject(json, "arguments");
+    int built = arguments != NULL && cJSON_AddStringToObject(json, "runtime", layer->runtime) != NULL &&
+                cJSON_AddStringToObject(json, "hostId", layer->host_id) != NULL &&
+                cJSON_AddStringToObject(json, "executable", layer->executable) != NULL;
+    for (size_t index = 0; built && index < layer->argument_count; index++) {
+        built = cJSON_AddItemToArray(arguments, cJSON_CreateString(layer->arguments[index]));
     }
-    return 1;
-}
-
-static char *hinted_version(const host_context *context, const char *id) {
-    const runtime_boot_definition *boot = runtime_boot_definition_of();
-    runtime_boot_host_argument argument = SPISOR_INIT(runtime_boot_host_argument);
-    runtime_boot_hint_answer hint = SPISOR_INIT(runtime_boot_hint_answer);
-    argument.cache = context->cache;
-    argument.host_id = id;
-    int hinted = boot->read(boot->context, &argument, &hint, NULL) == SPISOR_OK && hint.host != NULL;
-    char *version = hinted ? spisor_memory_allocate(strlen(hint.host) + 1) : NULL;
-    if (version != NULL) {
-        strcpy(version, hint.host);
-    }
-    boot->release_hint_answer(boot->context, &hint);
-    return version;
-}
-
-/** The entry the bundle's host.json names, NULL when it names none, and NULL with *out_of_memory set when memory runs out. */
-static char *entry_of_bundle(const char *directory, int *out_of_memory) {
-    const char *segments[2] = {directory, "host.json"};
-    char *path = joined(segments, 2);
-    *out_of_memory = path == NULL;
-    cJSON *standard = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
-    const char *entry = host_text(standard, "entry");
-    char *copy = entry == NULL ? NULL : spisor_memory_allocate(strlen(entry) + 1);
-    *out_of_memory = *out_of_memory || (entry != NULL && copy == NULL);
-    if (copy != NULL) {
-        strcpy(copy, entry);
-    }
-    cJSON_Delete(standard);
-    spisor_memory_release(path);
-    return copy;
-}
-
-cJSON *host_session_start_of(const host_context *context, const char *loader_id, cJSON **refusal) {
-    char *version = hinted_version(context, HOST_JAVASCRIPT_HOST_ID);
-    if (version == NULL) {
-        *refusal = refused("no " HOST_JAVASCRIPT_HOST_ID " version is recorded in ", context->cache,
-                           ", which runs the plugins the loader's settings enable");
+    cJSON *environment = built ? host_variables_json(layer->environment, layer->environment_count) : NULL;
+    if (environment == NULL || !cJSON_AddItemToObject(json, "environment", environment)) {
+        cJSON_Delete(environment);
+        cJSON_Delete(json);
         return NULL;
     }
-    char *directory = installed_version(context, HOST_JAVASCRIPT_HOST_ID, version, refusal);
-    int out_of_memory = 0;
-    char *entry = directory == NULL ? NULL : entry_of_bundle(directory, &out_of_memory);
-    cJSON *start = directory == NULL || out_of_memory
-                       ? NULL
-                       : layer_start(context, JAVASCRIPT_RUNTIME, directory, entry, JAVASCRIPT_RUNTIME, loader_id,
-                                     refusal);
-    spisor_memory_release(entry);
-    spisor_memory_release(directory);
-    spisor_memory_release(version);
-    return start;
+    return json;
+}
+
+static cJSON *layers_json(const runtime_hosts_layer_start_answer *answer) {
+    cJSON *layers = cJSON_CreateArray();
+    for (size_t index = 0; layers != NULL && index < answer->layer_count; index++) {
+        cJSON *layer = layer_json(&answer->layers[index]);
+        if (layer == NULL || !cJSON_AddItemToArray(layers, layer)) {
+            cJSON_Delete(layer);
+            cJSON_Delete(layers);
+            layers = NULL;
+        }
+    }
+    return layers;
+}
+
+cJSON *host_layer_starts(const host_context *context, const char *loader_id, uint32_t mode, const char *plugin,
+                         const char *action, const char *input, cJSON **refusal) {
+    const runtime_hosts_definition *hosts = runtime_hosts_definition_of();
+    runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
+    runtime_hosts_layer_start_answer answer = SPISOR_INIT(runtime_hosts_layer_start_answer);
+    spisor_refusal declined = SPISOR_INIT(spisor_refusal);
+    runtime_variable *environment = host_variables_of(context->environment, &argument.environment_count);
+    argument.environment = environment;
+    argument.loader_id = loader_id;
+    argument.mode = mode;
+    argument.plugin = plugin;
+    argument.action = action;
+    argument.input = input;
+    spisor_status status = environment == NULL ? SPISOR_OUT_OF_MEMORY
+                                               : hosts->layer_start(hosts->context, &argument, &answer, &declined);
+    cJSON *layers = status == SPISOR_OK ? layers_json(&answer) : NULL;
+    *refusal = status == SPISOR_OK || status == SPISOR_OUT_OF_MEMORY ? NULL : host_refusal_json(&declined);
+    hosts->release_layer_start_answer(hosts->context, &answer);
+    hosts->release_refusal(hosts->context, &declined);
+    spisor_memory_release(environment);
+    return layers;
 }

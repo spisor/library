@@ -2,6 +2,7 @@
 #define RUNTIME_HOSTS_START_H
 
 #include "cJSON.h"
+#include "hosts_layers.h"
 
 /** How many turns of a held host's process timer may fail in a row before it stops, since it can no longer tell whether anyone holds it. */
 #define RUNTIME_PRUNE_FAILURES_BEFORE_EXIT 6
@@ -33,12 +34,6 @@ typedef struct runtime_hosts_start_request {
     const char *action_plugin;
 } runtime_hosts_start_request;
 
-#define RUNTIME_LAYER_JAVASCRIPT "javascript"
-#define RUNTIME_LAYER_NATIVE "native"
-
-/** Whether runtime names a language layer a host runs plugins in. */
-int runtime_is_layer_runtime(const char *runtime);
-
 /**
  * hosts.start: the whole start sequence of a host that runs its plugins in a language layer. Answers
  * {places, identity: {version, home, requiresCommand,
@@ -51,11 +46,12 @@ int runtime_is_layer_runtime(const char *runtime);
  * record names hostId, with a run record of its own and as plugins that run less the running ids, and then
  * answers no next or rollback. The plan's plugins are then narrowed to those whose catalog runtime is
  * layer_runtime, an unlisted one running on javascript, and for an action_plugin to it and every plugin of the layer
- * providing, transitively, a capability it consumes; a narrowed plugin consuming a capability that no plugin of the
- * layer provides and a plugin of another runtime does is refused, naming both. runId is the identity the run
- * publishes its ready record and holds its holders under: hostId for the layer holding the front door, the runtime of
- * the first plugin the loader standard requires, else javascript unless only native plugins are planned, and
- * `<hostId>.<layer_runtime>` for any other. timers are answered to the session start alone. noColor is whether
+ * providing, transitively, a capability it consumes; an action_plugin of another runtime is refused, naming its
+ * runtime, and a narrowed plugin consuming a capability that no plugin of the layer provides and a plugin of another
+ * runtime does is refused, naming both. runId is the identity the run publishes its ready record and holds its holders
+ * under, as runtime_run_identity answers it for the front door runtime_front_door answers over the planned plugins.
+ * timers are answered to the session start alone, its update check 0 unless runId is hostId, so one layer of a session
+ * runs updates.check. noColor is whether
  * environment carries NO_COLOR at all. A refused session start publishes its refusal to the ready record of
  * runId, or of hostId before runId is known, as processes.ready does, once its places have resolved. An answer
  * that cannot be built removes the run record its plan wrote.

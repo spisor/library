@@ -8,6 +8,7 @@
 #include "changes_definition.h"
 #include "definition_support.h"
 #include "hosts.h"
+#include "hosts_layer_start.h"
 #include "hosts_start.h"
 #include "install_definition.h"
 #include "json_service.h"
@@ -24,6 +25,8 @@
 #define PROVENANCE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_provenance_answer, storage)
 #define START_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_start_argument, session)
 #define START_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_start_answer, storage)
+#define LAYER_START_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_argument, input)
+#define LAYER_START_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_answer, storage)
 
 static const char *text_of(const cJSON *object, const char *name) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, name));
@@ -502,6 +505,101 @@ static spisor_status start(void *context, const runtime_hosts_start_argument *ar
     return status != SPISOR_OK ? status : serve_start(argument, answer, refusal);
 }
 
+/** Whether the plugin, action and input are all given texts for an ACTION, and all NULL for any other mode. */
+static int are_action_members(const runtime_hosts_layer_start_argument *argument) {
+    if (argument->mode == RUNTIME_HOSTS_LAYER_ACTION) {
+        return runtime_is_text(argument->plugin) && runtime_is_text(argument->action) &&
+               runtime_is_text(argument->input);
+    }
+    return argument->plugin == NULL && argument->action == NULL && argument->input == NULL;
+}
+
+static spisor_status check_layer_start(const runtime_hosts_layer_start_argument *argument, spisor_refusal *refusal) {
+    spisor_status status = runtime_is_environment(argument->environment, argument->environment_count)
+                               ? runtime_check_host_id(refusal, argument->loader_id, HEADER)
+                               : runtime_refuse_environment(refusal);
+    if (status == SPISOR_OK &&
+        (argument->mode < RUNTIME_HOSTS_LAYER_SERVE || argument->mode > RUNTIME_HOSTS_LAYER_ACTION)) {
+        status = runtime_refuse_member(refusal, "mode", HEADER);
+    }
+    if (status == SPISOR_OK && !are_action_members(argument)) {
+        status = runtime_refuse_member(refusal, "plugin, action and input", HEADER);
+    }
+    return status;
+}
+
+static spisor_status fill_variables(void **storage, const cJSON *environment, runtime_hosts_layer *layer) {
+    runtime_variable *variables;
+    const cJSON *member;
+    if (!runtime_storage_take_array(storage, (size_t)cJSON_GetArraySize(environment), sizeof *variables,
+                                    (void **)&variables)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    layer->environment = variables;
+    cJSON_ArrayForEach(member, environment) {
+        runtime_variable *each = &variables[layer->environment_count++];
+        if (!runtime_storage_copy(storage, member->string, &each->name) ||
+            !runtime_storage_copy(storage, cJSON_GetStringValue(member), &each->value)) {
+            return SPISOR_OUT_OF_MEMORY;
+        }
+    }
+    return SPISOR_OK;
+}
+
+static spisor_status fill_layer(void **storage, const cJSON *json, runtime_hosts_layer *layer) {
+    if (!runtime_storage_copy(storage, text_of(json, "runtime"), &layer->runtime) ||
+        !runtime_storage_copy(storage, text_of(json, "hostId"), &layer->host_id) ||
+        !runtime_storage_copy(storage, text_of(json, "executable"), &layer->executable) ||
+        !runtime_storage_texts(storage, cJSON_GetObjectItemCaseSensitive(json, "arguments"), &layer->arguments,
+                               &layer->argument_count)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return fill_variables(storage, cJSON_GetObjectItemCaseSensitive(json, "environment"), layer);
+}
+
+static spisor_status fill_layer_start(const cJSON *answered, void *filled) {
+    runtime_hosts_layer_start_answer *answer = filled;
+    const cJSON *layers = cJSON_GetObjectItemCaseSensitive(answered, "layers");
+    const cJSON *layer;
+    runtime_hosts_layer *each;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    if (status != SPISOR_OK || !runtime_storage_take_array(&answer->storage, (size_t)cJSON_GetArraySize(layers),
+                                                           sizeof *each, (void **)&each)) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    answer->layers = each;
+    cJSON_ArrayForEach(layer, layers) {
+        status = status == SPISOR_OK ? fill_layer(&answer->storage, layer, &each[answer->layer_count++]) : status;
+    }
+    return status;
+}
+
+static spisor_status layer_start(void *context, const runtime_hosts_layer_start_argument *argument,
+                                 runtime_hosts_layer_start_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *environment = NULL;
+    cJSON *answered;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !spisor_has_shape(argument->size, LAYER_START_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, LAYER_START_ANSWER_SHAPE, answer->layer_count)) {
+        return spisor_refuse_shape(refusal, "hosts' layer_start");
+    }
+    status = check_layer_start(argument, refusal);
+    if (status == SPISOR_OK) {
+        status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
+    }
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_hosts_layer_start_request request = {environment,      argument->loader_id, argument->mode,
+                                                 argument->plugin, argument->action,    argument->input};
+    answered = runtime_hosts_layer_start(&request, &operation_refusal);
+    cJSON_Delete(environment);
+    return runtime_serve_answered(answered, operation_refusal, fill_layer_start, answer, LAYER_START_ANSWER_SHAPE,
+                                  refusal);
+}
+
 static void release_register_answer(void *context, runtime_install_register_loader_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, REGISTER_ANSWER_SHAPE);
@@ -528,6 +626,11 @@ static void release_start_answer(void *context, runtime_hosts_start_answer *answ
     runtime_release_stored_answer(answer, START_ANSWER_SHAPE);
 }
 
+static void release_layer_start_answer(void *context, runtime_hosts_layer_start_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, LAYER_START_ANSWER_SHAPE);
+}
+
 static const runtime_hosts_definition definition = {
     sizeof(runtime_hosts_definition),
     NULL,
@@ -542,6 +645,8 @@ static const runtime_hosts_definition definition = {
     release_provenance_answer,
     release_start_answer,
     spisor_release_refusal,
+    layer_start,
+    release_layer_start_answer,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_hosts_definition_of(void) {

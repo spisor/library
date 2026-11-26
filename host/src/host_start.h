@@ -1,29 +1,28 @@
 #ifndef HOST_START_H
 #define HOST_START_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "cJSON.h"
 #include "host_context.h"
 
-/** The catalog id of the generic host that runs a loader's own plugins on JavaScript. */
-#define HOST_JAVASCRIPT_HOST_ID "javascript-host"
-
 /**
  * How to start registered host id in its own layer, as processes.hold takes it: {executable, arguments,
- * environment}, from the start its registration records at the version it records. A native host's entry
- * is its executable; a JavaScript one's entry is run by the JS runtime <cache>/runtimes/javascript.json
- * names. Either is given the host id as its last argument. NULL with *refusal set for a host that is not
- * registered, records no start, or whose version is not installed intact.
+ * environment}, the start its registration records at the version it records, as runtime_entry_start answers it, given
+ * the host id and then the count strings of extra. NULL with *refusal set for a host that is not registered, records
+ * no start, or whose start runtime_entry_start refuses.
  */
-cJSON *host_start_of(const host_context *context, const char *id, cJSON **refusal);
-
-/** Appends the count strings of extra to the arguments of start, a start host_start_of answered; 0 when memory runs out. */
-int host_start_append_arguments(cJSON *start, const char *const *extra, size_t count);
+cJSON *host_start_of(const host_context *context, const char *id, const char *const *extra, size_t count,
+                     cJSON **refusal);
 
 /**
- * How to start loader_id's own plugins in a session host on javascript-host, the version its boot hint
- * names, with the layer's runtime, javascript, and the loader id as its last arguments; NULL with *refusal set when it
- * is not installed.
+ * The layers hosts' layer_start answers for loader_id in mode, a runtime_hosts_layer_mode, with plugin, action and
+ * input for an ACTION and NULL for any other mode: an array of {runtime, hostId, executable, arguments, environment}, in
+ * the order to start them, the front door's first; NULL with *refusal set when it refuses, or with it NULL when memory
+ * runs out.
  */
-cJSON *host_session_start_of(const host_context *context, const char *loader_id, cJSON **refusal);
+cJSON *host_layer_starts(const host_context *context, const char *loader_id, uint32_t mode, const char *plugin,
+                         const char *action, const char *input, cJSON **refusal);
 
 #endif

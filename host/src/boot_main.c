@@ -15,6 +15,7 @@
 #include "spisor/json_allocation.h"
 #include "own_executable.h"
 #include "paths.h"
+#include "runnable.h"
 #include "spisor/path.h"
 
 #if defined(_WIN32)
@@ -62,7 +63,7 @@ static int boot(int count, char **arguments) {
     cJSON *resolved = cache == NULL ? NULL : runtime_boot_resolve_host(cache, arguments[0], &refusal);
     cJSON *passed = resolved == NULL ? NULL : passed_arguments(count - 1, arguments + 1);
     spisor_memory_release(cache);
-    if (passed != NULL && !host_make_runnable(host_text(resolved, "executable"))) {
+    if (passed != NULL && !runtime_make_runnable(host_text(resolved, "executable"))) {
         const char *parts[2] = {host_text(resolved, "executable"), " cannot be made runnable"};
         refusal = host_refusal_of(parts, 2,
                                   "check that the cache SPISOR_CACHE names is writable, then run the command again");

@@ -1443,6 +1443,28 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_start_answer, no_color);
     FIELD(runtime_hosts_start_answer, storage);
     SIZE(runtime_hosts_start_answer);
+    FIELD(runtime_hosts_layer_start_argument, size);
+    FIELD(runtime_hosts_layer_start_argument, environment);
+    FIELD(runtime_hosts_layer_start_argument, environment_count);
+    FIELD(runtime_hosts_layer_start_argument, loader_id);
+    FIELD(runtime_hosts_layer_start_argument, mode);
+    FIELD(runtime_hosts_layer_start_argument, plugin);
+    FIELD(runtime_hosts_layer_start_argument, action);
+    FIELD(runtime_hosts_layer_start_argument, input);
+    SIZE(runtime_hosts_layer_start_argument);
+    FIELD(runtime_hosts_layer, runtime);
+    FIELD(runtime_hosts_layer, host_id);
+    FIELD(runtime_hosts_layer, executable);
+    FIELD(runtime_hosts_layer, arguments);
+    FIELD(runtime_hosts_layer, argument_count);
+    FIELD(runtime_hosts_layer, environment);
+    FIELD(runtime_hosts_layer, environment_count);
+    SIZE(runtime_hosts_layer);
+    FIELD(runtime_hosts_layer_start_answer, size);
+    FIELD(runtime_hosts_layer_start_answer, layers);
+    FIELD(runtime_hosts_layer_start_answer, layer_count);
+    FIELD(runtime_hosts_layer_start_answer, storage);
+    SIZE(runtime_hosts_layer_start_answer);
     FIELD(runtime_hosts_definition, size);
     FIELD(runtime_hosts_definition, context);
     FIELD(runtime_hosts_definition, register_host);
@@ -1456,6 +1478,8 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_definition, release_provenance_answer);
     FIELD(runtime_hosts_definition, release_start_answer);
     FIELD(runtime_hosts_definition, release_refusal);
+    FIELD(runtime_hosts_definition, layer_start);
+    FIELD(runtime_hosts_definition, release_layer_start_answer);
     SIZE(runtime_hosts_definition);
 }
 

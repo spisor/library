@@ -56,20 +56,12 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix) {
     return runtime_cache_refusal(parts, count, fix);
 }
 
-/** The layer item whose boot hint names the libraries a layer of runtime loads, NULL for no layer's runtime. */
-static const char *layer_id_of(const char *runtime) {
-    if (runtime != NULL && strcmp(runtime, RUNTIME_LAYER_JAVASCRIPT) == 0) {
-        return RUNTIME_JAVASCRIPT_HOST_ID;
-    }
-    return runtime != NULL && strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0 ? RUNTIME_NATIVE_HOST_ID : NULL;
-}
-
 /** 1 with `request` filled; 0 with `*refusal` set for arguments naming no run, or NULL when memory runs out. */
 static int read_request(const char *const *arguments, size_t count, host_request *request, cJSON **refusal) {
     int out_of_memory = 0;
     memset(request, 0, sizeof *request);
     request->runtime = count > 0 ? arguments[0] : NULL;
-    request->layer_id = layer_id_of(request->runtime);
+    request->layer_id = runtime_layer_item_of(request->runtime);
     request->host_id = count > 1 ? arguments[1] : NULL;
     request->mode = count == 2 ? WEIVEL_STANDARD_HOST_SERVE : 0;
     if (count == 3 && strcmp(arguments[2], IN_PROCESS_WORD) == 0) {
@@ -90,21 +82,6 @@ static int read_request(const char *const *arguments, size_t count, host_request
         *refusal = runtime_refusal(USAGE_MESSAGE, USAGE_FIX);
     }
     return request->mode != 0;
-}
-
-/** The hint of layer item layer_id, {libraries, host}, refused unless it names the version the layer runs at. */
-static cJSON *layer_hint(const char *cache, const char *layer_id, cJSON **refusal) {
-    cJSON *read = runtime_boot_read(cache, layer_id, refusal);
-    cJSON *hint = cJSON_DetachItemFromObjectCaseSensitive(read, "hint");
-    cJSON_Delete(read);
-    if (read != NULL && text_of(hint, "host") == NULL) {
-        const char *parts[5] = {"no ", layer_id, " version is recorded in ", cache,
-                                ", which runs the plugins the loader's settings enable"};
-        *refusal = refused(parts, 5, RUNTIME_REINSTALL_FIX);
-        cJSON_Delete(hint);
-        hint = NULL;
-    }
-    return hint;
 }
 
 /** Each hinted library's id to its version, as hosts.start takes the libraries the layer loaded. */
@@ -313,6 +290,21 @@ static void publish_refusal(const host_request *request, const char *run_id, con
     }
 }
 
+/**
+ * Publishes the refusal of a SERVE run whose layer has no hint under the identity its layer runs as, so a launch
+ * waiting on that layer reads it, else under the loader's when the identity cannot be read.
+ *
+ * @implNote The refusal is the layer's own: publishing it under the loader's identity while another layer holds the
+ * front door would overwrite that layer's ready record and leave this layer's waited on until it times out.
+ */
+static void publish_unhinted_refusal(const host_request *request, const cJSON *places, const cJSON *refusal) {
+    int publishes = refusal != NULL && request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process &&
+                    runtime_is_plain_host_id(request->host_id);
+    char *identity = publishes ? runtime_read_run_identity(places, request->host_id, request->runtime) : NULL;
+    publish_refusal(request, identity, places, refusal);
+    spisor_memory_release(identity);
+}
+
 static runtime_host_run *run_of(const host_request *request, const cJSON *environment, const cJSON *hint,
                                 cJSON **refusal) {
     runtime_host_run *run = new_run(request);
@@ -342,9 +334,9 @@ runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t ar
     if (read_request(arguments, argument_count, &request, refusal)) {
         places = runtime_places_of_environment(environment, refusal);
     }
-    hint = places == NULL ? NULL : layer_hint(text_of(places, "cache"), request.layer_id, refusal);
+    hint = places == NULL ? NULL : runtime_layer_hint(text_of(places, "cache"), request.layer_id, refusal);
     if (hint == NULL && places != NULL) {
-        publish_refusal(&request, NULL, places, *refusal);
+        publish_unhinted_refusal(&request, places, *refusal);
     }
     run = hint == NULL ? NULL : run_of(&request, environment, hint, refusal);
     cJSON_Delete(request.input);
