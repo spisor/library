@@ -25,7 +25,11 @@ extern "C" {
 
 /** Which settings file a set writes. Append-only: a published value keeps its number. */
 typedef enum runtime_settings_layer {
-    /** The key's declared layer, else the application layer: for a declaration, that it declares none. */
+    /**
+     * For a write, the key's declared layer: the one its declaration names, the portable layer for a key declared
+     * without one, and the application layer for a key no declaration names, as every key of the settings service. For
+     * a declaration, that it names none, so its key is written to the portable layer.
+     */
     RUNTIME_SETTINGS_LAYER_DEFAULT = 0,
     /** The file under the application's home. */
     RUNTIME_SETTINGS_LAYER_APPLICATION = 1,
