@@ -1,6 +1,7 @@
-#include "cache_marker.h"
 #include "host_fixture.h"
 #include "spisor/allocation.h"
+
+#include "cache_marker.h"
 
 static void runs_the_application_with_its_arguments_answers_its_exit_code_and_the_background_host_stops(void) {
     host_world world;
@@ -683,11 +684,12 @@ static void starts_both_layers_of_a_loader_whose_plugins_span_two_each_under_its
     host_world world;
     install_two_layer_world(&world, "two-layers");
     world.fixture_ready = "{\"SPISOR_TEST\": \"front\"}";
+    world.tags_layer = 1;
     program launcher;
     const char *passed[] = {"layers", "0", NULL};
     launch(&world, &launcher, passed, NULL);
     cJSON *started = await_application(&world, "layers");
-    check_text(text_at(started, "spisorTest"), "front", "the front door's environment");
+    check_text(text_at(started, "spisorTest"), "front@javascript", "the front door's environment, not the other's");
     long front = await_holders(&world, LOADER_ID, 2);
     long other = await_holders(&world, LOADER_ID ".native", 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);

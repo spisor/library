@@ -94,7 +94,7 @@ static cJSON *ecosystem_settings(const char *state, const char *portable, int *o
     cJSON *settings = registration == NULL ? NULL
                                            : runtime_ecosystem_settings_values(text_of(registration, "home"), portable,
                                                                                refusal);
-    *out_of_memory = registration == NULL && unregistered == NULL;
+    *out_of_memory = registration == NULL ? unregistered == NULL : (settings == NULL && *refusal == NULL);
     cJSON_Delete(unregistered);
     cJSON_Delete(registration);
     return settings;
@@ -123,6 +123,21 @@ static cJSON *settings_of(const cJSON *registration, const char *portable, cJSON
         return NULL;
     }
     return runtime_read_ecosystem_settings(home, NULL, portable, &failed);
+}
+
+/**
+ * A refusal of a loader whose first required plugin runs on a runtime no layer runs, naming both; NULL when memory runs
+ * out.
+ */
+static cJSON *doorless_refusal(const cJSON *standard, const char *runtime) {
+    const char *plugin = cJSON_GetStringValue(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(standard, "plugins"), 0));
+    const char *parts[5] = {plugin, ", the first plugin the loader requires, runs on ", runtime,
+                            ", which no layer runs, so no layer can hold the loader's front door"};
+    const char *fix_parts[3] = {"install a version of ", plugin, " written for javascript or native"};
+    char *fix = runtime_cache_text(fix_parts, 3);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 4, fix);
+    spisor_memory_release(fix);
+    return refusal;
 }
 
 int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime_loader_layers *layers,
@@ -154,7 +169,24 @@ int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime
         return 0;
     }
     layers->front_door = runtime_front_door(layers->catalog, layers->standard, layers->plugins);
+    if (!runtime_is_layer_runtime(layers->front_door)) {
+        *refusal = doorless_refusal(layers->standard, layers->front_door);
+        runtime_free_loader_layers(layers);
+        return 0;
+    }
     return 1;
+}
+
+char *runtime_read_run_identity(const cJSON *places, const char *host_id, const char *runtime) {
+    runtime_loader_layers layers;
+    cJSON *refusal = NULL;
+    char *identity = NULL;
+    if (runtime_read_loader_layers(places, host_id, &layers, &refusal)) {
+        identity = runtime_run_identity(host_id, runtime, layers.front_door);
+        runtime_free_loader_layers(&layers);
+    }
+    cJSON_Delete(refusal);
+    return identity;
 }
 
 void runtime_free_loader_layers(runtime_loader_layers *layers) {

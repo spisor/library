@@ -676,7 +676,89 @@ static void an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer
     finish_base();
 }
 
+/**
+ * The other layer's session start reuses the run the front door's applied: applying again would record a run naming
+ * its own layer alone and an empty rollback over the front door's.
+ */
+static void one_session_applies_once_and_the_other_layer_reuses_its_run(void) {
+    lay_out_two_layers("start-one-apply");
+    record_references(TEST_HOST, "{\"run\":{\"" TEST_HOST "\":\"1.0.0\"},\"next\":{\"" TEST_HOST "\":\"2.0.0\"}}");
+    mark_installed("bundles", TEST_HOST, "2.0.0");
+    catalog_answer front = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
+    expect_success(front, "the front door's session start");
+    CHECK(is_false_at(front.tree, "reusedRecordedRun"));
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
+    cJSON *environment = environment_json();
+    runtime_hosts_start_request request = {environment, TEST_HOST, "spisor-interface", "3.0.0", libraries, 1, 0,
+                                           NATIVE, NULL};
+    cJSON *refusal = NULL;
+    cJSON *other = runtime_hosts_start(&request, &refusal);
+    CHECK(other != NULL && refusal == NULL);
+    CHECK(cJSON_IsTrue(value_at(other, "reusedRecordedRun")));
+    check_text(text_at(value_at(other, "plan/run"), "javascript-host"), "2.0.0", "the front door's layer item");
+    check_text(text_at(value_at(other, "plan/run"), "spisor-interface"), "3.0.0", "its own layer item");
+    expect_member_json(other, "plan/plugins", "{\"compiled\":\"1.0.0\"}", "its own layer's plugins");
+    runtime_host_references recorded = runtime_read_host_references(state, TEST_HOST);
+    expect_json(recorded.rollback, "{\"" TEST_HOST "\":\"1.0.0\"}", "the front door's rollback kept");
+    check_text(text_at(recorded.run, "javascript-host"), "2.0.0", "the front door's run kept");
+    runtime_free_host_references(&recorded);
+    runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(other, "plan"));
+    cJSON_Delete(refusal);
+    cJSON_Delete(other);
+    cJSON_Delete(environment);
+    cJSON_Delete(libraries);
+    cJSON_Delete(front.tree);
+    finish_base();
+}
+
+/** Each layer's plugins consume a capability only the other layer provides, so each layer's session start is refused. */
+static void lay_out_two_split_layers(const char *label) {
+    start_world(label);
+    register_test_host("1.0.0");
+    install_layered_plugin("scripted-consumer", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", NULL);
+    install_layered_plugin("compiled-provider", NATIVE, "{\"provides\":[\"x\"],\"consumes\":[]}", NULL);
+    install_layered_plugin("compiled-consumer", NATIVE, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
+    install_layered_plugin("scripted-provider", JAVASCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
+    write_catalog();
+    write_settings(application_home,
+                   "{\"plugins\":{\"scripted-consumer\":{\"enabled\":true},\"compiled-provider\":{\"enabled\":true},"
+                   "\"compiled-consumer\":{\"enabled\":true},\"scripted-provider\":{\"enabled\":true}}}");
+}
+
+static void expect_published_refusal(const char *identity, const char *part, const char *label) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "processes/%s.ready.json", identity);
+    char *path = joined(state, rest);
+    cJSON *record = read_json_file(path);
+    const char *refused = text_at(record, "refused");
+    if (refused == NULL || strstr(refused, part) == NULL) {
+        fprintf(stderr, "%s: expected %s's record to name %s, got %s\n", label, identity, part,
+                refused == NULL ? "(none)" : refused);
+        check_failures++;
+    }
+    cJSON_Delete(record);
+    spisor_memory_release(path);
+}
+
+/** Each layer's refusal lands on its own record whichever is refused first, never over the other's. */
+static void each_layer_publishes_its_refusal_to_its_own_record_in_either_order(void) {
+    const char *orders[2][2] = {{JAVASCRIPT, NATIVE}, {NATIVE, JAVASCRIPT}};
+    for (size_t order = 0; order < 2; order++) {
+        lay_out_two_split_layers(order == 0 ? "start-refusals-front-first" : "start-refusals-other-first");
+        for (size_t index = 0; index < 2; index++) {
+            catalog_answer started = start_layer_in(environment_json(), 1, orders[order][index], NULL);
+            CHECK(started.status == SPISOR_REFUSED);
+            cJSON_Delete(started.tree);
+        }
+        expect_published_refusal(TEST_HOST, "scripted-consumer (javascript)", "the front door's own refusal");
+        expect_published_refusal(TEST_HOST ".native", "compiled-consumer (native)", "the other layer's own refusal");
+        finish_base();
+    }
+}
+
 int main(void) {
+    one_session_applies_once_and_the_other_layer_reuses_its_run();
+    each_layer_publishes_its_refusal_to_its_own_record_in_either_order();
     only_the_front_door_layer_checks_for_updates();
     an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer();
     a_run_identity_may_carry_its_layer_after_a_dot();

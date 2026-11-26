@@ -122,7 +122,8 @@ static int add_layer_starts(cJSON *starts, const cJSON *layers) {
 /**
  * {host id: start} for every background host the loader's host.json names, then for each layer its plugins run in,
  * under that layer's identity; NULL with *refusal set when a background host or a layer of a loader with required
- * plugins cannot be started, before anything is. *layers is the layers, in the order hosts' layer_start answered them.
+ * plugins cannot be started, before anything is. *layers is the layers, in the order hosts' layer_start answered them,
+ * the front door's first, and starts holds them in that order after the background hosts.
  */
 static cJSON *starts_of(const host_context *context, const char *loader_id, const loader_start *loader, cJSON **layers,
                         cJSON **refusal) {
@@ -191,30 +192,60 @@ static cJSON *published_by(const host_context *context, const cJSON *layer, cons
                                : cJSON_CreateObject();
 }
 
+/** An object referring to the starts from index first up to, not including, end; NULL when memory runs out. */
+static cJSON *starts_between(const cJSON *starts, int first, int end) {
+    cJSON *between = cJSON_CreateObject();
+    for (int index = first; between != NULL && index < end; index++) {
+        cJSON *start = cJSON_GetArrayItem(starts, index);
+        if (!cJSON_AddItemReferenceToObject(between, start->string, start)) {
+            cJSON_Delete(between);
+            between = NULL;
+        }
+    }
+    return between;
+}
+
+/** Holds the starts from first up to end for holder, their pids added to pids; 0 with *refusal set as the hold says. */
+static int hold_between(const host_context *context, const cJSON *starts, int first, int end, double holder,
+                        cJSON *pids, cJSON **refusal) {
+    cJSON *between = starts_between(starts, first, end);
+    int held = between != NULL && host_hold_all(context, between, holder, pids, refusal);
+    cJSON_Delete(between);
+    return held;
+}
+
 /**
- * The environment the application starts with: this process's own, with the variables the layer holding the front
- * door publishes set over it, once every layer is ready. NULL with *refusal set when a layer publishes a refusal or is
- * not ready in time, which never happens for a launch that starts no layer.
+ * Holds every start for holder, the background hosts and the front door's layer first, then each other layer once the
+ * one before it is ready, and answers the environment the front door publishes; NULL with *refusal set when a hold is
+ * refused, a layer publishes a refusal or is not ready in time, nothing then held.
  *
- * @implNote The front door's record is awaited first: a refusal every layer would share is published there, so it is
- * read before another layer's record is waited on.
+ * @implNote The other layer starts only once the front door's is ready: only the front door's session start applies
+ * updates, and the other reuses the run it records, which exists once it is ready.
  */
-static cJSON *application_environment(const host_context *context, const cJSON *layers, const cJSON *pids,
-                                      cJSON **refusal) {
-    int count = cJSON_GetArraySize(layers);
-    cJSON *published = count == 0 ? cJSON_CreateObject()
-                                  : published_by(context, cJSON_GetArrayItem(layers, count - 1), pids, refusal);
-    for (int index = 0; published != NULL && index < count - 1; index++) {
-        cJSON *other = published_by(context, cJSON_GetArrayItem(layers, index), pids, refusal);
+static cJSON *held_and_ready(const host_context *context, const cJSON *starts, const cJSON *layers, double holder,
+                             cJSON **refusal) {
+    int layer_count = cJSON_GetArraySize(layers);
+    int front_end = cJSON_GetArraySize(starts) - (layer_count > 1 ? layer_count - 1 : 0);
+    cJSON *pids = cJSON_CreateObject();
+    int held = pids != NULL && hold_between(context, starts, 0, front_end, holder, pids, refusal);
+    cJSON *published = !held ? NULL
+                       : layer_count == 0 ? cJSON_CreateObject()
+                                          : published_by(context, cJSON_GetArrayItem(layers, 0), pids, refusal);
+    for (int index = 1; published != NULL && index < layer_count; index++) {
+        cJSON *other = hold_between(context, starts, front_end + index - 1, front_end + index, holder, pids, refusal)
+                           ? published_by(context, cJSON_GetArrayItem(layers, index), pids, refusal)
+                           : NULL;
         if (other == NULL) {
             cJSON_Delete(published);
             published = NULL;
         }
         cJSON_Delete(other);
     }
-    cJSON *environment = published == NULL ? NULL : host_overlay_environment(context->environment, published);
-    cJSON_Delete(published);
-    return environment;
+    if (held && published == NULL) {
+        host_release_all(context, starts, holder);
+    }
+    cJSON_Delete(pids);
+    return published;
 }
 
 static int run_application(const host_context *context, const char *binary, cJSON *starts, const cJSON *arguments,
@@ -239,15 +270,13 @@ static int run_held(const host_context *context, const cJSON *layers, const char
                     const cJSON *arguments) {
     cJSON *refusal = NULL;
     double self = host_process_id();
-    cJSON *pids = cJSON_CreateObject();
-    if (pids == NULL || !host_hold_all(context, starts, self, pids, &refusal)) {
-        cJSON_Delete(pids);
-        return host_refuse(refusal);
-    }
-    cJSON *environment = application_environment(context, layers, pids, &refusal);
-    cJSON_Delete(pids);
-    if (environment == NULL) {
+    cJSON *published = held_and_ready(context, starts, layers, self, &refusal);
+    cJSON *environment = published == NULL ? NULL : host_overlay_environment(context->environment, published);
+    cJSON_Delete(published);
+    if (published != NULL && environment == NULL) {
         host_release_all(context, starts, self);
+    }
+    if (environment == NULL) {
         return host_refuse(refusal);
     }
     int code = run_application(context, binary, starts, arguments, environment);

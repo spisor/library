@@ -298,18 +298,11 @@ static void publish_refusal(const host_request *request, const char *run_id, con
  * front door would overwrite that layer's ready record and leave this layer's waited on until it times out.
  */
 static void publish_unhinted_refusal(const host_request *request, const cJSON *places, const cJSON *refusal) {
-    runtime_loader_layers layers = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-    cJSON *unread = NULL;
-    int read = refusal != NULL && request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process &&
-               runtime_is_plain_host_id(request->host_id) &&
-               runtime_read_loader_layers(places, request->host_id, &layers, &unread);
-    char *identity = read ? runtime_run_identity(request->host_id, request->runtime, layers.front_door) : NULL;
+    int publishes = refusal != NULL && request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process &&
+                    runtime_is_plain_host_id(request->host_id);
+    char *identity = publishes ? runtime_read_run_identity(places, request->host_id, request->runtime) : NULL;
     publish_refusal(request, identity, places, refusal);
     spisor_memory_release(identity);
-    cJSON_Delete(unread);
-    if (read) {
-        runtime_free_loader_layers(&layers);
-    }
 }
 
 static runtime_host_run *run_of(const host_request *request, const cJSON *environment, const cJSON *hint,

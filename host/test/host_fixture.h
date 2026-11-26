@@ -316,6 +316,7 @@ typedef struct host_world {
     const char *fixture_ready;
     const char *ready_timeout;
     const char *refusing_runtime;
+    int tags_layer;
 } host_world;
 
 static inline void start_world_at(host_world *world, const char *suite, const char *label) {
@@ -330,6 +331,7 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->fixture_ready = NULL;
     world->ready_timeout = NULL;
     world->refusing_runtime = NULL;
+    world->tags_layer = 0;
     CHECK(spisor_make_directories(world->bin) == SPISOR_OK && spisor_make_directories(world->signals) == SPISOR_OK &&
           spisor_make_directories(world->streams) == SPISOR_OK);
 }
@@ -382,6 +384,9 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     }
     if (world->refusing_runtime != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REFUSING", world->refusing_runtime);
+    }
+    if (world->tags_layer) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_TAG_LAYER", "1");
     }
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "ComSpec");

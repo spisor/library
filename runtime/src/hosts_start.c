@@ -166,6 +166,22 @@ static cJSON *unwritable_run_record(const char *host_id) {
     return runtime_refusal(message, WRITABLE_STATE_FIX);
 }
 
+/**
+ * run with every id of running it does not name added, so the run record of a layer reusing another layer's run
+ * also names the layer item and libraries it runs on.
+ */
+static cJSON *run_beside(const cJSON *run, const cJSON *running) {
+    cJSON *merged = cJSON_Duplicate(run, 1);
+    for (const cJSON *entry = running->child; merged != NULL && entry != NULL; entry = entry->next) {
+        if (cJSON_GetObjectItemCaseSensitive(merged, entry->string) == NULL &&
+            !runtime_map_set(merged, entry->string, entry->valuestring)) {
+            cJSON_Delete(merged);
+            merged = NULL;
+        }
+    }
+    return merged;
+}
+
 static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
     cJSON *plugins = cJSON_CreateObject();
     for (const cJSON *entry = run->child; plugins != NULL && entry != NULL; entry = entry->next) {
@@ -177,18 +193,24 @@ static cJSON *plugins_beside(const cJSON *run, const cJSON *running) {
     return plugins;
 }
 
-static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON **refusal) {
+static cJSON *reused_plan(const start_context *context, const cJSON *recorded, cJSON **refusal) {
     int out_of_memory = 0;
     spisor_prepared_path removal;
-    char *record = runtime_record_run(context->state, context->argument.host_id, run,
-                                      RUNTIME_DEFAULT_CHECK_MILLISECONDS, &removal, &out_of_memory);
+    cJSON *run = run_beside(recorded, context->running);
+    char *record = run == NULL ? NULL
+                               : runtime_record_run(context->state, context->argument.host_id, run,
+                                                    RUNTIME_DEFAULT_CHECK_MILLISECONDS, &removal, &out_of_memory);
     if (record == NULL) {
-        *refusal = out_of_memory ? NULL : unwritable_run_record(context->argument.host_id);
+        *refusal = out_of_memory || run == NULL ? NULL : unwritable_run_record(context->argument.host_id);
+        cJSON_Delete(run);
         return NULL;
     }
     cJSON *plan = cJSON_CreateObject();
-    int built = plan != NULL && runtime_add_owned(plan, "plugins", plugins_beside(run, context->running)) &&
-                runtime_add_owned(plan, "run", cJSON_Duplicate(run, 1)) &&
+    if (plan == NULL) {
+        cJSON_Delete(run);
+    }
+    int built = plan != NULL && runtime_add_owned(plan, "run", run) &&
+                runtime_add_owned(plan, "plugins", plugins_beside(recorded, context->running)) &&
                 runtime_add_owned(plan, "unrecorded", cJSON_CreateArray()) &&
                 cJSON_AddStringToObject(plan, "runRecord", record) != NULL;
     if (!built) {
@@ -202,8 +224,9 @@ static cJSON *reused_plan(const start_context *context, const cJSON *run, cJSON 
 }
 
 /**
- * What a start that is not the background session start runs, an in-process one included: the run the host's
- * last start recorded, while a live run record names the host, else what updates.apply answers.
+ * What a start that is not the front door's session start runs, an in-process one and another layer's session start
+ * included: the run the host's last start recorded, while a live run record names the host, else what updates.apply
+ * answers.
  *
  * @implNote updates.apply may switch the host and its plugins to a scheduled version and rewrite their
  * references, which a second process beside a running session host must not do; a host with no live run
@@ -229,10 +252,34 @@ static cJSON *recorded_or_applied(const start_context *context, int *reused, cJS
     return plan;
 }
 
+/**
+ * The plan of the start: what updates.apply answers for the session start of the layer holding the front door, else
+ * what recorded_or_applied answers.
+ *
+ * @implNote One apply per session: a second layer applying beside the first would record a run of its own layer alone
+ * and an empty rollback over the first's, so launch starts the front door's layer first and the other reuses its run.
+ */
 static cJSON *planned(const start_context *context, int *reused, cJSON **refusal) {
+    int front_door = strcmp(context->run_id, context->argument.host_id) == 0;
     *reused = 0;
-    return context->argument.session && !context->argument.in_process ? applied(context, refusal)
-                                                                      : recorded_or_applied(context, reused, refusal);
+    return context->argument.session && !context->argument.in_process && front_door
+               ? applied(context, refusal)
+               : recorded_or_applied(context, reused, refusal);
+}
+
+/**
+ * Sets the run's identity from the front door runtime_read_loader_layers reads; 0 with *refusal set as it refuses, or
+ * with it NULL when memory runs out.
+ */
+static int identified(start_context *context, cJSON **refusal) {
+    runtime_loader_layers layers;
+    if (!runtime_read_loader_layers(context->places, context->argument.host_id, &layers, refusal)) {
+        return 0;
+    }
+    context->run_id =
+        runtime_run_identity(context->argument.host_id, context->argument.layer_runtime, layers.front_door);
+    runtime_free_loader_layers(&layers);
+    return context->run_id != NULL;
 }
 
 static cJSON *strings_of(const cJSON *capabilities, const char *member) {
@@ -272,12 +319,21 @@ static cJSON *described_plugin(const cJSON *catalog, const char *id, const char 
     return described;
 }
 
-/** Each of plugins described as described_plugin says, by id; NULL when memory runs out. */
+/** Whether the catalog lists id as a plugin, or does not list it, a reused run naming the other layer's items. */
+static int is_plugin_item(const cJSON *catalog, const char *id) {
+    const char *kind = text_of(runtime_updates_item(catalog, id), "kind");
+    return kind == NULL || strcmp(kind, "plugin") == 0;
+}
+
+/** Each of plugins the catalog does not list as another kind, described as described_plugin says, by id; NULL when memory runs out. */
 static cJSON *described_plugins(const char *cache, const cJSON *catalog, const cJSON *plugins) {
     cJSON *located = runtime_cache_locate_plugins(cache, plugins);
     cJSON *described = located == NULL ? NULL : cJSON_CreateObject();
     int out_of_memory = described == NULL;
     for (const cJSON *plugin = plugins == NULL ? NULL : plugins->child; !out_of_memory && plugin != NULL; plugin = plugin->next) {
+        if (!is_plugin_item(catalog, plugin->string)) {
+            continue;
+        }
         cJSON *each = described_plugin(catalog, plugin->string, located_manifest(located, plugin->string),
                                        &out_of_memory);
         out_of_memory = out_of_memory || !runtime_add_owned(described, plugin->string, each);
@@ -414,27 +470,6 @@ static cJSON *narrowed(const cJSON *plugins, const cJSON *needed) {
     return kept;
 }
 
-/**
- * The identity of the run plan plans: runtime_run_identity's for the front door of the loader standard the host's
- * bundle carries at the version plan runs; NULL when memory runs out. A host whose standard cannot be read requires
- * no plugin here, as a start needs none.
- */
-static char *run_identity(const start_context *context, const cJSON *catalog, const cJSON *plan) {
-    const char *version = string_of(cJSON_GetObjectItemCaseSensitive(plan, "run"), context->argument.host_id);
-    int out_of_memory = 0;
-    cJSON *standard = runtime_loader_standard(context->cache, context->argument.host_id,
-                                              version == NULL ? string_of(context->identity, "version") : version,
-                                              &out_of_memory);
-    const char *door = out_of_memory ? NULL
-                                     : runtime_front_door(catalog, standard,
-                                                          cJSON_GetObjectItemCaseSensitive(plan, "plugins"));
-    char *identity = door == NULL ? NULL
-                                  : runtime_run_identity(context->argument.host_id, context->argument.layer_runtime,
-                                                         door);
-    cJSON_Delete(standard);
-    return identity;
-}
-
 /** A refusal of an action of plugin, described in another layer than runtime's, naming both; NULL when memory runs out. */
 static cJSON *misplaced_action_refusal(const char *plugin, const cJSON *described, const char *runtime) {
     const char *own = string_of(described, "runtime");
@@ -472,11 +507,10 @@ static int layered(start_context *context, cJSON *plan, cJSON **refusal) {
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(plan, "plugins");
     cJSON *catalog = current_catalog(context, refusal);
     cJSON *described = catalog == NULL ? NULL : described_plugins(context->cache, catalog, plugins);
-    context->run_id = described == NULL ? NULL : run_identity(context, catalog, plan);
-    int misplaced = context->run_id != NULL && is_misplaced_action(described, action_plugin, runtime, refusal);
-    cJSON *needed = context->run_id == NULL || misplaced ? NULL
-                    : action_plugin == NULL              ? layer_plugins(described, runtime)
-                                                         : action_needs(described, action_plugin, runtime);
+    int misplaced = described != NULL && is_misplaced_action(described, action_plugin, runtime, refusal);
+    cJSON *needed = described == NULL || misplaced ? NULL
+                    : action_plugin == NULL        ? layer_plugins(described, runtime)
+                                                   : action_needs(described, action_plugin, runtime);
     int split = needed != NULL && is_split(described, needed, runtime, refusal);
     cJSON *kept = needed == NULL || split ? NULL : narrowed(plugins, needed);
     int replaced = kept != NULL && cJSON_ReplaceItemInObjectCaseSensitive(plan, "plugins", kept);
@@ -568,13 +602,20 @@ static void free_context(start_context *context) {
  *
  * @implNote Best effort: the start is refused either way, and a publication that fails must not hide why.
  * A refusal before the places resolve has nowhere to publish, and a start that is not the session start
- * has no launch waiting on it. A refusal before the run's identity is known is one of every layer alike, so the
- * host's own record, which the front door's layer publishes, carries it.
+ * has no launch waiting on it. A refusal before the run's identity is set goes to the identity
+ * runtime_read_run_identity reads, so it never lands on another layer's record, and to the host's own only when that
+ * cannot be read, as no layer could then start.
  */
 static void publish_refusal(const start_context *context, const cJSON *refusal) {
     if (context->argument.session && !context->argument.in_process && context->state != NULL && refusal != NULL) {
-        runtime_publish_ready_refusal(context->state,
-                                      context->run_id == NULL ? context->argument.host_id : context->run_id, refusal);
+        char *identity = context->run_id != NULL ? NULL
+                                                 : runtime_read_run_identity(context->places, context->argument.host_id,
+                                                                             context->argument.layer_runtime);
+        const char *published = context->run_id != NULL ? context->run_id
+                                : identity != NULL       ? identity
+                                                         : context->argument.host_id;
+        runtime_publish_ready_refusal(context->state, published, refusal);
+        spisor_memory_release(identity);
     }
 }
 
@@ -584,7 +625,7 @@ cJSON *runtime_hosts_start(const runtime_hosts_start_request *request, cJSON **r
     cJSON *answer = NULL;
     *refusal = NULL;
     context.argument = *request;
-    if (is_usable_request(request, refusal) && prepare(&context, refusal)) {
+    if (is_usable_request(request, refusal) && prepare(&context, refusal) && identified(&context, refusal)) {
         int reused = 0;
         cJSON *plan = planned(&context, &reused, refusal);
         if (plan != NULL && !layered(&context, plan, refusal)) {

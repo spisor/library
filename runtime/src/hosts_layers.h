@@ -76,10 +76,17 @@ typedef struct runtime_loader_layers {
 /**
  * Reads the layers of host_id under places, {state, cache, portable}, resolving its plugins as a start does from the
  * versions installed, writing nothing; 1, or 0 with *refusal set when it is not registered, its settings or catalog
- * cannot be read, or with it NULL when memory runs out, layers then holding nothing.
+ * cannot be read, or the first plugin its standard requires runs on a runtime no layer runs, so no layer can hold its
+ * front door; or with it NULL when memory runs out, layers then holding nothing.
  */
 int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime_loader_layers *layers,
                                cJSON **refusal);
+
+/**
+ * The identity a run of host_id's runtime layer runs as, read as runtime_read_loader_layers reads the front door; NULL
+ * when that read refuses or memory runs out.
+ */
+char *runtime_read_run_identity(const cJSON *places, const char *host_id, const char *runtime);
 
 void runtime_free_loader_layers(runtime_loader_layers *layers);
 

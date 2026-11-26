@@ -213,7 +213,10 @@ static int add_layer(const layer_context *context, cJSON *layers, const char *ru
     return 1;
 }
 
-/** Whether a SERVE or IN_PROCESS start runs a layer of runtime: one of its plugins does, or, for the front door, the standard requires one. */
+/**
+ * Whether a SERVE or IN_PROCESS start runs a layer of runtime: one of its plugins does, or, for the front door, the
+ * standard requires one.
+ */
 static int serves_on(const layer_context *context, const char *runtime) {
     const runtime_loader_layers *layers = &context->layers;
     int requires = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(layers->standard, "plugins")) > 0;
@@ -221,18 +224,38 @@ static int serves_on(const layer_context *context, const char *runtime) {
            (requires && strcmp(runtime, layers->front_door) == 0);
 }
 
-/** Every layer a SERVE or IN_PROCESS start runs, the front door's last. */
+/**
+ * Every layer a SERVE start runs, the front door's first.
+ *
+ * @implNote First, because only the front door's session start applies updates and the other layer reuses the run
+ * it records, which launch waits for before starting that layer.
+ */
 static int add_serving_layers(const layer_context *context, cJSON *layers, cJSON **refusal) {
     static const char *const runtimes[2] = {RUNTIME_LAYER_JAVASCRIPT, RUNTIME_LAYER_NATIVE};
     const char *door = context->layers.front_door;
-    int added = 1;
+    int added = !serves_on(context, door) || add_layer(context, layers, door, refusal);
     for (size_t index = 0; added && index < 2; index++) {
         if (strcmp(runtimes[index], door) != 0 && serves_on(context, runtimes[index])) {
             added = add_layer(context, layers, runtimes[index], refusal);
         }
     }
-    return added && (!runtime_is_layer_runtime(door) || !serves_on(context, door) ||
-                     add_layer(context, layers, door, refusal));
+    return added;
+}
+
+/**
+ * The javascript layer alone, the one runtime a host inside another application's process runs, refused when no
+ * plugin the loader runs is a javascript one.
+ */
+static int add_in_process_layer(const layer_context *context, cJSON *layers, cJSON **refusal) {
+    if (!serves_on(context, RUNTIME_LAYER_JAVASCRIPT)) {
+        const char *parts[3] = {"no plugin ", context->request->loader_id,
+                                " runs is a javascript one, and an in-process start runs the javascript layer alone"};
+        *refusal = runtime_cache_refusal(parts, 3,
+                                         "start the loader with spisor-host launch, which runs its native layer as a "
+                                         "process of its own");
+        return 0;
+    }
+    return add_layer(context, layers, RUNTIME_LAYER_JAVASCRIPT, refusal);
 }
 
 /** The one layer an ACTION runs in, the plugin's, refused when its catalog runtime is no layer's. */
@@ -250,6 +273,14 @@ static int add_action_layer(const layer_context *context, cJSON *layers, cJSON *
     return add_layer(context, layers, runtime, refusal);
 }
 
+static int add_mode_layers(const layer_context *context, cJSON *layers, cJSON **refusal) {
+    if (context->request->mode == RUNTIME_HOSTS_LAYER_ACTION) {
+        return add_action_layer(context, layers, refusal);
+    }
+    return context->request->mode == RUNTIME_HOSTS_LAYER_IN_PROCESS ? add_in_process_layer(context, layers, refusal)
+                                                                    : add_serving_layers(context, layers, refusal);
+}
+
 cJSON *runtime_hosts_layer_start(const runtime_hosts_layer_start_request *request, cJSON **refusal) {
     layer_context context;
     cJSON *places = runtime_places_of_environment(request->environment, refusal);
@@ -259,9 +290,7 @@ cJSON *runtime_hosts_layer_start(const runtime_hosts_layer_start_request *reques
     context.cache = text_of(places, "cache");
     if (places != NULL && runtime_read_loader_layers(places, request->loader_id, &context.layers, refusal)) {
         cJSON *layers = cJSON_CreateArray();
-        int added = layers != NULL && (request->mode == RUNTIME_HOSTS_LAYER_ACTION
-                                           ? add_action_layer(&context, layers, refusal)
-                                           : add_serving_layers(&context, layers, refusal));
+        int added = layers != NULL && add_mode_layers(&context, layers, refusal);
         answer = added ? cJSON_CreateObject() : NULL;
         if (answer == NULL || !cJSON_AddItemToObject(answer, "layers", layers)) {
             cJSON_Delete(answer);

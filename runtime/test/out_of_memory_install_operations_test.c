@@ -1356,22 +1356,19 @@ static int kept_the_session_run_unless_applied(void) {
     return kept;
 }
 
-/**
- * hosts' start world with javascript-host installed and hinted with the runtime binary, and a JavaScript runtime
- * recorded, so an action's layer start reads the loader's layers, its hint and bundle, and finds its runtime.
- */
-static void prepare_layer_start(void) {
-    char *bundle;
-    char *node;
+/** Installs layer item id at 1.0.0 with entry, hinted with the runtime binary the fake node stands in for. */
+static void install_layer_item(const char *id, const char *entry) {
+    char rest[256];
+    char host_json[256];
+    snprintf(rest, sizeof rest, "bundles/%s/1.0.0", id);
+    char *bundle = joined(base.cache, rest);
+    char *node = joined(base.user, "node");
     cJSON *hashes = cJSON_CreateObject();
     cJSON *sizes = cJSON_CreateObject();
-    prepare_start();
-    bundle = joined(base.cache, "bundles/javascript-host/1.0.0");
-    node = joined(base.user, "node");
-    write_in(bundle, "host.json", "{\"entry\":\"weivel-host.mjs\"}");
-    write_in(bundle, "weivel-host.mjs", "layer");
-    write_in(base.user, "node", "node");
-    const char *names[2] = {"host.json", "weivel-host.mjs"};
+    snprintf(host_json, sizeof host_json, "{\"entry\":\"%s\"}", entry);
+    write_in(bundle, "host.json", host_json);
+    write_in(bundle, entry, "layer");
+    const char *names[2] = {"host.json", entry};
     for (size_t index = 0; index < 2; index++) {
         char *path = joined(bundle, names[index]);
         char sha256[NAULA_SHA256_HEX_SIZE];
@@ -1389,13 +1386,8 @@ static void prepare_layer_start(void) {
     cJSON_AddStringToObject(runtime, "binary", node);
     cJSON_AddStringToObject(hint, "host", "1.0.0");
     char *hint_text = cJSON_PrintUnformatted(hint);
-    write_in(base.cache, "hosts/javascript-host.json", hint_text);
-    cJSON *record = cJSON_CreateObject();
-    cJSON_AddStringToObject(record, "executable", node);
-    char *record_text = cJSON_PrintUnformatted(record);
-    write_in(base.cache, "runtimes/javascript.json", record_text);
-    cJSON_free(record_text);
-    cJSON_Delete(record);
+    snprintf(rest, sizeof rest, "hosts/%s.json", id);
+    write_in(base.cache, rest, hint_text);
     cJSON_free(hint_text);
     cJSON_Delete(hint);
     cJSON_Delete(sizes);
@@ -1404,7 +1396,67 @@ static void prepare_layer_start(void) {
     spisor_memory_release(bundle);
 }
 
-/** An action's layer start for spisor-host; WRONG_RUN for an OK answering other than its one layer. */
+/** The loader the layer start case starts, and the runtime of the one layer its action answers. */
+static const char *layer_start_loader = "spisor-host";
+static const char *layer_start_runtime = "javascript";
+
+/**
+ * hosts' start world with javascript-host installed and hinted with the runtime binary, and a JavaScript runtime
+ * recorded, so an action's layer start of spisor-host reads its layers, its hint and bundle, and finds its runtime.
+ */
+static void prepare_layer_start(void) {
+    char *node;
+    prepare_start();
+    node = joined(base.user, "node");
+    write_in(base.user, "node", "node");
+    install_layer_item("javascript-host", "weivel-host.mjs");
+    cJSON *record = cJSON_CreateObject();
+    cJSON_AddStringToObject(record, "executable", node);
+    char *record_text = cJSON_PrintUnformatted(record);
+    write_in(base.cache, "runtimes/javascript.json", record_text);
+    cJSON_free(record_text);
+    cJSON_Delete(record);
+    spisor_memory_release(node);
+    layer_start_loader = "spisor-host";
+    layer_start_runtime = "javascript";
+}
+
+/**
+ * The layer start world with a loader beside spisor-host, whose settings alone name the catalog listing the action's
+ * plugin as native, so memory running out while reading them must never read as the loader's own empty catalog and a
+ * javascript plugin.
+ */
+static void prepare_loader_layer_start(void) {
+    char *home;
+    char *text;
+    cJSON *registration = cJSON_CreateObject();
+    cJSON *settings = cJSON_CreateObject();
+    prepare_layer_start();
+    install_layer_item("spisor-interface", "interface");
+    list_plugin(&base, "p", "1.0.0", "native");
+    write_catalog(&base);
+    cJSON_AddItemToObject(cJSON_AddObjectToObject(settings, "catalog"), "sources", local_sources(&base));
+    text = cJSON_PrintUnformatted(settings);
+    home = joined(base.user, "application");
+    write_in(home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+    spisor_memory_release(home);
+    home = joined(base.user, "loader-home");
+    cJSON_AddStringToObject(registration, "id", "fixture-loader");
+    cJSON_AddStringToObject(registration, "kind", "host");
+    cJSON_AddStringToObject(registration, "version", "1.0.0");
+    cJSON_AddStringToObject(registration, "home", home);
+    text = cJSON_PrintUnformatted(registration);
+    write_in(base.state, "hosts/fixture-loader.json", text);
+    cJSON_free(text);
+    cJSON_Delete(registration);
+    spisor_memory_release(home);
+    layer_start_loader = "fixture-loader";
+    layer_start_runtime = "native";
+}
+
+/** An action's layer start for layer_start_loader; WRONG_RUN for an OK answering other than its one layer of layer_start_runtime. */
 static spisor_status run_layer_start(void) {
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
@@ -1418,13 +1470,14 @@ static spisor_status run_layer_start(void) {
                                        {"SPISOR_CACHE", base.cache}};
     argument.environment = environment;
     argument.environment_count = 5;
-    argument.loader_id = "spisor-host";
+    argument.loader_id = layer_start_loader;
     argument.mode = RUNTIME_HOSTS_LAYER_ACTION;
     argument.plugin = "p";
     argument.action = "a";
     argument.input = "{}";
     last_status = hosts->layer_start(hosts->context, &argument, &answer, &refusal);
-    if (last_status == SPISOR_OK && (answer.layer_count != 1 || answer.layers[0].argument_count != 8)) {
+    if (last_status == SPISOR_OK && (answer.layer_count != 1 || answer.layers[0].argument_count != 8 ||
+                                     strcmp(answer.layers[0].runtime, layer_start_runtime) != 0)) {
         last_status = WRONG_RUN;
     }
     last_status = empty_unless_answered(last_status, &answer, sizeof answer);
@@ -1695,7 +1748,7 @@ int main(int argc, char **argv) {
         {"loader's check", prepare_loader_check, run_loader_check, NULL},
         {"loader's home", prepare_loader_home, run_loader_home, NULL},
         {"loader's installed", prepare_path_application, run_loader_installed, NULL}};
-    static const operation_case hosts_cases[7] = {
+    static const operation_case hosts_cases[8] = {
         {"hosts' register_host", prepare_register, run_register, NULL},
         {"hosts' list", prepare_list, run_list, NULL},
         {"hosts' remove", prepare_remove, run_remove, kept_the_registration_unless_removed},
@@ -1703,7 +1756,8 @@ int main(int argc, char **argv) {
         {"hosts' start", prepare_start, run_start, recorded_no_run_unless_applied},
         {"hosts' start beside a session", prepare_start_beside_session, run_start_beside_session,
          kept_the_session_run_unless_applied},
-        {"hosts' layer_start", prepare_layer_start, run_layer_start, NULL}};
+        {"hosts' layer_start", prepare_layer_start, run_layer_start, NULL},
+        {"hosts' layer_start of a loader", prepare_loader_layer_start, run_layer_start, NULL}};
     static const operation_case hold_start = {"processes' hold starting", prepare_hold_start, run_hold_start,
                                               started_and_recorded_or_nothing};
     const char *only = argc > 1 ? argv[1] : "";

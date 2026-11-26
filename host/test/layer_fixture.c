@@ -79,9 +79,22 @@ static char *identity_of(const host_context *context, int count, char **argument
     return identity;
 }
 
+/** Appends `@<runtime>` to every value of environment, so a test reads which layer published what it sees. */
+static void tag_with_runtime(cJSON *environment, const char *runtime) {
+    cJSON *variable;
+    cJSON_ArrayForEach(variable, environment) {
+        char tagged[1024];
+        if (cJSON_IsString(variable)) {
+            snprintf(tagged, sizeof tagged, "%s@%s", variable->valuestring, runtime);
+            cJSON_SetValuestring(variable, tagged);
+        }
+    }
+}
+
 /**
  * Publishes the ready record a session host does on every start, through the library as the real one does: a refusal
- * when SPISOR_FIXTURE_READY is refuse or SPISOR_FIXTURE_REFUSING names the layer's runtime.
+ * when SPISOR_FIXTURE_READY is refuse or SPISOR_FIXTURE_REFUSING names the layer's runtime, each value tagged with the
+ * layer's runtime when SPISOR_FIXTURE_TAG_LAYER is set.
  */
 static void publish_ready(const host_context *context, const char *host_id, const char *runtime) {
     const char *configured = host_text(context->environment, "SPISOR_FIXTURE_READY");
@@ -95,6 +108,9 @@ static void publish_ready(const host_context *context, const char *host_id, cons
     const runtime_processes_definition *processes = runtime_processes_definition_of();
     runtime_processes_ready_argument argument = SPISOR_INIT(runtime_processes_ready_argument);
     cJSON *environment = strcmp(mode, "refuse") == 0 || mode[0] == 0 ? NULL : cJSON_Parse(mode);
+    if (environment != NULL && runtime != NULL && host_text(context->environment, "SPISOR_FIXTURE_TAG_LAYER") != NULL) {
+        tag_with_runtime(environment, runtime);
+    }
     runtime_variable *variables =
         environment == NULL ? NULL : host_variables_of(environment, &argument.environment_count);
     argument.state = context->state;

@@ -5,10 +5,10 @@
  * @file
  * runtime's `hosts` service: what every start of a host does to register it and request its commands, the hosts
  * registered, a host's removal, the provenance an application's registration records, the whole start of a host
- * that runs its plugins in a language layer, and how to start each layer a loader's plugins run in. A size-prefixed struct is read only up to its `size`. Text the caller
- * hands in is NUL-terminated UTF-8 borrowed for the call; what an answer or a refusal points at is the provider's until
- * the release for its kind. A place is an absolute directory, as places' `resolve` answers it, and a host id a plain
- * file name.
+ * that runs its plugins in a language layer, and how to start each layer a loader's plugins run in. A size-prefixed
+ * struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what an
+ * answer or a refusal points at is the provider's until the release for its kind. A place is an absolute directory, as
+ * places' `resolve` answers it, and a host id a plain file name.
  */
 
 #include <stddef.h>
@@ -183,7 +183,10 @@ typedef struct runtime_hosts_layer {
     size_t environment_count;
 } runtime_hosts_layer;
 
-/** The `layer_count` `layers` to start, in the order to start them, the front door's last. First shape ends at `storage`. */
+/**
+ * The `layer_count` `layers` to start, in the order to start them, the front door's first. First shape ends at
+ * `storage`.
+ */
 typedef struct runtime_hosts_layer_start_answer {
     uint32_t size;
     const runtime_hosts_layer *layers;
@@ -250,17 +253,18 @@ typedef struct runtime_hosts_definition {
     /**
      * The whole start of a host: resolves the places, reads the host's registration and its home's settings, then
      * plans what runs as updates' apply does, with the layer and each library at the version it runs; a start that is
-     * not the session start reuses instead the run a live run record of the host names, with a run record of its own.
-     * The plan holds only the enabled plugins whose catalog runtime is `layer_runtime`, and for an ACTION start only
+     * not the session start of the layer holding the front door reuses instead the run a live run record of the host
+     * names, with a run record of its own naming that run and what this start runs beside it, so one session applies
+     * updates once. The plan holds only the enabled plugins whose catalog runtime is `layer_runtime`, and for an ACTION start only
      * `action_plugin` and every plugin of the layer that provides, transitively, a capability it consumes. A refused
      * session start publishes its refusal to the ready record of the run's identity, the host id for the layer that
      * holds the front door and `<host id>.<layer runtime>` for the other, once its places resolved.
      *
      * @return OK; MALFORMED, also for a `layer_runtime` that is neither `javascript` nor `native`; REFUSED when the
      * host is not registered or its registration carries no version or home, the settings cannot be read, a planned
-     * plugin consumes a capability only a plugin of the other layer provides, or as updates' apply refuses;
-     * OUT_OF_MEMORY, removing the run record this start
-     * wrote, and publishing no refusal. A refused or OUT_OF_MEMORY start may have recorded the references, which the
+     * plugin consumes a capability only a plugin of the other layer provides, an ACTION's plugin runs in the other
+     * layer, the first plugin the loader requires runs on a runtime no layer runs, or as updates' apply refuses;
+     * OUT_OF_MEMORY, removing the run record this start wrote, and publishing no refusal. A refused or OUT_OF_MEMORY start may have recorded the references, which the
      * next start would record alike.
      */
     spisor_status (*start)(void *context, const runtime_hosts_start_argument *argument,
@@ -273,8 +277,10 @@ typedef struct runtime_hosts_definition {
     void (*release_refusal)(void *context, spisor_refusal *refusal);
     /**
      * How to start the layers a loader's plugins run in, so no caller decides a layer, an argument order or an
-     * identity: a SERVE or IN_PROCESS start answers one layer per runtime of the enabled plugins a start resolves, an
-     * ACTION one layer, that of the plugin's catalog runtime. A `native` layer runs the entry of `spisor-interface`'s
+     * identity: a SERVE start answers one layer per runtime of the enabled plugins a start resolves, the front door's
+     * first, since only its session start applies updates and the other reuses the run it records; an IN_PROCESS start
+     * the javascript layer alone, the one a host inside another application's process runs; an ACTION one layer, that
+     * of the plugin's catalog runtime. A `native` layer runs the entry of `spisor-interface`'s
      * bundle as `host <runtime binary> native <loader id>`, a `javascript` one runs the JavaScript runtime with the
      * entry of `javascript-host`'s bundle and `<runtime binary> javascript <loader id>`, each at the version its boot
      * hint names and its runtime binary the one that hint names for `runtime`; `in-process`, or `action <plugin>
@@ -283,7 +289,8 @@ typedef struct runtime_hosts_definition {
      *
      * @return OK, with no layer for a loader whose settings enable no plugin it can run; MALFORMED, also for a mode
      * that is none of the three, or an ACTION without its plugin, action and input or another mode with any of them;
-     * REFUSED when the loader is not registered or its settings or catalog cannot be read, a layer's item has no
+     * REFUSED when the loader is not registered or its settings or catalog cannot be read, its first required plugin
+     * runs on a runtime no layer runs, an IN_PROCESS start finds no javascript plugin, a layer's item has no
      * hinted version or runtime binary or is not installed intact, its bundle names no entry inside it or a native one
      * cannot be made runnable, or no JavaScript runtime can be found or acquired; OUT_OF_MEMORY.
      */

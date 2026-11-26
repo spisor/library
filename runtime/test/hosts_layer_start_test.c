@@ -275,14 +275,14 @@ static void a_javascript_only_loader_answers_one_layer_under_its_own_identity(vo
     finish_world();
 }
 
-static void a_loader_spanning_two_layers_answers_both_the_front_door_last(void) {
+static void a_loader_spanning_two_layers_answers_both_the_front_door_first(void) {
     start_world("layer-two", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
     install_plugin_on("scripted", JAVASCRIPT, NULL);
     install_plugin_on("compiled", NATIVE, NULL);
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(NATIVE, LOADER ".native", "[]"), expected_layer(JAVASCRIPT, LOADER, "[]")),
-                  "the other layer first, the front door last");
+                  layers_of(expected_layer(JAVASCRIPT, LOADER, "[]"), expected_layer(NATIVE, LOADER ".native", "[]")),
+                  "the front door first, the other layer after it");
     release_answer(&answer);
     finish_world();
 }
@@ -294,7 +294,7 @@ static void the_first_required_plugin_puts_the_front_door_in_its_layer(void) {
     require_plugins("[\"compiled\"]");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(JAVASCRIPT, LOADER ".javascript", "[]"), expected_layer(NATIVE, LOADER, "[]")),
+                  layers_of(expected_layer(NATIVE, LOADER, "[]"), expected_layer(JAVASCRIPT, LOADER ".javascript", "[]")),
                   "the native layer holds the front door");
     release_answer(&answer);
     finish_world();
@@ -305,6 +305,47 @@ static void an_in_process_start_ends_each_layer_with_its_word(void) {
     install_plugin_on("scripted", JAVASCRIPT, NULL);
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
     expect_layers(&answer, layers_of(expected_layer(JAVASCRIPT, LOADER, "[\"in-process\"]"), NULL), "in-process");
+    release_answer(&answer);
+    finish_world();
+}
+
+/** An in-process host runs inside another application's JavaScript process, so it never runs the native layer. */
+static void an_in_process_start_of_two_layers_answers_the_javascript_layer_alone(void) {
+    start_world("layer-in-process-two", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
+    install_plugin_on("scripted", JAVASCRIPT, NULL);
+    install_plugin_on("compiled", NATIVE, NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
+    expect_layers(&answer, layers_of(expected_layer(JAVASCRIPT, LOADER, "[\"in-process\"]"), NULL),
+                  "the javascript layer alone");
+    release_answer(&answer);
+    finish_world();
+}
+
+static void an_in_process_start_of_native_plugins_alone_is_refused_naming_launch(void) {
+    start_world("layer-in-process-native", "{\"compiled\":{\"enabled\":true}}");
+    install_plugin_on("compiled", NATIVE, NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
+    CHECK(answer.status == SPISOR_REFUSED);
+    const char *message = text_at(answer.refusal, "message");
+    CHECK(message != NULL && strstr(message, "runs the javascript layer alone") != NULL);
+    const char *fix = text_at(answer.refusal, "fix");
+    CHECK(fix != NULL && strstr(fix, "spisor-host launch") != NULL);
+    release_answer(&answer);
+    finish_world();
+}
+
+static void a_first_required_plugin_on_no_layers_runtime_is_refused_naming_it(void) {
+    start_world("layer-jvm-door", "{\"scripted\":{\"enabled\":true},\"brewed\":{\"enabled\":true}}");
+    install_plugin_on("scripted", JAVASCRIPT, NULL);
+    install_plugin_on("brewed", "jvm", NULL);
+    require_plugins("[\"brewed\"]");
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    CHECK(answer.status == SPISOR_REFUSED);
+    const char *message = text_at(answer.refusal, "message");
+    CHECK(message != NULL && strstr(message, "brewed, the first plugin the loader requires, runs on jvm") != NULL);
+    CHECK(message != NULL && strstr(message, "no layer can hold the loader's front door") != NULL);
+    check_text(text_at(answer.refusal, "fix"), "install a version of brewed written for javascript or native",
+               "the fix naming the plugin");
     release_answer(&answer);
     finish_world();
 }
@@ -342,7 +383,7 @@ static void a_loader_naming_no_catalog_reads_runtimes_from_spisor_hosts(void) {
     write_tree(ecosystem_home, "config/settings.json", settings_with("{}"));
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(NATIVE, LOADER ".native", "[]"), expected_layer(JAVASCRIPT, LOADER, "[]")),
+                  layers_of(expected_layer(JAVASCRIPT, LOADER, "[]"), expected_layer(NATIVE, LOADER ".native", "[]")),
                   "the runtimes of spisor-host's catalog");
     release_answer(&answer);
     finish_world();
@@ -399,9 +440,12 @@ static void a_mode_or_its_members_out_of_shape_is_malformed(void) {
 
 int main(void) {
     a_javascript_only_loader_answers_one_layer_under_its_own_identity();
-    a_loader_spanning_two_layers_answers_both_the_front_door_last();
+    a_loader_spanning_two_layers_answers_both_the_front_door_first();
     the_first_required_plugin_puts_the_front_door_in_its_layer();
     an_in_process_start_ends_each_layer_with_its_word();
+    an_in_process_start_of_two_layers_answers_the_javascript_layer_alone();
+    an_in_process_start_of_native_plugins_alone_is_refused_naming_launch();
+    a_first_required_plugin_on_no_layers_runtime_is_refused_naming_it();
     an_action_of_a_native_plugin_answers_the_native_layer_alone();
     a_loader_naming_no_catalog_reads_runtimes_from_spisor_hosts();
     a_loader_enabling_no_plugin_answers_no_layer();
