@@ -288,7 +288,10 @@ static void a_remembered_name_that_points_elsewhere_needs_the_user(void) {
     command_run run = install_name("greeter", NULL);
     CHECK(run.code == 1);
     expect_contains(run.err, "git:0000000000000000000000000000000000000005", "the remembered id");
-    expect_contains(run.err, "git:000000000000000000000000000000000000000b", "the id now listed");
+    expect_contains(run.err, "it now means git:000000000000000000000000000000000000000b at the places forge:11",
+                    "the id now listed with the places it would be installed from");
+    expect_contains(run.err, "check that git:000000000000000000000000000000000000000b at the places forge:11 is",
+                    "the fix names the places accepting takes");
     expect_contains(run.err, "--accept git:000000000000000000000000000000000000000b", "how to accept");
     expect_nothing_installed("bundles");
     char *remembered = remembered_text();

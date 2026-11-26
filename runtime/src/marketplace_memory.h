@@ -26,9 +26,9 @@ typedef struct runtime_marketplace_remember_request {
 
 /**
  * marketplace.remember: answers {remembered: true} once the id and the at places a name was given are the ones this
- * host has on record for it, recording them when the host had none. Answers {needsUserAcceptance: true, was, now} and
- * records nothing when the host remembers another id for that name, unless accept is the id now offered, which is then
- * recorded with its places in place of the old ones. Answers {needsAtAcceptance: true, wasAt, nowAt} and records
+ * host has on record for it, recording them when the host had none. Answers {needsUserAcceptance: true, was, now,
+ * nowAt} and records nothing when the host remembers another id for that name, unless accept is the id now offered,
+ * which is then recorded with the places nowAt named in place of the old ones. Answers {needsAtAcceptance: true, wasAt, nowAt} and records
  * nothing when the id is the remembered one and its places are not, in the same order, unless accept_at is exactly the
  * places now offered: a copy that keeps an id and points its places at a copy of the repo would otherwise be trusted on
  * first contact. Not recording it only checks: it answers {settled: true} where it would have recorded or found the

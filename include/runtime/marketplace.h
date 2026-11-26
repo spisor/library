@@ -178,14 +178,14 @@ typedef enum runtime_marketplace_memory {
     RUNTIME_MARKETPLACE_REMEMBERED = 1,
     /** A check only: recording would have remembered it. */
     RUNTIME_MARKETPLACE_SETTLED = 2,
-    /** The host remembers `was` for the name, and the name now gives `now`; nothing was recorded. */
+    /** The host remembers `was` for the name, and the name now gives `now` at `now_at`; nothing was recorded. */
     RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE = 3,
     /** The id is the remembered one, at the places `was_at`, and the name now gives `now_at`; nothing was recorded. */
     RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE = 4
 } runtime_marketplace_memory;
 
 /**
- * What remembering found, with `was` and `now` for NEEDS_USER_ACCEPTANCE and `was_at` and `now_at` for
+ * What remembering found, with `was`, `now` and `now_at` for NEEDS_USER_ACCEPTANCE and `was_at` and `now_at` for
  * NEEDS_AT_ACCEPTANCE. First shape ends at `storage`.
  */
 typedef struct runtime_marketplace_remember_answer {

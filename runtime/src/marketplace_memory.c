@@ -178,16 +178,6 @@ static cJSON *flag_answer(const char *flag) {
     return answer;
 }
 
-static cJSON *needs_acceptance_answer(const char *was, const char *now) {
-    cJSON *answer = flag_answer("needsUserAcceptance");
-    if (answer != NULL &&
-        (cJSON_AddStringToObject(answer, "was", was) == NULL || cJSON_AddStringToObject(answer, "now", now) == NULL)) {
-        cJSON_Delete(answer);
-        return NULL;
-    }
-    return answer;
-}
-
 static cJSON *places_json(const char *const *at, size_t count) {
     cJSON *places = cJSON_CreateArray();
     for (size_t index = 0; places != NULL && index < count; index++) {
@@ -212,6 +202,23 @@ static cJSON *needs_at_acceptance_answer(const cJSON *was, const runtime_marketp
         return NULL;
     }
     if (!cJSON_AddItemToObject(answer, "nowAt", now)) {
+        cJSON_Delete(now);
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    return answer;
+}
+
+/** The id question names the places offered with the new id, so accepting it never takes places the user did not see. */
+static cJSON *needs_acceptance_answer(const char *was, const runtime_marketplace_remember_request *request) {
+    cJSON *answer = flag_answer("needsUserAcceptance");
+    if (answer == NULL || cJSON_AddStringToObject(answer, "was", was) == NULL ||
+        cJSON_AddStringToObject(answer, "now", request->id) == NULL) {
+        cJSON_Delete(answer);
+        return NULL;
+    }
+    cJSON *now = places_json(request->at, request->at_count);
+    if (now == NULL || !cJSON_AddItemToObject(answer, "nowAt", now)) {
         cJSON_Delete(now);
         cJSON_Delete(answer);
         return NULL;
@@ -277,7 +284,7 @@ static cJSON *question_for(const cJSON *remembered, const runtime_marketplace_re
             return NULL;
         }
         *asked = 1;
-        return needs_acceptance_answer(was, request->id);
+        return needs_acceptance_answer(was, request);
     }
     if (!is_same_at(was_at, request->at, request->at_count)) {
         if (request->accept_at != NULL && is_accepted_at(request->accept_at, request->at, request->at_count)) {

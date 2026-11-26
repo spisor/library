@@ -220,6 +220,9 @@ static inline cJSON *marketplace_remember_tree(const cJSON *argument, spisor_ref
             for (size_t index = 0; index < answer.was_at_count; index++) {
                 cJSON_AddItemToArray(was_at, cJSON_CreateString(answer.was_at[index]));
             }
+        }
+        if (answer.memory == RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE ||
+            answer.memory == RUNTIME_MARKETPLACE_NEEDS_USER_ACCEPTANCE) {
             cJSON *now_at = cJSON_AddArrayToObject(tree, "nowAt");
             for (size_t index = 0; index < answer.now_at_count; index++) {
                 cJSON_AddItemToArray(now_at, cJSON_CreateString(answer.now_at[index]));

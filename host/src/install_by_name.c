@@ -76,13 +76,6 @@ static int refuse_not_found(const char *name) {
     return refuse_with(parts, 2, "check the spelling, or name its marketplace as <marketplace>/<name>");
 }
 
-static int refuse_changed_name(const char *label, const char *was, const char *now, const char *application) {
-    const char *parts[5] = {label, " was ", was, " when it was first installed, and it now means ", now};
-    const char *fix_parts[8] = {"check that ", now, " is the plugin you mean, then run spisor-host install --name ", label,
-                                " --application ", application, " --accept ", now};
-    return refuse_with_fix_parts(parts, 5, fix_parts, 8);
-}
-
 static int refuse_changed_primary(const char *name, const char *application,
                                   const runtime_install_by_id_answer *answer) {
     const char *primary = answer->primary;
@@ -103,6 +96,20 @@ static char *joined_texts(const char *const *texts, size_t count, const char *se
         joined = longer;
     }
     return joined;
+}
+
+static int refuse_changed_name(const char *label, const runtime_marketplace_remember_answer *answer,
+                               const char *application) {
+    char *now_at = joined_texts(answer->now_at, answer->now_at_count, ",");
+    const char *places = now_at == NULL ? "" : now_at;
+    const char *parts[7] = {label, " was ", answer->was, " when it was first installed, and it now means ", answer->now,
+                            " at the places ", places};
+    const char *fix_parts[10] = {"check that ", answer->now, " at the places ", places,
+                                 " is the plugin you mean, then run spisor-host install --name ", label,
+                                 " --application ", application, " --accept ", answer->now};
+    int code = refuse_with_fix_parts(parts, 7, fix_parts, 10);
+    spisor_memory_release(now_at);
+    return code;
 }
 
 static int refuse_changed_number(const char *name, const char *application,
@@ -282,7 +289,7 @@ static int settles_name(const host_context *context, const host_name_request *re
         const char *shown = marketplace == NULL || label == NULL ? found->bare : label;
         *code = answer.memory == RUNTIME_MARKETPLACE_NEEDS_AT_ACCEPTANCE
                     ? refuse_changed_at(shown, &answer, request->application)
-                    : refuse_changed_name(shown, answer.was, answer.now, request->application);
+                    : refuse_changed_name(shown, &answer, request->application);
         spisor_memory_release(label);
     }
     names->release_remember_answer(names->context, &answer);

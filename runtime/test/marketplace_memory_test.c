@@ -101,12 +101,17 @@ static void one_name_in_two_marketplaces_is_two_memories(void) {
 static void a_different_id_for_a_remembered_name_needs_the_user_naming_both(void) {
     scratch_in(scratch, sizeof scratch, "marketplace-memory", "different");
     cJSON_Delete(remember("spisor", "runtime", "git:0000000000000000000000000000000000000001", NULL).tree);
+    offered_place = "forge:2";
     catalog_answer answer = remember("spisor", "runtime", "git:0000000000000000000000000000000000000002", NULL);
+    offered_place = "forge:1";
     CHECK(answer.status == SPISOR_OK);
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer.tree, "needsUserAcceptance")));
     CHECK(cJSON_GetObjectItemCaseSensitive(answer.tree, "remembered") == NULL);
     check_text(text_at(answer.tree, "was"), "git:0000000000000000000000000000000000000001", "the remembered id");
     check_text(text_at(answer.tree, "now"), "git:0000000000000000000000000000000000000002", "the offered id");
+    const cJSON *now_at = cJSON_GetObjectItemCaseSensitive(answer.tree, "nowAt");
+    CHECK(cJSON_GetArraySize(now_at) == 1);
+    check_text(cJSON_GetStringValue(cJSON_GetArrayItem(now_at, 0)), "forge:2", "the places offered with the new id");
     char *text = store_text();
     CHECK(text != NULL && strstr(text, "git:0000000000000000000000000000000000000001") != NULL && strstr(text, "git:0000000000000000000000000000000000000002") == NULL);
     spisor_memory_release(text);
