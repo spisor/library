@@ -139,6 +139,7 @@ static void write_store(const char *text) {
 static void a_corrupt_store_is_refused_not_overwritten(void) {
     const char *corrupt[] = {"{\"format\":2", "[]", "{\"format\":3,\"names\":{}}",
                              "{\"format\":1,\"names\":{\"spisor/runtime\":\"git:0000000000000000000000000000000000000001\"}}",
+                             "{\"format\":1,\"names\":{\"spisor/runtime\":{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[\"forge:1\"]}}}",
                              "{\"format\":2,\"names\":{\"spisor/runtime\":\"git:0000000000000000000000000000000000000001\"}}",
                              "{\"format\":2,\"names\":{\"spisor/runtime\":{\"id\":\"git:0000000000000000000000000000000000000001\",\"at\":[]}}}"};
     for (size_t index = 0; index < sizeof corrupt / sizeof corrupt[0]; index++) {

@@ -232,6 +232,19 @@ static void installs_by_name_and_prints_the_warnings(void) {
     finish_world(&world);
 }
 
+static void a_cache_naula_cannot_keep_records_in_is_printed_as_a_warning(void) {
+    start_world("unkept");
+    write_in(world.base.cache, "identities", "not a folder");
+    list_one_marketplace(COPY_OF(ENTRY_OF("git:0000000000000000000000000000000000000005", "forge:5", "greeter")));
+    command_run run = install_name("greeter", NULL);
+    CHECK(run.code == 0);
+    expect_contains(run.err, "warning: the cache record ", "the cache problem as a warning");
+    expect_contains(run.err, "identities", "the record naula could not keep");
+    expect_contains(run.out, "\"id\": \"git:0000000000000000000000000000000000000005\"", "installed all the same");
+    free_run(&run);
+    finish_world(&world);
+}
+
 static void an_ambiguous_name_lists_the_qualified_forms_and_installs_nothing(void) {
     start_world("ambiguous");
     const char *ids[] = {"first", "second"};
@@ -556,6 +569,7 @@ static void places_swapped_under_a_remembered_name_need_the_user(void) {
 
 static void run_against_the_forge(void) {
     installs_by_name_and_prints_the_warnings();
+    a_cache_naula_cannot_keep_records_in_is_printed_as_a_warning();
     an_ambiguous_name_lists_the_qualified_forms_and_installs_nothing();
     a_name_that_is_listed_nowhere_installs_nothing();
     a_remembered_name_that_points_elsewhere_needs_the_user();

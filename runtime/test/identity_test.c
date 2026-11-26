@@ -8,6 +8,7 @@
 #include "check.h"
 #include "definition_fixture.h"
 #include "fake_forge.h"
+#include "identity_naula.h"
 #include "runtime/identity.h"
 #include "service_scratch.h"
 
@@ -323,6 +324,33 @@ static void a_disputed_number_needs_the_user_until_accepted(void) {
     release_resolve_call(&accepted);
 }
 
+static naula_refusal refusal_of(const char *code, const char *fix) {
+    naula_refusal refusal;
+    memset(&refusal, 0, sizeof refusal);
+    refusal.size = sizeof refusal;
+    snprintf(refusal.code, sizeof refusal.code, "%s", code);
+    refusal.fix = fix;
+    return refusal;
+}
+
+static void a_refusal_that_asks_nothing_wins_over_a_declined_acceptance(void) {
+    runtime_identity_acceptance acceptance;
+    memset(&acceptance, 0, sizeof acceptance);
+    acceptance.dispute_count = 1;
+    naula_refusal for_the_number = refusal_of("number-changed", "accept the new number through accept_number");
+    naula_refusal copy = refusal_of("copy-of", "depend on the original");
+    naula_refusal none = refusal_of("", NULL);
+    CHECK(runtime_identity_needs_the_user(NAULA_OK, &none, &acceptance));
+    CHECK(runtime_identity_needs_the_user(NAULA_REFUSED, &for_the_number, &acceptance));
+    CHECK(!runtime_identity_needs_the_user(NAULA_REFUSED, &copy, &acceptance));
+    CHECK(!runtime_identity_needs_the_user(NAULA_UNREACHABLE, &copy, &acceptance));
+    acceptance.dispute_count = 0;
+    acceptance.primary_needed = 1;
+    naula_refusal primary = refusal_of("primary-changed", "accept the new primary");
+    CHECK(runtime_identity_needs_the_user(NAULA_REFUSED, &primary, &acceptance));
+    CHECK(!runtime_identity_needs_the_user(NAULA_REFUSED, &copy, &acceptance));
+}
+
 static void a_resolve_without_what_it_needs_is_malformed(void) {
     start_forge("malformed");
     const char *at[] = {"forge:10", NULL};
@@ -398,6 +426,7 @@ int main(void) {
     an_unknown_provider_is_refused_with_the_plugin_fix();
     a_changed_primary_needs_the_user_until_accepted();
     a_disputed_number_needs_the_user_until_accepted();
+    a_refusal_that_asks_nothing_wins_over_a_declined_acceptance();
     a_resolve_without_what_it_needs_is_malformed();
     a_token_goes_only_with_its_host();
     a_short_argument_or_a_filled_answer_is_malformed();
