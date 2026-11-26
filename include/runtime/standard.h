@@ -81,10 +81,12 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * ready, when every plugin activated, and otherwise a refusal naming the first plugin that did not, never an empty
  * environment. Its environment is empty but in the layer holding the front door of a loader whose standard declares
  * `application.proxy`: there it sets the proxy's `baseUrlVariable` to `http://127.0.0.1:<port>` and its placeholder's
- * `variable` to its `value`, the port the one the front door, the standard's first required plugin, declares it
- * listens on as `port` access with mode `listen`, a number or `setting:<key>` read from that plugin's settings. A
- * front door declaring no such fixed port, or whose setting holds no port from 1 to 65535, publishes a refusal
- * naming it instead.
+ * `variable` to its `value`. The port is declared by the front door, the standard's first required plugin, as the
+ * `port` access of its manifest with mode `listen`: a number, or `setting:<key>` read from that plugin's settings.
+ * That layer publishes a refusal instead when the proxy does not hold its `baseUrlVariable` or its placeholder's
+ * `variable` or `value` as text, when the standard requires no plugin, or when the front door is not among the run's
+ * plugins, has a manifest that cannot be read, declares no fixed port it listens on, or names a setting that is not
+ * set or holds no port from 1 to 65535.
  *
  * `tick` is a SERVE run's alone, after its `started` answered OK, and REFUSED otherwise, since an ACTION run never
  * ticks. It acts only through its `now` and reads no clock: every `recordRunMilliseconds` of hosts' start's timers

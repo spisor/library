@@ -332,6 +332,58 @@ static void a_proxy_with_no_front_door_to_read_publishes_a_refusal(void) {
         "run spisor-host install --catalog <path or url> again", "a standard requiring no plugin");
 }
 
+/** A setting the front door declares but neither its defaults nor any layer set is named as not set. */
+static void a_front_door_port_setting_that_is_not_set_publishes_a_refusal(void) {
+    expect_front_door_refused(
+        serving_front_door_set("front-door-port-not-set",
+                               "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+                               "\"access\": [{\"kind\": \"port\", \"target\": \"setting:proxy.port\", "
+                               "\"mode\": \"listen\"}]}",
+                               "{}"),
+        "a, the front door of " LOADER ", listens on the port its setting proxy.port, which is not set",
+        "set proxy.port of a to a port from 1 to 65535", "a front door whose setting is not set");
+}
+
+/** A manifest that turned unreadable after the plugin activated is named as unreadable, not as declaring no port. */
+static void a_front_door_whose_manifest_cannot_be_read_publishes_a_refusal(void) {
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    start_held_host_world("front-door-unreadable-manifest");
+    install_plugin("a", LISTENING_MANIFEST);
+    write_loader_standard(PROXY_STANDARD);
+    run = start_one(serve_arguments, 2);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    write_file(outcome.manifest, "{");
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    expect_front_door_refused(run, "a, the front door of " LOADER ", has a manifest at ",
+                              "run spisor-host install --catalog <path or url> again",
+                              "a front door whose manifest cannot be read");
+}
+
+/** The port is the one the plugin reads: the home's config layer over the portable one, over the default. */
+static void a_front_door_port_set_in_the_home_wins_over_the_portable_one(void) {
+    weivel_standard_host_outcome outcome;
+    started_run run;
+    cJSON *record;
+    start_held_host_world("front-door-home-port");
+    install_plugin("a", LISTENING_MANIFEST);
+    write_loader_standard(PROXY_STANDARD);
+    write_in(portable, "plugins/a/config.json", "{\"proxy\": {\"port\": 34000}}");
+    write_in(application_home, "config/a.json", PORT_SETTING);
+    run = start_one(serve_arguments, 2);
+    outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
+    CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
+    record = ready_record();
+    expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"),
+                "{\"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:43123\", "
+                "\"ANTHROPIC_AUTH_TOKEN\": \"sk-ant-loader-proxy\"}",
+                "a port the home sets over the portable one");
+    cJSON_Delete(record);
+    release_run(&run);
+    stop_expecting(0, "a port the home sets");
+    finish_base();
+}
+
 /**
  * The javascript layer of a loader whose front door is a native plugin runs as `<loader>.javascript`, and hands the
  * application nothing: only the front door's layer publishes the proxy's variables.
@@ -858,6 +910,9 @@ int main(void) {
     a_front_door_with_no_port_to_hand_publishes_a_refusal();
     a_proxy_the_standard_cannot_describe_publishes_a_refusal_naming_the_member();
     a_proxy_with_no_front_door_to_read_publishes_a_refusal();
+    a_front_door_port_setting_that_is_not_set_publishes_a_refusal();
+    a_front_door_whose_manifest_cannot_be_read_publishes_a_refusal();
+    a_front_door_port_set_in_the_home_wins_over_the_portable_one();
     a_layer_not_holding_the_front_door_publishes_an_empty_environment();
     in_process_runs_serve_beside_another_host_and_leave_the_loaders_records_alone();
     a_record_naming_a_dead_host_lets_a_serve_run_start_and_keep_ticking();

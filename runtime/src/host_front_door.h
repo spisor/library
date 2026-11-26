@@ -17,9 +17,9 @@
  * port the system picks (`any`) cannot be read this way, so it is refused like a missing declaration.
  *
  * @return a new object; NULL with *refusal set to {message, fix} when the proxy does not hold its `baseUrlVariable`
- * or its placeholder's `variable` or `value` as text, the standard requires no plugin, the front door is not among the
- * run's plugins,
- * declares no fixed port it listens on, or names a setting holding no port; or with it NULL when memory runs out.
+ * or its placeholder's `variable` or `value` as text, the standard requires no plugin, or the front door is not among
+ * the run's plugins, has a manifest that cannot be read, declares no fixed port it listens on, or names a setting that
+ * is not set or holds no port from 1 to 65535; or with it NULL when memory runs out.
  */
 cJSON *runtime_front_door_environment(const runtime_host_run *run, cJSON **refusal);
 

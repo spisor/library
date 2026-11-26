@@ -98,12 +98,21 @@ static spisor_status setting_of(const char *manifest, const char *key, cJSON **v
     return status;
 }
 
-/** A refusal of a setting that holds no port, naming the setting and why it could not be read when it could not. */
+/** What is wrong with a setting holding `value`, or that could not be read for `detail`. */
+static const char *setting_problem(const cJSON *value, const char *detail) {
+    if (detail != NULL) {
+        return " holds, which cannot be read: ";
+    }
+    return value == NULL ? ", which is not set" : " holds, which is no port from 1 to 65535";
+}
+
+/**
+ * A refusal of a setting that holds no port: one that is not set when `value` and `detail` are NULL, one whose
+ * `detail` says why it could not be read, else one holding something else.
+ */
 static cJSON *unusable_setting_refusal(const runtime_host_run *run, const char *plugin, const char *key,
-                                       const char *detail) {
-    const char *reason_parts[4] = {", listens on the port its setting ", key,
-                                   detail == NULL ? " holds, which is no port from 1 to 65535"
-                                                  : " holds, which cannot be read: ",
+                                       const cJSON *value, const char *detail) {
+    const char *reason_parts[4] = {", listens on the port its setting ", key, setting_problem(value, detail),
                                    detail == NULL ? "" : detail};
     const char *fix_parts[4] = {"set ", key, " of ", plugin};
     char *reason = runtime_cache_text(reason_parts, 4);
@@ -117,9 +126,18 @@ static cJSON *unusable_setting_refusal(const runtime_host_run *run, const char *
     return refusal;
 }
 
+static cJSON *unreadable_manifest_refusal(const runtime_host_run *run, const char *plugin, const char *path) {
+    const char *parts[3] = {", has a manifest at ", path, " that cannot be read as JSON"};
+    char *reason = runtime_cache_text(parts, 3);
+    cJSON *refusal = reason == NULL ? NULL : front_door_refusal(run, plugin, reason, RUNTIME_REINSTALL_FIX);
+    spisor_memory_release(reason);
+    return refusal;
+}
+
 /**
- * The port the front door `plugin`, whose manifest is at `path`, declares it listens on, or 0 with *refusal set when it
- * declares no fixed one or its setting holds none, or with it NULL when memory runs out.
+ * The port the front door `plugin`, whose manifest is at `path`, declares it listens on, or 0 with *refusal set when
+ * its manifest cannot be read, it declares no fixed port or its setting holds none, or with it NULL when memory runs
+ * out.
  */
 static int declared_port(const runtime_host_run *run, const char *plugin, const char *path, cJSON **refusal) {
     int out_of_memory = 0;
@@ -138,10 +156,12 @@ static int declared_port(const runtime_host_run *run, const char *plugin, const 
         spisor_status status = setting_of(path, key, &value, &refused);
         port = status == SPISOR_OK && is_port(value) ? (int)value->valuedouble : 0;
         if (port == 0 && status != SPISOR_OUT_OF_MEMORY) {
-            *refusal = unusable_setting_refusal(run, plugin, key, status == SPISOR_OK ? NULL : refused.detail);
+            *refusal = unusable_setting_refusal(run, plugin, key, value, status == SPISOR_OK ? NULL : refused.detail);
         }
         cJSON_Delete(value);
         spisor_refusal_release(&refused);
+    } else if (manifest == NULL && !out_of_memory) {
+        *refusal = unreadable_manifest_refusal(run, plugin, path);
     } else if (!out_of_memory) {
         *refusal = no_port_refusal(run, plugin);
     }
@@ -212,6 +232,7 @@ static cJSON *proxy_environment(const runtime_host_run *run, const cJSON *standa
     }
     return front_door_environment(run, standard, proxy, refusal);
 }
+
 cJSON *runtime_front_door_environment(const runtime_host_run *run, cJSON **refusal) {
     const cJSON *identity = member(run->started, "identity");
     const char *cache = text_of(member(run->started, "places"), "cache");
