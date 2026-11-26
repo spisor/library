@@ -16,7 +16,7 @@
 #define JAVASCRIPT "javascript"
 #define NATIVE "native"
 #define RECORDED_RUN                                                                                                \
-    "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\",\"a\":\"0.9.0\"}"
+    "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"0.9.0\"}"
 
 static int record_out_of_memory;
 
@@ -85,7 +85,7 @@ static catalog_answer start_layer_in(cJSON *environment, int session, const char
     cJSON_AddItemToObject(argument, "environment", environment);
     cJSON_AddStringToObject(argument, "hostId", TEST_HOST);
     cJSON_AddItemToObject(argument, "layer", parsed("{\"id\":\"" LAYER "\",\"version\":\"2.0.0\"}"));
-    cJSON_AddItemToObject(argument, "libraries", parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"));
+    cJSON_AddItemToObject(argument, "libraries", parsed("{\"runtime\":\"0.1.0\"}"));
     cJSON_AddBoolToObject(argument, "session", session);
     cJSON_AddStringToObject(argument, "layerRuntime", layer_runtime);
     if (action_plugin != NULL) {
@@ -143,8 +143,7 @@ static void a_session_start_applies_updates(void) {
     CHECK(cJSON_IsArray(value_at(started.tree, "plan/unrecorded")));
     CHECK(text_at(value_at(started.tree, "plan"), "runRecord") != NULL);
     expect_member_json(started.tree, "plan/run",
-                       "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\","
-                       "\"a\":\"1.0.0\"}",
+                       "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"1.0.0\"}",
                        "session run");
     char *identity = NULL;
     cJSON *expected_identity = cJSON_CreateObject();
@@ -224,8 +223,8 @@ static void the_running_map_names_the_host_the_layer_and_every_library(void) {
     expect_success(started, "running");
     expect_member_json(started.tree, "plan/plugins", "{\"a\":\"1.0.0\"}", "running excluded from plugins");
     expect_references(TEST_HOST,
-                      "{\"run\":{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"koffi\":"
-                      "\"2.0.0\",\"a\":\"1.0.0\"},\"next\":{}}",
+                      "{\"run\":{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\","
+                      "\"a\":\"1.0.0\"},\"next\":{}}",
                       "running recorded");
     cJSON_Delete(started.tree);
     finish_base();
@@ -291,7 +290,7 @@ static void a_no_color_that_is_no_text_is_refused_as_no_usable_environment(void)
     enable_plugin_a();
     cJSON *environment = environment_json();
     cJSON_AddNumberToObject(environment, "NO_COLOR", 1);
-    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}");
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
     runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, JAVASCRIPT, NULL};
     cJSON *refusal = NULL;
     cJSON *answer = runtime_hosts_start(&request, &refusal);
@@ -322,7 +321,7 @@ static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(v
     register_test_host("1.0.0");
     enable_plugin_a();
     cJSON *run = parsed(RECORDED_RUN);
-    cJSON_AddStringToObject(run, "Koffi", "3.0.0");
+    cJSON_AddStringToObject(run, "Runtime", "3.0.0");
     char *text = cJSON_PrintUnformatted(run);
     char references[1024];
     snprintf(references, sizeof references, "{\"run\":%s,\"next\":{}}", text);
@@ -330,7 +329,7 @@ static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(v
     spisor_memory_release(written_run_record(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
     catalog_answer started = start_host(0);
     expect_success(started, "plugin case");
-    expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Koffi\":\"3.0.0\"}", "case kept");
+    expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Runtime\":\"3.0.0\"}", "case kept");
     cJSON_free(text);
     cJSON_Delete(run);
     cJSON_Delete(started.tree);
@@ -389,7 +388,6 @@ static void a_start_writes_no_hint_for_the_registered_host(void) {
     start_world("start-no-hint");
     install_library_here("runtime", "0.1.0");
     install_library_here("runtime", "0.2.0");
-    install_library_here("koffi", "2.0.0");
     write_catalog();
     register_test_host("1.0.0");
     enable_plugin_a();
@@ -416,7 +414,7 @@ static void the_identity_version_is_the_one_the_plan_runs(void) {
 
 static cJSON *start_in_process(void) {
     cJSON *environment = environment_json();
-    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}");
+    cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
     runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, JAVASCRIPT, NULL};
     cJSON *refusal = NULL;
     cJSON *answer = runtime_hosts_start(&request, &refusal);

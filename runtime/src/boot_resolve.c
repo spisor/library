@@ -39,7 +39,7 @@ static char *hinted_version(const char *cache, const char *host_id, cJSON **refu
     return version;
 }
 
-static char *version_directory(const char *cache, const char *host_id, const char *version, cJSON **refusal) {
+char *runtime_bundle_version_directory(const char *cache, const char *host_id, const char *version, cJSON **refusal) {
     int unfit = 0;
     char *folder = runtime_item_folder(host_id, &unfit);
     const char *versions_segments[3] = {cache, "bundles", folder};
@@ -131,7 +131,7 @@ static cJSON *resolution(const char *executable, const char *version, const char
 cJSON *runtime_resolve_booted_host(const char *cache, const char *host_id, const char *platform, cJSON **refusal) {
     *refusal = NULL;
     char *version = hinted_version(cache, host_id, refusal);
-    char *directory = version == NULL ? NULL : version_directory(cache, host_id, version, refusal);
+    char *directory = version == NULL ? NULL : runtime_bundle_version_directory(cache, host_id, version, refusal);
     char *executable = directory != NULL && is_verified(host_id, directory, refusal)
                            ? executable_in(directory, host_id, platform, refusal)
                            : NULL;

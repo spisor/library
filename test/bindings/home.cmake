@@ -15,15 +15,14 @@ get_filename_component(runtime_name "${RUNTIME}" NAME)
 
 file(COPY "${RUNTIME}" DESTINATION "${BASE}/rt")
 file(COPY "${DECLARATION}" DESTINATION "${BASE}/rt")
-file(MAKE_DIRECTORY "${BASE}/user" "${BASE}/portable" "${BASE}/secrets" "${BASE}/koffi")
+file(MAKE_DIRECTORY "${BASE}/user" "${BASE}/portable" "${BASE}/secrets")
 
 file(WRITE "${BASE}/catalog/index.json" "{\"format\": 1, \"items\": {}}")
 file(WRITE "${BASE}/state/hosts/test-host.json"
     "{\"id\": \"test-host\", \"kind\": \"host\", \"version\": \"1.0.0\", \"home\": \"${BASE}/application\"}")
 file(WRITE "${BASE}/cache/hosts/javascript-host.json"
     "{\"host\": \"2.0.0\", \"libraries\": {"
-    "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"${BASE}/rt\", \"binary\": \"${BASE}/rt/${runtime_name}\"}, "
-    "\"koffi\": {\"version\": \"2.0.0\", \"directory\": \"${BASE}/koffi\"}}}")
+    "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"${BASE}/rt\", \"binary\": \"${BASE}/rt/${runtime_name}\"}}}")
 
 set(enabled "")
 foreach(id IN LISTS plugin_ids)

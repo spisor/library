@@ -12,7 +12,7 @@
 #endif
 
 #define HOST "spisor-host"
-#define LIBRARIES "{\"runtime\":\"0.1.0\",\"koffi\":\"2.0.0\"}"
+#define LIBRARIES "{\"runtime\":\"0.1.0\"}"
 #define DECLARATION "library.json"
 
 static catalog_answer read_hint(const char *host) {
@@ -124,8 +124,8 @@ static void it_writes_the_hint_as_json_stringify_writes_it_and_reads_it_back(voi
 static void it_keeps_the_recorded_host_version_when_a_write_names_none(void) {
     start_base("hint-keeps-host");
     cJSON_Delete(write_hint_through_boot(HOST, LIBRARIES, "1.0.0").tree);
-    cJSON_Delete(write_hint_through_boot(HOST, "{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"}", NULL).tree);
-    char *expected = undeclared_hint("{\"runtime\":\"0.2.0\",\"koffi\":\"2.0.0\"}", "1.0.0");
+    cJSON_Delete(write_hint_through_boot(HOST, "{\"runtime\":\"0.2.0\"}", NULL).tree);
+    char *expected = undeclared_hint("{\"runtime\":\"0.2.0\"}", "1.0.0");
     expect_hint(HOST, expected, "keeps host");
     cJSON_free(expected);
     finish_base();
@@ -230,11 +230,11 @@ static void it_refuses_a_library_folder_whose_binary_is_a_symlink(void) {
 static void it_records_only_the_directory_of_a_library_with_no_declaration(void) {
     start_base("hint-undeclared");
     const char *files[2] = {"lib/native.node", "package.json"};
-    place_library("koffi", "2.16.3", "linux-x64", files, 2);
-    catalog_answer written = write_hint_on(HOST, "{\"koffi\":\"2.16.3\"}", "1.0.0", "linux-x64");
+    place_library("native-library", "2.16.3", "linux-x64", files, 2);
+    catalog_answer written = write_hint_on(HOST, "{\"native-library\":\"2.16.3\"}", "1.0.0", "linux-x64");
     expect_success(written, "undeclared write");
-    cJSON *expected = hinted_entry("koffi", "2.16.3", "linux-x64", NULL);
-    expect_entry(written.tree, "hint/libraries/koffi", expected, "directory only");
+    cJSON *expected = hinted_entry("native-library", "2.16.3", "linux-x64", NULL);
+    expect_entry(written.tree, "hint/libraries/native-library", expected, "directory only");
     cJSON_Delete(expected);
     cJSON_Delete(written.tree);
     finish_base();
@@ -243,10 +243,8 @@ static void it_records_only_the_directory_of_a_library_with_no_declaration(void)
 static void it_reads_back_what_it_wrote(void) {
     start_base("hint-read-back");
     const char *runtime_files[2] = {DECLARATION, "runtime.dll"};
-    const char *koffi_files[1] = {"lib/native.node"};
     place_library("runtime", "0.1.0", "win32-x64", runtime_files, 2);
-    place_library("koffi", "2.16.3", "win32-x64", koffi_files, 1);
-    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\",\"koffi\":\"2.16.3\"}", "1.0.0", "win32-x64");
+    catalog_answer written = write_hint_on(HOST, "{\"runtime\":\"0.1.0\"}", "1.0.0", "win32-x64");
     if (!expect_success(written, "read back write")) {
         cJSON_Delete(written.tree);
         finish_base();
@@ -478,9 +476,7 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     install_host("3.0.0");
     mark_installed("libraries", "runtime", "0.1.0");
     mark_installed("libraries", "runtime", "0.2.0");
-    mark_installed("libraries", "koffi", "2.0.0");
-    write_hint(HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"},"
-                     "\"koffi\":{\"version\":\"2.0.0\",\"directory\":\"k\"}},\"host\":\"2.0.0\"}");
+    write_hint(HOST, "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"}},\"host\":\"2.0.0\"}");
     record_references(HOST, "{\"run\":{},\"next\":{}}");
     catalog_answer swept = sweep_cache();
     expect_success(swept, "sweep");
@@ -488,7 +484,6 @@ static void it_leaves_everything_the_hint_names_after_a_sweep(void) {
     CHECK(exists_in(cache, "bundles/spisor-host/2.0.0/" PLATFORM "/spisor-host"));
     CHECK(!exists_in(cache, "bundles/spisor-host/1.0.0"));
     CHECK(exists_in(cache, "libraries/runtime/0.1.0/" PLATFORM));
-    CHECK(exists_in(cache, "libraries/koffi/2.0.0/" PLATFORM));
     catalog_answer resolved = resolve_boot(HOST, NULL);
     expect_executable(resolved, HOST, "2.0.0", "after sweep");
     cJSON_Delete(resolved.tree);

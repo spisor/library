@@ -238,6 +238,33 @@ static inline void list_host(install_base *base, const char *id, const char *ver
               host_json == NULL ? "{}" : host_json, 0);
 }
 
+/** The folder Node's archive of version unpacks into on this platform, node-v<version>-<os>-<arch>, win32 as win. */
+static inline void node_archive_stem(const char *version, char *stem, size_t size) {
+    const char *platform = runtime_platform_key();
+    int windows = strncmp(platform, "win32-", 6) == 0;
+    snprintf(stem, size, "node-v%s-%s%s", version, windows ? "win-" : "", windows ? platform + 6 : platform);
+}
+
+/** javascript-host's host.json pinning Node pinned at minimum, this platform's build at url with sha256 (freed). */
+static inline char *javascript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
+    cJSON *manifest = cJSON_CreateObject();
+    cJSON_AddStringToObject(manifest, "id", "javascript-host");
+    cJSON_AddStringToObject(manifest, "runtime", "javascript");
+    cJSON_AddStringToObject(manifest, "entry", "weivel-host.mjs");
+    cJSON *node = cJSON_AddObjectToObject(manifest, "node");
+    cJSON_AddStringToObject(node, "pinned", pinned);
+    cJSON_AddStringToObject(node, "minimum", minimum);
+    cJSON *build = cJSON_AddObjectToObject(cJSON_AddObjectToObject(node, "builds"), runtime_platform_key());
+    cJSON_AddStringToObject(build, "url", url);
+    cJSON_AddStringToObject(build, "sha256", sha256);
+    char *printed = cJSON_PrintUnformatted(manifest);
+    char *text = spisor_memory_allocate(strlen(printed) + 1);
+    strcpy(text, printed);
+    cJSON_free(printed);
+    cJSON_Delete(manifest);
+    return text;
+}
+
 /** The application JSON of id, found as binary, at home candidate ~/homes/<id>, under package mapping packages_json. */
 /** An entry running the loader's hook through the boot stub, with one settings member the removal takes back. */
 #define HOOK_ENTRY_JSON                                                                                              \

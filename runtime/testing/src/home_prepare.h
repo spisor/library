@@ -29,7 +29,6 @@ typedef struct runtime_testing_prepared_home {
     runtime_testing_prepared_install *installs;
     size_t install_count;
     cJSON *libraries;
-    int hints_default_koffi;
 } runtime_testing_prepared_home;
 
 /**

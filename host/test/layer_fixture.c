@@ -26,7 +26,7 @@
 /** No fixture outlives a broken test by more than this. */
 #define LONGEST_LIFE_MILLISECONDS 60000.0
 #define DEFAULT_INTERVAL 300.0
-#define NODE_VERSION "22.0.0"
+#define NODE_VERSION "22.18.0"
 
 static void pause_milliseconds(long milliseconds) {
 #if defined(_WIN32)

@@ -85,7 +85,6 @@ static void finish(void) {
     tree_before_entry = NULL;
     spisor_memory_release(path_directory);
     path_directory = NULL;
-    runtime_install_use_runtime_build(NULL, NULL, NULL);
     finish_install_base(&base);
 }
 
@@ -290,11 +289,19 @@ static spisor_status run_register_loader(void) {
     return status;
 }
 
-/** A node of major 22 on a PATH of its own, the pinned build pointed at an archive that is not there. */
+/** javascript-host 1.0.0 installed and hinted, its host.json pinning Node version at url with sha256. */
+static void install_node_pin(const char *version, const char *url, const char *sha256) {
+    write_in(base.cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    char *manifest = javascript_host_json(version, "22.18.0", url, sha256);
+    write_in(base.cache, "bundles/javascript-host/1.0.0/host.json", manifest);
+    spisor_memory_release(manifest);
+}
+
+/** A node of the pinned minimum on a PATH of its own, the pinned build pointed at an archive that is not there. */
 static void prepare_runtime(void) {
     start_install_base(&base, "operations", "runtime");
     path_directory = joined(base.root, "path-node");
-    write_in(path_directory, "version.txt", "22.1.0");
+    write_in(path_directory, "version.txt", "22.18.0");
     size_t length = 0;
     uint8_t *probe = spisor_read_file_reporting(RUNTIME_NODE_PROBE_PATH, &length,
                                                 &(spisor_read_outcome){SPISOR_READ_FAILED});
@@ -312,7 +319,7 @@ static void prepare_runtime(void) {
     char *missing = joined(base.root, "unreachable/node.zip");
     char *url = NULL;
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, missing, &url);
-    runtime_install_use_runtime_build(UNREACHABLE_VERSION, url, UNREACHABLE_SHA256);
+    install_node_pin(UNREACHABLE_VERSION, url, UNREACHABLE_SHA256);
     spisor_memory_release(url);
     spisor_memory_release(missing);
 }
@@ -344,14 +351,17 @@ static int acquired_nothing(void) {
 }
 
 #define STAGED_VERSION "1.2.3"
-#define STAGED_STEM "node-v1.2.3-staged"
 #if defined(_WIN32)
-#define STAGED_ARCHIVE STAGED_STEM ".zip"
+#define STAGED_ENDING ".zip"
 #define STAGED_EXECUTABLE "node.exe"
 #else
-#define STAGED_ARCHIVE STAGED_STEM ".tar.gz"
+#define STAGED_ENDING ".tar.gz"
 #define STAGED_EXECUTABLE "bin/node"
 #endif
+
+/** The folder STAGED_VERSION's archive unpacks into and the archive's name, as Node names them. */
+static char STAGED_STEM[64];
+static char STAGED_ARCHIVE[80];
 
 static install_base archive_base;
 static char *staged_archive_url = NULL;
@@ -388,8 +398,12 @@ static cJSON *packing_arguments(const char *archive, const char *packing) {
 /** Packs, once for every attempt, a runtime archive the staging case fetches and unpacks. */
 static void pack_staged_archive(void) {
     start_install_base(&archive_base, "operations", "runtime-archive");
+    node_archive_stem(STAGED_VERSION, STAGED_STEM, sizeof STAGED_STEM);
+    snprintf(STAGED_ARCHIVE, sizeof STAGED_ARCHIVE, "%s" STAGED_ENDING, STAGED_STEM);
+    char member[128];
+    snprintf(member, sizeof member, "%s/" STAGED_EXECUTABLE, STAGED_STEM);
     char *packing = joined(archive_base.root, "packing");
-    write_in(packing, STAGED_STEM "/" STAGED_EXECUTABLE, "the node executable");
+    write_in(packing, member, "the node executable");
     char *archive = joined(archive_base.root, STAGED_ARCHIVE);
     cJSON *arguments = packing_arguments(archive, packing);
     char *tar = system_tar();
@@ -416,7 +430,7 @@ static void prepare_staged_runtime(void) {
     start_install_base(&base, "operations", "runtime-staged");
     path_directory = joined(base.root, "path-without-node");
     CHECK(spisor_make_directories(path_directory) == SPISOR_OK);
-    runtime_install_use_runtime_build(STAGED_VERSION, staged_archive_url, staged_archive_sha256);
+    install_node_pin(STAGED_VERSION, staged_archive_url, staged_archive_sha256);
 }
 
 static int holds_archive(const char *versions, const char *staging) {
@@ -467,18 +481,16 @@ static void settings_reading_the_catalog(void) {
 }
 
 /**
- * spisor-host registered, scheduled to switch to its installed 2.0.0, booting with two libraries of which the catalog
- * lists a newer one installed, so a start switches, records, hints and writes its run record.
+ * spisor-host registered, scheduled to switch to its installed 2.0.0, booting with a library the catalog lists a newer
+ * version of installed, so a start switches, records, hints and writes its run record.
  */
 static void prepare_apply(void) {
     start_install_base(&base, "operations", "apply");
     list_library(&base, "runtime", "0.1.0");
     list_library(&base, "runtime", "0.2.0");
-    list_library(&base, "koffi", "2.0.0");
     write_catalog(&base);
     mark_library("runtime", "0.1.0");
     mark_library("runtime", "0.2.0");
-    mark_library("koffi", "2.0.0");
     mark_version("bundles/spisor-host/2.0.0/.installed.json");
     write_in(base.state, "hosts/spisor-host.json", "{\"id\":\"spisor-host\"}");
     write_in(base.state, "bundles/spisor-host.json",
@@ -488,9 +500,8 @@ static void prepare_apply(void) {
 }
 
 static spisor_status run_apply(void) {
-    static const runtime_item_version running[3] = {
-        {"spisor-host", "1.0.0"}, {"runtime", "0.1.0"}, {"koffi", "2.0.0"}};
-    static const char *const libraries[2] = {"runtime", "koffi"};
+    static const runtime_item_version running[2] = {{"spisor-host", "1.0.0"}, {"runtime", "0.1.0"}};
+    static const char *const libraries[1] = {"runtime"};
     const runtime_updates_definition *updates = runtime_updates_definition_of();
     runtime_updates_apply_argument argument = SPISOR_INIT(runtime_updates_apply_argument);
     runtime_updates_apply_answer answer;
@@ -501,10 +512,10 @@ static spisor_status run_apply(void) {
     argument.host_id = "spisor-host";
     argument.settings = &updates_settings.root;
     argument.running = running;
-    argument.running_count = 3;
+    argument.running_count = 2;
     argument.writes_boot_hint = 1;
     argument.libraries = libraries;
-    argument.library_count = 2;
+    argument.library_count = 1;
     last_status = updates->apply(updates->context, &argument, &answer, &refusal);
     last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     updates->release_apply_answer(updates->context, &answer);
@@ -1303,7 +1314,7 @@ static void prepare_start_beside_session(void) {
 
 /** A start of spisor-host, as its session host when session is nonzero; WRONG_RUN for an OK missing what it owes. */
 static spisor_status start_spisor_host(int session) {
-    static const runtime_item_version layer = {"koffi", "2.0.0"};
+    static const runtime_item_version layer = {"javascript-host", "2.0.0"};
     static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_hosts_start_argument argument = SPISOR_INIT(runtime_hosts_start_argument);

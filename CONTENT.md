@@ -540,6 +540,18 @@ sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
 
+The `javascript-host` item every JavaScript plugin runs on is weivel/typescript's program bundle, staged by the build
+target `javascript_host_bundle` into `bundles/javascript-host` beside `spisor-host`'s bundles, ready for
+`spisor-host catalog build --host <bundle>@<platform>`. It runs `stage-bundle javascript-host`, which runs
+`node <checkout>/dist/bundle/bin.js program` on the `node` on the `PATH`, so it is not built by default and needs
+`siblings/typescript` (or `SPISOR_WEIVEL_TYPESCRIPT_DIR`) installed and built with `npm ci` and `npm run build`. Beside
+`weivel-host.mjs` and `weivel-host-in-process.mjs` it places this build's `weivel_core` and `weivel_standard`, and
+koffi under `node_modules/koffi` with this platform's prebuilt only. Its `host.json` carries the Node every
+JavaScript host runs on, `node {pinned, minimum, builds}`: the pin and each platform's archive with its SHA-256 come
+from `host/bundle/node.json`, copied from nodejs.org's `SHASUMS256.txt` and never computed from a download, and the
+minimum, the lowest Node a `PATH` may offer instead, is weivel/typescript's `engines.node`. Staging refuses a pin older
+than that minimum. Moving Node is a change to `node.json` and a new `javascript-host`, never to `runtime`.
+
 `spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
 it lies in. `--out` may not be the list itself. A copy already at `--out` is the previous copy: an entry whose repository cannot

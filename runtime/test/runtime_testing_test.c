@@ -60,8 +60,7 @@ static void expect_hinted(const char *cache) {
     check_text(text_at(hint, "host"), "2.0.0", "hinted host");
     check_text(text_at(value_at(hint, "libraries/runtime"), "version"), "0.2.0", "runtime's version");
     check_text(text_at(value_at(hint, "libraries/forebay-library"), "version"), "0.3.0", "the declared version");
-    const char *koffi = text_at(value_at(hint, "libraries/koffi"), "directory");
-    CHECK(koffi != NULL && runtime_probe_entry(koffi) == RUNTIME_ENTRY_DIRECTORY);
+    CHECK(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(hint, "libraries")) == 2);
     cJSON_Delete(hint);
 }
 

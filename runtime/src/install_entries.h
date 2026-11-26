@@ -12,9 +12,6 @@
 /** The library id runtime itself is installed and hinted under. */
 #define RUNTIME_LIBRARY_ID "runtime"
 
-/** The library id koffi, the JavaScript host's FFI, is installed and hinted under. */
-#define RUNTIME_KOFFI_LIBRARY_ID "koffi"
-
 /**
  * Writes the entry the loader's application declares, every directory, file and settings member through
  * changes.apply under the loader's id, so removing the loader reverses all of it. Answers {written: true,

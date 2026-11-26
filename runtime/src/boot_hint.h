@@ -36,8 +36,8 @@ cJSON *runtime_read_boot_hint(const char *cache, const char *host_id, int *out_o
  * listed, or naming the id and version when they name no folder inside cache/libraries; with *problem NULL
  * when memory runs out. Every path is absolute, so a cache moved elsewhere needs its hosts installed again.
  *
- * @implNote A folder with no declaration, such as koffi's, is located by its directory alone: its native
- * file is no library C opens, so naming it would put a rule about it in C.
+ * @implNote A folder with no declaration is located by its directory alone: whatever native file it holds is no
+ * library C opens, so naming it would put a rule about it in C.
  */
 cJSON *runtime_boot_hint_libraries(const char *cache, const cJSON *versions, const char *platform, char **problem);
 

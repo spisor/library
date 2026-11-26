@@ -5,8 +5,6 @@
 
 spisor_bound_tests()
 
-set(SPISOR_WEIVEL_TYPESCRIPT_DIR "${CMAKE_SOURCE_DIR}/siblings/typescript" CACHE PATH
-    "weivel/typescript at the commit repo.json pins")
 set(SPISOR_WEIVEL_JAVA_DIR "${CMAKE_SOURCE_DIR}/siblings/java" CACHE PATH "weivel/java at the commit repo.json pins")
 set(SPISOR_BINDINGS_JAVA_HOME "$ENV{JAVA_HOME}" CACHE PATH "A JDK of release 22 or later, for the Java bindings test")
 

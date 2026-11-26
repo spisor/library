@@ -1071,8 +1071,8 @@ static void it_sweeps_library_versions_per_platform_like_bundles(void) {
 
 static void it_leaves_a_library_version_with_no_completion_marker_alone(void) {
     start_cache("sweep-library-unmarked");
-    installed_library("koffi", "1.0.0", "linux-x64", 0);
-    installed_library("koffi", "2.0.0", "linux-x64", 1);
+    installed_library("native-library", "1.0.0", "linux-x64", 0);
+    installed_library("native-library", "2.0.0", "linux-x64", 1);
     expect_removed("[]", "library unmarked");
     finish_cache();
 }
@@ -1121,12 +1121,13 @@ static void it_keys_an_abandoned_id_folder_by_its_id_when_it_checks_references_a
 
 static void it_removes_an_old_unmarked_library_version_for_one_platform(void) {
     start_cache("sweep-library-abandoned");
-    installed_library("koffi", "2.0.0", "linux-x64", 1);
-    installed_library("koffi", "1.0.0", "linux-x64", 0);
-    age_in_cache("libraries/koffi/1.0.0/linux-x64", 25);
-    installed_library("koffi", "1.0.0", "win32-x64", 1);
-    expect_removed("[\"koffi@1.0.0 for linux-x64\"]", "library abandoned");
-    CHECK(!library_present("koffi", "1.0.0", "linux-x64") && library_present("koffi", "1.0.0", "win32-x64"));
+    installed_library("native-library", "2.0.0", "linux-x64", 1);
+    installed_library("native-library", "1.0.0", "linux-x64", 0);
+    age_in_cache("libraries/native-library/1.0.0/linux-x64", 25);
+    installed_library("native-library", "1.0.0", "win32-x64", 1);
+    expect_removed("[\"native-library@1.0.0 for linux-x64\"]", "library abandoned");
+    CHECK(!library_present("native-library", "1.0.0", "linux-x64") &&
+          library_present("native-library", "1.0.0", "win32-x64"));
     finish_cache();
 }
 
@@ -1165,14 +1166,12 @@ static void it_keeps_what_a_boot_hint_names_for_the_next_start(void) {
     installed_bundle("spisor-host", "3.0.0", 1);
     installed_library("runtime", "0.1.0", "linux-x64", 1);
     installed_library("runtime", "0.2.0", "linux-x64", 1);
-    installed_library("koffi", "1.0.0", "linux-x64", 1);
-    installed_library("koffi", "2.0.0", "linux-x64", 1);
-    write_in(cache, "hosts/spisor-host.json", "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"},"
-             "\"koffi\":{\"version\":\"1.0.0\",\"directory\":\"k\"}},\"host\":\"1.0.0\"}");
+    write_in(cache, "hosts/spisor-host.json",
+             "{\"libraries\":{\"runtime\":{\"version\":\"0.1.0\",\"directory\":\"r\"}},\"host\":\"1.0.0\"}");
     write_in(cache, "hosts/broken.json", "{");
     write_in(cache, "hosts/elsewhere.txt", "{\"libraries\":{},\"host\":\"2.0.0\"}");
     expect_removed("[\"spisor-host@2.0.0\"]", "hints");
-    CHECK(library_present("runtime", "0.1.0", "linux-x64") && library_present("koffi", "1.0.0", "linux-x64"));
+    CHECK(library_present("runtime", "0.1.0", "linux-x64"));
     finish_cache();
 }
 

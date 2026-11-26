@@ -149,6 +149,12 @@ static int compare_prereleases(const parsed_version *left, const parsed_version 
     return sign_of((double)left_count - (double)right_count);
 }
 
+int runtime_catalog_is_plain_version(const char *text) {
+    parsed_version version;
+    return text != NULL && parse_version(text, &version) && version.prerelease == NULL &&
+           strchr(text, '+') == NULL;
+}
+
 int runtime_catalog_compare_versions(const char *left, const char *right) {
     parsed_version parsed_left;
     parsed_version parsed_right;

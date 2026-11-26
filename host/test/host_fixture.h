@@ -509,12 +509,13 @@ static inline void list_launch_catalog_requiring(host_world *world, const char *
     list_native_background(base, BACKGROUND_ID, 1);
     if (javascript_plugin) {
         list_plugin(base, SESSION_PLUGIN, "1.0.0", "javascript");
-        list_library(base, "koffi", "2.16.3");
         list_library(base, "forebay-library", "0.1.2");
         cJSON *item = catalog_item(base, "javascript-host", "host", "javascript", "1.0.0");
         cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), "1.0.0");
         cJSON *files = cJSON_AddObjectToObject(entry, "files");
-        cJSON_AddItemToObject(files, "host.json", served_reference(base, "javascript-host", "1.0.0", "host.json", "{\"entry\": \"host.js\"}"));
+        cJSON_AddItemToObject(files, "host.json", served_reference(base, "javascript-host", "1.0.0", "host.json",
+                                                                   "{\"entry\": \"host.js\", \"node\": {\"pinned\": "
+                                                                   "\"26.13.1\", \"minimum\": \"22.18.0\", \"builds\": {}}}"));
         cJSON_AddItemToObject(files, "host.js", served_reference(base, "javascript-host", "1.0.0", "host.js", "export {};\n"));
     }
     write_catalog(base);

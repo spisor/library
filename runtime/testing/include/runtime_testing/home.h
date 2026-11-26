@@ -43,7 +43,7 @@ typedef struct runtime_testing_install {
 /**
  * Lays a home out at `base`, which must be absolute, exist and be empty; nothing is written outside it. `host_id` is
  * the host registered and held. `libraries` are those the javascript-host's hint names, a NULL version read from the
- * library.json in its directory; koffi, when they name none, is hinted at an empty folder in the home. `holder` is the
+ * library.json in its directory, and no other library is hinted beside them. `holder` is the
  * pid recorded as the host's one holder, 0 for no processes record. First shape ends at `holder`.
  */
 typedef struct runtime_testing_home_argument {

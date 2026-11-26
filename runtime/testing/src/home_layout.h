@@ -21,7 +21,6 @@ typedef struct runtime_testing_layout {
     char *secrets;
     char *application;
     char *catalog;
-    char *koffi;
     char *secrets_file;
     int force_file_store;
 } runtime_testing_layout;
