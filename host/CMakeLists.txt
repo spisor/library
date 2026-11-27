@@ -118,11 +118,16 @@ endfunction()
 stage_bundles(spisor_host_bundles spisor_host $<TARGET_FILE_DIR:spisor_host>/bundles)
 
 # Not built by default: it runs weivel/typescript's bundler, so it needs node and that checkout installed and built.
+# CMake's string(JSON) writes the host data's keys in its own sorted order, so host.json's node members read builds,
+# minimum, pinned: the content is what the pin says, and every reader and test compares it as JSON.
 set(SPISOR_TYPESCRIPT_HOST_VERSION 0.1.0)
+set(SPISOR_TYPESCRIPT_HOST_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/bundle/typescript_host_bundle.cmake)
 add_custom_target(typescript_host_bundle
-    COMMAND stage_bundle typescript-host $<TARGET_FILE_DIR:spisor_host>/bundles/typescript-host
-        ${SPISOR_TYPESCRIPT_HOST_VERSION} ${SPISOR_WEIVEL_TYPESCRIPT_DIR} ${PROJECT_SOURCE_DIR}/host/bundle/node.json
-        $<TARGET_FILE:weivel_core_shared> $<TARGET_FILE:weivel_standard_shared>
+    COMMAND ${CMAKE_COMMAND} -DSTAGE_BUNDLE=$<TARGET_FILE:stage_bundle>
+        -DDIRECTORY=$<TARGET_FILE_DIR:spisor_host>/bundles/typescript-host -DVERSION=${SPISOR_TYPESCRIPT_HOST_VERSION}
+        -DCHECKOUT=${SPISOR_WEIVEL_TYPESCRIPT_DIR} -DNODE_PIN=${CMAKE_CURRENT_SOURCE_DIR}/bundle/node.json
+        -DCORE=$<TARGET_FILE:weivel_core_shared> -DSTANDARD=$<TARGET_FILE:weivel_standard_shared>
+        -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/typescript-host-inputs/$<CONFIG> -P ${SPISOR_TYPESCRIPT_HOST_SCRIPT}
     VERBATIM)
 add_dependencies(typescript_host_bundle stage_bundle spisor_host weivel_core_shared weivel_standard_shared)
 

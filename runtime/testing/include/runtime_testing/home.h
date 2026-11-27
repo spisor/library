@@ -56,8 +56,12 @@ typedef struct runtime_testing_layer {
  * pid recorded as the host's one holder, 0 for no processes record. When its size reaches them, the `layer_count`
  * `layers` are each listed in the home's catalog as the language-host item `<language>-host` and hinted, and each
  * install whose manifest names a `language` is listed there as a plugin item in that language at its version, so the
- * layers read every plugin's language as an install leaves it; with no layer nothing is hinted. First shape ends at
- * `holder`.
+ * layers read every plugin's language as an install leaves it; with no layer nothing is hinted. When its size reaches
+ * them, each of the `item_count` `items` is the absolute folder `stage-bundle` staged a language-host or interface item
+ * into, its host.json naming its kind, id, version and runtime and, for a language host, its language: the folder is
+ * installed in the cache as that version, listed in the catalog under its kind, and hinted with the libraries, so a
+ * start runs its real entry. A staged language host stands for its language's layer, which `layers` may not name too.
+ * First shape ends at `holder`.
  */
 typedef struct runtime_testing_home_argument {
     uint32_t size;
@@ -70,6 +74,8 @@ typedef struct runtime_testing_home_argument {
     int64_t holder;
     const runtime_testing_layer *layers;
     size_t layer_count;
+    const char *const *items;
+    size_t item_count;
 } runtime_testing_home_argument;
 
 /**
@@ -124,7 +130,7 @@ typedef struct runtime_testing_definition {
      * Lays the home out.
      *
      * @return OK; MALFORMED for a short shape, a base not absolute, missing or not empty, a host id that is no plain
-     * file name, a layer whose language is no language name or is given twice or whose runtime is none of the three, an install without a manifest record carrying id, version and entry or without an entry source, an
+     * file name, a layer whose language is no language name or is given twice or whose runtime is none of the three, an item that is no absolute real folder whose host.json names a language-host or interface kind, an id, a version and one of the three runtimes, or that holds a link anywhere below it, a language host whose id is not `<language>-host` or whose language a layer or another item names, an interface that names a language, starts on any runtime but native or takes a layer's `<language>-host` id, an item id given twice, an install without a manifest record carrying id, version and entry or without an entry source, an
      * entry or a bundle climbing out of its folder, an entry naming the bundle's plugin.json or completion marker, settings that are no record, a library without an id or a
      * directory, or a version neither given nor declared, or a negative holder; REFUSED when a file cannot be written;
      * what config's set answers for a setting; OUT_OF_MEMORY. A call that does not answer OK removes what it wrote,

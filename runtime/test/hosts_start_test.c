@@ -610,7 +610,7 @@ static void a_start_no_language_can_hold_the_front_door_of_is_refused(void) {
     catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
     expect_refused_with(started, "so no one language holds its front door",
                         "require the plugin that holds the front door in the loader's standard, or enable plugins of "
-                        "one language only",
+                        "one language only, then install the loader again",
                         "two languages and no required plugin");
     cJSON_Delete(started.tree);
     finish_base();

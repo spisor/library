@@ -375,7 +375,7 @@ static void a_loader_requiring_no_plugin_over_two_languages_is_refused_naming_bo
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_refused(&answer, "so no one language holds its front door",
                    "require the plugin that holds the front door in the loader's standard, or enable plugins of one "
-                   "language only",
+                   "language only, then install the loader again",
                    "no language holds the front door");
     const char *message = text_at(answer.refusal, "message");
     CHECK(message != NULL && strstr(message, TYPESCRIPT) != NULL && strstr(message, FIXTURE_ONE) != NULL);

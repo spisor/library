@@ -21,9 +21,24 @@
 
 static spisor_value_tree manifest;
 static spisor_value_tree settings;
+static char staged[1200];
+
+/** A native language host staged below the parent, its entry one folder down, so the copy recurses. */
+static void stage_item(void) {
+    char path[1300];
+    snprintf(staged, sizeof staged, "%s/staged", parent);
+    snprintf(path, sizeof path, "%s/bin", staged);
+    CHECK(spisor_make_directories(path) == SPISOR_OK);
+    snprintf(path, sizeof path, "%s/host.json", staged);
+    write_text(path, "{\"kind\": \"language-host\", \"id\": \"fixture-one-host\", \"version\": \"3.0.0\", "
+                     "\"language\": \"fixture-one\", \"runtime\": \"native\", \"entry\": \"bin/host\"}");
+    snprintf(path, sizeof path, "%s/bin/host", staged);
+    write_text(path, "the staged program");
+}
 
 static spisor_status lay_out_failing(allocation_failure_mode mode, uint64_t attempt, uint64_t *attempts) {
     runtime_testing_install install = {&manifest.root, entry_source, &settings.root};
+    const char *items[1] = {staged};
     runtime_boot_library libraries[2];
     runtime_testing_home_argument argument;
     runtime_testing_home_answer answer;
@@ -31,6 +46,8 @@ static spisor_status lay_out_failing(allocation_failure_mode mode, uint64_t atte
     spisor_status status;
     default_libraries(libraries);
     argument = home_argument(base, &install, 1, libraries);
+    argument.items = items;
+    argument.item_count = 1;
     start_empty(&answer, sizeof answer);
     fail_allocation(mode, attempt);
     status = testing()->lay_out_home(NULL, &argument, &answer, &refusal);
@@ -86,6 +103,7 @@ int main(void) {
     start_parent("out-of-memory");
     manifest = tree_of(parsed(MANIFEST));
     settings = tree_of(parsed("{\"token\": \"held\", \"greeting\": \"hi\"}"));
+    stage_item();
     in_every_failure_mode(every_failure_in_mode);
     spisor_value_release(&settings);
     spisor_value_release(&manifest);

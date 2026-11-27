@@ -149,7 +149,7 @@ static cJSON *two_doors_refusal(const char *first, const char *second) {
     const char *parts[5] = {"the loader requires no plugin, and the plugins its settings enable are written in ",
                             first, " and ", second, ", so no one language holds its front door"};
     return runtime_cache_refusal(parts, 5, "require the plugin that holds the front door in the loader's standard, or "
-                                           "enable plugins of one language only");
+                                           "enable plugins of one language only, then install the loader again");
 }
 
 int runtime_read_front_door(runtime_loader_layers *layers, cJSON **refusal) {

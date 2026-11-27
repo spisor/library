@@ -8,20 +8,21 @@
 
 #include "cJSON.h"
 #include "allocation.h"
-#include "catalog_semver.h"
+#include "cache_refusal.h"
+#include "catalog_patterns.h"
+#include "catalog_text.h"
 #include "directory_tree.h"
+#include "hosts_layers.h"
 #include "node_json_file.h"
-#include "on_path.h"
 #include "paths.h"
 #include "platform_key.h"
-#include "process_environment.h"
-#include "process_run.h"
 #include "spisor/file.h"
 #include "spisor/json_write.h"
 #include "spisor/path.h"
 
 #if defined(_WIN32)
 #include "host_arguments.h"
+#include "windows_file.h"
 #define EXECUTABLE_ENDING ".exe"
 #define SHARED_LIBRARY_PREFIX ""
 #define SHARED_LIBRARY_ENDING ".dll"
@@ -39,23 +40,35 @@
 #define USAGE                                                                                                         \
     "usage: stage-bundle host <directory> <version> <spisor-host> <spisor-boot> [<runtime-launcher>]\n"                \
     "       stage-bundle library <directory> <library.json> <library binary>\n"                                       \
-    "       stage-bundle typescript-host <directory> <version> <weivel/typescript checkout> <node pin> "               \
-    "<weivel_core> <weivel_standard>\n"
-#define BUNDLER_MILLISECONDS 300000u
-#define ENGINE_BOUND ">="
-#define KOFFI_FOLDER "node_modules/koffi"
+    "       stage-bundle language-host <directory> <version> <language> <runtime> <entry> <host-data json> "           \
+    "<weivel_core> <weivel_standard> [<file or directory>...]\n"                                                      \
+    "       stage-bundle interface <directory> <version> <interface id> <binary> <weivel_core> <weivel_standard>\n"   \
+    "       stage-bundle platform\n"
+#define LANGUAGE_HOST_ARGUMENTS 10
+#define INTERFACE_ARGUMENTS 8
+#define STAGING_ENDING ".staging"
+#define PREVIOUS_ENDING ".previous"
+#define CORE_LIBRARY SHARED_LIBRARY_PREFIX "weivel_core" SHARED_LIBRARY_ENDING
+#define STANDARD_LIBRARY SHARED_LIBRARY_PREFIX "weivel_standard" SHARED_LIBRARY_ENDING
 
-/** The files of koffi's package the bundled program loads, beside the one prebuilt of this platform. */
-static const char *const KOFFI_FILES[] = {"package.json", "index.js", "LICENSE.txt"};
+/** The members stage-bundle writes into a language host's host.json itself, which its host-data may not replace. */
+static const char *const OWN_MEMBERS[] = {"kind", "id", "version", "language", "runtime", "entry"};
 
-/** What typescript-host's bundle is staged from: the version, the checkout's minimum Node and the read pin. */
-typedef struct typescript_host_inputs {
-    const char *directory;
-    const char *version;
-    const char *checkout;
-    cJSON *pin;
-    char minimum[64];
-} typescript_host_inputs;
+static const char *const RUNTIMES[] = {RUNTIME_LAYER_JAVASCRIPT, RUNTIME_LAYER_JVM, RUNTIME_LAYER_NATIVE};
+
+/**
+ * A language host or interface bundle being staged: built in `staging`, the sibling `<directory>.staging`, whose
+ * `files` folder is `<platform>/` for a native one, and swapped into `directory` once every file is in it, the bundle
+ * before it moved aside to the sibling `previous`, `<directory>.previous`, until the swap is done.
+ */
+typedef struct staged_item {
+    char *directory;
+    char *staging;
+    char *previous;
+    char *files;
+    cJSON *manifest;
+    int owns_staging;
+} staged_item;
 
 static char *joined(const char *base, const char *rest) {
     const char *segments[2] = {base, rest};
@@ -67,6 +80,27 @@ static const char *base_name_of(const char *path) {
     const char *backslash = strrchr(path, '\\');
     const char *last = slash > backslash ? slash : backslash;
     return last == NULL ? path : last + 1;
+}
+
+static int is_one_of(const char *text, const char *const *names, size_t count) {
+    for (size_t index = 0; text != NULL && index < count; index++) {
+        if (strcmp(text, names[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int lowered(int character) {
+    return character >= 'A' && character <= 'Z' ? character - 'A' + 'a' : character;
+}
+
+static int equals_ignoring_case(const char *left, const char *right) {
+    while (*left != 0 && lowered(*left) == lowered(*right)) {
+        left++;
+        right++;
+    }
+    return *left == 0 && *right == 0;
 }
 
 /** Copies source to name inside directory, name a relative path whose folders are made first. */
@@ -92,12 +126,53 @@ static int copy_into(const char *source, const char *directory, const char *name
     return copied;
 }
 
+/** Copies the file or directory source to name inside directory, a directory with everything under it. */
+static int copy_tree_into(const char *source, const char *directory, const char *name) {
+    runtime_entry_kind kind = runtime_probe_entry(source);
+    if (kind != RUNTIME_ENTRY_DIRECTORY) {
+        return copy_into(source, directory, name);
+    }
+    runtime_directory_listing listing = {NULL, 0};
+    int copied = runtime_list_directory(source, &listing) == SPISOR_OK;
+    if (!copied) {
+        fprintf(stderr, "stage-bundle: %s could not be listed\n", source);
+    }
+    for (size_t index = 0; copied && index < listing.count; index++) {
+        const runtime_directory_entry *entry = &listing.entries[index];
+        char *from = joined(source, entry->name);
+        char *to = joined(name, entry->name);
+        if (!entry->is_directory && !entry->is_file) {
+            fprintf(stderr, "stage-bundle: %s is a link, which a bundle cannot carry\n", from == NULL ? source : from);
+            copied = 0;
+        } else {
+            copied = from != NULL && to != NULL && copy_tree_into(from, directory, to);
+        }
+        spisor_memory_release(to);
+        spisor_memory_release(from);
+    }
+    runtime_free_directory_listing(&listing);
+    return copied;
+}
+
 static int start_empty(const char *directory) {
     if (runtime_remove_tree(directory) != SPISOR_OK || spisor_make_directories(directory) != SPISOR_OK) {
         fprintf(stderr, "stage-bundle: %s could not be emptied\n", directory);
         return 0;
     }
     return 1;
+}
+
+static int write_manifest(const char *directory, const cJSON *manifest) {
+    char *text = manifest == NULL ? NULL : spisor_json_stringify_pretty(manifest);
+    char *path = joined(directory, "host.json");
+    int written = text != NULL && path != NULL &&
+                  spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
+    if (!written) {
+        fprintf(stderr, "stage-bundle: the host.json of %s could not be written\n", directory);
+    }
+    spisor_memory_release(path);
+    spisor_memory_release(text);
+    return written;
 }
 
 /** host.json as catalog build reads a native host: its id, version, runtime and this platform's executable as entry. */
@@ -109,12 +184,7 @@ static int write_host_manifest(const char *directory, const char *version) {
     cJSON_AddStringToObject(manifest, "version", version);
     cJSON_AddStringToObject(manifest, "runtime", "native");
     cJSON_AddStringToObject(manifest, "entry", entry);
-    char *text = spisor_json_stringify_pretty(manifest);
-    char *path = joined(directory, "host.json");
-    int written = text != NULL && path != NULL &&
-        spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
-    spisor_memory_release(path);
-    spisor_memory_release(text);
+    int written = write_manifest(directory, manifest);
     cJSON_Delete(manifest);
     return written;
 }
@@ -148,229 +218,448 @@ static int stage_library(int count, char **arguments) {
     return staged ? 0 : 1;
 }
 
-static int ends_with(const char *text, const char *ending) {
-    size_t length = strlen(text);
-    size_t ending_length = strlen(ending);
-    return length >= ending_length && strcmp(text + length - ending_length, ending) == 0;
-}
-
-/** Whether text is a SHA-256 as nodejs.org's SHASUMS256.txt prints one: 64 lowercase hexadecimal digits. */
-static int is_sha256(const char *text) {
-    size_t length = text == NULL ? 0 : strlen(text);
-    for (size_t index = 0; index < length; index++) {
-        if (!((text[index] >= '0' && text[index] <= '9') || (text[index] >= 'a' && text[index] <= 'f'))) {
-            return 0;
-        }
+/** Whether a real file, or with `folders` a real folder, stands at path itself, printing what stands there when not. */
+static int is_real_source(const char *path, const char *what, int folders) {
+    runtime_entry_kind kind = runtime_probe_entry(path);
+    if (kind == RUNTIME_ENTRY_MISSING) {
+        fprintf(stderr, "stage-bundle: the %s %s does not exist\n", what, path);
+        return 0;
     }
-    return length == 64;
-}
-
-/** Whether build is {url, sha256}, the url an https one ending .zip or .tar.gz, printing what is wrong when not. */
-static int is_build(const char *path, const cJSON *build) {
-    const char *url = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(build, "url"));
-    const char *sha256 = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(build, "sha256"));
-    int fetchable = url != NULL && strncmp(url, "https://", strlen("https://")) == 0 &&
-                    (ends_with(url, ".zip") || ends_with(url, ".tar.gz"));
-    if (!fetchable) {
-        fprintf(stderr, "stage-bundle: %s pins %s for %s, not an https url ending .zip or .tar.gz\n", path,
-                url == NULL ? "no url" : url, build->string);
-    } else if (!is_sha256(sha256)) {
-        fprintf(stderr, "stage-bundle: %s pins %s for %s, not a sha256 of 64 lowercase hexadecimal digits\n", path,
-                sha256 == NULL ? "no sha256" : sha256, build->string);
+    if (kind == RUNTIME_ENTRY_DIRECTORY && !folders) {
+        fprintf(stderr, "stage-bundle: the %s %s is a folder, not a file\n", what, path);
+        return 0;
     }
-    return fetchable && is_sha256(sha256);
-}
-
-/** Whether every build in builds is one, and builds holds this platform's, printing what is wrong when not. */
-static int are_builds(const char *path, const cJSON *builds) {
-    const cJSON *build;
-    cJSON_ArrayForEach(build, builds) {
-        if (!is_build(path, build)) {
-            return 0;
-        }
-    }
-    if (cJSON_GetObjectItemCaseSensitive(builds, runtime_platform_key()) == NULL) {
-        fprintf(stderr, "stage-bundle: %s pins no build for %s, the platform this bundle is staged for\n", path,
-                runtime_platform_key());
+    if (kind != RUNTIME_ENTRY_DIRECTORY && !runtime_is_real_file(path)) {
+        fprintf(stderr, "stage-bundle: the %s %s is a link, which a bundle cannot carry\n", what, path);
         return 0;
     }
     return 1;
 }
 
-static cJSON *read_json(const char *path) {
-    int out_of_memory = 0;
-    cJSON *read = runtime_read_node_json(path, &out_of_memory);
-    if (read == NULL) {
-        fprintf(stderr, "stage-bundle: %s %s\n", path, out_of_memory ? "ran out of memory reading" : "is no JSON file");
+/** Whether path is a relative path inside the working directory, printing what is wrong when it is not. */
+static int is_relative_inside(const char *path, const char *what) {
+    if (runtime_catalog_is_file_key(path)) {
+        return 1;
     }
-    return read;
+    fprintf(stderr, "stage-bundle: the %s %s is not a relative path with / separators inside the working directory\n",
+            what, path);
+    return 0;
 }
 
-/** The lowest Node the checkout's package.json engines.node names as >=<version>, into inputs->minimum. */
-static int read_minimum(typescript_host_inputs *inputs) {
-    char *path = joined(inputs->checkout, "package.json");
-    cJSON *package = path == NULL ? NULL : read_json(path);
-    const char *engine =
-        cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(package, "engines"), "node"));
-    size_t bound = strlen(ENGINE_BOUND);
-    int read = engine != NULL && strncmp(engine, ENGINE_BOUND, bound) == 0 &&
-               runtime_catalog_is_plain_version(engine + bound) && strlen(engine + bound) < sizeof inputs->minimum;
-    if (read) {
-        snprintf(inputs->minimum, sizeof inputs->minimum, "%s", engine + bound);
-    } else if (package != NULL) {
-        fprintf(stderr, "stage-bundle: %s names engines.node %s, not >=<major>.<minor>.<patch>\n", path,
-                engine == NULL ? "(none)" : engine);
+static int is_version(const char *version) {
+    if (runtime_catalog_is_version(version)) {
+        return 1;
     }
-    cJSON_Delete(package);
-    spisor_memory_release(path);
-    return read;
+    fprintf(stderr, "stage-bundle: %s is no version: name <major>.<minor>.<patch>\n", version);
+    return 0;
+}
+
+/** Whether the core and the standard are real files, as every bundle carries both. */
+static int are_libraries(const char *core, const char *standard) {
+    return is_real_source(core, "weivel_core", 0) && is_real_source(standard, "weivel_standard", 0);
+}
+
+/** Whether the words name a version, a language, a runtime of the three, and an entry and files that can be copied. */
+static int are_language_host_words(int count, char **arguments) {
+    const char *language = arguments[4];
+    const char *runtime = arguments[5];
+    if (!is_version(arguments[3])) {
+        return 0;
+    }
+    if (!runtime_catalog_is_language(language)) {
+        fprintf(stderr, "stage-bundle: %s is no language name: lowercase words of letters and digits joined by -, "
+                        "and not spisor\n", language);
+        return 0;
+    }
+    if (!is_one_of(runtime, RUNTIMES, sizeof RUNTIMES / sizeof RUNTIMES[0])) {
+        fprintf(stderr, "stage-bundle: %s is no runtime: name javascript, jvm or native\n", runtime);
+        return 0;
+    }
+    int usable = is_relative_inside(arguments[6], "entry") && is_real_source(arguments[6], "entry", 0) &&
+                 are_libraries(arguments[8], arguments[9]);
+    for (int index = LANGUAGE_HOST_ARGUMENTS; usable && index < count; index++) {
+        usable = is_relative_inside(arguments[index], "file") && is_real_source(arguments[index], "file", 1);
+    }
+    return usable;
+}
+
+/** Whether the binary's own name can be a file a catalog lists and is neither library it is staged beside. */
+static int is_binary_name(const char *name) {
+    if (!runtime_catalog_is_name(name) || !runtime_catalog_is_file_key(name)) {
+        fprintf(stderr, "stage-bundle: the binary's name %s is no file name a catalog can list\n", name);
+        return 0;
+    }
+    if (equals_ignoring_case(name, CORE_LIBRARY) || equals_ignoring_case(name, STANDARD_LIBRARY)) {
+        fprintf(stderr, "stage-bundle: the binary's name %s is the name of a library the bundle carries beside it\n",
+                name);
+        return 0;
+    }
+    return 1;
+}
+
+/** Whether the words name an item id, a version, and a binary and libraries that can be copied. */
+static int are_interface_words(char **arguments) {
+    if (!is_version(arguments[3])) {
+        return 0;
+    }
+    if (!runtime_catalog_is_item_id(arguments[4])) {
+        fprintf(stderr, "stage-bundle: %s is no item id a catalog can list\n", arguments[4]);
+        return 0;
+    }
+    return is_real_source(arguments[5], "binary", 0) && is_binary_name(base_name_of(arguments[5])) &&
+           are_libraries(arguments[6], arguments[7]);
+}
+
+/** Whether the host-data member is one stage-bundle refuses, printing why. */
+static int is_refused_member(const cJSON *member, const char *path) {
+    if (is_one_of(member->string, OWN_MEMBERS, sizeof OWN_MEMBERS / sizeof OWN_MEMBERS[0])) {
+        fprintf(stderr, "stage-bundle: the host-data file %s names %s, which stage-bundle writes itself\n", path,
+                member->string);
+        return 1;
+    }
+    if (strcmp(member->string, "application") == 0) {
+        fprintf(stderr, "stage-bundle: the host-data file %s names application, which only a loader's host.json "
+                        "carries\n", path);
+        return 1;
+    }
+    return 0;
 }
 
 /**
- * The pin file as {pinned, builds}, refused unless pinned is a plain version no older than the checkout's minimum and
- * every build is one stage-bundle can vouch for, this platform's among them.
- */
-static int read_pin(typescript_host_inputs *inputs, const char *path) {
-    inputs->pin = read_json(path);
-    const char *pinned = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(inputs->pin, "pinned"));
-    const cJSON *builds = cJSON_GetObjectItemCaseSensitive(inputs->pin, "builds");
-    int shaped = runtime_catalog_is_plain_version(pinned) && cJSON_IsObject(builds);
-    if (inputs->pin != NULL && !shaped) {
-        fprintf(stderr, "stage-bundle: %s is not {\"pinned\": \"<major>.<minor>.<patch>\", \"builds\": {...}}\n", path);
-        return 0;
-    }
-    if (shaped && runtime_catalog_compare_versions(pinned, inputs->minimum) < 0) {
-        fprintf(stderr, "stage-bundle: %s pins Node %s, older than the %s the program needs\n", path, pinned,
-                inputs->minimum);
-        return 0;
-    }
-    return shaped && are_builds(path, builds);
-}
-
-/** Runs the checkout's bundler on the PATH's node, writing the program's two files into the directory. */
-static int run_bundler(const typescript_host_inputs *inputs) {
-    cJSON *environment = runtime_process_environment();
-    char *node = NULL;
-    runtime_on_path_status found = environment == NULL ? RUNTIME_ON_PATH_OUT_OF_MEMORY
-                                                       : runtime_find_on_path(RUNTIME_HOST_IS_WINDOWS, "node",
-                                                                              environment, &node);
-    char *bundler = joined(inputs->checkout, "dist/bundle/bin.js");
-    cJSON *arguments = cJSON_CreateArray();
-    int built = bundler != NULL && arguments != NULL &&
-                cJSON_AddItemToArray(arguments, cJSON_CreateString(bundler)) &&
-                cJSON_AddItemToArray(arguments, cJSON_CreateString("program")) &&
-                cJSON_AddItemToArray(arguments, cJSON_CreateString(inputs->directory));
-    int exit_code = -1;
-    char *output = NULL;
-    char *problem = NULL;
-    int ran = found == RUNTIME_ON_PATH_FOUND && built &&
-              runtime_run_to_exit(node, arguments, BUNDLER_MILLISECONDS, &exit_code, &output, &problem);
-    if (found != RUNTIME_ON_PATH_FOUND) {
-        fputs("stage-bundle: no node on the PATH runs the bundler\n", stderr);
-    } else if (!ran || exit_code != 0) {
-        fprintf(stderr, "stage-bundle: %s program %s failed: %s\n", bundler == NULL ? "the bundler" : bundler,
-                inputs->directory, ran ? "it exited non-zero" : problem == NULL ? "memory ran out" : problem);
-    }
-    spisor_memory_release(problem);
-    spisor_memory_release(output);
-    cJSON_Delete(arguments);
-    spisor_memory_release(bundler);
-    spisor_memory_release(node);
-    cJSON_Delete(environment);
-    return ran && exit_code == 0;
-}
-
-/** Copies the core's and the standard's shared libraries beside the bundle, named as it looks for them. */
-static int copy_weivel_libraries(const char *directory, const char *core, const char *standard) {
-    return copy_into(core, directory, SHARED_LIBRARY_PREFIX "weivel_core" SHARED_LIBRARY_ENDING) &&
-           copy_into(standard, directory, SHARED_LIBRARY_PREFIX "weivel_standard" SHARED_LIBRARY_ENDING);
-}
-
-/**
- * Copies koffi's package from the checkout's node_modules: the files its loader reads and this platform's prebuilt.
+ * Whether the host-data text names one member twice, printing which.
  *
- * @implNote koffi names a prebuilt folder by os_arch, the platform key with an underscore, and its sources and every
- * other platform's prebuilt are never loaded, so a bundle built for one platform carries one.
+ * @implNote Read with cJSON's own parser, which keeps every member as written, since the JSON.parse reading of the file
+ * keeps only the last of two and could not tell.
  */
-static int copy_koffi(const typescript_host_inputs *inputs) {
-    char *package = joined(inputs->checkout, KOFFI_FOLDER);
-    char *target = joined(inputs->directory, KOFFI_FOLDER);
-    int copied = package != NULL && target != NULL;
-    for (size_t index = 0; copied && index < sizeof KOFFI_FILES / sizeof KOFFI_FILES[0]; index++) {
-        char *source = joined(package, KOFFI_FILES[index]);
-        copied = source != NULL && copy_into(source, target, KOFFI_FILES[index]);
-        spisor_memory_release(source);
+static int names_a_member_twice(const uint8_t *bytes, size_t length, const char *path) {
+    cJSON *written = cJSON_ParseWithLength((const char *)bytes, length);
+    int twice = 0;
+    for (const cJSON *member = written == NULL ? NULL : written->child; !twice && member != NULL;
+         member = member->next) {
+        for (const cJSON *earlier = written->child; !twice && earlier != member; earlier = earlier->next) {
+            twice = member->string != NULL && earlier->string != NULL && strcmp(earlier->string, member->string) == 0;
+        }
+        if (twice) {
+            fprintf(stderr, "stage-bundle: the host-data file %s names %s twice\n", path, member->string);
+        }
     }
-    char prebuilt[128];
-    snprintf(prebuilt, sizeof prebuilt, "build/koffi/%s/koffi.node", runtime_platform_key());
-    char *triplet = strchr(prebuilt + strlen("build/koffi/"), '-');
-    if (triplet != NULL) {
-        *triplet = '_';
+    cJSON_Delete(written);
+    return twice;
+}
+
+/**
+ * The host-data file read: a JSON object naming each member once, and neither application nor any member stage-bundle
+ * writes itself; NULL, printing why, otherwise.
+ */
+static cJSON *read_host_data(const char *path) {
+    size_t length = 0;
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
+    int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
+    cJSON *data = bytes == NULL ? NULL : runtime_parse_node_json(bytes, length, &out_of_memory);
+    int twice = cJSON_IsObject(data) && names_a_member_twice(bytes, length, path);
+    spisor_memory_release(bytes);
+    if (twice) {
+        cJSON_Delete(data);
+        return NULL;
     }
-    char *source = copied ? joined(package, prebuilt) : NULL;
-    copied = source != NULL && copy_into(source, target, prebuilt);
-    spisor_memory_release(source);
-    spisor_memory_release(target);
-    spisor_memory_release(package);
+    if (bytes == NULL || !cJSON_IsObject(data)) {
+        fprintf(stderr, "stage-bundle: the host-data file %s %s\n", path,
+                out_of_memory ? "ran out of memory being read"
+                : bytes == NULL ? "could not be read"
+                                : "is no JSON object");
+        cJSON_Delete(data);
+        return NULL;
+    }
+    for (const cJSON *member = data->child; member != NULL; member = member->next) {
+        if (is_refused_member(member, path)) {
+            cJSON_Delete(data);
+            return NULL;
+        }
+    }
+    return data;
+}
+
+/** The item's entry as host.json names it, with / separators: name itself, or `<platform>/<name>` per platform. */
+static char *entry_named(const char *name, int per_platform) {
+    const char *parts[3] = {runtime_platform_key(), "/", name};
+    return per_platform ? runtime_cache_text(parts, 3) : runtime_catalog_copy(name);
+}
+
+static int is_separator(char character) {
+    return character == '/' || (RUNTIME_HOST_IS_WINDOWS && character == '\\');
+}
+
+/**
+ * The bundle's folder with its trailing separators taken off, so its staging and previous folders are siblings of it;
+ * NULL, printing why, when what is left names no folder of its own: a root, a drive, `.` or `..`.
+ */
+static char *bundle_folder(const char *directory) {
+    char *folder = runtime_catalog_copy(directory);
+    if (folder == NULL) {
+        fputs("stage-bundle: memory ran out\n", stderr);
+        return NULL;
+    }
+    size_t length = strlen(folder);
+    while (length > 0 && is_separator(folder[length - 1])) {
+        folder[--length] = 0;
+    }
+    size_t start = length;
+    while (start > 0 && !is_separator(folder[start - 1])) {
+        start--;
+    }
+    const char *segment = folder + start;
+    int share_root = RUNTIME_HOST_IS_WINDOWS && start > 2 && is_separator(folder[0]) && is_separator(folder[1]) &&
+                     strpbrk(folder + 2, "/\\") == folder + start - 1;
+    int own = *segment != 0 && strcmp(segment, ".") != 0 && strcmp(segment, "..") != 0 && !share_root &&
+              !(RUNTIME_HOST_IS_WINDOWS && strchr(segment, ':') != NULL);
+    if (!own) {
+        fprintf(stderr, "stage-bundle: %s names no folder of its own: name the bundle's folder, not a root, . or ..\n",
+                directory);
+        spisor_memory_release(folder);
+        return NULL;
+    }
+    return folder;
+}
+
+/** Whether the real folder path is empty or holds host.json as a real file, as every bundle stage-bundle writes. */
+static int holds_a_manifest_or_nothing(const char *path) {
+    runtime_directory_listing listing = {NULL, 0};
+    int empty = runtime_list_directory(path, &listing) == SPISOR_OK && listing.count == 0;
+    runtime_free_directory_listing(&listing);
+    char *manifest = empty ? NULL : joined(path, "host.json");
+    int manifested = manifest != NULL && runtime_is_real_file(manifest);
+    spisor_memory_release(manifest);
+    return empty || manifested;
+}
+
+/**
+ * Whether stage-bundle may replace what stands at path: nothing, or a real folder that is empty or holds a top-level
+ * host.json; printing why not.
+ *
+ * @implNote A folder that is no bundle is never moved or removed, whatever it was named: a shell that rewrites `/`
+ * into an install folder once led stage-bundle to swap that install aside.
+ */
+static int is_replaceable(const char *path, const char *what) {
+    runtime_entry_kind kind = runtime_probe_entry(path);
+    if (kind == RUNTIME_ENTRY_MISSING) {
+        return 1;
+    }
+    if (kind != RUNTIME_ENTRY_DIRECTORY) {
+        fprintf(stderr, "stage-bundle: the %s %s is no folder: it is a link or a file, which stage-bundle never "
+                        "replaces\n", what, path);
+        return 0;
+    }
+    if (!holds_a_manifest_or_nothing(path)) {
+        fprintf(stderr, "stage-bundle: the %s folder %s holds no host.json, so it is no bundle stage-bundle replaces\n",
+                what, path);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * Empties item's staging folder, from then on its own, and removes a previous folder a crash left, after checking
+ * that each, and the bundle's own folder, is one stage-bundle may replace; the staging folder gets host.json at once,
+ * so a run that dies leaves one the next run recognises.
+ */
+static int clear_siblings(staged_item *item) {
+    if (!is_replaceable(item->directory, "bundle") || !is_replaceable(item->staging, "staging") ||
+        !is_replaceable(item->previous, "previous")) {
+        return 0;
+    }
+    if (runtime_remove_tree(item->previous) != SPISOR_OK) {
+        fprintf(stderr, "stage-bundle: the previous folder %s could not be removed\n", item->previous);
+        return 0;
+    }
+    item->owns_staging = start_empty(item->staging);
+    return item->owns_staging && write_manifest(item->staging, item->manifest);
+}
+
+/** Opens item: its manifest begun as {kind, id, version} and its files folder made inside an empty staging folder. */
+static int begin_item(staged_item *item, const char *directory, const char *kind, const char *id, const char *version,
+                      int per_platform) {
+    item->directory = bundle_folder(directory);
+    if (item->directory == NULL) {
+        return 0;
+    }
+    const char *parts[2] = {item->directory, STAGING_ENDING};
+    const char *previous_parts[2] = {item->directory, PREVIOUS_ENDING};
+    item->staging = runtime_cache_text(parts, 2);
+    item->previous = runtime_cache_text(previous_parts, 2);
+    item->files = item->staging == NULL ? NULL
+                  : per_platform        ? joined(item->staging, runtime_platform_key())
+                                        : runtime_catalog_copy(item->staging);
+    item->manifest = cJSON_CreateObject();
+    int built = item->files != NULL && item->previous != NULL && item->manifest != NULL &&
+                cJSON_AddStringToObject(item->manifest, "kind", kind) != NULL &&
+                cJSON_AddStringToObject(item->manifest, "id", id) != NULL &&
+                cJSON_AddStringToObject(item->manifest, "version", version) != NULL;
+    if (!built) {
+        fputs("stage-bundle: memory ran out\n", stderr);
+    }
+    return built && clear_siblings(item) && spisor_make_directories(item->files) == SPISOR_OK;
+}
+
+static int rename_directory(const char *from, const char *to) {
+#if defined(_WIN32)
+    return spisor_windows_move_directory(from, to);
+#else
+    return rename(from, to) == 0;
+#endif
+}
+
+/**
+ * Renames the staging folder to the bundle's folder.
+ *
+ * @implNote The failing build of stage-bundle, which only the suite builds, fails this one rename, the step after the
+ * bundle before has moved aside, so a test can watch that bundle put back.
+ */
+static int rename_into_place(const char *staging, const char *directory) {
+#if defined(STAGE_BUNDLE_FAILING_RENAME_INTO_PLACE)
+    (void)staging;
+    (void)directory;
+    return 0;
+#else
+    return rename_directory(staging, directory);
+#endif
+}
+
+/**
+ * Writes item's host.json into its staging folder and swaps it into the bundle's folder: the bundle before moved aside
+ * to the previous folder, the staging folder renamed into place, and the previous folder removed, or renamed back when
+ * the staging folder could not be. A previous folder that cannot be removed after the swap is only warned about, since
+ * the next staging removes it.
+ */
+static int finish_item(const staged_item *item) {
+    if (!write_manifest(item->staging, item->manifest)) {
+        return 0;
+    }
+    int replacing = runtime_probe_entry(item->directory) != RUNTIME_ENTRY_MISSING;
+    if (replacing && !rename_directory(item->directory, item->previous)) {
+        fprintf(stderr, "stage-bundle: %s could not be renamed aside to %s\n", item->directory, item->previous);
+        return 0;
+    }
+    if (!rename_into_place(item->staging, item->directory)) {
+        int restored = !replacing || rename_directory(item->previous, item->directory);
+        fprintf(stderr, "stage-bundle: %s could not be renamed over %s%s\n", item->staging, item->directory,
+                restored ? "" : ", and the bundle before it stays in the previous folder");
+        return 0;
+    }
+    if (replacing && runtime_remove_tree(item->previous) != SPISOR_OK) {
+        fprintf(stderr, "stage-bundle: warning: %s could not be removed; the next staging removes it\n",
+                item->previous);
+    }
+    return 1;
+}
+
+/** Frees item, removing the staging folder it made when it was not renamed, so a refusal leaves what stood before. */
+static void end_item(staged_item *item) {
+    if (item->owns_staging && runtime_probe_entry(item->staging) == RUNTIME_ENTRY_DIRECTORY) {
+        runtime_remove_tree(item->staging);
+    }
+    spisor_memory_release(item->staging);
+    spisor_memory_release(item->previous);
+    spisor_memory_release(item->directory);
+    spisor_memory_release(item->files);
+    cJSON_Delete(item->manifest);
+}
+
+/** Adds the runtime and the entry to item's manifest, the entry inside its files folder; 0 when memory runs out. */
+static int add_start(staged_item *item, const char *runtime, const char *entry, int per_platform) {
+    char *named = entry_named(entry, per_platform);
+    int added = named != NULL && cJSON_AddStringToObject(item->manifest, "runtime", runtime) != NULL &&
+                cJSON_AddStringToObject(item->manifest, "entry", named) != NULL;
+    spisor_memory_release(named);
+    return added;
+}
+
+/** Copies the core's and the standard's shared libraries into the item's files, named as its entry looks for them. */
+static int copy_weivel_libraries(const staged_item *item, const char *core, const char *standard) {
+    return copy_into(core, item->files, CORE_LIBRARY) && copy_into(standard, item->files, STANDARD_LIBRARY);
+}
+
+/** Moves every member of data after item's own, in data's order; data is emptied. */
+static void merge_host_data(staged_item *item, cJSON *data) {
+    while (data->child != NULL) {
+        cJSON *member = cJSON_DetachItemViaPointer(data, data->child);
+        cJSON_AddItemToObject(item->manifest, member->string, member);
+    }
+}
+
+/** Copies each file or directory argument from index on into item's files at the same relative path. */
+static int copy_files(const staged_item *item, int count, char **arguments, int index) {
+    int copied = 1;
+    for (; copied && index < count; index++) {
+        copied = copy_tree_into(arguments[index], item->files, arguments[index]);
+    }
     return copied;
 }
 
 /**
- * typescript-host's host.json: a language-host of typescript started on javascript, its entries and node {pinned,
- * minimum, builds}, the pin catalog data carries.
+ * A language's host item: host.json {kind: language-host, id: <language>-host, version, language, runtime, entry}
+ * followed by the host-data file's members, and the entry, the files and the core and standard in its files folder,
+ * which is `<platform>/` for a native one. The entry and the files are relative paths read from the working directory.
  */
-static int write_typescript_host_manifest(const typescript_host_inputs *inputs) {
-    cJSON *manifest = cJSON_CreateObject();
-    cJSON *node = cJSON_CreateObject();
-    int built = manifest != NULL && node != NULL && cJSON_AddStringToObject(manifest, "kind", "language-host") &&
-                cJSON_AddStringToObject(manifest, "id", "typescript-host") &&
-                cJSON_AddStringToObject(manifest, "version", inputs->version) &&
-                cJSON_AddStringToObject(manifest, "language", "typescript") &&
-                cJSON_AddStringToObject(manifest, "runtime", "javascript") &&
-                cJSON_AddStringToObject(manifest, "entry", "weivel-host.mjs") &&
-                cJSON_AddStringToObject(manifest, "inProcessEntry", "weivel-host-in-process.mjs") &&
-                cJSON_AddItemToObject(manifest, "node", node);
-    if (!built) {
-        cJSON_Delete(node);
-    }
-    built = built &&
-            cJSON_AddStringToObject(node, "pinned",
-                                    cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(inputs->pin, "pinned"))) &&
-            cJSON_AddStringToObject(node, "minimum", inputs->minimum) &&
-            cJSON_AddItemToObject(node, "builds",
-                                  cJSON_Duplicate(cJSON_GetObjectItemCaseSensitive(inputs->pin, "builds"), 1));
-    char *text = built ? spisor_json_stringify_pretty(manifest) : NULL;
-    char *path = joined(inputs->directory, "host.json");
-    int written = text != NULL && path != NULL &&
-                  spisor_replace_file(path, (const uint8_t *)text, strlen(text)) == SPISOR_OK;
-    if (!written) {
-        fprintf(stderr, "stage-bundle: the host.json of %s could not be written\n", inputs->directory);
-    }
-    spisor_memory_release(path);
-    spisor_memory_release(text);
-    cJSON_Delete(manifest);
-    return written;
-}
-
-/**
- * typescript-host's bundle: weivel/typescript's program bundled by its own weivel-bundle, the core and standard beside
- * it, koffi under node_modules, and host.json carrying the Node pin with the checkout's minimum.
- */
-static int stage_typescript_host(int count, char **arguments) {
-    if (count != 8) {
+static int stage_language_host(int count, char **arguments) {
+    if (count < LANGUAGE_HOST_ARGUMENTS) {
         fputs(USAGE, stderr);
         return 2;
     }
-    typescript_host_inputs inputs;
-    memset(&inputs, 0, sizeof inputs);
-    inputs.directory = arguments[2];
-    inputs.version = arguments[3];
-    inputs.checkout = arguments[4];
-    int staged = read_minimum(&inputs) && read_pin(&inputs, arguments[5]) && start_empty(inputs.directory) &&
-                 run_bundler(&inputs) && copy_weivel_libraries(inputs.directory, arguments[6], arguments[7]) &&
-                 copy_koffi(&inputs) && write_typescript_host_manifest(&inputs);
-    cJSON_Delete(inputs.pin);
+    if (!are_language_host_words(count, arguments)) {
+        return 1;
+    }
+    cJSON *data = read_host_data(arguments[7]);
+    if (data == NULL) {
+        return 1;
+    }
+    int per_platform = strcmp(arguments[5], RUNTIME_LAYER_NATIVE) == 0;
+    char *id = runtime_language_host_id(arguments[4]);
+    staged_item item = {NULL, NULL, NULL, NULL, NULL, 0};
+    int staged = id != NULL && begin_item(&item, arguments[2], "language-host", id, arguments[3], per_platform) &&
+                 cJSON_AddStringToObject(item.manifest, "language", arguments[4]) != NULL &&
+                 add_start(&item, arguments[5], arguments[6], per_platform);
+    if (staged) {
+        merge_host_data(&item, data);
+    }
+    staged = staged && copy_tree_into(arguments[6], item.files, arguments[6]) &&
+             copy_weivel_libraries(&item, arguments[8], arguments[9]) &&
+             copy_files(&item, count, arguments, LANGUAGE_HOST_ARGUMENTS) && finish_item(&item);
+    end_item(&item);
+    spisor_memory_release(id);
+    cJSON_Delete(data);
     return staged ? 0 : 1;
+}
+
+/**
+ * An interface item: host.json {kind: interface, id, version, runtime: native, entry} and `<platform>/` holding the
+ * binary, under its own name, beside the core and standard.
+ */
+static int stage_interface(int count, char **arguments) {
+    if (count != INTERFACE_ARGUMENTS) {
+        fputs(USAGE, stderr);
+        return 2;
+    }
+    if (!are_interface_words(arguments)) {
+        return 1;
+    }
+    const char *binary = base_name_of(arguments[5]);
+    staged_item item = {NULL, NULL, NULL, NULL, NULL, 0};
+    int staged = begin_item(&item, arguments[2], "interface", arguments[4], arguments[3], 1) &&
+                 add_start(&item, RUNTIME_LAYER_NATIVE, binary, 1) && copy_into(arguments[5], item.files, binary) &&
+                 copy_weivel_libraries(&item, arguments[6], arguments[7]) && finish_item(&item);
+    end_item(&item);
+    return staged ? 0 : 1;
+}
+
+/** Prints the platform key a bundle staged here is for, so a build script never computes a second one. */
+static int print_platform(int count) {
+    if (count != 2) {
+        fputs(USAGE, stderr);
+        return 2;
+    }
+    puts(runtime_platform_key());
+    return 0;
 }
 
 static int run(int count, char **arguments) {
@@ -380,8 +669,14 @@ static int run(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[1], "library") == 0) {
         return stage_library(count, arguments);
     }
-    if (count >= 2 && strcmp(arguments[1], "typescript-host") == 0) {
-        return stage_typescript_host(count, arguments);
+    if (count >= 2 && strcmp(arguments[1], "language-host") == 0) {
+        return stage_language_host(count, arguments);
+    }
+    if (count >= 2 && strcmp(arguments[1], "interface") == 0) {
+        return stage_interface(count, arguments);
+    }
+    if (count >= 2 && strcmp(arguments[1], "platform") == 0) {
+        return print_platform(count);
     }
     fputs(USAGE, stderr);
     return 2;

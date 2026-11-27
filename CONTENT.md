@@ -555,20 +555,47 @@ sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
 
+A language's host item and an interface item are staged by `stage-bundle`, which names no language and no item:
+
+```
+stage-bundle language-host <directory> <version> <language> <runtime> <entry> <host-data json> <weivel_core> <weivel_standard> [<file or directory>...]
+stage-bundle interface <directory> <version> <interface id> <binary> <weivel_core> <weivel_standard>
+```
+
+`language-host` writes `host.json` as `{"kind": "language-host", "id": "<language>-host", "version", "language",
+"runtime", "entry"}` followed by every member of the host-data file, and copies the entry, each further file or
+directory and the build's `weivel_core` and `weivel_standard` into the bundle. The host-data file is trusted build
+input, written by the build that stages the item: it must be a JSON object naming each member once, and neither
+`application` nor any of those six. The entry and the files are relative paths read from the working directory and
+keep that path in the bundle, under `<platform>/` for a `native` runtime, whose entry `host.json` then names as
+`<platform>/<entry>`. Every source must be a real file or folder: a link, or on Windows any reparse point, is refused
+wherever it stands, at the top of an argument or inside a folder. `interface`
+writes `{"kind": "interface", "id", "version", "runtime": "native", "entry": "<platform>/<binary's name>"}` with the
+binary and both libraries under `<platform>/`; the binary's name must be one a catalog can list and neither library's.
+Both modes check every argument before writing anything. `<directory>` loses its trailing separators and must name a
+folder of its own, never a root, a drive, `.` or `..`. The item is staged in the sibling `<directory>.staging` and, once
+every file is in it, swapped in: the bundle before moves aside to the sibling `<directory>.previous`, the staging folder
+is renamed into place, and the previous folder is removed, or renamed back when the staging folder could not be. A
+staging or previous folder left by an earlier run is removed first. `<directory>`, the staging folder and the previous
+folder are replaced only when each is missing, empty, or a real folder holding a top-level `host.json`; anything else,
+a link, a file or a folder that is no bundle, is refused by name and left as it is. So a
+refusal at any step leaves the bundle staged before as it was. `stage-bundle platform` prints the platform key a
+bundle staged here is for. `spisor-host catalog build --host <bundle>@<platform>` lists each under the kind its `host.json` names.
+
 The `typescript-host` item every TypeScript plugin runs on, a `language-host` of `typescript` started on `javascript`,
 is weivel/typescript's program bundle, staged by the build target `typescript_host_bundle` into
-`bundles/typescript-host` beside `spisor-host`'s bundles, ready for `spisor-host catalog build --host
-<bundle>@<platform>`, which lists it under the kind its `host.json` names. It runs `stage-bundle typescript-host`, which
-runs
-`node <checkout>/dist/bundle/bin.js program` on the `node` on the `PATH`, so it is not built by default and needs
-`siblings/typescript` (or `SPISOR_WEIVEL_TYPESCRIPT_DIR`) installed and built with `npm ci` and `npm run build`. Beside
-`weivel-host.mjs` and `weivel-host-in-process.mjs` it places this build's `weivel_core` and `weivel_standard`, and
-koffi under `node_modules/koffi` with this platform's prebuilt only. Its `host.json` carries the Node every
-JavaScript host runs on, `node {pinned, minimum, builds}`: the pin and each platform's archive with its SHA-256 come
-from `host/bundle/node.json`, copied from nodejs.org's `SHASUMS256.txt` and never computed from a download, and the
-minimum, the lowest Node a `PATH` may offer instead, is weivel/typescript's `engines.node`. Staging refuses a pin older
-than that minimum. Moving Node is a change to `node.json` and a new `typescript-host`, never to `runtime`; every
-installed item started on `javascript` that pins Node must pin the same one.
+`bundles/typescript-host` beside `spisor-host`'s bundles. The target runs `host/bundle/typescript_host_bundle.cmake`,
+which runs `node <checkout>/dist/bundle/bin.js program` on the `node` on the `PATH`, so it is not built by default and
+needs `siblings/typescript` (or `SPISOR_WEIVEL_TYPESCRIPT_DIR`) installed and built with `npm ci` and `npm run build`.
+It copies koffi's package with this platform's prebuilt only, writes the host data, and calls `stage-bundle
+language-host` with `weivel-host.mjs` as the entry and `weivel-host-in-process.mjs` and `node_modules/koffi` as its
+files. The host data carries `inProcessEntry` and the Node every JavaScript host runs on, `node {pinned, minimum,
+builds}`: the pin and each platform's archive with its SHA-256 come from `host/bundle/node.json`, copied from
+nodejs.org's `SHASUMS256.txt` and never computed from a download, and the minimum, the lowest Node a `PATH` may offer
+instead, is weivel/typescript's `engines.node`. The script refuses a pin older than that minimum, a build that is not
+an https archive with a SHA-256, and a pin with no build for this platform. Moving Node is a change to `node.json` and
+a new `typescript-host`, never to `runtime`; every installed item started on `javascript` that pins Node must pin the
+same one.
 
 `spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder
