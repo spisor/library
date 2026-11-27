@@ -583,11 +583,14 @@ typedef struct language_host_call {
     const char *data;
     const char *core;
     const char *file;
+    const char *directory;
+    const char *executable;
 } language_host_call;
 
 /** Stages fixture-one's native host into <base>/bundle from <base>/inputs as call names it; its exit code. */
 static int stage_language_host_call(const language_host_call *call, program *run) {
-    char *directory = in_base("bundle");
+    char directory[1200];
+    snprintf(directory, sizeof directory, "%s/%s", base_folder, call->directory == NULL ? "bundle" : call->directory);
     char *data = in_base("host-data.json");
     char *core = in_base("built/core.bin");
     char *standard = in_base("built/standard.bin");
@@ -596,12 +599,11 @@ static int stage_language_host_call(const language_host_call *call, program *run
                                "fixture-one", "native", call->entry == NULL ? "weivel-host" : call->entry,
                                call->data == NULL ? data : call->data, call->core == NULL ? core : call->core,
                                standard, call->file == NULL ? "data" : call->file, NULL};
-    int code = run_in(STAGE_BUNDLE_PATH, arguments, inputs, run);
+    int code = run_in(call->executable == NULL ? STAGE_BUNDLE_PATH : call->executable, arguments, inputs, run);
     spisor_memory_release(inputs);
     spisor_memory_release(standard);
     spisor_memory_release(core);
     spisor_memory_release(data);
-    spisor_memory_release(directory);
     return code;
 }
 
@@ -828,6 +830,137 @@ static void says_a_missing_host_data_file_could_not_be_read(void) {
     finish_case();
 }
 
+/** A snapshot of <base>/bundle, its length in *length; freed by the caller. */
+static char *bundle_snapshot(size_t *length) {
+    char *bundle = in_base("bundle");
+    char *snapshot = tree_snapshot_sized(bundle, NULL, length);
+    spisor_memory_release(bundle);
+    return snapshot;
+}
+
+/** Whether <base>/bundle holds exactly what the snapshot of before_length bytes held. */
+static int is_bundle_unchanged(const char *before, size_t before_length) {
+    size_t after_length = 0;
+    char *after = bundle_snapshot(&after_length);
+    int unchanged = before_length == after_length && memcmp(before, after, before_length) == 0;
+    spisor_memory_release(after);
+    return unchanged;
+}
+
+/** Stages a prior bundle at <base>/bundle with a marker file a later staging must replace or keep. */
+static void stage_prior_bundle(void) {
+    program run;
+    CHECK(stage_native_host("fixture-one", "native", &run) == 0);
+    program_free(&run);
+    write_in(base_folder, "bundle/prior.txt", "the prior bundle");
+}
+
+static void restages_a_bundle_named_with_a_trailing_separator_in_place(void) {
+    start_case("trailing");
+    write_native_inputs("{}");
+    const char *endings[2] = {"bundle/", RUNTIME_HOST_IS_WINDOWS ? "bundle\\" : "bundle//"};
+    for (size_t index = 0; index < 2; index++) {
+        stage_prior_bundle();
+        language_host_call call = {NULL, NULL, NULL, NULL, NULL, endings[index], NULL};
+        program run;
+        CHECK(stage_language_host_call(&call, &run) == 0);
+        check_text(run.err, "", endings[index]);
+        CHECK(exists_in(base_folder, "bundle/host.json") && !exists_in(base_folder, "bundle/prior.txt"));
+        CHECK(!staging_left("bundle") && !exists_in(base_folder, "bundle.previous"));
+        CHECK(!exists_in(base_folder, "bundle/bundle.staging"));
+        program_free(&run);
+    }
+    finish_case();
+}
+
+static void refuses_a_bundle_folder_named_by_a_dot_segment_leaving_the_bundle_untouched(void) {
+    start_case("dot");
+    write_native_inputs("{}");
+    stage_prior_bundle();
+    size_t before_length = 0;
+    char *before = bundle_snapshot(&before_length);
+    const char *names[4] = {"bundle/.", "bundle/./", "bundle/..", "."};
+    for (size_t index = 0; index < 4; index++) {
+        language_host_call call = {NULL, NULL, NULL, NULL, NULL, names[index], NULL};
+        program run;
+        CHECK(stage_language_host_call(&call, &run) == 1);
+        expect_contains(run.err, "names no folder of its own", names[index]);
+        CHECK(is_bundle_unchanged(before, before_length));
+        program_free(&run);
+    }
+    CHECK(exists_in(base_folder, "inputs/weivel-host"));
+    spisor_memory_release(before);
+    finish_case();
+}
+
+static void a_refusal_during_the_copy_leaves_the_bundle_staged_before_untouched(void) {
+    start_case("copy-refusal");
+    write_native_inputs("{}");
+    stage_prior_bundle();
+    size_t before_length = 0;
+    char *before = bundle_snapshot(&before_length);
+    char *outside = in_base("outside");
+    char *link = in_base("inputs/data/linked");
+    CHECK(spisor_make_directories(outside) == SPISOR_OK);
+    if (create_folder_link_or_skip(link, outside)) {
+        language_host_call call = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+        program run;
+        CHECK(stage_language_host_call(&call, &run) == 1);
+        expect_contains(run.err, "is a link, which a bundle cannot carry", "the link met while copying");
+        CHECK(is_bundle_unchanged(before, before_length));
+        CHECK(!staging_left("bundle") && !exists_in(base_folder, "bundle.previous"));
+        program_free(&run);
+    }
+    spisor_memory_release(link);
+    spisor_memory_release(outside);
+    spisor_memory_release(before);
+    finish_case();
+}
+
+static void a_failed_rename_into_place_puts_the_bundle_staged_before_back(void) {
+    start_case("swap-fails");
+    write_native_inputs("{}");
+    stage_prior_bundle();
+    size_t before_length = 0;
+    char *before = bundle_snapshot(&before_length);
+    language_host_call call = {NULL, NULL, NULL, NULL, NULL, NULL, FAILING_STAGE_BUNDLE_PATH};
+    program run;
+    CHECK(stage_language_host_call(&call, &run) == 1);
+    expect_contains(run.err, "could not be renamed", "the failed rename named");
+    CHECK(is_bundle_unchanged(before, before_length));
+    CHECK(!staging_left("bundle") && !exists_in(base_folder, "bundle.previous"));
+    program_free(&run);
+    spisor_memory_release(before);
+    finish_case();
+}
+
+static void removes_a_previous_folder_left_by_a_crash_and_refuses_a_linked_one(void) {
+    start_case("previous");
+    write_native_inputs("{}");
+    stage_prior_bundle();
+    write_in(base_folder, "bundle.previous/stale.txt", "left by a crash");
+    program run;
+    CHECK(stage_native_host("fixture-one", "native", &run) == 0);
+    CHECK(!exists_in(base_folder, "bundle.previous") && !exists_in(base_folder, "bundle/prior.txt"));
+    program_free(&run);
+    write_in(base_folder, "bundle/prior.txt", "the prior bundle");
+    size_t before_length = 0;
+    char *before = bundle_snapshot(&before_length);
+    write_in(base_folder, "elsewhere/kept.txt", "kept");
+    char *previous = in_base("bundle.previous");
+    char *elsewhere = in_base("elsewhere");
+    if (create_folder_link_or_skip(previous, elsewhere)) {
+        CHECK(stage_native_host("fixture-one", "native", &run) == 1);
+        expect_contains(run.err, "is a link or a file", "the linked previous folder");
+        CHECK(is_bundle_unchanged(before, before_length) && exists_in(base_folder, "elsewhere/kept.txt"));
+        program_free(&run);
+    }
+    spisor_memory_release(elsewhere);
+    spisor_memory_release(previous);
+    spisor_memory_release(before);
+    finish_case();
+}
+
 /** With the word node, the one case that runs the bundler on the PATH's node; else every case that needs none. */
 int main(int count, char **arguments) {
     if (count == 2 && strcmp(arguments[1], "node") == 0) {
@@ -850,6 +983,11 @@ int main(int count, char **arguments) {
     refuses_a_link_at_the_top_or_inside_a_directory_writing_nothing();
     a_refused_language_host_leaves_the_bundle_staged_before_untouched();
     replaces_a_staging_folder_left_by_a_failed_run_and_refuses_a_linked_one();
+    restages_a_bundle_named_with_a_trailing_separator_in_place();
+    refuses_a_bundle_folder_named_by_a_dot_segment_leaving_the_bundle_untouched();
+    a_refusal_during_the_copy_leaves_the_bundle_staged_before_untouched();
+    a_failed_rename_into_place_puts_the_bundle_staged_before_back();
+    removes_a_previous_folder_left_by_a_crash_and_refuses_a_linked_one();
     stages_an_interface_binary_under_its_platform();
     refuses_an_interface_id_no_catalog_can_list();
     refuses_an_interface_binary_named_as_a_library_or_no_catalog_name();

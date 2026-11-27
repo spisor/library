@@ -47,6 +47,7 @@
 #define LANGUAGE_HOST_ARGUMENTS 10
 #define INTERFACE_ARGUMENTS 8
 #define STAGING_ENDING ".staging"
+#define PREVIOUS_ENDING ".previous"
 #define CORE_LIBRARY SHARED_LIBRARY_PREFIX "weivel_core" SHARED_LIBRARY_ENDING
 #define STANDARD_LIBRARY SHARED_LIBRARY_PREFIX "weivel_standard" SHARED_LIBRARY_ENDING
 
@@ -56,12 +57,14 @@ static const char *const OWN_MEMBERS[] = {"kind", "id", "version", "language", "
 static const char *const RUNTIMES[] = {RUNTIME_LAYER_JAVASCRIPT, RUNTIME_LAYER_JVM, RUNTIME_LAYER_NATIVE};
 
 /**
- * A language host or interface bundle being staged: built in `staging`, `<directory>.staging`, whose `files` folder is
- * `<platform>/` for a native one, and renamed over `directory` only once every file is in it.
+ * A language host or interface bundle being staged: built in `staging`, the sibling `<directory>.staging`, whose
+ * `files` folder is `<platform>/` for a native one, and swapped into `directory` once every file is in it, the bundle
+ * before it moved aside to the sibling `previous`, `<directory>.previous`, until the swap is done.
  */
 typedef struct staged_item {
-    const char *directory;
+    char *directory;
     char *staging;
+    char *previous;
     char *files;
     cJSON *manifest;
 } staged_item;
@@ -382,15 +385,58 @@ static char *entry_named(const char *name, int per_platform) {
     return per_platform ? runtime_cache_text(parts, 3) : runtime_catalog_copy(name);
 }
 
+static int is_separator(char character) {
+    return character == '/' || (RUNTIME_HOST_IS_WINDOWS && character == '\\');
+}
+
 /**
- * Empties item's staging folder, refusing one that is not a real folder: a link there would lead the staging, and the
- * rename after it, outside.
+ * The bundle's folder with its trailing separators taken off, so its staging and previous folders are siblings of it;
+ * NULL, printing why, when what is left names no folder of its own: a root, a drive, `.` or `..`.
  */
-static int empty_staging(const staged_item *item) {
-    runtime_entry_kind kind = runtime_probe_entry(item->staging);
+static char *bundle_folder(const char *directory) {
+    char *folder = runtime_catalog_copy(directory);
+    if (folder == NULL) {
+        fputs("stage-bundle: memory ran out\n", stderr);
+        return NULL;
+    }
+    size_t length = strlen(folder);
+    while (length > 0 && is_separator(folder[length - 1])) {
+        folder[--length] = 0;
+    }
+    size_t start = length;
+    while (start > 0 && !is_separator(folder[start - 1])) {
+        start--;
+    }
+    const char *segment = folder + start;
+    int own = *segment != 0 && strcmp(segment, ".") != 0 && strcmp(segment, "..") != 0 &&
+              !(RUNTIME_HOST_IS_WINDOWS && strchr(segment, ':') != NULL);
+    if (!own) {
+        fprintf(stderr, "stage-bundle: %s names no folder of its own: name the bundle's folder, not a root, . or ..\n",
+                directory);
+        spisor_memory_release(folder);
+        return NULL;
+    }
+    return folder;
+}
+
+/** Whether a real folder, or nothing, stands at the sibling path, printing why not: a link there would lead outside. */
+static int is_replaceable(const char *path, const char *what) {
+    runtime_entry_kind kind = runtime_probe_entry(path);
     if (kind != RUNTIME_ENTRY_MISSING && kind != RUNTIME_ENTRY_DIRECTORY) {
-        fprintf(stderr, "stage-bundle: the staging folder %s is a link or a file, which stage-bundle never replaces\n",
-                item->staging);
+        fprintf(stderr, "stage-bundle: the %s folder %s is a link or a file, which stage-bundle never replaces\n", what,
+                path);
+        return 0;
+    }
+    return 1;
+}
+
+/** Empties item's staging folder and removes a previous folder a crash left, each refused unless a real folder. */
+static int clear_siblings(const staged_item *item) {
+    if (!is_replaceable(item->staging, "staging") || !is_replaceable(item->previous, "previous")) {
+        return 0;
+    }
+    if (runtime_remove_tree(item->previous) != SPISOR_OK) {
+        fprintf(stderr, "stage-bundle: the previous folder %s could not be removed\n", item->previous);
         return 0;
     }
     return start_empty(item->staging);
@@ -399,21 +445,26 @@ static int empty_staging(const staged_item *item) {
 /** Opens item: its manifest begun as {kind, id, version} and its files folder made inside an empty staging folder. */
 static int begin_item(staged_item *item, const char *directory, const char *kind, const char *id, const char *version,
                       int per_platform) {
-    const char *parts[2] = {directory, STAGING_ENDING};
-    item->directory = directory;
+    item->directory = bundle_folder(directory);
+    if (item->directory == NULL) {
+        return 0;
+    }
+    const char *parts[2] = {item->directory, STAGING_ENDING};
+    const char *previous_parts[2] = {item->directory, PREVIOUS_ENDING};
     item->staging = runtime_cache_text(parts, 2);
+    item->previous = runtime_cache_text(previous_parts, 2);
     item->files = item->staging == NULL ? NULL
                   : per_platform        ? joined(item->staging, runtime_platform_key())
                                         : runtime_catalog_copy(item->staging);
     item->manifest = cJSON_CreateObject();
-    int built = item->files != NULL && item->manifest != NULL &&
+    int built = item->files != NULL && item->previous != NULL && item->manifest != NULL &&
                 cJSON_AddStringToObject(item->manifest, "kind", kind) != NULL &&
                 cJSON_AddStringToObject(item->manifest, "id", id) != NULL &&
                 cJSON_AddStringToObject(item->manifest, "version", version) != NULL;
     if (!built) {
         fputs("stage-bundle: memory ran out\n", stderr);
     }
-    return built && empty_staging(item) && spisor_make_directories(item->files) == SPISOR_OK;
+    return built && clear_siblings(item) && spisor_make_directories(item->files) == SPISOR_OK;
 }
 
 static int rename_directory(const char *from, const char *to) {
@@ -424,14 +475,46 @@ static int rename_directory(const char *from, const char *to) {
 #endif
 }
 
-/** Writes item's host.json into its staging folder and renames the folder over its directory. */
+/**
+ * Renames the staging folder to the bundle's folder.
+ *
+ * @implNote The failing build of stage-bundle, which only the suite builds, fails this one rename, the step after the
+ * bundle before has moved aside, so a test can watch that bundle put back.
+ */
+static int rename_into_place(const char *staging, const char *directory) {
+#if defined(STAGE_BUNDLE_FAILING_RENAME_INTO_PLACE)
+    (void)staging;
+    (void)directory;
+    return 0;
+#else
+    return rename_directory(staging, directory);
+#endif
+}
+
+/**
+ * Writes item's host.json into its staging folder and swaps it into the bundle's folder: the bundle before moved aside
+ * to the previous folder, the staging folder renamed into place, and the previous folder removed, or renamed back when
+ * the staging folder could not be. A previous folder that cannot be removed after the swap is only warned about, since
+ * the next staging removes it.
+ */
 static int finish_item(const staged_item *item) {
     if (!write_manifest(item->staging, item->manifest)) {
         return 0;
     }
-    if (runtime_remove_tree(item->directory) != SPISOR_OK || !rename_directory(item->staging, item->directory)) {
-        fprintf(stderr, "stage-bundle: %s could not be renamed over %s\n", item->staging, item->directory);
+    int replacing = runtime_probe_entry(item->directory) != RUNTIME_ENTRY_MISSING;
+    if (replacing && !rename_directory(item->directory, item->previous)) {
+        fprintf(stderr, "stage-bundle: %s could not be renamed aside to %s\n", item->directory, item->previous);
         return 0;
+    }
+    if (!rename_into_place(item->staging, item->directory)) {
+        int restored = !replacing || rename_directory(item->previous, item->directory);
+        fprintf(stderr, "stage-bundle: %s could not be renamed over %s%s\n", item->staging, item->directory,
+                restored ? "" : ", and the bundle before it stays in the previous folder");
+        return 0;
+    }
+    if (replacing && runtime_remove_tree(item->previous) != SPISOR_OK) {
+        fprintf(stderr, "stage-bundle: warning: %s could not be removed; the next staging removes it\n",
+                item->previous);
     }
     return 1;
 }
@@ -442,6 +525,8 @@ static void end_item(staged_item *item) {
         runtime_remove_tree(item->staging);
     }
     spisor_memory_release(item->staging);
+    spisor_memory_release(item->previous);
+    spisor_memory_release(item->directory);
     spisor_memory_release(item->files);
     cJSON_Delete(item->manifest);
 }
@@ -496,7 +581,7 @@ static int stage_language_host(int count, char **arguments) {
     }
     int per_platform = strcmp(arguments[5], RUNTIME_LAYER_NATIVE) == 0;
     char *id = runtime_language_host_id(arguments[4]);
-    staged_item item = {NULL, NULL, NULL, NULL};
+    staged_item item = {NULL, NULL, NULL, NULL, NULL};
     int staged = id != NULL && begin_item(&item, arguments[2], "language-host", id, arguments[3], per_platform) &&
                  cJSON_AddStringToObject(item.manifest, "language", arguments[4]) != NULL &&
                  add_start(&item, arguments[5], arguments[6], per_platform);
@@ -525,7 +610,7 @@ static int stage_interface(int count, char **arguments) {
         return 1;
     }
     const char *binary = base_name_of(arguments[5]);
-    staged_item item = {NULL, NULL, NULL, NULL};
+    staged_item item = {NULL, NULL, NULL, NULL, NULL};
     int staged = begin_item(&item, arguments[2], "interface", arguments[4], arguments[3], 1) &&
                  add_start(&item, RUNTIME_LAYER_NATIVE, binary, 1) && copy_into(arguments[5], item.files, binary) &&
                  copy_weivel_libraries(&item, arguments[6], arguments[7]) && finish_item(&item);

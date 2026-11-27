@@ -68,9 +68,20 @@ host_test(profile_test)
 host_test(command_line_test)
 host_test(child_test)
 host_test(catalog_build_test)
+if(WIN32)
+    set(failing_stage_bundle_sources ${PROJECT_SOURCE_DIR}/host/src/host_arguments.c)
+else()
+    set(failing_stage_bundle_sources "")
+endif()
+host_executable(stage_bundle_failing stage-bundle-failing ${PROJECT_SOURCE_DIR}/host/bundle/stage_bundle.c
+    ${failing_stage_bundle_sources} ${host_runtime_objects})
+target_compile_definitions(stage_bundle_failing PRIVATE STAGE_BUNDLE_FAILING_RENAME_INTO_PLACE)
+set_target_properties(stage_bundle_failing PROPERTIES SPISOR_TEST_ONLY TRUE)
+
 host_test(stage_bundle_test)
-add_dependencies(stage_bundle_test stage_bundle)
+add_dependencies(stage_bundle_test stage_bundle stage_bundle_failing)
 target_compile_definitions(stage_bundle_test PRIVATE STAGE_BUNDLE_PATH="$<TARGET_FILE:stage_bundle>"
+    FAILING_STAGE_BUNDLE_PATH="$<TARGET_FILE:stage_bundle_failing>"
     CMAKE_PATH="${CMAKE_COMMAND}" TYPESCRIPT_HOST_SCRIPT="${SPISOR_TYPESCRIPT_HOST_SCRIPT}")
 add_test(NAME host_stage_bundle_node_test COMMAND stage_bundle_test node)
 set_tests_properties(host_stage_bundle_node_test PROPERTIES SKIP_RETURN_CODE 77)

@@ -572,9 +572,12 @@ keep that path in the bundle, under `<platform>/` for a `native` runtime, whose 
 wherever it stands, at the top of an argument or inside a folder. `interface`
 writes `{"kind": "interface", "id", "version", "runtime": "native", "entry": "<platform>/<binary's name>"}` with the
 binary and both libraries under `<platform>/`; the binary's name must be one a catalog can list and neither library's.
-Both modes check every argument before writing anything, stage into `<directory>.staging` (a staging folder left by an
-earlier failed run is removed first, and a link there is refused), and rename it over `<directory>` only once every file
-is in it, so a refusal leaves the bundle staged before untouched. `stage-bundle platform` prints the platform key a
+Both modes check every argument before writing anything. `<directory>` loses its trailing separators and must name a
+folder of its own, never a root, a drive, `.` or `..`. The item is staged in the sibling `<directory>.staging` and, once
+every file is in it, swapped in: the bundle before moves aside to the sibling `<directory>.previous`, the staging folder
+is renamed into place, and the previous folder is removed, or renamed back when the staging folder could not be. A
+staging or previous folder left by an earlier run is removed first, and a link or file at either name is refused. So a
+refusal at any step leaves the bundle staged before as it was. `stage-bundle platform` prints the platform key a
 bundle staged here is for. `spisor-host catalog build --host <bundle>@<platform>` lists each under the kind its `host.json` names.
 
 The `typescript-host` item every TypeScript plugin runs on, a `language-host` of `typescript` started on `javascript`,
