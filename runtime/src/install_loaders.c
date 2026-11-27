@@ -193,14 +193,27 @@ static cJSON *register_loader_host(const runtime_install_run *run, const catalog
     return registered;
 }
 
-/** The language of the loader's front door, that of the first plugin its standard requires; NULL when it requires none. */
-static const char *front_door_language(const runtime_install_run *run, const catalog_loader *loader) {
-    const cJSON *first = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(loader->standard, "plugins"), 0);
-    return cJSON_IsString(first) ? runtime_plugin_language(run->catalog, first->valuestring) : NULL;
+/**
+ * The language of the registered loader's front door, read as its start reads it, copied; NULL with *refusal set when
+ * its start would refuse it, NULL with neither when it has none, and NULL with *out_of_memory set when memory runs out.
+ */
+static char *front_door_language(const runtime_install_run *run, const catalog_loader *loader, cJSON **refusal,
+                                 int *out_of_memory) {
+    runtime_loader_layers layers;
+    char *language = NULL;
+    *refusal = NULL;
+    if (!runtime_read_loader_layers(run->places, loader->id, &layers, refusal)) {
+        *out_of_memory = *refusal == NULL;
+        return NULL;
+    }
+    int read = runtime_read_front_door(&layers, refusal);
+    language = read && layers.front_door != NULL ? runtime_catalog_copy(layers.front_door) : NULL;
+    *out_of_memory = read ? layers.front_door != NULL && language == NULL : *refusal == NULL;
+    runtime_free_loader_layers(&layers);
+    return language;
 }
 
-static cJSON *entry_loader_of(const runtime_install_run *run, const catalog_loader *loader) {
-    const char *language = front_door_language(run, loader);
+static cJSON *entry_loader_of(const catalog_loader *loader, const char *language) {
     cJSON *entry = cJSON_CreateObject();
     if (entry == NULL || cJSON_AddStringToObject(entry, "id", loader->id) == NULL ||
         !runtime_install_copy_into(entry, "application", loader->application) ||
@@ -217,10 +230,13 @@ static cJSON *entry_loader_of(const runtime_install_run *run, const catalog_load
  * loader: its registration and commands already stand, and the launcher starts it without the entry.
  */
 static cJSON *entry_of(const runtime_install_run *run, const catalog_loader *loader) {
-    cJSON *entry_loader = entry_loader_of(run, loader);
     cJSON *refusal = NULL;
+    int out_of_memory = 0;
+    char *language = front_door_language(run, loader, &refusal, &out_of_memory);
+    cJSON *entry_loader = refusal != NULL || out_of_memory ? NULL : entry_loader_of(loader, language);
     cJSON *entry = entry_loader == NULL ? NULL : runtime_install_entry(run->places, entry_loader, &refusal);
     cJSON_Delete(entry_loader);
+    spisor_memory_release(language);
     if (entry != NULL) {
         cJSON_DeleteItemFromObjectCaseSensitive(entry, "sequences");
         return entry;

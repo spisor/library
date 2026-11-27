@@ -427,12 +427,22 @@ static void reports_a_background_host_the_catalog_does_not_list_and_still_regist
     finish_install_base(&base);
 }
 
-/** The in-process entry of a loader requiring `required_json`, listed beside typescript-host and `scripted`. */
-static cJSON *install_in_process_loader(install_base *base, const char *label, const char *required_json) {
+/**
+ * The in-process entry of a loader requiring `required_json`, listed beside typescript-host, the TypeScript plugin
+ * `scripted` and the fixture-one plugin `compiled`, with the plugins `enabled` names, a NULL-ended list, enabled in the portable place.
+ */
+static cJSON *install_in_process_loader(install_base *base, const char *label, const char *required_json,
+                                        const char *const *enabled) {
     start_install_base(base, "applications", label);
     list_foundation(base);
     list_language_host(base, "typescript", "javascript", "1.0.0", "{}");
     list_plugin(base, "scripted", "1.0.0", "typescript");
+    list_plugin(base, "compiled", "1.0.0", "fixture-one");
+    for (const char *const *id = enabled; *id != NULL; id++) {
+        char key[128];
+        snprintf(key, sizeof key, "plugins.%s.enabled", *id);
+        set_portable(base, key, cJSON_CreateTrue());
+    }
     cJSON *application = application_json("sample", "sample", "{}");
     cJSON_AddItemToObject(application, "entry",
                           parsed("{\"runsInProcess\": true, \"directories\": [\"{{home}}\"],"
@@ -449,7 +459,8 @@ static cJSON *install_in_process_loader(install_base *base, const char *label, c
 /** An in-process entry runs its front door's layer, so that language's host comes with the plugin holding it. */
 static void brings_the_front_doors_language_host_for_an_in_process_entry(void) {
     install_base base;
-    cJSON *report = install_in_process_loader(&base, "in-process-door", "[\"scripted\"]");
+    static const char *const nothing[1] = {NULL};
+    cJSON *report = install_in_process_loader(&base, "in-process-door", "[\"scripted\"]", nothing);
     CHECK(exists_in(base.cache, "bundles/typescript-host"));
     const cJSON *entry = value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0), "entry");
     CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written")) &&
@@ -485,15 +496,41 @@ static void reports_a_required_plugin_whose_language_no_catalog_source_hosts(voi
     finish_install_base(&base);
 }
 
-/** A loader requiring no plugin holds no front door, so its in-process entry is not written and no host comes. */
-static void writes_no_in_process_entry_for_a_loader_requiring_no_plugin(void) {
+static const cJSON *entry_of_first_loader(const cJSON *report) {
+    return value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0), "entry");
+}
+
+/** A loader requiring no plugin has its front door in the one language its plugins are written in, as a start reads it. */
+static void writes_the_in_process_entry_of_a_loader_requiring_no_plugin_from_its_plugins_language(void) {
+    static const char *const scripted[2] = {"scripted", NULL};
     install_base base;
-    cJSON *report = install_in_process_loader(&base, "in-process-doorless", "[]");
-    CHECK(!exists_in(base.cache, "bundles/typescript-host"));
-    const cJSON *entry = value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0), "entry");
+    cJSON *report = install_in_process_loader(&base, "in-process-one-language", "[]", scripted);
+    CHECK(exists_in(base.cache, "bundles/typescript-host"));
+    const cJSON *entry = entry_of_first_loader(report);
+    if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written"))) {
+        const char *message = text_at(entry, "message");
+        fprintf(stderr, "the one-language entry: not written, \"%s\"\n", message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsInProcess")));
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+/** With no plugin required and plugins of two languages, no language holds the front door, so no entry is written. */
+static void writes_no_entry_for_a_loader_requiring_no_plugin_over_two_languages(void) {
+    static const char *const both[3] = {"scripted", "compiled", NULL};
+    install_base base;
+    cJSON *report = install_in_process_loader(&base, "in-process-two-languages", "[]", both);
+    const cJSON *entry = entry_of_first_loader(report);
     CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(entry, "written")));
     const char *message = text_at(entry, "message");
-    CHECK(message != NULL && strstr(message, "names no front door language") != NULL);
+    CHECK(message != NULL && strstr(message, "so no one language holds its front door") != NULL &&
+          strstr(message, "typescript") != NULL && strstr(message, "fixture-one") != NULL);
+    check_text(text_at(entry, "fix"),
+               "require the plugin that holds the front door in the loader's standard, or enable plugins of one "
+               "language only",
+               "the two languages' fix");
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -781,7 +818,8 @@ int main(void) {
     reports_a_background_host_the_catalog_does_not_list_and_still_registers_its_loader();
     writes_each_entry_reports_one_without_and_removing_the_loader_takes_it_away();
     brings_the_front_doors_language_host_for_an_in_process_entry();
-    writes_no_in_process_entry_for_a_loader_requiring_no_plugin();
+    writes_the_in_process_entry_of_a_loader_requiring_no_plugin_from_its_plugins_language();
+    writes_no_entry_for_a_loader_requiring_no_plugin_over_two_languages();
     reports_a_required_plugin_whose_language_no_catalog_source_hosts();
     keeps_the_first_install_s_provenance_on_a_second_install();
     requests_each_command_running_spisor_boot_with_launch();
