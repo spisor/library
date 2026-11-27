@@ -1700,7 +1700,7 @@ static void a_catalog_with_one_plugin(void) {
     char bundles[1300];
     char source[1300];
     char url[4200];
-    char text[5000];
+    char text[9600];
     a_file_to_install();
     snprintf(bundles, sizeof bundles, "%s/bundles", place.state);
     under_base(source, sizeof source, "source.txt");

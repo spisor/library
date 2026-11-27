@@ -19,7 +19,6 @@
 #include "runtime/fetch.h"
 #include "followed_entry.h"
 #include "file_times.h"
-#include "install_entries.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "node_json_file.h"

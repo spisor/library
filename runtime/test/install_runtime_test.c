@@ -101,7 +101,7 @@ static void pack_archive_as(runtime_fixture *fixture, const char *executable_con
 /** typescript-host 1.0.0 installed and hinted under cache, its host.json pinning Node pinned at url with sha256. */
 static void install_pin_of(const char *cache, const char *pinned, const char *url, const char *sha256) {
     write_in(cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    char *manifest = javascript_host_json(pinned, MINIMUM, url, sha256);
+    char *manifest = typescript_host_json(pinned, MINIMUM, url, sha256);
     write_in(cache, "bundles/typescript-host/1.0.0/host.json", manifest);
     spisor_memory_release(manifest);
 }
@@ -359,7 +359,7 @@ static void refuses_a_pinned_version_of_two_numbers(void) {
     refuses_a_pinned_version_that_is_not_plain("pin-short", "1.2", "1.2");
 }
 
-static void refuses_a_hinted_javascript_host_version_outside_its_bundles(void) {
+static void refuses_a_hinted_typescript_host_version_outside_its_bundles(void) {
     install_base base;
     start_install_base(&base, "runtime", "hint-escapes");
     write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"../../escaped\"}");
@@ -372,7 +372,7 @@ static void refuses_a_hinted_javascript_host_version_outside_its_bundles(void) {
     finish_install_base(&base);
 }
 
-static void refuses_a_cache_with_no_javascript_host_to_read_the_pin_from(void) {
+static void refuses_a_cache_with_no_typescript_host_to_read_the_pin_from(void) {
     install_base base;
     start_install_base(&base, "runtime", "no-layer");
     catalog_answer answer = acquire_on(&base, base.path);
@@ -383,7 +383,7 @@ static void refuses_a_cache_with_no_javascript_host_to_read_the_pin_from(void) {
     finish_install_base(&base);
 }
 
-static void refuses_a_javascript_host_whose_host_json_pins_no_node(void) {
+static void refuses_a_typescript_host_whose_host_json_pins_no_node(void) {
     install_base base;
     start_install_base(&base, "runtime", "no-pin");
     write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
@@ -402,7 +402,7 @@ static void refuses_two_installed_javascript_items_that_pin_different_nodes_nami
     start_install_base(&base, "runtime", "two-pins");
     install_pin_of(base.cache, "1.2.3", "file:///nowhere/a.zip", "0000000000000000000000000000000000000000000000000000000000000000");
     write_in(base.cache, "hosts/other-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    char *manifest = javascript_host_json("1.2.4", MINIMUM, "file:///nowhere/b.zip", "0000000000000000000000000000000000000000000000000000000000000000");
+    char *manifest = typescript_host_json("1.2.4", MINIMUM, "file:///nowhere/b.zip", "0000000000000000000000000000000000000000000000000000000000000000");
     write_in(base.cache, "bundles/other-host/1.0.0/host.json", manifest);
     spisor_memory_release(manifest);
     catalog_answer answer = acquire_on(&base, base.path);
@@ -677,15 +677,15 @@ int main(void) {
     names_the_archive_and_its_folder_from_the_pin_never_from_its_url();
     refuses_a_pinned_version_reaching_outside_its_folder();
     refuses_a_pinned_version_of_two_numbers();
-    refuses_a_hinted_javascript_host_version_outside_its_bundles();
+    refuses_a_hinted_typescript_host_version_outside_its_bundles();
     fetches_nothing_on_a_second_run();
     keeps_only_the_executable_and_the_archive_s_hash_in_place_of_the_archive();
     acquires_the_runtime_again_when_its_executable_s_bytes_changed();
     removes_the_runtime_versions_no_longer_pinned();
     refuses_an_archive_whose_hash_differs_from_the_pin_and_leaves_no_executable();
     refuses_a_platform_with_no_pinned_build();
-    refuses_a_cache_with_no_javascript_host_to_read_the_pin_from();
-    refuses_a_javascript_host_whose_host_json_pins_no_node();
+    refuses_a_cache_with_no_typescript_host_to_read_the_pin_from();
+    refuses_a_typescript_host_whose_host_json_pins_no_node();
     refuses_two_installed_javascript_items_that_pin_different_nodes_naming_both();
     reads_no_pin_from_an_item_not_started_on_javascript();
     stops_a_run_that_does_not_exit_in_time_and_refuses_it();

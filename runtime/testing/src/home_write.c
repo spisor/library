@@ -13,7 +13,6 @@
 #include "directory_tree.h"
 #include "holders.h"
 #include "hosts.h"
-#include "install_entries.h"
 #include "hosts_layers.h"
 #include "install_settings.h"
 #include "paths.h"

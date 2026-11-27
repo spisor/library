@@ -200,7 +200,7 @@ static void passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_numb
 }
 #endif
 
-static void starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins(void) {
+static void starts_the_loader_s_session_host_on_typescript_host_when_its_settings_enable_plugins(void) {
     host_world world;
     install_launch_world(&world, "launch", "session", 1);
     world.layer_delay = "1000";
@@ -752,7 +752,7 @@ int main(void) {
 #else
     passes_a_sigterm_on_to_the_application_and_answers_128_plus_its_number();
 #endif
-    starts_the_loader_s_session_host_on_javascript_host_when_its_settings_enable_plugins();
+    starts_the_loader_s_session_host_on_typescript_host_when_its_settings_enable_plugins();
     starts_the_application_with_the_environment_its_session_host_publishes();
     starts_the_application_unchanged_when_its_session_host_publishes_nothing();
     starts_the_application_with_the_environment_of_a_session_host_an_earlier_launch_left_running();

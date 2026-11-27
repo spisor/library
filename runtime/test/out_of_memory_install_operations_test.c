@@ -293,7 +293,7 @@ static spisor_status run_register_loader(void) {
 /** typescript-host 1.0.0 installed and hinted, its host.json pinning Node version at url with sha256. */
 static void install_node_pin(const char *version, const char *url, const char *sha256) {
     write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    char *manifest = javascript_host_json(version, "22.18.0", url, sha256);
+    char *manifest = typescript_host_json(version, "22.18.0", url, sha256);
     write_in(base.cache, "bundles/typescript-host/1.0.0/host.json", manifest);
     spisor_memory_release(manifest);
 }
@@ -1295,13 +1295,21 @@ static void prepare_start(void) {
     write_in(base.state, "hosts/spisor-host.json", text);
     cJSON_free(text);
     cJSON_Delete(registration);
-    spisor_memory_release(home);
     list_language_host(&base, "typescript", "javascript", "2.0.0", "{}");
+    list_plugin(&base, "p", "1.0.0", "typescript");
     write_catalog(&base);
+    cJSON *settings = cJSON_CreateObject();
+    cJSON_AddItemToObject(cJSON_AddObjectToObject(settings, "catalog"), "sources", local_sources(&base));
+    text = cJSON_PrintUnformatted(settings);
+    write_in(home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+    spisor_memory_release(home);
 }
 
 /**
- * hosts' start world with a live run of spisor-host 1.0.0 recorded by this process, so a start that is not the session
+ * hosts' start world, whose spisor-host settings read the catalog listing TypeScript's host and plugin p, with a live
+ * run of spisor-host 1.0.0 recorded by this process, so a start that is not the session
  * start reuses that run rather than switching to the scheduled 2.0.0 under it.
  */
 static void prepare_start_beside_session(void) {
@@ -1428,8 +1436,6 @@ static void prepare_layer_start(void) {
     node = joined(base.user, "node");
     write_in(base.user, "node", "node");
     install_layer_item("typescript-host", "weivel-host.mjs");
-    list_plugin(&base, "p", "1.0.0", "typescript");
-    write_catalog(&base);
     cJSON *record = cJSON_CreateObject();
     cJSON_AddStringToObject(record, "executable", node);
     char *record_text = cJSON_PrintUnformatted(record);

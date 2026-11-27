@@ -265,7 +265,7 @@ static inline void node_archive_stem(const char *version, char *stem, size_t siz
 }
 
 /** typescript-host's host.json pinning Node pinned at minimum, this platform's build at url with sha256 (freed). */
-static inline char *javascript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
+static inline char *typescript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
     cJSON *manifest = cJSON_CreateObject();
     cJSON_AddStringToObject(manifest, "kind", "language-host");
     cJSON_AddStringToObject(manifest, "id", "typescript-host");

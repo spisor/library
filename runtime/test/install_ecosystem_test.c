@@ -437,7 +437,7 @@ static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item
     install_base base;
     start_install_base(&base, "ecosystem", "no-javascript");
     list_ecosystem(&base);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", "file:///nowhere/node.zip",
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", "file:///nowhere/node.zip",
                                           "0000000000000000000000000000000000000000000000000000000000000000");
     list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
@@ -532,7 +532,7 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     list_library(&base, "forebay-library", "0.1.2");
     served_build served;
     serve_runtime_build(&base, 64, &served);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
     list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
     write_catalog(&base);
@@ -814,7 +814,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     list_library(&base, "forebay-library", "0.1.2");
     served_build served;
     serve_runtime_build(&base, 24 * 1024 * 1024, &served);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
     list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
     cJSON *application = application_json("claude", "claude", "{}");
