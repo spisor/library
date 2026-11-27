@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "boot_hint.h"
+#include "cache_installed.h"
 #include "cache_refusal.h"
 #include "host_references.h"
 #include "hosts_layers.h"
@@ -17,7 +18,9 @@
 #include "platform_key.h"
 #include "plugin_choices.h"
 
-#define UNLISTED_FIX "add a catalog source listing it to spisor-host's settings, then install it again"
+#define UNLISTED_FIX                                                                                           \
+    "check the catalog sources with spisor-host install, or add a source listing the plugin to spisor-host's " \
+    "settings, then install it again"
 #define UNHINTED_FIX "install the ecosystem with spisor-host install, then install the plugin again"
 
 /** One install of plugins for a host: the run every step shares and what the host's layers stand on. */
@@ -39,7 +42,7 @@ static const cJSON *catalog_item(const cJSON *catalog, const char *id) {
 }
 
 static cJSON *unlisted_refusal(const char *id) {
-    const char *parts[3] = {"no catalog source lists ", id, " as a plugin, so it cannot be installed"};
+    const char *parts[3] = {"the catalog sources, as they stand, list no plugin ", id, ", so it cannot be installed"};
     return runtime_cache_refusal(parts, 3, UNLISTED_FIX);
 }
 
@@ -157,11 +160,32 @@ static cJSON *unhinted_languages(const plugins_install *install) {
     return languages;
 }
 
-/** Reports language's host unavailable for want of a runtime spisor-host runs; 0 when memory runs out. */
-static int report_no_runtime(plugins_install *install, const char *language) {
+/**
+ * Whether the cache holds library at the version running names for this platform; 0 when it names none or the cache
+ * holds no such version, -1 when memory runs out.
+ */
+static int holds_running_library(const plugins_install *install, const cJSON *running, const char *library) {
+    const char *version = runtime_install_text(running, library);
+    cJSON *installed = version == NULL ? NULL
+                                       : runtime_cache_installed_libraries(install->run.cache, install->run.platform);
+    int held = installed != NULL &&
+               runtime_install_holds(cJSON_GetObjectItemCaseSensitive(installed, library), version);
+    cJSON_Delete(installed);
+    return version != NULL && installed == NULL ? -1 : held;
+}
+
+/**
+ * Reports language's host unavailable since the cache lacks the version of library spisor-host runs, or spisor-host
+ * runs none; 0 when memory runs out.
+ */
+static int report_missing_library(plugins_install *install, const char *language, const cJSON *running,
+                                  const char *library) {
+    const char *version = runtime_install_text(running, library);
     char *host_id = runtime_language_host_id(language);
-    const char *parts[3] = {"spisor-host runs no runtime library, so ", host_id, " cannot be hinted to run on one"};
-    char *message = host_id == NULL ? NULL : runtime_cache_text(parts, 3);
+    const char *parts[6] = {host_id, " cannot be hinted: spisor-host runs ", library, " ",
+                            version == NULL ? "at no version" : version,
+                            version == NULL ? "" : ", which the cache does not hold"};
+    char *message = host_id == NULL ? NULL : runtime_cache_text(parts, 6);
     int reported = message != NULL &&
                    runtime_install_report_unavailable(install->run.report, host_id, message, UNHINTED_FIX);
     spisor_memory_release(message);
@@ -169,9 +193,33 @@ static int report_no_runtime(plugins_install *install, const char *language) {
     return reported;
 }
 
-static int runs_on_javascript(const plugins_install *install, const char *language) {
+/**
+ * Installs language's host, once each library its hint names is in the cache at the version spisor-host runs, else
+ * reports it unavailable having written no hint; 0 only when memory runs out.
+ */
+static int install_language_host_on(plugins_install *install, runtime_install_items *items, const char *language) {
+    static const char *const library_ids[1] = {RUNTIME_FOREBAY_LIBRARY_ID};
+    const char *library = RUNTIME_LIBRARY_ID;
+    int held = holds_running_library(install, items->running, library);
+    if (held == 1) {
+        library = RUNTIME_FOREBAY_LIBRARY_ID;
+        if (!cJSON_HasObjectItem(items->running, library) &&
+            !runtime_install_pinned(items, library_ids, 1, "library")) {
+            return 0;
+        }
+        held = holds_running_library(install, items->running, library);
+    }
+    if (held == -1) {
+        return 0;
+    }
+    return held == 1 ? runtime_install_language_host(items, language)
+                     : report_missing_library(install, language, items->running, library);
+}
+
+/** Whether language's host, installed now as running holds, runs on JavaScript. */
+static int runs_on_javascript(const plugins_install *install, const cJSON *running, const char *language) {
     char *host_id = runtime_language_host_id(language);
-    int javascript = host_id != NULL &&
+    int javascript = host_id != NULL && cJSON_HasObjectItem(running, host_id) &&
                      is_text(runtime_install_text(catalog_item(install->run.catalog, host_id), "runtime"),
                              RUNTIME_LAYER_JAVASCRIPT);
     spisor_memory_release(host_id);
@@ -183,21 +231,14 @@ static int runs_on_javascript(const plugins_install *install, const char *langua
  * runs, then the pinned Node when one of them runs on JavaScript; 0 only when memory runs out.
  */
 static int install_language_hosts(plugins_install *install) {
-    static const char *const library_ids[1] = {RUNTIME_FOREBAY_LIBRARY_ID};
     cJSON *languages = unhinted_languages(install);
     runtime_host_references references = runtime_read_host_references(install->run.state, RUNTIME_ECOSYSTEM_HOST_ID);
     runtime_install_items items = {&install->run, install->own_values, references.run};
     int javascript = 0;
     int done = languages != NULL && references.run != NULL;
     for (const cJSON *language = done ? languages->child : NULL; done && language != NULL; language = language->next) {
-        if (!cJSON_HasObjectItem(references.run, RUNTIME_LIBRARY_ID)) {
-            done = report_no_runtime(install, language->valuestring);
-            continue;
-        }
-        done = (cJSON_HasObjectItem(references.run, RUNTIME_FOREBAY_LIBRARY_ID) ||
-                runtime_install_pinned(&items, library_ids, 1, "library")) &&
-               runtime_install_language_host(&items, language->valuestring);
-        javascript = javascript || runs_on_javascript(install, language->valuestring);
+        done = install_language_host_on(install, &items, language->valuestring);
+        javascript = javascript || runs_on_javascript(install, references.run, language->valuestring);
     }
     runtime_free_host_references(&references);
     cJSON_Delete(languages);

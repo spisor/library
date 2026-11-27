@@ -298,6 +298,53 @@ static void installs_and_hints_the_language_host_a_plugin_needs_only_while_it_ha
     finish_install_base(&base);
 }
 
+static void a_plugin_that_cannot_install_is_reported_and_never_enabled(void) {
+    static const char *const plugins[2] = {"wanted", "rival"};
+    install_base base;
+    prepare_world(&base, "foreign");
+    list_foreign_plugin(&base, "rival", "1.0.0");
+    write_catalog(&base);
+    char *claude_home = loader_home(&base, "claude");
+    plugins_result result = install_plugins_for(&base, CLAUDE, plugins, 2);
+    expect_answered(&result, "an install beside a foreign plugin");
+    expect_json(value_at(result.answer, "installed"), "[\"wanted\"]", "the foreign install's installed");
+    expect_json(value_at(result.answer, "unavailable"), "[\"rival\"]", "the foreign install's unavailable");
+    expect_json(value_at(result.answer, "enabled"), "[\"wanted\"]", "the foreign install's enabled");
+    expect_enabled_in(claude_home, "wanted", 1, "claude's settings");
+    expect_enabled_in(claude_home, "rival", 0, "claude's settings");
+    cJSON_Delete(result.answer);
+    spisor_memory_release(claude_home);
+    finish_install_base(&base);
+}
+
+/** Rewrites spisor-host's references so its run names runtime at a version the cache does not hold. */
+static void make_runtime_stale(const install_base *base) {
+    cJSON *references = json_in(base->state, "bundles/spisor-host.json");
+    cJSON *run = cJSON_GetObjectItemCaseSensitive(references, "run");
+    CHECK(cJSON_HasObjectItem(run, "runtime"));
+    cJSON_ReplaceItemInObjectCaseSensitive(run, "runtime", cJSON_CreateString("9.9.9"));
+    char *text = cJSON_PrintUnformatted(references);
+    write_in(base->state, "bundles/spisor-host.json", text);
+    cJSON_free(text);
+    cJSON_Delete(references);
+}
+
+static void a_language_host_whose_runtime_the_cache_lacks_is_reported_and_never_hinted(void) {
+    install_base base;
+    prepare_world(&base, "stale-runtime");
+    make_runtime_stale(&base);
+    plugins_result result = install_one(&base, CLAUDE, "other");
+    expect_answered(&result, "an install over a stale runtime");
+    expect_json(value_at(result.answer, "installed"), "[\"other\"]", "the stale install's installed");
+    expect_json(value_at(result.answer, "unavailable"), "[\"fixture-two-host\"]", "the stale install's unavailable");
+    CHECK(!exists_in(base.cache, "hosts/fixture-two-host.json"));
+    cJSON *references = json_in(base.state, "bundles/spisor-host.json");
+    CHECK(value_at(references, "run/fixture-two-host") == NULL);
+    cJSON_Delete(references);
+    cJSON_Delete(result.answer);
+    finish_install_base(&base);
+}
+
 static void expect_refused_having_written_nothing(const install_base *base, const char *host,
                                                   const char *const *plugins, size_t count, const char *named,
                                                   const char *label) {
@@ -371,6 +418,8 @@ int main(void) {
     a_rows_plugin_becomes_enabled_for_the_loader_and_its_next_session_lists_it();
     no_host_installs_for_spisor_host_alone();
     installs_and_hints_the_language_host_a_plugin_needs_only_while_it_has_none();
+    a_plugin_that_cannot_install_is_reported_and_never_enabled();
+    a_language_host_whose_runtime_the_cache_lacks_is_reported_and_never_hinted();
     refuses_a_plugin_no_catalog_lists_having_written_nothing();
     refuses_a_plugin_whose_language_no_catalog_hosts_having_written_nothing();
     refuses_a_host_that_is_not_registered_having_written_nothing();

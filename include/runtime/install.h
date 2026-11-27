@@ -4,12 +4,12 @@
 /**
  * @file
  * runtime's `install` service: what a plugin's manifest depends on by name, the packages an item's install methods
- * name, the steps that install it through one method, what each built-in method finds already installed, a
- * loader's application entry, the JavaScript runtime, an installed application's update or removal, a loader's
- * registration, a plugin's install by its repo id, the whole ecosystem's install, and one host's plugins' install. A
- * manifest, its `packages` record, a loader's application and a method's options cross as spisor_value, their shapes
- * being their authors'. A size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for
- * the call; what an answer or a refusal points at is the provider's until the release for its kind.
+ * name, the steps that install it through one method, what each built-in method finds already installed, a loader's
+ * application entry, the JavaScript runtime, an installed application's update or removal, a loader's registration, a
+ * plugin's install by its repo id, the whole ecosystem's install, and one host's plugins' install. A manifest, its
+ * `packages` record, a loader's application and a method's options cross as spisor_value, their shapes being their
+ * authors'. A size-prefixed struct is read only up to its `size`. Text the caller hands in is NUL-terminated UTF-8
+ * borrowed for the call; what an answer or a refusal points at is the provider's until the release for its kind.
  */
 
 #include <stddef.h>
@@ -475,8 +475,8 @@ typedef struct runtime_install_ecosystem_answer {
 
 /**
  * The absolute places, the environment a JavaScript runtime is looked for on, the `host` whose settings the plugins are
- * enabled in, a host id, or NULL for spisor-host, and the `plugins` to install, by the ids the catalog lists them under.
- * First shape ends at `plugin_count`.
+ * enabled in, a host id, or NULL for spisor-host, and the `plugins` to install, by the ids the catalog lists them
+ * under. First shape ends at `plugin_count`.
  */
 typedef struct runtime_install_plugins_argument {
     uint32_t size;
@@ -666,19 +666,20 @@ typedef struct runtime_install_definition {
     void (*release_ecosystem_answer)(void *context, runtime_install_ecosystem_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
     /**
-     * Installs the plugins for one host, as a row of its Plugins screen asks: the catalog read as the host's layers read
-     * it, as each source stands, with no source checked; each plugin at the pin the host's settings hold for it, else the catalog's
-     * latest, installed into the cache for this machine, referenced for the host, and enabled in the host's own
-     * application layer, so no other host's settings and no shared portable setting change. The language-host item of
-     * a plugin's language installs only when its hint names no version yet, as install's ecosystem installs it: beside
-     * forebay-library unless spisor-host runs one, referenced for spisor-host, hinted with the runtime and the
-     * forebay-library spisor-host runs, and the pinned Node acquired when that host runs on JavaScript. Nothing else is
-     * installed, registered or written.
+     * Installs the plugins for one host, as a row of its Plugins screen asks: the catalog read as the host's layers
+     * read it, as each source stands, with no source checked; each plugin at the pin the host's settings hold for it,
+     * else the catalog's latest, installed into the cache for this machine, referenced for the host, and enabled in the
+     * host's own application layer, so no other host's settings and no shared portable setting change. The
+     * language-host item of a plugin's language installs only when its hint names no version yet, as install's
+     * ecosystem installs it: beside forebay-library unless spisor-host runs one, referenced for spisor-host, hinted
+     * with the runtime and the forebay-library spisor-host runs, and the pinned Node acquired when that host runs on
+     * JavaScript. When the cache lacks either library at the version spisor-host runs, that host is reported
+     * unavailable and no hint is written. Nothing else is installed, registered or written.
      *
-     * Every refusal comes before anything is written, so a REFUSED answer has written nothing. From then on an item that cannot be installed is reported
-     * under `unavailable` and the rest still install, and a plugin that does not install is not enabled. Every step is
-     * one a repeat finds done, so an OUT_OF_MEMORY answer may leave versions in the cache, references, the enabling or a
-     * hint written, and calling again completes it.
+     * Every refusal comes before anything is written, so a REFUSED answer has written nothing. From then on an item
+     * that cannot be installed is reported under `unavailable` and the rest still install, and a plugin that does not
+     * install is not enabled. Every step is one a repeat finds done, so an OUT_OF_MEMORY answer may leave versions in
+     * the cache, references, the enabling or a hint written, and calling again completes it.
      *
      * @return OK; MALFORMED, also for a host that is no host id; REFUSED for a host that is not registered or whose
      * settings or catalog sources cannot be read, and for a plugin the catalog lists as no plugin or not at all, or

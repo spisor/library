@@ -235,7 +235,7 @@ static void every_install_failure(install_base *base) {
     }
 }
 
-/** A refusal under any failing allocation refuses as a clean one does, or answers OOM, and writes nothing either way. */
+/** A refusal under any failing allocation refuses as a clean one does, or answers OOM, writing nothing either way. */
 static void every_refusal_failure(install_base *base) {
     static char clean_detail[sizeof refused_detail];
     for (int mode = FAIL_ONE_ALLOCATION; mode < ALLOCATION_FAILURE_MODES; mode++) {
