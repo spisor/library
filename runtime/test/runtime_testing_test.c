@@ -14,6 +14,7 @@
 #include "check.h"
 #include "config.h"
 #include "holders.h"
+#include "links.h"
 #include "hosts_layers.h"
 #include "paths.h"
 #include "registry.h"
@@ -541,6 +542,62 @@ static void a_staged_item_out_of_shape_is_refused(void) {
     finish_parent();
 }
 
+/** Lays the home out with the count items, requiring MALFORMED naming the items and nothing written. */
+static void expect_items_refused(const char *const *items, size_t count, const char *label) {
+    runtime_boot_library libraries[2];
+    default_libraries(libraries);
+    char *before = tree_snapshot(parent, NULL);
+    runtime_testing_home_argument argument = home_argument(base, NULL, 0, libraries);
+    argument.items = items;
+    argument.item_count = count;
+    expect_malformed_argument(&argument, "an item is no absolute folder", label, before);
+    spisor_memory_release(before);
+}
+
+static void staged_items_that_clash_or_carry_a_link_are_refused(void) {
+    start_parent("staged-clash");
+    char *drawer = staged_item("drawer", DRAWER_HOST_JSON, "drawer");
+    char *again = staged_item("drawer-again", DRAWER_HOST_JSON, "drawer");
+    const char *same_id[2] = {drawer, again};
+    expect_items_refused(same_id, 2, "two items with one id");
+    char *fixture = staged_item("fixture", FIXTURE_HOST_JSON, "weivel-host");
+    char *fixture_again = staged_item("fixture-again", FIXTURE_HOST_JSON, "weivel-host");
+    const char *same_language[2] = {fixture, fixture_again};
+    expect_items_refused(same_language, 2, "two items with one language");
+    char *scripted = staged_item("scripted",
+                                 "{\"kind\": \"interface\", \"id\": \"drawer\", \"version\": \"0.4.0\", \"runtime\": "
+                                 "\"javascript\", \"entry\": \"bin/drawer\"}",
+                                 "drawer");
+    expect_items_refused((const char *const *)&scripted, 1, "an interface not started natively");
+    char *posing = staged_item("posing",
+                               "{\"kind\": \"interface\", \"id\": \"typescript-host\", \"version\": \"0.4.0\", "
+                               "\"runtime\": \"native\", \"entry\": \"bin/drawer\"}",
+                               "drawer");
+    expect_items_refused((const char *const *)&posing, 1, "an interface named as a layer's host");
+    char *linked = staged_item("linked", DRAWER_HOST_JSON, "drawer");
+    char *outside = joined(parent, "outside");
+    char *link = joined(linked, "bin/escape");
+    CHECK(spisor_make_directories(outside) == SPISOR_OK);
+    if (create_folder_link_or_skip(link, outside)) {
+        expect_items_refused((const char *const *)&linked, 1, "a link inside a staged folder");
+    }
+    char *linked_folder = joined(parent, "staged/linked-folder");
+    if (create_folder_link_or_skip(linked_folder, drawer)) {
+        expect_items_refused((const char *const *)&linked_folder, 1, "a staged folder that is a link");
+    }
+    spisor_memory_release(linked_folder);
+    spisor_memory_release(link);
+    spisor_memory_release(outside);
+    spisor_memory_release(linked);
+    spisor_memory_release(posing);
+    spisor_memory_release(scripted);
+    spisor_memory_release(fixture_again);
+    spisor_memory_release(fixture);
+    spisor_memory_release(again);
+    spisor_memory_release(drawer);
+    finish_parent();
+}
+
 int main(void) {
     spisor_json_use_library_allocator();
     a_laid_out_home_is_read_by_runtime();
@@ -554,5 +611,6 @@ int main(void) {
     a_secret_setting_lands_in_the_secret_store();
     staged_items_are_installed_listed_and_hinted_beside_the_layers();
     a_staged_item_out_of_shape_is_refused();
-    return check_summary("runtime_testing_test");
+    staged_items_that_clash_or_carry_a_link_are_refused();
+    return summary_with_links("runtime_testing_test");
 }

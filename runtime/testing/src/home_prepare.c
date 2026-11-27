@@ -327,6 +327,25 @@ static int is_named_for_language(const char *id, const char *language, int *out_
 }
 
 /** Whether the item's members fit its kind, its id and language not taken by the home's earlier layers and items. */
+/** Whether id is the `<language>-host` of one of the home's layers; *out_of_memory set when memory runs out asking. */
+static int is_layer_host_id(const runtime_testing_prepared_home *home, const char *id, int *out_of_memory) {
+    int taken = 0;
+    for (size_t index = 0; !taken && !*out_of_memory && index < home->layer_count; index++) {
+        char *layer_id = runtime_language_host_id(home->layers[index].language);
+        *out_of_memory = layer_id == NULL;
+        taken = layer_id != NULL && strcmp(layer_id, id) == 0;
+        spisor_memory_release(layer_id);
+    }
+    return taken;
+}
+
+/** Whether an interface item names no language, starts natively and takes no layer's host id. */
+static int is_interface_shaped(const runtime_testing_prepared_home *home, const runtime_testing_prepared_item *item,
+                               int *out_of_memory) {
+    return item->language == NULL && strcmp(item->runtime, "native") == 0 &&
+           !is_layer_host_id(home, item->id, out_of_memory);
+}
+
 static int is_item_shaped(const runtime_testing_prepared_home *home, size_t index, int *out_of_memory) {
     const runtime_testing_prepared_item *item = &home->items[index];
     int language_host = item->kind != NULL && strcmp(item->kind, "language-host") == 0;
@@ -334,24 +353,60 @@ static int is_item_shaped(const runtime_testing_prepared_home *home, size_t inde
                  item->version != NULL && runtime_catalog_is_version(item->version) &&
                  is_layer_runtime(item->runtime) && !is_id_taken(home, item->id, index);
     if (!shaped || !language_host) {
-        return shaped && item->language == NULL;
+        return shaped && is_interface_shaped(home, item, out_of_memory);
     }
     return runtime_catalog_is_language(item->language) && !is_language_taken(home, item->language, index) &&
            is_named_for_language(item->id, item->language, out_of_memory);
+}
+
+/** OK when everything below directory is a real file or folder, MALFORMED at a link, as the copy never follows one. */
+static spisor_status holds_no_link(const char *directory) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status status = runtime_list_directory(directory, &listing);
+    status = status == SPISOR_REFUSED ? SPISOR_MALFORMED : status;
+    for (size_t index = 0; status == SPISOR_OK && index < listing.count; index++) {
+        const runtime_directory_entry *entry = &listing.entries[index];
+        const char *segments[2] = {directory, entry->name};
+        char *path = entry->is_directory ? spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2) : NULL;
+        if (!entry->is_directory && !entry->is_file) {
+            status = SPISOR_MALFORMED;
+        } else if (entry->is_directory) {
+            status = path == NULL ? SPISOR_OUT_OF_MEMORY : holds_no_link(path);
+        }
+        spisor_memory_release(path);
+    }
+    runtime_free_directory_listing(&listing);
+    return status;
+}
+
+/** OK when directory is an absolute real folder holding no link anywhere below it; MALFORMED otherwise. */
+static spisor_status check_item_folder(const char *directory) {
+    if (directory == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, directory)) {
+        return SPISOR_MALFORMED;
+    }
+    runtime_entry_kind kind = runtime_probe_entry(directory);
+    if (kind == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    return kind == RUNTIME_ENTRY_DIRECTORY ? holds_no_link(directory) : SPISOR_MALFORMED;
 }
 
 /** Reads the item at index's host.json into it and checks it as lay_out_home documents. */
 static spisor_status prepare_item(runtime_testing_prepared_home *home, size_t index, const char *directory) {
     runtime_testing_prepared_item *item = &home->items[index];
     int out_of_memory = 0;
-    if (directory == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, directory)) {
-        return SPISOR_MALFORMED;
+    spisor_status folder = check_item_folder(directory);
+    if (folder != SPISOR_OK) {
+        return folder;
     }
     const char *segments[2] = {directory, "host.json"};
     char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
-    item->manifest = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
+    if (path == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    item->manifest = runtime_read_node_json(path, &out_of_memory);
     spisor_memory_release(path);
-    if (path == NULL || out_of_memory) {
+    if (out_of_memory) {
         return SPISOR_OUT_OF_MEMORY;
     }
     item->directory = directory;
@@ -395,7 +450,7 @@ static spisor_status prepare_items(const runtime_testing_home_argument *argument
     if (status == SPISOR_MALFORMED) {
         return refuse(refusal,
                       "an item is no absolute folder whose host.json names a language-host or interface kind, an id, a "
-                      "version and a runtime of the three, or its id or language is taken",
+                      "version and a runtime of the three, it holds a link, or it clashes with a layer or another item",
                       ITEM_FIX);
     }
     return status;

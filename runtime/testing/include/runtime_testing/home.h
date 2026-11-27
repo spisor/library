@@ -130,7 +130,7 @@ typedef struct runtime_testing_definition {
      * Lays the home out.
      *
      * @return OK; MALFORMED for a short shape, a base not absolute, missing or not empty, a host id that is no plain
-     * file name, a layer whose language is no language name or is given twice or whose runtime is none of the three, an item that is no absolute folder whose host.json names a language-host or interface kind, an id, a version and one of the three runtimes, a language host whose id is not `<language>-host` or whose language a layer or another item names, an item id given twice, an install without a manifest record carrying id, version and entry or without an entry source, an
+     * file name, a layer whose language is no language name or is given twice or whose runtime is none of the three, an item that is no absolute real folder whose host.json names a language-host or interface kind, an id, a version and one of the three runtimes, or that holds a link anywhere below it, a language host whose id is not `<language>-host` or whose language a layer or another item names, an interface that names a language, starts on any runtime but native or takes a layer's `<language>-host` id, an item id given twice, an install without a manifest record carrying id, version and entry or without an entry source, an
      * entry or a bundle climbing out of its folder, an entry naming the bundle's plugin.json or completion marker, settings that are no record, a library without an id or a
      * directory, or a version neither given nor declared, or a negative holder; REFUSED when a file cannot be written;
      * what config's set answers for a setting; OUT_OF_MEMORY. A call that does not answer OK removes what it wrote,
