@@ -561,7 +561,9 @@ static void reports_a_plugin_whose_language_no_catalog_source_hosts_and_installs
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"announcer\", \"spoken\"]}", NULL), "unhosted");
     expect_installed_ids(report, "[\"announcer\",\"fixture-one-host\",\"forebay-library\",\"runtime\",\"spisor-host\"]",
                          "the hosted plugin installed");
-    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
+    const cJSON *row = cJSON_GetArrayItem(unavailable, 0);
+    CHECK(cJSON_GetArraySize(unavailable) == 1);
     check_text(text_at(row, "id"), "spoken", "the unhosted plugin reported");
     check_text(text_at(row, "message"),
                "plugins written in lua have no host: no catalog source lists lua-host, the language-host item that "

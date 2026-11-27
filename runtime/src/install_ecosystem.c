@@ -395,29 +395,38 @@ static int is_text(const char *text, const char *expected) {
     return text != NULL && strcmp(text, expected) == 0;
 }
 
-/** Adds language to languages unless it holds it already; 0 when memory runs out. */
-static int add_language(cJSON *languages, const char *language) {
-    return language == NULL || runtime_install_holds(languages, language) ||
-           runtime_install_add_text(languages, language);
+/**
+ * Adds language to languages unless it holds it already or the catalog lists no host item for it, whose plugins were
+ * reported unavailable when they were refused; 0 when memory runs out.
+ */
+static int add_language(const ecosystem *install, cJSON *languages, const char *language) {
+    int out_of_memory = 0;
+    if (language == NULL || runtime_install_holds(languages, language)) {
+        return 1;
+    }
+    if (runtime_language_host_item(install->run.catalog, language, &out_of_memory) == NULL) {
+        return !out_of_memory;
+    }
+    return runtime_install_add_text(languages, language);
 }
 
 /**
  * The languages whose host this install installs: each one a plugin installed now or a loader's required plugin is
  * written in, as an array of texts; NULL when memory runs out.
  *
- * @implNote A loader's in-process entry runs its front door's layer, the language of its first required plugin, so
- * its host comes with that plugin and an entry needs no host of its own.
+ * @implNote A loader's in-process entry runs its front door's layer, the language of its first required plugin or
+ * else of the plugins it enables, so its host comes with that plugin and an entry needs no host of its own.
  */
 static cJSON *hosted_languages(const ecosystem *install) {
     cJSON *languages = cJSON_CreateArray();
     int built = languages != NULL;
     for (const cJSON *version = built ? install->running->child : NULL; built && version != NULL;
          version = version->next) {
-        built = add_language(languages, runtime_plugin_language(install->run.catalog, version->string));
+        built = add_language(install, languages, runtime_plugin_language(install->run.catalog, version->string));
     }
     for (const cJSON *plugin = built ? install->run.required_plugins->child : NULL; built && plugin != NULL;
          plugin = plugin->next) {
-        built = add_language(languages, runtime_plugin_language(install->run.catalog, plugin->string));
+        built = add_language(install, languages, runtime_plugin_language(install->run.catalog, plugin->string));
     }
     if (!built) {
         cJSON_Delete(languages);
