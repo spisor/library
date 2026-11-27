@@ -737,6 +737,7 @@ static void refuses_a_link_at_the_top_or_inside_a_directory_writing_nothing(void
 static void replaces_a_staging_folder_left_by_a_failed_run_and_refuses_a_linked_one(void) {
     start_case("staging");
     write_native_inputs("{}");
+    write_in(base_folder, "bundle.staging/host.json", "{}");
     write_in(base_folder, "bundle.staging/stale.txt", "left by a failed run");
     program run;
     CHECK(stage_native_host("fixture-one", "native", &run) == 0);
@@ -938,6 +939,7 @@ static void removes_a_previous_folder_left_by_a_crash_and_refuses_a_linked_one(v
     start_case("previous");
     write_native_inputs("{}");
     stage_prior_bundle();
+    write_in(base_folder, "bundle.previous/host.json", "{}");
     write_in(base_folder, "bundle.previous/stale.txt", "left by a crash");
     program run;
     CHECK(stage_native_host("fixture-one", "native", &run) == 0);
@@ -958,6 +960,85 @@ static void removes_a_previous_folder_left_by_a_crash_and_refuses_a_linked_one(v
     spisor_memory_release(elsewhere);
     spisor_memory_release(previous);
     spisor_memory_release(before);
+    finish_case();
+}
+
+/** A snapshot of <base>/rest, its length in *length; freed by the caller. */
+static char *folder_snapshot(const char *rest, size_t *length) {
+    char *folder = in_base(rest);
+    char *snapshot = tree_snapshot_sized(folder, NULL, length);
+    spisor_memory_release(folder);
+    return snapshot;
+}
+
+/** Whether <base>/rest holds exactly what the snapshot of before_length bytes held. */
+static int is_folder_unchanged(const char *rest, const char *before, size_t before_length) {
+    size_t after_length = 0;
+    char *after = folder_snapshot(rest, &after_length);
+    int unchanged = before_length == after_length && memcmp(before, after, before_length) == 0;
+    spisor_memory_release(after);
+    return unchanged;
+}
+
+static void refuses_to_replace_a_folder_that_is_no_bundle_in_either_mode(void) {
+    start_case("no-bundle");
+    write_native_inputs("{}");
+    write_in(base_folder, "bundle/notes/other.txt", "not a bundle");
+    write_in(base_folder, "interface/other.txt", "not a bundle either");
+    write_in(base_folder, "built/drawer.exe", "the interface program");
+    size_t before_length = 0;
+    char *before = folder_snapshot("bundle", &before_length);
+    program run;
+    CHECK(stage_native_host("fixture-one", "native", &run) == 1);
+    expect_contains(run.err, "holds no host.json", "the folder named");
+    CHECK(is_folder_unchanged("bundle", before, before_length));
+    CHECK(!staging_left("bundle") && !exists_in(base_folder, "bundle.previous"));
+    program_free(&run);
+    size_t interface_length = 0;
+    char *interface_before = folder_snapshot("interface", &interface_length);
+    CHECK(stage_interface("fixture-interface", &run) == 1);
+    expect_contains(run.err, "holds no host.json", "the interface's folder named");
+    CHECK(is_folder_unchanged("interface", interface_before, interface_length));
+    CHECK(!staging_left("interface"));
+    program_free(&run);
+    CHECK(runtime_remove_tree(base_folder) == SPISOR_OK);
+    start_empty_directory(base_folder);
+    write_native_inputs("{}");
+    write_in(base_folder, "bundle", "a file, not a folder");
+    CHECK(stage_native_host("fixture-one", "native", &run) == 1);
+    expect_contains(run.err, "is no folder", "a file at the bundle's name");
+    expect_file(base_folder, "bundle", "a file, not a folder");
+    program_free(&run);
+    spisor_memory_release(interface_before);
+    spisor_memory_release(before);
+    finish_case();
+}
+
+static void refuses_a_previous_or_staging_folder_that_is_no_bundle_leaving_it(void) {
+    start_case("no-bundle-siblings");
+    write_native_inputs("{}");
+    stage_prior_bundle();
+    size_t bundle_length = 0;
+    char *bundle_before = bundle_snapshot(&bundle_length);
+    const char *siblings[2] = {"bundle.previous", "bundle.staging"};
+    for (size_t index = 0; index < 2; index++) {
+        char rest[128];
+        snprintf(rest, sizeof rest, "%s/kept.txt", siblings[index]);
+        write_in(base_folder, rest, "someone else's");
+        size_t before_length = 0;
+        char *before = folder_snapshot(siblings[index], &before_length);
+        program run;
+        CHECK(stage_native_host("fixture-one", "native", &run) == 1);
+        expect_contains(run.err, "holds no host.json", siblings[index]);
+        CHECK(is_folder_unchanged(siblings[index], before, before_length));
+        CHECK(is_bundle_unchanged(bundle_before, bundle_length));
+        program_free(&run);
+        spisor_memory_release(before);
+        char *sibling = in_base(siblings[index]);
+        CHECK(runtime_remove_tree(sibling) == SPISOR_OK);
+        spisor_memory_release(sibling);
+    }
+    spisor_memory_release(bundle_before);
     finish_case();
 }
 
@@ -988,6 +1069,8 @@ int main(int count, char **arguments) {
     a_refusal_during_the_copy_leaves_the_bundle_staged_before_untouched();
     a_failed_rename_into_place_puts_the_bundle_staged_before_back();
     removes_a_previous_folder_left_by_a_crash_and_refuses_a_linked_one();
+    refuses_to_replace_a_folder_that_is_no_bundle_in_either_mode();
+    refuses_a_previous_or_staging_folder_that_is_no_bundle_leaving_it();
     stages_an_interface_binary_under_its_platform();
     refuses_an_interface_id_no_catalog_can_list();
     refuses_an_interface_binary_named_as_a_library_or_no_catalog_name();

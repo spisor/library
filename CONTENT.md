@@ -576,7 +576,9 @@ Both modes check every argument before writing anything. `<directory>` loses its
 folder of its own, never a root, a drive, `.` or `..`. The item is staged in the sibling `<directory>.staging` and, once
 every file is in it, swapped in: the bundle before moves aside to the sibling `<directory>.previous`, the staging folder
 is renamed into place, and the previous folder is removed, or renamed back when the staging folder could not be. A
-staging or previous folder left by an earlier run is removed first, and a link or file at either name is refused. So a
+staging or previous folder left by an earlier run is removed first. `<directory>`, the staging folder and the previous
+folder are replaced only when each is missing, empty, or a real folder holding a top-level `host.json`; anything else,
+a link, a file or a folder that is no bundle, is refused by name and left as it is. So a
 refusal at any step leaves the bundle staged before as it was. `stage-bundle platform` prints the platform key a
 bundle staged here is for. `spisor-host catalog build --host <bundle>@<platform>` lists each under the kind its `host.json` names.
 

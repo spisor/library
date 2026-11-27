@@ -67,6 +67,7 @@ typedef struct staged_item {
     char *previous;
     char *files;
     cJSON *manifest;
+    int owns_staging;
 } staged_item;
 
 static char *joined(const char *base, const char *rest) {
@@ -408,7 +409,9 @@ static char *bundle_folder(const char *directory) {
         start--;
     }
     const char *segment = folder + start;
-    int own = *segment != 0 && strcmp(segment, ".") != 0 && strcmp(segment, "..") != 0 &&
+    int share_root = RUNTIME_HOST_IS_WINDOWS && start > 2 && is_separator(folder[0]) && is_separator(folder[1]) &&
+                     strpbrk(folder + 2, "/\\") == folder + start - 1;
+    int own = *segment != 0 && strcmp(segment, ".") != 0 && strcmp(segment, "..") != 0 && !share_root &&
               !(RUNTIME_HOST_IS_WINDOWS && strchr(segment, ':') != NULL);
     if (!own) {
         fprintf(stderr, "stage-bundle: %s names no folder of its own: name the bundle's folder, not a root, . or ..\n",
@@ -419,27 +422,58 @@ static char *bundle_folder(const char *directory) {
     return folder;
 }
 
-/** Whether a real folder, or nothing, stands at the sibling path, printing why not: a link there would lead outside. */
+/** Whether the real folder path is empty or holds host.json as a real file, as every bundle stage-bundle writes. */
+static int holds_a_manifest_or_nothing(const char *path) {
+    runtime_directory_listing listing = {NULL, 0};
+    int empty = runtime_list_directory(path, &listing) == SPISOR_OK && listing.count == 0;
+    runtime_free_directory_listing(&listing);
+    char *manifest = empty ? NULL : joined(path, "host.json");
+    int manifested = manifest != NULL && runtime_is_real_file(manifest);
+    spisor_memory_release(manifest);
+    return empty || manifested;
+}
+
+/**
+ * Whether stage-bundle may replace what stands at path: nothing, or a real folder that is empty or holds a top-level
+ * host.json; printing why not.
+ *
+ * @implNote A folder that is no bundle is never moved or removed, whatever it was named: a shell that rewrites `/`
+ * into an install folder once led stage-bundle to swap that install aside.
+ */
 static int is_replaceable(const char *path, const char *what) {
     runtime_entry_kind kind = runtime_probe_entry(path);
-    if (kind != RUNTIME_ENTRY_MISSING && kind != RUNTIME_ENTRY_DIRECTORY) {
-        fprintf(stderr, "stage-bundle: the %s folder %s is a link or a file, which stage-bundle never replaces\n", what,
-                path);
+    if (kind == RUNTIME_ENTRY_MISSING) {
+        return 1;
+    }
+    if (kind != RUNTIME_ENTRY_DIRECTORY) {
+        fprintf(stderr, "stage-bundle: the %s %s is no folder: it is a link or a file, which stage-bundle never "
+                        "replaces\n", what, path);
+        return 0;
+    }
+    if (!holds_a_manifest_or_nothing(path)) {
+        fprintf(stderr, "stage-bundle: the %s folder %s holds no host.json, so it is no bundle stage-bundle replaces\n",
+                what, path);
         return 0;
     }
     return 1;
 }
 
-/** Empties item's staging folder and removes a previous folder a crash left, each refused unless a real folder. */
-static int clear_siblings(const staged_item *item) {
-    if (!is_replaceable(item->staging, "staging") || !is_replaceable(item->previous, "previous")) {
+/**
+ * Empties item's staging folder, from then on its own, and removes a previous folder a crash left, after checking
+ * that each, and the bundle's own folder, is one stage-bundle may replace; the staging folder gets host.json at once,
+ * so a run that dies leaves one the next run recognises.
+ */
+static int clear_siblings(staged_item *item) {
+    if (!is_replaceable(item->directory, "bundle") || !is_replaceable(item->staging, "staging") ||
+        !is_replaceable(item->previous, "previous")) {
         return 0;
     }
     if (runtime_remove_tree(item->previous) != SPISOR_OK) {
         fprintf(stderr, "stage-bundle: the previous folder %s could not be removed\n", item->previous);
         return 0;
     }
-    return start_empty(item->staging);
+    item->owns_staging = start_empty(item->staging);
+    return item->owns_staging && write_manifest(item->staging, item->manifest);
 }
 
 /** Opens item: its manifest begun as {kind, id, version} and its files folder made inside an empty staging folder. */
@@ -519,9 +553,9 @@ static int finish_item(const staged_item *item) {
     return 1;
 }
 
-/** Frees item, removing its staging folder when it was not renamed, so a refusal leaves only what stood before. */
+/** Frees item, removing the staging folder it made when it was not renamed, so a refusal leaves what stood before. */
 static void end_item(staged_item *item) {
-    if (item->staging != NULL && runtime_probe_entry(item->staging) == RUNTIME_ENTRY_DIRECTORY) {
+    if (item->owns_staging && runtime_probe_entry(item->staging) == RUNTIME_ENTRY_DIRECTORY) {
         runtime_remove_tree(item->staging);
     }
     spisor_memory_release(item->staging);
@@ -581,7 +615,7 @@ static int stage_language_host(int count, char **arguments) {
     }
     int per_platform = strcmp(arguments[5], RUNTIME_LAYER_NATIVE) == 0;
     char *id = runtime_language_host_id(arguments[4]);
-    staged_item item = {NULL, NULL, NULL, NULL, NULL};
+    staged_item item = {NULL, NULL, NULL, NULL, NULL, 0};
     int staged = id != NULL && begin_item(&item, arguments[2], "language-host", id, arguments[3], per_platform) &&
                  cJSON_AddStringToObject(item.manifest, "language", arguments[4]) != NULL &&
                  add_start(&item, arguments[5], arguments[6], per_platform);
@@ -610,7 +644,7 @@ static int stage_interface(int count, char **arguments) {
         return 1;
     }
     const char *binary = base_name_of(arguments[5]);
-    staged_item item = {NULL, NULL, NULL, NULL, NULL};
+    staged_item item = {NULL, NULL, NULL, NULL, NULL, 0};
     int staged = begin_item(&item, arguments[2], "interface", arguments[4], arguments[3], 1) &&
                  add_start(&item, RUNTIME_LAYER_NATIVE, binary, 1) && copy_into(arguments[5], item.files, binary) &&
                  copy_weivel_libraries(&item, arguments[6], arguments[7]) && finish_item(&item);
