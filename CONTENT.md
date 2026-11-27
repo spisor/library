@@ -258,10 +258,13 @@ argument, then the input, then the row's `item` and `items`, and refuses an acti
 settings file: given the places and a loader id, or none for spisor-host's own, the plugins that host's settings
 enable with a version the cache holds, each with its manifest checked as its scope checks it and the
 `runtime_config_plugin` its settings are read and written through, the host's `ui` settings, the three groups
-`ui.plugin_list` takes (the plugins, every other catalog plugin with a version cached, every catalog plugin with none)
-and the catalog sources they were read from. It writes nothing, and refuses as the host's start, the cache's locate and
-a plugin's scope refuse, naming the plugin's manifest. `ui_session_test` and `out_of_memory_ui_session_test` hold it
-over a home `runtime-testing` lays out.
+`ui.plugin_list` takes (the plugins, every other catalog plugin with a version cached at the newest there, every
+catalog plugin with none), the `problems`, and the catalog sources they were read from. A plugin the home cannot draw
+(enabled with no version installed, a version the cache's locate cannot run, a manifest its scope refuses) is left out
+and listed under `problems` with its detail, naming its manifest, and a fix, as are sources none of which yields a
+catalog, so one broken plugin never blanks the home. It writes nothing, and refuses only as the host's start refuses,
+for the host itself. `ui_session_test` and `out_of_memory_ui_session_test` hold it over a home `runtime-testing` lays
+out.
 
 ### Bound from TypeScript and Java
 

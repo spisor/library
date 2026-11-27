@@ -65,15 +65,17 @@ const char *runtime_front_door(const cJSON *catalog, const cJSON *standard, cons
 char *runtime_run_identity(const char *host_id, const char *runtime, const char *front_door);
 
 /**
- * What a host's layers stand on: the `sources` runtime_layer_sources answers and the `catalog` they hold, the
- * `plugins` a start of it resolves, an object of id to version, its `standard` at its registered version, NULL when it
- * carries none, and the runtime its `front_door` is in. Freed with runtime_free_loader_layers.
+ * What a host's layers stand on: the `sources` runtime_layer_sources answers, the `catalog` they hold and how many
+ * of them are `yielding` it, the `plugins` a start of it resolves, an object of id to version, its `standard` at its
+ * registered version, NULL when it carries none, and the runtime its `front_door` is in. Freed with
+ * runtime_free_loader_layers.
  */
 typedef struct runtime_loader_layers {
     cJSON *registration;
     cJSON *settings;
     cJSON *sources;
     cJSON *catalog;
+    size_t yielding;
     cJSON *resolved;
     cJSON *standard;
     const cJSON *plugins;

@@ -179,6 +179,7 @@ static void a_loader_answers_each_enabled_plugin_with_its_description_and_config
     check_text(row_id(home.answer.installed, 0), "alpha", "the first installed row");
     CHECK(home.answer.detected != NULL && home.answer.detected->count == 0);
     CHECK(home.answer.available != NULL && home.answer.available->count == 0);
+    CHECK(home.answer.problems != NULL && home.answer.problems->count == 0);
     CHECK(home.answer.source_count == 1 && home.answer.sources[0].kind == RUNTIME_CATALOG_LOCAL);
     spisor_memory_release(before);
     spisor_memory_release(after);
@@ -215,9 +216,26 @@ static void no_loader_refuses_while_spisor_host_is_not_registered(void) {
     finish_session_home(&home);
 }
 
-/** Rewrites the installed manifest of the first plugin with `from` replaced by `to`, of the same length. */
-static char *rewrite_manifest(const session_home *home, const char *from, const char *to) {
-    char *manifest = joined(home->home.answer.installs[0].bundle, "plugin.json");
+/** A catalog item for plugin id at version, its one file a placeholder the session never fetches. */
+static void list_plugin_item(cJSON *items, const char *id, const char *version) {
+    char item[512];
+    snprintf(item, sizeof item, "{\"kind\": \"plugin\", \"latest\": \"%s\", \"versions\": {\"%s\": {\"files\": %s}}}",
+             version, version, FILE_REFERENCE);
+    cJSON_AddItemToObject(items, id, parsed(item));
+}
+
+/** Writes index as the catalog the home's one local source names. */
+static void write_catalog_index(const cJSON *index) {
+    char *printed = cJSON_PrintUnformatted(index);
+    char *catalog = joined(base, "catalog/index.json");
+    write_text(catalog, printed);
+    spisor_memory_release(catalog);
+    cJSON_free(printed);
+}
+
+/** Rewrites the installed manifest of the plugin at `install` with `from` replaced by `to`, of the same length. */
+static char *rewrite_manifest(const session_home *home, size_t install, const char *from, const char *to) {
+    char *manifest = joined(home->home.answer.installs[install].bundle, "plugin.json");
     size_t length = 0;
     uint8_t *content = spisor_read_file_reporting(manifest, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     char *text = content == NULL ? NULL : spisor_memory_allocate_zeroed(length + 1, 1);
@@ -237,39 +255,105 @@ static char *rewrite_manifest(const session_home *home, const char *from, const 
     return manifest;
 }
 
-static void an_unreadable_manifest_refuses_naming_it(void) {
+/** The one problem the session answered, checked to name id at version (NULL for none) and to hold `detail`. */
+static void expect_one_problem(const session_home *home, const char *id, const char *version, const char *detail) {
+    const spisor_value *problems = home->answer.problems;
+    const spisor_value *problem = problems != NULL && problems->count == 1 ? &problems->items[0] : NULL;
+    const char *problem_detail = value_text(problem, "detail");
+    CHECK(home->status == SPISOR_OK && problem != NULL);
+    check_text(value_text(problem, "id"), id, "the problem's plugin");
+    if (version == NULL) {
+        CHECK(value_text(problem, "version") == NULL);
+    } else {
+        check_text(value_text(problem, "version"), version, "the problem's version");
+    }
+    CHECK(problem_detail != NULL && strstr(problem_detail, detail) != NULL);
+    CHECK(value_text(problem, "fix") != NULL);
+}
+
+static void one_broken_plugin_of_two_answers_the_other_and_a_problem_naming_its_manifest(void) {
+    static const char *const manifests[2] = {ALPHA, BETA};
+    session_home home;
+    cJSON *index = parsed("{\"format\": 1, \"items\": {}}");
+    lay_out_session_home(&home, "one-broken", LOADER, manifests, 2, NULL);
+    char *manifest = rewrite_manifest(&home, 0, "{\"id\"", "x\"id\"");
+    list_plugin_item(cJSON_GetObjectItemCaseSensitive(index, "items"), "alpha", "1.0.0");
+    list_plugin_item(cJSON_GetObjectItemCaseSensitive(index, "items"), "beta", "2.0.0");
+    write_catalog_index(index);
+    open_session(&home, LOADER);
+    CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 1);
+    check_text(home.answer.plugin_count == 1 ? home.answer.plugins[0].id : NULL, "beta", "the plugin left");
+    CHECK(home.answer.descriptions != NULL && home.answer.descriptions->count == 1);
+    expect_one_problem(&home, "alpha", "1.0.0", home.home.answer.installs[0].bundle);
+    CHECK(home.answer.installed != NULL && home.answer.installed->count == 1);
+    check_text(row_id(home.answer.installed, 0), "beta", "the installed row");
+    CHECK(home.answer.detected != NULL && home.answer.detected->count == 0);
+    CHECK(home.answer.available != NULL && home.answer.available->count == 0);
+    cJSON_Delete(index);
+    spisor_memory_release(manifest);
+    finish_session_home(&home);
+}
+
+static void an_unreadable_manifest_is_a_problem_saying_it_cannot_be_read(void) {
     static const char *const manifests[1] = {ALPHA};
     session_home home;
     lay_out_session_home(&home, "unreadable", LOADER, manifests, 1, NULL);
-    char *manifest = rewrite_manifest(&home, "{\"id\"", "x\"id\"");
+    char *manifest = rewrite_manifest(&home, 0, "{\"id\"", "x\"id\"");
     open_session(&home, LOADER);
-    CHECK(home.status == SPISOR_REFUSED);
-    CHECK(home.refusal.detail != NULL && strstr(home.refusal.detail, "alpha@1.0.0 cannot run") != NULL &&
-          strstr(home.refusal.detail, "plugin.json in ") != NULL);
-    CHECK(home.answer.plugin_count == 0 && home.answer.storage == NULL);
+    CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 0);
+    expect_one_problem(&home, "alpha", "1.0.0", "cannot be read");
+    expect_one_problem(&home, "alpha", "1.0.0", home.home.answer.installs[0].bundle);
     spisor_memory_release(manifest);
     finish_session_home(&home);
 }
 
-static void a_manifest_its_scope_refuses_refuses_naming_it(void) {
+static void a_manifest_its_scope_refuses_is_a_problem_naming_it(void) {
     static const char *const manifests[1] = {ALPHA};
     session_home home;
     lay_out_session_home(&home, "scope-refused", LOADER, manifests, 1, NULL);
-    char *manifest = rewrite_manifest(&home, "\"application\"", "\"applicatio_\"");
+    char *manifest = rewrite_manifest(&home, 0, "\"application\"", "\"applicatio_\"");
     open_session(&home, LOADER);
-    CHECK(home.status == SPISOR_REFUSED);
-    CHECK(home.refusal.detail != NULL && strstr(home.refusal.detail, manifest) != NULL &&
-          strstr(home.refusal.detail, "applicatio_") != NULL);
+    CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 0);
+    expect_one_problem(&home, "alpha", "1.0.0", manifest);
+    expect_one_problem(&home, "alpha", "1.0.0", "applicatio_");
     spisor_memory_release(manifest);
     finish_session_home(&home);
 }
 
-/** A catalog item for plugin id at version, its one file a placeholder the session never fetches. */
-static void list_plugin_item(cJSON *items, const char *id, const char *version) {
-    char item[512];
-    snprintf(item, sizeof item, "{\"kind\": \"plugin\", \"latest\": \"%s\", \"versions\": {\"%s\": {\"files\": %s}}}",
-             version, version, FILE_REFERENCE);
-    cJSON_AddItemToObject(items, id, parsed(item));
+static void an_enabled_plugin_with_no_version_installed_is_a_problem_not_available(void) {
+    static const char *const manifests[1] = {ALPHA};
+    session_home home;
+    cJSON *refusal = NULL;
+    cJSON *enabled = cJSON_CreateTrue();
+    cJSON *index = parsed("{\"format\": 1, \"items\": {}}");
+    lay_out_session_home(&home, "not-installed", LOADER, manifests, 1, NULL);
+    CHECK(runtime_set_ecosystem_setting(home.home.answer.home, home.places.portable, "plugins.omega.enabled", enabled,
+                                        RUNTIME_SETTINGS_LAYER_APPLICATION, &refusal));
+    list_plugin_item(cJSON_GetObjectItemCaseSensitive(index, "items"), "omega", "0.1.0");
+    write_catalog_index(index);
+    open_session(&home, LOADER);
+    CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 1);
+    expect_one_problem(&home, "omega", "0.1.0", "enabled but not installed");
+    CHECK(home.answer.available != NULL && home.answer.available->count == 0);
+    CHECK(home.answer.detected != NULL && home.answer.detected->count == 0);
+    cJSON_Delete(index);
+    cJSON_Delete(enabled);
+    cJSON_Delete(refusal);
+    finish_session_home(&home);
+}
+
+static void sources_that_yield_no_catalog_are_one_problem_and_the_plugins_still_answer(void) {
+    static const char *const manifests[1] = {ALPHA};
+    session_home home;
+    lay_out_session_home(&home, "no-catalog", LOADER, manifests, 1, NULL);
+    char *catalog = joined(base, "catalog/index.json");
+    CHECK(remove(catalog) == 0);
+    open_session(&home, LOADER);
+    CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 1);
+    expect_one_problem(&home, "spisor-host", NULL, "no catalog source yields a catalog");
+    CHECK(home.answer.source_count == 1);
+    spisor_memory_release(catalog);
+    finish_session_home(&home);
 }
 
 static void the_groups_split_the_catalog_by_what_runs_and_what_is_cached(void) {
@@ -285,18 +369,16 @@ static void the_groups_split_the_catalog_by_what_runs_and_what_is_cached(void) {
     list_plugin_item(items, "alpha", "1.0.0");
     list_plugin_item(items, "beta", "2.1.0");
     list_plugin_item(items, "omega", "0.1.0");
-    char *text = cJSON_PrintUnformatted(index);
-    char *catalog = joined(base, "catalog/index.json");
-    write_text(catalog, text);
+    write_catalog_index(index);
     open_session(&home, LOADER);
     CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 1);
     CHECK(home.answer.installed->count == 1 && home.answer.detected->count == 1 && home.answer.available->count == 1);
     check_text(row_id(home.answer.installed, 0), "alpha", "the installed row");
     check_text(row_id(home.answer.detected, 0), "beta", "the detected row");
-    check_text(value_text(&home.answer.detected->items[0], "version"), "2.1.0", "the detected row's latest");
+    check_text(value_text(&home.answer.detected->items[0], "version"), "2.0.0", "the detected row's cached version");
     check_text(row_id(home.answer.available, 0), "omega", "the available row");
-    spisor_memory_release(catalog);
-    cJSON_free(text);
+    check_text(value_text(&home.answer.available->items[0], "version"), "0.1.0", "the available row's latest");
+    CHECK(home.answer.problems != NULL && home.answer.problems->count == 0);
     cJSON_Delete(index);
     cJSON_Delete(disabled);
     cJSON_Delete(refusal);
@@ -322,8 +404,11 @@ int main(void) {
     a_loader_answers_each_enabled_plugin_with_its_description_and_config();
     no_loader_answers_spisor_hosts_own_layer();
     no_loader_refuses_while_spisor_host_is_not_registered();
-    an_unreadable_manifest_refuses_naming_it();
-    a_manifest_its_scope_refuses_refuses_naming_it();
+    one_broken_plugin_of_two_answers_the_other_and_a_problem_naming_its_manifest();
+    an_unreadable_manifest_is_a_problem_saying_it_cannot_be_read();
+    a_manifest_its_scope_refuses_is_a_problem_naming_it();
+    an_enabled_plugin_with_no_version_installed_is_a_problem_not_available();
+    sources_that_yield_no_catalog_are_one_problem_and_the_plugins_still_answer();
     the_groups_split_the_catalog_by_what_runs_and_what_is_cached();
     answers_malformed_for_places_that_are_not_absolute_and_a_loader_that_is_no_host_id();
     return check_summary("ui_session_test");

@@ -1741,6 +1741,7 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_session_answer, installed);
     FIELD(runtime_ui_session_answer, detected);
     FIELD(runtime_ui_session_answer, available);
+    FIELD(runtime_ui_session_answer, problems);
     FIELD(runtime_ui_session_answer, sources);
     FIELD(runtime_ui_session_answer, source_count);
     FIELD(runtime_ui_session_answer, storage);

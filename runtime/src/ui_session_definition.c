@@ -151,6 +151,10 @@ static spisor_status fill_session(const cJSON *answered, void *filled) {
         status = runtime_storage_value(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "available"),
                                        &answer->available);
     }
+    if (status == SPISOR_OK) {
+        status = runtime_storage_value(&answer->storage, cJSON_GetObjectItemCaseSensitive(answered, "problems"),
+                                       &answer->problems);
+    }
     return status == SPISOR_OK ? fill_sources(answer, cJSON_GetObjectItemCaseSensitive(answered, "sources")) : status;
 }
 

@@ -101,6 +101,7 @@ static void put_session(const runtime_ui_session_answer *answer) {
     put_value(answer->installed);
     put_value(answer->detected);
     put_value(answer->available);
+    put_value(answer->problems);
     for (size_t index = 0; index < answer->source_count; index++) {
         put_number(answer->sources[index].kind);
         put_text(answer->sources[index].location);
@@ -231,7 +232,7 @@ int main(void) {
     if (check_failures == 0) {
         every_failure_of("ui's session", HOST, SPISOR_OK);
         break_manifest(&home);
-        every_failure_of("ui's session refused", HOST, SPISOR_REFUSED);
+        every_failure_of("ui's session with a problem", HOST, SPISOR_OK);
     }
     ((const runtime_places_definition *)runtime_places_definition_of())->release_answer(NULL, &places);
     testing()->release_home_answer(NULL, &home.answer);

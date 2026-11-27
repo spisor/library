@@ -425,9 +425,12 @@ typedef struct runtime_ui_session_plugin {
  * What the interface draws a host's home from: the `host` whose plugins it holds; those `plugins`, each that host's
  * settings enable with a version installed, in id order; their `descriptions` as one list in that order, as navigation
  * and the screens take them; the host's `ui` settings, a record; the three groups plugin_list takes, each a list of
- * {id, version} records, `installed` the plugins, `detected` every other catalog plugin with a version in the cache
- * and `available` every catalog plugin with none, at the catalog's latest; and the catalog `sources` the groups were
- * read from, those spisor-host's settings name. First shape ends at `storage`.
+ * {id, version} records, `installed` the plugins, `detected` every other catalog plugin that is neither enabled nor a
+ * problem with a version in the cache, at the newest version there, and `available` every catalog plugin with none, at
+ * the catalog's latest; the `problems`, a list of {id, version?, detail, fix} records in id order, each an enabled
+ * plugin the home cannot draw, its detail naming its manifest where it has one, and one with the id spisor-host and no
+ * version when no catalog source yields a catalog; and the catalog `sources` the groups were read from, those
+ * spisor-host's settings name. First shape ends at `storage`.
  */
 typedef struct runtime_ui_session_answer {
     uint32_t size;
@@ -439,6 +442,7 @@ typedef struct runtime_ui_session_answer {
     const spisor_value *installed;
     const spisor_value *detected;
     const spisor_value *available;
+    const spisor_value *problems;
     const runtime_catalog_source *sources;
     size_t source_count;
     void *storage;
@@ -532,10 +536,11 @@ typedef struct runtime_ui_definition {
      * registration and settings, its plugins resolved as its start resolves them from the versions the cache holds,
      * each manifest as a plugin's scope reads it, and the catalog its layers read.
      *
-     * @return OK; MALFORMED, also for places that are not absolute or a loader that is no host id; REFUSED for a host
-     * that is not registered or whose settings or catalog cannot be read, as its start refuses, for a plugin whose
-     * installed version cannot run, as cache's locate finds it, and for a manifest a plugin's scope refuses, each
-     * naming the plugin's manifest; OUT_OF_MEMORY.
+     * @return OK, also when a plugin cannot be drawn: one enabled with no version installed, one whose installed
+     * version cannot run, as cache's locate finds it, or whose manifest its scope refuses is then left out of
+     * `plugins` and listed under `problems`; MALFORMED, also for places that are not absolute or a loader that is no
+     * host id; REFUSED only for what refuses the host itself, as its start refuses: a host that is not registered or
+     * whose settings or catalog sources cannot be read; OUT_OF_MEMORY.
      * @implNote The interface reads no manifest and no settings file, so everything it draws a home from is answered
      * here rather than recomputed on the interface's side.
      */

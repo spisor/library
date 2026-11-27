@@ -165,7 +165,9 @@ int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime
                                                : runtime_layer_sources(text_of(places, "state"),
                                                                        text_of(places, "portable"), layers->settings,
                                                                        refusal);
-    layers->catalog = layers->sources == NULL ? NULL : runtime_catalog_current(layers->sources, cache, refusal);
+    layers->catalog = layers->sources == NULL ? NULL
+                                              : runtime_catalog_current_counted(layers->sources, cache,
+                                                                                &layers->yielding, refusal);
     layers->standard = layers->catalog == NULL ? NULL
                                                 : runtime_loader_standard(cache, host_id,
                                                                           text_of(layers->registration, "version"),
