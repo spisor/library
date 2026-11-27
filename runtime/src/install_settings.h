@@ -33,10 +33,11 @@ int runtime_install_enable_plugin(const runtime_install_settings *settings, cons
                                   cJSON **refusal);
 
 /**
- * Writes plugins.<id>.enabled as true for every id of ids, an array of strings, into the portable layer in one write,
- * so a reader sees all of them or none; 1 on success, else as above.
+ * Writes plugins.<id>.enabled as true for every id of ids, an array of strings, into layer ("application" or
+ * "portable") in one write, so a reader sees all of them or none; 1 on success, else as above.
  */
-int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, cJSON **refusal);
+int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, const char *layer,
+                                   cJSON **refusal);
 
 /**
  * Appends each of sources that catalog.sources does not list yet, never replacing one that is: a local

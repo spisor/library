@@ -255,7 +255,8 @@ set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIB
 spisor_strict_warnings(runtime_ui)
 
 set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_application.c src/install_applications.c
-    src/install_definition.c src/install_ecosystem.c src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_methods.c src/install_references.c
+    src/install_definition.c src/install_ecosystem.c src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_items.c src/install_methods.c src/install_plugins.c
+    src/install_references.c
     src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
     src/process_run.c src/boot_definition.c src/updates_definition.c src/updates_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})

@@ -365,7 +365,7 @@ static spisor_status enable_installs(const runtime_testing_prepared_home *home, 
     if (ids == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
-    enabled = runtime_install_enable_plugins(&settings, ids, &operation_refusal);
+    enabled = runtime_install_enable_plugins(&settings, ids, "portable", &operation_refusal);
     cJSON_Delete(ids);
     return enabled ? SPISOR_OK : runtime_refuse_json(refusal, operation_refusal);
 }

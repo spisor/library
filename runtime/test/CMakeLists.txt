@@ -230,6 +230,10 @@ target_compile_definitions(ui_component_enum_test PRIVATE
 
 runtime_test(ui_session_test TEST_HOOKS ${runtime_ui_test_objects})
 target_link_libraries(ui_session_test PRIVATE runtime_testing_objects)
+runtime_test(install_plugins_test TEST_HOOKS ${runtime_ui_test_objects})
+if(WIN32)
+    add_dependencies(install_plugins_test runtime_launcher)
+endif()
 runtime_test_with_allocator(out_of_memory_ui_session_test spisor_allocator_counting TEST_HOOKS
     ${runtime_ui_test_objects})
 target_link_libraries(out_of_memory_ui_session_test PRIVATE runtime_testing_objects)
@@ -329,6 +333,14 @@ target_include_directories(out_of_memory_ecosystem_test PRIVATE ${PROJECT_SOURCE
 set_tests_properties(out_of_memory_ecosystem_test PROPERTIES TIMEOUT 1800)
 if(WIN32)
     add_dependencies(out_of_memory_ecosystem_test runtime_launcher)
+endif()
+
+runtime_test_with_allocator(out_of_memory_install_plugins_test spisor_allocator_counting
+    ${runtime_install_test_objects})
+target_include_directories(out_of_memory_install_plugins_test PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_tests_properties(out_of_memory_install_plugins_test PROPERTIES TIMEOUT 1800)
+if(WIN32)
+    add_dependencies(out_of_memory_install_plugins_test runtime_launcher)
 endif()
 
 runtime_test_with_allocator(out_of_memory_install_operations_test spisor_allocator_counting

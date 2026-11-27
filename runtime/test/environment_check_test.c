@@ -119,6 +119,15 @@ static spisor_status call_install_ecosystem(const refused_environment *environme
     return install->ecosystem(install->context, &argument, &answer, refusal);
 }
 
+static spisor_status call_install_plugins(const refused_environment *environment, spisor_refusal *refusal) {
+    const runtime_install_definition *install = runtime_install_definition_of();
+    runtime_install_plugins_argument argument = SPISOR_INIT(runtime_install_plugins_argument);
+    runtime_install_plugins_answer answer = SPISOR_INIT(runtime_install_plugins_answer);
+    argument.environment = environment->variables;
+    argument.environment_count = environment->count;
+    return install->plugins(install->context, &argument, &answer, refusal);
+}
+
 static spisor_status call_processes_hold(const refused_environment *environment, spisor_refusal *refusal) {
     const runtime_processes_definition *processes = runtime_processes_definition_of();
     runtime_processes_hold_argument argument = SPISOR_INIT(runtime_processes_hold_argument);
@@ -183,7 +192,7 @@ int main(void) {
     static const struct {
         const char *operation;
         environment_call call;
-    } calls[11] = {{"places' resolve", call_places},
+    } calls[12] = {{"places' resolve", call_places},
                    {"detect's on_path", call_detect},
                    {"lists' applications", call_lists},
                    {"commands' request", call_command_request},
@@ -192,11 +201,12 @@ int main(void) {
                    {"install's runtime", call_install_runtime},
                    {"install's register_loader", call_install_register_loader},
                    {"install's ecosystem", call_install_ecosystem},
+                   {"install's plugins", call_install_plugins},
                    {"processes' hold", call_processes_hold},
                    {"processes' ready", call_processes_ready}};
     spisor_json_use_library_allocator();
     uint64_t allowed = refusal_allocations();
-    for (size_t call = 0; call < 11; call++) {
+    for (size_t call = 0; call < 12; call++) {
         for (size_t environment = 0; environment < 5; environment++) {
             it_refuses_before_allocating(calls[call].operation, calls[call].call, &environments[environment], allowed);
         }

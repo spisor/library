@@ -14,6 +14,8 @@
 #include "install_ecosystem.h"
 #include "install_entries.h"
 #include "install_methods.h"
+#include "install_plugins.h"
+#include "install_run.h"
 #include "install_runtime.h"
 #include "install_warnings.h"
 #include "paths.h"
@@ -41,6 +43,8 @@
 #define BY_ID_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_by_id_answer, storage)
 #define ECOSYSTEM_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_argument, platform)
 #define ECOSYSTEM_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_ecosystem_answer, storage)
+#define PLUGINS_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_plugins_argument, plugin_count)
+#define PLUGINS_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_install_plugins_answer, storage)
 
 static const char *const WARNING_KINDS[] = {NULL, "named-dependency", "unbound-service"};
 static const char *const SOURCES[] = {NULL, "path", "acquired"};
@@ -1054,18 +1058,18 @@ static spisor_status fill_ecosystem_rows(runtime_install_ecosystem_answer *answe
     return status;
 }
 
-static spisor_status fill_acquired(runtime_install_ecosystem_answer *answer, const cJSON *javascript) {
+static spisor_status fill_acquired(void **storage, const cJSON *javascript, const runtime_install_javascript **filled) {
     runtime_install_javascript *acquired;
     if (javascript == NULL) {
         return SPISOR_OK;
     }
-    acquired = runtime_storage_take(&answer->storage, sizeof *acquired);
+    acquired = runtime_storage_take(storage, sizeof *acquired);
     if (acquired == NULL) {
         return SPISOR_OUT_OF_MEMORY;
     }
     memset(acquired, 0, sizeof *acquired);
-    answer->javascript = acquired;
-    return fill_javascript(&answer->storage, javascript, acquired);
+    *filled = acquired;
+    return fill_javascript(storage, javascript, acquired);
 }
 
 /** Fills the answer from the report, replacing what an earlier take of the same install filled. */
@@ -1085,7 +1089,8 @@ static spisor_status fill_ecosystem(const cJSON *report, void *filled) {
         status = copy_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "enabled"), &answer->enabled,
                             &answer->enabled_count);
     }
-    return status == SPISOR_OK ? fill_acquired(answer, cJSON_GetObjectItemCaseSensitive(report, "javascript"))
+    return status == SPISOR_OK ? fill_acquired(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "javascript"),
+                                               &answer->javascript)
                                : status;
 }
 
@@ -1214,6 +1219,103 @@ static spisor_status ecosystem(void *context, const runtime_install_ecosystem_ar
     return status != SPISOR_OK ? status : serve_ecosystem(call, argument->platform, answer, refusal);
 }
 
+static spisor_status fill_plugins(const cJSON *report, void *filled) {
+    runtime_install_plugins_answer *answer = filled;
+    void *installed = NULL;
+    void *unavailable = NULL;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    if (status == SPISOR_OK) {
+        status = fill_rows(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "installed"),
+                           sizeof(runtime_item_version), fill_fetched, &installed, &answer->installed_count);
+        answer->installed = installed;
+    }
+    if (status == SPISOR_OK) {
+        status = fill_rows(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "unavailable"),
+                           sizeof(runtime_install_unavailable), fill_unavailable, &unavailable,
+                           &answer->unavailable_count);
+        answer->unavailable = unavailable;
+    }
+    if (status == SPISOR_OK) {
+        status = copy_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "cached"), &answer->cached,
+                            &answer->cached_count);
+    }
+    if (status == SPISOR_OK) {
+        status = copy_texts(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "enabled"), &answer->enabled,
+                            &answer->enabled_count);
+    }
+    return status == SPISOR_OK ? fill_acquired(&answer->storage, cJSON_GetObjectItemCaseSensitive(report, "javascript"),
+                                               &answer->javascript)
+                               : status;
+}
+
+static int are_plugin_ids(const char *const *plugins, size_t count) {
+    for (size_t index = 0; plugins != NULL && index < count; index++) {
+        if (!runtime_is_text(plugins[index])) {
+            return 0;
+        }
+    }
+    return plugins != NULL && count > 0;
+}
+
+static spisor_status check_plugins(const runtime_install_plugins_argument *argument, const char *const *names,
+                                   const char *const *places, spisor_refusal *refusal) {
+    spisor_status status = check_places(names, places, 3, refusal);
+    if (status == SPISOR_OK && argument->host != NULL) {
+        status = runtime_check_host_id(refusal, argument->host, HEADER);
+    }
+    if (status == SPISOR_OK && !are_plugin_ids(argument->plugins, argument->plugin_count)) {
+        status = runtime_refuse_member(refusal, "plugins", HEADER);
+    }
+    return status;
+}
+
+/** The plugins' call {places, environment, plugins}, its environment already checked; NULL when memory runs out. */
+static cJSON *plugins_call(const runtime_install_plugins_argument *argument, const char *const *names,
+                           const char *const *places, spisor_refusal *refusal) {
+    cJSON *call = places_call(names, places, 3);
+    if (call == NULL || add_environment(call, argument->environment, argument->environment_count, refusal) != SPISOR_OK ||
+        !add_texts(call, "plugins", argument->plugins, argument->plugin_count)) {
+        cJSON_Delete(call);
+        return NULL;
+    }
+    return call;
+}
+
+static spisor_status plugins(void *context, const runtime_install_plugins_argument *argument,
+                             runtime_install_plugins_answer *answer, spisor_refusal *refusal) {
+    static const char *const names[3] = {"portable", "state", "cache"};
+    const char *places[3];
+    cJSON *operation_refusal = NULL;
+    cJSON *call;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !spisor_has_shape(argument->size, PLUGINS_SHAPE) ||
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, PLUGINS_ANSWER_SHAPE,
+                                         answer->installed_count | answer->cached_count | answer->unavailable_count |
+                                         answer->enabled_count)) {
+        return spisor_refuse_shape(refusal, "install's plugins");
+    }
+    if (!runtime_is_environment(argument->environment, argument->environment_count)) {
+        return runtime_refuse_environment(refusal);
+    }
+    places[0] = argument->portable;
+    places[1] = argument->state;
+    places[2] = argument->cache;
+    status = check_plugins(argument, names, places, refusal);
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    call = plugins_call(argument, names, places, refusal);
+    if (call == NULL) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    runtime_install_plugins_request request = {member_of(call, "places"), member_of(call, "environment"),
+                                               argument->host == NULL ? RUNTIME_ECOSYSTEM_HOST_ID : argument->host,
+                                               member_of(call, "plugins")};
+    cJSON *answered = runtime_install_plugins(&request, &operation_refusal);
+    return serve_over(call, answered, &operation_refusal, fill_plugins, answer, PLUGINS_ANSWER_SHAPE, refusal);
+}
+
 static void release_warnings_answer(void *context, runtime_install_warnings_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, WARNINGS_ANSWER_SHAPE);
@@ -1264,6 +1366,11 @@ static void release_ecosystem_answer(void *context, runtime_install_ecosystem_an
     runtime_release_stored_answer(answer, ECOSYSTEM_ANSWER_SHAPE);
 }
 
+static void release_plugins_answer(void *context, runtime_install_plugins_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, PLUGINS_ANSWER_SHAPE);
+}
+
 static const runtime_install_definition definition = {
     sizeof(runtime_install_definition),
     NULL,
@@ -1288,6 +1395,8 @@ static const runtime_install_definition definition = {
     release_by_id_answer,
     release_ecosystem_answer,
     spisor_release_refusal,
+    plugins,
+    release_plugins_answer,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_install_definition_of(void) {

@@ -134,7 +134,7 @@ off the include path.
 | `registry` | `include/runtime/registry.h` | `register_host`, `get`, `list`, `forget` |
 | `changes` | `include/runtime/changes.h` | `apply`, `reverse` |
 | `commands` | `include/runtime/commands.h` | `request`, `rename`, `remove`, `add` |
-| `install` | `include/runtime/install.h` | `warnings`, `packages`, `plan`, `detect`, `entry`, `runtime`, `application`, `register_loader`, `by_id`, `ecosystem` |
+| `install` | `include/runtime/install.h` | `warnings`, `packages`, `plan`, `detect`, `entry`, `runtime`, `application`, `register_loader`, `by_id`, `ecosystem`, `plugins` |
 | `fetch` | `include/runtime/fetch.h` | `get` |
 | `catalog` | `include/runtime/catalog.h` | `read`, `sources`, `merge`, `check`, `current`, `resolve` |
 | `cache` | `include/runtime/cache.h` | `install`, `installed`, `check`, `damaged`, `locate`, `platform`, `sweep`, `deploy` |
@@ -458,6 +458,16 @@ plannable and needs no package or provider. Any other method needs a package map
 when `chosen` is not in `installedProviders`, the first `catalog` entry whose `installMethod` is
 `chosen` is installed first as an `install-provider` step, and none is a refusal naming the method.
 The caller orders `catalog`, so earlier marketplaces take precedence.
+
+`install.plugins` is what a row of an interface's Plugins screen installs: given the places, a host id, or none for
+spisor-host, and plugin ids, it reads the catalog as that host's layers read it, with no source checked, installs each
+plugin at the host's pin or the catalog's latest, references it for that host and enables it in that host's own
+application layer, so no other loader and no shared portable setting changes. A plugin's language host installs only
+while its hint names no version, on the runtime and forebay-library spisor-host runs, with Node when it runs on
+JavaScript. A plugin the catalog does not list, or whose language it lists no host for, is refused before anything is
+written. `install.ecosystem` stays the whole install: every source checked, every application's loader installed, and
+plugins enabled in the portable layer every host reads. `install_plugins_test` and `out_of_memory_install_plugins_test`
+hold it over an installed ecosystem with two loaders.
 
 ### The portable layer
 

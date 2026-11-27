@@ -74,11 +74,14 @@ static cJSON *enabled_plugins(const cJSON *ids) {
     return plugins;
 }
 
-int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, cJSON **refusal) {
+int runtime_install_enable_plugins(const runtime_install_settings *settings, const cJSON *ids, const char *layer,
+                                   cJSON **refusal) {
+    uint32_t chosen = strcmp(layer, "portable") == 0 ? RUNTIME_SETTINGS_LAYER_PORTABLE
+                                                     : RUNTIME_SETTINGS_LAYER_APPLICATION;
     cJSON *plugins = enabled_plugins(ids);
     *refusal = NULL;
     int enabled = plugins != NULL && runtime_merge_ecosystem_setting(settings->home, settings->portable, "plugins",
-                                                                     plugins, RUNTIME_SETTINGS_LAYER_PORTABLE, refusal);
+                                                                     plugins, chosen, refusal);
     cJSON_Delete(plugins);
     return enabled;
 }

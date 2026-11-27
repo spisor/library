@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "boot.h"
 #include "cache_refusal.h"
 #include "catalog.h"
 #include "catalog_source.h"
@@ -14,17 +13,16 @@
 #include "hosts_layers.h"
 #include "install_entries.h"
 #include "install_hosts.h"
+#include "install_items.h"
 #include "install_references.h"
 #include "install_report.h"
 #include "install_run.h"
-#include "install_runtime.h"
 #include "install_settings.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "platform_key.h"
 #include "plugin_choices.h"
 
-#define FOREBAY_LIBRARY_ID "forebay-library"
 #define INTERFACE_SETTING "interface"
 #define HEADLESS "none"
 #define CATALOG_FIX "check the catalog path or url, then install again"
@@ -33,7 +31,7 @@
     "{\"portable\", \"state\", \"cache\"}, \"environment\": {<name>: <value>}, \"choices\"?: {<application>: "  \
     "<method>}, \"defaults\"?: [<plugin id>], \"requested\"?: [<plugin id>], \"platform\"?: \"<os>-<arch>\"}"
 
-static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID};
+static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, RUNTIME_FOREBAY_LIBRARY_ID};
 
 /** What one ecosystem install has settled so far, beside the run every step shares. */
 typedef struct ecosystem {
@@ -151,45 +149,19 @@ static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusa
     return install->run.catalog != NULL;
 }
 
-static int note_running(ecosystem *install, const char *id, const char *version) {
-    cJSON_DeleteItemFromObjectCaseSensitive(install->running, id);
-    return cJSON_AddStringToObject(install->running, id, version) != NULL;
+static runtime_install_items items_of(ecosystem *install) {
+    runtime_install_items items = {&install->run, install->values, install->running};
+    return items;
 }
 
-/** Installs target {id, pin?} of kind, referenced for the ecosystem host first; 0 only when memory runs out. */
 static int install_referenced(ecosystem *install, const cJSON *target, const char *kind) {
-    const char *id = runtime_install_text(target, "id");
-    const char *version = runtime_install_target_version(install->run.catalog, target, kind);
-    cJSON *versions = version == NULL ? NULL : cJSON_CreateObject();
-    cJSON *refusal = NULL;
-    int referenced = versions != NULL && cJSON_AddStringToObject(versions, id, version) != NULL &&
-                     runtime_install_reference_versions(install->run.state, RUNTIME_ECOSYSTEM_HOST_ID, versions, &refusal);
-    cJSON_Delete(versions);
-    if (version != NULL && !referenced) {
-        return runtime_install_report_refusal(install->run.report, id, refusal);
-    }
-    int out_of_memory = 0;
-    const char *installed = runtime_install_item(install->run.catalog, target, kind, install->run.cache, install->run.report,
-                                                 &out_of_memory);
-    return !out_of_memory && (installed == NULL || note_running(install, id, installed));
+    runtime_install_items items = items_of(install);
+    return runtime_install_referenced(&items, RUNTIME_ECOSYSTEM_HOST_ID, target, kind);
 }
 
 static int install_pinned(ecosystem *install, const char *const *ids, size_t count, const char *kind) {
-    cJSON *names = cJSON_CreateArray();
-    for (size_t index = 0; names != NULL && index < count; index++) {
-        if (!runtime_install_add_text(names, ids[index])) {
-            cJSON_Delete(names);
-            names = NULL;
-        }
-    }
-    cJSON *targets = names == NULL ? NULL : runtime_pinned_candidates(names, install->values);
-    int installed = targets != NULL;
-    for (const cJSON *target = installed ? targets->child : NULL; installed && target != NULL; target = target->next) {
-        installed = install_referenced(install, target, kind);
-    }
-    cJSON_Delete(targets);
-    cJSON_Delete(names);
-    return installed;
+    runtime_install_items items = items_of(install);
+    return runtime_install_pinned(&items, ids, count, kind);
 }
 
 /** Whether the catalog lists id as an item of a kind other than plugin, as a pin on a host or a library does. */
@@ -287,7 +259,7 @@ static int enable_all(ecosystem *install, const cJSON *enabling) {
         return 1;
     }
     cJSON *refusal = NULL;
-    if (!runtime_install_enable_plugins(&install->settings, enabling, &refusal)) {
+    if (!runtime_install_enable_plugins(&install->settings, enabling, "portable", &refusal)) {
         return report_each_refused(install, enabling, refusal);
     }
     cJSON *enabled = cJSON_GetObjectItemCaseSensitive(install->run.report, "enabled");
@@ -342,37 +314,9 @@ static int record_sources(ecosystem *install, const cJSON *sources) {
            (refusal != NULL && runtime_install_report_refusal(install->run.report, "catalog", refusal));
 }
 
-/** The running versions of the libraries, as an object of library id to version; NULL when memory runs out. */
-static cJSON *hint_libraries(const ecosystem *install, const char *const *libraries, size_t count) {
-    cJSON *versions = cJSON_CreateObject();
-    int built = versions != NULL;
-    for (size_t index = 0; built && index < count; index++) {
-        built = runtime_install_copy_into(versions, libraries[index],
-                                          cJSON_GetObjectItemCaseSensitive(install->running, libraries[index]));
-    }
-    if (!built) {
-        cJSON_Delete(versions);
-        return NULL;
-    }
-    return versions;
-}
-
-/** Records the libraries and host version the next start of host_id boots, when that host is installed. */
 static int write_hint(ecosystem *install, const char *host_id, const char *const *libraries, size_t count) {
-    if (!cJSON_HasObjectItem(install->running, host_id)) {
-        return 1;
-    }
-    cJSON *refusal = NULL;
-    cJSON *versions = hint_libraries(install, libraries, count);
-    runtime_boot_hint_request request = {install->run.cache,
-                                         host_id,
-                                         versions,
-                                         runtime_install_text(install->running, host_id),
-                                         install->run.state,
-                                         install->run.platform};
-    int written = versions != NULL && runtime_boot_write(&request, &refusal);
-    cJSON_Delete(versions);
-    return written || (refusal != NULL && runtime_install_report_refusal(install->run.report, host_id, refusal));
+    runtime_install_items items = items_of(install);
+    return runtime_install_write_hint(&items, host_id, libraries, count);
 }
 
 static int register_ecosystem_host(ecosystem *install) {
@@ -451,26 +395,6 @@ static int starts_javascript(const ecosystem *install, const cJSON *background) 
     return 0;
 }
 
-static int acquire_javascript(ecosystem *install) {
-    cJSON *refusal = NULL;
-    cJSON *acquired = runtime_acquire_javascript(install->run.cache, install->run.platform, install->run.environment, &refusal);
-    if (acquired == NULL) {
-        return refusal != NULL && runtime_install_report_refusal(install->run.report, "node", refusal);
-    }
-    return cJSON_AddItemToObject(install->run.report, "javascript", acquired);
-}
-
-/** Installs language's host item, `<language>-host`, and writes its hint; 0 only when memory runs out. */
-static int install_language_host(ecosystem *install, const char *language) {
-    static const char *const libraries[2] = {RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID};
-    char *host_id = runtime_language_host_id(language);
-    const char *host_ids[1] = {host_id};
-    int installed = host_id != NULL && install_pinned(install, host_ids, 1, "language-host") &&
-                    write_hint(install, host_id, libraries, 2);
-    spisor_memory_release(host_id);
-    return installed;
-}
-
 /**
  * @implNote A language's host and forebay-library come only with a plugin written in that language, and Node only
  * with something this install would start on it. forebay-library comes with every language host because any plugin
@@ -478,16 +402,17 @@ static int install_language_host(ecosystem *install, const char *language) {
  * the host.json of each, which its hint names, carries the Node pin.
  */
 static int install_language_hosts(ecosystem *install, const cJSON *background) {
-    static const char *const library_ids[1] = {FOREBAY_LIBRARY_ID};
+    static const char *const library_ids[1] = {RUNTIME_FOREBAY_LIBRARY_ID};
     cJSON *languages = hosted_languages(install);
     int installed = languages != NULL &&
                     (cJSON_GetArraySize(languages) == 0 || install_pinned(install, library_ids, 1, "library"));
     for (const cJSON *language = installed ? languages->child : NULL; installed && language != NULL;
          language = language->next) {
-        installed = install_language_host(install, language->valuestring);
+        runtime_install_items items = items_of(install);
+        installed = runtime_install_language_host(&items, language->valuestring);
     }
     cJSON_Delete(languages);
-    return installed && (!starts_javascript(install, background) || acquire_javascript(install));
+    return installed && (!starts_javascript(install, background) || runtime_install_acquire_javascript(&install->run));
 }
 
 /** The ids of every item the catalog lists of kind interface, in its order; NULL when memory runs out. */
