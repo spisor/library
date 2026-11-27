@@ -600,9 +600,9 @@ typedef struct runtime_install_definition {
      * running versions are recorded, so OUT_OF_MEMORY never follows that last write.
      *
      * @return OK; MALFORMED, also for a source of no known kind, a choice without an application or a method, or a
-     * platform that is not os-arch; REFUSED for a catalog none of the sources yields, an application whose packages
-     * cannot be read, or a choice naming an application the catalog does not list or a method not offered for it;
-     * OUT_OF_MEMORY.
+     * platform that is not os-arch; REFUSED for a catalog none of the sources yields, its detail joining what each
+     * source's check found, an application whose packages cannot be read, or a choice naming an application the
+     * catalog does not list or a method not offered for it; OUT_OF_MEMORY.
      */
     spisor_status (*ecosystem)(void *context, const runtime_install_ecosystem_argument *argument,
                                runtime_install_ecosystem_answer *answer, spisor_refusal *refusal);

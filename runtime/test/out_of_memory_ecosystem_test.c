@@ -68,7 +68,8 @@ static void environment_of_base(const install_base *base, runtime_variable envir
     environment[3].value = "/bin/sh";
 }
 
-static spisor_status install_ecosystem(const install_base *base) {
+/** Installs the ecosystem from the one local index named `index_name` in the catalog folder. */
+static spisor_status install_from(const install_base *base, const char *index_name) {
     const runtime_install_definition *install = runtime_install_definition_of();
     char index[1200];
     runtime_catalog_source source;
@@ -77,7 +78,7 @@ static spisor_status install_ecosystem(const install_base *base) {
     runtime_install_ecosystem_answer answer;
     start_empty(&answer, sizeof answer);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    snprintf(index, sizeof index, "%s/catalog.json", base->catalog);
+    snprintf(index, sizeof index, "%s/%s", base->catalog, index_name);
     memset(&source, 0, sizeof source);
     source.kind = RUNTIME_CATALOG_LOCAL;
     source.location = index;
@@ -98,6 +99,10 @@ static spisor_status install_ecosystem(const install_base *base) {
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;
+}
+
+static spisor_status install_ecosystem(const install_base *base) {
+    return install_from(base, "catalog.json");
 }
 
 static int is_registration(const char *relative) {
@@ -326,10 +331,60 @@ static void every_ecosystem_failure(uint64_t first, uint64_t last) {
     }
 }
 
+/**
+ * Whether failing allocation attempt of an install no source yields a catalog for answers REFUSED or OUT_OF_MEMORY,
+ * leaves nothing live and writes what a clean refusal writes.
+ */
+static int refuses_as_promised(const install_base *base, const cJSON *clean, uint64_t attempt) {
+    int64_t baseline = spisor_memory_live_blocks();
+    fresh_places(base);
+    fail_allocation(failure_mode, attempt);
+    spisor_status status = install_from(base, "missing.json");
+    spisor_memory_fail_at(0);
+    if (spisor_memory_live_blocks() != baseline) {
+        fprintf(stderr, "ecosystem refused: failing allocation %llu left %lld blocks live\n",
+                (unsigned long long)attempt, (long long)(spisor_memory_live_blocks() - baseline));
+        return 0;
+    }
+    if (status != SPISOR_REFUSED && status != SPISOR_OUT_OF_MEMORY) {
+        fprintf(stderr, "ecosystem refused: failing allocation %llu answered %d\n", (unsigned long long)attempt,
+                (int)status);
+        return 0;
+    }
+    return matches_clean(base, clean, "ecosystem's refusal", attempt);
+}
+
+/** Fails, allocation by allocation, an install whose one source yields no catalog. */
+static void every_refused_ecosystem_failure(void) {
+    for (failure_mode = FAIL_ONE_ALLOCATION; failure_mode < ALLOCATION_FAILURE_MODES; failure_mode++) {
+        install_base base;
+        prepare_ecosystem(&base);
+        fresh_places(&base);
+        spisor_memory_fail_at(0);
+        CHECK(install_from(&base, "missing.json") == SPISOR_REFUSED);
+        uint64_t allocations = spisor_memory_attempts();
+        cJSON *clean = snapshot_of(&base);
+        for (uint64_t attempt = 1; attempt <= allocations; attempt++) {
+            if (!refuses_as_promised(&base, clean, attempt)) {
+                check_failures++;
+                break;
+            }
+        }
+        printf("install's ecosystem refused%s: %llu allocations, failures 1 to %llu checked\n",
+               allocation_failure_mode_name(failure_mode), (unsigned long long)allocations,
+               (unsigned long long)allocations);
+        cJSON_Delete(clean);
+        finish_install_base(&base);
+    }
+}
+
 int main(int argc, char **argv) {
     spisor_json_use_library_allocator();
     uint64_t first = argc > 1 ? strtoull(argv[1], NULL, 10) : 1;
     uint64_t last = argc > 2 ? strtoull(argv[2], NULL, 10) : 0;
+    if (argc <= 1) {
+        every_refused_ecosystem_failure();
+    }
     every_ecosystem_failure(first == 0 ? 1 : first, last);
     return check_summary("out_of_memory_ecosystem_test");
 }

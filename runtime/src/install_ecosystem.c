@@ -97,6 +97,34 @@ static int check_source(ecosystem *install, const cJSON *source, const char *now
 }
 
 /**
+ * The refusal of an install no source yields a catalog for, joining what each source's check reported under
+ * `unavailable`; NULL when memory runs out.
+ */
+static cJSON *unyielding_refusal(const cJSON *report) {
+    const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
+    size_t count = 1;
+    const char **parts = spisor_memory_allocate((2 * (size_t)cJSON_GetArraySize(unavailable) + 1) * sizeof *parts);
+    const cJSON *row;
+    cJSON *refusal = NULL;
+    if (parts == NULL) {
+        return NULL;
+    }
+    parts[0] = "no catalog source yields a catalog, so nothing can be installed";
+    cJSON_ArrayForEach(row, unavailable) {
+        const char *id = runtime_install_text(row, "id");
+        const char *message = runtime_install_text(row, "message");
+        if (id != NULL && strcmp(id, "catalog") == 0 && message != NULL) {
+            parts[count] = count == 1 ? ": " : "; ";
+            parts[count + 1] = message;
+            count += 2;
+        }
+    }
+    refusal = runtime_cache_refusal(parts, count, CATALOG_FIX);
+    spisor_memory_release((void *)parts);
+    return refusal;
+}
+
+/**
  * Reads the catalog every source yields, each checked first; 0 with *refusal set when none yields one, so a source
  * that failed beside one that yields stays under `unavailable` and an install with no catalog writes nothing.
  */
@@ -115,7 +143,7 @@ static int read_catalog(ecosystem *install, const cJSON *sources, cJSON **refusa
     if (install->run.catalog != NULL && yielding == 0) {
         cJSON_Delete(install->run.catalog);
         install->run.catalog = NULL;
-        *refusal = runtime_refusal("no catalog source yields a catalog, so nothing can be installed", CATALOG_FIX);
+        *refusal = unyielding_refusal(install->run.report);
     }
     return install->run.catalog != NULL;
 }

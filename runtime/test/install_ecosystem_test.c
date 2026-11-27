@@ -409,6 +409,8 @@ static void refuses_having_written_nothing_when_no_source_yields_a_catalog(void)
     CHECK(answer.status == SPISOR_REFUSED);
     CHECK(strstr(text_at(answer.tree, "message") == NULL ? "" : text_at(answer.tree, "message"),
                  "no catalog source yields a catalog") != NULL);
+    CHECK(strstr(text_at(answer.tree, "message") == NULL ? "" : text_at(answer.tree, "message"),
+                 " could not be checked: the file could not be read") != NULL);
     check_text(after, before, "everything but the catalog cache after a refused install");
     CHECK(!exists_in(base.root, "state"));
     spisor_memory_release(after);
