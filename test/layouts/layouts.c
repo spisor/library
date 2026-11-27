@@ -1723,6 +1723,29 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_action_answer, target);
     FIELD(runtime_ui_action_answer, storage);
     SIZE(runtime_ui_action_answer);
+    FIELD(runtime_ui_session_argument, size);
+    FIELD(runtime_ui_session_argument, places);
+    FIELD(runtime_ui_session_argument, loader);
+    SIZE(runtime_ui_session_argument);
+    FIELD(runtime_ui_session_plugin, id);
+    FIELD(runtime_ui_session_plugin, version);
+    FIELD(runtime_ui_session_plugin, description);
+    FIELD(runtime_ui_session_plugin, config);
+    SIZE(runtime_ui_session_plugin);
+    FIELD(runtime_ui_session_answer, size);
+    FIELD(runtime_ui_session_answer, host);
+    FIELD(runtime_ui_session_answer, plugins);
+    FIELD(runtime_ui_session_answer, plugin_count);
+    FIELD(runtime_ui_session_answer, descriptions);
+    FIELD(runtime_ui_session_answer, ui);
+    FIELD(runtime_ui_session_answer, installed);
+    FIELD(runtime_ui_session_answer, detected);
+    FIELD(runtime_ui_session_answer, available);
+    FIELD(runtime_ui_session_answer, problems);
+    FIELD(runtime_ui_session_answer, sources);
+    FIELD(runtime_ui_session_answer, source_count);
+    FIELD(runtime_ui_session_answer, storage);
+    SIZE(runtime_ui_session_answer);
     FIELD(runtime_ui_definition, size);
     FIELD(runtime_ui_definition, context);
     FIELD(runtime_ui_definition, navigation);
@@ -1738,6 +1761,8 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_definition, release_refusal);
     FIELD(runtime_ui_definition, action);
     FIELD(runtime_ui_definition, release_action_answer);
+    FIELD(runtime_ui_definition, session);
+    FIELD(runtime_ui_definition, release_session_answer);
     SIZE(runtime_ui_definition);
 }
 

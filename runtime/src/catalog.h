@@ -63,6 +63,12 @@ cJSON *runtime_catalog_unkept_answer(const runtime_catalog_kept_state *kept);
 cJSON *runtime_catalog_current(const cJSON *sources, const char *cache, cJSON **refusal);
 
 /**
+ * As runtime_catalog_current, with *yielding set to how many of the sources yielded a catalog: a local index as it
+ * stands on disk, an https one as its last check kept it.
+ */
+cJSON *runtime_catalog_current_counted(const cJSON *sources, const char *cache, size_t *yielding, cJSON **refusal);
+
+/**
  * catalog's resolve: {run, fetch}, which installed version each of `enabled`, [{id, pin?}], of `kind` (plugin when
  * NULL) runs this start, given each id's `installed` versions, and which versions to fetch for the next; or NULL with
  * *refusal set, or with it NULL when memory runs out.

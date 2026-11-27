@@ -100,8 +100,7 @@ static cJSON *ecosystem_settings(const char *state, const char *portable, int *o
     return settings;
 }
 
-cJSON *runtime_layer_catalog(const char *state, const char *cache, const char *portable, const cJSON *settings,
-                             cJSON **refusal) {
+cJSON *runtime_layer_sources(const char *state, const char *portable, const cJSON *settings, cJSON **refusal) {
     int out_of_memory = 0;
     *refusal = NULL;
     cJSON *ecosystem = ecosystem_settings(state, portable, &out_of_memory, refusal);
@@ -109,9 +108,15 @@ cJSON *runtime_layer_catalog(const char *state, const char *cache, const char *p
     cJSON *sources = out_of_memory || unreadable ? NULL
                                                  : runtime_updates_sources(ecosystem == NULL ? settings : ecosystem,
                                                                            refusal);
+    cJSON_Delete(ecosystem);
+    return sources;
+}
+
+cJSON *runtime_layer_catalog(const char *state, const char *cache, const char *portable, const cJSON *settings,
+                             cJSON **refusal) {
+    cJSON *sources = runtime_layer_sources(state, portable, settings, refusal);
     cJSON *catalog = sources == NULL ? NULL : runtime_catalog_current(sources, cache, refusal);
     cJSON_Delete(sources);
-    cJSON_Delete(ecosystem);
     return catalog;
 }
 
@@ -156,10 +161,13 @@ int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime
                            : runtime_updates_resolve_plugins(layers->settings, NULL, cache, &resolving, refusal);
     cJSON_Delete(resolving);
     layers->plugins = cJSON_GetObjectItemCaseSensitive(layers->resolved, "run");
-    layers->catalog = layers->resolved == NULL ? NULL
-                                               : runtime_layer_catalog(text_of(places, "state"), cache,
+    layers->sources = layers->resolved == NULL ? NULL
+                                               : runtime_layer_sources(text_of(places, "state"),
                                                                        text_of(places, "portable"), layers->settings,
                                                                        refusal);
+    layers->catalog = layers->sources == NULL ? NULL
+                                              : runtime_catalog_current_counted(layers->sources, cache,
+                                                                                &layers->yielding, refusal);
     layers->standard = layers->catalog == NULL ? NULL
                                                 : runtime_loader_standard(cache, host_id,
                                                                           text_of(layers->registration, "version"),
@@ -192,6 +200,7 @@ char *runtime_read_run_identity(const cJSON *places, const char *host_id, const 
 void runtime_free_loader_layers(runtime_loader_layers *layers) {
     cJSON_Delete(layers->registration);
     cJSON_Delete(layers->settings);
+    cJSON_Delete(layers->sources);
     cJSON_Delete(layers->catalog);
     cJSON_Delete(layers->resolved);
     cJSON_Delete(layers->standard);

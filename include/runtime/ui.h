@@ -14,7 +14,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "runtime/catalog.h"
+#include "runtime/config.h"
 #include "runtime/definition.h"
+#include "runtime/places.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -397,11 +400,61 @@ typedef struct runtime_ui_action_answer {
 } runtime_ui_action_answer;
 
 /**
- * The ui service. It reads no file and writes nothing. Every operation answers MALFORMED for an argument short of its
- * first shape, an answer that is not empty, a manifest list that is not a list of records each with its id as text, a
- * value that is not well-formed or not of the kind its field names, a count whose array is NULL, a required text that
- * is NULL, or a kind, outcome or flag outside its values; and OUT_OF_MEMORY, which never reads as a refusal. The answer
- * arguments are required and the refusal may be NULL for none. First shape ends at `release_refusal`.
+ * Whose session to answer: the `places`, as places' resolve answers them, and the `loader` whose layer of plugins it
+ * holds, a host id, or NULL for spisor-host's own. First shape ends at `loader`.
+ */
+typedef struct runtime_ui_session_argument {
+    uint32_t size;
+    const runtime_places_answer *places;
+    const char *loader;
+} runtime_ui_session_argument;
+
+/**
+ * One plugin the host runs: its `id`, the `version` it runs at, its `description`, the manifest checked as its scope
+ * checks it and in the shape settings_view and action take, and its `config`, which config's operations read and
+ * write its settings through as its own scope does. An element of an array, so it has no size.
+ */
+typedef struct runtime_ui_session_plugin {
+    const char *id;
+    const char *version;
+    const spisor_value *description;
+    const runtime_config_plugin *config;
+} runtime_ui_session_plugin;
+
+/**
+ * What the interface draws a host's home from: the `host` whose plugins it holds; those `plugins`, each that host's
+ * settings enable with a version installed, in id order; their `descriptions` as one list in that order, as navigation
+ * and the screens take them; the host's `ui` settings, a record; the three groups plugin_list takes, each a list of
+ * {id, version} records, `installed` the plugins, `detected` every other catalog plugin that is neither enabled nor a
+ * problem with a version in the cache, at the newest version there, and `available` every catalog plugin with none, at
+ * the catalog's latest; the `problems`, a list of {id, version?, detail, fix} records in id order, each an enabled
+ * plugin the home cannot draw, its detail naming its manifest where it has one, and, the one problem naming no plugin,
+ * one with the id `catalog` and no version when no catalog source yields a catalog; and the catalog `sources` the
+ * groups were read from, those spisor-host's settings name. First shape ends at `storage`.
+ */
+typedef struct runtime_ui_session_answer {
+    uint32_t size;
+    const char *host;
+    const runtime_ui_session_plugin *plugins;
+    size_t plugin_count;
+    const spisor_value *descriptions;
+    const spisor_value *ui;
+    const spisor_value *installed;
+    const spisor_value *detected;
+    const spisor_value *available;
+    const spisor_value *problems;
+    const runtime_catalog_source *sources;
+    size_t source_count;
+    void *storage;
+} runtime_ui_session_answer;
+
+/**
+ * The ui service. It writes nothing, and only session reads a file. Every operation answers MALFORMED for an argument
+ * short of its first shape, an answer that is not empty, a manifest list that is not a list of records each with its
+ * id as text, a value that is not well-formed or not of the kind its field names, a count whose array is NULL, a
+ * required text that is NULL, or a kind, outcome or flag outside its values; and OUT_OF_MEMORY, which never reads as a
+ * refusal. The answer arguments are required and the refusal may be NULL for none. First shape ends at
+ * `release_refusal`.
  */
 typedef struct runtime_ui_definition {
     uint32_t size;
@@ -478,6 +531,22 @@ typedef struct runtime_ui_definition {
     spisor_status (*action)(void *context, const runtime_ui_action_argument *argument,
                             runtime_ui_action_answer *answer, spisor_refusal *refusal);
     void (*release_action_answer)(void *context, runtime_ui_action_answer *answer);
+    /**
+     * The session a host's interface draws, each part read through the service that owns its read: the host's
+     * registration and settings, its plugins resolved as its start resolves them from the versions the cache holds,
+     * each manifest as a plugin's scope reads it, and the catalog its layers read.
+     *
+     * @return OK, also when a plugin cannot be drawn: one enabled with no version installed, one whose installed
+     * version cannot run, as cache's locate finds it, or whose manifest its scope refuses is then left out of
+     * `plugins` and listed under `problems`; MALFORMED, also for places that are not absolute or a loader that is no
+     * host id; REFUSED only for what refuses the host itself, as its start refuses: a host that is not registered or
+     * whose settings or catalog sources cannot be read; OUT_OF_MEMORY.
+     * @implNote The interface reads no manifest and no settings file, so everything it draws a home from is answered
+     * here rather than recomputed on the interface's side.
+     */
+    spisor_status (*session)(void *context, const runtime_ui_session_argument *argument,
+                             runtime_ui_session_answer *answer, spisor_refusal *refusal);
+    void (*release_session_answer)(void *context, runtime_ui_session_answer *answer);
 } runtime_ui_definition;
 
 /** The static runtime_ui_definition, living until the library is unloaded. */

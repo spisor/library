@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "config.h"
 #include "config_conversion.h"
 #include "spisor/definition.h"
 #include "spisor/json_file.h"
@@ -139,4 +140,20 @@ spisor_status runtime_read_scope_manifest(const char *path, runtime_scope_manife
 void runtime_scope_manifest_free(runtime_scope_manifest *manifest) {
     cJSON_Delete(manifest->manifest);
     memset(manifest, 0, sizeof *manifest);
+}
+
+spisor_status runtime_check_scope_plugin(const runtime_config_request *request, const char *manifest_path,
+                                         spisor_refusal *refusal) {
+    spisor_refusal checked = SPISOR_INIT(spisor_refusal);
+    spisor_status status = runtime_config_check_request(request, &checked);
+    char detail[DETAIL_BYTES];
+    if (status != SPISOR_MALFORMED) {
+        spisor_refusal_release(&checked);
+        return status;
+    }
+    snprintf(detail, sizeof detail, "the manifest at %s is refused: %s", manifest_path,
+             checked.detail == NULL ? "its plugin cannot be located" : checked.detail);
+    status = spisor_refuse_as(refusal, SPISOR_REFUSED, detail, checked.fix);
+    spisor_refusal_release(&checked);
+    return status;
 }

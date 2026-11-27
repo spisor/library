@@ -104,6 +104,22 @@ static void it_reports_a_version_whose_plugin_json_names_another_version(void) {
     finish_base();
 }
 
+static void it_reports_a_plugin_json_it_cannot_read_as_unreadable_not_as_another_version(void) {
+    start_base("locate-unreadable");
+    installed("a", "1.0.0", (bundle){NULL, "index.js"});
+    write_in(cache, "bundles/a/1.0.0/plugin.json", "x\"id\":\"a\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"index.js\"}");
+    catalog_answer answer = located("{\"a\":\"1.0.0\"}");
+    expect_member_json(answer.tree, "located", "[]", "unreadable not located");
+    const cJSON *problem = only(answer.tree, "problems", "unreadable");
+    const char *detail = text_at(problem, "detail");
+    const char *fix = text_at(problem, "fix");
+    check_text(text_at(problem, "file"), "plugin.json", "unreadable file");
+    CHECK(detail != NULL && strstr(detail, "cannot be read") != NULL && strstr(detail, "names version") == NULL);
+    CHECK(fix != NULL && strstr(fix, "publisher") == NULL);
+    cJSON_Delete(answer.tree);
+    finish_base();
+}
+
 static void it_reports_a_version_with_a_file_not_at_its_recorded_size_naming_the_file(void) {
     start_base("locate-damaged");
     installed("a", "1.0.0", (bundle){NULL, "index.js"});
@@ -152,6 +168,7 @@ int main(void) {
     it_answers_the_entry_plugin_json_names_inside_the_version();
     it_lists_every_id_it_was_given_that_is_installed_ordered_by_id();
     it_reports_a_version_whose_plugin_json_names_another_version();
+    it_reports_a_plugin_json_it_cannot_read_as_unreadable_not_as_another_version();
     it_reports_a_version_with_a_file_not_at_its_recorded_size_naming_the_file();
     it_locates_a_version_whose_files_kept_their_sizes_without_hashing_them();
     it_reports_an_id_that_would_name_a_folder_outside_the_bundles();

@@ -31,9 +31,15 @@ const char *runtime_plugin_runtime(const cJSON *catalog, const char *id);
 cJSON *runtime_loader_standard(const char *cache, const char *host_id, const char *version, int *out_of_memory);
 
 /**
- * The current catalog a host's layers read each plugin's runtime from: that of the catalog sources spisor-host's
- * settings name, else of settings, the host's own, when spisor-host is not registered or its registration cannot be
- * read. NULL with *refusal set, or with it NULL when memory runs out.
+ * The catalog sources a host's layers read their catalog from, as catalog.sources answers them: those spisor-host's
+ * settings name, else those of settings, the host's own, when spisor-host is not registered or its registration
+ * cannot be read. NULL with *refusal set, or with it NULL when memory runs out.
+ */
+cJSON *runtime_layer_sources(const char *state, const char *portable, const cJSON *settings, cJSON **refusal);
+
+/**
+ * The current catalog a host's layers read each plugin's runtime from: that of the runtime_layer_sources. NULL with
+ * *refusal set, or with it NULL when memory runs out.
  *
  * @implNote install records a catalog source in spisor-host's own layer, which no other host reads, so a loader's own
  * settings name no catalog and every plugin would read as javascript; updates' run lends that source to a loader's
@@ -59,14 +65,17 @@ const char *runtime_front_door(const cJSON *catalog, const cJSON *standard, cons
 char *runtime_run_identity(const char *host_id, const char *runtime, const char *front_door);
 
 /**
- * What a host's layers stand on: the `catalog` runtime_layer_catalog answers, the `plugins` a start of it resolves,
- * an object of id to version, its `standard` at its registered version, NULL when it carries none, and the runtime its
- * `front_door` is in. Freed with runtime_free_loader_layers.
+ * What a host's layers stand on: the `sources` runtime_layer_sources answers, the `catalog` they hold and how many
+ * of them are `yielding` it, the `plugins` a start of it resolves, an object of id to version, its `standard` at its
+ * registered version, NULL when it carries none, and the runtime its `front_door` is in. Freed with
+ * runtime_free_loader_layers.
  */
 typedef struct runtime_loader_layers {
     cJSON *registration;
     cJSON *settings;
+    cJSON *sources;
     cJSON *catalog;
+    size_t yielding;
     cJSON *resolved;
     cJSON *standard;
     const cJSON *plugins;

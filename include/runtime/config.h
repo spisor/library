@@ -29,8 +29,8 @@ extern "C" {
 
 /**
  * One setting the plugin declares: its key, its type or NULL (`secret` keeps it out of every settings file), and the
- * runtime_settings_layer a set without a layer writes it to, RUNTIME_SETTINGS_LAYER_DEFAULT meaning the portable
- * layer. An element of an array, so it has no size.
+ * runtime_settings_layer a set without a layer writes it to, RUNTIME_SETTINGS_LAYER_DEFAULT naming none, so the
+ * portable layer, as runtime/settings.h has it. An element of an array, so it has no size.
  */
 typedef struct runtime_setting_declaration {
     const char *key;

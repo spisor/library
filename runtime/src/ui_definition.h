@@ -42,6 +42,13 @@ spisor_status runtime_ui_fill_plan(const cJSON *answered, void *filled);
 /** Fills a runtime_ui_screen from what render or plugin_list answered, as a runtime_answer_filler. */
 spisor_status runtime_ui_fill_screen(const cJSON *answered, void *filled);
 
+/** ui's session, as runtime_ui_definition documents it. */
+spisor_status runtime_ui_session_operation(void *context, const runtime_ui_session_argument *argument,
+                                           runtime_ui_session_answer *answer, spisor_refusal *refusal);
+
+/** Releases what ui's session answered. */
+void runtime_ui_release_session_answer(void *context, runtime_ui_session_answer *answer);
+
 /** The name a kind has in JSON; NULL for a value outside runtime_ui_kind. */
 const char *runtime_ui_kind_name(uint32_t kind);
 

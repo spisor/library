@@ -47,13 +47,18 @@ int runtime_are_setting_choices(const cJSON *choices) {
     return 1;
 }
 
-int runtime_is_settings_layer_name(const char *name) {
-    for (size_t layer = RUNTIME_SETTINGS_LAYER_APPLICATION; layer <= RUNTIME_SETTINGS_LAYER_PORTABLE; layer++) {
+uint32_t runtime_settings_layer_named(const char *name) {
+    for (uint32_t layer = RUNTIME_SETTINGS_LAYER_APPLICATION; name != NULL && layer <= RUNTIME_SETTINGS_LAYER_PORTABLE;
+         layer++) {
         if (strcmp(LAYER_NAMES[layer], name) == 0) {
-            return 1;
+            return layer;
         }
     }
-    return 0;
+    return RUNTIME_SETTINGS_LAYER_DEFAULT;
+}
+
+int runtime_is_settings_layer_name(const char *name) {
+    return runtime_settings_layer_named(name) != RUNTIME_SETTINGS_LAYER_DEFAULT;
 }
 
 static spisor_status refuse_layer(spisor_refusal *refusal) {

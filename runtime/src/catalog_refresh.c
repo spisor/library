@@ -421,7 +421,7 @@ static spisor_status current_catalog(const runtime_catalog_location *source, con
     return out_of_memory ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
 }
 
-static cJSON *current(const runtime_catalog_location *sources, size_t count, const char *cache) {
+static cJSON *current(const runtime_catalog_location *sources, size_t count, const char *cache, size_t *yielding) {
     runtime_catalog_reading *readings = spisor_memory_allocate((count + 1) * sizeof *readings);
     if (readings == NULL) {
         return NULL;
@@ -437,6 +437,7 @@ static cJSON *current(const runtime_catalog_location *sources, size_t count, con
         }
     }
     cJSON *merged = status == SPISOR_OK ? runtime_catalog_merge_readings(readings, read, NULL) : NULL;
+    *yielding = read;
     for (size_t index = 0; index < read; index++) {
         cJSON_Delete((cJSON *)readings[index].catalog);
     }
@@ -445,11 +446,17 @@ static cJSON *current(const runtime_catalog_location *sources, size_t count, con
 }
 
 cJSON *runtime_catalog_current(const cJSON *listed, const char *cache, cJSON **refusal) {
+    size_t yielding = 0;
+    return runtime_catalog_current_counted(listed, cache, &yielding, refusal);
+}
+
+cJSON *runtime_catalog_current_counted(const cJSON *listed, const char *cache, size_t *yielding, cJSON **refusal) {
     runtime_catalog_location *sources = NULL;
     size_t count = 0;
     char *problem = NULL;
     cJSON *answer = NULL;
     *refusal = NULL;
+    *yielding = 0;
     if (!cJSON_IsArray(listed) || !runtime_catalog_sources_of(listed, &sources, &count, &problem)) {
         if (problem != NULL || !cJSON_IsArray(listed)) {
             runtime_catalog_refuse_member("sources", "an array of catalog sources", refusal);
@@ -457,7 +464,7 @@ cJSON *runtime_catalog_current(const cJSON *listed, const char *cache, cJSON **r
     } else if (cache == NULL || !spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, cache)) {
         runtime_catalog_refuse_member("cache", "the absolute path of the cache place", refusal);
     } else {
-        answer = current(sources, count, cache);
+        answer = current(sources, count, cache, yielding);
     }
     spisor_memory_release(problem);
     spisor_memory_release(sources);

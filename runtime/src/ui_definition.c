@@ -516,6 +516,8 @@ static const runtime_ui_definition definition = {
     spisor_release_refusal,
     action,
     release_action_answer,
+    runtime_ui_session_operation,
+    runtime_ui_release_session_answer,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_ui_definition_of(void) {
