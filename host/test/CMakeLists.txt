@@ -72,6 +72,8 @@ host_test(stage_bundle_test)
 add_dependencies(stage_bundle_test stage_bundle)
 target_compile_definitions(stage_bundle_test PRIVATE STAGE_BUNDLE_PATH="$<TARGET_FILE:stage_bundle>"
     CMAKE_PATH="${CMAKE_COMMAND}" TYPESCRIPT_HOST_SCRIPT="${SPISOR_TYPESCRIPT_HOST_SCRIPT}")
+add_test(NAME host_stage_bundle_node_test COMMAND stage_bundle_test node)
+set_tests_properties(host_stage_bundle_node_test PROPERTIES SKIP_RETURN_CODE 77)
 host_test(install_script_test)
 host_test(c_host_proof)
 add_dependencies(c_host_proof c_host)

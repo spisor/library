@@ -52,6 +52,12 @@ typedef enum runtime_entry_kind {
  */
 runtime_entry_kind runtime_probe_entry(const char *path);
 
+/**
+ * Whether a real file stands at path itself, never following a link: a symbolic link, or on Windows any reparse
+ * point, is no real file whatever it points at.
+ */
+int runtime_is_real_file(const char *path);
+
 typedef enum runtime_entry_outcome {
     RUNTIME_ENTRY_DONE,
     RUNTIME_ENTRY_EXISTS,

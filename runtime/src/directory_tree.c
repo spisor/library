@@ -264,6 +264,14 @@ runtime_entry_kind runtime_probe_entry(const char *path) {
     return kind_of(attributes, error);
 }
 
+int runtime_is_real_file(const char *path) {
+    int out_of_memory;
+    wchar_t *wide = wide_of(path, &out_of_memory);
+    DWORD attributes = wide == NULL ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(wide);
+    spisor_memory_release(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && is_real_file(attributes);
+}
+
 static runtime_entry_outcome unconverted(int out_of_memory) {
     return out_of_memory ? RUNTIME_ENTRY_OUT_OF_MEMORY : RUNTIME_ENTRY_FAILED;
 }
@@ -457,6 +465,11 @@ runtime_entry_kind runtime_probe_entry(const char *path) {
         return is_missing_errno(errno) ? RUNTIME_ENTRY_MISSING : RUNTIME_ENTRY_UNKNOWN;
     }
     return S_ISDIR(status.st_mode) ? RUNTIME_ENTRY_DIRECTORY : RUNTIME_ENTRY_OTHER;
+}
+
+int runtime_is_real_file(const char *path) {
+    struct stat status;
+    return lstat(path, &status) == 0 && S_ISREG(status.st_mode);
 }
 
 static int write_all(int descriptor, const uint8_t *bytes, size_t length) {

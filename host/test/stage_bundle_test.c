@@ -1,8 +1,10 @@
 #include "host_fixture.h"
 #include "spisor/allocation.h"
 
+#include "links.h"
 #include "on_path.h"
 #include "process_environment.h"
+#include "tree_snapshot.h"
 
 #define SHA256 "e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f1f7"
 #define OTHER_TRIPLET "freebsd_ia32"
@@ -474,7 +476,7 @@ static void the_target_stages_the_program_bundle_beside_its_libraries_koffi_and_
     finish_case();
 }
 
-/** text with every run of whitespace made one space, as CMake's wrapping of a message is undone; freed by the caller. */
+/** text with each run of whitespace made one space, undoing how CMake wraps a message; freed by the caller. */
 static char *unwrapped(const char *text) {
     char *flat = copy_text(text == NULL ? "" : text);
     size_t length = 0;
@@ -574,23 +576,288 @@ static int node_is_on_the_path(void) {
     return found == RUNTIME_ON_PATH_FOUND;
 }
 
-int main(void) {
+/** What a language-host call names beside its fixed words: NULL for the defaults of write_native_inputs. */
+typedef struct language_host_call {
+    const char *version;
+    const char *entry;
+    const char *data;
+    const char *core;
+    const char *file;
+} language_host_call;
+
+/** Stages fixture-one's native host into <base>/bundle from <base>/inputs as call names it; its exit code. */
+static int stage_language_host_call(const language_host_call *call, program *run) {
+    char *directory = in_base("bundle");
+    char *data = in_base("host-data.json");
+    char *core = in_base("built/core.bin");
+    char *standard = in_base("built/standard.bin");
+    char *inputs = in_base("inputs");
+    const char *arguments[] = {"language-host", directory, call->version == NULL ? "3.2.1" : call->version,
+                               "fixture-one", "native", call->entry == NULL ? "weivel-host" : call->entry,
+                               call->data == NULL ? data : call->data, call->core == NULL ? core : call->core,
+                               standard, call->file == NULL ? "data" : call->file, NULL};
+    int code = run_in(STAGE_BUNDLE_PATH, arguments, inputs, run);
+    spisor_memory_release(inputs);
+    spisor_memory_release(standard);
+    spisor_memory_release(core);
+    spisor_memory_release(data);
+    spisor_memory_release(directory);
+    return code;
+}
+
+/** Whether stage-bundle left its staging folder behind beside directory_name in the base. */
+static int staging_left(const char *directory_name) {
+    char name[256];
+    snprintf(name, sizeof name, "%s.staging", directory_name);
+    return exists_in(base_folder, name);
+}
+
+/** The call is refused naming part, the bundle a prior call staged byte-identical and no staging left. */
+static void expect_call_refused_keeping(const language_host_call *call, const char *part, const char *label) {
+    char *bundle = in_base("bundle");
+    size_t before_length = 0;
+    size_t after_length = 0;
+    char *before = tree_snapshot_sized(bundle, NULL, &before_length);
+    program run;
+    CHECK(stage_language_host_call(call, &run) == 1);
+    expect_contains(run.err, part, label);
+    char *after = tree_snapshot_sized(bundle, NULL, &after_length);
+    if (before_length != after_length || memcmp(before, after, before_length) != 0) {
+        fprintf(stderr, "%s: the bundle staged before changed\n", label);
+        check_failures++;
+    }
+    CHECK(!staging_left("bundle"));
+    program_free(&run);
+    spisor_memory_release(after);
+    spisor_memory_release(before);
+    spisor_memory_release(bundle);
+}
+
+/** The call is refused naming part with no bundle and no staging folder written. */
+static void expect_call_refused_writing_nothing(const language_host_call *call, const char *part, const char *label) {
+    program run;
+    CHECK(stage_language_host_call(call, &run) == 1);
+    expect_contains(run.err, part, label);
+    CHECK(!exists_in(base_folder, "bundle") && !staging_left("bundle"));
+    program_free(&run);
+}
+
+static void a_refused_language_host_leaves_the_bundle_staged_before_untouched(void) {
+    start_case("keeps");
+    write_native_inputs("{}");
+    program run;
+    CHECK(stage_native_host("fixture-one", "native", &run) == 0);
+    program_free(&run);
+    language_host_call climbing = {NULL, NULL, NULL, NULL, "../x"};
+    expect_call_refused_keeping(&climbing, "../x", "a file climbing out");
+    char *missing_core = in_base("built/no-core.bin");
+    language_host_call no_library = {NULL, NULL, NULL, missing_core, NULL};
+    expect_call_refused_keeping(&no_library, "no-core.bin", "a missing library");
+    language_host_call missing_entry = {NULL, "absent-host", NULL, NULL, NULL};
+    expect_call_refused_keeping(&missing_entry, "absent-host", "a missing entry");
+    spisor_memory_release(missing_core);
+    finish_case();
+}
+
+static void a_refused_interface_leaves_the_bundle_staged_before_untouched(void) {
+    start_case("keeps-interface");
+    write_libraries();
+    write_in(base_folder, "built/drawer.exe", "the interface program");
+    program run;
+    CHECK(stage_interface("fixture-interface", &run) == 0);
+    program_free(&run);
+    char *bundle = in_base("interface");
+    size_t before_length = 0;
+    size_t after_length = 0;
+    char *before = tree_snapshot_sized(bundle, NULL, &before_length);
+    char *directory = in_base("interface");
+    char *missing = in_base("built/absent.exe");
+    char *core = in_base("built/core.bin");
+    char *standard = in_base("built/standard.bin");
+    const char *arguments[] = {"interface", directory, "0.4.0", "fixture-interface", missing, core, standard, NULL};
+    CHECK(stage(arguments, &run) == 1);
+    expect_contains(run.err, "absent.exe", "the missing binary named");
+    char *after = tree_snapshot_sized(bundle, NULL, &after_length);
+    CHECK(before_length == after_length && memcmp(before, after, before_length) == 0);
+    CHECK(!staging_left("interface"));
+    program_free(&run);
+    spisor_memory_release(after);
+    spisor_memory_release(standard);
+    spisor_memory_release(core);
+    spisor_memory_release(missing);
+    spisor_memory_release(directory);
+    spisor_memory_release(before);
+    spisor_memory_release(bundle);
+    finish_case();
+}
+
+static void refuses_an_entry_or_file_that_is_no_relative_path_inside_the_working_directory(void) {
+    start_case("paths");
+    write_native_inputs("{}");
+    char *absolute = in_base("inputs/weivel-host");
+    const char *paths[7] = {"../x", absolute, "C:x", "a/.", "sub./a", "//server/share/x", "\\\\server\\share\\x"};
+    for (size_t index = 0; index < 7; index++) {
+        language_host_call as_entry = {NULL, paths[index], NULL, NULL, NULL};
+        expect_call_refused_writing_nothing(&as_entry, "is not a relative path", paths[index]);
+        language_host_call as_file = {NULL, NULL, NULL, NULL, paths[index]};
+        expect_call_refused_writing_nothing(&as_file, "is not a relative path", paths[index]);
+    }
+    spisor_memory_release(absolute);
+    finish_case();
+}
+
+static void refuses_a_link_at_the_top_or_inside_a_directory_writing_nothing(void) {
+    start_case("links");
+    write_native_inputs("{}");
+    write_in(base_folder, "outside/secret.txt", "a secret");
+    char *outside_file = in_base("outside/secret.txt");
+    char *outside_folder = in_base("outside");
+    char *file_link = in_base("inputs/linked-host");
+    char *folder_link = in_base("inputs/linked-data");
+    char *inner_link = in_base("inputs/data/linked");
+    if (create_link_or_skip(file_link, outside_file) && create_folder_link_or_skip(folder_link, outside_folder) &&
+        create_folder_link_or_skip(inner_link, outside_folder)) {
+        language_host_call linked_entry = {NULL, "linked-host", NULL, NULL, NULL};
+        expect_call_refused_writing_nothing(&linked_entry, "is a link, which a bundle cannot carry", "a linked entry");
+        language_host_call linked_file = {NULL, NULL, NULL, NULL, "linked-data"};
+        expect_call_refused_writing_nothing(&linked_file, "is a link, which a bundle cannot carry", "a linked folder");
+        language_host_call inner = {NULL, NULL, NULL, NULL, NULL};
+        expect_call_refused_writing_nothing(&inner, "is a link, which a bundle cannot carry", "a link inside data");
+    }
+    spisor_memory_release(inner_link);
+    spisor_memory_release(folder_link);
+    spisor_memory_release(file_link);
+    spisor_memory_release(outside_folder);
+    spisor_memory_release(outside_file);
+    finish_case();
+}
+
+static void replaces_a_staging_folder_left_by_a_failed_run_and_refuses_a_linked_one(void) {
+    start_case("staging");
+    write_native_inputs("{}");
+    write_in(base_folder, "bundle.staging/stale.txt", "left by a failed run");
+    program run;
+    CHECK(stage_native_host("fixture-one", "native", &run) == 0);
+    CHECK(exists_in(base_folder, "bundle/host.json") && !exists_in(base_folder, "bundle/stale.txt"));
+    CHECK(!staging_left("bundle"));
+    program_free(&run);
+    write_in(base_folder, "elsewhere/kept.txt", "kept");
+    char *staging = in_base("bundle.staging");
+    char *elsewhere = in_base("elsewhere");
+    if (create_folder_link_or_skip(staging, elsewhere)) {
+        CHECK(stage_native_host("fixture-one", "native", &run) == 1);
+        expect_contains(run.err, "is a link", "the linked staging folder");
+        CHECK(exists_in(base_folder, "elsewhere/kept.txt"));
+        program_free(&run);
+    }
+    spisor_memory_release(elsewhere);
+    spisor_memory_release(staging);
+    finish_case();
+}
+
+static void refuses_a_version_no_catalog_can_list_in_either_mode(void) {
+    start_case("version");
+    write_native_inputs("{}");
+    language_host_call call = {"three", NULL, NULL, NULL, NULL};
+    expect_call_refused_writing_nothing(&call, "three is no version", "a language host's version");
+    write_in(base_folder, "built/drawer.exe", "the interface program");
+    char *directory = in_base("interface");
+    char *binary = in_base("built/drawer.exe");
+    char *core = in_base("built/core.bin");
+    char *standard = in_base("built/standard.bin");
+    const char *arguments[] = {"interface", directory, "1.0", "fixture-interface", binary, core, standard, NULL};
+    program run;
+    CHECK(stage(arguments, &run) == 1);
+    expect_contains(run.err, "1.0 is no version", "an interface's version");
+    CHECK(!exists_in(base_folder, "interface"));
+    program_free(&run);
+    spisor_memory_release(standard);
+    spisor_memory_release(core);
+    spisor_memory_release(binary);
+    spisor_memory_release(directory);
+    finish_case();
+}
+
+/** stage-bundle interface refuses the binary written as name, naming part, writing nothing. */
+static void expect_binary_refused(const char *name, const char *part) {
+    char rest[256];
+    snprintf(rest, sizeof rest, "named/%s", name);
+    write_in(base_folder, rest, "a binary");
+    char *directory = in_base("interface");
+    char *binary = in_base(rest);
+    char *core = in_base("built/core.bin");
+    char *standard = in_base("built/standard.bin");
+    const char *arguments[] = {"interface", directory, "0.4.0", "fixture-interface", binary, core, standard, NULL};
+    program run;
+    CHECK(stage(arguments, &run) == 1);
+    expect_contains(run.err, part, name);
+    CHECK(!exists_in(base_folder, "interface") && !staging_left("interface"));
+    program_free(&run);
+    spisor_memory_release(standard);
+    spisor_memory_release(core);
+    spisor_memory_release(binary);
+    spisor_memory_release(directory);
+}
+
+static void refuses_an_interface_binary_named_as_a_library_or_no_catalog_name(void) {
+    start_case("binary-name");
+    write_libraries();
+    char library[64];
+    shared_library_name("weivel_core", library, sizeof library);
+    expect_binary_refused(library, "the name of a library");
+    shared_library_name("weivel_standard", library, sizeof library);
+    expect_binary_refused(library, "the name of a library");
+    expect_binary_refused("draw er", "is no file name a catalog can list");
+    finish_case();
+}
+
+static void refuses_host_data_naming_the_application_or_a_member_twice(void) {
+    expect_native_host_refused("data-application", "{\"application\": {}}", "fixture-one", "native",
+                               "names application");
+    expect_native_host_refused("data-twice", "{\"flavour\": 1, \"flavour\": 2}", "fixture-one", "native",
+                               "names flavour twice");
+}
+
+static void says_a_missing_host_data_file_could_not_be_read(void) {
+    start_case("no-data");
+    write_native_inputs("{}");
+    char *missing = in_base("absent-data.json");
+    language_host_call call = {NULL, NULL, missing, NULL, NULL};
+    expect_call_refused_writing_nothing(&call, "could not be read", "a missing host-data file");
+    spisor_memory_release(missing);
+    finish_case();
+}
+
+/** With the word node, the one case that runs the bundler on the PATH's node; else every case that needs none. */
+int main(int count, char **arguments) {
+    if (count == 2 && strcmp(arguments[1], "node") == 0) {
+        if (!node_is_on_the_path()) {
+            fputs("stage_bundle_test node: no node on the PATH, so the bundler cannot run\n", stderr);
+            return 77;
+        }
+        the_target_stages_the_program_bundle_beside_its_libraries_koffi_and_the_node_pin();
+        return check_summary("stage_bundle_test node");
+    }
     answers_2_for_a_mode_missing_an_argument();
     prints_the_platform_a_bundle_is_staged_for();
     stages_a_native_language_host_under_its_platform_with_the_host_data_merged();
     refuses_host_data_naming_a_member_stage_bundle_writes_itself();
+    refuses_host_data_naming_the_application_or_a_member_twice();
+    says_a_missing_host_data_file_could_not_be_read();
     refuses_a_language_that_is_no_language_name_and_a_runtime_outside_the_three();
+    refuses_a_version_no_catalog_can_list_in_either_mode();
+    refuses_an_entry_or_file_that_is_no_relative_path_inside_the_working_directory();
+    refuses_a_link_at_the_top_or_inside_a_directory_writing_nothing();
+    a_refused_language_host_leaves_the_bundle_staged_before_untouched();
+    replaces_a_staging_folder_left_by_a_failed_run_and_refuses_a_linked_one();
     stages_an_interface_binary_under_its_platform();
     refuses_an_interface_id_no_catalog_can_list();
+    refuses_an_interface_binary_named_as_a_library_or_no_catalog_name();
+    a_refused_interface_leaves_the_bundle_staged_before_untouched();
     lists_each_staged_kind_per_platform_and_spisor_host_as_a_host();
     the_target_refuses_a_pinned_node_older_than_the_one_the_program_needs();
     the_target_refuses_an_engine_that_names_no_lower_bound();
     the_target_refuses_a_build_that_is_not_an_https_archive_with_a_sha256();
     the_target_refuses_a_pin_with_no_build_for_this_platform();
-    if (!node_is_on_the_path()) {
-        fputs("stage_bundle_test: no node on the PATH, so the bundler cannot run; its refusals ran\n", stderr);
-        return check_failures == 0 ? 77 : check_summary("stage_bundle_test");
-    }
-    the_target_stages_the_program_bundle_beside_its_libraries_koffi_and_the_node_pin();
-    return check_summary("stage_bundle_test");
+    return summary_with_links("stage_bundle_test");
 }

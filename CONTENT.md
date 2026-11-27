@@ -563,13 +563,19 @@ stage-bundle interface <directory> <version> <interface id> <binary> <weivel_cor
 ```
 
 `language-host` writes `host.json` as `{"kind": "language-host", "id": "<language>-host", "version", "language",
-"runtime", "entry"}` followed by every member of the host-data file, a JSON object that may not name any of those six,
-and copies the entry, each further file or directory and the build's `weivel_core` and `weivel_standard` into the
-bundle. The entry and the files are relative paths read from the working directory and keep that path in the bundle,
-under `<platform>/` for a `native` runtime, whose entry `host.json` then names as `<platform>/<entry>`. `interface`
+"runtime", "entry"}` followed by every member of the host-data file, and copies the entry, each further file or
+directory and the build's `weivel_core` and `weivel_standard` into the bundle. The host-data file is trusted build
+input, written by the build that stages the item: it must be a JSON object naming each member once, and neither
+`application` nor any of those six. The entry and the files are relative paths read from the working directory and
+keep that path in the bundle, under `<platform>/` for a `native` runtime, whose entry `host.json` then names as
+`<platform>/<entry>`. Every source must be a real file or folder: a link, or on Windows any reparse point, is refused
+wherever it stands, at the top of an argument or inside a folder. `interface`
 writes `{"kind": "interface", "id", "version", "runtime": "native", "entry": "<platform>/<binary's name>"}` with the
-binary and both libraries under `<platform>/`. `stage-bundle platform` prints the platform key a bundle staged here is
-for. `spisor-host catalog build --host <bundle>@<platform>` lists each under the kind its `host.json` names.
+binary and both libraries under `<platform>/`; the binary's name must be one a catalog can list and neither library's.
+Both modes check every argument before writing anything, stage into `<directory>.staging` (a staging folder left by an
+earlier failed run is removed first, and a link there is refused), and rename it over `<directory>` only once every file
+is in it, so a refusal leaves the bundle staged before untouched. `stage-bundle platform` prints the platform key a
+bundle staged here is for. `spisor-host catalog build --host <bundle>@<platform>` lists each under the kind its `host.json` names.
 
 The `typescript-host` item every TypeScript plugin runs on, a `language-host` of `typescript` started on `javascript`,
 is weivel/typescript's program bundle, staged by the build target `typescript_host_bundle` into

@@ -118,6 +118,8 @@ endfunction()
 stage_bundles(spisor_host_bundles spisor_host $<TARGET_FILE_DIR:spisor_host>/bundles)
 
 # Not built by default: it runs weivel/typescript's bundler, so it needs node and that checkout installed and built.
+# CMake's string(JSON) writes the host data's keys in its own sorted order, so host.json's node members read builds,
+# minimum, pinned: the content is what the pin says, and every reader and test compares it as JSON.
 set(SPISOR_TYPESCRIPT_HOST_VERSION 0.1.0)
 set(SPISOR_TYPESCRIPT_HOST_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/bundle/typescript_host_bundle.cmake)
 add_custom_target(typescript_host_bundle
