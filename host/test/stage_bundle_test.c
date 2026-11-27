@@ -238,7 +238,8 @@ static cJSON *built_catalog(const char *const *directories) {
     const char *arguments[12] = {"catalog", "build"};
     size_t count = 2;
     for (size_t index = 0; directories[index] != NULL; index++) {
-        snprintf(hosts[index], sizeof hosts[index], "%s@%s", directories[index], runtime_platform_key());
+        int written = snprintf(hosts[index], sizeof hosts[index], "%s@%s", directories[index], runtime_platform_key());
+        CHECK(written > 0 && (size_t)written < sizeof hosts[index]);
         arguments[count++] = "--host";
         arguments[count++] = hosts[index];
     }
