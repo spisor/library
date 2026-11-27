@@ -428,9 +428,9 @@ typedef struct runtime_ui_session_plugin {
  * {id, version} records, `installed` the plugins, `detected` every other catalog plugin that is neither enabled nor a
  * problem with a version in the cache, at the newest version there, and `available` every catalog plugin with none, at
  * the catalog's latest; the `problems`, a list of {id, version?, detail, fix} records in id order, each an enabled
- * plugin the home cannot draw, its detail naming its manifest where it has one, and one with the id spisor-host and no
- * version when no catalog source yields a catalog; and the catalog `sources` the groups were read from, those
- * spisor-host's settings name. First shape ends at `storage`.
+ * plugin the home cannot draw, its detail naming its manifest where it has one, and, the one problem naming no plugin,
+ * one with the id `catalog` and no version when no catalog source yields a catalog; and the catalog `sources` the
+ * groups were read from, those spisor-host's settings name. First shape ends at `storage`.
  */
 typedef struct runtime_ui_session_answer {
     uint32_t size;

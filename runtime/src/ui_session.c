@@ -8,7 +8,6 @@
 #include "catalog_answer.h"
 #include "catalog_semver.h"
 #include "hosts_layers.h"
-#include "install_run.h"
 #include "json_service.h"
 #include "plugin_choices.h"
 #include "scope_manifest.h"
@@ -16,7 +15,10 @@
 #include "spisor/definition.h"
 
 #define MANIFEST_FIX "repair the manifest, or install the plugin again"
-#define NOT_INSTALLED_FIX "install it again"
+#define NOT_INSTALLED_FIX "install it"
+#define UNDESCRIBED_DETAIL "it cannot be drawn, and what refused it gave no reason"
+#define UNDESCRIBED_FIX "install it again"
+#define CATALOG_PROBLEM_ID "catalog"
 #define CATALOG_FIX "check the catalog sources spisor-host's settings name, then open the home again"
 
 static const char *text_of(const cJSON *object, const char *member) {
@@ -44,14 +46,18 @@ static int is_listed(const cJSON *rows, const char *id) {
     return 0;
 }
 
-/** Adds {id, version?, detail, fix} to problems, kept in id order; 0 when memory runs out. */
+/**
+ * Adds {id, version?, detail, fix} to problems, kept in id order; 0 when memory runs out.
+ *
+ * @implNote A NULL detail or fix is substituted, since cJSON reads NULL text as an allocation that failed.
+ */
 static int add_problem(cJSON *problems, const char *id, const char *version, const char *detail, const char *fix) {
     cJSON *problem = cJSON_CreateObject();
     cJSON *after = problems->child;
     int built = problem != NULL && cJSON_AddStringToObject(problem, "id", id) != NULL &&
                 (version == NULL || cJSON_AddStringToObject(problem, "version", version) != NULL) &&
-                cJSON_AddStringToObject(problem, "detail", detail) != NULL &&
-                cJSON_AddStringToObject(problem, "fix", fix) != NULL;
+                cJSON_AddStringToObject(problem, "detail", detail == NULL ? UNDESCRIBED_DETAIL : detail) != NULL &&
+                cJSON_AddStringToObject(problem, "fix", fix == NULL ? UNDESCRIBED_FIX : fix) != NULL;
     int index = 0;
     while (after != NULL && strcmp(text_of(after, "id"), id) <= 0) {
         after = after->next;
@@ -252,7 +258,7 @@ static cJSON *ui_settings(const cJSON *settings) {
 /** Adds the problem of sources none of which yields a catalog, when none does; 0 when memory runs out. */
 static int add_unyielding(cJSON *problems, const runtime_loader_layers *layers) {
     return layers->yielding > 0 ||
-           add_problem(problems, RUNTIME_ECOSYSTEM_HOST_ID, NULL,
+           add_problem(problems, CATALOG_PROBLEM_ID, NULL,
                        "no catalog source yields a catalog, so no plugin the catalog lists can be shown", CATALOG_FIX);
 }
 

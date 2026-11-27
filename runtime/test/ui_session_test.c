@@ -350,7 +350,7 @@ static void sources_that_yield_no_catalog_are_one_problem_and_the_plugins_still_
     CHECK(remove(catalog) == 0);
     open_session(&home, LOADER);
     CHECK(home.status == SPISOR_OK && home.answer.plugin_count == 1);
-    expect_one_problem(&home, "spisor-host", NULL, "no catalog source yields a catalog");
+    expect_one_problem(&home, "catalog", NULL, "no catalog source yields a catalog");
     CHECK(home.answer.source_count == 1);
     spisor_memory_release(catalog);
     finish_session_home(&home);
