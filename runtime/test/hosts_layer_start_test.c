@@ -394,6 +394,19 @@ static void a_language_the_catalog_hosts_in_no_item_is_refused_naming_it(void) {
     finish_world();
 }
 
+/** jvm is a runtime the catalog names, so its item is not to be reinstalled: no start exists for it yet. */
+static void a_language_host_on_jvm_is_refused_saying_no_jvm_start_exists(void) {
+    start_world("layer-jvm", "{\"steeped\":{\"enabled\":true}}");
+    install_language_host("kettle", "jvm", 0);
+    install_plugin_in("steeped", "kettle", NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    expect_refused(&answer, "the start recorded for kettle-host runs on jvm, and no jvm start exists yet",
+                   "use a host for this language that runs on native or javascript until a jvm start is built",
+                   "the jvm layer");
+    release_answer(&answer);
+    finish_world();
+}
+
 static void an_in_process_start_ends_its_layer_with_its_word(void) {
     start_world("layer-in-process", "{\"scripted\":{\"enabled\":true}}");
     install_plugin_in("scripted", TYPESCRIPT, NULL);
@@ -573,6 +586,7 @@ int main(void) {
     the_first_required_plugin_puts_the_front_door_in_its_layer();
     a_loader_requiring_no_plugin_over_two_languages_is_refused_naming_both();
     a_language_the_catalog_hosts_in_no_item_is_refused_naming_it();
+    a_language_host_on_jvm_is_refused_saying_no_jvm_start_exists();
     an_in_process_start_ends_its_layer_with_its_word();
     an_action_given_a_result_path_ends_its_start_with_it();
     an_in_process_start_of_two_languages_answers_the_front_doors_layer_alone();

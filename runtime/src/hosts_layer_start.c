@@ -116,6 +116,13 @@ static cJSON *start_of(const runtime_entry_start_request *request, const char *e
     return start;
 }
 
+/** A refusal of a start of id on jvm, a runtime the catalog names and no start exists for yet; NULL out of memory. */
+static cJSON *jvm_refusal(const char *id) {
+    const char *parts[3] = {"the start recorded for ", id, " runs on jvm, and no jvm start exists yet"};
+    return runtime_cache_refusal(parts, 3, "use a host for this language that runs on native or javascript until a "
+                                           "jvm start is built");
+}
+
 cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **refusal) {
     int native = request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_NATIVE) == 0;
     int javascript = request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_JAVASCRIPT) == 0;
@@ -123,6 +130,10 @@ cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **r
     char *executable = NULL;
     cJSON *start = NULL;
     *refusal = NULL;
+    if (request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_JVM) == 0) {
+        *refusal = jvm_refusal(request->id);
+        return NULL;
+    }
     if (!native && !javascript) {
         *refusal = reinstall_refusal("the start recorded for ", request->id, " names a runtime this host cannot start");
         return NULL;

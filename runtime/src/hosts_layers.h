@@ -5,6 +5,7 @@
 
 #define RUNTIME_LAYER_JAVASCRIPT "javascript"
 #define RUNTIME_LAYER_NATIVE "native"
+#define RUNTIME_LAYER_JVM "jvm"
 
 /** The id of the language-host item that hosts plugins written in language, `<language>-host`; NULL out of memory. */
 char *runtime_language_host_id(const char *language);

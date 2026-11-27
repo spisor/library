@@ -25,8 +25,9 @@ typedef struct runtime_entry_start_request {
  * executable, made runnable; a javascript one is run by the JavaScript runtime the cache records, else the one found
  * or acquired, the entry its first argument. The bundle's sizes are checked, never its hashes, as spisor-boot checks
  * them at every start. NULL with *refusal set, with the reinstall fix, when the version is not installed intact, the
- * entry lies outside its bundle or cannot be made runnable, or runtime is neither, or as finding the JavaScript runtime
- * refuses; NULL with it NULL when memory runs out.
+ * entry lies outside its bundle or cannot be made runnable, or runtime is none of the catalog's runtimes, or as finding
+ * the JavaScript runtime refuses; with a fix of its own when runtime is jvm, which no start exists for yet; NULL with
+ * it NULL when memory runs out.
  */
 cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **refusal);
 
