@@ -321,7 +321,7 @@ static cJSON *described_plugin(const cJSON *catalog, const char *id, const char 
     return described;
 }
 
-/** Whether the catalog lists id as a plugin, or does not list it, a reused run naming the other layer's items. */
+/** Whether the catalog lists id as a plugin, or does not list it, a reused run naming another layer's items. */
 static int is_plugin_item(const cJSON *catalog, const char *id) {
     const char *kind = text_of(runtime_updates_item(catalog, id), "kind");
     return kind == NULL || strcmp(kind, "plugin") == 0;
