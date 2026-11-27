@@ -259,7 +259,7 @@ static int add_serving_layers(const layer_context *context, cJSON *layers, cJSON
     const cJSON *plugin = context->layers.plugins == NULL ? NULL : context->layers.plugins->child;
     for (; added && plugin != NULL; plugin = plugin->next) {
         const char *language = runtime_plugin_language(context->layers.catalog, plugin->string);
-        if (language != NULL && strcmp(language, door) != 0 && !named_before(context, plugin, language)) {
+        if (language != NULL && (door == NULL || strcmp(language, door) != 0) && !named_before(context, plugin, language)) {
             added = add_layer(context, layers, language, refusal);
         }
     }

@@ -1692,7 +1692,10 @@ static void release_json_of(char *json, size_t capacity) {
     snprintf(json, capacity, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
 }
 
-/** A catalog listing the plugin p, whose one file is source.txt, and the file itself. */
+/**
+ * A catalog listing the plugin p, written in the fixture language, and that language's native host item, the one file
+ * of each source.txt, and the file itself.
+ */
 static void a_catalog_with_one_plugin(void) {
     char bundles[1300];
     char source[1300];
@@ -1703,9 +1706,12 @@ static void a_catalog_with_one_plugin(void) {
     under_base(source, sizeof source, "source.txt");
     file_url_of(source, url, sizeof url);
     snprintf(text, sizeof text,
-             "{\"format\":2,\"items\":{\"p\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"runtime\":\"native\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
-             "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}}}",
-             url);
+             "{\"format\":2,\"items\":{\"p\":{\"kind\":\"plugin\",\"language\":\"fixture-one\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
+             "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}},"
+             "\"fixture-one-host\":{\"kind\":\"language-host\",\"language\":\"fixture-one\",\"runtime\":\"native\","
+             "\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"program\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\","
+             "\"size\":5}}}}}}}",
+             url, url);
     write_text(place.base, "index.json", text);
     write_text(bundles, "spisor-host.json", "{\"run\":{\"old\":\"0.1.0\"},\"next\":{}}\n");
 }

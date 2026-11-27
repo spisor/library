@@ -73,8 +73,11 @@ static inline void list_plugin_in(const char *id, const char *language) {
 
 /**
  * Lists plugin `id` at `version` in the home's catalog in the language `manifest` names, as the catalog an install read
- * lists every plugin it installed, so the layers read its language; and in the updates fixture's catalog, which a test
- * writing settings_with reads instead.
+ * lists every plugin it installed, so the layers read its language; and, unless it lists the plugin already, in the
+ * updates fixture's catalog, which a test writing settings_with reads instead.
+ *
+ * @implNote Listing a plugin the updates catalog holds again would grow that catalog on every install, which an out of
+ * memory case installing before each attempt reads as blocks its attempt left.
  */
 static inline void list_in_home_catalog(const runtime_testing_layout *layout, const cJSON *manifest) {
     cJSON *catalog = read_json_file(layout->catalog);
@@ -91,7 +94,9 @@ static inline void list_in_home_catalog(const runtime_testing_layout *layout, co
     write_file(layout->catalog, text);
     cJSON_free(text);
     cJSON_Delete(catalog);
-    list_plugin_in(id, text_at(manifest, "language"));
+    if (!cJSON_HasObjectItem(catalog_items, id)) {
+        list_plugin_in(id, text_at(manifest, "language"));
+    }
 }
 
 /**
