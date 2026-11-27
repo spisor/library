@@ -68,6 +68,14 @@ static int add_other_version(cJSON *problems, const location *place, const char 
     return added;
 }
 
+static int add_unreadable(cJSON *problems, const location *place) {
+    const char *parts[3] = {RUNTIME_PLUGIN_MANIFEST " in ", place->directory, " cannot be read as a JSON object"};
+    char *detail = runtime_cache_text(parts, 3);
+    int added = detail != NULL && add_problem(problems, place, detail, REINSTALL_FIX, RUNTIME_PLUGIN_MANIFEST);
+    spisor_memory_release(detail);
+    return added;
+}
+
 /** The entry manifest names inside directory when it is there, else NULL; *failed is set when memory runs out. */
 static char *entry_of(const char *directory, const cJSON *manifest, int *failed) {
     const char *entry = text_of(manifest, "entry");
@@ -96,7 +104,10 @@ static int add_located(cJSON *located, const location *place, const char *manife
     return 1;
 }
 
-/** Reads plugin.json of an intact version: located when it names the version, a problem when it names another. */
+/**
+ * Reads plugin.json of an intact version: located when it names the version, a problem when it names another or
+ * cannot be read as a JSON object.
+ */
 static int add_intact(cJSON *located, cJSON *problems, const location *place) {
     const char *name = RUNTIME_PLUGIN_MANIFEST;
     char *manifest_path = runtime_cache_resolve(place->directory, &name, 1);
@@ -113,6 +124,8 @@ static int add_intact(cJSON *located, cJSON *problems, const location *place) {
         char *entry = named != NULL && strcmp(named, place->version) == 0 ? entry_of(place->directory, manifest, &failed) : NULL;
         if (out_of_memory) {
             added = 0;
+        } else if (!cJSON_IsObject(manifest)) {
+            added = add_unreadable(problems, place);
         } else if (named == NULL || strcmp(named, place->version) != 0) {
             added = add_other_version(problems, place, named);
         } else {
