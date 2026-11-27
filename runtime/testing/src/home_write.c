@@ -6,8 +6,10 @@
 #include "cache_folders.h"
 #include "cache_marker.h"
 #include "cache_place.h"
+#include "cache_refusal.h"
 #include "catalog.h"
 #include "catalog_source.h"
+#include "catalog_text.h"
 #include "config.h"
 #include "definition_support.h"
 #include "directory_tree.h"
@@ -88,6 +90,12 @@ static int list_items(const runtime_testing_prepared_home *home, cJSON *items) {
         int skipped = language == NULL || cJSON_HasObjectItem(items, install->id);
         cJSON *item = skipped ? NULL : listed_item(items, install->id, "plugin", install->version);
         listed = skipped || (item != NULL && cJSON_AddStringToObject(item, "language", language) != NULL);
+    }
+    for (size_t index = 0; listed && index < home->item_count; index++) {
+        const runtime_testing_prepared_item *staged = &home->items[index];
+        cJSON *item = listed_item(items, staged->id, staged->kind, staged->version);
+        listed = item != NULL && cJSON_AddStringToObject(item, "runtime", staged->runtime) != NULL &&
+                 (staged->language == NULL || cJSON_AddStringToObject(item, "language", staged->language) != NULL);
     }
     return listed;
 }
@@ -180,6 +188,13 @@ static spisor_status hint_libraries(const runtime_testing_prepared_home *home, s
             return refuse_problem(problem, refusal);
         }
     }
+    for (size_t index = 0; index < home->item_count; index++) {
+        char *problem = NULL;
+        const runtime_testing_prepared_item *item = &home->items[index];
+        if (!runtime_write_boot_hint(home->layout.cache, item->id, home->libraries, item->version, &problem)) {
+            return refuse_problem(problem, refusal);
+        }
+    }
     return SPISOR_OK;
 }
 
@@ -205,6 +220,57 @@ static spisor_status record_file(const char *path, const char *key, cJSON *hashe
     return cJSON_AddStringToObject(hashes, key, hex) != NULL && cJSON_AddNumberToObject(sizes, key, (double)size) != NULL
                ? SPISOR_OK
                : SPISOR_OUT_OF_MEMORY;
+}
+
+/** The key of name below prefix, with / separators as a marker records it; NULL when memory runs out. */
+static char *key_below(const char *prefix, const char *name) {
+    const char *parts[3] = {prefix, "/", name};
+    return prefix == NULL ? runtime_catalog_copy(name) : runtime_cache_text(parts, 3);
+}
+
+/** Copies the folder from into to, recording each file under its key below prefix, NULL for the folder itself. */
+static spisor_status copy_tree(const char *from, const char *to, const char *prefix, cJSON *hashes, cJSON *sizes) {
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status status = runtime_list_directory(from, &listing);
+    for (size_t index = 0; status == SPISOR_OK && index < listing.count; index++) {
+        const runtime_directory_entry *entry = &listing.entries[index];
+        const char *source_segments[2] = {from, entry->name};
+        const char *target_segments[2] = {to, entry->name};
+        char *source = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, source_segments, 2);
+        char *target = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, target_segments, 2);
+        char *key = key_below(prefix, entry->name);
+        if (source == NULL || target == NULL || key == NULL) {
+            status = SPISOR_OUT_OF_MEMORY;
+        } else if (entry->is_directory) {
+            status = copy_tree(source, target, key, hashes, sizes);
+        } else if (!entry->is_file) {
+            status = SPISOR_REFUSED;
+        } else {
+            status = copy_file(source, target);
+            status = status == SPISOR_OK ? record_file(target, key, hashes, sizes) : status;
+        }
+        spisor_memory_release(key);
+        spisor_memory_release(target);
+        spisor_memory_release(source);
+    }
+    runtime_free_directory_listing(&listing);
+    return status;
+}
+
+/** Installs the staged item's folder as its version in the cache, marked with every file it holds. */
+static spisor_status place_item(const runtime_testing_prepared_item *item, spisor_refusal *refusal) {
+    cJSON *hashes = cJSON_CreateObject();
+    cJSON *sizes = cJSON_CreateObject();
+    spisor_status status = SPISOR_OUT_OF_MEMORY;
+    if (hashes != NULL && sizes != NULL) {
+        status = copy_tree(item->directory, item->bundle, NULL, hashes, sizes);
+    }
+    if (status == SPISOR_OK) {
+        status = runtime_cache_write_marker(item->bundle, hashes, sizes);
+    }
+    cJSON_Delete(sizes);
+    cJSON_Delete(hashes);
+    return written(status, "a staged item cannot be copied into the cache", refusal);
 }
 
 static spisor_status mark_installed(const runtime_testing_prepared_install *install, const char *manifest_path) {
@@ -331,6 +397,9 @@ spisor_status runtime_testing_write_home(const runtime_testing_prepared_home *ho
     }
     if (status == SPISOR_OK) {
         status = hint_libraries(home, refusal);
+    }
+    for (size_t index = 0; status == SPISOR_OK && index < home->item_count; index++) {
+        status = place_item(&home->items[index], refusal);
     }
     for (size_t index = 0; status == SPISOR_OK && index < home->install_count; index++) {
         status = runtime_testing_place_install(&home->layout, &home->installs[index], refusal);

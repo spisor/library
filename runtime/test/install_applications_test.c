@@ -529,7 +529,7 @@ static void writes_no_entry_for_a_loader_requiring_no_plugin_over_two_languages(
           strstr(message, "typescript") != NULL && strstr(message, "fixture-one") != NULL);
     check_text(text_at(entry, "fix"),
                "require the plugin that holds the front door in the loader's standard, or enable plugins of one "
-               "language only",
+               "language only, then install the loader again",
                "the two languages' fix");
     cJSON_Delete(report);
     finish_install_base(&base);

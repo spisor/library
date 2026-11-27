@@ -14,6 +14,7 @@
 #include "check.h"
 #include "config.h"
 #include "holders.h"
+#include "hosts_layers.h"
 #include "paths.h"
 #include "registry.h"
 #include "runtime/places.h"
@@ -411,6 +412,135 @@ static void a_secret_setting_lands_in_the_secret_store(void) {
     finish_parent();
 }
 
+/** A folder below the parent staged as stage-bundle stages an item: host_json and the one entry file it names. */
+static char *staged_item(const char *name, const char *host_json, const char *entry) {
+    char *staged = joined(parent, "staged");
+    char *folder = joined(staged, name);
+    char *bin = joined(folder, "bin");
+    char *manifest = joined(folder, "host.json");
+    char *program = joined(bin, entry);
+    CHECK(spisor_make_directories(bin) == SPISOR_OK);
+    write_text(manifest, host_json);
+    write_text(program, "the staged program");
+    spisor_memory_release(program);
+    spisor_memory_release(manifest);
+    spisor_memory_release(bin);
+    spisor_memory_release(staged);
+    return folder;
+}
+
+#define FIXTURE_HOST_JSON                                                                                           \
+    "{\"kind\": \"language-host\", \"id\": \"fixture-one-host\", \"version\": \"3.0.0\", \"language\": "            \
+    "\"fixture-one\", \"runtime\": \"native\", \"entry\": \"bin/weivel-host\"}"
+#define DRAWER_HOST_JSON                                                                                            \
+    "{\"kind\": \"interface\", \"id\": \"drawer\", \"version\": \"0.4.0\", \"runtime\": \"native\", \"entry\": "     \
+    "\"bin/drawer\"}"
+
+/** The staged item id is installed intact at version, hinted at it, and listed in the catalog under kind. */
+static void expect_staged(const char *cache, const cJSON *catalog, const char *id, const char *version,
+                          const char *kind) {
+    const char *segments[4] = {cache, "bundles", id, version};
+    char *bundle = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 4);
+    cJSON *check = runtime_cache_check_version_sizes(bundle);
+    check_text(text_at(check, "kind"), "intact", id);
+    char *manifest = joined(bundle, "host.json");
+    CHECK(spisor_probe_file(manifest) == SPISOR_FILE_PRESENT);
+    int out_of_memory = 0;
+    cJSON *hint = runtime_read_boot_hint(cache, id, &out_of_memory);
+    check_text(text_at(hint, "host"), version, "the staged item hinted at its version");
+    CHECK(text_at(value_at(hint, "libraries/runtime"), "version") != NULL);
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(value_at(catalog, "catalog/items"), id);
+    check_text(text_at(item, "kind"), kind, "the staged item's kind");
+    check_text(text_at(item, "latest"), version, "the staged item's version");
+    check_text(text_at(item, "runtime"), "native", "the staged item's runtime");
+    cJSON_Delete(hint);
+    spisor_memory_release(manifest);
+    cJSON_Delete(check);
+    spisor_memory_release(bundle);
+}
+
+static cJSON *read_home_catalog(void) {
+    char *path = joined(base, "catalog/index.json");
+    size_t length = 0;
+    char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    cJSON *refusal = NULL;
+    cJSON *read = text == NULL ? NULL : runtime_catalog_read(text, path, &refusal);
+    CHECK(read != NULL && refusal == NULL);
+    cJSON_Delete(refusal);
+    spisor_memory_release(text);
+    spisor_memory_release(path);
+    return read;
+}
+
+static void staged_items_are_installed_listed_and_hinted_beside_the_layers(void) {
+    runtime_boot_library libraries[2];
+    start_parent("staged");
+    char *fixture = staged_item("fixture-one-host", FIXTURE_HOST_JSON, "weivel-host");
+    char *drawer = staged_item("drawer", DRAWER_HOST_JSON, "drawer");
+    const char *items[2] = {fixture, drawer};
+    default_libraries(libraries);
+    runtime_testing_home_argument argument = home_argument(base, NULL, 0, libraries);
+    argument.items = items;
+    argument.item_count = 2;
+    laid_out result = lay_out_argument(&argument);
+    CHECK(result.status == SPISOR_OK);
+    const char *cache = variable(&result.answer, "SPISOR_CACHE");
+    cJSON *catalog = read_home_catalog();
+    expect_staged(cache, catalog, "fixture-one-host", "3.0.0", "language-host");
+    check_text(text_at(value_at(catalog, "catalog/items/fixture-one-host"), "language"), "fixture-one",
+               "the staged host's language");
+    expect_staged(cache, catalog, "drawer", "0.4.0", "interface");
+    CHECK(!cJSON_HasObjectItem(value_at(catalog, "catalog/items/drawer"), "language"));
+    expect_hinted(cache);
+    cJSON *refusal = NULL;
+    cJSON *hint = runtime_layer_hint(cache, "fixture-one-host", &refusal);
+    CHECK(hint != NULL && refusal == NULL);
+    cJSON_Delete(hint);
+    cJSON_Delete(refusal);
+    cJSON_Delete(catalog);
+    release(&result);
+    spisor_memory_release(drawer);
+    spisor_memory_release(fixture);
+    finish_parent();
+}
+
+static void a_staged_item_out_of_shape_is_refused(void) {
+    runtime_boot_library libraries[2];
+    start_parent("staged-malformed");
+    char *misnamed = staged_item("misnamed",
+                                 "{\"kind\": \"language-host\", \"id\": \"other-host\", \"version\": \"3.0.0\", "
+                                 "\"language\": \"fixture-one\", \"runtime\": \"native\", \"entry\": \"bin/host\"}",
+                                 "host");
+    char *layered = staged_item("layered",
+                                "{\"kind\": \"language-host\", \"id\": \"typescript-host\", \"version\": \"3.0.0\", "
+                                "\"language\": \"typescript\", \"runtime\": \"javascript\", \"entry\": \"bin/host\"}",
+                                "host");
+    char *plain = staged_item("plain", "{\"id\": \"spisor-host\", \"version\": \"1.0.0\", \"runtime\": \"native\", "
+                                       "\"entry\": \"bin/host\"}",
+                              "host");
+    char *spoken = staged_item("spoken",
+                               "{\"kind\": \"interface\", \"id\": \"drawer\", \"version\": \"0.4.0\", \"language\": "
+                               "\"fixture-one\", \"runtime\": \"native\", \"entry\": \"bin/host\"}",
+                               "host");
+    const char *cases[5] = {misnamed, layered, plain, spoken, "relative/folder"};
+    const char *labels[5] = {"a language host not named for its language", "a language a layer names",
+                             "an item of kind host", "an interface naming a language", "a relative folder"};
+    char *before = tree_snapshot(parent, NULL);
+    default_libraries(libraries);
+    for (size_t index = 0; index < 5; index++) {
+        runtime_testing_home_argument argument = home_argument(base, NULL, 0, libraries);
+        argument.items = &cases[index];
+        argument.item_count = 1;
+        expect_malformed_argument(&argument, "an item is no absolute folder", labels[index], before);
+    }
+    spisor_memory_release(before);
+    spisor_memory_release(spoken);
+    spisor_memory_release(plain);
+    spisor_memory_release(layered);
+    spisor_memory_release(misnamed);
+    finish_parent();
+}
+
 int main(void) {
     spisor_json_use_library_allocator();
     a_laid_out_home_is_read_by_runtime();
@@ -422,5 +552,7 @@ int main(void) {
     a_malformed_install_is_refused();
     a_refused_write_leaves_the_base_empty();
     a_secret_setting_lands_in_the_secret_store();
+    staged_items_are_installed_listed_and_hinted_beside_the_layers();
+    a_staged_item_out_of_shape_is_refused();
     return check_summary("runtime_testing_test");
 }

@@ -650,6 +650,43 @@ static void installs_the_interface_the_setting_chooses(void) {
     finish_install_base(&base);
 }
 
+static void installs_the_interface_and_no_host_item_when_no_plugin_is_enabled(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "no-plugin");
+    list_foundation(&base);
+    list_interface(&base, "spisor-interface");
+    write_catalog(&base);
+    cJSON *report = expect_report(install_with(&base, "{\"defaults\": []}", NULL), "no plugin");
+    expect_installed_ids(report, "[\"runtime\",\"spisor-host\",\"spisor-interface\"]", "the interface alone");
+    cJSON *hint = json_in(base.cache, "hosts/spisor-interface.json");
+    check_text(text_at(hint, "host"), "0.1.0", "the interface hinted");
+    CHECK(!exists_in(base.cache, "bundles/fixture-one-host") && !exists_in(base.cache, "hosts/fixture-one-host.json"));
+    cJSON_Delete(hint);
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void installs_the_host_of_an_enabled_plugin_s_language_and_no_other(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "rust");
+    list_foundation(&base);
+    list_language_host(&base, "rust", "native", "1.0.0", "{\"entry\": \"weivel-host\", \"runtime\": \"native\"}");
+    list_language_host(&base, "typescript", "javascript", "1.0.0",
+                       "{\"entry\": \"weivel-host.mjs\", \"runtime\": \"javascript\"}");
+    list_plugin(&base, "carved", "1.0.0", "rust");
+    write_catalog(&base);
+    cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"carved\"]}", NULL), "rust");
+    expect_installed_ids(report, "[\"carved\",\"forebay-library\",\"runtime\",\"rust-host\",\"spisor-host\"]",
+                         "the rust plugin and its host");
+    cJSON *hint = json_in(base.cache, "hosts/rust-host.json");
+    check_text(text_at(hint, "host"), "1.0.0", "rust-host hinted");
+    CHECK(!exists_in(base.cache, "bundles/typescript-host") && !exists_in(base.cache, "hosts/typescript-host.json"));
+    CHECK(!exists_in(base.cache, "bundles/fixture-one-host"));
+    cJSON_Delete(hint);
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
 static void answers_malformed_for_an_argument_with_no_usable_places(void) {
     catalog_answer answer = install_call(INSTALL_ECOSYSTEM, parsed("{\"sources\": [], \"places\": {}, \"environment\": {}}"));
     expect_malformed_released(answer, "portable", "no places");
@@ -912,6 +949,8 @@ int main(int argc, char **argv) {
     installs_no_interface_when_the_setting_says_none();
     reports_two_interfaces_none_chooses_naming_both_and_installs_neither();
     installs_the_interface_the_setting_chooses();
+    installs_the_interface_and_no_host_item_when_no_plugin_is_enabled();
+    installs_the_host_of_an_enabled_plugin_s_language_and_no_other();
     acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin();
     answers_malformed_for_an_argument_with_no_usable_places();
     two_concurrent_installs_end_with_one_consistent_registry_and_cache(self_path(argv[0]));

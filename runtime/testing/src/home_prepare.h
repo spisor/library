@@ -20,6 +20,18 @@ typedef struct runtime_testing_prepared_install {
     char *settings_file;
 } runtime_testing_prepared_install;
 
+/** One staged item, checked: its host.json read, its members borrowed from it, `language` NULL for an interface. */
+typedef struct runtime_testing_prepared_item {
+    cJSON *manifest;
+    const char *directory;
+    const char *kind;
+    const char *id;
+    const char *version;
+    const char *language;
+    const char *runtime;
+    char *bundle;
+} runtime_testing_prepared_item;
+
 /** A home argument, checked before anything is written, so a malformed one writes nothing. */
 typedef struct runtime_testing_prepared_home {
     const char *base;
@@ -31,6 +43,8 @@ typedef struct runtime_testing_prepared_home {
     cJSON *libraries;
     const runtime_testing_layer *layers;
     size_t layer_count;
+    runtime_testing_prepared_item *items;
+    size_t item_count;
 } runtime_testing_prepared_home;
 
 /**
