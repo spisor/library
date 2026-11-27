@@ -13,6 +13,7 @@
 #include "boot_call.h"
 #include "cache.h"
 #include "cache_call.h"
+#include "catalog.h"
 #include "catalog_call.h"
 #include "catalog_url.h"
 #include "check.h"
@@ -159,6 +160,9 @@ static inline cJSON *catalog_item(const char *id, const char *kind, const char *
         if (strcmp(kind, "host") == 0) {
             cJSON_AddStringToObject(item, "runtime", "native");
         }
+        if (strcmp(kind, "plugin") == 0) {
+            cJSON_AddStringToObject(item, "language", "typescript");
+        }
         cJSON_AddStringToObject(item, "latest", latest);
         cJSON_AddObjectToObject(item, "versions");
     }
@@ -208,7 +212,7 @@ static inline char *index_path(void) {
 
 static inline void write_catalog(void) {
     cJSON *index = cJSON_CreateObject();
-    cJSON_AddNumberToObject(index, "format", 1);
+    cJSON_AddNumberToObject(index, "format", RUNTIME_CATALOG_FORMAT);
     cJSON_AddItemToObject(index, "items", cJSON_Duplicate(catalog_items, 1));
     char *text = cJSON_PrintUnformatted(index);
     cJSON_Delete(index);

@@ -5,6 +5,7 @@
 
 #include "answer_storage.h"
 #include "catalog_listed_source.h"
+#include "catalog_patterns.h"
 #include "definition_support.h"
 #include "install_definition.h"
 #include "identity.h"
@@ -508,8 +509,7 @@ static spisor_status fill_entry(const cJSON *answered, void *filled) {
         return SPISOR_OUT_OF_MEMORY;
     }
     answer->written = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "written")) ? 1u : 0u;
-    answer->runs_on_javascript_host =
-        cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "runsOnJavascriptHost")) ? 1u : 0u;
+    answer->runs_in_process = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answered, "runsInProcess")) ? 1u : 0u;
     answer->sequences = array;
     cJSON_ArrayForEach(sequence, sequences) {
         array[answer->sequence_count++] = (uint64_t)sequence->valuedouble;
@@ -518,7 +518,13 @@ static spisor_status fill_entry(const cJSON *answered, void *filled) {
     return status == SPISOR_OK ? copy_text(&answer->storage, text_of(answered, "fix"), &answer->fix) : status;
 }
 
-/** The entry's call, {places: {state, cache}, loader: {id, application, home}}. */
+static const char *entry_language_of(const runtime_install_entry_argument *argument) {
+    return spisor_has_shape(argument->size, SPISOR_SHAPE_THROUGH(runtime_install_entry_argument, language))
+               ? argument->language
+               : NULL;
+}
+
+/** The entry's call, {places: {state, cache}, loader: {id, application, home, language?}}. */
 static spisor_status entry_call(const runtime_install_entry_argument *argument, cJSON **call) {
     static const char *const names[2] = {"state", "cache"};
     const char *places[2];
@@ -528,7 +534,8 @@ static spisor_status entry_call(const runtime_install_entry_argument *argument, 
     places[1] = argument->cache;
     *call = places_call(names, places, 2);
     loader = *call == NULL ? NULL : cJSON_AddObjectToObject(*call, "loader");
-    status = loader != NULL && add_text(loader, "id", argument->loader) && add_text(loader, "home", argument->home)
+    status = loader != NULL && add_text(loader, "id", argument->loader) &&
+                     add_text(loader, "home", argument->home) && add_text(loader, "language", entry_language_of(argument))
                  ? runtime_add_value_json(loader, "application", argument->application, SPISOR_VALUE_RECORD)
                  : SPISOR_OUT_OF_MEMORY;
     if (status != SPISOR_OK) {
@@ -556,6 +563,10 @@ static spisor_status entry(void *context, const runtime_install_entry_argument *
     status = check_places(names, places, 3, refusal);
     if (status == SPISOR_OK && !runtime_is_text(argument->loader)) {
         status = runtime_refuse_member(refusal, "loader", HEADER);
+    }
+    if (status == SPISOR_OK && entry_language_of(argument) != NULL &&
+        !runtime_catalog_is_language(entry_language_of(argument))) {
+        status = runtime_refuse_member(refusal, "language", HEADER);
     }
     if (status == SPISOR_OK) {
         status = check_application(argument->application, refusal);
@@ -972,7 +983,7 @@ static spisor_status fill_settled_application(void **storage, const cJSON *json,
 static spisor_status fill_loader_entry(void **storage, const cJSON *entry, runtime_install_loader *loader) {
     spisor_status status = copy_text(storage, text_of(entry, "message"), &loader->entry_detail);
     loader->entry_written = is_true(entry, "written");
-    loader->entry_runs_on_javascript_host = is_true(entry, "runsOnJavascriptHost");
+    loader->entry_runs_in_process = is_true(entry, "runsInProcess");
     return status == SPISOR_OK ? copy_text(storage, text_of(entry, "fix"), &loader->entry_fix) : status;
 }
 

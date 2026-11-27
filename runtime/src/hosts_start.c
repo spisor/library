@@ -10,6 +10,7 @@
 #include "cache_refusal.h"
 #include "catalog.h"
 #include "catalog_answer.h"
+#include "catalog_patterns.h"
 #include "config.h"
 #include "file_times.h"
 #include "host_references.h"
@@ -75,8 +76,8 @@ static int is_usable_request(const runtime_hosts_start_request *start, cJSON **r
         *refusal = request_refusal("layer", "the layer bundle's id and its version");
     } else if (!runtime_is_version_map(start->libraries)) {
         *refusal = request_refusal("libraries", "an object of the loaded library ids to their versions");
-    } else if (!runtime_is_layer_runtime(start->layer_runtime)) {
-        *refusal = request_refusal("layerRuntime", RUNTIME_LAYER_JAVASCRIPT " or " RUNTIME_LAYER_NATIVE);
+    } else if (!runtime_catalog_is_language(start->layer_language)) {
+        *refusal = request_refusal("layerLanguage", "a language name, as a catalog's plugin item names its language");
     }
     return *refusal == NULL;
 }
@@ -277,7 +278,7 @@ static int identified(start_context *context, cJSON **refusal) {
         return 0;
     }
     context->run_id =
-        runtime_run_identity(context->argument.host_id, context->argument.layer_runtime, layers.front_door);
+        runtime_run_identity(context->argument.host_id, context->argument.layer_language, layers.front_door);
     runtime_free_loader_layers(&layers);
     return context->run_id != NULL;
 }
@@ -298,16 +299,17 @@ static const char *located_manifest(const cJSON *located, const char *id) {
 }
 
 /**
- * {runtime, provides, consumes}: plugin id's catalog runtime and the capabilities its manifest declares, none for a
- * manifest that is not located or cannot be read, which the run refuses by name once it reads it; NULL with
- * *out_of_memory set when memory runs out.
+ * {language?, provides, consumes}: plugin id's catalog language, absent for a plugin the catalog does not list, and the
+ * capabilities its manifest declares, none for a manifest that is not located or cannot be read, which the run refuses
+ * by name once it reads it; NULL with *out_of_memory set when memory runs out.
  */
 static cJSON *described_plugin(const cJSON *catalog, const char *id, const char *manifest, int *out_of_memory) {
     cJSON *read = manifest == NULL ? NULL : runtime_read_node_json(manifest, out_of_memory);
     const cJSON *capabilities = cJSON_GetObjectItemCaseSensitive(read, "capabilities");
     cJSON *described = *out_of_memory ? NULL : cJSON_CreateObject();
+    const char *language = runtime_plugin_language(catalog, id);
     int built = described != NULL &&
-                cJSON_AddStringToObject(described, "runtime", runtime_plugin_runtime(catalog, id)) != NULL &&
+                (language == NULL || cJSON_AddStringToObject(described, "language", language) != NULL) &&
                 runtime_add_owned(described, "provides", strings_of(capabilities, "provides")) &&
                 runtime_add_owned(described, "consumes", strings_of(capabilities, "consumes"));
     cJSON_Delete(read);
@@ -346,8 +348,9 @@ static cJSON *described_plugins(const char *cache, const cJSON *catalog, const c
     return described;
 }
 
-static int runs_on(const cJSON *plugin, const char *runtime) {
-    return strcmp(string_of(plugin, "runtime"), runtime) == 0;
+static int is_written_in(const cJSON *plugin, const char *language) {
+    const char *written = string_of(plugin, "language");
+    return written != NULL && strcmp(written, language) == 0;
 }
 
 static int lists(const cJSON *strings, const char *text) {
@@ -360,11 +363,14 @@ static int lists(const cJSON *strings, const char *text) {
     return 0;
 }
 
-/** The first described plugin providing capability on runtime when on_runtime is 1, else on any other runtime. */
-static const cJSON *provider_of(const cJSON *described, const char *capability, const char *runtime, int on_runtime) {
+/**
+ * The first described plugin providing capability written in language when in_language is 1, else in any other
+ * language, a plugin the catalog lists in none running in no layer.
+ */
+static const cJSON *provider_of(const cJSON *described, const char *capability, const char *language, int in_language) {
     const cJSON *plugin;
     cJSON_ArrayForEach(plugin, described) {
-        if (runs_on(plugin, runtime) == on_runtime &&
+        if (string_of(plugin, "language") != NULL && is_written_in(plugin, language) == in_language &&
             lists(cJSON_GetObjectItemCaseSensitive(plugin, "provides"), capability)) {
             return plugin;
         }
@@ -372,12 +378,12 @@ static const cJSON *provider_of(const cJSON *described, const char *capability, 
     return NULL;
 }
 
-/** The ids of every described plugin on runtime, as an object of id to true; NULL when memory runs out. */
-static cJSON *layer_plugins(const cJSON *described, const char *runtime) {
+/** The ids of every described plugin written in language, as an object of id to true; NULL when memory runs out. */
+static cJSON *layer_plugins(const cJSON *described, const char *language) {
     cJSON *needed = cJSON_CreateObject();
     const cJSON *plugin;
     cJSON_ArrayForEach(plugin, described) {
-        if (needed != NULL && runs_on(plugin, runtime) && cJSON_AddTrueToObject(needed, plugin->string) == NULL) {
+        if (needed != NULL && is_written_in(plugin, language) && cJSON_AddTrueToObject(needed, plugin->string) == NULL) {
             cJSON_Delete(needed);
             needed = NULL;
         }
@@ -385,11 +391,12 @@ static cJSON *layer_plugins(const cJSON *described, const char *runtime) {
     return needed;
 }
 
-/** Adds to needed every plugin on runtime that provides capability; 0 when memory runs out. */
-static int add_providers(cJSON *needed, const cJSON *described, const char *capability, const char *runtime) {
+/** Adds to needed every plugin written in language that provides capability; 0 when memory runs out. */
+static int add_providers(cJSON *needed, const cJSON *described, const char *capability, const char *language) {
     const cJSON *plugin;
     cJSON_ArrayForEach(plugin, described) {
-        int provides = runs_on(plugin, runtime) && lists(cJSON_GetObjectItemCaseSensitive(plugin, "provides"), capability);
+        int provides = is_written_in(plugin, language) &&
+                       lists(cJSON_GetObjectItemCaseSensitive(plugin, "provides"), capability);
         if (provides && !cJSON_HasObjectItem(needed, plugin->string) &&
             cJSON_AddTrueToObject(needed, plugin->string) == NULL) {
             return 0;
@@ -399,22 +406,23 @@ static int add_providers(cJSON *needed, const cJSON *described, const char *capa
 }
 
 /**
- * What an action of action_plugin needs, as an object of id to true: it, when it runs on runtime, and every plugin on
- * runtime that provides, transitively, a capability one of them consumes; NULL when memory runs out.
+ * What an action of action_plugin needs, as an object of id to true: it, when it is written in language, and every
+ * plugin written in language that provides, transitively, a capability one of them consumes; NULL when memory runs
+ * out.
  *
  * @implNote A provider is appended behind the id being read, so the one walk reaches the providers it adds.
  */
-static cJSON *action_needs(const cJSON *described, const char *action_plugin, const char *runtime) {
+static cJSON *action_needs(const cJSON *described, const char *action_plugin, const char *language) {
     const cJSON *action = cJSON_GetObjectItemCaseSensitive(described, action_plugin);
     cJSON *needed = cJSON_CreateObject();
-    int built = needed != NULL && (action == NULL || !runs_on(action, runtime) ||
+    int built = needed != NULL && (action == NULL || !is_written_in(action, language) ||
                                    cJSON_AddTrueToObject(needed, action_plugin) != NULL);
     for (const cJSON *id = built ? needed->child : NULL; built && id != NULL; id = id->next) {
         const cJSON *capability;
         cJSON_ArrayForEach(capability, cJSON_GetObjectItemCaseSensitive(
                                            cJSON_GetObjectItemCaseSensitive(described, id->string), "consumes")) {
             built = built && (!cJSON_IsString(capability) ||
-                              add_providers(needed, described, capability->valuestring, runtime));
+                              add_providers(needed, described, capability->valuestring, language));
         }
     }
     if (!built) {
@@ -424,9 +432,9 @@ static cJSON *action_needs(const cJSON *described, const char *action_plugin, co
     return needed;
 }
 
-static cJSON *split_refusal(const char *consumer, const char *runtime, const char *capability, const cJSON *provider) {
-    const char *parts[10] = {consumer, " (", runtime, ") consumes ", capability, ", which only ", provider->string,
-                             " (", string_of(provider, "runtime"), ") provides, and a layer runs plugins of one runtime"};
+static cJSON *split_refusal(const char *consumer, const char *language, const char *capability, const cJSON *provider) {
+    const char *parts[10] = {consumer, " (", language, ") consumes ", capability, ", which only ", provider->string,
+                             " (", string_of(provider, "language"), ") provides, and a layer runs plugins of one language"};
     const char *fix_parts[4] = {"enable a provider of ", capability, " written in the consumer's language, or disable ",
                                 consumer};
     char *fix = runtime_cache_text(fix_parts, 4);
@@ -436,21 +444,21 @@ static cJSON *split_refusal(const char *consumer, const char *runtime, const cha
 }
 
 /**
- * 1 with *refusal set, or NULL when memory runs out, when a needed plugin consumes a capability no plugin on runtime
- * provides and a plugin on another runtime does; 0 otherwise.
+ * 1 with *refusal set, or NULL when memory runs out, when a needed plugin consumes a capability no plugin written in
+ * language provides and a plugin written in another language does; 0 otherwise.
  */
-static int is_split(const cJSON *described, const cJSON *needed, const char *runtime, cJSON **refusal) {
+static int is_split(const cJSON *described, const cJSON *needed, const char *language, cJSON **refusal) {
     const cJSON *id;
     cJSON_ArrayForEach(id, needed) {
         const cJSON *capability;
         cJSON_ArrayForEach(capability, cJSON_GetObjectItemCaseSensitive(
                                            cJSON_GetObjectItemCaseSensitive(described, id->string), "consumes")) {
             const char *name = cJSON_GetStringValue(capability);
-            const cJSON *elsewhere = name == NULL || provider_of(described, name, runtime, 1) != NULL
+            const cJSON *elsewhere = name == NULL || provider_of(described, name, language, 1) != NULL
                                          ? NULL
-                                         : provider_of(described, name, runtime, 0);
+                                         : provider_of(described, name, language, 0);
             if (elsewhere != NULL) {
-                *refusal = split_refusal(id->string, runtime, name, elsewhere);
+                *refusal = split_refusal(id->string, language, name, elsewhere);
                 return 1;
             }
         }
@@ -470,26 +478,31 @@ static cJSON *narrowed(const cJSON *plugins, const cJSON *needed) {
     return kept;
 }
 
-/** A refusal of an action of plugin, described in another layer than runtime's, naming both; NULL when memory runs out. */
-static cJSON *misplaced_action_refusal(const char *plugin, const cJSON *described, const char *runtime) {
-    const char *own = string_of(described, "runtime");
-    const char *parts[6] = {plugin, " runs in the ", own, " layer, so its action cannot run in the ", runtime,
+/**
+ * A refusal of an action of plugin, described in another layer than language's or in none, naming both; NULL when
+ * memory runs out.
+ */
+static cJSON *misplaced_action_refusal(const char *plugin, const cJSON *described, const char *language) {
+    const char *own = string_of(described, "language");
+    const char *parts[6] = {plugin, " runs in the ", own, " layer, so its action cannot run in the ", language,
                             " layer this run was started for"};
+    const char *unlisted[2] = {plugin, " is listed in no catalog source as a plugin, so no layer runs its action"};
     const char *fix_parts[3] = {"start the action in the ", own, " layer, as spisor-host action does"};
-    char *fix = runtime_cache_text(fix_parts, 3);
-    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 6, fix);
+    const char *unlisted_fix[3] = {"add a catalog source listing ", plugin, ", then run the action again"};
+    char *fix = runtime_cache_text(own == NULL ? unlisted_fix : fix_parts, 3);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(own == NULL ? unlisted : parts, own == NULL ? 2 : 6, fix);
     spisor_memory_release(fix);
     return refusal;
 }
 
 /** 1 with *refusal set, or NULL when memory runs out, when action_plugin is described in another layer; 0 otherwise. */
-static int is_misplaced_action(const cJSON *described, const char *action_plugin, const char *runtime,
+static int is_misplaced_action(const cJSON *described, const char *action_plugin, const char *language,
                                cJSON **refusal) {
     const cJSON *action = action_plugin == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(described, action_plugin);
-    if (action == NULL || runs_on(action, runtime)) {
+    if (action == NULL || is_written_in(action, language)) {
         return 0;
     }
-    *refusal = misplaced_action_refusal(action_plugin, action, runtime);
+    *refusal = misplaced_action_refusal(action_plugin, action, language);
     return 1;
 }
 
@@ -502,16 +515,21 @@ static cJSON *current_catalog(const start_context *context, cJSON **refusal) {
  * hosts.start says, or with it NULL when memory runs out.
  */
 static int layered(start_context *context, cJSON *plan, cJSON **refusal) {
-    const char *runtime = context->argument.layer_runtime;
+    const char *language = context->argument.layer_language;
     const char *action_plugin = context->argument.action_plugin;
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(plan, "plugins");
     cJSON *catalog = current_catalog(context, refusal);
-    cJSON *described = catalog == NULL ? NULL : described_plugins(context->cache, catalog, plugins);
-    int misplaced = described != NULL && is_misplaced_action(described, action_plugin, runtime, refusal);
+    int out_of_memory = 0;
+    int hosted = catalog != NULL && runtime_language_host_item(catalog, language, &out_of_memory) != NULL;
+    cJSON *described = !hosted ? NULL : described_plugins(context->cache, catalog, plugins);
+    int misplaced = described != NULL && is_misplaced_action(described, action_plugin, language, refusal);
     cJSON *needed = described == NULL || misplaced ? NULL
-                    : action_plugin == NULL        ? layer_plugins(described, runtime)
-                                                   : action_needs(described, action_plugin, runtime);
-    int split = needed != NULL && is_split(described, needed, runtime, refusal);
+                    : action_plugin == NULL        ? layer_plugins(described, language)
+                                                   : action_needs(described, action_plugin, language);
+    int split = needed != NULL && is_split(described, needed, language, refusal);
+    if (catalog != NULL && !hosted && !out_of_memory) {
+        *refusal = runtime_unhosted_language_refusal(language);
+    }
     cJSON *kept = needed == NULL || split ? NULL : narrowed(plugins, needed);
     int replaced = kept != NULL && cJSON_ReplaceItemInObjectCaseSensitive(plan, "plugins", kept);
     if (kept != NULL && !replaced) {
@@ -610,7 +628,7 @@ static void publish_refusal(const start_context *context, const cJSON *refusal) 
     if (context->argument.session && !context->argument.in_process && context->state != NULL && refusal != NULL) {
         char *identity = context->run_id != NULL ? NULL
                                                  : runtime_read_run_identity(context->places, context->argument.host_id,
-                                                                             context->argument.layer_runtime);
+                                                                             context->argument.layer_language);
         const char *published = context->run_id != NULL ? context->run_id
                                 : identity != NULL       ? identity
                                                          : context->argument.host_id;

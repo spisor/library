@@ -113,7 +113,7 @@ static cJSON *good_builds(void) {
     return builds_of(runtime_platform_key(), "https://nodejs.org/dist/v26.0.1/node.zip", SHA256);
 }
 
-/** Runs stage-bundle javascript-host into <base>/bundle at 9.8.7 over checkout, with the pin builds and two libraries. */
+/** Runs stage-bundle typescript-host into <base>/bundle at 9.8.7 over checkout, with the pin builds and two libraries. */
 static int stage_javascript_host_with(const char *checkout, cJSON *builds, program *run) {
     char *directory = in_base("bundle");
     char *pin = in_base("node.json");
@@ -124,7 +124,7 @@ static int stage_javascript_host_with(const char *checkout, cJSON *builds, progr
     spisor_memory_release(text);
     write_file(core, "the core");
     write_file(standard, "the standard");
-    const char *arguments[] = {"javascript-host", directory, "9.8.7", checkout, pin, core, standard, NULL};
+    const char *arguments[] = {"typescript-host", directory, "9.8.7", checkout, pin, core, standard, NULL};
     int code = stage(arguments, run);
     spisor_memory_release(standard);
     spisor_memory_release(core);
@@ -166,7 +166,8 @@ static void expect_bundle_files(const char *directory) {
 
 static void expect_host_manifest(const char *directory) {
     cJSON *manifest = json_in(directory, "host.json");
-    cJSON *expected = parsed("{\"id\": \"javascript-host\", \"version\": \"9.8.7\", \"runtime\": \"javascript\", "
+    cJSON *expected = parsed("{\"kind\": \"language-host\", \"id\": \"typescript-host\", \"version\": \"9.8.7\", "
+                             "\"language\": \"typescript\", \"runtime\": \"javascript\", "
                              "\"entry\": \"weivel-host.mjs\", \"inProcessEntry\": \"weivel-host-in-process.mjs\", "
                              "\"node\": {\"pinned\": \"26.0.1\", \"minimum\": \"22.18.0\"}}");
     cJSON_AddItemToObject(cJSON_GetObjectItemCaseSensitive(expected, "node"), "builds", good_builds());
@@ -204,9 +205,10 @@ static cJSON *built_catalog(const char *directory) {
 static void expect_catalog_of_one_javascript_host(const char *directory) {
     cJSON *catalog = built_catalog(directory);
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(catalog, "items");
-    const cJSON *host = cJSON_GetObjectItemCaseSensitive(items, "javascript-host");
+    const cJSON *host = cJSON_GetObjectItemCaseSensitive(items, "typescript-host");
     CHECK(cJSON_GetArraySize(items) == 1 && cJSON_GetObjectItemCaseSensitive(items, "koffi") == NULL);
-    check_text(text_at(host, "kind"), "host", "kind");
+    check_text(text_at(host, "kind"), "language-host", "kind");
+    check_text(text_at(host, "language"), "typescript", "language");
     check_text(text_at(host, "runtime"), "javascript", "runtime");
     char triplet[64];
     char rest[512];
@@ -294,10 +296,10 @@ static void refuses_a_pin_with_no_build_for_this_platform(void) {
 
 static void answers_2_for_a_javascript_host_word_missing_an_argument(void) {
     start_case("usage");
-    const char *arguments[] = {"javascript-host", "bundle", "1.0.0", NULL};
+    const char *arguments[] = {"typescript-host", "bundle", "1.0.0", NULL};
     program run;
     CHECK(stage(arguments, &run) == 2);
-    expect_contains(run.err, "stage-bundle javascript-host", "the usage");
+    expect_contains(run.err, "stage-bundle typescript-host", "the usage");
     program_free(&run);
     finish_case();
 }

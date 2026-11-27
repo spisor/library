@@ -39,7 +39,7 @@
 #define USAGE                                                                                                         \
     "usage: stage-bundle host <directory> <version> <spisor-host> <spisor-boot> [<runtime-launcher>]\n"                \
     "       stage-bundle library <directory> <library.json> <library binary>\n"                                       \
-    "       stage-bundle javascript-host <directory> <version> <weivel/typescript checkout> <node pin> "               \
+    "       stage-bundle typescript-host <directory> <version> <weivel/typescript checkout> <node pin> "               \
     "<weivel_core> <weivel_standard>\n"
 #define BUNDLER_MILLISECONDS 300000u
 #define ENGINE_BOUND ">="
@@ -48,14 +48,14 @@
 /** The files of koffi's package the bundled program loads, beside the one prebuilt of this platform. */
 static const char *const KOFFI_FILES[] = {"package.json", "index.js", "LICENSE.txt"};
 
-/** What javascript-host's bundle is staged from: the version, the checkout's minimum Node and the read pin. */
-typedef struct javascript_host_inputs {
+/** What typescript-host's bundle is staged from: the version, the checkout's minimum Node and the read pin. */
+typedef struct typescript_host_inputs {
     const char *directory;
     const char *version;
     const char *checkout;
     cJSON *pin;
     char minimum[64];
-} javascript_host_inputs;
+} typescript_host_inputs;
 
 static char *joined(const char *base, const char *rest) {
     const char *segments[2] = {base, rest};
@@ -207,7 +207,7 @@ static cJSON *read_json(const char *path) {
 }
 
 /** The lowest Node the checkout's package.json engines.node names as >=<version>, into inputs->minimum. */
-static int read_minimum(javascript_host_inputs *inputs) {
+static int read_minimum(typescript_host_inputs *inputs) {
     char *path = joined(inputs->checkout, "package.json");
     cJSON *package = path == NULL ? NULL : read_json(path);
     const char *engine =
@@ -230,7 +230,7 @@ static int read_minimum(javascript_host_inputs *inputs) {
  * The pin file as {pinned, builds}, refused unless pinned is a plain version no older than the checkout's minimum and
  * every build is one stage-bundle can vouch for, this platform's among them.
  */
-static int read_pin(javascript_host_inputs *inputs, const char *path) {
+static int read_pin(typescript_host_inputs *inputs, const char *path) {
     inputs->pin = read_json(path);
     const char *pinned = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(inputs->pin, "pinned"));
     const cJSON *builds = cJSON_GetObjectItemCaseSensitive(inputs->pin, "builds");
@@ -248,7 +248,7 @@ static int read_pin(javascript_host_inputs *inputs, const char *path) {
 }
 
 /** Runs the checkout's bundler on the PATH's node, writing the program's two files into the directory. */
-static int run_bundler(const javascript_host_inputs *inputs) {
+static int run_bundler(const typescript_host_inputs *inputs) {
     cJSON *environment = runtime_process_environment();
     char *node = NULL;
     runtime_on_path_status found = environment == NULL ? RUNTIME_ON_PATH_OUT_OF_MEMORY
@@ -292,7 +292,7 @@ static int copy_weivel_libraries(const char *directory, const char *core, const 
  * @implNote koffi names a prebuilt folder by os_arch, the platform key with an underscore, and its sources and every
  * other platform's prebuilt are never loaded, so a bundle built for one platform carries one.
  */
-static int copy_koffi(const javascript_host_inputs *inputs) {
+static int copy_koffi(const typescript_host_inputs *inputs) {
     char *package = joined(inputs->checkout, KOFFI_FOLDER);
     char *target = joined(inputs->directory, KOFFI_FOLDER);
     int copied = package != NULL && target != NULL;
@@ -315,12 +315,17 @@ static int copy_koffi(const javascript_host_inputs *inputs) {
     return copied;
 }
 
-/** javascript-host's host.json: its entries and node {pinned, minimum, builds}, the pin catalog data carries. */
-static int write_javascript_host_manifest(const javascript_host_inputs *inputs) {
+/**
+ * typescript-host's host.json: a language-host of typescript started on javascript, its entries and node {pinned,
+ * minimum, builds}, the pin catalog data carries.
+ */
+static int write_typescript_host_manifest(const typescript_host_inputs *inputs) {
     cJSON *manifest = cJSON_CreateObject();
     cJSON *node = cJSON_CreateObject();
-    int built = manifest != NULL && node != NULL && cJSON_AddStringToObject(manifest, "id", "javascript-host") &&
+    int built = manifest != NULL && node != NULL && cJSON_AddStringToObject(manifest, "kind", "language-host") &&
+                cJSON_AddStringToObject(manifest, "id", "typescript-host") &&
                 cJSON_AddStringToObject(manifest, "version", inputs->version) &&
+                cJSON_AddStringToObject(manifest, "language", "typescript") &&
                 cJSON_AddStringToObject(manifest, "runtime", "javascript") &&
                 cJSON_AddStringToObject(manifest, "entry", "weivel-host.mjs") &&
                 cJSON_AddStringToObject(manifest, "inProcessEntry", "weivel-host-in-process.mjs") &&
@@ -348,22 +353,22 @@ static int write_javascript_host_manifest(const javascript_host_inputs *inputs) 
 }
 
 /**
- * javascript-host's bundle: weivel/typescript's program bundled by its own weivel-bundle, the core and standard beside
+ * typescript-host's bundle: weivel/typescript's program bundled by its own weivel-bundle, the core and standard beside
  * it, koffi under node_modules, and host.json carrying the Node pin with the checkout's minimum.
  */
-static int stage_javascript_host(int count, char **arguments) {
+static int stage_typescript_host(int count, char **arguments) {
     if (count != 8) {
         fputs(USAGE, stderr);
         return 2;
     }
-    javascript_host_inputs inputs;
+    typescript_host_inputs inputs;
     memset(&inputs, 0, sizeof inputs);
     inputs.directory = arguments[2];
     inputs.version = arguments[3];
     inputs.checkout = arguments[4];
     int staged = read_minimum(&inputs) && read_pin(&inputs, arguments[5]) && start_empty(inputs.directory) &&
                  run_bundler(&inputs) && copy_weivel_libraries(inputs.directory, arguments[6], arguments[7]) &&
-                 copy_koffi(&inputs) && write_javascript_host_manifest(&inputs);
+                 copy_koffi(&inputs) && write_typescript_host_manifest(&inputs);
     cJSON_Delete(inputs.pin);
     return staged ? 0 : 1;
 }
@@ -375,8 +380,8 @@ static int run(int count, char **arguments) {
     if (count >= 2 && strcmp(arguments[1], "library") == 0) {
         return stage_library(count, arguments);
     }
-    if (count >= 2 && strcmp(arguments[1], "javascript-host") == 0) {
-        return stage_javascript_host(count, arguments);
+    if (count >= 2 && strcmp(arguments[1], "typescript-host") == 0) {
+        return stage_typescript_host(count, arguments);
     }
     fputs(USAGE, stderr);
     return 2;

@@ -14,22 +14,27 @@
     {
       "id": "github:1456093642",
       "importName": "standard",
-      "commit": "b8c40b7cfb994ecd80bb5cd8739245af29954190"
+      "commit": "c94bdf2b6e8dd1ba4930a584fafb2e14a2c43145"
     },
     {
       "id": "github:1457141747",
       "importName": "c",
-      "commit": "89b98aea33e2704f7f3bcd5def7208d49ac006b9"
+      "commit": "f2deb90ac195aeb541a846c3d166e21467081c2c"
     },
     {
       "id": "github:1427561829",
       "importName": "typescript",
-      "commit": "d45c27986ccb12b5c1bfda5b2f33309a865c1e80"
+      "commit": "e60adefd969d597dd557f429b01f364847fa9fb7"
     },
     {
       "id": "github:1350572676",
       "importName": "java",
-      "commit": "1026283c49702dcb8d0a80eb315bc07641e06d3b"
+      "commit": "dae5e847b711a35d63d2111a49e593d94e69efe3"
+    },
+    {
+      "id": "github:1471393328",
+      "importName": "rust",
+      "commit": "b8d3538f63cf1f30973a593305bfcd160563c481"
     },
     {
       "id": "github:1472199689",

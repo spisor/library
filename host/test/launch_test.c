@@ -211,10 +211,10 @@ static void starts_the_loader_s_session_host_on_javascript_host_when_its_setting
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
     expect_holders(&world, LOADER_ID, launcher.child.pid, started_pid(started), "session held");
-    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID);
-    expect_contains(starts, "javascript-host", "session host on javascript-host");
+    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID);
+    expect_contains(starts, "typescript-host", "session host on typescript-host");
     expect_contains(starts, "host.js ", "the bundle's entry run by the JavaScript runtime");
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID, "its entry run for the loader");
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID, "its entry run for the loader");
     release_application(&world, "session");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -296,8 +296,8 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
     cJSON *started = await_application(&world, "again");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID);
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID, "session host started");
+    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID);
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID, "session host started");
     cJSON *record = json_in(world.base.cache, "runtimes/javascript.json");
     expect_contains(text_at(record, "executable"), "node-again", "the runtime found again is recorded");
     release_application(&world, "again");
@@ -319,7 +319,7 @@ static void starts_the_session_host_on_a_javascript_runtime_found_again_when_the
 static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(void) {
     host_world world;
     install_launch_world(&world, "launch", "session-sizes", 1);
-    char *script = joined(world.base.cache, "bundles/javascript-host/1.0.0/host.js");
+    char *script = joined(world.base.cache, "bundles/typescript-host/1.0.0/host.js");
     write_file(script, "export {}:\n");
     program launcher;
     const char *passed[] = {"sized", "0", NULL};
@@ -327,8 +327,8 @@ static void starts_the_session_host_on_its_bundle_s_sizes_without_hashing_it(voi
     cJSON *started = await_application(&world, "sized");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID);
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID, "session host started on sizes");
+    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID);
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID, "session host started on sizes");
     release_application(&world, "sized");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -410,8 +410,8 @@ static void starts_the_session_host_for_the_plugins_the_loader_requires(void) {
     cJSON *started = await_application(&world, "required");
     long session = await_holders(&world, LOADER_ID, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID);
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID, "session host started");
+    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID);
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID, "session host started");
     release_application(&world, "required");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(session, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -653,51 +653,39 @@ static void refuses_a_background_host_that_records_no_start_before_anything_star
     finish_world(&world);
 }
 
-#define NATIVE_PLUGIN "compiled"
+#define FIXTURE_PLUGIN "compiled"
+#define FIXTURE_LANGUAGE "fixture-one"
 
-/** The native layer's item as its install will leave it: the layer fixture as its entry, hinted as javascript-host is. */
-static void install_native_layer(const host_world *world) {
-    char *directory = joined(world->base.cache, "bundles/spisor-interface/1.0.0");
-    char *entry = joined(directory, "interface" EXECUTABLE_ENDING);
-    char *standard = joined(directory, "host.json");
-    char *hint = text_in(world->base.cache, "hosts/javascript-host.json");
-    cJSON *hashes = cJSON_CreateObject();
-    cJSON *sizes = cJSON_CreateObject();
-    const char *files[2][2] = {{"interface" EXECUTABLE_ENDING, NULL}, {"host.json", NULL}};
-    copy_file(LAYER_FIXTURE_PATH, entry);
-    write_file(standard, "{\"entry\": \"interface" EXECUTABLE_ENDING "\"}");
-    files[0][1] = entry;
-    files[1][1] = standard;
-    for (size_t index = 0; index < 2; index++) {
-        char sha256[NAULA_SHA256_HEX_SIZE];
-        uint64_t size = 0;
-        CHECK(runtime_sha256_file_sized(files[index][1], sha256, &size) == SPISOR_OK);
-        cJSON_AddStringToObject(hashes, files[index][0], sha256);
-        cJSON_AddNumberToObject(sizes, files[index][0], (double)size);
-    }
-    CHECK(runtime_cache_write_marker(directory, hashes, sizes) == SPISOR_OK);
-    CHECK(hint != NULL);
-    write_in(world->base.cache, "hosts/spisor-interface.json", hint);
-    cJSON_Delete(sizes);
-    cJSON_Delete(hashes);
-    spisor_memory_release(hint);
-    spisor_memory_release(standard);
-    spisor_memory_release(entry);
-    spisor_memory_release(directory);
+/** The fixture language's host item, native, the layer fixture as its entry, which install installs and hints. */
+static void list_fixture_language_host(host_world *world) {
+    install_base *base = &world->base;
+    cJSON *item = catalog_item(base, FIXTURE_LANGUAGE "-host", "language-host", "native", "1.0.0");
+    cJSON_AddStringToObject(item, "language", FIXTURE_LANGUAGE);
+    cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), "1.0.0");
+    cJSON *files = cJSON_AddObjectToObject(entry, "files");
+    cJSON_AddItemToObject(files, "host.json",
+                          served_reference(base, FIXTURE_LANGUAGE "-host", "1.0.0", "host.json",
+                                           "{\"entry\": \"program" EXECUTABLE_ENDING "\", \"runtime\": \"native\"}"));
+    cJSON_AddItemToObject(files, "program" EXECUTABLE_ENDING,
+                          served_copy(base, FIXTURE_LANGUAGE "-host", "1.0.0", "program" EXECUTABLE_ENDING,
+                                      LAYER_FIXTURE_PATH));
 }
 
-/** The launch world whose settings enable SESSION_PLUGIN on javascript and NATIVE_PLUGIN on native, both layers installed. */
+/**
+ * The launch world whose settings enable SESSION_PLUGIN, in TypeScript and required first so its layer holds the front
+ * door, and FIXTURE_PLUGIN in the fixture language, each language's host item installed by install.
+ */
 static void install_two_layer_world(host_world *world, const char *label) {
     start_world_at(world, "launch", label);
     install_fake_application(world);
-    list_plugin(&world->base, NATIVE_PLUGIN, "1.0.0", "native");
-    list_launch_catalog(world, "[]", 1);
+    list_plugin(&world->base, FIXTURE_PLUGIN, "1.0.0", FIXTURE_LANGUAGE);
+    list_fixture_language_host(world);
+    list_launch_catalog_requiring(world, APPLICATION_ID, "[]", 1, "[\"" SESSION_PLUGIN "\"]");
     char *node = install_fake_node(world);
     char path[4096];
     snprintf(path, sizeof path, "%s" PATH_SEPARATOR "%s", world->bin, node);
-    const char *plugins[] = {"--plugin", SESSION_PLUGIN, "--plugin", NATIVE_PLUGIN, NULL};
+    const char *plugins[] = {"--plugin", SESSION_PLUGIN, "--plugin", FIXTURE_PLUGIN, NULL};
     CHECK(world_install(world, plugins, path) == 0);
-    install_native_layer(world);
     spisor_memory_release(node);
 }
 
@@ -710,14 +698,13 @@ static void starts_both_layers_of_a_loader_whose_plugins_span_two_each_under_its
     const char *passed[] = {"layers", "0", NULL};
     launch(&world, &launcher, passed, NULL);
     cJSON *started = await_application(&world, "layers");
-    check_text(text_at(started, "spisorTest"), "front@javascript", "the front door's environment, not the other's");
+    check_text(text_at(started, "spisorTest"), "front@typescript", "the front door's environment, not the other's");
     long front = await_holders(&world, LOADER_ID, 2);
-    long other = await_holders(&world, LOADER_ID ".native", 2);
+    long other = await_holders(&world, LOADER_ID "." FIXTURE_LANGUAGE, 2);
     long background = await_holders(&world, BACKGROUND_ID, 2);
-    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " native " LOADER_ID);
-    expect_contains(starts, "host ", "the native layer started through its host word");
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " native " LOADER_ID, "the native layer");
-    expect_contains(starts, RUNTIME_FIXTURE_BINARY " javascript " LOADER_ID, "the javascript layer");
+    char *starts = await_starts_holding(&world, RUNTIME_FIXTURE_BINARY " " FIXTURE_LANGUAGE " " LOADER_ID);
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " " FIXTURE_LANGUAGE " " LOADER_ID, "the fixture language's layer");
+    expect_contains(starts, RUNTIME_FIXTURE_BINARY " typescript " LOADER_ID, "the typescript layer");
     release_application(&world, "layers");
     CHECK(program_finish(&launcher, 30000) == 0);
     CHECK(gone_within(front, INTERVAL_MILLISECONDS * 2 + STOP_ALLOWANCE));
@@ -732,18 +719,18 @@ static void starts_both_layers_of_a_loader_whose_plugins_span_two_each_under_its
     finish_world(&world);
 }
 
-/** A launch reading only the front door's record would start the application without the native layer's plugins. */
+/** A launch reading only the front door's record would start the application without the other layer's plugins. */
 static void refuses_the_launch_with_the_refusal_the_other_layer_publishes(void) {
     host_world world;
     install_two_layer_world(&world, "other-layer-refused");
-    world.refusing_runtime = "native";
+    world.refusing_language = FIXTURE_LANGUAGE;
     program launcher;
     const char *passed[] = {"refused", "0", NULL};
     launch(&world, &launcher, passed, NULL);
     CHECK(program_finish(&launcher, 30000) == 1);
     expect_contains(launcher.err, "the fixture session host refused", "the other layer's refusal");
     expect_unheld(&world, LOADER_ID, "the front door after the other layer refused");
-    expect_unheld(&world, LOADER_ID ".native", "the other layer after it refused");
+    expect_unheld(&world, LOADER_ID "." FIXTURE_LANGUAGE, "the other layer after it refused");
     cJSON *never = application_start(&world, "refused");
     CHECK(never == NULL);
     cJSON_Delete(never);

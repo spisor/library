@@ -27,13 +27,17 @@ case carries the `detail`, `path` and `fix` the refusal must give; the reader an
   | `minimum` | use a value of at least the schema's minimum |
   | `minLength` | give the member a non-empty value |
   | `not` on an application | remove the member, which this kind of item may not carry; only a host item may have an application |
+  | `not` on an interface's language | remove language, which an interface item does not carry: it hosts no plugin |
+  | `not` on a plugin's runtime | remove runtime: a plugin's language decides the host that runs it, and that host's item its runtime |
   | `anyOf` on a version | list files, platforms, or both |
   | `anyOf` on a package | give the package as a name, or as an object with a name and optional options |
   | anything else | correct the member the path names |
 
 - **A fault the schema cannot express** (a url leaving its origin, two file keys naming one file, text
   that is not JSON) is decided by the rule `urls.json` or `folds.json` states, and
-  worded as the reader's other refusals of that kind are worded.
+  worded as the reader's other refusals of that kind are worded. A language-host item whose id is not
+  its `language` followed by `-host` is refused at `/items/<id>` with the detail `language-host item
+  <id> hosts <language>, so its id must be <language>-host`.
 - `detailStartsWith` replaces `detail` where the rest of the message is a parser's own description of
   the fault, which is not pinned.
 - `because` says why an answer is what it is wherever the rules above would not make it obvious.

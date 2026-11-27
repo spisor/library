@@ -1091,7 +1091,7 @@ static void every_service_but_commands(void) {
 }
 
 #define CATALOG_INDEX                                                                                              \
-    "{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{" \
+    "{\"format\":2,\"items\":{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{" \
     "\"plugin.json\":{\"url\":\"a/1.0.0/plugin.json\",\"sha256\":\""                                              \
     "0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1}}}}}}}"
 #define HELLO_SHA256 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -1639,7 +1639,7 @@ static void every_cache_and_catalog_operation(void) {
 #define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
 #define PLUGIN_ENTRY "export default {};"
 #define RELEASE_INDEX                                                                                              \
-    "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"        \
+    "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"        \
     "\"plugin.json\":{\"url\":\"plugin.json\",\"sha256\":"                                                         \
     "\"6ef2fa406ca66093ba8b6348f8b0547fc59e0d34de3bcddee40baaa4ece95cb3\",\"size\":74},"                         \
     "\"dist/index.js\":{\"url\":\"index.js\",\"sha256\":"                                                          \
@@ -1703,7 +1703,7 @@ static void a_catalog_with_one_plugin(void) {
     under_base(source, sizeof source, "source.txt");
     file_url_of(source, url, sizeof url);
     snprintf(text, sizeof text,
-             "{\"format\":1,\"items\":{\"p\":{\"kind\":\"plugin\",\"runtime\":\"native\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
+             "{\"format\":2,\"items\":{\"p\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"runtime\":\"native\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
              "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}}}",
              url);
     write_text(place.base, "index.json", text);
@@ -1809,12 +1809,12 @@ static void build_cache_and_catalog_values(void) {
     under_base(source, sizeof source, "source.txt");
     file_url_of(source, url, sizeof url);
     snprintf(text, sizeof text,
-             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
              "\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}",
              url);
     CHECK(value_of_text(text, &install_item));
     snprintf(text, sizeof text,
-             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
              "\"sha256\":\"" HELLO_SHA256 "\",\"size\":6}}}}}",
              url);
     CHECK(value_of_text(text, &short_item));
@@ -1876,7 +1876,7 @@ int main(int argc, char **argv) {
                         "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
                         "\"opencode\",\"binary\":\"absent\"}}}",
                         &catalog_items));
-    CHECK(value_of_text("{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\"},\"b\":{\"kind\":\"host\"}}}",
+    CHECK(value_of_text("{\"format\":2,\"items\":{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\"},\"b\":{\"kind\":\"host\"}}}",
                         &whole_catalog));
     CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
     build_cache_and_catalog_values();

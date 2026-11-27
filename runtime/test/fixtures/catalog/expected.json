@@ -611,8 +611,8 @@
       "path": ""
     },
     {
-      "name": "refuses a format other than 1",
-      "fixture": "refuses-a-format-other-than-1.json",
+      "name": "refuses a format other than 2",
+      "fixture": "refuses-a-format-other-than-2.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": false,
       "detail": "the catalog index must be equal to constant",
@@ -1238,7 +1238,7 @@
       "detail": "the catalog index must have required property 'runtime'",
       "fix": "add the missing member",
       "path": "/items/thing/runtime",
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
     },
     {
       "name": "refuses a runtime outside the three",
@@ -1248,28 +1248,31 @@
       "detail": "the catalog index must be equal to one of the allowed values",
       "fix": "use one of the values the schema lists for this member",
       "path": "/items/thing/runtime",
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
     },
     {
       "name": "accepts a plugin item with no runtime",
       "fixture": "accepts-a-plugin-item-with-no-runtime.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": true,
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
     },
     {
-      "name": "accepts a plugin item that runs on the jvm",
-      "fixture": "accepts-a-plugin-item-that-runs-on-the-jvm.json",
+      "name": "refuses a plugin item that names a runtime",
+      "fixture": "refuses-a-plugin-item-that-names-a-runtime.json",
       "origin": "https://example.com/catalog/index.json",
-      "accepted": true,
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "accepted": false,
+      "detail": "the catalog index must NOT be valid",
+      "fix": "remove runtime: a plugin's language decides the host that runs it, and that host's item its runtime",
+      "path": "/items/thing",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
     },
     {
       "name": "accepts a library item that names a runtime",
       "fixture": "accepts-a-library-item-that-names-a-runtime.json",
       "origin": "https://example.com/catalog/index.json",
       "accepted": true,
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
     },
     {
       "name": "refuses a runtime that is not a string",
@@ -1279,7 +1282,7 @@
       "detail": "the catalog index must be equal to one of the allowed values",
       "fix": "use one of the values the schema lists for this member",
       "path": "/items/thing/runtime",
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
     },
     {
       "name": "refuses a host with no runtime before its missing versions",
@@ -1289,7 +1292,118 @@
       "detail": "the catalog index must have required property 'runtime'",
       "fix": "add the missing member",
       "path": "/items/thing/runtime",
-      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; any other item may name one"
+      "because": "a host item names the runtime it starts on, one of native, javascript and jvm; a library may name one, and a plugin names none"
+    },
+    {
+      "name": "refuses a plugin item with no language",
+      "fixture": "refuses-a-plugin-item-with-no-language.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must have required property 'language'",
+      "fix": "add the missing member",
+      "path": "/items/thing/language",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses a language outside the pattern",
+      "fixture": "refuses-a-language-outside-the-pattern.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must match pattern \"^(?!spisor(?![\\s\\S]))[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])\"",
+      "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
+      "path": "/items/thing/language",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses the language spisor",
+      "fixture": "refuses-the-language-spisor.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must match pattern \"^(?!spisor(?![\\s\\S]))[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])\"",
+      "fix": "use the shape the schema's pattern requires: a plugin-style id, a semver version, a 64-character lowercase hex sha256, or a file key of non-empty relative segments with / separators",
+      "path": "/items/thing/language",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "accepts a hyphenated language",
+      "fixture": "accepts-a-hyphenated-language.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": true,
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "accepts a language-host item",
+      "fixture": "accepts-a-language-host-item.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": true,
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses a language-host item with no language",
+      "fixture": "refuses-a-language-host-item-with-no-language.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must have required property 'language'",
+      "fix": "add the missing member",
+      "path": "/items/typescript-host/language",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses a language-host item with no runtime",
+      "fixture": "refuses-a-language-host-item-with-no-runtime.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must have required property 'runtime'",
+      "fix": "add the missing member",
+      "path": "/items/typescript-host/runtime",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses a language-host item not named for its language",
+      "fixture": "refuses-a-language-host-item-not-named-for-its-language.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "language-host item rust-host hosts typescript, so its id must be typescript-host",
+      "fix": "name a language-host item for the language it hosts followed by -host, or host that language",
+      "path": "/items/rust-host",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "accepts an interface item",
+      "fixture": "accepts-an-interface-item.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": true,
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses an interface item that names a language",
+      "fixture": "refuses-an-interface-item-that-names-a-language.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must NOT be valid",
+      "fix": "remove language, which an interface item does not carry: it hosts no plugin",
+      "path": "/items/spisor-interface",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses an interface item with no runtime",
+      "fixture": "refuses-an-interface-item-with-no-runtime.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must have required property 'runtime'",
+      "fix": "add the missing member",
+      "path": "/items/spisor-interface/runtime",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
+    },
+    {
+      "name": "refuses an application on a language-host item",
+      "fixture": "refuses-an-application-on-a-language-host-item.json",
+      "origin": "https://example.com/catalog/index.json",
+      "accepted": false,
+      "detail": "the catalog index must NOT be valid",
+      "fix": "remove the member, which this kind of item may not carry; only a host item may have an application",
+      "path": "/items/typescript-host",
+      "because": "a plugin item names the language it is written in and no runtime, a language-host item its language and runtime, an interface item its runtime and no language"
     }
   ]
 }

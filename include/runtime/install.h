@@ -168,7 +168,9 @@ typedef struct runtime_install_detect_answer {
 /**
  * A loader `loader`, installed at the absolute `home`, and `application`, the record its host.json describes (an
  * `id`, a `label` and the `entry` to write), whose changes are recorded under the absolute `state` place, the
- * absolute `cache` place being where an entry finds what it runs. First shape ends at `application`.
+ * absolute `cache` place being where an entry finds what it runs; and when its size reaches it the `language` of the
+ * loader's front door, whose language-host item `<language>-host` an entry's {{hint}} and {{bundles}} stand for, NULL
+ * for a loader that holds none. First shape ends at `application`.
  */
 typedef struct runtime_install_entry_argument {
     uint32_t size;
@@ -177,17 +179,18 @@ typedef struct runtime_install_entry_argument {
     const char *loader;
     const char *home;
     const spisor_value *application;
+    const char *language;
 } runtime_install_entry_argument;
 
 /**
- * Whether the entry was written, whether it runs its host on the JavaScript host, and the sequence of each change
- * recorded now; for an application that declares no entry, `detail` and `fix` say how to start it instead. First
- * shape ends at `storage`.
+ * Whether the entry was written, whether it runs its host inside the application's process, and the sequence of each
+ * change recorded now; for an application that declares no entry, `detail` and `fix` say how to start it instead.
+ * First shape ends at `storage`.
  */
 typedef struct runtime_install_entry_answer {
     uint32_t size;
     uint32_t written;
-    uint32_t runs_on_javascript_host;
+    uint32_t runs_in_process;
     const uint64_t *sequences;
     size_t sequence_count;
     const char *detail;
@@ -440,7 +443,7 @@ typedef struct runtime_install_loader {
     const runtime_install_refused_command *refused_commands;
     size_t refused_command_count;
     uint32_t entry_written;
-    uint32_t entry_runs_on_javascript_host;
+    uint32_t entry_runs_in_process;
     const char *entry_detail;
     const char *entry_fix;
 } runtime_install_loader;
@@ -527,19 +530,22 @@ typedef struct runtime_install_definition {
      * out, also while taking them back, answers OUT_OF_MEMORY, and what it leaves stays recorded for the loader's
      * removal to reverse.
      *
-     * @return OK; MALFORMED, also for an application that is not a record with an id; REFUSED for application facts
-     * the loader gets wrong, or a change the disk refuses; OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for an application that is not a record with an id, or a `language` that is no
+     * language name; REFUSED for application facts the loader gets wrong, an entry that runs in process or names
+     * {{hint}} or {{bundles}} for a loader naming no `language`, or a change the disk refuses; OUT_OF_MEMORY.
      */
     spisor_status (*entry)(void *context, const runtime_install_entry_argument *argument,
                            runtime_install_entry_answer *answer, spisor_refusal *refusal);
     /**
-     * A node on the environment's PATH of the minimum the installed javascript-host's Node pin names or newer, else
-     * the build that pin names for the platform, fetched into the cache and verified against its pinned SHA-256 only
-     * when it is not there intact, and recorded as the runtime every host started on JavaScript runs with. What it
-     * stored in the cache stays there for the next call, whatever this one answers.
+     * A node on the environment's PATH of the minimum the Node pin of the installed items started on JavaScript names
+     * or newer, else the build that pin names for the platform, fetched into the cache and verified against its pinned
+     * SHA-256 only when it is not there intact, and recorded as the runtime every host started on JavaScript runs
+     * with. The pin is read from the host.json of every item a boot hint names whose host.json says `runtime`
+     * `javascript` and carries `node`. What it stored in the cache stays there for the next call, whatever this one
+     * answers.
      *
-     * @return OK; MALFORMED, also for a platform that is not os-arch; REFUSED when no installed javascript-host pins
-     * Node, or there is none to reuse and the pin cannot be acquired; OUT_OF_MEMORY.
+     * @return OK; MALFORMED, also for a platform that is not os-arch; REFUSED when no such item pins Node, two pin
+     * different Nodes, naming both, or there is none to reuse and the pin cannot be acquired; OUT_OF_MEMORY.
      */
     spisor_status (*runtime)(void *context, const runtime_install_runtime_argument *argument,
                              runtime_install_runtime_answer *answer, spisor_refusal *refusal);
@@ -588,9 +594,14 @@ typedef struct runtime_install_definition {
      * they name none, plus each of `requested`; each installed default or requested plugin the settings never mention
      * is enabled; each source not yet listed is recorded; spisor-host is registered and its boot hint written. The
      * loader of every installed or detected application is installed and registered with its commands and its
-     * application entry, and every background host a loader names is installed and registered.
-     * forebay-library and the JavaScript host install only when something runs on them, and the pinned Node only when
-     * something this install would start runs on JavaScript. Last, the versions now running are recorded.
+     * application entry, and every background host a loader names is installed and registered. The language-host
+     * item `<language>-host` of each language an installed plugin is written in, or a loader's in-process entry needs
+     * for its front door, installs beside forebay-library, each hinted with the runtime and forebay-library; a plugin
+     * whose language the catalog lists no such item for is reported unavailable and not installed. The chosen
+     * interface installs with every ecosystem: the item spisor-host's `interface` setting names, none for `none`, else
+     * the catalog's one item of kind `interface`, reported unavailable naming each when it lists two or more and none
+     * is chosen, and headless when it lists none. The pinned Node installs only when something this install would
+     * start runs on JavaScript. Last, the versions now running are recorded.
      *
      * Before anything is installed, only the catalog cache is written, by the check of each source. A refusal comes
      * only then, so a REFUSED answer has installed nothing. From then on an item that cannot be installed is reported

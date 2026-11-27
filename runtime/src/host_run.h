@@ -54,10 +54,10 @@ typedef struct runtime_host_run {
 
 /**
  * Starts the run `arguments` name in `environment`, an object of variable names to values, each form led by the
- * layer's runtime, javascript or native: `<runtime> <loader id>` serves, `<runtime> <loader id> in-process` serves
- * in-process, `<runtime> <loader id> action <plugin> <action> <input> [<result>]` runs one action, the input a JSON
- * object and the result, when given, a path runtime_is_result_path accepts in the state place. The
- * layer is the item that runtime names, javascript-host or spisor-interface, at the version its boot hint names,
+ * layer's language, as a catalog names a plugin's: `<language> <loader id>` serves, `<language> <loader id>
+ * in-process` serves in-process, `<language> <loader id> action <plugin> <action> <input> [<result>]` runs one action,
+ * the input a JSON object and the result, when given, a path runtime_is_result_path accepts in the state place. The
+ * layer is the language-host item `<language>-host` at the version its boot hint names,
  * beside every library the hint names; hosts.start plans the layer's run,
  * a SERVE run as the loader's session start; the plan's libraries are the hinted ones with a binary but runtime
  * itself, which the program was started with, and its plugins are those cache.locate finds of the plan's. An ACTION

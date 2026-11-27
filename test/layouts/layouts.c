@@ -958,10 +958,11 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_entry_argument, loader);
     FIELD(runtime_install_entry_argument, home);
     FIELD(runtime_install_entry_argument, application);
+    FIELD(runtime_install_entry_argument, language);
     SIZE(runtime_install_entry_argument);
     FIELD(runtime_install_entry_answer, size);
     FIELD(runtime_install_entry_answer, written);
-    FIELD(runtime_install_entry_answer, runs_on_javascript_host);
+    FIELD(runtime_install_entry_answer, runs_in_process);
     FIELD(runtime_install_entry_answer, sequences);
     FIELD(runtime_install_entry_answer, sequence_count);
     FIELD(runtime_install_entry_answer, detail);
@@ -1091,7 +1092,7 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_loader, refused_commands);
     FIELD(runtime_install_loader, refused_command_count);
     FIELD(runtime_install_loader, entry_written);
-    FIELD(runtime_install_loader, entry_runs_on_javascript_host);
+    FIELD(runtime_install_loader, entry_runs_in_process);
     FIELD(runtime_install_loader, entry_detail);
     FIELD(runtime_install_loader, entry_fix);
     SIZE(runtime_install_loader);
@@ -1423,7 +1424,7 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_start_argument, libraries);
     FIELD(runtime_hosts_start_argument, library_count);
     FIELD(runtime_hosts_start_argument, session);
-    FIELD(runtime_hosts_start_argument, layer_runtime);
+    FIELD(runtime_hosts_start_argument, layer_language);
     FIELD(runtime_hosts_start_argument, action_plugin);
     SIZE(runtime_hosts_start_argument);
     FIELD(runtime_hosts_timers, record_run_milliseconds);
@@ -1453,7 +1454,7 @@ static void print_hosts_layouts(void) {
     FIELD(runtime_hosts_layer_start_argument, input);
     FIELD(runtime_hosts_layer_start_argument, result);
     SIZE(runtime_hosts_layer_start_argument);
-    FIELD(runtime_hosts_layer, runtime);
+    FIELD(runtime_hosts_layer, language);
     FIELD(runtime_hosts_layer, host_id);
     FIELD(runtime_hosts_layer, executable);
     FIELD(runtime_hosts_layer, arguments);

@@ -216,12 +216,13 @@ static inline spisor_status install_entry_call(const runtime_install_definition 
     argument.loader = cache_member_text(loader, "id");
     argument.home = cache_member_text(loader, "home");
     argument.application = catalog_request_value(held, loader, "application");
+    argument.language = cache_member_text(loader, "language");
     status = install->entry(install->context, &argument, &answer, refusal);
     if (status == SPISOR_OK) {
         *tree = cJSON_CreateObject();
         CHECK(cJSON_AddBoolToObject(*tree, "written", answer.written != 0) != NULL);
-        if (answer.runs_on_javascript_host) {
-            CHECK(cJSON_AddTrueToObject(*tree, "runsOnJavascriptHost") != NULL);
+        if (answer.runs_in_process) {
+            CHECK(cJSON_AddTrueToObject(*tree, "runsInProcess") != NULL);
         }
         if (answer.written) {
             cJSON *sequences = cJSON_AddArrayToObject(*tree, "sequences");
@@ -443,8 +444,8 @@ static inline cJSON *install_loader_json(const runtime_install_loader *loader) {
                                                                                         loader->refused_command_count)));
     entry = cJSON_AddObjectToObject(json, "entry");
     CHECK(cJSON_AddBoolToObject(entry, "written", loader->entry_written != 0) != NULL);
-    if (loader->entry_runs_on_javascript_host) {
-        CHECK(cJSON_AddTrueToObject(entry, "runsOnJavascriptHost") != NULL);
+    if (loader->entry_runs_in_process) {
+        CHECK(cJSON_AddTrueToObject(entry, "runsInProcess") != NULL);
     }
     cache_add_text(entry, "message", loader->entry_detail);
     cache_add_text(entry, "fix", loader->entry_fix);

@@ -5,6 +5,7 @@
 #include "boot_hint.h"
 #include "cache_place.h"
 #include "cache_marker.h"
+#include "catalog_patterns.h"
 #include "config.h"
 #include "directory_tree.h"
 #include "paths.h"
@@ -21,6 +22,7 @@
 #define INSTALL_FIX                                                                                                   \
     "give each install a plugin.json record with an id, a version and an entry below its bundle, an absolute entry " \
     "source that exists, and settings that are a record or NULL"
+#define LAYER_FIX "give each layer a language name and the runtime javascript, jvm or native, each language once"
 #define LIBRARY_FIX "give each library an id, an absolute directory, and a version or a library.json declaring one"
 
 static spisor_status refuse(spisor_refusal *refusal, const char *detail, const char *fix) {
@@ -253,6 +255,34 @@ static spisor_status prepare_libraries(const runtime_testing_home_argument *argu
     return status;
 }
 
+static int is_layer_runtime(const char *runtime) {
+    return runtime != NULL && (strcmp(runtime, "javascript") == 0 || strcmp(runtime, "jvm") == 0 ||
+                               strcmp(runtime, "native") == 0);
+}
+
+/** Takes the argument's layers into home when its size reaches them, each checked as lay_out_home documents. */
+static spisor_status prepare_layers(const runtime_testing_home_argument *argument,
+                                    runtime_testing_prepared_home *home, spisor_refusal *refusal) {
+    int given = spisor_has_shape(argument->size, SPISOR_SHAPE_THROUGH(runtime_testing_home_argument, layer_count));
+    home->layers = given ? argument->layers : NULL;
+    home->layer_count = given ? argument->layer_count : 0;
+    if (home->layer_count > 0 && home->layers == NULL) {
+        return refuse(refusal, "the layers are absent beside a count", LAYER_FIX);
+    }
+    for (size_t index = 0; index < home->layer_count; index++) {
+        const runtime_testing_layer *layer = &home->layers[index];
+        int repeated = 0;
+        for (size_t earlier = 0; runtime_catalog_is_language(layer->language) && earlier < index; earlier++) {
+            repeated = repeated || strcmp(home->layers[earlier].language, layer->language) == 0;
+        }
+        if (!runtime_catalog_is_language(layer->language) || repeated || !is_layer_runtime(layer->runtime)) {
+            return refuse(refusal, "a layer names no language, names one twice, or names no runtime of the three",
+                          LAYER_FIX);
+        }
+    }
+    return SPISOR_OK;
+}
+
 static spisor_status check_host(const runtime_testing_home_argument *argument, spisor_refusal *refusal) {
     if (!runtime_registry_is_host_id(argument->host_id)) {
         return refuse(refusal, "the host id is absent or no plain file name", "pass a host id such as test-host");
@@ -280,7 +310,8 @@ spisor_status runtime_testing_prepare_home(const runtime_testing_home_argument *
         return SPISOR_OUT_OF_MEMORY;
     }
     status = prepare_installs(argument, home, refusal);
-    return status == SPISOR_OK ? prepare_libraries(argument, home, refusal) : status;
+    status = status == SPISOR_OK ? prepare_libraries(argument, home, refusal) : status;
+    return status == SPISOR_OK ? prepare_layers(argument, home, refusal) : status;
 }
 
 void runtime_testing_free_prepared_install(runtime_testing_prepared_install *prepared) {

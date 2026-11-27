@@ -3,20 +3,16 @@
 
 #include "cJSON.h"
 
-/** The catalog item an entry declaring runsOnJavascriptHost runs a loader's host on. */
-#define RUNTIME_JAVASCRIPT_HOST_ID "javascript-host"
-
-/** The catalog item whose boot hint names the native layer's libraries and version. */
-#define RUNTIME_NATIVE_HOST_ID "spisor-interface"
-
 /** The library id runtime itself is installed and hinted under. */
 #define RUNTIME_LIBRARY_ID "runtime"
 
 /**
  * Writes the entry the loader's application declares, every directory, file and settings member through
- * changes.apply under the loader's id, so removing the loader reverses all of it. Answers {written: true,
- * runsOnJavascriptHost, sequences}, the sequence of each change recorded now, or {written: false, message,
- * fix} for an application declaring no entry; NULL with *refusal set when a change is refused.
+ * changes.apply under the loader's id, so removing the loader reverses all of it, its {{hint}} and {{bundles}} standing
+ * for the boot hint and the bundles of `<language>-host`, the loader's `language` being its front door's. Answers
+ * {written: true, runsInProcess, sequences}, the sequence of each change recorded now, or {written: false, message,
+ * fix} for an application declaring no entry; NULL with *refusal set when a change is refused, or when the loader
+ * names no language and its entry runs in process or names {{hint}} or {{bundles}}.
  */
 cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **refusal);
 

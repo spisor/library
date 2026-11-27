@@ -1,7 +1,8 @@
 # Lays out a fresh home for one bindings test under BASE: a registered loader `test-host` whose settings enable the
 # plugins PLUGINS names (comma separated, each a folder of PLUGIN_SOURCES holding its plugin.json), each installed as
-# version 1.0.0 with a placeholder entry, its application settings file holding its report path, an empty local
-# catalog, and the javascript-host's hint naming the copy of RUNTIME and DECLARATION it places in BASE/rt.
+# version 1.0.0 with a placeholder entry, its application settings file holding its report path, a local catalog
+# listing each plugin as written in typescript and typescript-host as the language-host item that runs it, and
+# typescript-host's hint naming the copy of RUNTIME and DECLARATION it places in BASE/rt.
 
 foreach(required BASE PLUGINS PLUGIN_SOURCES RUNTIME DECLARATION)
     if(NOT DEFINED ${required})
@@ -17,10 +18,9 @@ file(COPY "${RUNTIME}" DESTINATION "${BASE}/rt")
 file(COPY "${DECLARATION}" DESTINATION "${BASE}/rt")
 file(MAKE_DIRECTORY "${BASE}/user" "${BASE}/portable" "${BASE}/secrets")
 
-file(WRITE "${BASE}/catalog/index.json" "{\"format\": 1, \"items\": {}}")
 file(WRITE "${BASE}/state/hosts/test-host.json"
     "{\"id\": \"test-host\", \"kind\": \"host\", \"version\": \"1.0.0\", \"home\": \"${BASE}/application\"}")
-file(WRITE "${BASE}/cache/hosts/javascript-host.json"
+file(WRITE "${BASE}/cache/hosts/typescript-host.json"
     "{\"host\": \"2.0.0\", \"libraries\": {"
     "\"runtime\": {\"version\": \"0.2.0\", \"directory\": \"${BASE}/rt\", \"binary\": \"${BASE}/rt/${runtime_name}\"}}}")
 
@@ -34,6 +34,13 @@ foreach(id IN LISTS plugin_ids)
     list(APPEND enabled "\"${id}\": {\"enabled\": true}")
 endforeach()
 list(JOIN enabled ", " enabled)
+string(CONCAT listed "\"typescript-host\": {\"kind\": \"language-host\", \"language\": \"typescript\", \"runtime\": \"javascript\", "
+    "\"latest\": \"2.0.0\", \"versions\": {\"2.0.0\": {\"files\": {}}}}")
+foreach(id IN LISTS plugin_ids)
+    string(APPEND listed ", \"${id}\": {\"kind\": \"plugin\", \"language\": \"typescript\", \"latest\": \"1.0.0\", "
+        "\"versions\": {\"1.0.0\": {\"files\": {}}}}")
+endforeach()
+file(WRITE "${BASE}/catalog/index.json" "{\"format\": 2, \"items\": {${listed}}}")
 file(WRITE "${BASE}/application/config/settings.json"
     "{\"plugins\": {${enabled}}, "
     "\"catalog\": {\"sources\": [{\"kind\": \"local\", \"path\": \"${BASE}/catalog/index.json\"}]}}")

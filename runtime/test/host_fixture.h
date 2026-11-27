@@ -18,9 +18,9 @@
 #include "user_home.h"
 
 #define LOADER "test-host"
-#define LAYER_RUNTIME "javascript"
+#define LAYER_LANGUAGE "typescript"
 #define PLUGIN_MANIFEST                                                                                            \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", \"config\": {\"name\": \"a\"}, "              \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", \"config\": {\"name\": \"a\"}, "              \
     "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\", "                      \
     "\"argument\": {\"name\": \"world\", \"loud\": false}}}}}"
 
@@ -49,9 +49,55 @@ static inline void write_entry_source(char *entry, size_t capacity) {
     write_file(entry, "export default {};\n");
 }
 
+/** Lists `<language>-host` as a language-host item started under `runtime` in the updates fixture's catalog. */
+static inline void list_language_host_item(const char *language, const char *runtime) {
+    char id[128];
+    snprintf(id, sizeof id, "%s-host", language);
+    cJSON_DeleteItemFromObjectCaseSensitive(catalog_items, id);
+    cJSON *item = cJSON_AddObjectToObject(catalog_items, id);
+    cJSON_AddStringToObject(item, "kind", "language-host");
+    cJSON_AddStringToObject(item, "language", language);
+    cJSON_AddStringToObject(item, "runtime", runtime);
+    cJSON_AddStringToObject(item, "latest", "2.0.0");
+    cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(item, "versions"), "2.0.0"), "files");
+    write_catalog();
+}
+
+/** Lists plugin `id` at 1.0.0 written in `language` in the updates fixture's catalog. */
+static inline void list_plugin_in(const char *id, const char *language) {
+    list_plugin(id, "1.0.0", "1.0.0");
+    cJSON_ReplaceItemInObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog_items, id), "language",
+                                           cJSON_CreateString(language));
+    write_catalog();
+}
+
+/**
+ * Lists plugin `id` at `version` in the home's catalog in the language `manifest` names, as the catalog an install read
+ * lists every plugin it installed, so the layers read its language; and in the updates fixture's catalog, which a test
+ * writing settings_with reads instead.
+ */
+static inline void list_in_home_catalog(const runtime_testing_layout *layout, const cJSON *manifest) {
+    cJSON *catalog = read_json_file(layout->catalog);
+    cJSON *items = cJSON_GetObjectItemCaseSensitive(catalog, "items");
+    const char *id = text_at(manifest, "id");
+    const char *version = text_at(manifest, "version");
+    cJSON_DeleteItemFromObjectCaseSensitive(items, id);
+    cJSON *item = cJSON_AddObjectToObject(items, id);
+    cJSON_AddStringToObject(item, "kind", "plugin");
+    cJSON_AddStringToObject(item, "language", text_at(manifest, "language"));
+    cJSON_AddStringToObject(item, "latest", version);
+    cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(item, "versions"), version), "files");
+    char *text = cJSON_PrintUnformatted(catalog);
+    write_file(layout->catalog, text);
+    cJSON_free(text);
+    cJSON_Delete(catalog);
+    list_plugin_in(id, text_at(manifest, "language"));
+}
+
 /**
  * Installs plugin `id` with `manifest` again, as a plugin's next install would leave it: through runtime-testing's own
- * placing of one install, an empty module at the entry the manifest names, if it names one.
+ * placing of one install, an empty module at the entry the manifest names, if it names one, and listed in the home's
+ * catalog in the language its manifest names.
  */
 static inline void install_plugin(const char *id, const char *manifest) {
     char entry[1200];
@@ -69,6 +115,7 @@ static inline void install_plugin(const char *id, const char *manifest) {
     CHECK(runtime_testing_layout_of(scratch, &layout));
     CHECK(runtime_testing_prepare_install(&install, &layout, 0, &prepared, NULL) == SPISOR_OK);
     CHECK(runtime_testing_place_install(&layout, &prepared, NULL) == SPISOR_OK);
+    list_in_home_catalog(&layout, manifest_json);
     runtime_testing_free_prepared_install(&prepared);
     runtime_testing_free_layout(&layout);
     if (install.entry_source != NULL) {
@@ -101,6 +148,7 @@ static inline void lay_out_host_world(int64_t holder) {
     char forebay_binary[1500];
     runtime_boot_library libraries[2] = {{"runtime", "0.2.0", runtime_directory, runtime_binary},
                                          {"forebay-library", "0.3.0", forebay_directory, forebay_binary}};
+    runtime_testing_layer layers[1] = {{LAYER_LANGUAGE, "javascript"}};
     cJSON *manifest_json = parsed(PLUGIN_MANIFEST);
     spisor_value_tree manifest = SPISOR_INIT(spisor_value_tree);
     runtime_testing_install install = {&manifest.root, entry, NULL};
@@ -119,19 +167,23 @@ static inline void lay_out_host_world(int64_t holder) {
     argument.libraries = libraries;
     argument.library_count = 2;
     argument.holder = holder;
+    argument.layers = layers;
+    argument.layer_count = 1;
     CHECK(testing_definition()->lay_out_home(NULL, &argument, &answer, NULL) == SPISOR_OK);
     for (size_t index = 0; index < answer.variable_count; index++) {
         keep_variable(&answer.variables[index]);
     }
     snprintf(application_home, sizeof application_home, "%s", answer.home == NULL ? "" : answer.home);
     testing_definition()->release_home_answer(NULL, &answer);
+    list_language_host_item(LAYER_LANGUAGE, "javascript");
+    list_plugin_in("a", LAYER_LANGUAGE);
     spisor_value_release(&manifest);
     cJSON_Delete(manifest_json);
     CHECK(runtime_remove_tree(entry) == SPISOR_OK);
 }
 
 /**
- * A registered loader whose settings enable plugin `a`, installed with PLUGIN_MANIFEST, the javascript-host's hint
+ * A registered loader whose settings enable plugin `a`, installed with PLUGIN_MANIFEST, the typescript-host's hint
  * naming runtime and forebay-library, and this process's environment pointed at it all.
  */
 static inline void start_host_world(const char *label) {

@@ -8,8 +8,10 @@
 #include "cache_refusal.h"
 #include "catalog.h"
 #include "catalog_source.h"
+#include "catalog_text.h"
 #include "catalog_time.h"
 #include "file_times.h"
+#include "hosts_layers.h"
 #include "install_entries.h"
 #include "install_hosts.h"
 #include "install_references.h"
@@ -23,14 +25,15 @@
 #include "plugin_choices.h"
 
 #define FOREBAY_LIBRARY_ID "forebay-library"
+#define INTERFACE_SETTING "interface"
+#define HEADLESS "none"
 #define CATALOG_FIX "check the catalog path or url, then install again"
 #define ECOSYSTEM_FIX                                                                                           \
     "send {\"sources\": [{\"kind\": \"local\", \"path\"} | {\"kind\": \"https\", \"url\"}], \"places\": "         \
     "{\"portable\", \"state\", \"cache\"}, \"environment\": {<name>: <value>}, \"choices\"?: {<application>: "  \
     "<method>}, \"defaults\"?: [<plugin id>], \"requested\"?: [<plugin id>], \"platform\"?: \"<os>-<arch>\"}"
 
-static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID,
-                                             RUNTIME_JAVASCRIPT_HOST_ID};
+static const char *const FOUNDATION_IDS[] = {RUNTIME_ECOSYSTEM_HOST_ID, RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID};
 
 /** What one ecosystem install has settled so far, beside the run every step shares. */
 typedef struct ecosystem {
@@ -189,13 +192,26 @@ static int install_pinned(ecosystem *install, const char *const *ids, size_t cou
     return installed;
 }
 
-/** The plugin ids the settings mention under plugins, a pin on the host or a library not making one. */
-static cJSON *mentioned_plugins(const cJSON *values) {
+/** Whether the catalog lists id as an item of a kind other than plugin, as a pin on a host or a library does. */
+static int is_listed_as_no_plugin(const cJSON *catalog, const char *id) {
+    const char *kind = runtime_install_text(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(catalog,
+                                                                                                             "items"),
+                                                                             id),
+                                            "kind");
+    return kind != NULL && strcmp(kind, "plugin") != 0;
+}
+
+/**
+ * The plugin ids the settings mention under plugins, a pin on the host, a library or another item the catalog lists
+ * as no plugin not making one.
+ */
+static cJSON *mentioned_plugins(const cJSON *values, const cJSON *catalog) {
     const cJSON *plugins = cJSON_GetObjectItemCaseSensitive(values, "plugins");
     cJSON *mentioned = cJSON_CreateArray();
     for (const cJSON *member = mentioned != NULL && cJSON_IsObject(plugins) ? plugins->child : NULL; member != NULL;
          member = member->next) {
-        if (!is_foundation(member->string) && !runtime_install_add_text(mentioned, member->string)) {
+        int plugin = !is_foundation(member->string) && !is_listed_as_no_plugin(catalog, member->string);
+        if (plugin && !runtime_install_add_text(mentioned, member->string)) {
             cJSON_Delete(mentioned);
             return NULL;
         }
@@ -227,7 +243,7 @@ static int append_unnamed(cJSON *targets, const cJSON *asked, const cJSON *value
 
 /** The enabled plugins, or defaults when the settings name none, then each requested plugin not named yet. */
 static cJSON *plugin_targets(const ecosystem *install) {
-    cJSON *mentioned = mentioned_plugins(install->values);
+    cJSON *mentioned = mentioned_plugins(install->values, install->run.catalog);
     cJSON *targets = mentioned == NULL ? NULL
                      : cJSON_GetArraySize(mentioned) == 0 ? cJSON_CreateArray()
                                                           : runtime_plugin_candidates(install->values, NULL);
@@ -282,13 +298,33 @@ static int enable_all(ecosystem *install, const cJSON *enabling) {
     return reported;
 }
 
+/**
+ * Whether the catalog lists a language-host item for the language plugin id is written in, a plugin it does not list
+ * being left for install to report as absent; 0 having reported it unavailable when it lists none, and 0 with
+ * *out_of_memory set when memory runs out.
+ */
+static int is_hosted(ecosystem *install, const char *id, int *out_of_memory) {
+    const char *language = runtime_plugin_language(install->run.catalog, id);
+    int hosted = language == NULL || runtime_language_host_item(install->run.catalog, language, out_of_memory) != NULL;
+    if (!hosted && !*out_of_memory) {
+        cJSON *refusal = runtime_unhosted_language_refusal(language);
+        *out_of_memory = !runtime_install_report_refusal(install->run.report, id, refusal);
+    }
+    return hosted && !*out_of_memory;
+}
+
 static int install_plugins(ecosystem *install) {
     cJSON *targets = plugin_targets(install);
-    cJSON *mentioned = targets == NULL ? NULL : mentioned_plugins(install->values);
+    cJSON *mentioned = targets == NULL ? NULL : mentioned_plugins(install->values, install->run.catalog);
     cJSON *enabling = mentioned == NULL ? NULL : cJSON_CreateArray();
     int installed = enabling != NULL;
     for (const cJSON *target = installed ? targets->child : NULL; installed && target != NULL; target = target->next) {
         const char *id = runtime_install_text(target, "id");
+        int out_of_memory = 0;
+        if (!is_hosted(install, id, &out_of_memory)) {
+            installed = !out_of_memory;
+            continue;
+        }
         installed = install_referenced(install, target, "plugin") &&
                     (!cJSON_HasObjectItem(install->running, id) || !needs_enabling(install, id, mentioned) ||
                      runtime_install_add_text(enabling, id));
@@ -359,32 +395,47 @@ static int is_text(const char *text, const char *expected) {
     return text != NULL && strcmp(text, expected) == 0;
 }
 
-/** Whether a plugin or a background host installed now runs on the JavaScript runtime this install would start it with. */
-static int runs_javascript(const ecosystem *install, const cJSON *background) {
+/** Adds language to languages unless it holds it already; 0 when memory runs out. */
+static int add_language(cJSON *languages, const char *language) {
+    return language == NULL || runtime_install_holds(languages, language) ||
+           runtime_install_add_text(languages, language);
+}
+
+/**
+ * The languages whose host this install installs: each one a plugin installed now or a loader's required plugin is
+ * written in, as an array of texts; NULL when memory runs out.
+ *
+ * @implNote A loader's in-process entry runs its front door's layer, the language of its first required plugin, so
+ * its host comes with that plugin and an entry needs no host of its own.
+ */
+static cJSON *hosted_languages(const ecosystem *install) {
+    cJSON *languages = cJSON_CreateArray();
+    int built = languages != NULL;
+    for (const cJSON *version = built ? install->running->child : NULL; built && version != NULL;
+         version = version->next) {
+        built = add_language(languages, runtime_plugin_language(install->run.catalog, version->string));
+    }
+    for (const cJSON *plugin = built ? install->run.required_plugins->child : NULL; built && plugin != NULL;
+         plugin = plugin->next) {
+        built = add_language(languages, runtime_plugin_language(install->run.catalog, plugin->string));
+    }
+    if (!built) {
+        cJSON_Delete(languages);
+        return NULL;
+    }
+    return languages;
+}
+
+/** Whether a host installed now, a language host or a background host, starts on the JavaScript runtime. */
+static int starts_javascript(const ecosystem *install, const cJSON *background) {
     for (const cJSON *version = install->running->child; version != NULL; version = version->next) {
-        if (is_text(item_member(install, version->string, "kind"), "plugin") &&
-            is_text(item_member(install, version->string, "runtime"), "javascript")) {
+        if (is_text(item_member(install, version->string, "kind"), "language-host") &&
+            is_text(item_member(install, version->string, "runtime"), RUNTIME_LAYER_JAVASCRIPT)) {
             return 1;
         }
     }
     for (const cJSON *id = background->child; id != NULL; id = id->next) {
-        if (is_text(item_member(install, id->valuestring, "runtime"), "javascript")) {
-            return 1;
-        }
-    }
-    for (const cJSON *plugin = install->run.required_plugins->child; plugin != NULL; plugin = plugin->next) {
-        if (is_text(item_member(install, plugin->string, "runtime"), "javascript")) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int writes_in_process_entry(const ecosystem *install) {
-    for (const cJSON *row = cJSON_GetObjectItemCaseSensitive(install->run.report, "loaders")->child; row != NULL; row = row->next) {
-        const cJSON *entry = cJSON_GetObjectItemCaseSensitive(row, "entry");
-        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsOnJavascriptHost")) &&
-            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written"))) {
+        if (is_text(item_member(install, id->valuestring, "runtime"), RUNTIME_LAYER_JAVASCRIPT)) {
             return 1;
         }
     }
@@ -400,23 +451,102 @@ static int acquire_javascript(ecosystem *install) {
     return cJSON_AddItemToObject(install->run.report, "javascript", acquired);
 }
 
+/** Installs language's host item, `<language>-host`, and writes its hint; 0 only when memory runs out. */
+static int install_language_host(ecosystem *install, const char *language) {
+    static const char *const libraries[2] = {RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID};
+    char *host_id = runtime_language_host_id(language);
+    const char *host_ids[1] = {host_id};
+    int installed = host_id != NULL && install_pinned(install, host_ids, 1, "language-host") &&
+                    write_hint(install, host_id, libraries, 2);
+    spisor_memory_release(host_id);
+    return installed;
+}
+
 /**
- * @implNote The JavaScript host and forebay-library come only with something that runs on them,
- * and Node only with something this install would start on it: an entry running in the application's
- * own process runs on the application's own runtime. forebay-library comes with every JavaScript host because any plugin it runs
- * may consume the services the host offers from it. Node is acquired after the host's hint is written, since the
- * host's host.json, which that hint names, carries the Node pin.
+ * @implNote A language's host and forebay-library come only with a plugin written in that language, and Node only
+ * with something this install would start on it. forebay-library comes with every language host because any plugin
+ * it runs may consume the services the host offers from it. Node is acquired after the hosts' hints are written, since
+ * the host.json of each, which its hint names, carries the Node pin.
  */
-static int install_javascript(ecosystem *install, const cJSON *background) {
-    int starts = runs_javascript(install, background);
-    if (!starts && !writes_in_process_entry(install)) {
-        return 1;
-    }
-    static const char *const host_ids[1] = {RUNTIME_JAVASCRIPT_HOST_ID};
+static int install_language_hosts(ecosystem *install, const cJSON *background) {
     static const char *const library_ids[1] = {FOREBAY_LIBRARY_ID};
-    const char *libraries[2] = {RUNTIME_LIBRARY_ID, FOREBAY_LIBRARY_ID};
-    return install_pinned(install, library_ids, 1, "library") && install_pinned(install, host_ids, 1, "host") &&
-           write_hint(install, RUNTIME_JAVASCRIPT_HOST_ID, libraries, 2) && (!starts || acquire_javascript(install));
+    cJSON *languages = hosted_languages(install);
+    int installed = languages != NULL &&
+                    (cJSON_GetArraySize(languages) == 0 || install_pinned(install, library_ids, 1, "library"));
+    for (const cJSON *language = installed ? languages->child : NULL; installed && language != NULL;
+         language = language->next) {
+        installed = install_language_host(install, language->valuestring);
+    }
+    cJSON_Delete(languages);
+    return installed && (!starts_javascript(install, background) || acquire_javascript(install));
+}
+
+/** The ids of every item the catalog lists of kind interface, in its order; NULL when memory runs out. */
+static cJSON *interface_items(const ecosystem *install) {
+    cJSON *ids = cJSON_CreateArray();
+    const cJSON *item;
+    cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(install->run.catalog, "items")) {
+        if (ids != NULL && is_text(runtime_install_text(item, "kind"), "interface") &&
+            !runtime_install_add_text(ids, item->string)) {
+            cJSON_Delete(ids);
+            ids = NULL;
+        }
+    }
+    return ids;
+}
+
+/** The texts of ids joined by commas; NULL when memory runs out. */
+static char *joined_ids(const cJSON *ids) {
+    runtime_catalog_text text;
+    runtime_catalog_text_start(&text);
+    runtime_catalog_text_add(&text, "");
+    for (const cJSON *id = ids->child; id != NULL; id = id->next) {
+        runtime_catalog_text_add(&text, id == ids->child ? "" : ", ");
+        runtime_catalog_text_add(&text, id->valuestring);
+    }
+    return runtime_catalog_text_finish(&text);
+}
+
+/** Reports that two interface items or more are listed and none is chosen, naming each; 0 when memory runs out. */
+static int report_unchosen(ecosystem *install, const cJSON *ids) {
+    char *listed = joined_ids(ids);
+    const char *parts[3] = {"the catalog lists more than one interface, ", listed,
+                            ", and spisor-host's interface setting chooses none"};
+    const char *fix_parts[3] = {"set spisor-host's interface setting to one of ", listed, ", or to none"};
+    char *message = listed == NULL ? NULL : runtime_cache_text(parts, 3);
+    char *fix = listed == NULL ? NULL : runtime_cache_text(fix_parts, 3);
+    int reported = message != NULL && fix != NULL &&
+                   runtime_install_report_unavailable(install->run.report, INTERFACE_SETTING, message, fix);
+    spisor_memory_release(fix);
+    spisor_memory_release(message);
+    spisor_memory_release(listed);
+    return reported;
+}
+
+/** Installs the interface item id and writes its hint; 0 only when memory runs out. */
+static int install_chosen_interface(ecosystem *install, const char *id) {
+    static const char *const libraries[1] = {RUNTIME_LIBRARY_ID};
+    const char *ids[1] = {id};
+    return install_pinned(install, ids, 1, "interface") && write_hint(install, id, libraries, 1);
+}
+
+/**
+ * Installs the interface spisor-host's `interface` setting names, none for `none`, else the catalog's one interface
+ * item; an install with none is headless. 0 only when memory runs out.
+ */
+static int install_interface(ecosystem *install) {
+    const char *chosen = runtime_install_text(install->values, INTERFACE_SETTING);
+    cJSON *ids = chosen != NULL ? NULL : interface_items(install);
+    int done = chosen != NULL || ids != NULL;
+    if (chosen != NULL && strcmp(chosen, HEADLESS) != 0) {
+        done = install_chosen_interface(install, chosen);
+    } else if (ids != NULL && cJSON_GetArraySize(ids) == 1) {
+        done = install_chosen_interface(install, ids->child->valuestring);
+    } else if (ids != NULL && cJSON_GetArraySize(ids) > 1) {
+        done = report_unchosen(install, ids);
+    }
+    cJSON_Delete(ids);
+    return done;
 }
 
 static int record_run(ecosystem *install) {
@@ -452,7 +582,8 @@ static int install_all(ecosystem *install, const cJSON *sources, cJSON **refusal
         return 0;
     }
     cJSON *background = runtime_install_loaders(&install->run);
-    int done = background != NULL && install_javascript(install, background) && record_run_taken(install);
+    int done = background != NULL && install_language_hosts(install, background) && install_interface(install) &&
+               record_run_taken(install);
     cJSON_Delete(background);
     return done;
 }

@@ -460,7 +460,7 @@ static const char *VALID_FACTS =
     " \"name\": \".acme.json\", \"member\": \"account\"}},"
     " \"modelVariables\": {\"tierModel\": \"ACME_{{TIER}}_MODEL\", \"tierModelName\": \"ACME_{{TIER}}_NAME\","
     " \"model\": \"ACME_MODEL\"}},"
-    " \"entry\": {\"runsOnJavascriptHost\": false, \"directories\": [\"{{entryRoot}}\", \"{{home}}\"],"
+    " \"entry\": {\"runsInProcess\": false, \"directories\": [\"{{entryRoot}}\", \"{{home}}\"],"
     " \"files\": [{\"path\": \"{{entryRoot}}/a.json\", \"json\": {\"command\": \"{{boot}}\"}},"
     " {\"path\": \"{{home}}/b.js\", \"text\": \"const a = {{json:hint}}; `${a}`\"}],"
     " \"settings\": [{\"file\": \"{{home}}/settings.json\", \"key\": [\"known\", \"{{loaderId}}\"], \"value\": true}]}}";
@@ -561,8 +561,8 @@ static void refuses_a_setting_with_no_key_or_value(void) {
 
 static void refuses_an_entry_with_no_javascript_host_answer(void) {
     cJSON *standard = standard_with_facts();
-    cJSON_DeleteItemFromObject(entry_of(standard), "runsOnJavascriptHost");
-    check_paths(standard, "/application/entry/runsOnJavascriptHost", "no runsOnJavascriptHost");
+    cJSON_DeleteItemFromObject(entry_of(standard), "runsInProcess");
+    check_paths(standard, "/application/entry/runsInProcess", "no runsInProcess");
 }
 
 static void refuses_blank_proxy_names_naming_each(void) {

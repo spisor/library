@@ -53,7 +53,7 @@ static void release_scope(weivel_standard_scope *scope) {
 }
 
 static void a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     started_run run;
     start_host_world("serve");
     run = start_with(arguments, 2);
@@ -83,7 +83,7 @@ static void a_serve_start_plans_the_hinted_libraries_and_the_installed_plugin(vo
 }
 
 static void the_scopes_open_from_the_start_until_its_stop(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     weivel_standard_scope scope;
     started_run run;
     start_host_world("scopes");
@@ -112,7 +112,7 @@ static const weivel_standard_entry *entry_at(const weivel_standard_value *record
 }
 
 static void an_action_start_names_the_plugins_own_manifest_and_merges_its_arguments(void) {
-    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\", \"times\": 2}"};
+    const char *arguments[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{\"name\": \"you\", \"times\": 2}"};
     const weivel_standard_entry *entry;
     started_run run;
     start_host_world("action");
@@ -170,8 +170,8 @@ static int is_untouched_past_its_size(const older_plan *older) {
 }
 
 static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(void) {
-    const char *action[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}"};
-    const char *serve[2] = {LAYER_RUNTIME, LOADER};
+    const char *action[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{}"};
+    const char *serve[2] = {LAYER_LANGUAGE, LOADER};
     const weivel_standard_host *host = host_definition();
     weivel_standard_service_refusal refusal;
     older_plan older;
@@ -201,15 +201,16 @@ static void an_action_start_refuses_a_plan_too_small_for_its_service_and_method(
     finish_base();
 }
 
-#define USAGE "takes its layer's runtime, javascript or native, then a loader id"
+#define USAGE "takes its layer's language, as a catalog names a plugin's, then a loader id"
 
 static void arguments_that_name_no_run_are_refused(void) {
     const char *loader_alone[1] = {LOADER};
-    const char *other_runtime[2] = {"jvm", LOADER};
-    const char *serve_word[3] = {LAYER_RUNTIME, LOADER, "serve"};
-    const char *short_action[5] = {LAYER_RUNTIME, LOADER, "action", "a", "greet"};
-    const char *listed_input[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "[1]"};
-    const char *broken_input[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{"};
+    const char *no_language[2] = {"Type Script", LOADER};
+    const char *spisor[2] = {"spisor", LOADER};
+    const char *serve_word[3] = {LAYER_LANGUAGE, LOADER, "serve"};
+    const char *short_action[5] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet"};
+    const char *listed_input[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "[1]"};
+    const char *broken_input[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{"};
     started_run run;
     start_host_world("usage");
     run = start_with(NULL, 0);
@@ -218,8 +219,11 @@ static void arguments_that_name_no_run_are_refused(void) {
     run = start_with(loader_alone, 1);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a loader id with no runtime before it");
     release_run(&run);
-    run = start_with(other_runtime, 2);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a runtime no layer runs");
+    run = start_with(no_language, 2);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a first word that is no language name");
+    release_run(&run);
+    run = start_with(spisor, 2);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "spisor, whose host item would be spisor-host");
     release_run(&run);
     run = start_with(serve_word, 3);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, USAGE, "a second word");
@@ -240,7 +244,7 @@ static void arguments_that_name_no_run_are_refused(void) {
 #define NOT_A_RESULT_PATH "is not a file directly inside"
 
 static void expect_result_path_refused(const char *path, const char *label) {
-    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", path};
+    const char *arguments[7] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{}", path};
     started_run run = start_with(arguments, 7);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, NOT_A_RESULT_PATH, label);
     release_run(&run);
@@ -255,7 +259,7 @@ static void expect_result_path_refused_in_state(const char *rest, const char *la
 
 static void an_action_takes_a_result_path_only_directly_inside_the_results_folder(void) {
     char *path;
-    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", NULL};
+    const char *arguments[7] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{}", NULL};
     started_run run;
     start_host_world("result-path");
     path = joined(state, "results/7-1.json");
@@ -285,7 +289,7 @@ static void an_action_takes_a_result_path_only_directly_inside_the_results_folde
 }
 
 static void a_null_argument_is_malformed(void) {
-    const char *holding_null[3] = {LAYER_RUNTIME, LOADER, NULL};
+    const char *holding_null[3] = {LAYER_LANGUAGE, LOADER, NULL};
     started_run run = start_with(holding_null, 3);
     expect_refused(&run, WEIVEL_STATUS_MALFORMED, "NULL", "an argument that is NULL");
     release_run(&run);
@@ -295,12 +299,12 @@ static void a_null_argument_is_malformed(void) {
 }
 
 static void an_action_of_a_plugin_the_plan_does_not_run_is_refused(void) {
-    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "b", "greet", "{}"};
+    const char *arguments[6] = {LAYER_LANGUAGE, LOADER, "action", "b", "greet", "{}"};
     weivel_standard_scope scope;
     char *manifest;
     started_run run;
     start_host_world("not-deployed");
-    install_plugin("b", "{\"id\": \"b\", \"version\": \"1.0.0\", \"actions\": {\"greet\": {\"call\": "
+    install_plugin("b", "{\"id\": \"b\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"actions\": {\"greet\": {\"call\": "
                         "{\"service\": \"b\", \"method\": \"greet\"}}}}");
     run = start_with(arguments, 6);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "b is not among the plugins " LOADER " runs", "an undeployed plugin");
@@ -313,10 +317,10 @@ static void an_action_of_a_plugin_the_plan_does_not_run_is_refused(void) {
 }
 
 static void a_located_plugin_with_no_entry_is_refused(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     started_run run;
     start_host_world("no-entry");
-    install_plugin("a", "{\"id\": \"a\", \"version\": \"1.0.0\"}");
+    install_plugin("a", "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\"}");
     run = start_with(arguments, 2);
     expect_refused(&run, WEIVEL_STATUS_REFUSED, "names no entry installed beside it", "a plugin with no entry");
     release_run(&run);
@@ -325,7 +329,7 @@ static void a_located_plugin_with_no_entry_is_refused(void) {
 }
 
 static void an_undeclared_action_is_refused(void) {
-    const char *arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
+    const char *arguments[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "wave", "{}"};
     started_run run;
     start_host_world("undeclared");
     run = start_with(arguments, 6);
@@ -336,14 +340,14 @@ static void an_undeclared_action_is_refused(void) {
 }
 
 static void a_layer_with_no_hinted_version_is_refused_and_published(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     char *problem = NULL;
     char *ready;
     started_run run;
     start_host_world("no-layer");
-    write_hint("javascript-host", "{\"libraries\": {}}");
+    write_hint("typescript-host", "{\"libraries\": {}}");
     run = start_with(arguments, 2);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "no javascript-host version is recorded", "a layer with no version");
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, "no typescript-host version is recorded", "a layer with no version");
     release_run(&run);
     ready = runtime_holders_path(state, LOADER, ".ready.json", &problem);
     CHECK(ready != NULL && spisor_probe_file(ready) == SPISOR_FILE_PRESENT);
@@ -353,20 +357,20 @@ static void a_layer_with_no_hinted_version_is_refused_and_published(void) {
 }
 
 /**
- * The native layer of a loader whose front door is javascript runs as `<loader>.native`, so its refusal goes to that
- * record, the one a launch waits on for it, and leaves the front door's alone.
+ * The fixture language's layer of a loader whose front door is TypeScript runs as `<loader>.fixture-one`, so its
+ * refusal goes to that record, the one a launch waits on for it, and leaves the front door's alone.
  */
 static void a_layer_with_no_hint_publishes_under_its_own_identity(void) {
-    const char *arguments[2] = {"native", LOADER};
+    const char *arguments[2] = {"fixture-one", LOADER};
     char *problem = NULL;
     char *own;
     char *front_door;
     started_run run;
-    start_host_world("no-native-layer");
+    start_host_world("no-fixture-layer");
     run = start_with(arguments, 2);
-    expect_refused(&run, WEIVEL_STATUS_REFUSED, "no spisor-interface version is recorded", "a native layer unhinted");
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, "no fixture-one-host version is recorded", "a fixture layer unhinted");
     release_run(&run);
-    own = runtime_holders_path(state, LOADER ".native", ".ready.json", &problem);
+    own = runtime_holders_path(state, LOADER ".fixture-one", ".ready.json", &problem);
     front_door = runtime_holders_path(state, LOADER, ".ready.json", &problem);
     CHECK(own != NULL && spisor_probe_file(own) == SPISOR_FILE_PRESENT);
     CHECK(front_door != NULL && spisor_probe_file(front_door) == SPISOR_FILE_MISSING);
@@ -376,8 +380,92 @@ static void a_layer_with_no_hint_publishes_under_its_own_identity(void) {
     finish_base();
 }
 
+/** Hints `<language>-host` at 3.0.0 with the runtime and one library of its own, `library`, which only it names. */
+static void hint_language_host(const char *language, const char *library) {
+    char id[128];
+    char directory[1600];
+    char binary[1700];
+    char hint[4096];
+    snprintf(id, sizeof id, "%s-host", language);
+    snprintf(directory, sizeof directory, "%s/%s", scratch, library);
+    snprintf(binary, sizeof binary, "%s/%s.dll", directory, library);
+    cJSON *libraries = cJSON_CreateObject();
+    cJSON *runtime = cJSON_AddObjectToObject(libraries, "runtime");
+    cJSON_AddStringToObject(runtime, "version", "0.2.0");
+    cJSON_AddStringToObject(runtime, "directory", directory);
+    cJSON *own = cJSON_AddObjectToObject(libraries, library);
+    cJSON_AddStringToObject(own, "version", "1.0.0");
+    cJSON_AddStringToObject(own, "directory", directory);
+    cJSON_AddStringToObject(own, "binary", binary);
+    char *printed = cJSON_PrintUnformatted(libraries);
+    snprintf(hint, sizeof hint, "{\"host\": \"3.0.0\", \"libraries\": %s}", printed);
+    write_hint(id, hint);
+    cJSON_free(printed);
+    cJSON_Delete(libraries);
+}
+
+/** A SERVE run of `language` plans that language's plugin alone and loads the library its own host's hint names. */
+static void expect_run_of(const char *language, const char *plugin, const char *library) {
+    const char *arguments[2] = {language, LOADER};
+    char suffix[256];
+    started_run run = start_with(arguments, 2);
+    CHECK(run.status == WEIVEL_STATUS_OK);
+    CHECK(run.plan.plugin_count == 1 && run.plan.library_count == 1);
+    if (run.plan.plugin_count == 1) {
+        CHECK(strstr(run.plan.plugins[0].directory, plugin) != NULL);
+    }
+    if (run.plan.library_count == 1) {
+        snprintf(suffix, sizeof suffix, "/%s.dll", library);
+        check_ends_with(run.plan.libraries[0].binary, suffix, "the library its own host's hint names");
+    }
+    release_run(&run);
+    if (run.status == WEIVEL_STATUS_OK) {
+        stop_run();
+    }
+}
+
+/**
+ * Two languages whose hosts both run on native are two layers: each run reads its own `<language>-host`'s hint and
+ * plans its own language's plugins, which a lookup keyed by runtime would merge into one.
+ */
+static void two_languages_on_one_runtime_each_run_from_its_own_hosts_hint(void) {
+    cJSON *settings;
+    char *text;
+    start_host_world("one-runtime");
+    list_language_host_item("fixture-one", "native");
+    list_language_host_item("fixture-two", "native");
+    install_plugin("first", "{\"id\": \"first\", \"version\": \"1.0.0\", \"language\": \"fixture-one\", "
+                            "\"entry\": \"index.js\"}");
+    install_plugin("second", "{\"id\": \"second\", \"version\": \"1.0.0\", \"language\": \"fixture-two\", "
+                             "\"entry\": \"index.js\"}");
+    hint_language_host("fixture-one", "first-library");
+    hint_language_host("fixture-two", "second-library");
+    write_in(cache, "bundles/" LOADER "/1.0.0/host.json", "{\"plugins\": [\"a\"]}");
+    settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}, \"first\": {\"enabled\": true}, "
+                             "\"second\": {\"enabled\": true}}}");
+    text = cJSON_PrintUnformatted(settings);
+    write_in(application_home, "config/settings.json", text);
+    cJSON_free(text);
+    cJSON_Delete(settings);
+    expect_run_of("fixture-one", "first", "first-library");
+    expect_run_of("fixture-two", "second", "second-library");
+    finish_base();
+}
+
+static void a_run_of_a_language_the_catalog_hosts_in_no_item_is_refused_naming_it(void) {
+    const char *arguments[2] = {"lua", LOADER};
+    started_run run;
+    start_host_world("unhosted-language");
+    hint_language_host("lua", "lua-library");
+    run = start_with(arguments, 2);
+    expect_refused(&run, WEIVEL_STATUS_REFUSED, "plugins written in lua have no host: no catalog source lists lua-host",
+                   "a language with no host item");
+    release_run(&run);
+    finish_base();
+}
+
 static void an_unregistered_loader_is_refused(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, "other-host"};
+    const char *arguments[2] = {LAYER_LANGUAGE, "other-host"};
     started_run run;
     start_host_world("unregistered");
     run = start_with(arguments, 2);
@@ -387,7 +475,7 @@ static void an_unregistered_loader_is_refused(void) {
 }
 
 static void a_second_start_before_its_stop_is_refused(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     started_run first;
     started_run second;
     start_host_world("second");
@@ -429,6 +517,8 @@ int main(void) {
     an_undeclared_action_is_refused();
     a_layer_with_no_hinted_version_is_refused_and_published();
     a_layer_with_no_hint_publishes_under_its_own_identity();
+    two_languages_on_one_runtime_each_run_from_its_own_hosts_hint();
+    a_run_of_a_language_the_catalog_hosts_in_no_item_is_refused_naming_it();
     an_unregistered_loader_is_refused();
     a_second_start_before_its_stop_is_refused();
     every_later_operation_refuses_with_no_run();

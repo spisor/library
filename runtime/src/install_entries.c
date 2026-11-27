@@ -6,6 +6,7 @@
 #include "allocation.h"
 #include "boot_stub.h"
 #include "cache_refusal.h"
+#include "catalog_patterns.h"
 #include "catalog_text.h"
 #include "changes.h"
 #include "entry_template.h"
@@ -21,7 +22,9 @@
 #define ENTRY_ROOT_TEMPLATE "{{entryRoot}}"
 #define ENTRY_FIX                                                                                            \
     "send {\"places\": {\"state\": \"<absolute directory>\", \"cache\": \"<absolute directory>\"}, \"loader\": " \
-    "{\"id\", \"application\": {\"id\", \"label\", \"entry\"}, \"home\": \"<absolute directory>\"}}"
+    "{\"id\", \"application\": {\"id\", \"label\", \"entry\"}, \"home\": \"<absolute directory>\", "       \
+    "\"language\"?: \"<the front door's language>\"}}"
+#define DOORLESS_FIX "require the plugin that holds the loader's front door in its standard, then install it again"
 
 typedef struct entry_loader {
     const cJSON *places;
@@ -32,6 +35,7 @@ typedef struct entry_loader {
     const char *label;
     const char *home;
     const cJSON *entry;
+    const char *language;
 } entry_loader;
 
 /** The paths the placeholders stand for, owned here, and the values that lend them out. */
@@ -56,21 +60,39 @@ static void finish_context(entry_context *context) {
     spisor_memory_release(context->bundles);
 }
 
+/**
+ * Sets the hint and bundles of the front door's language host, `<language>-host`, or both empty for a loader naming
+ * no language, whose entry names neither, as runtime_install_entry refuses one first; 0 when memory runs out.
+ */
+static int start_layer_paths(entry_context *context, const entry_loader *loader) {
+    const char *suffix[2] = {loader->language, "-host"};
+    const char *hint_suffix[2] = {loader->language, "-host.json"};
+    char *layer_id = loader->language == NULL ? NULL : runtime_cache_text(suffix, 2);
+    char *hint_name = loader->language == NULL ? NULL : runtime_cache_text(hint_suffix, 2);
+    const char *hint_segments[3] = {loader->cache, "hosts", hint_name};
+    const char *bundle_segments[3] = {loader->cache, "bundles", layer_id};
+    context->hint = loader->language == NULL ? runtime_catalog_copy("")
+                    : hint_name == NULL      ? NULL
+                                             : joined(hint_segments, 3);
+    context->bundles = loader->language == NULL ? runtime_catalog_copy("")
+                       : layer_id == NULL       ? NULL
+                                                : joined(bundle_segments, 3);
+    spisor_memory_release(hint_name);
+    spisor_memory_release(layer_id);
+    return context->hint != NULL && context->bundles != NULL;
+}
+
 static int start_context(entry_context *context, const entry_loader *loader) {
     const char *entries_segments[2] = {loader->state, "entries"};
     const char *root_segments[3] = {loader->state, "entries", loader->id};
-    const char *hint_segments[3] = {loader->cache, "hosts", RUNTIME_JAVASCRIPT_HOST_ID ".json"};
-    const char *bundle_segments[3] = {loader->cache, "bundles", RUNTIME_JAVASCRIPT_HOST_ID};
     context->entries = joined(entries_segments, 2);
     context->entry_root = joined(root_segments, 3);
     context->boot = runtime_boot_stub_path(loader->cache);
-    context->hint = joined(hint_segments, 3);
-    context->bundles = joined(bundle_segments, 3);
+    int laid_out = start_layer_paths(context, loader);
     runtime_entry_values values = {loader->home, context->entry_root, loader->id, context->boot,
                                    RUNTIME_ECOSYSTEM_HOST_ID, context->hint, context->bundles};
     context->values = values;
-    return context->entries != NULL && context->entry_root != NULL && context->boot != NULL && context->hint != NULL &&
-           context->bundles != NULL;
+    return laid_out && context->entries != NULL && context->entry_root != NULL && context->boot != NULL;
 }
 
 static int add_change(cJSON *changes, cJSON *change) {
@@ -266,9 +288,9 @@ static cJSON *applied(const entry_loader *loader, const cJSON *changes, runtime_
 
 static cJSON *written(cJSON *sequences, const cJSON *entry) {
     cJSON *answer = sequences == NULL ? NULL : cJSON_CreateObject();
-    int on_javascript_host = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsOnJavascriptHost"));
+    int in_process = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsInProcess"));
     if (answer == NULL || cJSON_AddTrueToObject(answer, "written") == NULL ||
-        (on_javascript_host && cJSON_AddTrueToObject(answer, "runsOnJavascriptHost") == NULL) ||
+        (in_process && cJSON_AddTrueToObject(answer, "runsInProcess") == NULL) ||
         !cJSON_AddItemToObject(answer, "sequences", sequences)) {
         cJSON_Delete(sequences);
         cJSON_Delete(answer);
@@ -343,10 +365,13 @@ static int read_loader(const cJSON *places, const cJSON *loader, entry_loader *r
     read->label = runtime_install_text(application, "label");
     read->home = runtime_install_text(loader, "home");
     read->entry = cJSON_GetObjectItemCaseSensitive(application, "entry");
+    read->language = runtime_install_text(loader, "language");
     if (read->label == NULL) {
         read->label = read->application;
     }
-    return read->state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->state) &&
+    return (cJSON_GetObjectItemCaseSensitive(loader, "language") == NULL ||
+            runtime_catalog_is_language(read->language)) &&
+           read->state != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->state) &&
            read->cache != NULL && spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->cache) && read->id != NULL &&
            read->id[0] != 0 && read->application != NULL && read->home != NULL &&
            spisor_path_is_absolute(RUNTIME_HOST_IS_WINDOWS, read->home);
@@ -391,6 +416,22 @@ static int application_facts_usable(const cJSON *loader, cJSON **refusal) {
     return usable;
 }
 
+/**
+ * Whether the entry needs the front door's language host: it runs in process, or names {{hint}} or {{bundles}}, in
+ * either form; 0 with *out_of_memory set when memory runs out.
+ */
+static int needs_language_host(const cJSON *entry, int *out_of_memory) {
+    int in_process = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsInProcess"));
+    char *text = in_process ? NULL : cJSON_PrintUnformatted(entry);
+    int needs = in_process || (text != NULL && (strstr(text, "{{hint}}") != NULL ||
+                                                strstr(text, "{{json:hint}}") != NULL ||
+                                                strstr(text, "{{bundles}}") != NULL ||
+                                                strstr(text, "{{json:bundles}}") != NULL));
+    *out_of_memory = !in_process && text == NULL;
+    cJSON_free(text);
+    return needs;
+}
+
 cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **refusal) {
     entry_loader read;
     if (!read_loader(places, loader, &read)) {
@@ -402,6 +443,18 @@ cJSON *runtime_install_entry(const cJSON *places, const cJSON *loader, cJSON **r
     }
     if (read.entry == NULL) {
         return not_written(&read);
+    }
+    int out_of_memory = 0;
+    int doorless = read.language == NULL && needs_language_host(read.entry, &out_of_memory);
+    if (out_of_memory) {
+        return NULL;
+    }
+    if (doorless) {
+        *refusal = runtime_refusal("the application's entry runs in process or names {{hint}} or {{bundles}}, which "
+                                   "stand for the host of the loader's front door, and the loader names no front door "
+                                   "language",
+                                   DOORLESS_FIX);
+        return NULL;
     }
     cJSON *changes = cJSON_CreateArray();
     cJSON *answer = changes != NULL && add_declared_changes(&read, changes) ? written_locked(&read, changes, refusal)

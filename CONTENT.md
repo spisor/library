@@ -163,19 +163,21 @@ standard's own descriptions. runtime serves `weivel.host` and `weivel.scope` and
 `weivel.secrets`, `weivel.paths` and `weivel.log`, which a plugin reaches only through its own scope.
 
 `weivel.host` is what weivel's host program runs a loader's plugins on, one run a process, from a `start` answering OK
-to its `stop`. `start` takes the program's arguments, each form led by its layer's runtime, `javascript` or `native`:
-`<runtime> <loader id>` for a SERVE run, `<runtime> <loader id> in-process` for a SERVE run that serves the process it
-runs in alone, or `<runtime> <loader id> action <plugin> <action> <input JSON>` for an ACTION run, and this process's
-environment. An in-process run, as a host started inside another application's process makes, never reads or writes the
+to its `stop`. `start` takes the program's arguments, each form led by its layer's language, as a catalog names a
+plugin's: `<language> <loader id>` for a SERVE run, `<language> <loader id> in-process` for a SERVE run that serves the
+process it runs in alone, or `<language> <loader id> action <plugin> <action> <input JSON>` for an ACTION run, and this
+process's environment. An in-process run, as a host started inside another application's process makes, never reads or writes the
 loader's holders and ready records, so any number of them serve at once, each in its own process; it publishes no ready
-record, its ticks run no prune, and only a stop request ends it. The layer is the item that runtime names,
-`javascript-host` or `spisor-interface`, at the version its boot hint names, beside every library the hint names, and
-`hosts.start` plans the run, a SERVE run as the loader's session start: only the enabled plugins of that runtime, and
-for an ACTION only the action's plugin and the providers of what it consumes. The layer holding the front door, that of
-the first plugin the loader standard requires, else javascript unless only native plugins run, runs as the loader; the
-other runs as `<loader id>.<runtime>`, and publishes its ready record and is held under that identity. A first required
-plugin on a runtime no layer runs is refused, as no layer could hold the front door. Only the front door's session start
-applies updates; the other layer's reuses the run it recorded, so one session applies once. The plan loads every hinted
+record, its ticks run no prune, and only a stop request ends it. The layer is the language-host item
+`<language>-host` at the version its boot hint names, beside every library the hint names, and `hosts.start` plans the
+run, a SERVE run as the loader's session start: only the enabled plugins the catalog lists in that language, and for an
+ACTION only the action's plugin and the providers of what it consumes; a language the catalog lists no language-host
+item for is refused, naming it. The layer holding the front door, that of the first plugin the loader standard
+requires, else the one language its plugins are written in, runs as the loader; any other runs as
+`<loader id>.<language>`, and publishes its ready record and is held under that identity. A first required plugin the
+catalog lists in no language, or a loader requiring none whose plugins span two languages, is refused, naming them, as
+no language could hold the front door. Only the front door's session start applies updates; every other layer's reuses
+the run it recorded, so one session applies once. The plan loads every hinted
 library with a binary but runtime itself, which the program was started with, and activates every plugin of that plan
 `cache.locate` finds installed. An ACTION plan names its plugin by that plugin's manifest path, the very text the plan's
 plugin carries, since the program matches it exactly; it names the service and method the action's declared `call`
@@ -187,15 +189,17 @@ record and no scopes begun; a refused SERVE start that is not in-process publish
 its identity. The start begins the scopes last, over the loader's home and the places.
 
 `hosts.layer_start` is how anything starts those runs, so no caller decides a layer, an argument order or an identity:
-for a loader and a mode it answers each layer's runtime, identity, executable, arguments and environment. A SERVE start
-answers one layer per runtime of the plugins a start resolves, the front door's first; an IN_PROCESS start the
-javascript layer alone, refused when no plugin is a javascript one; an ACTION one layer, its plugin's. A native layer
-runs `spisor-interface`'s entry as `host <runtime binary> native <loader id>`, a javascript one runs Node with
-`javascript-host`'s entry and `<runtime binary> javascript <loader id>`. A layer reads each plugin's runtime from the
-catalog spisor-host's settings name, since install records the catalog source there alone. `spisor-host launch` holds
-the front door's layer and waits for it to be ready before it starts the other, whose session start reuses the run the
-front door recorded, then starts the application with the front door's environment; `spisor-host action` runs the one
-layer an action answers.
+for a loader and a mode it answers each layer's language, identity, executable, arguments and environment. A SERVE
+start answers one layer per language of the plugins a start resolves, the front door's first; an IN_PROCESS start the
+front door's layer alone, refused when no plugin holds the front door or that language's host item carries no
+`inProcessEntry` in its bundle's `host.json`; an ACTION one layer, its plugin's. A layer of language `L` starts the
+entry of `L-host`'s bundle as that catalog item's runtime says: a native one runs the entry itself with
+`<runtime binary> L <loader id>`, a javascript one runs Node with the entry and the same arguments. Two languages on one
+runtime are two layers, each started from its own item. A layer reads each plugin's language from the catalog
+spisor-host's settings name, since install records the catalog source there alone. `spisor-host launch` holds the front
+door's layer and waits for it to be ready before it starts the others, whose session starts reuse the run the front
+door recorded, then starts the application with the front door's environment; `spisor-host action` runs the one layer
+an action answers.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries on
 with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to
@@ -551,9 +555,11 @@ sh install/install.sh <path to catalog.json> [install options]
 powershell -ExecutionPolicy Bypass -File install/install.ps1 <path to catalog.json> [install options]
 ```
 
-The `javascript-host` item every JavaScript plugin runs on is weivel/typescript's program bundle, staged by the build
-target `javascript_host_bundle` into `bundles/javascript-host` beside `spisor-host`'s bundles, ready for
-`spisor-host catalog build --host <bundle>@<platform>`. It runs `stage-bundle javascript-host`, which runs
+The `typescript-host` item every TypeScript plugin runs on, a `language-host` of `typescript` started on `javascript`,
+is weivel/typescript's program bundle, staged by the build target `typescript_host_bundle` into
+`bundles/typescript-host` beside `spisor-host`'s bundles, ready for `spisor-host catalog build --host
+<bundle>@<platform>`, which lists it under the kind its `host.json` names. It runs `stage-bundle typescript-host`, which
+runs
 `node <checkout>/dist/bundle/bin.js program` on the `node` on the `PATH`, so it is not built by default and needs
 `siblings/typescript` (or `SPISOR_WEIVEL_TYPESCRIPT_DIR`) installed and built with `npm ci` and `npm run build`. Beside
 `weivel-host.mjs` and `weivel-host-in-process.mjs` it places this build's `weivel_core` and `weivel_standard`, and
@@ -561,7 +567,8 @@ koffi under `node_modules/koffi` with this platform's prebuilt only. Its `host.j
 JavaScript host runs on, `node {pinned, minimum, builds}`: the pin and each platform's archive with its SHA-256 come
 from `host/bundle/node.json`, copied from nodejs.org's `SHASUMS256.txt` and never computed from a download, and the
 minimum, the lowest Node a `PATH` may offer instead, is weivel/typescript's `engines.node`. Staging refuses a pin older
-than that minimum. Moving Node is a change to `node.json` and a new `javascript-host`, never to `runtime`.
+than that minimum. Moving Node is a change to `node.json` and a new `typescript-host`, never to `runtime`; every
+installed item started on `javascript` that pins Node must pin the same one.
 
 `spisor-host marketplace build --list <path> --out <path> [--token-env <variable> --token-host <host>]` builds the generated copy of a marketplace
 list with `marketplace.build`, stamping it with the current UTC time, and writes it to `--out` atomically, creating the folder

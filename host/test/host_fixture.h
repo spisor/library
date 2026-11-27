@@ -315,7 +315,7 @@ typedef struct host_world {
     const char *layer_delay;
     const char *fixture_ready;
     const char *ready_timeout;
-    const char *refusing_runtime;
+    const char *refusing_language;
     int tags_layer;
 } host_world;
 
@@ -330,7 +330,7 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->layer_delay = NULL;
     world->fixture_ready = NULL;
     world->ready_timeout = NULL;
-    world->refusing_runtime = NULL;
+    world->refusing_language = NULL;
     world->tags_layer = 0;
     CHECK(spisor_make_directories(world->bin) == SPISOR_OK && spisor_make_directories(world->signals) == SPISOR_OK &&
           spisor_make_directories(world->streams) == SPISOR_OK);
@@ -382,8 +382,8 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     if (world->ready_timeout != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_TEST_READY_TIMEOUT", world->ready_timeout);
     }
-    if (world->refusing_runtime != NULL) {
-        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REFUSING", world->refusing_runtime);
+    if (world->refusing_language != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REFUSING", world->refusing_language);
     }
     if (world->tags_layer) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_TAG_LAYER", "1");
@@ -508,15 +508,17 @@ static inline void list_launch_catalog_requiring(host_world *world, const char *
                           "[\"" BACKGROUND_ID "\"]", plugins_json);
     list_native_background(base, BACKGROUND_ID, 1);
     if (javascript_plugin) {
-        list_plugin(base, SESSION_PLUGIN, "1.0.0", "javascript");
+        list_plugin(base, SESSION_PLUGIN, "1.0.0", "typescript");
         list_library(base, "forebay-library", "0.1.2");
-        cJSON *item = catalog_item(base, "javascript-host", "host", "javascript", "1.0.0");
+        cJSON *item = catalog_item(base, "typescript-host", "language-host", "javascript", "1.0.0");
+        cJSON_AddStringToObject(item, "language", "typescript");
         cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), "1.0.0");
         cJSON *files = cJSON_AddObjectToObject(entry, "files");
-        cJSON_AddItemToObject(files, "host.json", served_reference(base, "javascript-host", "1.0.0", "host.json",
-                                                                   "{\"entry\": \"host.js\", \"node\": {\"pinned\": "
-                                                                   "\"26.13.1\", \"minimum\": \"22.18.0\", \"builds\": {}}}"));
-        cJSON_AddItemToObject(files, "host.js", served_reference(base, "javascript-host", "1.0.0", "host.js", "export {};\n"));
+        cJSON_AddItemToObject(files, "host.json", served_reference(base, "typescript-host", "1.0.0", "host.json",
+                                                                   "{\"entry\": \"host.js\", \"runtime\": \"javascript\", "
+                                                                   "\"node\": {\"pinned\": \"26.13.1\", \"minimum\": "
+                                                                   "\"22.18.0\", \"builds\": {}}}"));
+        cJSON_AddItemToObject(files, "host.js", served_reference(base, "typescript-host", "1.0.0", "host.js", "export {};\n"));
     }
     write_catalog(base);
 }

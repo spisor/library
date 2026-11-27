@@ -246,11 +246,11 @@ static void check_entry(issue_list *list, const cJSON *entry) {
         return;
     }
     if (!cJSON_IsObject(entry)) {
-        runtime_loader_add_issue(list, "/application/entry", "entry is not an object", "declare runsOnJavascriptHost, directories, files and settings, or leave entry out");
+        runtime_loader_add_issue(list, "/application/entry", "entry is not an object", "declare runsInProcess, directories, files and settings, or leave entry out");
         return;
     }
-    if (!cJSON_IsBool(member(entry, "runsOnJavascriptHost"))) {
-        runtime_loader_add_issue(list, "/application/entry/runsOnJavascriptHost", "runsOnJavascriptHost is not a boolean", "say whether the entry runs the loader's host on the JavaScript host bundle");
+    if (!cJSON_IsBool(member(entry, "runsInProcess"))) {
+        runtime_loader_add_issue(list, "/application/entry/runsInProcess", "runsInProcess is not a boolean", "say whether the entry runs the loader's host inside the application's own process");
     }
     check_list(list, member(entry, "directories"), "directories", check_directory);
     check_list(list, member(entry, "files"), "files", check_file);

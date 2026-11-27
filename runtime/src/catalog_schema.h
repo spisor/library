@@ -37,6 +37,7 @@ typedef enum runtime_catalog_pattern_index {
     PATTERN_XDG_SUBDIR,
     PATTERN_CANDIDATE,
     PATTERN_PACKAGE_NAME,
+    PATTERN_LANGUAGE,
     PATTERN_COUNT
 } runtime_catalog_pattern_index;
 
@@ -57,6 +58,14 @@ typedef enum runtime_catalog_list_index {
     ENUM_KIND,
     ENUM_RUNTIME,
     ENUM_APPLICATION_RULE_KINDS,
+    REQUIRED_LANGUAGE_HOST_RULE_IF,
+    REQUIRED_LANGUAGE_HOST_RULE_THEN,
+    REQUIRED_INTERFACE_RULE_IF,
+    REQUIRED_INTERFACE_RULE_THEN,
+    REQUIRED_INTERFACE_RULE_NOT,
+    REQUIRED_PLUGIN_RULE_IF,
+    REQUIRED_PLUGIN_RULE_THEN,
+    REQUIRED_PLUGIN_RULE_NOT,
     LIST_COUNT
 } runtime_catalog_list_index;
 
@@ -75,6 +84,9 @@ typedef enum runtime_catalog_bound_index {
 typedef enum runtime_catalog_constant_index {
     CONSTANT_FORMAT,
     CONSTANT_RUNTIME_RULE_KIND,
+    CONSTANT_LANGUAGE_HOST_RULE_KIND,
+    CONSTANT_INTERFACE_RULE_KIND,
+    CONSTANT_PLUGIN_RULE_KIND,
     CONSTANT_COUNT
 } runtime_catalog_constant_index;
 
@@ -91,6 +103,6 @@ extern const runtime_catalog_schema_bound runtime_catalog_schema_bounds[BOUND_CO
 extern const runtime_catalog_schema_text runtime_catalog_schema_constants[CONSTANT_COUNT];
 
 /** How many if-then rules the checker applies to an item, the length of the item's allOf. */
-#define RUNTIME_CATALOG_ITEM_RULE_COUNT 2
+#define RUNTIME_CATALOG_ITEM_RULE_COUNT 5
 
 #endif

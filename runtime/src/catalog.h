@@ -5,7 +5,7 @@
 #include "catalog_state.h"
 
 /** The format of a catalog index, its `format` member, as catalog.schema.json pins it. */
-#define RUNTIME_CATALOG_FORMAT 1
+#define RUNTIME_CATALOG_FORMAT 2
 
 /**
  * @file

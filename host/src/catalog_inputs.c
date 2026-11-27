@@ -293,6 +293,7 @@ static void free_input(catalog_input *input) {
     spisor_memory_release(input->platform);
     spisor_memory_release(input->install_method);
     spisor_memory_release(input->runtime);
+    spisor_memory_release(input->language);
     cJSON_Delete(input->files);
     cJSON_Delete(input->application);
 }
@@ -305,7 +306,10 @@ static int add_input(catalog_inputs *inputs, catalog_input *input, const char *i
     input->version = copy_of(cJSON_GetObjectItemCaseSensitive(manifest, "version")->valuestring);
     input->platform = copy_of(platform);
     input->install_method = install_method == NULL || install_method[0] == 0 ? NULL : copy_of(install_method);
-    input->runtime = copy_of(host_text(manifest, "runtime"));
+    input->runtime = strcmp(input->kind, "plugin") == 0 ? NULL : copy_of(host_text(manifest, "runtime"));
+    input->language = strcmp(input->kind, "plugin") == 0 || strcmp(input->kind, "language-host") == 0
+                          ? copy_of(host_text(manifest, "language"))
+                          : NULL;
     if (input->id == NULL || input->version == NULL || (platform != NULL && input->platform == NULL) || !append(inputs, input)) {
         free_input(input);
         return 0;
@@ -334,12 +338,31 @@ static int add_bundled_file(cJSON *files, const char *root, const char *key, cJS
     return added;
 }
 
+/** Whether manifest names its language as a catalog may list it; 0 with *refusal set naming the member otherwise. */
+static int names_language(const cJSON *manifest, const char *path, const char *fix, cJSON **refusal) {
+    const char *language = host_text(manifest, "language");
+    const char *missing[2] = {path, " names no language, which the catalog item it is listed as needs"};
+    const char *malformed[4] = {path, " names the language ", language,
+                                ", which is no lowercase name of hyphen-joined words other than spisor"};
+    if (runtime_catalog_is_language(language)) {
+        return 1;
+    }
+    *refusal = language == NULL ? refused(missing, 2, fix) : refused(malformed, 4, fix);
+    return 0;
+}
+
 int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
     cJSON *manifest = root == NULL ? NULL : identified_manifest(root, PLUGIN_MANIFEST, "importName", runtime_is_import_name, &path, refusal);
-    const char *entry = manifest == NULL ? NULL : entry_of(manifest, path, refusal);
-    catalog_input input = {"plugin", NULL, NULL, NULL, entry == NULL ? NULL : cJSON_CreateObject(), NULL, NULL, NULL};
+    int named = manifest != NULL &&
+                names_language(manifest, path,
+                               "give plugin.json \"language\": the weivel implementation that loads the plugin, as "
+                               "weivel names it",
+                               refusal);
+    const char *entry = !named ? NULL : entry_of(manifest, path, refusal);
+    catalog_input input = {"plugin", NULL, NULL, NULL, entry == NULL ? NULL : cJSON_CreateObject(), NULL, NULL, NULL,
+                           NULL};
     int added = input.files != NULL && add_bundled_file(input.files, root, entry, refusal) &&
                 add_module_marker(input.files, entry, 0) && add_file(input.files, PLUGIN_MANIFEST, path);
     if (added) {
@@ -398,15 +421,58 @@ static int names_runtime(const cJSON *manifest, const char *path, cJSON **refusa
     return 0;
 }
 
+/** The catalog kind host.json names, `host` when it names none; NULL with *refusal set for any other. */
+static const char *host_kind(const cJSON *manifest, const char *path, cJSON **refusal) {
+    static const char *const KINDS[3] = {"host", "language-host", "interface"};
+    const char *named = host_text(manifest, "kind");
+    for (size_t index = 0; index < 3; index++) {
+        if (named == NULL || strcmp(named, KINDS[index]) == 0) {
+            return KINDS[named == NULL ? 0 : index];
+        }
+    }
+    const char *parts[3] = {path, " names the kind ", named};
+    *refusal = refused(parts, 3, "give host.json \"kind\": \"host\", \"language-host\" or \"interface\", or leave "
+                                 "it out for a host");
+    return NULL;
+}
+
+/**
+ * Whether host.json fits its kind: a language-host names its language and is called `<language>-host`, an interface
+ * names no language; 0 with *refusal set otherwise.
+ */
+static int fits_kind(const cJSON *manifest, const char *path, const char *kind, cJSON **refusal) {
+    const char *language = host_text(manifest, "language");
+    const char *id = host_text(manifest, "id");
+    size_t length = language == NULL ? 0 : strlen(language);
+    if (strcmp(kind, "language-host") == 0) {
+        if (!names_language(manifest, path, "give a language-host's host.json \"language\": the language it hosts",
+                            refusal)) {
+            return 0;
+        }
+        if (strncmp(id, language, length) != 0 || strcmp(id + length, "-host") != 0) {
+            const char *parts[6] = {path, " hosts ", language, ", so its id must be ", language, "-host"};
+            *refusal = refused(parts, 6, "name a language-host for the language it hosts followed by -host");
+            return 0;
+        }
+    }
+    if (strcmp(kind, "interface") == 0 && language != NULL) {
+        const char *parts[2] = {path, " is an interface, which hosts no plugin and names no language"};
+        *refusal = refused(parts, 2, "remove language from the interface's host.json");
+        return 0;
+    }
+    return 1;
+}
+
 int host_read_host_directory(catalog_inputs *inputs, const char *directory, const char *platform, cJSON **refusal) {
     char *root = absolute(directory);
     char *path = NULL;
     cJSON *manifest = root == NULL ? NULL : identified_manifest(root, HOST_MANIFEST, "id", runtime_catalog_is_item_name, &path, refusal);
+    const char *kind = manifest == NULL ? NULL : host_kind(manifest, path, refusal);
     const cJSON *application = cJSON_GetObjectItemCaseSensitive(manifest, "application");
-    const char *entry = manifest == NULL || application != NULL ? NULL : entry_of(manifest, path, refusal);
-    int checked = manifest != NULL && names_runtime(manifest, path, refusal) &&
+    const char *entry = kind == NULL || application != NULL ? NULL : entry_of(manifest, path, refusal);
+    int checked = kind != NULL && names_runtime(manifest, path, refusal) && fits_kind(manifest, path, kind, refusal) &&
                   (application == NULL ? entry != NULL : check_standard(manifest, path, refusal));
-    catalog_input input = {"host", NULL, NULL, NULL, checked ? every_file(root) : NULL, NULL, NULL, NULL};
+    catalog_input input = {kind, NULL, NULL, NULL, checked ? every_file(root) : NULL, NULL, NULL, NULL, NULL};
     int added = input.files != NULL && (application == NULL ? add_module_marker(input.files, entry, 1)
                                                             : only_the_manifest(input.files, root, refusal));
     if (added && application != NULL) {
@@ -444,7 +510,7 @@ int host_read_library_directory(catalog_inputs *inputs, const char *id, const ch
     }
     cJSON *manifest = path == NULL ? NULL : read_manifest(path, refusal);
     int versioned = manifest != NULL && accepts_version(manifest, path, refusal);
-    catalog_input input = {"library", NULL, NULL, NULL, versioned ? every_file(root) : NULL, NULL, NULL, NULL};
+    catalog_input input = {"library", NULL, NULL, NULL, versioned ? every_file(root) : NULL, NULL, NULL, NULL, NULL};
     int added = input.files != NULL;
     if (added) {
         cJSON_DeleteItemFromObjectCaseSensitive(manifest, "installMethod");

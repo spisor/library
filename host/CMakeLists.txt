@@ -118,12 +118,12 @@ endfunction()
 stage_bundles(spisor_host_bundles spisor_host $<TARGET_FILE_DIR:spisor_host>/bundles)
 
 # Not built by default: it runs weivel/typescript's bundler, so it needs node and that checkout installed and built.
-set(SPISOR_JAVASCRIPT_HOST_VERSION 0.1.0)
-add_custom_target(javascript_host_bundle
-    COMMAND stage_bundle javascript-host $<TARGET_FILE_DIR:spisor_host>/bundles/javascript-host
-        ${SPISOR_JAVASCRIPT_HOST_VERSION} ${SPISOR_WEIVEL_TYPESCRIPT_DIR} ${PROJECT_SOURCE_DIR}/host/bundle/node.json
+set(SPISOR_TYPESCRIPT_HOST_VERSION 0.1.0)
+add_custom_target(typescript_host_bundle
+    COMMAND stage_bundle typescript-host $<TARGET_FILE_DIR:spisor_host>/bundles/typescript-host
+        ${SPISOR_TYPESCRIPT_HOST_VERSION} ${SPISOR_WEIVEL_TYPESCRIPT_DIR} ${PROJECT_SOURCE_DIR}/host/bundle/node.json
         $<TARGET_FILE:weivel_core_shared> $<TARGET_FILE:weivel_standard_shared>
     VERBATIM)
-add_dependencies(javascript_host_bundle stage_bundle spisor_host weivel_core_shared weivel_standard_shared)
+add_dependencies(typescript_host_bundle stage_bundle spisor_host weivel_core_shared weivel_standard_shared)
 
 add_subdirectory(test)

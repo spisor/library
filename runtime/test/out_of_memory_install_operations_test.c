@@ -184,6 +184,7 @@ static spisor_status run_entry(void) {
     argument.loader = ENTRY_LOADER;
     argument.home = run_path;
     argument.application = &application.root;
+    argument.language = "typescript";
     last_status = install->entry(install->context, &argument, &answer, &refusal);
     last_status = empty_unless_answered(last_status, &answer, sizeof answer);
     install->release_entry_answer(install->context, &answer);
@@ -289,11 +290,11 @@ static spisor_status run_register_loader(void) {
     return status;
 }
 
-/** javascript-host 1.0.0 installed and hinted, its host.json pinning Node version at url with sha256. */
+/** typescript-host 1.0.0 installed and hinted, its host.json pinning Node version at url with sha256. */
 static void install_node_pin(const char *version, const char *url, const char *sha256) {
-    write_in(base.cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
     char *manifest = javascript_host_json(version, "22.18.0", url, sha256);
-    write_in(base.cache, "bundles/javascript-host/1.0.0/host.json", manifest);
+    write_in(base.cache, "bundles/typescript-host/1.0.0/host.json", manifest);
     spisor_memory_release(manifest);
 }
 
@@ -1295,6 +1296,8 @@ static void prepare_start(void) {
     cJSON_free(text);
     cJSON_Delete(registration);
     spisor_memory_release(home);
+    list_language_host(&base, "typescript", "javascript", "2.0.0", "{}");
+    write_catalog(&base);
 }
 
 /**
@@ -1314,7 +1317,7 @@ static void prepare_start_beside_session(void) {
 
 /** A start of spisor-host, as its session host when session is nonzero; WRONG_RUN for an OK missing what it owes. */
 static spisor_status start_spisor_host(int session) {
-    static const runtime_item_version layer = {"javascript-host", "2.0.0"};
+    static const runtime_item_version layer = {"typescript-host", "2.0.0"};
     static const runtime_item_version libraries[1] = {{"runtime", "0.1.0"}};
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_hosts_start_argument argument = SPISOR_INIT(runtime_hosts_start_argument);
@@ -1333,7 +1336,7 @@ static spisor_status start_spisor_host(int session) {
     argument.libraries = libraries;
     argument.library_count = 1;
     argument.session = session;
-    argument.layer_runtime = "javascript";
+    argument.layer_language = "typescript";
     last_status = hosts->start(hosts->context, &argument, &answer, &refusal);
     int owed = answer.plan != NULL && answer.plan->run_record != NULL && (!session || answer.timers != NULL);
     if (last_status == SPISOR_OK && !owed) {
@@ -1407,12 +1410,16 @@ static void install_layer_item(const char *id, const char *entry) {
     spisor_memory_release(bundle);
 }
 
-/** The loader the layer start case starts, and the runtime of the one layer its action answers. */
+/**
+ * The loader the layer start case starts, and the language of the one layer its action answers and how many arguments
+ * that layer's start takes: TypeScript's leads with its entry, which a native layer's start runs itself.
+ */
 static const char *layer_start_loader = "spisor-host";
-static const char *layer_start_runtime = "javascript";
+static const char *layer_start_language = "typescript";
+static size_t layer_start_arguments = 8;
 
 /**
- * hosts' start world with javascript-host installed and hinted with the runtime binary, and a JavaScript runtime
+ * hosts' start world with typescript-host installed and hinted with the runtime binary, and a JavaScript runtime
  * recorded, so an action's layer start of spisor-host reads its layers, its hint and bundle, and finds its runtime.
  */
 static void prepare_layer_start(void) {
@@ -1420,7 +1427,9 @@ static void prepare_layer_start(void) {
     prepare_start();
     node = joined(base.user, "node");
     write_in(base.user, "node", "node");
-    install_layer_item("javascript-host", "weivel-host.mjs");
+    install_layer_item("typescript-host", "weivel-host.mjs");
+    list_plugin(&base, "p", "1.0.0", "typescript");
+    write_catalog(&base);
     cJSON *record = cJSON_CreateObject();
     cJSON_AddStringToObject(record, "executable", node);
     char *record_text = cJSON_PrintUnformatted(record);
@@ -1429,13 +1438,14 @@ static void prepare_layer_start(void) {
     cJSON_Delete(record);
     spisor_memory_release(node);
     layer_start_loader = "spisor-host";
-    layer_start_runtime = "javascript";
+    layer_start_language = "typescript";
+    layer_start_arguments = 8;
 }
 
 /**
  * The layer start world with a loader beside spisor-host, whose settings alone name the catalog listing the action's
- * plugin as native, so memory running out while reading them must never read as the loader's own empty catalog and a
- * javascript plugin.
+ * plugin in the fixture language, so memory running out while reading them must never read as the loader's own empty
+ * catalog and a plugin listed in no language.
  */
 static void prepare_loader_layer_start(void) {
     char *home;
@@ -1443,8 +1453,10 @@ static void prepare_loader_layer_start(void) {
     cJSON *registration = cJSON_CreateObject();
     cJSON *settings = cJSON_CreateObject();
     prepare_layer_start();
-    install_layer_item("spisor-interface", "interface");
-    list_plugin(&base, "p", "1.0.0", "native");
+    install_layer_item("fixture-one-host", "fixture-one-program");
+    list_language_host(&base, "fixture-one", "native", "1.0.0", "{}");
+    cJSON_DeleteItemFromObjectCaseSensitive(base.items, "p");
+    list_plugin(&base, "p", "1.0.0", "fixture-one");
     write_catalog(&base);
     cJSON_AddItemToObject(cJSON_AddObjectToObject(settings, "catalog"), "sources", local_sources(&base));
     text = cJSON_PrintUnformatted(settings);
@@ -1464,10 +1476,11 @@ static void prepare_loader_layer_start(void) {
     cJSON_Delete(registration);
     spisor_memory_release(home);
     layer_start_loader = "fixture-loader";
-    layer_start_runtime = "native";
+    layer_start_language = "fixture-one";
+    layer_start_arguments = 7;
 }
 
-/** An action's layer start for layer_start_loader; WRONG_RUN for an OK answering other than its one layer of layer_start_runtime. */
+/** An action's layer start for layer_start_loader; WRONG_RUN for an OK answering other than its one layer of layer_start_language. */
 static spisor_status run_layer_start(void) {
     const runtime_hosts_definition *hosts = hosts_service();
     runtime_hosts_layer_start_argument argument = SPISOR_INIT(runtime_hosts_layer_start_argument);
@@ -1487,8 +1500,9 @@ static spisor_status run_layer_start(void) {
     argument.action = "a";
     argument.input = "{}";
     last_status = hosts->layer_start(hosts->context, &argument, &answer, &refusal);
-    if (last_status == SPISOR_OK && (answer.layer_count != 1 || answer.layers[0].argument_count != 8 ||
-                                     strcmp(answer.layers[0].runtime, layer_start_runtime) != 0)) {
+    if (last_status == SPISOR_OK &&
+        (answer.layer_count != 1 || answer.layers[0].argument_count != layer_start_arguments ||
+         strcmp(answer.layers[0].language, layer_start_language) != 0)) {
         last_status = WRONG_RUN;
     }
     last_status = empty_unless_answered(last_status, &answer, sizeof answer);

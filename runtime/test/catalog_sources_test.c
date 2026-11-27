@@ -24,9 +24,9 @@
 #endif
 
 #define ITEM_ONE \
-    "{\"kind\":\"plugin\",\"latest\":\"1\",\"versions\":{\"1\":{\"files\":{\"p.js\":{\"url\":\"https://e.com/p.js\"}}}}}"
+    "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1\",\"versions\":{\"1\":{\"files\":{\"p.js\":{\"url\":\"https://e.com/p.js\"}}}}}"
 #define ITEM_TWO \
-    "{\"kind\":\"plugin\",\"latest\":\"2\",\"versions\":{\"2\":{\"files\":{\"p.js\":{\"url\":\"https://e.com/p.js\"}}}}}"
+    "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"2\",\"versions\":{\"2\":{\"files\":{\"p.js\":{\"url\":\"https://e.com/p.js\"}}}}}"
 #define FIRST "{\"kind\":\"local\",\"path\":\"a\"}"
 #define SECOND "{\"kind\":\"https\",\"url\":\"https://e.com/i.json\"}"
 
@@ -121,9 +121,9 @@ static catalog_answer merged(const char *catalogs_json) {
 }
 
 static void it_keeps_the_earlier_source_s_item_and_reports_the_later_one_shadowed(void) {
-    catalog_answer answer = merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1,\"items\":{\"x\":" ITEM_ONE
+    catalog_answer answer = merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":2,\"items\":{\"x\":" ITEM_ONE
                                    ",\"y\":" ITEM_ONE "}}},{\"source\":" SECOND
-                                   ",\"catalog\":{\"format\":1,\"items\":{\"x\":" ITEM_TWO ",\"z\":" ITEM_TWO "}}}]");
+                                   ",\"catalog\":{\"format\":2,\"items\":{\"x\":" ITEM_TWO ",\"z\":" ITEM_TWO "}}}]");
     CHECK(answer.status == SPISOR_OK);
     const cJSON *items = value_at(answer.tree, "catalog/items");
     check_text(text_at(value_at(items, "x"), "latest"), "1", "earlier wins");
@@ -134,7 +134,7 @@ static void it_keeps_the_earlier_source_s_item_and_reports_the_later_one_shadowe
 
 static void it_treats_an_inherited_object_member_name_as_absent(void) {
     catalog_answer answer =
-        merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1,\"items\":{\"constructor\":" ITEM_ONE "}}}]");
+        merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":2,\"items\":{\"constructor\":" ITEM_ONE "}}}]");
     expect_json(value_at(answer.tree, "shadowed"), "[]", "constructor");
     CHECK(value_at(answer.tree, "catalog/items/constructor") != NULL);
     cJSON_Delete(answer.tree);
@@ -142,21 +142,21 @@ static void it_treats_an_inherited_object_member_name_as_absent(void) {
 
 static void it_merges_nothing_into_an_empty_catalog(void) {
     catalog_answer answer = merged("[]");
-    expect_json(answer.tree, "{\"catalog\":{\"format\":1,\"items\":{}},\"shadowed\":[]}", "empty");
+    expect_json(answer.tree, "{\"catalog\":{\"format\":2,\"items\":{}},\"shadowed\":[]}", "empty");
     cJSON_Delete(answer.tree);
 }
 
 static void it_merges_ids_in_the_order_javascript_enumerates_them(void) {
     catalog_answer answer =
-        merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1,\"items\":{\"b\":" ITEM_ONE ",\"7\":" ITEM_ONE "}}}]");
+        merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":2,\"items\":{\"b\":" ITEM_ONE ",\"7\":" ITEM_ONE "}}}]");
     const cJSON *items = value_at(answer.tree, "catalog/items");
     CHECK(items != NULL && items->child != NULL && strcmp(items->child->string, "7") == 0);
     cJSON_Delete(answer.tree);
 }
 
 static void it_refuses_catalogs_it_cannot_merge(void) {
-    expect_malformed_released(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":1}}]"), "catalogs", "no items");
-    expect_malformed_released(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":1,\"items\":{}}}]"), "catalogs",
+    expect_malformed_released(merged("[{\"source\":" FIRST ",\"catalog\":{\"format\":2}}]"), "catalogs", "no items");
+    expect_malformed_released(merged("[{\"source\":{\"kind\":\"ftp\"},\"catalog\":{\"format\":2,\"items\":{}}}]"), "catalogs",
                    "bad source");
 }
 

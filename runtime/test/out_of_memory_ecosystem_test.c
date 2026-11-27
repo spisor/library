@@ -39,9 +39,9 @@ static void place_binary(const install_base *base) {
 static void prepare_ecosystem(install_base *base) {
     start_install_base(base, "out-of-memory", "ecosystem");
     list_foundation(base);
-    list_plugin(base, "announcer", "1.0.0", "native");
-    list_plugin(base, "viewer", "1.0.0", "native");
-    list_plugin(base, "wanted", "1.0.0", "native");
+    list_plugin(base, "announcer", "1.0.0", "fixture-one");
+    list_plugin(base, "viewer", "1.0.0", "fixture-one");
+    list_plugin(base, "wanted", "1.0.0", "fixture-one");
     list_loader(base, "claude-loader", "1.0.0", application_with_hook_entry("claude", BINARY, "{}"), "[]", 0, "[]");
     write_catalog(base);
     place_binary(base);

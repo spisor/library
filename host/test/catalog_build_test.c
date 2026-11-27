@@ -25,8 +25,9 @@ static char *bundled_plugin(const char *id, const char *version, const char *ext
     snprintf(rest, sizeof rest, "bundled/%s/%s", id, version);
     char *directory = in_base(rest);
     char manifest[512];
-    snprintf(manifest, sizeof manifest, "{\"importName\": \"%s\", \"version\": \"%s\", \"entry\": \"index.js\"%s}", id, version,
-             extra_members == NULL ? "" : extra_members);
+    snprintf(manifest, sizeof manifest,
+             "{\"importName\": \"%s\", \"version\": \"%s\", \"language\": \"typescript\", \"entry\": \"index.js\"%s}",
+             id, version, extra_members == NULL ? "" : extra_members);
     write_in(directory, "plugin.json", manifest);
     write_in(directory, "index.js", "export default { activate() {} };\n");
     return directory;
@@ -254,6 +255,7 @@ static void add_made_input(catalog_inputs *inputs, const char *kind, const char 
     input->id = copy_text(id);
     input->version = copy_text(version);
     input->platform = platform == NULL ? NULL : copy_text(platform);
+    input->language = strcmp(kind, "plugin") == 0 ? copy_text("typescript") : NULL;
     input->files = parsed(files_json);
 }
 
@@ -305,7 +307,9 @@ static void refuses_an_import_name_that_is_an_id_or_the_module_marker(void) {
         cJSON *refusal = NULL;
         char *directory = in_base("bundled/odd/1.0.0");
         char manifest[256];
-        snprintf(manifest, sizeof manifest, "{\"importName\": \"%s\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}", refused[index]);
+        snprintf(manifest, sizeof manifest,
+                 "{\"importName\": \"%s\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\"}",
+                 refused[index]);
         write_in(directory, "plugin.json", manifest);
         write_in(directory, "index.js", "export default {};\n");
         CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
@@ -531,7 +535,9 @@ static void refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replac
         start_case("replaced-entry");
         char *directory = in_base("replaced");
         char manifest[256];
-        snprintf(manifest, sizeof manifest, "{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"%s\"}", entries[index]);
+        snprintf(manifest, sizeof manifest,
+                 "{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"%s\"}",
+                 entries[index]);
         write_in(directory, "plugin.json", manifest);
         catalog_inputs inputs = {NULL, 0, 0};
         cJSON *refusal = NULL;
@@ -601,6 +607,152 @@ static void refuses_a_host_json_that_names_no_runtime(void) {
     expect_refusal_naming(refusal, "names no runtime", "no runtime");
     host_free_catalog_inputs(&inputs);
     spisor_memory_release(directory);
+    finish_case();
+}
+
+static void lists_a_plugin_in_the_language_its_manifest_names_and_no_runtime(void) {
+    start_case("language");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = bundled_plugin("greeter", "1.0.0", ", \"runtime\": \"javascript\"");
+    CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
+    char *path = build(&inputs, &refusal);
+    cJSON *catalog = read_back(path);
+    check_text(text_at(item_of(catalog, "greeter"), "language"), "typescript", "the manifest's language");
+    CHECK(!cJSON_HasObjectItem(item_of(catalog, "greeter"), "runtime"));
+    cJSON_Delete(catalog);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    host_free_catalog_inputs(&inputs);
+    finish_case();
+}
+
+static void refuses_a_plugin_manifest_naming_no_language_or_one_outside_the_pattern(void) {
+    const char *manifests[3] = {"{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}",
+                                "{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"language\": \"Type Script\", "
+                                "\"entry\": \"index.js\"}",
+                                "{\"importName\": \"greeter\", \"version\": \"1.0.0\", \"language\": \"spisor\", "
+                                "\"entry\": \"index.js\"}"};
+    const char *named[3] = {"names no language", "names the language Type Script", "names the language spisor"};
+    start_case("no-language");
+    for (size_t index = 0; index < 3; index++) {
+        char *directory = in_base("bundled/greeter/1.0.0");
+        catalog_inputs inputs = {NULL, 0, 0};
+        cJSON *refusal = NULL;
+        write_in(directory, "plugin.json", manifests[index]);
+        write_in(directory, "index.js", "export default {};\n");
+        CHECK(!host_read_plugin_directory(&inputs, directory, &refusal));
+        expect_contains(text_at(refusal, "fix"), "\"language\"", "the fix naming the member");
+        expect_refusal_naming(refusal, named[index], named[index]);
+        host_free_catalog_inputs(&inputs);
+        spisor_memory_release(directory);
+    }
+    finish_case();
+}
+
+/** A host bundle directory under name holding host.json and the entry it names. */
+static char *host_bundle(const char *name, const char *host_json, const char *entry) {
+    char *directory = in_base(name);
+    write_in(directory, "host.json", host_json);
+    write_in(directory, entry, "built");
+    return directory;
+}
+
+static void lists_a_language_host_and_an_interface_by_the_kind_their_host_json_names(void) {
+    start_case("kinds");
+    char *language_host = host_bundle("typescript-host",
+                                      "{\"kind\": \"language-host\", \"id\": \"typescript-host\", \"version\": \"2.0.0\", "
+                                      "\"language\": \"typescript\", \"runtime\": \"javascript\", \"entry\": \"host.mjs\"}",
+                                      "host.mjs");
+    char *renderer = host_bundle("interface",
+                                  "{\"kind\": \"interface\", \"id\": \"spisor-interface\", \"version\": \"0.1.0\", "
+                                  "\"runtime\": \"native\", \"entry\": \"spisor-interface\"}",
+                                  "spisor-interface");
+    char *host = host_bundle("host", "{\"id\": \"spisor-host\", \"version\": \"0.1.0\", \"runtime\": \"native\", "
+                                     "\"entry\": \"spisor-host\"}",
+                             "spisor-host");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    CHECK(host_read_host_directory(&inputs, language_host, NULL, &refusal));
+    CHECK(host_read_host_directory(&inputs, renderer, NULL, &refusal));
+    CHECK(host_read_host_directory(&inputs, host, NULL, &refusal));
+    char *path = build(&inputs, &refusal);
+    cJSON *catalog = read_back(path);
+    const cJSON *hosting = item_of(catalog, "typescript-host");
+    check_text(text_at(hosting, "kind"), "language-host", "the language host's kind");
+    check_text(text_at(hosting, "language"), "typescript", "the language it hosts");
+    check_text(text_at(hosting, "runtime"), "javascript", "its runtime");
+    check_text(text_at(item_of(catalog, "spisor-interface"), "kind"), "interface", "the interface's kind");
+    CHECK(!cJSON_HasObjectItem(item_of(catalog, "spisor-interface"), "language"));
+    check_text(text_at(item_of(catalog, "spisor-host"), "kind"), "host", "a host.json naming no kind");
+    cJSON_Delete(catalog);
+    spisor_memory_release(path);
+    host_free_catalog_inputs(&inputs);
+    spisor_memory_release(host);
+    spisor_memory_release(renderer);
+    spisor_memory_release(language_host);
+    finish_case();
+}
+
+static void refuses_a_language_host_not_named_for_its_language_and_an_interface_naming_one(void) {
+    start_case("misnamed");
+    char *misnamed = host_bundle("misnamed",
+                                 "{\"kind\": \"language-host\", \"id\": \"rust-host\", \"version\": \"2.0.0\", "
+                                 "\"language\": \"typescript\", \"runtime\": \"javascript\", \"entry\": \"host.mjs\"}",
+                                 "host.mjs");
+    char *unnamed = host_bundle("unnamed",
+                                "{\"kind\": \"language-host\", \"id\": \"rust-host\", \"version\": \"2.0.0\", "
+                                "\"runtime\": \"native\", \"entry\": \"weivel-host\"}",
+                                "weivel-host");
+    char *speaking = host_bundle("speaking",
+                                 "{\"kind\": \"interface\", \"id\": \"spisor-interface\", \"version\": \"0.1.0\", "
+                                 "\"language\": \"rust\", \"runtime\": \"native\", \"entry\": \"spisor-interface\"}",
+                                 "spisor-interface");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    CHECK(!host_read_host_directory(&inputs, misnamed, NULL, &refusal));
+    expect_refusal_naming(refusal, "hosts typescript, so its id must be typescript-host", "the misnamed language host");
+    refusal = NULL;
+    CHECK(!host_read_host_directory(&inputs, unnamed, NULL, &refusal));
+    expect_refusal_naming(refusal, "names no language", "a language host naming no language");
+    refusal = NULL;
+    CHECK(!host_read_host_directory(&inputs, speaking, NULL, &refusal));
+    expect_refusal_naming(refusal, "is an interface, which hosts no plugin and names no language", "the interface");
+    CHECK(inputs.count == 0);
+    host_free_catalog_inputs(&inputs);
+    spisor_memory_release(speaking);
+    spisor_memory_release(unnamed);
+    spisor_memory_release(misnamed);
+    finish_case();
+}
+
+static void refuses_a_host_json_naming_an_unknown_kind(void) {
+    start_case("unknown-kind");
+    char *directory = host_bundle("odd", "{\"kind\": \"plugin\", \"id\": \"odd\", \"version\": \"1.0.0\", "
+                                         "\"runtime\": \"native\", \"entry\": \"odd\"}",
+                                  "odd");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    CHECK(!host_read_host_directory(&inputs, directory, NULL, &refusal));
+    expect_refusal_naming(refusal, "names the kind plugin", "the kind no host directory is");
+    host_free_catalog_inputs(&inputs);
+    spisor_memory_release(directory);
+    finish_case();
+}
+
+static void writes_the_catalog_format_runtime_reads(void) {
+    start_case("format");
+    catalog_inputs inputs = {NULL, 0, 0};
+    cJSON *refusal = NULL;
+    char *directory = bundled_plugin("greeter", "1.0.0", NULL);
+    CHECK(host_read_plugin_directory(&inputs, directory, &refusal));
+    char *path = build(&inputs, &refusal);
+    cJSON *raw = json_in(base_folder, "catalog/catalog.json");
+    CHECK(cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(raw, "format")) == RUNTIME_CATALOG_FORMAT);
+    cJSON_Delete(raw);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    host_free_catalog_inputs(&inputs);
     finish_case();
 }
 
@@ -691,6 +843,12 @@ static void answers_2_for_a_misused_catalog_command_line(void) {
 }
 
 int main(void) {
+    lists_a_plugin_in_the_language_its_manifest_names_and_no_runtime();
+    refuses_a_plugin_manifest_naming_no_language_or_one_outside_the_pattern();
+    lists_a_language_host_and_an_interface_by_the_kind_their_host_json_names();
+    refuses_a_language_host_not_named_for_its_language_and_an_interface_naming_one();
+    refuses_a_host_json_naming_an_unknown_kind();
+    writes_the_catalog_format_runtime_reads();
     refuses_an_entry_the_bundle_s_own_plugin_json_or_marker_would_replace();
     writes_the_esm_marker_beside_a_plugin_s_js_entry_itself();
     replaces_a_javascript_host_s_own_package_json_with_the_esm_marker();

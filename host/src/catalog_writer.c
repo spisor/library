@@ -6,6 +6,7 @@
 #include "cache_marker.h"
 #include "allocation.h"
 #include "cache_refusal.h"
+#include "catalog.h"
 #include "catalog_build.h"
 #include "catalog_fold.h"
 #include "catalog_patterns.h"
@@ -322,6 +323,7 @@ static cJSON *item_for(cJSON *items, const catalog_input *input) {
         item = built ? item : NULL;
     }
     int complete = item != NULL && (input->runtime == NULL || set_member(item, "runtime", cJSON_CreateString(input->runtime))) &&
+                   (input->language == NULL || set_member(item, "language", cJSON_CreateString(input->language))) &&
                    (input->application == NULL || set_member(item, "application", cJSON_Duplicate(input->application, 1))) &&
                    (input->install_method == NULL || set_member(item, "installMethod", cJSON_CreateString(input->install_method)));
     return complete ? item : NULL;
@@ -362,7 +364,7 @@ static int set_latest(cJSON *items) {
 
 static cJSON *catalog_of(const catalog_inputs *inputs, const char *out, cJSON **refusal) {
     cJSON *catalog = cJSON_CreateObject();
-    cJSON *items = catalog == NULL || cJSON_AddNumberToObject(catalog, "format", 1) == NULL ? NULL
+    cJSON *items = catalog == NULL || cJSON_AddNumberToObject(catalog, "format", RUNTIME_CATALOG_FORMAT) == NULL ? NULL
                                                                                            : cJSON_AddObjectToObject(catalog, "items");
     int complete = items != NULL;
     for (size_t index = 0; complete && index < inputs->count; index++) {

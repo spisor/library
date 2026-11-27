@@ -165,9 +165,12 @@ static void installs_from_a_relative_catalog_under_a_folder_named_outside_the_an
     finish_world(&world);
 }
 
+/** Plugin id with manifest, written in the fixture language, listed beside that language's host and forebay-library. */
 static void list_plugin_with_manifest(host_world *world, const char *id, const char *manifest) {
     install_base *base = &world->base;
-    list_file(base, catalog_item(base, id, "plugin", "native", "1.0.0"), id, "1.0.0", "plugin.json", manifest, 0);
+    list_file(base, catalog_item(base, id, "plugin", "fixture-one", "1.0.0"), id, "1.0.0", "plugin.json", manifest, 0);
+    list_language_host(base, "fixture-one", "native", "1.0.0", "{\"entry\": \"program\", \"runtime\": \"native\"}");
+    list_library(base, "forebay-library", "0.1.2");
     write_catalog(base);
 }
 

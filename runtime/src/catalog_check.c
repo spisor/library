@@ -25,6 +25,8 @@
 #define FIX_APPLICATION "remove the member, which this kind of item may not carry; only a host item may have an application"
 #define FIX_FILES_OR_PLATFORMS "list files, platforms, or both"
 #define FIX_PACKAGE "give the package as a name, or as an object with a name and optional options"
+#define FIX_INTERFACE_LANGUAGE "remove language, which an interface item does not carry: it hosts no plugin"
+#define FIX_PLUGIN_RUNTIME "remove runtime: a plugin's language decides the host that runs it, and that host's item its runtime"
 
 struct runtime_catalog_checker {
     runtime_catalog_text pointer;
@@ -316,6 +318,10 @@ static int check_runtime(checker *check, const cJSON *value) {
                                                 : fail(check, "must be equal to one of the allowed values", FIX_ENUM, NULL);
 }
 
+static int check_language(checker *check, const cJSON *value) {
+    return check_patterned(check, value, runtime_catalog_is_language, PATTERN_LANGUAGE);
+}
+
 static int check_format(checker *check, const cJSON *value) {
     return equals_constant(value, CONSTANT_FORMAT) ? 1 : fail(check, "must be equal to constant", FIX_CONST, NULL);
 }
@@ -436,16 +442,40 @@ static int application_rule_applies(const cJSON *item) {
            (!cJSON_IsObject(item) || is_one_of(member_of(item, "kind"), list(ENUM_APPLICATION_RULE_KINDS)));
 }
 
+/** Whether a rule whose if clause requires the members if_required and holds kind to the constant kind applies. */
+static int kind_rule_applies(const cJSON *item, runtime_catalog_list_index if_required,
+                             runtime_catalog_constant_index kind) {
+    return first_missing(item, list(if_required)) == NULL &&
+           (!cJSON_IsObject(item) || equals_constant(member_of(item, "kind"), kind));
+}
+
 static int runtime_rule_applies(const cJSON *item) {
-    return first_missing(item, list(REQUIRED_RUNTIME_RULE_IF)) == NULL &&
-           (!cJSON_IsObject(item) || equals_constant(member_of(item, "kind"), CONSTANT_RUNTIME_RULE_KIND));
+    return kind_rule_applies(item, REQUIRED_RUNTIME_RULE_IF, CONSTANT_RUNTIME_RULE_KIND);
+}
+
+/** A rule's then of required members, followed by a not of required members, unless forbidden is LIST_COUNT. */
+static int check_kind_rule(checker *check, const cJSON *item, runtime_catalog_list_index required,
+                           runtime_catalog_list_index forbidden, const char *fix) {
+    if (!has_required(check, item, required)) {
+        return 0;
+    }
+    return forbidden == LIST_COUNT || first_missing(item, list(forbidden)) != NULL
+               ? 1
+               : fail(check, "must NOT be valid", fix, NULL);
 }
 
 static int check_item_rules(checker *check, const cJSON *item) {
     if (application_rule_applies(item) && first_missing(item, list(REQUIRED_APPLICATION_RULE_NOT)) == NULL) {
         return fail(check, "must NOT be valid", FIX_APPLICATION, NULL);
     }
-    return !runtime_rule_applies(item) || has_required(check, item, REQUIRED_RUNTIME_RULE_THEN);
+    return (!runtime_rule_applies(item) || has_required(check, item, REQUIRED_RUNTIME_RULE_THEN)) &&
+           (!kind_rule_applies(item, REQUIRED_LANGUAGE_HOST_RULE_IF, CONSTANT_LANGUAGE_HOST_RULE_KIND) ||
+            check_kind_rule(check, item, REQUIRED_LANGUAGE_HOST_RULE_THEN, LIST_COUNT, NULL)) &&
+           (!kind_rule_applies(item, REQUIRED_INTERFACE_RULE_IF, CONSTANT_INTERFACE_RULE_KIND) ||
+            check_kind_rule(check, item, REQUIRED_INTERFACE_RULE_THEN, REQUIRED_INTERFACE_RULE_NOT,
+                            FIX_INTERFACE_LANGUAGE)) &&
+           (!kind_rule_applies(item, REQUIRED_PLUGIN_RULE_IF, CONSTANT_PLUGIN_RULE_KIND) ||
+            check_kind_rule(check, item, REQUIRED_PLUGIN_RULE_THEN, REQUIRED_PLUGIN_RULE_NOT, FIX_PLUGIN_RUNTIME));
 }
 
 static const runtime_catalog_property_rule ITEM_PROPERTIES[] = {{"kind", check_kind},
@@ -454,6 +484,7 @@ static const runtime_catalog_property_rule ITEM_PROPERTIES[] = {{"kind", check_k
                                                                 {"application", check_application},
                                                                 {"installMethod", check_install_method},
                                                                 {"runtime", check_runtime},
+                                                                {"language", check_language},
                                                                 {NULL, NULL}};
 
 static int check_item(checker *check, const cJSON *value) {

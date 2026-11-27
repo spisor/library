@@ -40,7 +40,7 @@ cJSON *host_start_of(const host_context *context, const char *id, const char *co
 static cJSON *layer_json(const runtime_hosts_layer *layer) {
     cJSON *json = cJSON_CreateObject();
     cJSON *arguments = json == NULL ? NULL : cJSON_AddArrayToObject(json, "arguments");
-    int built = arguments != NULL && cJSON_AddStringToObject(json, "runtime", layer->runtime) != NULL &&
+    int built = arguments != NULL && cJSON_AddStringToObject(json, "language", layer->language) != NULL &&
                 cJSON_AddStringToObject(json, "hostId", layer->host_id) != NULL &&
                 cJSON_AddStringToObject(json, "executable", layer->executable) != NULL;
     for (size_t index = 0; built && index < layer->argument_count; index++) {

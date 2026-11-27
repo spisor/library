@@ -19,8 +19,8 @@
  * language layer's bundle and the libraries it loaded, an object of library id to version; session is not 0 for
  * the application's session host, and in_process not 0 for a session host that serves the process it runs in alone,
  * whose refusal is never published to the loader's ready record, since a launch waiting on that record waits on
- * another process; layer_runtime is the runtime, RUNTIME_LAYER_JAVASCRIPT or RUNTIME_LAYER_NATIVE, whose plugins the
- * start plans, and action_plugin the plugin an ACTION start runs an action of, NULL for any other start.
+ * another process; layer_language is the language whose plugins the start plans, and action_plugin the plugin an
+ * ACTION start runs an action of, NULL for any other start.
  */
 typedef struct runtime_hosts_start_request {
     const cJSON *environment;
@@ -30,7 +30,7 @@ typedef struct runtime_hosts_start_request {
     const cJSON *libraries;
     int session;
     int in_process;
-    const char *layer_runtime;
+    const char *layer_language;
     const char *action_plugin;
 } runtime_hosts_start_request;
 
@@ -44,12 +44,13 @@ typedef struct runtime_hosts_start_request {
  * with running naming hostId, the layer and each library at the version it runs. A start that is not the
  * session start, or is an in-process one, reuses instead the run updates.recorded answers while a live run
  * record names hostId, with a run record of its own and as plugins that run less the running ids, and then
- * answers no next or rollback. The plan's plugins are then narrowed to those whose catalog runtime is
- * layer_runtime, an unlisted one running on javascript, and for an action_plugin to it and every plugin of the layer
- * providing, transitively, a capability it consumes; an action_plugin of another runtime is refused, naming its
- * runtime, and a narrowed plugin consuming a capability that no plugin of the layer provides and a plugin of another
- * runtime does is refused, naming both. runId is the identity the run publishes its ready record and holds its holders
- * under, as runtime_run_identity answers it for the front door runtime_front_door answers over the planned plugins.
+ * answers no next or rollback. The plan's plugins are then narrowed to those the catalog lists in layer_language, an
+ * unlisted one running in no layer, and for an action_plugin to it and every plugin of the layer providing,
+ * transitively, a capability it consumes; a layer_language the catalog lists no language-host item for is refused,
+ * naming it, an action_plugin of another language is refused, naming its language, and a narrowed plugin consuming a
+ * capability that no plugin of the layer provides and a plugin of another language does is refused, naming both. runId
+ * is the identity the run publishes its ready record and holds its holders under, as runtime_run_identity answers it
+ * for the front door runtime_read_loader_layers reads.
  * timers are answered to the session start alone, its update check 0 unless runId is hostId, so one layer of a session
  * runs updates.check. noColor is whether
  * environment carries NO_COLOR at all. A refused session start publishes its refusal to the ready record of

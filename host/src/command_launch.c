@@ -109,7 +109,7 @@ static int add_layer_starts(cJSON *starts, const cJSON *layers) {
     const cJSON *layer;
     cJSON_ArrayForEach(layer, layers) {
         cJSON *start = cJSON_Duplicate(layer, 1);
-        cJSON_DeleteItemFromObjectCaseSensitive(start, "runtime");
+        cJSON_DeleteItemFromObjectCaseSensitive(start, "language");
         cJSON_DeleteItemFromObjectCaseSensitive(start, "hostId");
         if (start == NULL || !cJSON_AddItemToObject(starts, host_text(layer, "hostId"), start)) {
             cJSON_Delete(start);

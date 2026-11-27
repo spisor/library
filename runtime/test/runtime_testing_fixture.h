@@ -81,10 +81,18 @@ static inline void default_libraries(runtime_boot_library libraries[2]) {
     memcpy(libraries, defaults, sizeof defaults);
 }
 
-/** An argument laying out the default libraries at `at`, held by this process, with `count` installs. */
+/** The one layer a home runs its plugins in: TypeScript's, on javascript. */
+static const runtime_testing_layer TYPESCRIPT_LAYER[1] = {{"typescript", "javascript"}};
+
+/**
+ * An argument laying out the default libraries at `at` for TypeScript's layer, held by this process, with `count`
+ * installs.
+ */
 static inline runtime_testing_home_argument home_argument(const char *at, const runtime_testing_install *installs,
                                                           size_t count, const runtime_boot_library libraries[2]) {
     runtime_testing_home_argument argument = SPISOR_INIT(runtime_testing_home_argument);
+    argument.layers = TYPESCRIPT_LAYER;
+    argument.layer_count = 1;
     argument.base = at;
     argument.host_id = HOST;
     argument.installs = installs;

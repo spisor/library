@@ -9,6 +9,7 @@
 #include "boot_hint.h"
 #include "cache_locate.h"
 #include "cache_refusal.h"
+#include "catalog_patterns.h"
 #include "host_references.h"
 #include "hosts_start.h"
 #include "install_entries.h"
@@ -26,23 +27,24 @@
 
 #define ACTION_WORD "action"
 #define IN_PROCESS_WORD "in-process"
-#define USAGE_MESSAGE                                                                                             \
-    "the host takes its layer's runtime, javascript or native, then a loader id, alone, followed by in-process, " \
-    "or followed by action, a plugin, an action, its input as a JSON object and the path of its result, if any"
-#define USAGE_FIX                                                                                                 \
-    "start it with <runtime> <loader id>, with in-process after the loader id, or with action <plugin> <action> " \
+#define USAGE_MESSAGE                                                                                         \
+    "the host takes its layer's language, as a catalog names a plugin's, then a loader id, alone, followed by " \
+    "in-process, or followed by action, a plugin, an action, its input as a JSON object and the path of its "   \
+    "result, if any"
+#define USAGE_FIX                                                                                                  \
+    "start it with <language> <loader id>, with in-process after the loader id, or with action <plugin> <action> " \
     "<input json object> [<result path>] after the loader id"
 #define RESULT_FIX "name a file directly inside the results folder of the state place, by an absolute path"
 #define SCOPES_FIX "check that the loader's registered home and the places are absolute folders, then try again"
 
 /**
- * What a run's arguments name: its layer's runtime and the layer item that runtime names, its loader, its mode,
+ * What a run's arguments name: its layer's language and that language's language-host item, its loader, its mode,
  * whether a SERVE run serves its own process alone, and, for an ACTION run, the plugin, the action, its input and the
  * path its result is written to, NULL for none.
  */
 typedef struct host_request {
-    const char *runtime;
-    const char *layer_id;
+    const char *language;
+    char *layer_id;
     const char *host_id;
     uint32_t mode;
     int in_process;
@@ -64,8 +66,7 @@ static cJSON *refused(const char *const *parts, size_t count, const char *fix) {
 static int read_request(const char *const *arguments, size_t count, host_request *request, cJSON **refusal) {
     int out_of_memory = 0;
     memset(request, 0, sizeof *request);
-    request->runtime = count > 0 ? arguments[0] : NULL;
-    request->layer_id = runtime_layer_item_of(request->runtime);
+    request->language = count > 0 && runtime_catalog_is_language(arguments[0]) ? arguments[0] : NULL;
     request->host_id = count > 1 ? arguments[1] : NULL;
     request->mode = count == 2 ? WEIVEL_STANDARD_HOST_SERVE : 0;
     if (count == 3 && strcmp(arguments[2], IN_PROCESS_WORD) == 0) {
@@ -80,6 +81,8 @@ static int read_request(const char *const *arguments, size_t count, host_request
         request->action = arguments[4];
         request->result = count == 7 ? arguments[6] : NULL;
     }
+    request->layer_id = request->language == NULL ? NULL : runtime_language_host_id(request->language);
+    out_of_memory = out_of_memory || (request->language != NULL && request->layer_id == NULL);
     if (request->layer_id == NULL) {
         request->mode = 0;
     }
@@ -113,7 +116,7 @@ static cJSON *started_run(const host_request *request, const cJSON *environment,
                                          versions,
                                          request->mode == WEIVEL_STANDARD_HOST_SERVE,
                                          request->in_process,
-                                         request->runtime,
+                                         request->language,
                                          request->mode == WEIVEL_STANDARD_HOST_ACTION ? request->plugin : NULL};
     cJSON *started = versions == NULL ? NULL : runtime_hosts_start(&start, refusal);
     cJSON_Delete(versions);
@@ -316,7 +319,7 @@ static void publish_refusal(const host_request *request, const char *run_id, con
 static void publish_unhinted_refusal(const host_request *request, const cJSON *places, const cJSON *refusal) {
     int publishes = refusal != NULL && request->mode == WEIVEL_STANDARD_HOST_SERVE && !request->in_process &&
                     runtime_is_plain_host_id(request->host_id);
-    char *identity = publishes ? runtime_read_run_identity(places, request->host_id, request->runtime) : NULL;
+    char *identity = publishes ? runtime_read_run_identity(places, request->host_id, request->language) : NULL;
     publish_refusal(request, identity, places, refusal);
     spisor_memory_release(identity);
 }
@@ -374,6 +377,7 @@ runtime_host_run *runtime_host_run_start(const char *const *arguments, size_t ar
         publish_unhinted_refusal(&request, places, *refusal);
     }
     run = hint == NULL ? NULL : run_of(&request, environment, hint, refusal);
+    spisor_memory_release(request.layer_id);
     cJSON_Delete(request.input);
     cJSON_Delete(hint);
     cJSON_Delete(places);

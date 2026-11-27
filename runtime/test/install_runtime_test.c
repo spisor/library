@@ -98,11 +98,11 @@ static void pack_archive_as(runtime_fixture *fixture, const char *executable_con
     spisor_memory_release(packing);
 }
 
-/** javascript-host 1.0.0 installed and hinted under cache, its host.json pinning Node pinned at url with sha256. */
+/** typescript-host 1.0.0 installed and hinted under cache, its host.json pinning Node pinned at url with sha256. */
 static void install_pin_of(const char *cache, const char *pinned, const char *url, const char *sha256) {
-    write_in(cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
     char *manifest = javascript_host_json(pinned, MINIMUM, url, sha256);
-    write_in(cache, "bundles/javascript-host/1.0.0/host.json", manifest);
+    write_in(cache, "bundles/typescript-host/1.0.0/host.json", manifest);
     spisor_memory_release(manifest);
 }
 
@@ -341,7 +341,7 @@ static void refuses_a_pinned_version_that_is_not_plain(const char *label, const 
     runtime_catalog_file_url_of_path(RUNTIME_HOST_IS_WINDOWS, fixture.archive, &fixture.pinned_url);
     install_pin_of(fixture.base.cache, pinned, fixture.pinned_url, fixture.archive_sha256);
     catalog_answer answer = acquire(&fixture);
-    expect_cache_refusal_refused(answer, "pins no Node", label);
+    expect_cache_refusal_refused(answer, "is not {pinned, minimum, builds}", label);
     cJSON_Delete(answer.tree);
     char *runtimes = joined(fixture.base.cache, "runtimes");
     char *versions = joined(runtimes, "node");
@@ -362,7 +362,7 @@ static void refuses_a_pinned_version_of_two_numbers(void) {
 static void refuses_a_hinted_javascript_host_version_outside_its_bundles(void) {
     install_base base;
     start_install_base(&base, "runtime", "hint-escapes");
-    write_in(base.cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"../../escaped\"}");
+    write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"../../escaped\"}");
     write_in(base.cache, "escaped/host.json",
              "{\"node\": {\"pinned\": \"1.2.3\", \"minimum\": \"22.18.0\", \"builds\": {}}}");
     catalog_answer answer = acquire_on(&base, base.path);
@@ -376,7 +376,8 @@ static void refuses_a_cache_with_no_javascript_host_to_read_the_pin_from(void) {
     install_base base;
     start_install_base(&base, "runtime", "no-layer");
     catalog_answer answer = acquire_on(&base, base.path);
-    expect_cache_refusal_refused(answer, "javascript-host", "no javascript-host");
+    expect_cache_refusal_refused(answer, "no installed item started on JavaScript carries a Node pin",
+                                 "no typescript-host");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "runtimes"));
     finish_install_base(&base);
@@ -385,12 +386,45 @@ static void refuses_a_cache_with_no_javascript_host_to_read_the_pin_from(void) {
 static void refuses_a_javascript_host_whose_host_json_pins_no_node(void) {
     install_base base;
     start_install_base(&base, "runtime", "no-pin");
-    write_in(base.cache, "hosts/javascript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
-    write_in(base.cache, "bundles/javascript-host/1.0.0/host.json", "{\"id\": \"javascript-host\", \"runtime\": \"javascript\"}");
+    write_in(base.cache, "hosts/typescript-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(base.cache, "bundles/typescript-host/1.0.0/host.json", "{\"id\": \"typescript-host\", \"runtime\": \"javascript\"}");
     catalog_answer answer = acquire_on(&base, base.path);
-    expect_cache_refusal_refused(answer, "pins no Node", "no node member");
+    expect_cache_refusal_refused(answer, "no installed item started on JavaScript carries a Node pin",
+                                 "no node member");
     cJSON_Delete(answer.tree);
     CHECK(!exists_in(base.cache, "runtimes"));
+    finish_install_base(&base);
+}
+
+/** Every host started on JavaScript runs on one Node, so two installed items pinning different ones are refused. */
+static void refuses_two_installed_javascript_items_that_pin_different_nodes_naming_both(void) {
+    install_base base;
+    start_install_base(&base, "runtime", "two-pins");
+    install_pin_of(base.cache, "1.2.3", "file:///nowhere/a.zip", "0000000000000000000000000000000000000000000000000000000000000000");
+    write_in(base.cache, "hosts/other-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    char *manifest = javascript_host_json("1.2.4", MINIMUM, "file:///nowhere/b.zip", "0000000000000000000000000000000000000000000000000000000000000000");
+    write_in(base.cache, "bundles/other-host/1.0.0/host.json", manifest);
+    spisor_memory_release(manifest);
+    catalog_answer answer = acquire_on(&base, base.path);
+    expect_cache_refusal_refused(answer, "other-host pins Node 1.2.4 and typescript-host pins Node 1.2.3",
+                                 "two pins");
+    const char *fix = text_at(answer.tree, "fix");
+    CHECK(fix != NULL && strstr(fix, "other-host") != NULL && strstr(fix, "typescript-host") != NULL);
+    cJSON_Delete(answer.tree);
+    CHECK(!exists_in(base.cache, "runtimes"));
+    finish_install_base(&base);
+}
+
+/** A hinted host that is not started on JavaScript carries no Node pin, whatever its host.json holds. */
+static void reads_no_pin_from_an_item_not_started_on_javascript(void) {
+    install_base base;
+    start_install_base(&base, "runtime", "native-pin");
+    write_in(base.cache, "hosts/fixture-one-host.json", "{\"libraries\":{},\"host\":\"1.0.0\"}");
+    write_in(base.cache, "bundles/fixture-one-host/1.0.0/host.json",
+             "{\"runtime\": \"native\", \"node\": {\"pinned\": \"1.2.3\", \"minimum\": \"22.18.0\", \"builds\": {}}}");
+    catalog_answer answer = acquire_on(&base, base.path);
+    expect_cache_refusal_refused(answer, "no installed item started on JavaScript carries a Node pin", "a native pin");
+    cJSON_Delete(answer.tree);
     finish_install_base(&base);
 }
 
@@ -652,6 +686,8 @@ int main(void) {
     refuses_a_platform_with_no_pinned_build();
     refuses_a_cache_with_no_javascript_host_to_read_the_pin_from();
     refuses_a_javascript_host_whose_host_json_pins_no_node();
+    refuses_two_installed_javascript_items_that_pin_different_nodes_naming_both();
+    reads_no_pin_from_an_item_not_started_on_javascript();
     stops_a_run_that_does_not_exit_in_time_and_refuses_it();
     returns_when_the_child_exits_though_a_grandchild_holds_its_output();
     sweeps_staging_folders_left_over_a_day_and_keeps_a_fresh_one();
