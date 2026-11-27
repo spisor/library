@@ -1114,6 +1114,28 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_ecosystem_answer, javascript);
     FIELD(runtime_install_ecosystem_answer, storage);
     SIZE(runtime_install_ecosystem_answer);
+    FIELD(runtime_install_plugins_argument, size);
+    FIELD(runtime_install_plugins_argument, portable);
+    FIELD(runtime_install_plugins_argument, state);
+    FIELD(runtime_install_plugins_argument, cache);
+    FIELD(runtime_install_plugins_argument, environment);
+    FIELD(runtime_install_plugins_argument, environment_count);
+    FIELD(runtime_install_plugins_argument, host);
+    FIELD(runtime_install_plugins_argument, plugins);
+    FIELD(runtime_install_plugins_argument, plugin_count);
+    SIZE(runtime_install_plugins_argument);
+    FIELD(runtime_install_plugins_answer, size);
+    FIELD(runtime_install_plugins_answer, installed);
+    FIELD(runtime_install_plugins_answer, installed_count);
+    FIELD(runtime_install_plugins_answer, cached);
+    FIELD(runtime_install_plugins_answer, cached_count);
+    FIELD(runtime_install_plugins_answer, unavailable);
+    FIELD(runtime_install_plugins_answer, unavailable_count);
+    FIELD(runtime_install_plugins_answer, enabled);
+    FIELD(runtime_install_plugins_answer, enabled_count);
+    FIELD(runtime_install_plugins_answer, javascript);
+    FIELD(runtime_install_plugins_answer, storage);
+    SIZE(runtime_install_plugins_answer);
     FIELD(runtime_install_definition, size);
     FIELD(runtime_install_definition, context);
     FIELD(runtime_install_definition, warnings);
@@ -1137,6 +1159,8 @@ static void print_install_layouts(void) {
     FIELD(runtime_install_definition, release_by_id_answer);
     FIELD(runtime_install_definition, release_ecosystem_answer);
     FIELD(runtime_install_definition, release_refusal);
+    FIELD(runtime_install_definition, plugins);
+    FIELD(runtime_install_definition, release_plugins_answer);
     SIZE(runtime_install_definition);
 }
 
