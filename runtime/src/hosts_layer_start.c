@@ -346,7 +346,7 @@ cJSON *runtime_hosts_layer_start(const runtime_hosts_layer_start_request *reques
     context.request = request;
     context.cache = text_of(places, "cache");
     if (places != NULL && runtime_read_loader_layers(places, request->loader_id, &context.layers, refusal)) {
-        cJSON *layers = cJSON_CreateArray();
+        cJSON *layers = runtime_read_front_door(&context.layers, refusal) ? cJSON_CreateArray() : NULL;
         int added = layers != NULL && add_mode_layers(&context, layers, refusal);
         answer = added ? cJSON_CreateObject() : NULL;
         if (answer == NULL || !cJSON_AddItemToObject(answer, "layers", layers)) {

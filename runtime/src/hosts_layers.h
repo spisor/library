@@ -67,9 +67,8 @@ char *runtime_run_identity(const char *host_id, const char *language, const char
 /**
  * What a host's layers stand on: the `sources` runtime_layer_sources answers, the `catalog` they hold and how many
  * of them are `yielding` it, the `plugins` a start of it resolves, an object of id to version, its `standard` at its
- * registered version, NULL when it carries none, and the language its `front_door` is in: that of the first plugin its
- * standard requires, else the one language the catalog lists its plugins in, NULL when it lists them in none. Freed
- * with runtime_free_loader_layers.
+ * registered version, NULL when it carries none, and the language its `front_door` is in once
+ * runtime_read_front_door has read it. Freed with runtime_free_loader_layers.
  */
 typedef struct runtime_loader_layers {
     cJSON *registration;
@@ -85,17 +84,28 @@ typedef struct runtime_loader_layers {
 
 /**
  * Reads the layers of host_id under places, {state, cache, portable}, resolving its plugins as a start does from the
- * versions installed, writing nothing; 1, or 0 with *refusal set when it is not registered, its settings or catalog
- * cannot be read, the first plugin its standard requires is listed in no language, or it requires none and its
- * plugins are written in two languages or more, naming them, so no language can hold its front door; or with it NULL
- * when memory runs out, layers then holding nothing.
+ * versions installed, writing nothing and leaving its front door unread; 1, or 0 with *refusal set when it is not
+ * registered or its settings or catalog cannot be read, or with it NULL when memory runs out, layers then holding
+ * nothing.
  */
 int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime_loader_layers *layers,
                                cJSON **refusal);
 
 /**
- * The identity a run of host_id's language layer runs as, read as runtime_read_loader_layers reads the front door;
- * NULL when that read refuses or memory runs out.
+ * Sets layers' front door: the language of the first plugin its standard requires, else the one language the catalog
+ * lists its plugins in, NULL when it lists them in none. 1, or 0 with *refusal set when that first plugin is listed in
+ * no language, or none is required and the plugins are written in two languages or more, naming them, so no language
+ * can hold its front door. Layers still hold what they read either way.
+ *
+ * @implNote Kept out of runtime_read_loader_layers because only a start, and install's entry for one, needs a front
+ * door: ui.session lists a loader's plugins whatever state its front door is in, the interface being where the user
+ * fixes it.
+ */
+int runtime_read_front_door(runtime_loader_layers *layers, cJSON **refusal);
+
+/**
+ * The identity a run of host_id's language layer runs as, read as runtime_read_front_door reads the front door; NULL
+ * when that read refuses or memory runs out.
  */
 char *runtime_read_run_identity(const cJSON *places, const char *host_id, const char *language);
 

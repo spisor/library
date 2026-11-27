@@ -590,6 +590,46 @@ static void a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused(vo
     finish_base();
 }
 
+static void expect_refused_with(catalog_answer started, const char *message_part, const char *fix, const char *label) {
+    const char *message = text_at(started.tree, "message");
+    if (started.status != SPISOR_REFUSED || message == NULL || strstr(message, message_part) == NULL) {
+        fprintf(stderr, "%s: expected a refusal naming \"%s\", got status %d and \"%s\"\n", label, message_part,
+                (int)started.status, message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    expect_fix(started, fix, label);
+}
+
+static void a_start_no_language_can_hold_the_front_door_of_is_refused(void) {
+    start_world("start-two-doors");
+    register_test_host("1.0.0");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    install_layered_plugin("compiled", FIXTURE, NO_CAPABILITIES, NULL);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
+    expect_refused_with(started, "so no one language holds its front door",
+                        "require the plugin that holds the front door in the loader's standard, or enable plugins of "
+                        "one language only",
+                        "two languages and no required plugin");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_start_whose_first_required_plugin_no_catalog_lists_is_refused(void) {
+    start_world("start-unlisted-door");
+    register_test_host("1.0.0");
+    require_front_door("brewed");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
+    expect_refused_with(started, "brewed, the first plugin the loader requires, is listed in no catalog source",
+                        "add a catalog source listing brewed, then install the loader again", "the unlisted front door");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
 static void an_unknown_layer_language_is_malformed(void) {
     start_world("start-unknown-layer");
     register_test_host("1.0.0");
@@ -790,6 +830,8 @@ int main(void) {
     each_layer_plans_only_the_plugins_of_its_language();
     a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused();
     an_unknown_layer_language_is_malformed();
+    a_start_no_language_can_hold_the_front_door_of_is_refused();
+    a_start_whose_first_required_plugin_no_catalog_lists_is_refused();
     an_action_start_plans_the_actions_plugin_without_a_serve_only_plugin_beside_it();
     an_action_start_of_a_consumer_plans_its_provider_too();
     an_action_start_plans_the_providers_of_its_providers();

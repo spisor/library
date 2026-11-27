@@ -152,11 +152,7 @@ static cJSON *two_doors_refusal(const char *first, const char *second) {
                                            "enable plugins of one language only");
 }
 
-/**
- * Sets layers' front door, as runtime_loader_layers says; 0 with *refusal set as runtime_read_loader_layers refuses,
- * or with it NULL when memory runs out.
- */
-static int read_front_door(runtime_loader_layers *layers, cJSON **refusal) {
+int runtime_read_front_door(runtime_loader_layers *layers, cJSON **refusal) {
     const cJSON *required = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(layers->standard, "plugins"), 0);
     const cJSON *plugin;
     if (cJSON_IsString(required)) {
@@ -206,10 +202,6 @@ int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime
         runtime_free_loader_layers(layers);
         return 0;
     }
-    if (!read_front_door(layers, refusal)) {
-        runtime_free_loader_layers(layers);
-        return 0;
-    }
     return 1;
 }
 
@@ -218,7 +210,9 @@ char *runtime_read_run_identity(const cJSON *places, const char *host_id, const 
     cJSON *refusal = NULL;
     char *identity = NULL;
     if (runtime_read_loader_layers(places, host_id, &layers, &refusal)) {
-        identity = runtime_run_identity(host_id, language, layers.front_door);
+        identity = runtime_read_front_door(&layers, &refusal)
+                       ? runtime_run_identity(host_id, language, layers.front_door)
+                       : NULL;
         runtime_free_loader_layers(&layers);
     }
     cJSON_Delete(refusal);

@@ -269,16 +269,18 @@ static cJSON *planned(const start_context *context, int *reused, cJSON **refusal
 }
 
 /**
- * Sets the run's identity from the front door runtime_read_loader_layers reads; 0 with *refusal set as it refuses, or
- * with it NULL when memory runs out.
+ * Sets the run's identity from the front door runtime_read_front_door reads; 0 with *refusal set as it or the layers'
+ * read refuses, or with it NULL when memory runs out.
  */
 static int identified(start_context *context, cJSON **refusal) {
     runtime_loader_layers layers;
     if (!runtime_read_loader_layers(context->places, context->argument.host_id, &layers, refusal)) {
         return 0;
     }
-    context->run_id =
-        runtime_run_identity(context->argument.host_id, context->argument.layer_language, layers.front_door);
+    context->run_id = runtime_read_front_door(&layers, refusal)
+                          ? runtime_run_identity(context->argument.host_id, context->argument.layer_language,
+                                                 layers.front_door)
+                          : NULL;
     runtime_free_loader_layers(&layers);
     return context->run_id != NULL;
 }
