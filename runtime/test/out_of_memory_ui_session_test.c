@@ -11,6 +11,7 @@
 #include "allocation_failure.h"
 #include "catalog_call.h"
 #include "check.h"
+#include "config.h"
 #include "runtime/places.h"
 #include "runtime/ui.h"
 #include "runtime_testing_fixture.h"
@@ -221,6 +222,56 @@ static void break_manifest(const laid_out *home) {
     spisor_memory_release(manifest);
 }
 
+/** Rewrites alpha's installed manifest with `from` replaced by `to`, of the same length. */
+static void rewrite_alpha(const laid_out *home, const char *from, const char *to) {
+    char *manifest = joined(home->answer.installs[0].bundle, "plugin.json");
+    size_t length = 0;
+    uint8_t *content = spisor_read_file_reporting(manifest, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
+    char *text = content == NULL ? NULL : spisor_memory_allocate_zeroed(length + 1, 1);
+    char *at;
+    if (text != NULL) {
+        memcpy(text, content, length);
+    }
+    at = text == NULL ? NULL : strstr(text, from);
+    CHECK(at != NULL && strlen(from) == strlen(to));
+    if (at != NULL) {
+        memcpy(at, to, strlen(to));
+        CHECK(spisor_replace_file(manifest, (const uint8_t *)text, length) == SPISOR_OK);
+    }
+    spisor_memory_release(text);
+    spisor_memory_release(content);
+    spisor_memory_release(manifest);
+}
+
+/**
+ * Gives the home every other problem the session lists: alpha's manifest refused by its scope, omega enabled with no
+ * version installed, and no catalog any source yields.
+ */
+static void break_every_path(const laid_out *home) {
+    cJSON *refusal = NULL;
+    cJSON *enabled = cJSON_CreateTrue();
+    char *catalog = joined(base, "catalog/index.json");
+    rewrite_alpha(home, "\"application\"", "\"applicatio_\"");
+    CHECK(runtime_set_ecosystem_setting(home->answer.home, places.portable, "plugins.omega.enabled", enabled,
+                                        RUNTIME_SETTINGS_LAYER_APPLICATION, &refusal));
+    CHECK(remove(catalog) == 0);
+    spisor_memory_release(catalog);
+    cJSON_Delete(enabled);
+    cJSON_Delete(refusal);
+}
+
+/** Checks a clean session over the broken home lists each problem path. */
+static void expect_every_problem(void) {
+    static session_run run;
+    spisor_memory_fail_at(0);
+    run_once(HOST, &run);
+    CHECK(run.status == SPISOR_OK);
+    CHECK(strstr(run.printed.text, "applicatio_") != NULL);
+    CHECK(strstr(run.printed.text, "omega is enabled but not installed") != NULL);
+    CHECK(strstr(run.printed.text, "no catalog source yields a catalog") != NULL);
+    CHECK(strstr(run.printed.text, "cannot be read as a JSON object") != NULL);
+}
+
 int main(void) {
     spisor_value_tree manifests[2];
     runtime_testing_install installs[2];
@@ -233,6 +284,9 @@ int main(void) {
         every_failure_of("ui's session", HOST, SPISOR_OK);
         break_manifest(&home);
         every_failure_of("ui's session with a problem", HOST, SPISOR_OK);
+        break_every_path(&home);
+        expect_every_problem();
+        every_failure_of("ui's session with every problem", HOST, SPISOR_OK);
     }
     ((const runtime_places_definition *)runtime_places_definition_of())->release_answer(NULL, &places);
     testing()->release_home_answer(NULL, &home.answer);
