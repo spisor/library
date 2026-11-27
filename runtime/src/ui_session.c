@@ -152,7 +152,8 @@ static int add_plugins(cJSON *session, cJSON *problems, const runtime_loader_lay
                                                              : runtime_cache_locate_plugins(cache, layers->plugins);
     const cJSON *found;
     int added = located != NULL && add_located_problems(problems, located);
-    cJSON_ArrayForEach(found, added ? cJSON_GetObjectItemCaseSensitive(located, "located") : NULL) {
+    const cJSON *found_plugins = added ? cJSON_GetObjectItemCaseSensitive(located, "located") : NULL;
+    cJSON_ArrayForEach(found, found_plugins) {
         added = add_found(plugins, descriptions, problems, found, home, portable);
         if (!added) {
             break;
@@ -179,7 +180,7 @@ static int add_uninstalled(cJSON *problems, const runtime_loader_layers *layers)
     cJSON *candidates = runtime_plugin_candidates(layers->settings, NULL);
     const cJSON *candidate;
     int added = candidates != NULL;
-    cJSON_ArrayForEach(candidate, added ? candidates : NULL) {
+    cJSON_ArrayForEach(candidate, candidates) {
         const char *id = text_of(candidate, "id");
         const char *parts[2] = {id, " is enabled but not installed"};
         char *detail = cJSON_HasObjectItem(layers->plugins, id) ? NULL : runtime_cache_text(parts, 2);
