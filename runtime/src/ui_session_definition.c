@@ -5,6 +5,7 @@
 #include "allocation.h"
 #include "answer_storage.h"
 #include "catalog_source.h"
+#include "config_conversion.h"
 #include "definition_support.h"
 #include "install_run.h"
 #include "ui_definition.h"
@@ -30,13 +31,6 @@ static const char *value_text(const spisor_value *record, const char *key) {
     return member != NULL && member->kind == SPISOR_VALUE_TEXT ? member->text : NULL;
 }
 
-static uint32_t layer_named(const char *layer) {
-    if (layer == NULL) {
-        return RUNTIME_SETTINGS_LAYER_DEFAULT;
-    }
-    return strcmp(layer, "application") == 0 ? RUNTIME_SETTINGS_LAYER_APPLICATION : RUNTIME_SETTINGS_LAYER_PORTABLE;
-}
-
 /** The declarations of a description's settings, which its scope's read has checked; 0 when memory runs out. */
 static int fill_declarations(void **storage, const spisor_value *description, runtime_config_plugin *config) {
     const spisor_value *settings = spisor_value_member(description, "settings", 8);
@@ -49,7 +43,7 @@ static int fill_declarations(void **storage, const spisor_value *description, ru
         const spisor_entry *entry = &settings->entries[index];
         declarations[index].key = entry->key;
         declarations[index].type = value_text(&entry->value, "type");
-        declarations[index].layer = layer_named(value_text(&entry->value, "layer"));
+        declarations[index].layer = runtime_settings_layer_named(value_text(&entry->value, "layer"));
     }
     config->settings = declarations;
     config->setting_count = count;

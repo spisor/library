@@ -32,6 +32,9 @@ uint32_t runtime_field_kind_named(const char *name);
 /** Whether a declaration's `choices` are absent, NULL, or a list of texts. */
 int runtime_are_setting_choices(const cJSON *choices);
 
+/** The runtime_settings_layer `name` names, `application` or `portable`; RUNTIME_SETTINGS_LAYER_DEFAULT for any other. */
+uint32_t runtime_settings_layer_named(const char *name);
+
 /** Whether `name` names a layer a declaration may carry as its `layer`: `application` or `portable`. */
 int runtime_is_settings_layer_name(const char *name);
 
