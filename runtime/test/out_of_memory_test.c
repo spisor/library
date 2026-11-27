@@ -1745,9 +1745,14 @@ static int replaced_the_old_run(void) {
 }
 
 /** Whether the answer installed and enabled p and found only spisor-host and runtime missing from the catalog. */
+/**
+ * Whether p and its language's host installed and p was enabled, spisor-host, the runtime and forebay-library being
+ * unavailable from a catalog that lists none of them.
+ */
 static int installed_the_plugin(const runtime_install_ecosystem_answer *answer) {
-    return answer->installed_count == 1 && strcmp(answer->installed[0].id, "p") == 0 &&
-           is_only_text(answer->enabled, answer->enabled_count, "p") && answer->unavailable_count == 2 &&
+    return answer->installed_count == 2 && strcmp(answer->installed[0].id, "p") == 0 &&
+           strcmp(answer->installed[1].id, "fixture-one-host") == 0 &&
+           is_only_text(answer->enabled, answer->enabled_count, "p") && answer->unavailable_count == 3 &&
            answer->application_count == 0 && answer->javascript == NULL && replaced_the_old_run();
 }
 
