@@ -68,6 +68,9 @@ static void environment_of_base(const install_base *base, runtime_variable envir
     environment[3].value = "/bin/sh";
 }
 
+/** The detail of the last refusal an install answered, printed without allocating; empty for none. */
+static char refused_detail[4096];
+
 /** Installs the ecosystem from the one local index named `index_name` in the catalog folder. */
 static spisor_status install_from(const install_base *base, const char *index_name) {
     const runtime_install_definition *install = runtime_install_definition_of();
@@ -96,6 +99,7 @@ static spisor_status install_from(const install_base *base, const char *index_na
     argument.requested_count = 1;
     spisor_status status = install->ecosystem(install->context, &argument, &answer, &refusal);
     status = empty_unless_answered(status, &answer, sizeof answer);
+    snprintf(refused_detail, sizeof refused_detail, "%s", refusal.detail == NULL ? "" : refusal.detail);
     install->release_ecosystem_answer(install->context, &answer);
     install->release_refusal(install->context, &refusal);
     return status;
@@ -333,9 +337,10 @@ static void every_ecosystem_failure(uint64_t first, uint64_t last) {
 
 /**
  * Whether failing allocation attempt of an install no source yields a catalog for answers REFUSED or OUT_OF_MEMORY,
- * leaves nothing live and writes what a clean refusal writes.
+ * leaves nothing live, writes what a clean refusal writes and, refusing, refuses as it does.
  */
-static int refuses_as_promised(const install_base *base, const cJSON *clean, uint64_t attempt) {
+static int refuses_as_promised(const install_base *base, const cJSON *clean, const char *clean_detail,
+                               uint64_t attempt) {
     int64_t baseline = spisor_memory_live_blocks();
     fresh_places(base);
     fail_allocation(failure_mode, attempt);
@@ -351,6 +356,11 @@ static int refuses_as_promised(const install_base *base, const cJSON *clean, uin
                 (int)status);
         return 0;
     }
+    if (status == SPISOR_REFUSED && strcmp(refused_detail, clean_detail) != 0) {
+        fprintf(stderr, "ecosystem refused: failing allocation %llu refused \"%s\"; a clean run refuses \"%s\"\n",
+                (unsigned long long)attempt, refused_detail, clean_detail);
+        return 0;
+    }
     return matches_clean(base, clean, "ecosystem's refusal", attempt);
 }
 
@@ -363,9 +373,12 @@ static void every_refused_ecosystem_failure(void) {
         spisor_memory_fail_at(0);
         CHECK(install_from(&base, "missing.json") == SPISOR_REFUSED);
         uint64_t allocations = spisor_memory_attempts();
+        static char clean_detail[sizeof refused_detail];
+        snprintf(clean_detail, sizeof clean_detail, "%s", refused_detail);
+        CHECK(clean_detail[0] != '\0');
         cJSON *clean = snapshot_of(&base);
         for (uint64_t attempt = 1; attempt <= allocations; attempt++) {
-            if (!refuses_as_promised(&base, clean, attempt)) {
+            if (!refuses_as_promised(&base, clean, clean_detail, attempt)) {
                 check_failures++;
                 break;
             }
