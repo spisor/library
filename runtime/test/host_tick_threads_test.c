@@ -22,7 +22,7 @@
 #define STALL_MILLISECONDS 1500
 #define SOURCE "https://catalog.test"
 #define VIEWER_MANIFEST                                                                                             \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                            \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                            \
     "\"config\": {\"name\": \"a\", \"defaults\": {\"theme\": \"dark\"}}}"
 
 typedef struct blocking_tick {
@@ -55,11 +55,17 @@ static int reads_theme(const weivel_standard_config *config) {
     return read;
 }
 
-/** The loader's settings reading the https source alone, which the fixture serves after its stall. */
+/**
+ * The loader's settings reading the local catalog, which lists `a`'s language as an install leaves it, then the https
+ * source, which the fixture serves after its stall.
+ */
 static void read_the_stalled_source(void) {
     char *text;
-    cJSON *settings = parsed("{\"plugins\": {\"a\": {\"enabled\": true}}, \"catalog\": {\"sources\": "
-                             "[{\"kind\": \"https\", \"url\": \"" SOURCE "/index.json\"}]}}");
+    cJSON *settings = settings_with("{\"plugins\": {\"a\": {\"enabled\": true}}}");
+    cJSON *source = cJSON_CreateObject();
+    cJSON_AddStringToObject(source, "kind", "https");
+    cJSON_AddStringToObject(source, "url", SOURCE "/index.json");
+    cJSON_AddItemToArray(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(settings, "catalog"), "sources"), source);
     text = cJSON_PrintUnformatted(settings);
     write_in(application_home, "config/settings.json", text);
     cJSON_free(text);
@@ -113,7 +119,7 @@ static void reads_while(const weivel_standard_config *config, blocking_tick *blo
 }
 
 static void config_reads_while_a_tick_blocks(void) {
-    const char *arguments[2] = {LAYER_RUNTIME, LOADER};
+    const char *arguments[2] = {LAYER_LANGUAGE, LOADER};
     const weivel_standard_scopes *scopes = runtime_standard_scope_definition_of();
     weivel_standard_scope scope = WEIVEL_INIT(weivel_standard_scope);
     blocking_tick blocked = {WEIVEL_STATUS_MALFORMED, 0};

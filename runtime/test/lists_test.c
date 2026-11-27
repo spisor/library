@@ -138,7 +138,7 @@ static void refuses_a_group_that_is_no_list_of_rows_with_an_id(void) {
 }
 
 static const char *CATALOG =
-    "{\"format\": 1, \"items\": {"
+    "{\"format\": 2, \"items\": {"
     "\"claude-host\": {\"kind\": \"host\", \"versions\": {}, \"latest\": \"1.0.0\", \"application\": {\"id\": \"claude\","
     " \"label\": \"claude label\", \"binary\": \"claude\", \"home\": {\"candidates\": [\"~/.x\"]}, \"packages\": {}}},"
     "\"opencode-host\": {\"kind\": \"host\", \"versions\": {}, \"latest\": \"1.0.0\", \"application\": {\"id\": "
@@ -146,7 +146,7 @@ static const char *CATALOG =
     " \"packages\": {}}},"
     "\"gemini-host\": {\"kind\": \"host\", \"versions\": {}, \"latest\": \"1.0.0\", \"application\": {\"id\": \"gemini\","
     " \"label\": \"gemini label\", \"binary\": \"gemini\", \"home\": {\"candidates\": [\"~/.x\"]}, \"packages\": {}}},"
-    "\"some-plugin\": {\"kind\": \"plugin\", \"versions\": {}, \"latest\": \"1.0.0\"}}}";
+    "\"some-plugin\": {\"kind\": \"plugin\", \"language\": \"typescript\", \"versions\": {}, \"latest\": \"1.0.0\"}}}";
 
 typedef struct lists_scratch {
     char base[1024];
@@ -329,7 +329,7 @@ static void refuses_items_that_are_no_record_or_a_detection_without_its_item(voi
     fresh(&place, "shape");
     runtime_list answer = SPISOR_INIT(runtime_list);
     spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
-    check_refused(applications_through(place.state, "{\"format\": 1, \"items\": [1]}", path_environment(""), "[]",
+    check_refused(applications_through(place.state, "{\"format\": 2, \"items\": [1]}", path_environment(""), "[]",
                                        &answer, &refusal),
                   SPISOR_MALFORMED, &refusal, "not a record", "items that are a list");
     lists()->release_refusal(lists()->context, &refusal);

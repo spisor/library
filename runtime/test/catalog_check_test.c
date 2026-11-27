@@ -51,7 +51,7 @@ static char cache[1100];
 static char *index_text(const char *latest) {
     char *text = spisor_memory_allocate(512);
     snprintf(text, 512,
-             "{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\",\"latest\":\"%s\",\"versions\":{\"%s\":{\"files\":{"
+             "{\"format\":2,\"items\":{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"%s\",\"versions\":{\"%s\":{\"files\":{"
              "\"plugin.json\":{\"url\":\"a/%s/plugin.json\",\"sha256\":\"" ZEROES "\",\"size\":1}}}}}}}",
              latest, latest, latest);
     return text;

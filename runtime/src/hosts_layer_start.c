@@ -18,7 +18,6 @@
 #include "runtime/hosts.h"
 #include "spisor/path.h"
 
-#define HOST_WORD "host"
 #define IN_PROCESS_WORD "in-process"
 #define ACTION_WORD "action"
 
@@ -117,6 +116,13 @@ static cJSON *start_of(const runtime_entry_start_request *request, const char *e
     return start;
 }
 
+/** A refusal of a start of id on jvm, a runtime the catalog names and no start exists for yet; NULL out of memory. */
+static cJSON *jvm_refusal(const char *id) {
+    const char *parts[3] = {"the start recorded for ", id, " runs on jvm, and no jvm start exists yet"};
+    return runtime_cache_refusal(parts, 3, "use a host for this language that runs on native or javascript until a "
+                                           "jvm start is built");
+}
+
 cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **refusal) {
     int native = request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_NATIVE) == 0;
     int javascript = request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_JAVASCRIPT) == 0;
@@ -124,6 +130,10 @@ cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **r
     char *executable = NULL;
     cJSON *start = NULL;
     *refusal = NULL;
+    if (request->runtime != NULL && strcmp(request->runtime, RUNTIME_LAYER_JVM) == 0) {
+        *refusal = jvm_refusal(request->id);
+        return NULL;
+    }
     if (!native && !javascript) {
         *refusal = reinstall_refusal("the start recorded for ", request->id, " names a runtime this host cannot start");
         return NULL;
@@ -149,13 +159,12 @@ typedef struct layer_context {
     runtime_loader_layers layers;
 } layer_context;
 
-/** The arguments a layer of runtime is given: its leading words, the loader id, then those of the mode. */
-static cJSON *layer_arguments(const layer_context *context, const char *runtime, const char *binary) {
+/** The arguments a layer of language is given: the runtime binary, the language, the loader id, then those of the mode. */
+static cJSON *layer_arguments(const layer_context *context, const char *language, const char *binary) {
     const runtime_hosts_layer_start_request *request = context->request;
     cJSON *arguments = cJSON_CreateArray();
-    int native = strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0;
-    int built = arguments != NULL && (!native || add_text(arguments, HOST_WORD)) && add_text(arguments, binary) &&
-                add_text(arguments, runtime) && add_text(arguments, request->loader_id);
+    int built = arguments != NULL && add_text(arguments, binary) && add_text(arguments, language) &&
+                add_text(arguments, request->loader_id);
     if (request->mode == RUNTIME_HOSTS_LAYER_IN_PROCESS) {
         built = built && add_text(arguments, IN_PROCESS_WORD);
     } else if (request->mode == RUNTIME_HOSTS_LAYER_ACTION) {
@@ -181,19 +190,30 @@ static const char *runtime_binary(const cJSON *hint, const char *layer_id, cJSON
     return binary;
 }
 
-/** {runtime, hostId}, the start of the layer of runtime added to it; NULL with *refusal as hosts.layer_start says. */
-static cJSON *layer_of(const layer_context *context, const char *runtime, cJSON **refusal) {
-    const char *layer_id = runtime_layer_item_of(runtime);
-    cJSON *hint = runtime_layer_hint(context->cache, layer_id, refusal);
+/** The runtime the catalog's language-host item for language starts under, NULL with *refusal set when it lists none. */
+static const char *host_runtime(const layer_context *context, const char *language, cJSON **refusal) {
+    int out_of_memory = 0;
+    const cJSON *item = runtime_language_host_item(context->layers.catalog, language, &out_of_memory);
+    if (item == NULL && !out_of_memory) {
+        *refusal = runtime_unhosted_language_refusal(language);
+    }
+    return text_of(item, "runtime");
+}
+
+/** {language, hostId}, the start of the layer of language added to it; NULL with *refusal as hosts.layer_start says. */
+static cJSON *layer_of(const layer_context *context, const char *language, cJSON **refusal) {
+    const char *runtime = host_runtime(context, language, refusal);
+    char *layer_id = runtime == NULL ? NULL : runtime_language_host_id(language);
+    cJSON *hint = layer_id == NULL ? NULL : runtime_layer_hint(context->cache, layer_id, refusal);
     const char *binary = hint == NULL ? NULL : runtime_binary(hint, layer_id, refusal);
-    cJSON *arguments = binary == NULL ? NULL : layer_arguments(context, runtime, binary);
+    cJSON *arguments = binary == NULL ? NULL : layer_arguments(context, language, binary);
     runtime_entry_start_request entry = {context->cache, context->request->environment, layer_id,
                                          text_of(hint, "host"), runtime, NULL, arguments};
     cJSON *layer = arguments == NULL ? NULL : runtime_entry_start(&entry, refusal);
     char *identity = layer == NULL ? NULL
-                                   : runtime_run_identity(context->request->loader_id, runtime,
+                                   : runtime_run_identity(context->request->loader_id, language,
                                                           context->layers.front_door);
-    int built = identity != NULL && cJSON_AddStringToObject(layer, "runtime", runtime) != NULL &&
+    int built = identity != NULL && cJSON_AddStringToObject(layer, "language", language) != NULL &&
                 cJSON_AddStringToObject(layer, "hostId", identity) != NULL;
     if (!built) {
         cJSON_Delete(layer);
@@ -202,11 +222,12 @@ static cJSON *layer_of(const layer_context *context, const char *runtime, cJSON 
     spisor_memory_release(identity);
     cJSON_Delete(arguments);
     cJSON_Delete(hint);
+    spisor_memory_release(layer_id);
     return layer;
 }
 
-static int add_layer(const layer_context *context, cJSON *layers, const char *runtime, cJSON **refusal) {
-    cJSON *layer = layer_of(context, runtime, refusal);
+static int add_layer(const layer_context *context, cJSON *layers, const char *language, cJSON **refusal) {
+    cJSON *layer = layer_of(context, language, refusal);
     if (layer == NULL || !cJSON_AddItemToArray(layers, layer)) {
         cJSON_Delete(layer);
         return 0;
@@ -215,63 +236,109 @@ static int add_layer(const layer_context *context, cJSON *layers, const char *ru
 }
 
 /**
- * Whether a SERVE or IN_PROCESS start runs a layer of runtime: one of its plugins does, or, for the front door, the
- * standard requires one.
+ * Whether a SERVE or IN_PROCESS start runs a layer of language: one of its plugins is written in it, or, for the front
+ * door, the standard requires one.
  */
-static int serves_on(const layer_context *context, const char *runtime) {
+static int serves_in(const layer_context *context, const char *language) {
     const runtime_loader_layers *layers = &context->layers;
     int requires = cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(layers->standard, "plugins")) > 0;
-    return runtime_names_plugin_on(layers->catalog, layers->plugins, runtime) ||
-           (requires && strcmp(runtime, layers->front_door) == 0);
+    return runtime_names_plugin_in(layers->catalog, layers->plugins, language) ||
+           (requires && layers->front_door != NULL && strcmp(language, layers->front_door) == 0);
+}
+
+/** Whether a plugin before plugin among the loader's plugins is written in language. */
+static int named_before(const layer_context *context, const cJSON *plugin, const char *language) {
+    for (const cJSON *earlier = context->layers.plugins->child; earlier != plugin; earlier = earlier->next) {
+        const char *written = runtime_plugin_language(context->layers.catalog, earlier->string);
+        if (written != NULL && strcmp(written, language) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /**
- * Every layer a SERVE start runs, the front door's first.
+ * Every layer a SERVE start runs, the front door's first, then one per further language in the order the loader's
+ * plugins first name it.
  *
- * @implNote First, because only the front door's session start applies updates and the other layer reuses the run
- * it records, which launch waits for before starting that layer.
+ * @implNote First, because only the front door's session start applies updates and every other layer reuses the run
+ * it records, which launch waits for before starting them.
  */
 static int add_serving_layers(const layer_context *context, cJSON *layers, cJSON **refusal) {
-    static const char *const runtimes[2] = {RUNTIME_LAYER_JAVASCRIPT, RUNTIME_LAYER_NATIVE};
     const char *door = context->layers.front_door;
-    int added = !serves_on(context, door) || add_layer(context, layers, door, refusal);
-    for (size_t index = 0; added && index < 2; index++) {
-        if (strcmp(runtimes[index], door) != 0 && serves_on(context, runtimes[index])) {
-            added = add_layer(context, layers, runtimes[index], refusal);
+    int added = door == NULL || !serves_in(context, door) || add_layer(context, layers, door, refusal);
+    const cJSON *plugin = context->layers.plugins == NULL ? NULL : context->layers.plugins->child;
+    for (; added && plugin != NULL; plugin = plugin->next) {
+        const char *language = runtime_plugin_language(context->layers.catalog, plugin->string);
+        if (language != NULL && (door == NULL || strcmp(language, door) != 0) && !named_before(context, plugin, language)) {
+            added = add_layer(context, layers, language, refusal);
         }
     }
     return added;
 }
 
-/**
- * The javascript layer alone, the one runtime a host inside another application's process runs, refused when no
- * plugin the loader runs is a javascript one.
- */
-static int add_in_process_layer(const layer_context *context, cJSON *layers, cJSON **refusal) {
-    if (!serves_on(context, RUNTIME_LAYER_JAVASCRIPT)) {
-        const char *parts[3] = {"no plugin ", context->request->loader_id,
-                                " runs is a javascript one, and an in-process start runs the javascript layer alone"};
-        *refusal = runtime_cache_refusal(parts, 3,
-                                         "start the loader with spisor-host launch, which runs its native layer as a "
-                                         "process of its own");
-        return 0;
-    }
-    return add_layer(context, layers, RUNTIME_LAYER_JAVASCRIPT, refusal);
+/** A refusal of an in-process start whose front door's host item, layer_id, carries no in-process entry. */
+static cJSON *not_in_process_refusal(const char *layer_id, const char *language) {
+    const char *parts[4] = {layer_id, ", which hosts ", language,
+                            ", the language of the loader's front door, carries no inProcessEntry in its host.json, "
+                            "so it cannot run inside another application's process"};
+    return runtime_cache_refusal(parts, 4, "start the loader with spisor-host launch, which runs each layer as a "
+                                           "process of its own");
 }
 
-/** The one layer an ACTION runs in, the plugin's, refused when its catalog runtime is no layer's. */
+/**
+ * Whether the installed bundle of language's host item carries an `inProcessEntry`; 0 with *refusal set when it does
+ * not or cannot be read, or with it NULL when memory runs out.
+ */
+static int runs_in_process(const layer_context *context, const char *language, cJSON **refusal) {
+    char *layer_id = runtime_language_host_id(language);
+    cJSON *hint = layer_id == NULL ? NULL : runtime_layer_hint(context->cache, layer_id, refusal);
+    runtime_entry_start_request bundle = {context->cache, NULL, layer_id, text_of(hint, "host"), NULL, NULL, NULL};
+    char *directory = hint == NULL ? NULL : installed_bundle(&bundle, refusal);
+    const char *segments[2] = {directory, "host.json"};
+    char *path = directory == NULL ? NULL : spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 2);
+    int out_of_memory = directory != NULL && path == NULL;
+    cJSON *manifest = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
+    int carries = text_of(manifest, "inProcessEntry") != NULL;
+    if (path != NULL && !carries && !out_of_memory) {
+        *refusal = not_in_process_refusal(layer_id, language);
+    }
+    cJSON_Delete(manifest);
+    spisor_memory_release(path);
+    spisor_memory_release(directory);
+    cJSON_Delete(hint);
+    spisor_memory_release(layer_id);
+    return carries;
+}
+
+/**
+ * The front door's layer alone, the one a host inside another application's process runs, refused when no plugin the
+ * loader runs holds a front door or that layer's host item carries no in-process entry.
+ */
+static int add_in_process_layer(const layer_context *context, cJSON *layers, cJSON **refusal) {
+    const char *door = context->layers.front_door;
+    if (door == NULL || !serves_in(context, door)) {
+        const char *parts[3] = {"no plugin ", context->request->loader_id,
+                                " runs holds its front door, and an in-process start runs the front door's layer alone"};
+        *refusal = runtime_cache_refusal(parts, 3, "enable a plugin for the loader, or start it with spisor-host launch");
+        return 0;
+    }
+    return runs_in_process(context, door, refusal) && add_layer(context, layers, door, refusal);
+}
+
+/** The one layer an ACTION runs in, the plugin's language, refused when the catalog lists the plugin in none. */
 static int add_action_layer(const layer_context *context, cJSON *layers, cJSON **refusal) {
     const char *plugin = context->request->plugin;
-    const char *runtime = runtime_plugin_runtime(context->layers.catalog, plugin);
-    if (!runtime_is_layer_runtime(runtime)) {
-        const char *parts[3] = {plugin, " runs on ", runtime};
-        const char *fix_parts[3] = {"install a version of ", plugin, " written for javascript or native"};
+    const char *language = runtime_plugin_language(context->layers.catalog, plugin);
+    if (language == NULL) {
+        const char *parts[2] = {plugin, " is listed in no catalog source as a plugin, so no layer runs it"};
+        const char *fix_parts[3] = {"add a catalog source listing ", plugin, ", then run the action again"};
         char *fix = runtime_cache_text(fix_parts, 3);
-        *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 3, fix);
+        *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 2, fix);
         spisor_memory_release(fix);
         return 0;
     }
-    return add_layer(context, layers, runtime, refusal);
+    return add_layer(context, layers, language, refusal);
 }
 
 static int add_mode_layers(const layer_context *context, cJSON *layers, cJSON **refusal) {
@@ -290,7 +357,7 @@ cJSON *runtime_hosts_layer_start(const runtime_hosts_layer_start_request *reques
     context.request = request;
     context.cache = text_of(places, "cache");
     if (places != NULL && runtime_read_loader_layers(places, request->loader_id, &context.layers, refusal)) {
-        cJSON *layers = cJSON_CreateArray();
+        cJSON *layers = runtime_read_front_door(&context.layers, refusal) ? cJSON_CreateArray() : NULL;
         int added = layers != NULL && add_mode_layers(&context, layers, refusal);
         answer = added ? cJSON_CreateObject() : NULL;
         if (answer == NULL || !cJSON_AddItemToObject(answer, "layers", layers)) {

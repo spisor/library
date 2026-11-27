@@ -23,6 +23,7 @@ const runtime_catalog_schema_text runtime_catalog_schema_patterns[PATTERN_COUNT]
     [PATTERN_XDG_SUBDIR] = {HOME "/properties/xdgSubdir/pattern", NAME_PATTERN},
     [PATTERN_CANDIDATE] = {HOME "/properties/candidates/items/pattern", "^(?:~/|/|[A-Za-z]:[\\/])"},
     [PATTERN_PACKAGE_NAME] = {APPLICATION "/properties/packages/propertyNames/pattern", NAME_PATTERN},
+    [PATTERN_LANGUAGE] = {ITEM "/properties/language/pattern", "^(?!spisor(?![\\s\\S]))[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"},
 };
 
 static const char *const ROOT_REQUIRED[] = {"format", "items", NULL};
@@ -36,9 +37,11 @@ static const char *const PACKAGE_REQUIRED[] = {"name", NULL};
 static const char *const KIND[] = {"kind", NULL};
 static const char *const APPLICATION_MEMBER[] = {"application", NULL};
 static const char *const RUNTIME_MEMBER[] = {"runtime", NULL};
-static const char *const KINDS[] = {"plugin", "host", "library", NULL};
+static const char *const LANGUAGE_MEMBER[] = {"language", NULL};
+static const char *const LANGUAGE_HOST_REQUIRED[] = {"language", "runtime", NULL};
+static const char *const KINDS[] = {"plugin", "host", "library", "language-host", "interface", NULL};
 static const char *const RUNTIMES[] = {"javascript", "jvm", "native", NULL};
-static const char *const PLUGIN_OR_LIBRARY[] = {"plugin", "library", NULL};
+static const char *const NOT_HOST_KINDS[] = {"plugin", "library", "language-host", "interface", NULL};
 
 const runtime_catalog_schema_list runtime_catalog_schema_lists[LIST_COUNT] = {
     [REQUIRED_ROOT] = {"/required", ROOT_REQUIRED},
@@ -56,7 +59,15 @@ const runtime_catalog_schema_list runtime_catalog_schema_lists[LIST_COUNT] = {
     [REQUIRED_RUNTIME_RULE_THEN] = {ITEM "/allOf/1/then/required", RUNTIME_MEMBER},
     [ENUM_KIND] = {ITEM "/properties/kind/enum", KINDS},
     [ENUM_RUNTIME] = {ITEM "/properties/runtime/enum", RUNTIMES},
-    [ENUM_APPLICATION_RULE_KINDS] = {ITEM "/allOf/0/if/properties/kind/enum", PLUGIN_OR_LIBRARY},
+    [ENUM_APPLICATION_RULE_KINDS] = {ITEM "/allOf/0/if/properties/kind/enum", NOT_HOST_KINDS},
+    [REQUIRED_LANGUAGE_HOST_RULE_IF] = {ITEM "/allOf/2/if/required", KIND},
+    [REQUIRED_LANGUAGE_HOST_RULE_THEN] = {ITEM "/allOf/2/then/required", LANGUAGE_HOST_REQUIRED},
+    [REQUIRED_INTERFACE_RULE_IF] = {ITEM "/allOf/3/if/required", KIND},
+    [REQUIRED_INTERFACE_RULE_THEN] = {ITEM "/allOf/3/then/required", RUNTIME_MEMBER},
+    [REQUIRED_INTERFACE_RULE_NOT] = {ITEM "/allOf/3/then/not/required", LANGUAGE_MEMBER},
+    [REQUIRED_PLUGIN_RULE_IF] = {ITEM "/allOf/4/if/required", KIND},
+    [REQUIRED_PLUGIN_RULE_THEN] = {ITEM "/allOf/4/then/required", LANGUAGE_MEMBER},
+    [REQUIRED_PLUGIN_RULE_NOT] = {ITEM "/allOf/4/then/not/required", RUNTIME_MEMBER},
 };
 
 const runtime_catalog_schema_bound runtime_catalog_schema_bounds[BOUND_COUNT] = {
@@ -71,6 +82,9 @@ const runtime_catalog_schema_bound runtime_catalog_schema_bounds[BOUND_COUNT] = 
 };
 
 const runtime_catalog_schema_text runtime_catalog_schema_constants[CONSTANT_COUNT] = {
-    [CONSTANT_FORMAT] = {"/properties/format/const", "1"},
+    [CONSTANT_FORMAT] = {"/properties/format/const", "2"},
     [CONSTANT_RUNTIME_RULE_KIND] = {ITEM "/allOf/1/if/properties/kind/const", "\"host\""},
+    [CONSTANT_LANGUAGE_HOST_RULE_KIND] = {ITEM "/allOf/2/if/properties/kind/const", "\"language-host\""},
+    [CONSTANT_INTERFACE_RULE_KIND] = {ITEM "/allOf/3/if/properties/kind/const", "\"interface\""},
+    [CONSTANT_PLUGIN_RULE_KIND] = {ITEM "/allOf/4/if/properties/kind/const", "\"plugin\""},
 };

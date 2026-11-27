@@ -130,3 +130,21 @@ int runtime_catalog_is_candidate(const char *text) {
     }
     return is_ascii_letter(text[0]) && text[1] == ':' && text[2] == '/';
 }
+
+static int is_lowercase_letter(char character) {
+    return character >= 'a' && character <= 'z';
+}
+
+int runtime_catalog_is_language(const char *text) {
+    if (text == NULL || !is_lowercase_letter(text[0]) || strcmp(text, "spisor") == 0) {
+        return 0;
+    }
+    for (const char *at = text + 1; *at != 0; at++) {
+        int word = is_lowercase_letter(*at) || is_ascii_digit(*at);
+        int joins = *at == '-' && (is_lowercase_letter(at[1]) || is_ascii_digit(at[1]));
+        if (!word && !joins) {
+            return 0;
+        }
+    }
+    return 1;
+}

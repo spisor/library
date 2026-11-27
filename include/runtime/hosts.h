@@ -93,9 +93,9 @@ typedef struct runtime_hosts_provenance_answer {
 
 /**
  * The start of `host_id` in the user's `environment`, its language `layer`'s bundle and the `library_count`
- * `libraries` that layer loaded, and `session` 1 for the application's session host, else 0; the `layer_runtime`,
- * `javascript` or `native`, whose plugins the start plans; and `action_plugin`, the plugin an ACTION start runs an
- * action of, NULL for any other start. First shape ends at `session`.
+ * `libraries` that layer loaded, and `session` 1 for the application's session host, else 0; the `layer_language`,
+ * the language whose plugins the start plans, as the catalog names a plugin's; and `action_plugin`, the plugin an
+ * ACTION start runs an action of, NULL for any other start. First shape ends at `session`.
  */
 typedef struct runtime_hosts_start_argument {
     uint32_t size;
@@ -106,7 +106,7 @@ typedef struct runtime_hosts_start_argument {
     const runtime_item_version *libraries;
     size_t library_count;
     uint32_t session;
-    const char *layer_runtime;
+    const char *layer_language;
     const char *action_plugin;
 } runtime_hosts_start_argument;
 
@@ -170,13 +170,12 @@ typedef struct runtime_hosts_layer_start_argument {
 } runtime_hosts_layer_start_argument;
 
 /**
- * How to start one layer: its `runtime`, `javascript` or `native`; the `host_id` its run publishes its ready record and
- * is held under, the loader id for the layer holding the front door and `<loader id>.<runtime>` for the other; and the
- * `executable` to run with its `argument_count` `arguments` and its `environment`. An element of an array, so it has no
- * size.
+ * How to start one layer: its `language`; the `host_id` its run publishes its ready record and is held under, the
+ * loader id for the layer holding the front door and `<loader id>.<language>` for any other; and the `executable` to
+ * run with its `argument_count` `arguments` and its `environment`. An element of an array, so it has no size.
  */
 typedef struct runtime_hosts_layer {
-    const char *runtime;
+    const char *language;
     const char *host_id;
     const char *executable;
     const char *const *arguments;
@@ -257,15 +256,17 @@ typedef struct runtime_hosts_definition {
      * plans what runs as updates' apply does, with the layer and each library at the version it runs; a start that is
      * not the session start of the layer holding the front door reuses instead the run a live run record of the host
      * names, with a run record of its own naming that run and what this start runs beside it, so one session applies
-     * updates once. The plan holds only the enabled plugins whose catalog runtime is `layer_runtime`, and for an ACTION start only
-     * `action_plugin` and every plugin of the layer that provides, transitively, a capability it consumes. A refused
-     * session start publishes its refusal to the ready record of the run's identity, the host id for the layer that
-     * holds the front door and `<host id>.<layer runtime>` for the other, once its places resolved.
+     * updates once. The plan holds only the enabled plugins the catalog lists in `layer_language`, and for an ACTION
+     * start only `action_plugin` and every plugin of the layer that provides, transitively, a capability it consumes. A
+     * refused session start publishes its refusal to the ready record of the run's identity, the host id for the layer
+     * that holds the front door and `<host id>.<layer language>` for any other, once its places resolved.
      *
-     * @return OK; MALFORMED, also for a `layer_runtime` that is neither `javascript` nor `native`; REFUSED when the
-     * host is not registered or its registration carries no version or home, the settings cannot be read, a planned
-     * plugin consumes a capability only a plugin of the other layer provides, an ACTION's plugin runs in the other
-     * layer, the first plugin the loader requires runs on a runtime no layer runs, or as updates' apply refuses;
+     * @return OK; MALFORMED, also for a `layer_language` that is no language name: a lowercase letter, then lowercase
+     * letters and digits in words joined by single hyphens, and never `spisor`; REFUSED when the host is not registered
+     * or its registration carries no version or home, the settings cannot be read, the catalog lists no language-host
+     * item `<layer language>-host`, a planned plugin consumes a capability only a plugin of another layer provides, an
+     * ACTION's plugin runs in another layer, the loader's front door has no language, as hosts' layer_start refuses
+     * one, or as updates' apply refuses;
      * OUT_OF_MEMORY, removing the run record this start wrote, and publishing no refusal. A refused or OUT_OF_MEMORY start may have recorded the references, which the
      * next start would record alike.
      */
@@ -279,23 +280,29 @@ typedef struct runtime_hosts_definition {
     void (*release_refusal)(void *context, spisor_refusal *refusal);
     /**
      * How to start the layers a loader's plugins run in, so no caller decides a layer, an argument order or an
-     * identity: a SERVE start answers one layer per runtime of the enabled plugins a start resolves, the front door's
-     * first, since only its session start applies updates and the other reuses the run it records; an IN_PROCESS start
-     * the javascript layer alone, the one a host inside another application's process runs; an ACTION one layer, that
-     * of the plugin's catalog runtime. A `native` layer runs the entry of `spisor-interface`'s
-     * bundle as `host <runtime binary> native <loader id>`, a `javascript` one runs the JavaScript runtime with the
-     * entry of `javascript-host`'s bundle and `<runtime binary> javascript <loader id>`, each at the version its boot
-     * hint names and its runtime binary the one that hint names for `runtime`; `in-process`, or `action <plugin>
-     * <action> <input>` followed by the result path when one is given, follows for those modes. Each start's
-     * environment is the argument's. It writes nothing but the JavaScript runtime's record when it acquires one.
+     * identity: a SERVE start answers one layer per language of the enabled plugins a start resolves, the front door's
+     * first, then each further language in the order the plugins first name it, since only the front door's session
+     * start applies updates and every other reuses the run it records; an IN_PROCESS start the front door's layer
+     * alone, the one a host inside another application's process runs; an ACTION one layer, that of the plugin's
+     * catalog language. The front door's language is that of the first plugin the loader's standard requires, else the
+     * one language its plugins are written in. A layer of language `L` runs the entry of the bundle of the catalog's
+     * language-host item `L-host` as that item's runtime starts it: a `native` one runs the entry itself with
+     * `<runtime binary> L <loader id>`, a `javascript` one runs the JavaScript runtime with the entry and the same
+     * arguments, each at the version its boot hint names and its runtime binary the one that hint names for `runtime`;
+     * `in-process`, or `action <plugin> <action> <input>` followed by the result path when one is given, follows for
+     * those modes. Each start's environment is the argument's. It writes nothing but the JavaScript runtime's record
+     * when it acquires one.
      *
      * @return OK, with no layer for a loader whose settings enable no plugin it can run; MALFORMED, also for a mode
      * that is none of the three, or an ACTION without its plugin, action and input or another mode with any of them
      * or with a result, or a result that is empty;
      * REFUSED when the loader is not registered or its settings or catalog cannot be read, its first required plugin
-     * runs on a runtime no layer runs, an IN_PROCESS start finds no javascript plugin, a layer's item has no
-     * hinted version or runtime binary or is not installed intact, its bundle names no entry inside it or a native one
-     * cannot be made runnable, or no JavaScript runtime can be found or acquired; OUT_OF_MEMORY.
+     * is listed in no language, it requires none and its plugins are written in two languages or more, the catalog
+     * lists no language-host item for a layer's language, an IN_PROCESS start finds no plugin holding the front door
+     * or the front door's host item carries no `inProcessEntry` in its bundle's host.json, an ACTION's plugin is
+     * listed in no language, a layer's item has no hinted version or runtime binary or is not installed intact, its
+     * bundle names no entry inside it or a native one cannot be made runnable, or no JavaScript runtime can be found or
+     * acquired; OUT_OF_MEMORY.
      */
     spisor_status (*layer_start)(void *context, const runtime_hosts_layer_start_argument *argument,
                                  runtime_hosts_layer_start_answer *answer, spisor_refusal *refusal);

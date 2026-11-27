@@ -1091,7 +1091,7 @@ static void every_service_but_commands(void) {
 }
 
 #define CATALOG_INDEX                                                                                              \
-    "{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{" \
+    "{\"format\":2,\"items\":{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{" \
     "\"plugin.json\":{\"url\":\"a/1.0.0/plugin.json\",\"sha256\":\""                                              \
     "0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1}}}}}}}"
 #define HELLO_SHA256 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -1639,7 +1639,7 @@ static void every_cache_and_catalog_operation(void) {
 #define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
 #define PLUGIN_ENTRY "export default {};"
 #define RELEASE_INDEX                                                                                              \
-    "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"        \
+    "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"        \
     "\"plugin.json\":{\"url\":\"plugin.json\",\"sha256\":"                                                         \
     "\"6ef2fa406ca66093ba8b6348f8b0547fc59e0d34de3bcddee40baaa4ece95cb3\",\"size\":74},"                         \
     "\"dist/index.js\":{\"url\":\"index.js\",\"sha256\":"                                                          \
@@ -1692,20 +1692,26 @@ static void release_json_of(char *json, size_t capacity) {
     snprintf(json, capacity, "{\"assets\":[{\"name\":\"weivel-index.json\",\"browser_download_url\":\"%s\"}]}", url);
 }
 
-/** A catalog listing the plugin p, whose one file is source.txt, and the file itself. */
+/**
+ * A catalog listing the plugin p, written in the fixture language, and that language's native host item, the one file
+ * of each source.txt, and the file itself.
+ */
 static void a_catalog_with_one_plugin(void) {
     char bundles[1300];
     char source[1300];
     char url[4200];
-    char text[5000];
+    char text[9600];
     a_file_to_install();
     snprintf(bundles, sizeof bundles, "%s/bundles", place.state);
     under_base(source, sizeof source, "source.txt");
     file_url_of(source, url, sizeof url);
     snprintf(text, sizeof text,
-             "{\"format\":1,\"items\":{\"p\":{\"kind\":\"plugin\",\"runtime\":\"native\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
-             "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}}}",
-             url);
+             "{\"format\":2,\"items\":{\"p\":{\"kind\":\"plugin\",\"language\":\"fixture-one\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{"
+             "\"files\":{\"p.js\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}},"
+             "\"fixture-one-host\":{\"kind\":\"language-host\",\"language\":\"fixture-one\",\"runtime\":\"native\","
+             "\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"program\":{\"url\":\"%s\",\"sha256\":\"" HELLO_SHA256 "\","
+             "\"size\":5}}}}}}}",
+             url, url);
     write_text(place.base, "index.json", text);
     write_text(bundles, "spisor-host.json", "{\"run\":{\"old\":\"0.1.0\"},\"next\":{}}\n");
 }
@@ -1739,9 +1745,14 @@ static int replaced_the_old_run(void) {
 }
 
 /** Whether the answer installed and enabled p and found only spisor-host and runtime missing from the catalog. */
+/**
+ * Whether p and its language's host installed and p was enabled, spisor-host, the runtime and forebay-library being
+ * unavailable from a catalog that lists none of them.
+ */
 static int installed_the_plugin(const runtime_install_ecosystem_answer *answer) {
-    return answer->installed_count == 1 && strcmp(answer->installed[0].id, "p") == 0 &&
-           is_only_text(answer->enabled, answer->enabled_count, "p") && answer->unavailable_count == 2 &&
+    return answer->installed_count == 2 && strcmp(answer->installed[0].id, "p") == 0 &&
+           strcmp(answer->installed[1].id, "fixture-one-host") == 0 &&
+           is_only_text(answer->enabled, answer->enabled_count, "p") && answer->unavailable_count == 3 &&
            answer->application_count == 0 && answer->javascript == NULL && replaced_the_old_run();
 }
 
@@ -1809,12 +1820,12 @@ static void build_cache_and_catalog_values(void) {
     under_base(source, sizeof source, "source.txt");
     file_url_of(source, url, sizeof url);
     snprintf(text, sizeof text,
-             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
              "\"sha256\":\"" HELLO_SHA256 "\",\"size\":5}}}}}",
              url);
     CHECK(value_of_text(text, &install_item));
     snprintf(text, sizeof text,
-             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
+             "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{\"p.js\":{\"url\":\"%s\","
              "\"sha256\":\"" HELLO_SHA256 "\",\"size\":6}}}}}",
              url);
     CHECK(value_of_text(text, &short_item));
@@ -1876,7 +1887,7 @@ int main(int argc, char **argv) {
                         "\"binary\":\"probe\"}},\"opencode-host\":{\"kind\":\"host\",\"application\":{\"id\":"
                         "\"opencode\",\"binary\":\"absent\"}}}",
                         &catalog_items));
-    CHECK(value_of_text("{\"format\":1,\"items\":{\"a\":{\"kind\":\"plugin\"},\"b\":{\"kind\":\"host\"}}}",
+    CHECK(value_of_text("{\"format\":2,\"items\":{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\"},\"b\":{\"kind\":\"host\"}}}",
                         &whole_catalog));
     CHECK(value_of_text("{\"npm\":\"@vendor/tool\"}", &manifest_packages));
     build_cache_and_catalog_values();

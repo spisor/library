@@ -20,7 +20,7 @@
 #include "transport_hooks.h"
 #include "tree_snapshot.h"
 
-#define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
+#define PLUGIN_MANIFEST "{\"importName\":\"greeter\",\"api\":1,\"language\":\"typescript\",\"version\":\"1.0.0\",\"entry\":\"dist/index.js\"}"
 #define PLUGIN_ENTRY "export default {};"
 #define REPOSITORY(identifier, name_text) \
     "{\"id\":" identifier ",\"name\":\"" name_text "\",\"full_name\":\"o/" name_text "\",\"default_branch\":\"main\"}"
@@ -70,6 +70,7 @@ static void add_file_reference(cJSON *files, const char *key, const char *url_pr
 static cJSON *release_item(const char *url_prefix, const char *entry_digest_text) {
     cJSON *item = cJSON_CreateObject();
     cJSON_AddStringToObject(item, "kind", "plugin");
+    cJSON_AddStringToObject(item, "language", "typescript");
     cJSON_AddStringToObject(item, "latest", "1.0.0");
     cJSON *version = cJSON_AddObjectToObject(cJSON_AddObjectToObject(item, "versions"), "1.0.0");
     cJSON_AddStringToObject(version, "commit", "abc123");

@@ -537,7 +537,7 @@ static cJSON *refused_commands_json(const runtime_install_refused_command *refus
 static int add_entry(cJSON *row, const runtime_install_loader *loader) {
     cJSON *entry = cJSON_AddObjectToObject(row, "entry");
     return entry != NULL && cJSON_AddBoolToObject(entry, "written", loader->entry_written != 0) != NULL &&
-           (!loader->entry_runs_on_javascript_host || cJSON_AddTrueToObject(entry, "runsOnJavascriptHost") != NULL) &&
+           (!loader->entry_runs_in_process || cJSON_AddTrueToObject(entry, "runsInProcess") != NULL) &&
            add_text(entry, "message", loader->entry_detail) && add_text(entry, "fix", loader->entry_fix);
 }
 

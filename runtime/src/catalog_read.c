@@ -17,7 +17,8 @@
 #define LATEST_FIX "set latest to one of the item's versions"
 #define CASE_FIX "give every file of a version a name that differs from the others in more than case"
 #define URL_FIX "use an https url under an https index, or a file url inside the index's own directory under a file index"
-#define DEFAULT_PLUGIN_RUNTIME "javascript"
+#define LANGUAGE_HOST_SUFFIX "-host"
+#define LANGUAGE_HOST_FIX "name a language-host item for the language it hosts followed by -host, or host that language"
 
 spisor_status runtime_catalog_refuse(runtime_catalog_refusal *refusal, char *detail, const char *fix, char *path) {
     refusal->detail = detail;
@@ -238,15 +239,32 @@ static spisor_status urls_rule(const char *id, cJSON *version, const char *origi
     return status;
 }
 
-static spisor_status add_default_runtimes(cJSON *items) {
-    for (cJSON *item = items->child; item != NULL; item = item->next) {
-        int plugin = strcmp(member(item, "kind")->valuestring, "plugin") == 0;
-        if (plugin && member(item, "runtime") == NULL &&
-            cJSON_AddStringToObject(item, "runtime", DEFAULT_PLUGIN_RUNTIME) == NULL) {
-            return SPISOR_OUT_OF_MEMORY;
+/** Whether id is language followed by LANGUAGE_HOST_SUFFIX. */
+static int is_host_of(const char *id, const char *language) {
+    size_t length = strlen(language);
+    return strncmp(id, language, length) == 0 && strcmp(id + length, LANGUAGE_HOST_SUFFIX) == 0;
+}
+
+/** Refuses the first language-host item, in JavaScript's order, whose id is not its language followed by -host. */
+static spisor_status check_language_hosts(const cJSON *items, runtime_catalog_refusal *refusal) {
+    size_t count;
+    const cJSON **ordered = spisor_json_members_in_javascript_order(items, &count);
+    if (ordered == NULL && count > 0) {
+        return SPISOR_OUT_OF_MEMORY;
+    }
+    spisor_status status = SPISOR_OK;
+    for (size_t index = 0; status == SPISOR_OK && index < count; index++) {
+        const cJSON *item = ordered[index];
+        const char *language = cJSON_GetStringValue(member(item, "language"));
+        if (strcmp(member(item, "kind")->valuestring, "language-host") == 0 && !is_host_of(item->string, language)) {
+            const char *detail[] = {"language-host item ", item->string, " hosts ", language, ", so its id must be ",
+                                    language, LANGUAGE_HOST_SUFFIX, NULL};
+            const char *path[] = {"/items/", item->string, NULL};
+            status = runtime_catalog_refuse(refusal, joined(detail), LANGUAGE_HOST_FIX, joined(path));
         }
     }
-    return SPISOR_OK;
+    spisor_memory_release(ordered);
+    return status;
 }
 
 static size_t byte_order_mark_length(const char *text, size_t length) {
@@ -260,9 +278,9 @@ static spisor_status check_rules(cJSON *document, const char *origin, runtime_ca
     cJSON *items = cJSON_GetObjectItemCaseSensitive(document, "items");
     spisor_status status = runtime_catalog_check_schema(document, refusal);
     status = status == SPISOR_OK ? check_latest(items, refusal) : status;
+    status = status == SPISOR_OK ? check_language_hosts(items, refusal) : status;
     status = status == SPISOR_OK ? each_version(items, origin, collisions_rule, refusal) : status;
-    status = status == SPISOR_OK ? each_version(items, origin, urls_rule, refusal) : status;
-    return status == SPISOR_OK ? add_default_runtimes(items) : status;
+    return status == SPISOR_OK ? each_version(items, origin, urls_rule, refusal) : status;
 }
 
 spisor_status runtime_catalog_read_text(const char *text, size_t length, const char *origin, cJSON **catalog,

@@ -10,7 +10,7 @@
   ],
   "properties": {
     "format": {
-      "const": 1
+      "const": 2
     },
     "items": {
       "type": "object",
@@ -35,7 +35,9 @@
           "enum": [
             "plugin",
             "host",
-            "library"
+            "library",
+            "language-host",
+            "interface"
           ]
         },
         "versions": {
@@ -60,12 +62,17 @@
           "minLength": 1
         },
         "runtime": {
-          "description": "The language runtime the item's bundle needs: required on a host item; a plugin item without it needs javascript, which a reader answers.",
+          "description": "How the item's bundle is started: required on a host, language-host or interface item, and carried by no plugin item, whose language decides the host that runs it.",
           "enum": [
             "javascript",
             "jvm",
             "native"
           ]
+        },
+        "language": {
+          "description": "The weivel implementation that loads a plugin item, or that a language-host item hosts, as the plugin's plugin.json names it: a lowercase letter, then lowercase letters and digits, in words joined by single hyphens, and never spisor, whose host item spisor-host is. Required on a plugin and on a language-host item, whose id is the language followed by -host.",
+          "type": "string",
+          "pattern": "^(?!spisor(?![\\s\\S]))[a-z][a-z0-9]*(-[a-z0-9]+)*(?![\\s\\S])"
         }
       },
       "allOf": [
@@ -75,7 +82,9 @@
               "kind": {
                 "enum": [
                   "plugin",
-                  "library"
+                  "library",
+                  "language-host",
+                  "interface"
                 ]
               }
             },
@@ -106,6 +115,68 @@
             "required": [
               "runtime"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "language-host"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "language",
+              "runtime"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "interface"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "runtime"
+            ],
+            "not": {
+              "required": [
+                "language"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "plugin"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "language"
+            ],
+            "not": {
+              "required": [
+                "runtime"
+              ]
+            }
           }
         }
       ]

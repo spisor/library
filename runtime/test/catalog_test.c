@@ -183,13 +183,18 @@ static void it_keeps_members_the_schema_does_not_know(void) {
     cJSON_Delete(answer.tree);
 }
 
+/** A plugin item carries its language and no runtime, which the reader adds nothing to; a host its runtime. */
 static void it_answers_each_item_s_runtime(void) {
     catalog_answer plugin = read_fixture("accepts-a-plugin-item-with-no-runtime.json", ORIGIN);
-    expect_text_at(catalog_of(plugin, "plugin default"), "items/thing/runtime", "javascript", "plugin default");
+    const cJSON *read = catalog_of(plugin, "plugin");
+    CHECK(value_at(read, "items/thing/runtime") == NULL);
+    expect_text_at(read, "items/thing/language", "typescript", "the plugin's language");
     cJSON_Delete(plugin.tree);
-    catalog_answer jvm = read_fixture("accepts-a-plugin-item-that-runs-on-the-jvm.json", ORIGIN);
-    expect_text_at(catalog_of(jvm, "plugin jvm"), "items/thing/runtime", "jvm", "plugin jvm");
-    cJSON_Delete(jvm.tree);
+    catalog_answer hosting = read_fixture("accepts-a-language-host-item.json", ORIGIN);
+    read = catalog_of(hosting, "language host");
+    expect_text_at(read, "items/typescript-host/language", "typescript", "the language it hosts");
+    expect_text_at(read, "items/typescript-host/runtime", "javascript", "the runtime it starts under");
+    cJSON_Delete(hosting.tree);
     catalog_answer kinds = read_fixture("reads-an-index-of-each-kind.json", ORIGIN);
     const cJSON *catalog = catalog_of(kinds, "kinds");
     expect_text_at(catalog, "items/b/runtime", "native", "host runtime");

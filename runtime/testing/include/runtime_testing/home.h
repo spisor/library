@@ -41,10 +41,23 @@ typedef struct runtime_testing_install {
 } runtime_testing_install;
 
 /**
+ * A language layer the home runs plugins in: its `language` and the `runtime` its language-host item `<language>-host`
+ * is started under, `javascript`, `jvm` or `native`. An element of an array, so it has no size.
+ */
+typedef struct runtime_testing_layer {
+    const char *language;
+    const char *runtime;
+} runtime_testing_layer;
+
+/**
  * Lays a home out at `base`, which must be absolute, exist and be empty; nothing is written outside it. `host_id` is
- * the host registered and held. `libraries` are those the javascript-host's hint names, a NULL version read from the
- * library.json in its directory, and no other library is hinted beside them. `holder` is the
- * pid recorded as the host's one holder, 0 for no processes record. First shape ends at `holder`.
+ * the host registered and held. `libraries` are those the hint of each layer's language-host item names, a NULL
+ * version read from the library.json in its directory, and no other library is hinted beside them. `holder` is the
+ * pid recorded as the host's one holder, 0 for no processes record. When its size reaches them, the `layer_count`
+ * `layers` are each listed in the home's catalog as the language-host item `<language>-host` and hinted, and each
+ * install whose manifest names a `language` is listed there as a plugin item in that language at its version, so the
+ * layers read every plugin's language as an install leaves it; with no layer nothing is hinted. First shape ends at
+ * `holder`.
  */
 typedef struct runtime_testing_home_argument {
     uint32_t size;
@@ -55,6 +68,8 @@ typedef struct runtime_testing_home_argument {
     const runtime_boot_library *libraries;
     size_t library_count;
     int64_t holder;
+    const runtime_testing_layer *layers;
+    size_t layer_count;
 } runtime_testing_home_argument;
 
 /**
@@ -109,7 +124,7 @@ typedef struct runtime_testing_definition {
      * Lays the home out.
      *
      * @return OK; MALFORMED for a short shape, a base not absolute, missing or not empty, a host id that is no plain
-     * file name, an install without a manifest record carrying id, version and entry or without an entry source, an
+     * file name, a layer whose language is no language name or is given twice or whose runtime is none of the three, an install without a manifest record carrying id, version and entry or without an entry source, an
      * entry or a bundle climbing out of its folder, an entry naming the bundle's plugin.json or completion marker, settings that are no record, a library without an id or a
      * directory, or a version neither given nor declared, or a negative holder; REFUSED when a file cannot be written;
      * what config's set answers for a setting; OUT_OF_MEMORY. A call that does not answer OK removes what it wrote,

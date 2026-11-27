@@ -24,7 +24,9 @@
 #include "spisor/path.h"
 #include "tree_snapshot.h"
 
-#define MANIFEST "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"dist/index.js\", \"config\": {\"name\": \"a\"}}"
+#define MANIFEST                                                                                             \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"dist/index.js\", "     \
+    "\"config\": {\"name\": \"a\"}}"
 #define SECRET_VALUE "s3cret-held-in-the-store"
 
 /** Everything in the parent outside the base, so a call can be shown to have written nothing outside it. */
@@ -55,7 +57,7 @@ static void expect_registered(const char *state) {
 
 static void expect_hinted(const char *cache) {
     int out_of_memory = 0;
-    cJSON *hint = runtime_read_boot_hint(cache, "javascript-host", &out_of_memory);
+    cJSON *hint = runtime_read_boot_hint(cache, "typescript-host", &out_of_memory);
     CHECK(hint != NULL);
     check_text(text_at(hint, "host"), "2.0.0", "hinted host");
     check_text(text_at(value_at(hint, "libraries/runtime"), "version"), "0.2.0", "runtime's version");
@@ -94,13 +96,21 @@ static void expect_settings(const runtime_testing_home_answer *answer) {
     cJSON_Delete(refusal);
 }
 
+/** The catalog reads, listing the layer's language-host item and the install in the language its manifest names. */
 static void expect_catalog_readable(void) {
     char *path = joined(base, "catalog/index.json");
     size_t length = 0;
     char *text = (char *)spisor_read_file_reporting(path, &length, &(spisor_read_outcome){SPISOR_READ_FAILED});
     cJSON *refusal = NULL;
     cJSON *read = text == NULL ? NULL : runtime_catalog_read(text, path, &refusal);
-    CHECK(read != NULL && refusal == NULL);
+    if (read == NULL || refusal != NULL) {
+        fprintf(stderr, "the home's catalog does not read: %s%c", text_at(refusal, "message"), 10);
+        check_failures++;
+    }
+    check_text(text_at(value_at(read, "catalog/items/typescript-host"), "kind"), "language-host", "the layer's item");
+    check_text(text_at(value_at(read, "catalog/items/typescript-host"), "runtime"), "javascript", "its runtime");
+    check_text(text_at(value_at(read, "catalog/items/a"), "language"), "typescript", "the install's language");
+    check_text(text_at(value_at(read, "catalog/items/a"), "latest"), "1.0.0", "the install's version");
     cJSON_Delete(read);
     cJSON_Delete(refusal);
     spisor_memory_release(text);
@@ -308,6 +318,17 @@ static void a_malformed_argument_is_refused(void) {
     expect_malformed_argument(&argument, "holder", "a negative holder", before);
     argument = home_argument(base, NULL, 0, twice);
     expect_malformed_argument(&argument, "named twice", "a library named twice", before);
+    static const runtime_testing_layer unnamed[1] = {{"Type Script", "javascript"}};
+    static const runtime_testing_layer repeated[2] = {{"typescript", "javascript"}, {"typescript", "native"}};
+    static const runtime_testing_layer unstarted[1] = {{"typescript", "python"}};
+    const runtime_testing_layer *layers[3] = {unnamed, repeated, unstarted};
+    const size_t layer_counts[3] = {1, 2, 1};
+    for (size_t index = 0; index < 3; index++) {
+        argument = home_argument(base, NULL, 0, libraries);
+        argument.layers = layers[index];
+        argument.layer_count = layer_counts[index];
+        expect_malformed_argument(&argument, "a layer names no language", "a layer out of shape", before);
+    }
     spisor_memory_release(before);
     finish_parent();
 }

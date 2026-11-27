@@ -23,6 +23,7 @@
 #endif
 
 #include "cache_call.h"
+#include "catalog.h"
 #include "catalog_call.h"
 #include "catalog_service_call.h"
 #include "catalog_url.h"
@@ -182,7 +183,10 @@ static inline cJSON *served_reference(install_base *base, const char *id, const 
     return reference;
 }
 
-/** The catalog item id, made with kind and runtime (NULL for none) the first time, latest moved to latest. */
+/**
+ * The catalog item id, made with kind and, the first time, its runtime or for a plugin its language (NULL for none),
+ * latest moved to latest.
+ */
 static inline cJSON *catalog_item(install_base *base, const char *id, const char *kind, const char *runtime,
                                   const char *latest) {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(base->items, id);
@@ -190,7 +194,7 @@ static inline cJSON *catalog_item(install_base *base, const char *id, const char
         item = cJSON_AddObjectToObject(base->items, id);
         cJSON_AddStringToObject(item, "kind", kind);
         if (runtime != NULL) {
-            cJSON_AddStringToObject(item, "runtime", runtime);
+            cJSON_AddStringToObject(item, strcmp(kind, "plugin") == 0 ? "language" : "runtime", runtime);
         }
         cJSON_AddStringToObject(item, "latest", latest);
         cJSON_AddObjectToObject(item, "versions");
@@ -202,6 +206,7 @@ static inline cJSON *catalog_item(install_base *base, const char *id, const char
 /** Lists version of id with one file name holding content, for every platform, or for this one when platform_only. */
 static inline void list_file(install_base *base, cJSON *item, const char *id, const char *version, const char *name,
                              const char *content, int platform_only) {
+    cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(item, "versions"), version);
     cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), version);
     cJSON *files = cJSON_CreateObject();
     cJSON_AddItemToObject(files, name, served_reference(base, id, version, name, content));
@@ -213,15 +218,29 @@ static inline void list_file(install_base *base, cJSON *item, const char *id, co
     }
 }
 
-static inline void list_plugin(install_base *base, const char *id, const char *version, const char *runtime) {
+/** A plugin written in language, which the catalog lists its language-host item beside when it is to install. */
+static inline void list_plugin(install_base *base, const char *id, const char *version, const char *language) {
     char content[256];
-    snprintf(content, sizeof content, "{\"id\": \"%s\", \"version\": \"%s\"}", id, version);
-    list_file(base, catalog_item(base, id, "plugin", runtime, version), id, version, "plugin.json", content, 0);
+    snprintf(content, sizeof content, "{\"id\": \"%s\", \"version\": \"%s\", \"language\": \"%s\"}", id,
+             version, language);
+    list_file(base, catalog_item(base, id, "plugin", language, version), id, version, "plugin.json", content, 0);
+}
+
+/** The language-host item `<language>-host` started under runtime, its bundle's host.json the one given. */
+static inline void list_language_host(install_base *base, const char *language, const char *runtime,
+                                      const char *version, const char *host_json) {
+    char id[128];
+    snprintf(id, sizeof id, "%s-host", language);
+    cJSON *item = catalog_item(base, id, "language-host", runtime, version);
+    if (!cJSON_HasObjectItem(item, "language")) {
+        cJSON_AddStringToObject(item, "language", language);
+    }
+    list_file(base, item, id, version, "host.json", host_json, 0);
 }
 
 /** A plugin built for another platform only, which this machine cannot install. */
 static inline void list_foreign_plugin(install_base *base, const char *id, const char *version) {
-    cJSON *item = catalog_item(base, id, "plugin", NULL, version);
+    cJSON *item = catalog_item(base, id, "plugin", "fixture-one", version);
     cJSON *entry = cJSON_AddObjectToObject(cJSON_GetObjectItemCaseSensitive(item, "versions"), version);
     cJSON *platform = cJSON_AddObjectToObject(cJSON_AddObjectToObject(entry, "platforms"), "aix-ppc64");
     cJSON *files = cJSON_AddObjectToObject(platform, "files");
@@ -245,10 +264,12 @@ static inline void node_archive_stem(const char *version, char *stem, size_t siz
     snprintf(stem, size, "node-v%s-%s%s", version, windows ? "win-" : "", windows ? platform + 6 : platform);
 }
 
-/** javascript-host's host.json pinning Node pinned at minimum, this platform's build at url with sha256 (freed). */
-static inline char *javascript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
+/** typescript-host's host.json pinning Node pinned at minimum, this platform's build at url with sha256 (freed). */
+static inline char *typescript_host_json(const char *pinned, const char *minimum, const char *url, const char *sha256) {
     cJSON *manifest = cJSON_CreateObject();
-    cJSON_AddStringToObject(manifest, "id", "javascript-host");
+    cJSON_AddStringToObject(manifest, "kind", "language-host");
+    cJSON_AddStringToObject(manifest, "id", "typescript-host");
+    cJSON_AddStringToObject(manifest, "language", "typescript");
     cJSON_AddStringToObject(manifest, "runtime", "javascript");
     cJSON_AddStringToObject(manifest, "entry", "weivel-host.mjs");
     cJSON *node = cJSON_AddObjectToObject(manifest, "node");
@@ -268,7 +289,7 @@ static inline char *javascript_host_json(const char *pinned, const char *minimum
 /** The application JSON of id, found as binary, at home candidate ~/homes/<id>, under package mapping packages_json. */
 /** An entry running the loader's hook through the boot stub, with one settings member the removal takes back. */
 #define HOOK_ENTRY_JSON                                                                                              \
-    "{\"runsOnJavascriptHost\": false, \"directories\": [\"{{entryRoot}}\", \"{{entryRoot}}/hooks\", \"{{home}}\"], " \
+    "{\"runsInProcess\": false, \"directories\": [\"{{entryRoot}}\", \"{{entryRoot}}/hooks\", \"{{home}}\"], " \
     "\"files\": [{\"path\": \"{{entryRoot}}/hooks/hooks.json\", \"json\": {\"hooks\": {\"SessionStart\": [{\"hooks\": " \
     "[{\"type\": \"command\", \"command\": \"{{boot}}\", \"args\": [\"{{bootedHost}}\", \"hook\", \"{{loaderId}}\", "  \
     "\"session-start\"], \"timeout\": 30}]}]}}}], "                                                                     \
@@ -318,10 +339,15 @@ static inline void list_loader(install_base *base, const char *loader_id, const 
     list_loader_requiring(base, loader_id, version, application, commands_json, minimum, background_json, "[]");
 }
 
-/** The foundation every ecosystem catalog carries: spisor-host and the runtime library. */
+/**
+ * spisor-host and the runtime, and what a plugin of the fixture language installs beside it: fixture-one-host, which
+ * runs on native, and forebay-library.
+ */
 static inline void list_foundation(install_base *base) {
     list_host(base, "spisor-host", "1.0.0", "native", NULL);
     list_library(base, "runtime", "0.1.0");
+    list_language_host(base, "fixture-one", "native", "1.0.0", "{\"entry\": \"program\", \"runtime\": \"native\"}");
+    list_library(base, "forebay-library", "0.1.2");
 }
 
 static inline char *index_path_of(const install_base *base) {
@@ -330,7 +356,7 @@ static inline char *index_path_of(const install_base *base) {
 
 static inline void write_catalog_of(const install_base *base, const char *name) {
     cJSON *index = cJSON_CreateObject();
-    cJSON_AddNumberToObject(index, "format", 1);
+    cJSON_AddNumberToObject(index, "format", RUNTIME_CATALOG_FORMAT);
     cJSON_AddItemToObject(index, "items", cJSON_Duplicate(base->items, 1));
     char *text = cJSON_PrintUnformatted(index);
     cJSON_Delete(index);

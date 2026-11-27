@@ -12,11 +12,11 @@
 #include "run_records.h"
 
 #define TEST_HOST "test-host"
-#define LAYER "javascript-host"
-#define JAVASCRIPT "javascript"
-#define NATIVE "native"
+#define LAYER "typescript-host"
+#define TYPESCRIPT "typescript"
+#define FIXTURE "fixture-one"
 #define RECORDED_RUN                                                                                                \
-    "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"0.9.0\"}"
+    "{\"test-host\":\"1.0.0\",\"typescript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"0.9.0\"}"
 
 static int record_out_of_memory;
 
@@ -33,11 +33,27 @@ static char user_home[1400];
 static char application_home[1400];
 static char portable[1400];
 
+/** Lists `<language>-host` as a language-host item started under `runtime`, at 2.0.0. */
+static void list_language_host(const char *language, const char *runtime) {
+    char id[128];
+    snprintf(id, sizeof id, "%s-host", language);
+    cJSON *item = cJSON_AddObjectToObject(catalog_items, id);
+    cJSON_AddStringToObject(item, "kind", "language-host");
+    cJSON_AddStringToObject(item, "language", language);
+    cJSON_AddStringToObject(item, "runtime", runtime);
+    cJSON_AddStringToObject(item, "latest", "2.0.0");
+    cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(item, "versions"), "2.0.0"), "files");
+}
+
+/** A world whose catalog hosts TypeScript on javascript and the fixture language on native, and lists plugin a. */
 static void start_world(const char *label) {
     start_base(label);
     snprintf(user_home, sizeof user_home, "%s/user", scratch);
     snprintf(application_home, sizeof application_home, "%s/application", scratch);
     snprintf(portable, sizeof portable, "%s/portable", scratch);
+    list_language_host("typescript", "javascript");
+    list_language_host("fixture-one", "native");
+    list_plugin("a", "1.0.0", "1.0.0");
     write_catalog();
     mark_installed("bundles", "a", "1.0.0");
 }
@@ -60,6 +76,13 @@ static void register_test_host(const char *version) {
     write_tree(state, "hosts/" TEST_HOST ".json", registration);
 }
 
+/** The loader's standard at its registered version, requiring `plugin` first, so it holds the front door. */
+static void require_front_door(const char *plugin) {
+    char standard[256];
+    snprintf(standard, sizeof standard, "{\"plugins\":[\"%s\"]}", plugin);
+    write_in(cache, "bundles/" TEST_HOST "/1.0.0/host.json", standard);
+}
+
 static void write_settings(const char *home, const char *extra_json) {
     write_tree(home, "config/settings.json", settings_with(extra_json));
 }
@@ -78,8 +101,8 @@ static cJSON *environment_json(void) {
     return environment;
 }
 
-/** A start of TEST_HOST's `layer_runtime` layer, and of an action of `action_plugin` when it is not NULL. */
-static catalog_answer start_layer_in(cJSON *environment, int session, const char *layer_runtime,
+/** A start of TEST_HOST's `layer_language` layer, and of an action of `action_plugin` when it is not NULL. */
+static catalog_answer start_layer_in(cJSON *environment, int session, const char *layer_language,
                                      const char *action_plugin) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "environment", environment);
@@ -87,7 +110,7 @@ static catalog_answer start_layer_in(cJSON *environment, int session, const char
     cJSON_AddItemToObject(argument, "layer", parsed("{\"id\":\"" LAYER "\",\"version\":\"2.0.0\"}"));
     cJSON_AddItemToObject(argument, "libraries", parsed("{\"runtime\":\"0.1.0\"}"));
     cJSON_AddBoolToObject(argument, "session", session);
-    cJSON_AddStringToObject(argument, "layerRuntime", layer_runtime);
+    cJSON_AddStringToObject(argument, "layerLanguage", layer_language);
     if (action_plugin != NULL) {
         cJSON_AddStringToObject(argument, "actionPlugin", action_plugin);
     }
@@ -95,7 +118,7 @@ static catalog_answer start_layer_in(cJSON *environment, int session, const char
 }
 
 static catalog_answer start_host_in(cJSON *environment, int session) {
-    return start_layer_in(environment, session, JAVASCRIPT, NULL);
+    return start_layer_in(environment, session, TYPESCRIPT, NULL);
 }
 
 static catalog_answer start_host(int session) {
@@ -143,7 +166,7 @@ static void a_session_start_applies_updates(void) {
     CHECK(cJSON_IsArray(value_at(started.tree, "plan/unrecorded")));
     CHECK(text_at(value_at(started.tree, "plan"), "runRecord") != NULL);
     expect_member_json(started.tree, "plan/run",
-                       "{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"1.0.0\"}",
+                       "{\"test-host\":\"1.0.0\",\"typescript-host\":\"2.0.0\",\"runtime\":\"0.1.0\",\"a\":\"1.0.0\"}",
                        "session run");
     char *identity = NULL;
     cJSON *expected_identity = cJSON_CreateObject();
@@ -223,7 +246,7 @@ static void the_running_map_names_the_host_the_layer_and_every_library(void) {
     expect_success(started, "running");
     expect_member_json(started.tree, "plan/plugins", "{\"a\":\"1.0.0\"}", "running excluded from plugins");
     expect_references(TEST_HOST,
-                      "{\"run\":{\"test-host\":\"1.0.0\",\"javascript-host\":\"2.0.0\",\"runtime\":\"0.1.0\","
+                      "{\"run\":{\"test-host\":\"1.0.0\",\"typescript-host\":\"2.0.0\",\"runtime\":\"0.1.0\","
                       "\"a\":\"1.0.0\"},\"next\":{}}",
                       "running recorded");
     cJSON_Delete(started.tree);
@@ -291,7 +314,7 @@ static void a_no_color_that_is_no_text_is_refused_as_no_usable_environment(void)
     cJSON *environment = environment_json();
     cJSON_AddNumberToObject(environment, "NO_COLOR", 1);
     cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
-    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, JAVASCRIPT, NULL};
+    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, TYPESCRIPT, NULL};
     cJSON *refusal = NULL;
     cJSON *answer = runtime_hosts_start(&request, &refusal);
     CHECK(answer == NULL);
@@ -329,7 +352,8 @@ static void a_recorded_plugin_differing_only_in_case_from_a_running_id_is_kept(v
     spisor_memory_release(written_run_record(state, TEST_HOST, run, RUNTIME_DEFAULT_CHECK_MILLISECONDS));
     catalog_answer started = start_host(0);
     expect_success(started, "plugin case");
-    expect_member_json(started.tree, "plan/plugins", "{\"a\":\"0.9.0\",\"Runtime\":\"3.0.0\"}", "case kept");
+    check_text(text_at(value_at(started.tree, "plan/run"), "Runtime"), "3.0.0", "the recorded id in its own case kept");
+    check_text(text_at(value_at(started.tree, "plan/run"), "runtime"), "0.1.0", "the running library beside it");
     cJSON_free(text);
     cJSON_Delete(run);
     cJSON_Delete(started.tree);
@@ -415,7 +439,7 @@ static void the_identity_version_is_the_one_the_plan_runs(void) {
 static cJSON *start_in_process(void) {
     cJSON *environment = environment_json();
     cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
-    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, JAVASCRIPT, NULL};
+    runtime_hosts_start_request request = {environment, TEST_HOST, LAYER, "2.0.0", libraries, 1, 1, TYPESCRIPT, NULL};
     cJSON *refusal = NULL;
     cJSON *answer = runtime_hosts_start(&request, &refusal);
     CHECK(answer != NULL && refusal == NULL);
@@ -481,16 +505,15 @@ static void a_refused_non_session_start_publishes_nothing(void) {
 }
 
 /**
- * Lists plugin `id` at 1.0.0 on `runtime` and installs it with a manifest declaring `capabilities` and, unless NULL,
- * `actions`, both JSON objects; the catalog is written by the caller.
+ * Lists plugin `id` at 1.0.0 written in `language` and installs it with a manifest declaring `capabilities` and,
+ * unless NULL, `actions`, both JSON objects; the catalog is written by the caller.
  */
-static void install_layered_plugin(const char *id, const char *runtime, const char *capabilities, const char *actions) {
+static void install_layered_plugin(const char *id, const char *language, const char *capabilities, const char *actions) {
     char manifest[1024];
     char rest[512];
     list_plugin(id, "1.0.0", "1.0.0");
     cJSON *item = cJSON_GetObjectItemCaseSensitive(catalog_items, id);
-    cJSON_DeleteItemFromObjectCaseSensitive(item, "runtime");
-    cJSON_AddStringToObject(item, "runtime", runtime);
+    cJSON_ReplaceItemInObjectCaseSensitive(item, "language", cJSON_CreateString(language));
     mark_installed("bundles", id, "1.0.0");
     snprintf(manifest, sizeof manifest, "{\"id\":\"%s\",\"version\":\"1.0.0\",\"capabilities\":%s%s%s}", id,
              capabilities, actions == NULL ? "" : ",\"actions\":", actions == NULL ? "" : actions);
@@ -502,13 +525,13 @@ static void install_layered_plugin(const char *id, const char *runtime, const ch
 #define GREET_ACTION "{\"greet\":{\"call\":{\"service\":\"plugin-stub\",\"method\":\"greet\"}}}"
 #define LOGIN_ACTION "{\"login\":{\"call\":{\"service\":\"provider:accounts\",\"method\":\"login\"}}}"
 
-/** plugin-stub with an action, a SERVE-only proxy consuming forebay.provider, and its provider, all javascript. */
+/** plugin-stub with an action, a SERVE-only proxy consuming forebay.provider, and its provider, all TypeScript. */
 static void lay_out_proxy_world(const char *label) {
     start_world(label);
     register_test_host("1.0.0");
-    install_layered_plugin("plugin-stub", JAVASCRIPT, NO_CAPABILITIES, GREET_ACTION);
-    install_layered_plugin("proxy", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"forebay.provider\"]}", NULL);
-    install_layered_plugin("provider", JAVASCRIPT, "{\"provides\":[\"forebay.provider\"],\"consumes\":[]}",
+    install_layered_plugin("plugin-stub", TYPESCRIPT, NO_CAPABILITIES, GREET_ACTION);
+    install_layered_plugin("proxy", TYPESCRIPT, "{\"provides\":[],\"consumes\":[\"forebay.provider\"]}", NULL);
+    install_layered_plugin("provider", TYPESCRIPT, "{\"provides\":[\"forebay.provider\"],\"consumes\":[]}",
                            LOGIN_ACTION);
     write_catalog();
     write_settings(application_home, "{\"plugins\":{\"plugin-stub\":{\"enabled\":true},\"proxy\":{\"enabled\":true},"
@@ -518,22 +541,23 @@ static void lay_out_proxy_world(const char *label) {
 static void lay_out_two_layers(const char *label) {
     start_world(label);
     register_test_host("1.0.0");
-    install_layered_plugin("scripted", JAVASCRIPT, NO_CAPABILITIES, NULL);
-    install_layered_plugin("compiled", NATIVE, NO_CAPABILITIES, NULL);
+    require_front_door("scripted");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    install_layered_plugin("compiled", FIXTURE, NO_CAPABILITIES, NULL);
     write_catalog();
     write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
 }
 
 static void a_run_identity_may_carry_its_layer_after_a_dot(void) {
-    CHECK(runtime_is_plain_host_id("claude-code-loader.native"));
+    CHECK(runtime_is_plain_host_id("claude-code-loader.fixture-one"));
 }
 
-static void each_layer_plans_only_the_plugins_of_its_runtime(void) {
+static void each_layer_plans_only_the_plugins_of_its_language(void) {
     lay_out_two_layers("start-layers");
-    catalog_answer javascript = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
+    catalog_answer javascript = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
     expect_success(javascript, "javascript layer");
     expect_member_json(javascript.tree, "plan/plugins", "{\"scripted\":\"1.0.0\"}", "the javascript layer's plugins");
-    catalog_answer native = start_layer_in(environment_json(), 1, NATIVE, NULL);
+    catalog_answer native = start_layer_in(environment_json(), 1, FIXTURE, NULL);
     expect_success(native, "native layer");
     expect_member_json(native.tree, "plan/plugins", "{\"compiled\":\"1.0.0\"}", "the native layer's plugins");
     cJSON_Delete(javascript.tree);
@@ -544,16 +568,17 @@ static void each_layer_plans_only_the_plugins_of_its_runtime(void) {
 static void a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused(void) {
     start_world("start-split");
     register_test_host("1.0.0");
-    install_layered_plugin("consumer", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"forebay.provider\"]}", NULL);
-    install_layered_plugin("compiled-provider", NATIVE, "{\"provides\":[\"forebay.provider\"],\"consumes\":[]}", NULL);
+    require_front_door("consumer");
+    install_layered_plugin("consumer", TYPESCRIPT, "{\"provides\":[],\"consumes\":[\"forebay.provider\"]}", NULL);
+    install_layered_plugin("compiled-provider", FIXTURE, "{\"provides\":[\"forebay.provider\"],\"consumes\":[]}", NULL);
     write_catalog();
     write_settings(application_home,
                    "{\"plugins\":{\"consumer\":{\"enabled\":true},\"compiled-provider\":{\"enabled\":true}}}");
-    catalog_answer started = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
+    catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
     CHECK(started.status == SPISOR_REFUSED);
     const char *message = text_at(started.tree, "message");
-    CHECK(message != NULL && strstr(message, "consumer (javascript)") != NULL);
-    CHECK(message != NULL && strstr(message, "compiled-provider (native)") != NULL);
+    CHECK(message != NULL && strstr(message, "consumer (typescript)") != NULL);
+    CHECK(message != NULL && strstr(message, "compiled-provider (fixture-one)") != NULL);
     expect_fix(started, "enable a provider of forebay.provider written in the consumer's language, or disable consumer",
                "the split fix");
     char *path = joined(state, "processes/" TEST_HOST ".ready.json");
@@ -565,10 +590,50 @@ static void a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused(vo
     finish_base();
 }
 
-static void an_unknown_layer_runtime_is_malformed(void) {
+static void expect_refused_with(catalog_answer started, const char *message_part, const char *fix, const char *label) {
+    const char *message = text_at(started.tree, "message");
+    if (started.status != SPISOR_REFUSED || message == NULL || strstr(message, message_part) == NULL) {
+        fprintf(stderr, "%s: expected a refusal naming \"%s\", got status %d and \"%s\"\n", label, message_part,
+                (int)started.status, message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    expect_fix(started, fix, label);
+}
+
+static void a_start_no_language_can_hold_the_front_door_of_is_refused(void) {
+    start_world("start-two-doors");
+    register_test_host("1.0.0");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    install_layered_plugin("compiled", FIXTURE, NO_CAPABILITIES, NULL);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
+    expect_refused_with(started, "so no one language holds its front door",
+                        "require the plugin that holds the front door in the loader's standard, or enable plugins of "
+                        "one language only",
+                        "two languages and no required plugin");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void a_start_whose_first_required_plugin_no_catalog_lists_is_refused(void) {
+    start_world("start-unlisted-door");
+    register_test_host("1.0.0");
+    require_front_door("brewed");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    write_catalog();
+    write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true}}}");
+    catalog_answer started = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
+    expect_refused_with(started, "brewed, the first plugin the loader requires, is listed in no catalog source",
+                        "add a catalog source listing brewed, then install the loader again", "the unlisted front door");
+    cJSON_Delete(started.tree);
+    finish_base();
+}
+
+static void an_unknown_layer_language_is_malformed(void) {
     start_world("start-unknown-layer");
     register_test_host("1.0.0");
-    catalog_answer started = start_layer_in(environment_json(), 1, "jvm", NULL);
+    catalog_answer started = start_layer_in(environment_json(), 1, "spisor", NULL);
     CHECK(started.status == SPISOR_MALFORMED);
     cJSON_Delete(started.tree);
     finish_base();
@@ -577,7 +642,7 @@ static void an_unknown_layer_runtime_is_malformed(void) {
 /** An action of plugin-stub beside a live session's SERVE-only proxy must never start a second proxy. */
 static void an_action_start_plans_the_actions_plugin_without_a_serve_only_plugin_beside_it(void) {
     lay_out_proxy_world("start-action-alone");
-    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "plugin-stub");
+    catalog_answer started = start_layer_in(environment_json(), 0, TYPESCRIPT, "plugin-stub");
     expect_success(started, "action alone");
     expect_member_json(started.tree, "plan/plugins", "{\"plugin-stub\":\"1.0.0\"}", "the action's plugin alone");
     cJSON_Delete(started.tree);
@@ -586,7 +651,7 @@ static void an_action_start_plans_the_actions_plugin_without_a_serve_only_plugin
 
 static void an_action_start_of_a_consumer_plans_its_provider_too(void) {
     lay_out_proxy_world("start-action-provider");
-    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "proxy");
+    catalog_answer started = start_layer_in(environment_json(), 0, TYPESCRIPT, "proxy");
     expect_success(started, "action with provider");
     expect_member_json(started.tree, "plan/plugins", "{\"provider\":\"1.0.0\",\"proxy\":\"1.0.0\"}",
                        "the consumer and its provider");
@@ -598,14 +663,14 @@ static void an_action_start_of_a_consumer_plans_its_provider_too(void) {
 static void an_action_start_plans_the_providers_of_its_providers(void) {
     start_world("start-action-transitive");
     register_test_host("1.0.0");
-    install_layered_plugin("front", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", GREET_ACTION);
-    install_layered_plugin("middle", JAVASCRIPT, "{\"provides\":[\"x\"],\"consumes\":[\"y\"]}", NULL);
-    install_layered_plugin("back", JAVASCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
-    install_layered_plugin("watcher", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
+    install_layered_plugin("front", TYPESCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", GREET_ACTION);
+    install_layered_plugin("middle", TYPESCRIPT, "{\"provides\":[\"x\"],\"consumes\":[\"y\"]}", NULL);
+    install_layered_plugin("back", TYPESCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
+    install_layered_plugin("watcher", TYPESCRIPT, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
     write_catalog();
     write_settings(application_home, "{\"plugins\":{\"front\":{\"enabled\":true},\"middle\":{\"enabled\":true},"
                                      "\"back\":{\"enabled\":true},\"watcher\":{\"enabled\":true}}}");
-    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "front");
+    catalog_answer started = start_layer_in(environment_json(), 0, TYPESCRIPT, "front");
     expect_success(started, "transitive action");
     expect_member_json(started.tree, "plan/plugins",
                        "{\"back\":\"1.0.0\",\"front\":\"1.0.0\",\"middle\":\"1.0.0\"}",
@@ -615,9 +680,9 @@ static void an_action_start_plans_the_providers_of_its_providers(void) {
 }
 
 static cJSON *start_layer_directly(const cJSON *environment, const cJSON *libraries, const char *layer_id,
-                                   const char *layer_runtime) {
+                                   const char *layer_language) {
     runtime_hosts_start_request request = {environment, TEST_HOST, layer_id, "2.0.0", libraries, 0, 0,
-                                           layer_runtime, NULL};
+                                           layer_language, NULL};
     cJSON *refusal = NULL;
     cJSON *answer = runtime_hosts_start(&request, &refusal);
     CHECK(answer != NULL && refusal == NULL);
@@ -630,10 +695,10 @@ static void the_layer_without_the_front_door_runs_under_its_own_identity(void) {
     lay_out_two_layers("start-identities");
     cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
     cJSON *environment = environment_json();
-    cJSON *front = start_layer_directly(environment, libraries, LAYER, JAVASCRIPT);
-    cJSON *other = start_layer_directly(environment, libraries, "spisor-interface", NATIVE);
+    cJSON *front = start_layer_directly(environment, libraries, LAYER, TYPESCRIPT);
+    cJSON *other = start_layer_directly(environment, libraries, "fixture-one-host", FIXTURE);
     check_text(text_at(front, "runId"), TEST_HOST, "the front door's identity");
-    check_text(text_at(other, "runId"), TEST_HOST ".native", "the other layer's identity");
+    check_text(text_at(other, "runId"), TEST_HOST "." FIXTURE, "the other layer's identity");
     runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(front, "plan"));
     runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(other, "plan"));
     cJSON_Delete(front);
@@ -646,8 +711,8 @@ static void the_layer_without_the_front_door_runs_under_its_own_identity(void) {
 /** Two layers each checking for updates would schedule and fetch the same versions into one cache at once. */
 static void only_the_front_door_layer_checks_for_updates(void) {
     lay_out_two_layers("start-update-check");
-    catalog_answer front = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
-    catalog_answer other = start_layer_in(environment_json(), 1, NATIVE, NULL);
+    catalog_answer front = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
+    catalog_answer other = start_layer_in(environment_json(), 1, FIXTURE, NULL);
     expect_success(front, "the front door's session start");
     expect_success(other, "the other layer's session start");
     CHECK(cJSON_GetNumberValue(value_at(front.tree, "timers/updateCheckMilliseconds")) ==
@@ -661,15 +726,16 @@ static void only_the_front_door_layer_checks_for_updates(void) {
 static void an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer(void) {
     start_world("start-action-other-layer");
     register_test_host("1.0.0");
-    install_layered_plugin("scripted", JAVASCRIPT, NO_CAPABILITIES, NULL);
-    install_layered_plugin("compiled", NATIVE, NO_CAPABILITIES, GREET_ACTION);
+    require_front_door("scripted");
+    install_layered_plugin("scripted", TYPESCRIPT, NO_CAPABILITIES, NULL);
+    install_layered_plugin("compiled", FIXTURE, NO_CAPABILITIES, GREET_ACTION);
     write_catalog();
     write_settings(application_home, "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
-    catalog_answer started = start_layer_in(environment_json(), 0, JAVASCRIPT, "compiled");
+    catalog_answer started = start_layer_in(environment_json(), 0, TYPESCRIPT, "compiled");
     CHECK(started.status == SPISOR_REFUSED);
     const char *message = text_at(started.tree, "message");
-    CHECK(message != NULL && strstr(message, "compiled runs in the native layer") != NULL);
-    expect_fix(started, "start the action in the native layer, as spisor-host action does", "the misplaced fix");
+    CHECK(message != NULL && strstr(message, "compiled runs in the fixture-one layer") != NULL);
+    expect_fix(started, "start the action in the fixture-one layer, as spisor-host action does", "the misplaced fix");
     cJSON_Delete(started.tree);
     finish_base();
 }
@@ -682,23 +748,23 @@ static void one_session_applies_once_and_the_other_layer_reuses_its_run(void) {
     lay_out_two_layers("start-one-apply");
     record_references(TEST_HOST, "{\"run\":{\"" TEST_HOST "\":\"1.0.0\"},\"next\":{\"" TEST_HOST "\":\"2.0.0\"}}");
     mark_installed("bundles", TEST_HOST, "2.0.0");
-    catalog_answer front = start_layer_in(environment_json(), 1, JAVASCRIPT, NULL);
+    catalog_answer front = start_layer_in(environment_json(), 1, TYPESCRIPT, NULL);
     expect_success(front, "the front door's session start");
     CHECK(is_false_at(front.tree, "reusedRecordedRun"));
     cJSON *libraries = parsed("{\"runtime\":\"0.1.0\"}");
     cJSON *environment = environment_json();
-    runtime_hosts_start_request request = {environment, TEST_HOST, "spisor-interface", "3.0.0", libraries, 1, 0,
-                                           NATIVE, NULL};
+    runtime_hosts_start_request request = {environment, TEST_HOST, "fixture-one-host", "3.0.0", libraries, 1, 0,
+                                           FIXTURE, NULL};
     cJSON *refusal = NULL;
     cJSON *other = runtime_hosts_start(&request, &refusal);
     CHECK(other != NULL && refusal == NULL);
     CHECK(cJSON_IsTrue(value_at(other, "reusedRecordedRun")));
-    check_text(text_at(value_at(other, "plan/run"), "javascript-host"), "2.0.0", "the front door's layer item");
-    check_text(text_at(value_at(other, "plan/run"), "spisor-interface"), "3.0.0", "its own layer item");
+    check_text(text_at(value_at(other, "plan/run"), "typescript-host"), "2.0.0", "the front door's layer item");
+    check_text(text_at(value_at(other, "plan/run"), "fixture-one-host"), "3.0.0", "its own layer item");
     expect_member_json(other, "plan/plugins", "{\"compiled\":\"1.0.0\"}", "its own layer's plugins");
     runtime_host_references recorded = runtime_read_host_references(state, TEST_HOST);
     expect_json(recorded.rollback, "{\"" TEST_HOST "\":\"1.0.0\"}", "the front door's rollback kept");
-    check_text(text_at(recorded.run, "javascript-host"), "2.0.0", "the front door's run kept");
+    check_text(text_at(recorded.run, "typescript-host"), "2.0.0", "the front door's run kept");
     runtime_free_host_references(&recorded);
     runtime_hosts_start_undo(cJSON_GetObjectItemCaseSensitive(other, "plan"));
     cJSON_Delete(refusal);
@@ -713,10 +779,11 @@ static void one_session_applies_once_and_the_other_layer_reuses_its_run(void) {
 static void lay_out_two_split_layers(const char *label) {
     start_world(label);
     register_test_host("1.0.0");
-    install_layered_plugin("scripted-consumer", JAVASCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", NULL);
-    install_layered_plugin("compiled-provider", NATIVE, "{\"provides\":[\"x\"],\"consumes\":[]}", NULL);
-    install_layered_plugin("compiled-consumer", NATIVE, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
-    install_layered_plugin("scripted-provider", JAVASCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
+    require_front_door("scripted-consumer");
+    install_layered_plugin("scripted-consumer", TYPESCRIPT, "{\"provides\":[],\"consumes\":[\"x\"]}", NULL);
+    install_layered_plugin("compiled-provider", FIXTURE, "{\"provides\":[\"x\"],\"consumes\":[]}", NULL);
+    install_layered_plugin("compiled-consumer", FIXTURE, "{\"provides\":[],\"consumes\":[\"y\"]}", NULL);
+    install_layered_plugin("scripted-provider", TYPESCRIPT, "{\"provides\":[\"y\"],\"consumes\":[]}", NULL);
     write_catalog();
     write_settings(application_home,
                    "{\"plugins\":{\"scripted-consumer\":{\"enabled\":true},\"compiled-provider\":{\"enabled\":true},"
@@ -740,7 +807,7 @@ static void expect_published_refusal(const char *identity, const char *part, con
 
 /** Each layer's refusal lands on its own record whichever is refused first, never over the other's. */
 static void each_layer_publishes_its_refusal_to_its_own_record_in_either_order(void) {
-    const char *orders[2][2] = {{JAVASCRIPT, NATIVE}, {NATIVE, JAVASCRIPT}};
+    const char *orders[2][2] = {{TYPESCRIPT, FIXTURE}, {FIXTURE, TYPESCRIPT}};
     for (size_t order = 0; order < 2; order++) {
         lay_out_two_split_layers(order == 0 ? "start-refusals-front-first" : "start-refusals-other-first");
         for (size_t index = 0; index < 2; index++) {
@@ -748,8 +815,8 @@ static void each_layer_publishes_its_refusal_to_its_own_record_in_either_order(v
             CHECK(started.status == SPISOR_REFUSED);
             cJSON_Delete(started.tree);
         }
-        expect_published_refusal(TEST_HOST, "scripted-consumer (javascript)", "the front door's own refusal");
-        expect_published_refusal(TEST_HOST ".native", "compiled-consumer (native)", "the other layer's own refusal");
+        expect_published_refusal(TEST_HOST, "scripted-consumer (typescript)", "the front door's own refusal");
+        expect_published_refusal(TEST_HOST "." FIXTURE, "compiled-consumer (fixture-one)", "the other layer's own refusal");
         finish_base();
     }
 }
@@ -760,9 +827,11 @@ int main(void) {
     only_the_front_door_layer_checks_for_updates();
     an_action_of_a_plugin_in_the_other_layer_is_refused_naming_its_layer();
     a_run_identity_may_carry_its_layer_after_a_dot();
-    each_layer_plans_only_the_plugins_of_its_runtime();
+    each_layer_plans_only_the_plugins_of_its_language();
     a_consumer_whose_only_provider_runs_in_the_other_layer_is_refused();
-    an_unknown_layer_runtime_is_malformed();
+    an_unknown_layer_language_is_malformed();
+    a_start_no_language_can_hold_the_front_door_of_is_refused();
+    a_start_whose_first_required_plugin_no_catalog_lists_is_refused();
     an_action_start_plans_the_actions_plugin_without_a_serve_only_plugin_beside_it();
     an_action_start_of_a_consumer_plans_its_provider_too();
     an_action_start_plans_the_providers_of_its_providers();

@@ -1,5 +1,6 @@
 {
   "api": 1,
+  "language": "typescript",
   "importName": "a",
   "id": "a",
   "version": "1.0.0",

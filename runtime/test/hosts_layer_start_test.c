@@ -11,14 +11,15 @@
 /**
  * @file
  * Calls hosts' layer_start as launch, action and the UI do, over a registered loader whose settings enable plugins of
- * one runtime or two, and requires each layer's start, its identity and the order they come in.
+ * one language or several, and requires each layer's start, its identity and the order they come in. A layer is a
+ * language and its start the language-host item the catalog lists for it: TypeScript runs on javascript, and the two
+ * fixture languages each run their own native host, so two languages on one runtime are two layers.
  */
 
 #define LOADER "test-host"
-#define JAVASCRIPT "javascript"
-#define NATIVE "native"
-#define JAVASCRIPT_LAYER "javascript-host"
-#define NATIVE_LAYER "spisor-interface"
+#define TYPESCRIPT "typescript"
+#define FIXTURE_ONE "fixture-one"
+#define FIXTURE_TWO "fixture-two"
 #define LAYER_VERSION "2.0.0"
 #define NO_CAPABILITIES "{\"provides\":[],\"consumes\":[]}"
 #define GREET_ACTION "{\"greet\":{\"call\":{\"service\":\"compiled\",\"method\":\"greet\"}}}"
@@ -45,17 +46,17 @@ static void register_loader(void) {
     write_tree(state, "hosts/" LOADER ".json", registration);
 }
 
-/** Lists plugin `id` at 1.0.0 on `runtime` and installs it with `actions`, a JSON object, unless NULL. */
-static void install_plugin_on(const char *id, const char *runtime, const char *actions) {
+/** Lists plugin `id` at 1.0.0 written in `language` and installs it with `actions`, a JSON object, unless NULL. */
+static void install_plugin_in(const char *id, const char *language, const char *actions) {
     char manifest[1024];
     char rest[512];
     list_plugin(id, "1.0.0", "1.0.0");
     cJSON *item = cJSON_GetObjectItemCaseSensitive(catalog_items, id);
-    cJSON_DeleteItemFromObjectCaseSensitive(item, "runtime");
-    cJSON_AddStringToObject(item, "runtime", runtime);
+    cJSON_ReplaceItemInObjectCaseSensitive(item, "language", cJSON_CreateString(language));
     mark_installed("bundles", id, "1.0.0");
-    snprintf(manifest, sizeof manifest, "{\"id\":\"%s\",\"version\":\"1.0.0\",\"capabilities\":" NO_CAPABILITIES "%s%s}",
-             id, actions == NULL ? "" : ",\"actions\":", actions == NULL ? "" : actions);
+    snprintf(manifest, sizeof manifest,
+             "{\"id\":\"%s\",\"version\":\"1.0.0\",\"language\":\"%s\",\"capabilities\":" NO_CAPABILITIES "%s%s}",
+             id, language, actions == NULL ? "" : ",\"actions\":", actions == NULL ? "" : actions);
     snprintf(rest, sizeof rest, "bundles/%s/1.0.0/plugin.json", id);
     write_in(cache, rest, manifest);
 }
@@ -71,23 +72,42 @@ static void write_sized(const char *directory, const char *name, const char *con
     spisor_memory_release(path);
 }
 
-/** Installs layer item `layer_id` at LAYER_VERSION, its host.json naming `entry`, and hints it with the runtime binary. */
-static void install_layer(const char *layer_id, const char *entry) {
+/** The entry `<language>-host`'s bundle names, its own for each language, so a start names which item it read. */
+static void entry_of(const char *language, char *entry, size_t size) {
+    snprintf(entry, size, strcmp(language, TYPESCRIPT) == 0 ? "weivel-host.mjs" : "%s-program", language);
+}
+
+/**
+ * Lists `<language>-host` as a language-host item started under `runtime`, installs it at LAYER_VERSION, its host.json
+ * naming its entry and, when `in_process` is 1, an in-process entry, and hints it with the runtime binary.
+ */
+static void install_language_host(const char *language, const char *runtime, int in_process) {
+    char layer_id[128];
     char rest[512];
     char host_json[256];
+    char entry[128];
+    snprintf(layer_id, sizeof layer_id, "%s-host", language);
+    entry_of(language, entry, sizeof entry);
+    cJSON *item = cJSON_AddObjectToObject(catalog_items, layer_id);
+    cJSON_AddStringToObject(item, "kind", "language-host");
+    cJSON_AddStringToObject(item, "language", language);
+    cJSON_AddStringToObject(item, "runtime", runtime);
+    cJSON_AddStringToObject(item, "latest", LAYER_VERSION);
+    cJSON_AddObjectToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(item, "versions"), LAYER_VERSION), "files");
     snprintf(rest, sizeof rest, "bundles/%s/" LAYER_VERSION, layer_id);
     char *directory = joined(cache, rest);
     cJSON *hashes = cJSON_CreateObject();
     cJSON *sizes = cJSON_CreateObject();
-    snprintf(host_json, sizeof host_json, "{\"entry\":\"%s\"}", entry);
+    snprintf(host_json, sizeof host_json, "{\"entry\":\"%s\"%s}", entry,
+             in_process ? ",\"inProcessEntry\":\"in-process.mjs\"" : "");
     write_sized(directory, "host.json", host_json, hashes, sizes);
     write_sized(directory, entry, "layer", hashes, sizes);
     CHECK(runtime_cache_write_marker(directory, hashes, sizes) == SPISOR_OK);
     cJSON *hint = cJSON_CreateObject();
-    cJSON *runtime = cJSON_AddObjectToObject(cJSON_AddObjectToObject(hint, "libraries"), "runtime");
-    cJSON_AddStringToObject(runtime, "version", "0.1.0");
-    cJSON_AddStringToObject(runtime, "directory", scratch);
-    cJSON_AddStringToObject(runtime, "binary", runtime_binary);
+    cJSON *library = cJSON_AddObjectToObject(cJSON_AddObjectToObject(hint, "libraries"), "runtime");
+    cJSON_AddStringToObject(library, "version", "0.1.0");
+    cJSON_AddStringToObject(library, "directory", scratch);
+    cJSON_AddStringToObject(library, "binary", runtime_binary);
     cJSON_AddStringToObject(hint, "host", LAYER_VERSION);
     char *text = cJSON_PrintUnformatted(hint);
     write_hint(layer_id, text);
@@ -105,7 +125,10 @@ static void require_plugins(const char *required_json) {
     write_in(cache, "bundles/" LOADER "/1.0.0/host.json", standard);
 }
 
-/** A registered loader whose settings enable `enabled_json`'s plugins, both layer items installed and hinted. */
+/**
+ * A registered loader whose settings enable `enabled_json`'s plugins, with the language-host items of TypeScript, on
+ * javascript and carrying an in-process entry, and of both fixture languages, each native, installed and hinted.
+ */
 static void start_world(const char *label, const char *enabled_json) {
     char settings[1024];
     start_base(label);
@@ -120,8 +143,9 @@ static void start_world(const char *label, const char *enabled_json) {
     cJSON_AddStringToObject(record, "executable", node);
     write_tree(cache, "runtimes/javascript.json", record);
     register_loader();
-    install_layer(JAVASCRIPT_LAYER, "weivel-host.mjs");
-    install_layer(NATIVE_LAYER, "spisor-interface");
+    install_language_host(TYPESCRIPT, "javascript", 1);
+    install_language_host(FIXTURE_ONE, "native", 0);
+    install_language_host(FIXTURE_TWO, "native", 0);
     snprintf(settings, sizeof settings, "{\"plugins\":%s}", enabled_json);
     write_tree(application_home, "config/settings.json", settings_with(settings));
 }
@@ -151,7 +175,7 @@ typedef struct layer_answer {
 static cJSON *layer_json(const runtime_hosts_layer *layer, size_t expected_environment) {
     cJSON *json = cJSON_CreateObject();
     cJSON *arguments = cJSON_AddArrayToObject(json, "arguments");
-    cJSON_AddStringToObject(json, "runtime", layer->runtime);
+    cJSON_AddStringToObject(json, "language", layer->language);
     cJSON_AddStringToObject(json, "hostId", layer->host_id);
     cJSON_AddStringToObject(json, "executable", layer->executable);
     for (size_t index = 0; index < layer->argument_count; index++) {
@@ -200,28 +224,34 @@ static void release_answer(layer_answer *answer) {
     cJSON_Delete(answer->refusal);
 }
 
-/** The bundle path of `layer_id`'s `entry`, as the start names it. */
-static char *entry_path(const char *layer_id, const char *entry) {
+/** The path of `language`'s host's entry in its bundle, as the start names it. */
+static char *entry_path(const char *language) {
     char rest[512];
-    snprintf(rest, sizeof rest, "bundles/%s/" LAYER_VERSION "/%s", layer_id, entry);
-    char *path = joined(cache, rest);
-    return path;
+    char entry[128];
+    entry_of(language, entry, sizeof entry);
+    snprintf(rest, sizeof rest, "bundles/%s-host/" LAYER_VERSION "/%s", language, entry);
+    return joined(cache, rest);
 }
 
-/** The layer {runtime, hostId, executable, arguments} expected for `runtime` under `identity`, its arguments ending in `tail_json`'s. */
-static cJSON *expected_layer(const char *runtime, const char *identity, const char *tail_json) {
-    int native = strcmp(runtime, NATIVE) == 0;
-    char *entry = native ? entry_path(NATIVE_LAYER, "spisor-interface") : entry_path(JAVASCRIPT_LAYER, "weivel-host.mjs");
+/**
+ * The layer {language, hostId, executable, arguments} expected for `language` under `identity`, its arguments ending
+ * in `tail_json`'s: TypeScript's host run by Node with its entry first, a fixture language's entry run itself.
+ */
+static cJSON *expected_layer(const char *language, const char *identity, const char *tail_json) {
+    int javascript = strcmp(language, TYPESCRIPT) == 0;
+    char *entry = entry_path(language);
     cJSON *layer = cJSON_CreateObject();
     cJSON *arguments = cJSON_AddArrayToObject(layer, "arguments");
     cJSON *tail = parsed(tail_json);
     cJSON *each;
-    cJSON_AddStringToObject(layer, "runtime", runtime);
+    cJSON_AddStringToObject(layer, "language", language);
     cJSON_AddStringToObject(layer, "hostId", identity);
-    cJSON_AddStringToObject(layer, "executable", native ? entry : node);
-    cJSON_AddItemToArray(arguments, cJSON_CreateString(native ? "host" : entry));
+    cJSON_AddStringToObject(layer, "executable", javascript ? node : entry);
+    if (javascript) {
+        cJSON_AddItemToArray(arguments, cJSON_CreateString(entry));
+    }
     cJSON_AddItemToArray(arguments, cJSON_CreateString(runtime_binary));
-    cJSON_AddItemToArray(arguments, cJSON_CreateString(runtime));
+    cJSON_AddItemToArray(arguments, cJSON_CreateString(language));
     cJSON_AddItemToArray(arguments, cJSON_CreateString(LOADER));
     cJSON_ArrayForEach(each, tail) {
         cJSON_AddItemToArray(arguments, cJSON_Duplicate(each, 1));
@@ -273,115 +303,195 @@ static cJSON *layers_of(cJSON *first, cJSON *second) {
     return layers;
 }
 
-static void a_javascript_only_loader_answers_one_layer_under_its_own_identity(void) {
-    start_world("layer-javascript", "{\"scripted\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
+static void expect_refused(const layer_answer *answer, const char *message_part, const char *fix, const char *label) {
+    const char *message = text_at(answer->refusal, "message");
+    if (answer->status != SPISOR_REFUSED || message == NULL || strstr(message, message_part) == NULL) {
+        fprintf(stderr, "%s: expected a refusal naming \"%s\", got status %d and \"%s\"\n", label, message_part,
+                (int)answer->status, message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    check_text(text_at(answer->refusal, "fix"), fix, label);
+}
+
+static void a_typescript_only_loader_answers_one_layer_under_its_own_identity(void) {
+    start_world("layer-typescript", "{\"scripted\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
-    expect_layers(&answer, layers_of(expected_layer(JAVASCRIPT, LOADER, "[]"), NULL), "the javascript layer");
+    expect_layers(&answer, layers_of(expected_layer(TYPESCRIPT, LOADER, "[]"), NULL), "the typescript layer");
     release_answer(&answer);
     finish_world();
 }
 
-static void a_loader_spanning_two_layers_answers_both_the_front_door_first(void) {
+static void a_loader_spanning_two_languages_answers_both_the_front_door_first(void) {
     start_world("layer-two", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, NULL);
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    require_plugins("[\"scripted\"]");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(JAVASCRIPT, LOADER, "[]"), expected_layer(NATIVE, LOADER ".native", "[]")),
+                  layers_of(expected_layer(TYPESCRIPT, LOADER, "[]"),
+                            expected_layer(FIXTURE_ONE, LOADER "." FIXTURE_ONE, "[]")),
                   "the front door first, the other layer after it");
     release_answer(&answer);
     finish_world();
 }
 
+/**
+ * The two fixture languages both run on native, so a layer looked up by its runtime would start one item for both;
+ * each layer is its own language's item, read from that item's own hint and bundle.
+ */
+static void two_languages_on_one_runtime_answer_two_layers_each_from_its_own_item(void) {
+    start_world("layer-one-runtime", "{\"first\":{\"enabled\":true},\"second\":{\"enabled\":true}}");
+    install_plugin_in("first", FIXTURE_ONE, NULL);
+    install_plugin_in("second", FIXTURE_TWO, NULL);
+    require_plugins("[\"first\"]");
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    expect_layers(&answer,
+                  layers_of(expected_layer(FIXTURE_ONE, LOADER, "[]"),
+                            expected_layer(FIXTURE_TWO, LOADER "." FIXTURE_TWO, "[]")),
+                  "one layer per language, each its own item's entry");
+    release_answer(&answer);
+    finish_world();
+}
+
 static void the_first_required_plugin_puts_the_front_door_in_its_layer(void) {
-    start_world("layer-native-door", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, NULL);
+    start_world("layer-fixture-door", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
     require_plugins("[\"compiled\"]");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(NATIVE, LOADER, "[]"), expected_layer(JAVASCRIPT, LOADER ".javascript", "[]")),
-                  "the native layer holds the front door");
+                  layers_of(expected_layer(FIXTURE_ONE, LOADER, "[]"),
+                            expected_layer(TYPESCRIPT, LOADER "." TYPESCRIPT, "[]")),
+                  "the fixture layer holds the front door");
     release_answer(&answer);
     finish_world();
 }
 
-static void an_in_process_start_ends_each_layer_with_its_word(void) {
-    start_world("layer-in-process", "{\"scripted\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
-    expect_layers(&answer, layers_of(expected_layer(JAVASCRIPT, LOADER, "[\"in-process\"]"), NULL), "in-process");
-    release_answer(&answer);
-    finish_world();
-}
-
-/** An in-process host runs inside another application's JavaScript process, so it never runs the native layer. */
-static void an_in_process_start_of_two_layers_answers_the_javascript_layer_alone(void) {
-    start_world("layer-in-process-two", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, NULL);
-    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
-    expect_layers(&answer, layers_of(expected_layer(JAVASCRIPT, LOADER, "[\"in-process\"]"), NULL),
-                  "the javascript layer alone");
-    release_answer(&answer);
-    finish_world();
-}
-
-static void an_in_process_start_of_native_plugins_alone_is_refused_naming_launch(void) {
-    start_world("layer-in-process-native", "{\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("compiled", NATIVE, NULL);
-    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
-    CHECK(answer.status == SPISOR_REFUSED);
+static void a_loader_requiring_no_plugin_over_two_languages_is_refused_naming_both(void) {
+    start_world("layer-two-doors", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    expect_refused(&answer, "so no one language holds its front door",
+                   "require the plugin that holds the front door in the loader's standard, or enable plugins of one "
+                   "language only",
+                   "no language holds the front door");
     const char *message = text_at(answer.refusal, "message");
-    CHECK(message != NULL && strstr(message, "runs the javascript layer alone") != NULL);
-    const char *fix = text_at(answer.refusal, "fix");
-    CHECK(fix != NULL && strstr(fix, "spisor-host launch") != NULL);
+    CHECK(message != NULL && strstr(message, TYPESCRIPT) != NULL && strstr(message, FIXTURE_ONE) != NULL);
     release_answer(&answer);
     finish_world();
 }
 
-static void a_first_required_plugin_on_no_layers_runtime_is_refused_naming_it(void) {
-    start_world("layer-jvm-door", "{\"scripted\":{\"enabled\":true},\"brewed\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("brewed", "jvm", NULL);
+static void a_language_the_catalog_hosts_in_no_item_is_refused_naming_it(void) {
+    start_world("layer-unhosted", "{\"spoken\":{\"enabled\":true}}");
+    install_plugin_in("spoken", "lua", NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    expect_refused(&answer, "plugins written in lua have no host: no catalog source lists lua-host",
+                   "add a catalog source listing lua-host, or disable the plugins written in lua",
+                   "the language with no host item");
+    release_answer(&answer);
+    finish_world();
+}
+
+/** jvm is a runtime the catalog names, so its item is not to be reinstalled: no start exists for it yet. */
+static void a_language_host_on_jvm_is_refused_saying_no_jvm_start_exists(void) {
+    start_world("layer-jvm", "{\"steeped\":{\"enabled\":true}}");
+    install_language_host("kettle", "jvm", 0);
+    install_plugin_in("steeped", "kettle", NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
+    expect_refused(&answer, "the start recorded for kettle-host runs on jvm, and no jvm start exists yet",
+                   "use a host for this language that runs on native or javascript until a jvm start is built",
+                   "the jvm layer");
+    release_answer(&answer);
+    finish_world();
+}
+
+static void an_in_process_start_ends_its_layer_with_its_word(void) {
+    start_world("layer-in-process", "{\"scripted\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
+    expect_layers(&answer, layers_of(expected_layer(TYPESCRIPT, LOADER, "[\"in-process\"]"), NULL), "in-process");
+    release_answer(&answer);
+    finish_world();
+}
+
+/** An in-process host runs inside another application's process, so it runs the front door's layer alone. */
+static void an_in_process_start_of_two_languages_answers_the_front_doors_layer_alone(void) {
+    start_world("layer-in-process-two", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    require_plugins("[\"scripted\"]");
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
+    expect_layers(&answer, layers_of(expected_layer(TYPESCRIPT, LOADER, "[\"in-process\"]"), NULL),
+                  "the front door's layer alone");
+    release_answer(&answer);
+    finish_world();
+}
+
+static void an_in_process_start_whose_front_doors_host_has_no_in_process_entry_is_refused(void) {
+    start_world("layer-in-process-native", "{\"compiled\":{\"enabled\":true}}");
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_IN_PROCESS, NULL, NULL, NULL);
+    expect_refused(&answer, FIXTURE_ONE "-host, which hosts " FIXTURE_ONE ", the language of the loader's front door, "
+                            "carries no inProcessEntry",
+                   "start the loader with spisor-host launch, which runs each layer as a process of its own",
+                   "no in-process entry");
+    release_answer(&answer);
+    finish_world();
+}
+
+static void a_first_required_plugin_listed_in_no_language_is_refused_naming_it(void) {
+    start_world("layer-unlisted-door", "{\"scripted\":{\"enabled\":true}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
     require_plugins("[\"brewed\"]");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
-    CHECK(answer.status == SPISOR_REFUSED);
-    const char *message = text_at(answer.refusal, "message");
-    CHECK(message != NULL && strstr(message, "brewed, the first plugin the loader requires, runs on jvm") != NULL);
-    CHECK(message != NULL && strstr(message, "no layer can hold the loader's front door") != NULL);
-    check_text(text_at(answer.refusal, "fix"), "install a version of brewed written for javascript or native",
-               "the fix naming the plugin");
+    expect_refused(&answer, "brewed, the first plugin the loader requires, is listed in no catalog source as a plugin",
+                   "add a catalog source listing brewed, then install the loader again", "the unlisted front door");
     release_answer(&answer);
     finish_world();
 }
 
-static void an_action_of_a_native_plugin_answers_the_native_layer_alone(void) {
+static void an_action_of_a_fixture_plugin_answers_its_layer_alone(void) {
     start_world("layer-action", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, GREET_ACTION);
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, GREET_ACTION);
+    require_plugins("[\"scripted\"]");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}");
     expect_layers(&answer,
-                  layers_of(expected_layer(NATIVE, LOADER ".native", "[\"action\",\"compiled\",\"greet\",\"{}\"]"), NULL),
+                  layers_of(expected_layer(FIXTURE_ONE, LOADER "." FIXTURE_ONE,
+                                           "[\"action\",\"compiled\",\"greet\",\"{}\"]"),
+                            NULL),
                   "the action's layer");
+    release_answer(&answer);
+    finish_world();
+}
+
+static void an_action_of_a_plugin_listed_in_no_language_is_refused_naming_it(void) {
+    start_world("layer-action-unlisted", "{\"compiled\":{\"enabled\":true}}");
+    install_plugin_in("compiled", FIXTURE_ONE, GREET_ACTION);
+    layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_ACTION, "absent", "greet", "{}");
+    expect_refused(&answer, "absent is listed in no catalog source as a plugin, so no layer runs it",
+                   "add a catalog source listing absent, then run the action again", "the unlisted action");
     release_answer(&answer);
     finish_world();
 }
 
 static void an_action_given_a_result_path_ends_its_start_with_it(void) {
     start_world("layer-action-result", "{\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("compiled", NATIVE, GREET_ACTION);
+    install_plugin_in("compiled", FIXTURE_ONE, GREET_ACTION);
     layer_answer answer = layer_start_with(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}", "/state/results/7-1.json",
                                            (uint32_t)sizeof(runtime_hosts_layer_start_argument));
     expect_layers(&answer,
-                  layers_of(expected_layer(NATIVE, LOADER, "[\"action\",\"compiled\",\"greet\",\"{}\",\"/state/results/7-1.json\"]"),
+                  layers_of(expected_layer(FIXTURE_ONE, LOADER,
+                                           "[\"action\",\"compiled\",\"greet\",\"{}\",\"/state/results/7-1.json\"]"),
                             NULL),
                   "the action's layer with its result path");
     release_answer(&answer);
     answer = layer_start_with(RUNTIME_HOSTS_LAYER_ACTION, "compiled", "greet", "{}", "/state/results/7-1.json",
                               (uint32_t)SPISOR_SHAPE_THROUGH(runtime_hosts_layer_start_argument, input));
-    expect_layers(&answer, layers_of(expected_layer(NATIVE, LOADER, "[\"action\",\"compiled\",\"greet\",\"{}\"]"), NULL),
+    expect_layers(&answer,
+                  layers_of(expected_layer(FIXTURE_ONE, LOADER, "[\"action\",\"compiled\",\"greet\",\"{}\"]"), NULL),
                   "a result past the argument's size is not read");
     release_answer(&answer);
     finish_world();
@@ -389,13 +499,14 @@ static void an_action_given_a_result_path_ends_its_start_with_it(void) {
 
 /**
  * install records the catalog source in spisor-host's own settings alone, so a layer reading the loader's would find
- * no catalog and take the native plugin for a javascript one.
+ * no catalog and no plugin's language.
  */
-static void a_loader_naming_no_catalog_reads_runtimes_from_spisor_hosts(void) {
+static void a_loader_naming_no_catalog_reads_languages_from_spisor_hosts(void) {
     char ecosystem_home[1400];
     start_world("layer-ecosystem-catalog", "{}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, NULL);
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    require_plugins("[\"scripted\"]");
     write_in(application_home, "config/settings.json",
              "{\"plugins\":{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}}");
     snprintf(ecosystem_home, sizeof ecosystem_home, "%s/spisor-host", scratch);
@@ -408,8 +519,9 @@ static void a_loader_naming_no_catalog_reads_runtimes_from_spisor_hosts(void) {
     write_tree(ecosystem_home, "config/settings.json", settings_with("{}"));
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
     expect_layers(&answer,
-                  layers_of(expected_layer(JAVASCRIPT, LOADER, "[]"), expected_layer(NATIVE, LOADER ".native", "[]")),
-                  "the runtimes of spisor-host's catalog");
+                  layers_of(expected_layer(TYPESCRIPT, LOADER, "[]"),
+                            expected_layer(FIXTURE_ONE, LOADER "." FIXTURE_ONE, "[]")),
+                  "the languages of spisor-host's catalog");
     release_answer(&answer);
     finish_world();
 }
@@ -424,27 +536,22 @@ static void a_loader_enabling_no_plugin_answers_no_layer(void) {
 
 static void a_layer_with_no_hinted_version_is_refused_with_the_reinstall_fix(void) {
     start_world("layer-unhinted", "{\"scripted\":{\"enabled\":true},\"compiled\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    install_plugin_on("compiled", NATIVE, NULL);
-    write_hint(NATIVE_LAYER, "{\"libraries\":{}}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    install_plugin_in("compiled", FIXTURE_ONE, NULL);
+    require_plugins("[\"scripted\"]");
+    write_hint(FIXTURE_ONE "-host", "{\"libraries\":{}}");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
-    CHECK(answer.status == SPISOR_REFUSED);
-    const char *message = text_at(answer.refusal, "message");
-    CHECK(message != NULL && strstr(message, "no " NATIVE_LAYER " version is recorded") != NULL);
-    check_text(text_at(answer.refusal, "fix"), REINSTALL_FIX, "the reinstall fix");
+    expect_refused(&answer, "no " FIXTURE_ONE "-host version is recorded", REINSTALL_FIX, "the unhinted layer");
     release_answer(&answer);
     finish_world();
 }
 
 static void a_hint_naming_no_runtime_binary_is_refused_with_the_reinstall_fix(void) {
     start_world("layer-no-binary", "{\"scripted\":{\"enabled\":true}}");
-    install_plugin_on("scripted", JAVASCRIPT, NULL);
-    write_hint(JAVASCRIPT_LAYER, "{\"libraries\":{},\"host\":\"" LAYER_VERSION "\"}");
+    install_plugin_in("scripted", TYPESCRIPT, NULL);
+    write_hint(TYPESCRIPT "-host", "{\"libraries\":{},\"host\":\"" LAYER_VERSION "\"}");
     layer_answer answer = layer_start(RUNTIME_HOSTS_LAYER_SERVE, NULL, NULL, NULL);
-    CHECK(answer.status == SPISOR_REFUSED);
-    const char *message = text_at(answer.refusal, "message");
-    CHECK(message != NULL && strstr(message, "names no runtime binary") != NULL);
-    check_text(text_at(answer.refusal, "fix"), REINSTALL_FIX, "the reinstall fix");
+    expect_refused(&answer, "names no runtime binary", REINSTALL_FIX, "the hint without a binary");
     release_answer(&answer);
     finish_world();
 }
@@ -473,16 +580,21 @@ static void a_mode_or_its_members_out_of_shape_is_malformed(void) {
 }
 
 int main(void) {
-    a_javascript_only_loader_answers_one_layer_under_its_own_identity();
-    a_loader_spanning_two_layers_answers_both_the_front_door_first();
+    a_typescript_only_loader_answers_one_layer_under_its_own_identity();
+    a_loader_spanning_two_languages_answers_both_the_front_door_first();
+    two_languages_on_one_runtime_answer_two_layers_each_from_its_own_item();
     the_first_required_plugin_puts_the_front_door_in_its_layer();
-    an_in_process_start_ends_each_layer_with_its_word();
+    a_loader_requiring_no_plugin_over_two_languages_is_refused_naming_both();
+    a_language_the_catalog_hosts_in_no_item_is_refused_naming_it();
+    a_language_host_on_jvm_is_refused_saying_no_jvm_start_exists();
+    an_in_process_start_ends_its_layer_with_its_word();
     an_action_given_a_result_path_ends_its_start_with_it();
-    an_in_process_start_of_two_layers_answers_the_javascript_layer_alone();
-    an_in_process_start_of_native_plugins_alone_is_refused_naming_launch();
-    a_first_required_plugin_on_no_layers_runtime_is_refused_naming_it();
-    an_action_of_a_native_plugin_answers_the_native_layer_alone();
-    a_loader_naming_no_catalog_reads_runtimes_from_spisor_hosts();
+    an_in_process_start_of_two_languages_answers_the_front_doors_layer_alone();
+    an_in_process_start_whose_front_doors_host_has_no_in_process_entry_is_refused();
+    a_first_required_plugin_listed_in_no_language_is_refused_naming_it();
+    an_action_of_a_fixture_plugin_answers_its_layer_alone();
+    an_action_of_a_plugin_listed_in_no_language_is_refused_naming_it();
+    a_loader_naming_no_catalog_reads_languages_from_spisor_hosts();
     a_loader_enabling_no_plugin_answers_no_layer();
     a_layer_with_no_hinted_version_is_refused_with_the_reinstall_fix();
     a_hint_naming_no_runtime_binary_is_refused_with_the_reinstall_fix();

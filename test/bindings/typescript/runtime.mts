@@ -87,7 +87,7 @@ export async function openRuntime(): Promise<OpenedRuntime> {
   const described = host.loadLibrary(declaration, runtimeLibraryPath, { withheld: [runtimeServiceIds.host, runtimeServiceIds.scope] })
     .described as ReadonlyMap<string, Bound>;
   const runtimeHost = described.get(runtimeServiceIds.host)!;
-  const plan = (await runtimeHost.start!({ arguments: ["javascript", loaderId] })) as Plan;
+  const plan = (await runtimeHost.start!({ arguments: ["typescript", loaderId] })) as Plan;
   const scope = (await described.get(runtimeServiceIds.scope)!.open!({ manifest_path: plan.plugins[0]!.manifest })) as Scope;
   return {
     declaration,

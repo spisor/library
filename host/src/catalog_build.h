@@ -23,6 +23,7 @@ typedef struct catalog_input {
     cJSON *application;
     char *install_method;
     char *runtime;
+    char *language;
 } catalog_input;
 
 /** The inputs a catalog build lists, in the order given. */
@@ -36,9 +37,9 @@ typedef struct catalog_inputs {
 int host_read_plugin_directory(catalog_inputs *inputs, const char *directory, cJSON **refusal);
 
 /**
- * Adds a host bundle directory, for platform when not NULL: every file in it with its id, version and
- * runtime from host.json, or for a loader, whose host.json declares an application, that one data-only
- * file and the application.
+ * Adds a host bundle directory, for platform when not NULL: every file in it with its id, version, runtime and kind
+ * from host.json, `host` when it names none, a `language-host` also with its language, or for a loader, whose
+ * host.json declares an application, that one data-only file and the application.
  */
 int host_read_host_directory(catalog_inputs *inputs, const char *directory, const char *platform, cJSON **refusal);
 

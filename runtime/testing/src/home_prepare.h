@@ -29,6 +29,8 @@ typedef struct runtime_testing_prepared_home {
     runtime_testing_prepared_install *installs;
     size_t install_count;
     cJSON *libraries;
+    const runtime_testing_layer *layers;
+    size_t layer_count;
 } runtime_testing_prepared_home;
 
 /**

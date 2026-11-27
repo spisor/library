@@ -132,12 +132,30 @@ static inline char *write_proof_loader(const host_world *world, const char *vers
     return directory;
 }
 
-/** A plugin that runs on no JavaScript runtime. */
+/** A plugin of the fixture language, whose host runs on no JavaScript runtime. */
 static inline char *write_proof_plugin(const host_world *world) {
     char *directory = joined(world->base.root, "inputs/plugin");
     write_in(directory, "plugin.json",
-             "{\"importName\": \"" PROOF_PLUGIN_ID "\", \"version\": \"1.0.0\", \"runtime\": \"native\", \"entry\": \"plugin.bin\"}");
+             "{\"importName\": \"" PROOF_PLUGIN_ID "\", \"version\": \"1.0.0\", \"language\": \"fixture-one\", "
+             "\"entry\": \"plugin.bin\"}");
     write_in(directory, "plugin.bin", "native plugin bytes");
+    return directory;
+}
+
+/** The fixture language's host bundle, a language-host started under native, which installs beside the plugin. */
+static inline char *write_proof_language_host(const host_world *world) {
+    char *directory = joined(world->base.root, "inputs/fixture-one-host");
+    write_in(directory, "host.json",
+             "{\"kind\": \"language-host\", \"id\": \"fixture-one-host\", \"version\": \"1.0.0\", "
+             "\"language\": \"fixture-one\", \"runtime\": \"native\", \"entry\": \"program\"}");
+    write_in(directory, "program", "native host bytes");
+    return directory;
+}
+
+/** forebay-library's directory, which every language host is hinted with, a version and no binary. */
+static inline char *write_proof_forebay_library(const host_world *world) {
+    char *directory = joined(world->base.root, "inputs/forebay-library");
+    write_in(directory, "package.json", "{\"version\": \"0.1.0\"}");
     return directory;
 }
 
@@ -152,8 +170,13 @@ static inline void build_proof_catalog(host_world *world, const char *const *loa
     snprintf(host_argument, sizeof host_argument, "%s/spisor-host@%s", STAGED_BUNDLES_PATH, runtime_platform_key());
     snprintf(library_argument, sizeof library_argument, "runtime=%s/runtime@%s", STAGED_BUNDLES_PATH, runtime_platform_key());
     char *plugin = write_proof_plugin(world);
-    const char *arguments[32] = {"catalog", "build", "--host", host_argument, "--library", library_argument, "--plugin", plugin};
-    size_t count = 8;
+    char *language_host = write_proof_language_host(world);
+    char *forebay = write_proof_forebay_library(world);
+    char forebay_argument[1200];
+    snprintf(forebay_argument, sizeof forebay_argument, "forebay-library=%s@%s", forebay, runtime_platform_key());
+    const char *arguments[32] = {"catalog", "build", "--host", host_argument, "--library", library_argument, "--plugin", plugin,
+                                 "--host", language_host, "--library", forebay_argument};
+    size_t count = 12;
     char *loaders[8] = {NULL};
     size_t loader_count = 0;
     for (; *loader_versions != NULL && loader_count < 8; loader_versions++) {
@@ -175,6 +198,8 @@ static inline void build_proof_catalog(host_world *world, const char *const *loa
     for (size_t index = 0; index < loader_count; index++) {
         spisor_memory_release(loaders[index]);
     }
+    spisor_memory_release(forebay);
+    spisor_memory_release(language_host);
     spisor_memory_release(plugin);
 }
 

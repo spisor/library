@@ -216,12 +216,16 @@ static void no_loader_refuses_while_spisor_host_is_not_registered(void) {
     finish_session_home(&home);
 }
 
-/** A catalog item for plugin id at version, its one file a placeholder the session never fetches. */
-static void list_plugin_item(cJSON *items, const char *id, const char *version) {
+/** A catalog item for plugin id at version written in language, its one file a placeholder the session never fetches. */
+static void list_plugin_item_in(cJSON *items, const char *id, const char *version, const char *language) {
     char item[512];
-    snprintf(item, sizeof item, "{\"kind\": \"plugin\", \"latest\": \"%s\", \"versions\": {\"%s\": {\"files\": %s}}}",
-             version, version, FILE_REFERENCE);
+    snprintf(item, sizeof item, "{\"kind\": \"plugin\", \"language\": \"%s\", \"latest\": \"%s\", \"versions\": {\"%s\": {\"files\": %s}}}",
+             language, version, version, FILE_REFERENCE);
     cJSON_AddItemToObject(items, id, parsed(item));
+}
+
+static void list_plugin_item(cJSON *items, const char *id, const char *version) {
+    list_plugin_item_in(items, id, version, "typescript");
 }
 
 /** Writes index as the catalog the home's one local source names. */
@@ -274,7 +278,7 @@ static void expect_one_problem(const session_home *home, const char *id, const c
 static void one_broken_plugin_of_two_answers_the_other_and_a_problem_naming_its_manifest(void) {
     static const char *const manifests[2] = {ALPHA, BETA};
     session_home home;
-    cJSON *index = parsed("{\"format\": 1, \"items\": {}}");
+    cJSON *index = parsed("{\"format\": 2, \"items\": {}}");
     lay_out_session_home(&home, "one-broken", LOADER, manifests, 2, NULL);
     char *manifest = rewrite_manifest(&home, 0, "{\"id\"", "x\"id\"");
     list_plugin_item(cJSON_GetObjectItemCaseSensitive(index, "items"), "alpha", "1.0.0");
@@ -325,7 +329,7 @@ static void an_enabled_plugin_with_no_version_installed_is_a_problem_not_availab
     session_home home;
     cJSON *refusal = NULL;
     cJSON *enabled = cJSON_CreateTrue();
-    cJSON *index = parsed("{\"format\": 1, \"items\": {}}");
+    cJSON *index = parsed("{\"format\": 2, \"items\": {}}");
     lay_out_session_home(&home, "not-installed", LOADER, manifests, 1, NULL);
     CHECK(runtime_set_ecosystem_setting(home.home.answer.home, home.places.portable, "plugins.omega.enabled", enabled,
                                         RUNTIME_SETTINGS_LAYER_APPLICATION, &refusal));
@@ -361,7 +365,7 @@ static void the_groups_split_the_catalog_by_what_runs_and_what_is_cached(void) {
     session_home home;
     cJSON *refusal = NULL;
     cJSON *disabled = cJSON_CreateFalse();
-    cJSON *index = parsed("{\"format\": 1, \"items\": {}}");
+    cJSON *index = parsed("{\"format\": 2, \"items\": {}}");
     cJSON *items = cJSON_GetObjectItemCaseSensitive(index, "items");
     lay_out_session_home(&home, "groups", LOADER, manifests, 2, NULL);
     CHECK(runtime_set_ecosystem_setting(home.home.answer.home, home.places.portable, "plugins.beta.enabled", disabled,
@@ -382,6 +386,49 @@ static void the_groups_split_the_catalog_by_what_runs_and_what_is_cached(void) {
     cJSON_Delete(index);
     cJSON_Delete(disabled);
     cJSON_Delete(refusal);
+    finish_session_home(&home);
+}
+
+static void expect_both_plugins_answered(const session_home *home, const char *label) {
+    if (home->status != SPISOR_OK || home->answer.plugin_count != 2) {
+        fprintf(stderr, "%s: expected both plugins, got status %d, %zu plugins and \"%s\"\n", label, (int)home->status,
+                home->answer.plugin_count, home->refusal.detail == NULL ? "(none)" : home->refusal.detail);
+        check_failures++;
+        return;
+    }
+    check_text(home->answer.plugins[0].id, "alpha", label);
+    check_text(home->answer.plugins[1].id, "beta", label);
+}
+
+/** No language can hold this loader's front door, which refuses its start, and the interface still lists its plugins. */
+static void a_loader_requiring_no_plugin_over_two_languages_answers_its_plugins(void) {
+    static const char *const manifests[2] = {ALPHA, BETA};
+    session_home home;
+    cJSON *index = parsed("{\"format\": 2, \"items\": {}}");
+    cJSON *items = cJSON_GetObjectItemCaseSensitive(index, "items");
+    lay_out_session_home(&home, "two-doors", LOADER, manifests, 2, NULL);
+    list_plugin_item_in(items, "alpha", "1.0.0", "typescript");
+    list_plugin_item_in(items, "beta", "2.0.0", "fixture-one");
+    write_catalog_index(index);
+    open_session(&home, LOADER);
+    expect_both_plugins_answered(&home, "two languages and no front door");
+    cJSON_Delete(index);
+    finish_session_home(&home);
+}
+
+/** A first required plugin no catalog lists refuses the loader's start, and the interface still lists its plugins. */
+static void a_loader_whose_first_required_plugin_no_catalog_lists_answers_its_plugins(void) {
+    static const char *const manifests[2] = {ALPHA, BETA};
+    session_home home;
+    lay_out_session_home(&home, "unlisted-door", LOADER, manifests, 2, NULL);
+    char *standard = joined(home.places.cache, "bundles/" LOADER "/1.0.0/host.json");
+    char *directory = joined(home.places.cache, "bundles/" LOADER "/1.0.0");
+    CHECK(spisor_make_directories(directory) == SPISOR_OK);
+    write_text(standard, "{\"plugins\": [\"brewed\"]}");
+    open_session(&home, LOADER);
+    expect_both_plugins_answered(&home, "an unlisted front door");
+    spisor_memory_release(directory);
+    spisor_memory_release(standard);
     finish_session_home(&home);
 }
 
@@ -410,6 +457,8 @@ int main(void) {
     an_enabled_plugin_with_no_version_installed_is_a_problem_not_available();
     sources_that_yield_no_catalog_are_one_problem_and_the_plugins_still_answer();
     the_groups_split_the_catalog_by_what_runs_and_what_is_cached();
+    a_loader_requiring_no_plugin_over_two_languages_answers_its_plugins();
+    a_loader_whose_first_required_plugin_no_catalog_lists_answers_its_plugins();
     answers_malformed_for_places_that_are_not_absolute_and_a_loader_that_is_no_host_id();
     return check_summary("ui_session_test");
 }

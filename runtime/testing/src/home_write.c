@@ -13,7 +13,7 @@
 #include "directory_tree.h"
 #include "holders.h"
 #include "hosts.h"
-#include "install_entries.h"
+#include "hosts_layers.h"
 #include "install_settings.h"
 #include "paths.h"
 #include "runtime/secrets.h"
@@ -60,13 +60,45 @@ static spisor_status write_json(const char *path, const cJSON *json) {
     return status;
 }
 
-static spisor_status write_catalog(const runtime_testing_layout *layout, spisor_refusal *refusal) {
+/** Lists id in items as an item of kind at version, with no files; NULL when memory runs out. */
+static cJSON *listed_item(cJSON *items, const char *id, const char *kind, const char *version) {
+    cJSON *item = cJSON_AddObjectToObject(items, id);
+    cJSON *versions = item == NULL ? NULL : cJSON_AddObjectToObject(item, "versions");
+    cJSON *listed = versions == NULL ? NULL : cJSON_AddObjectToObject(versions, version);
+    int built = listed != NULL && cJSON_AddObjectToObject(listed, "files") != NULL &&
+                cJSON_AddStringToObject(item, "kind", kind) != NULL &&
+                cJSON_AddStringToObject(item, "latest", version) != NULL;
+    return built ? item : NULL;
+}
+
+/** Lists each layer's language-host item and each install written in a language; 0 when memory runs out. */
+static int list_items(const runtime_testing_prepared_home *home, cJSON *items) {
+    int listed = 1;
+    for (size_t index = 0; listed && index < home->layer_count; index++) {
+        const runtime_testing_layer *layer = &home->layers[index];
+        char *id = runtime_language_host_id(layer->language);
+        cJSON *item = id == NULL ? NULL : listed_item(items, id, "language-host", HINTED_HOST_VERSION);
+        listed = item != NULL && cJSON_AddStringToObject(item, "language", layer->language) != NULL &&
+                 cJSON_AddStringToObject(item, "runtime", layer->runtime) != NULL;
+        spisor_memory_release(id);
+    }
+    for (size_t index = 0; listed && index < home->install_count; index++) {
+        const runtime_testing_prepared_install *install = &home->installs[index];
+        const char *language = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(install->manifest, "language"));
+        int skipped = language == NULL || cJSON_HasObjectItem(items, install->id);
+        cJSON *item = skipped ? NULL : listed_item(items, install->id, "plugin", install->version);
+        listed = skipped || (item != NULL && cJSON_AddStringToObject(item, "language", language) != NULL);
+    }
+    return listed;
+}
+
+static spisor_status write_catalog(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
     cJSON *catalog = cJSON_CreateObject();
-    spisor_status status = catalog != NULL &&
-                                   cJSON_AddNumberToObject(catalog, "format", RUNTIME_CATALOG_FORMAT) != NULL &&
-                                   cJSON_AddObjectToObject(catalog, "items") != NULL
-                               ? write_json(layout->catalog, catalog)
-                               : SPISOR_OUT_OF_MEMORY;
+    cJSON *items = catalog == NULL || cJSON_AddNumberToObject(catalog, "format", RUNTIME_CATALOG_FORMAT) == NULL
+                       ? NULL
+                       : cJSON_AddObjectToObject(catalog, "items");
+    spisor_status status = items != NULL && list_items(home, items) ? write_json(home->layout.catalog, catalog)
+                                                                     : SPISOR_OUT_OF_MEMORY;
     cJSON_Delete(catalog);
     return written(status, "the catalog index cannot be written", refusal);
 }
@@ -136,13 +168,19 @@ static spisor_status hold_host(const runtime_testing_prepared_home *home, spisor
     return written(status, "the host's processes record cannot be written", refusal);
 }
 
+/** Hints the libraries for each layer's language-host item, at the version the catalog lists it. */
 static spisor_status hint_libraries(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
-    char *problem = NULL;
-    if (runtime_write_boot_hint(home->layout.cache, RUNTIME_JAVASCRIPT_HOST_ID, home->libraries, HINTED_HOST_VERSION,
-                                &problem)) {
-        return SPISOR_OK;
+    for (size_t index = 0; index < home->layer_count; index++) {
+        char *problem = NULL;
+        char *id = runtime_language_host_id(home->layers[index].language);
+        int hinted = id != NULL &&
+                     runtime_write_boot_hint(home->layout.cache, id, home->libraries, HINTED_HOST_VERSION, &problem);
+        spisor_memory_release(id);
+        if (!hinted) {
+            return refuse_problem(problem, refusal);
+        }
     }
-    return refuse_problem(problem, refusal);
+    return SPISOR_OK;
 }
 
 static spisor_status copy_file(const char *from, const char *to) {
@@ -284,7 +322,7 @@ static spisor_status record_catalog_source(const runtime_testing_prepared_home *
 }
 
 spisor_status runtime_testing_write_home(const runtime_testing_prepared_home *home, spisor_refusal *refusal) {
-    spisor_status status = write_catalog(&home->layout, refusal);
+    spisor_status status = write_catalog(home, refusal);
     if (status == SPISOR_OK) {
         status = register_host(home, refusal);
     }

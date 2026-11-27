@@ -1,1 +1,1 @@
-{"format":1,"items":{"thing":{"kind":"plugin","latest":"constructor","versions":{"constructor":{"files":{"p.js":{"url":"p","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}}}}}}}
+{"format":2,"items":{"thing":{"kind":"plugin","language":"typescript","latest":"constructor","versions":{"constructor":{"files":{"p.js":{"url":"p","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":3}}}}}}}

@@ -258,7 +258,7 @@ static void list_claude_requiring(install_base *base, const char *plugins_json) 
 static void installs_and_enables_each_plugin_a_loader_requires_in_the_loader_s_home(void) {
     install_base base;
     start_install_base(&base, "applications", "required-plugins");
-    list_plugin(&base, "plugin-stub", "1.0.0", "native");
+    list_plugin(&base, "plugin-stub", "1.0.0", "fixture-one");
     list_claude_requiring(&base, "[\"plugin-stub\"]");
     write_catalog(&base);
     char *bin = install_binary(&base, BINARY);
@@ -293,7 +293,7 @@ static void set_loader_setting(const install_base *base, const char *content) {
 static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(void) {
     install_base base;
     start_install_base(&base, "applications", "required-disabled");
-    list_plugin(&base, "plugin-stub", "1.0.0", "native");
+    list_plugin(&base, "plugin-stub", "1.0.0", "fixture-one");
     list_claude_requiring(&base, "[\"plugin-stub\"]");
     write_catalog(&base);
     char *bin = install_binary(&base, BINARY);
@@ -317,7 +317,7 @@ static void leaves_a_required_plugin_the_user_disabled_disabled_and_reports_it(v
 static void names_the_portable_settings_file_when_the_portable_layer_disables_a_required_plugin(void) {
     install_base base;
     start_install_base(&base, "applications", "required-disabled-portable");
-    list_plugin(&base, "plugin-stub", "1.0.0", "native");
+    list_plugin(&base, "plugin-stub", "1.0.0", "fixture-one");
     list_claude_requiring(&base, "[\"plugin-stub\"]");
     write_catalog(&base);
     char *bin = install_binary(&base, BINARY);
@@ -427,25 +427,111 @@ static void reports_a_background_host_the_catalog_does_not_list_and_still_regist
     finish_install_base(&base);
 }
 
-static void brings_the_javascript_host_for_an_entry_declaring_it_runs_there_whatever_the_application_is(void) {
-    install_base base;
-    start_install_base(&base, "applications", "declared-javascript");
-    list_foundation(&base);
-    list_library(&base, "forebay-library", "0.1.2");
-    list_host(&base, "javascript-host", "1.0.0", "javascript", NULL);
+/**
+ * The in-process entry of a loader requiring `required_json`, listed beside typescript-host, the TypeScript plugin
+ * `scripted` and the fixture-one plugin `compiled`, with the plugins `enabled` names, a NULL-ended list, enabled in the portable place.
+ */
+static cJSON *install_in_process_loader(install_base *base, const char *label, const char *required_json,
+                                        const char *const *enabled) {
+    start_install_base(base, "applications", label);
+    list_foundation(base);
+    list_language_host(base, "typescript", "javascript", "1.0.0", "{}");
+    list_plugin(base, "scripted", "1.0.0", "typescript");
+    list_plugin(base, "compiled", "1.0.0", "fixture-one");
+    for (const char *const *id = enabled; *id != NULL; id++) {
+        char key[128];
+        snprintf(key, sizeof key, "plugins.%s.enabled", *id);
+        set_portable(base, key, cJSON_CreateTrue());
+    }
     cJSON *application = application_json("sample", "sample", "{}");
     cJSON_AddItemToObject(application, "entry",
-                          parsed("{\"runsOnJavascriptHost\": true, \"directories\": [\"{{home}}\"],"
-                                 " \"files\": [{\"path\": \"{{home}}/entry.js\", \"text\": \"x\"}], \"settings\": []}"));
-    list_loader(&base, "sample-loader", "1.0.0", application, "[]", 0, "[]");
+                          parsed("{\"runsInProcess\": true, \"directories\": [\"{{home}}\"],"
+                                 " \"files\": [{\"path\": \"{{home}}/entry.js\", \"text\": \"{{hint}}\"}], \"settings\": []}"));
+    list_loader_requiring(base, "sample-loader", "1.0.0", application, "[]", 0, "[]", required_json);
+    write_catalog(base);
+    char *bin = install_binary(base, "sample");
+    make_directory_in_user(base, "homes");
+    cJSON *report = install_choosing(base, "{}", bin);
+    spisor_memory_release(bin);
+    return report;
+}
+
+/** An in-process entry runs its front door's layer, so that language's host comes with the plugin holding it. */
+static void brings_the_front_doors_language_host_for_an_in_process_entry(void) {
+    install_base base;
+    static const char *const nothing[1] = {NULL};
+    cJSON *report = install_in_process_loader(&base, "in-process-door", "[\"scripted\"]", nothing);
+    CHECK(exists_in(base.cache, "bundles/typescript-host"));
+    const cJSON *entry = value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0), "entry");
+    CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written")) &&
+          cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsInProcess")));
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+/** A required plugin whose language no catalog source hosts is reported and left, as an enabled one is. */
+static void reports_a_required_plugin_whose_language_no_catalog_source_hosts(void) {
+    install_base base;
+    start_install_base(&base, "applications", "required-unhosted");
+    list_foundation(&base);
+    list_plugin(&base, "spoken", "1.0.0", "lua");
+    list_loader_requiring(&base, "sample-loader", "1.0.0", application_json("sample", "sample", "{}"), "[]", 0, "[]",
+                          "[\"spoken\"]");
     write_catalog(&base);
     char *bin = install_binary(&base, "sample");
     make_directory_in_user(&base, "homes");
     cJSON *report = install_choosing(&base, "{}", bin);
-    CHECK(exists_in(base.cache, "bundles/javascript-host"));
-    CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
+    const cJSON *row = NULL;
+    const cJSON *each;
+    cJSON_ArrayForEach(each, cJSON_GetObjectItemCaseSensitive(report, "unavailable")) {
+        row = text_at(each, "id") != NULL && strcmp(text_at(each, "id"), "spoken") == 0 ? each : row;
+    }
+    check_text(text_at(row, "message"),
+               "plugins written in lua have no host: no catalog source lists lua-host, the language-host item that "
+               "runs them",
+               "the required plugin's language named");
+    CHECK(!exists_in(base.cache, "bundles/spoken"));
     cJSON_Delete(report);
     spisor_memory_release(bin);
+    finish_install_base(&base);
+}
+
+static const cJSON *entry_of_first_loader(const cJSON *report) {
+    return value_at(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "loaders"), 0), "entry");
+}
+
+/** A loader requiring no plugin has its front door in the one language its plugins are written in, as a start reads it. */
+static void writes_the_in_process_entry_of_a_loader_requiring_no_plugin_from_its_plugins_language(void) {
+    static const char *const scripted[2] = {"scripted", NULL};
+    install_base base;
+    cJSON *report = install_in_process_loader(&base, "in-process-one-language", "[]", scripted);
+    CHECK(exists_in(base.cache, "bundles/typescript-host"));
+    const cJSON *entry = entry_of_first_loader(report);
+    if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "written"))) {
+        const char *message = text_at(entry, "message");
+        fprintf(stderr, "the one-language entry: not written, \"%s\"\n", message == NULL ? "(none)" : message);
+        check_failures++;
+    }
+    CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(entry, "runsInProcess")));
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+/** With no plugin required and plugins of two languages, no language holds the front door, so no entry is written. */
+static void writes_no_entry_for_a_loader_requiring_no_plugin_over_two_languages(void) {
+    static const char *const both[3] = {"scripted", "compiled", NULL};
+    install_base base;
+    cJSON *report = install_in_process_loader(&base, "in-process-two-languages", "[]", both);
+    const cJSON *entry = entry_of_first_loader(report);
+    CHECK(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(entry, "written")));
+    const char *message = text_at(entry, "message");
+    CHECK(message != NULL && strstr(message, "so no one language holds its front door") != NULL &&
+          strstr(message, "typescript") != NULL && strstr(message, "fixture-one") != NULL);
+    check_text(text_at(entry, "fix"),
+               "require the plugin that holds the front door in the loader's standard, or enable plugins of one "
+               "language only",
+               "the two languages' fix");
+    cJSON_Delete(report);
     finish_install_base(&base);
 }
 
@@ -731,7 +817,10 @@ int main(void) {
     installs_and_registers_each_background_host_in_a_home_of_its_own();
     reports_a_background_host_the_catalog_does_not_list_and_still_registers_its_loader();
     writes_each_entry_reports_one_without_and_removing_the_loader_takes_it_away();
-    brings_the_javascript_host_for_an_entry_declaring_it_runs_there_whatever_the_application_is();
+    brings_the_front_doors_language_host_for_an_in_process_entry();
+    writes_the_in_process_entry_of_a_loader_requiring_no_plugin_from_its_plugins_language();
+    writes_no_entry_for_a_loader_requiring_no_plugin_over_two_languages();
+    reports_a_required_plugin_whose_language_no_catalog_source_hosts();
     keeps_the_first_install_s_provenance_on_a_second_install();
     requests_each_command_running_spisor_boot_with_launch();
     records_one_shape_for_an_application_installed_through_a_method_and_found_through_it();

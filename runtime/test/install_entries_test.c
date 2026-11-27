@@ -11,7 +11,7 @@
 #define LOADER_ID "entry-loader"
 
 static const char *const MARKETPLACE_ENTRY =
-    "{\"runsOnJavascriptHost\": false,"
+    "{\"runsInProcess\": false,"
     " \"directories\": [\"{{entryRoot}}\", \"{{entryRoot}}/.sample-plugin\", \"{{entryRoot}}/hooks\", \"{{home}}\"],"
     " \"files\": ["
     "{\"path\": \"{{entryRoot}}/.sample-plugin/marketplace.json\", \"json\": {\"name\": \"spisor\", \"owner\": {\"name\": \"spisor\"},"
@@ -25,7 +25,7 @@ static const char *const MARKETPLACE_ENTRY =
     " \"value\": {\"source\": {\"source\": \"directory\", \"path\": \"{{entryRoot}}\"}}}]}";
 
 static const char *const IN_PROCESS_ENTRY =
-    "{\"runsOnJavascriptHost\": true, \"directories\": [\"{{home}}\", \"{{home}}/plugins\"],"
+    "{\"runsInProcess\": true, \"directories\": [\"{{home}}\", \"{{home}}/plugins\"],"
     " \"files\": [{\"path\": \"{{home}}/plugins/spisor-{{loaderId}}.js\","
     " \"text\": \"const HINT = {{json:hint}};\\nconst LOADER_ID = {{json:loaderId}};\\nexport const SpisorHost = `${HINT}`;\\n\"}],"
     " \"settings\": []}";
@@ -103,7 +103,9 @@ static void register_loader(const install_base *base, const char *application, c
     cJSON_Delete(answer.tree);
 }
 
-static catalog_answer write_entry(const install_base *base, const char *application, const char *home) {
+/** install.entry of `application` for the loader at `home`, its front door in `language`, NULL for none. */
+static catalog_answer write_entry_in(const install_base *base, const char *application, const char *home,
+                                     const char *language) {
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "places", places_of(base));
     cJSON *loader = cJSON_AddObjectToObject(argument, "loader");
@@ -116,7 +118,14 @@ static catalog_answer write_entry(const install_base *base, const char *applicat
         cJSON_AddItemToObject(described, "entry", entry);
     }
     cJSON_AddStringToObject(loader, "home", home);
+    if (language != NULL) {
+        cJSON_AddStringToObject(loader, "language", language);
+    }
     return install_call(INSTALL_ENTRY, argument);
+}
+
+static catalog_answer write_entry(const install_base *base, const char *application, const char *home) {
+    return write_entry_in(base, application, home, "typescript");
 }
 
 static cJSON *removed(const install_base *base) {
@@ -322,7 +331,7 @@ static void writes_one_declared_text_file_gone_with_the_directory_it_created(voi
     cJSON_Delete(answer.tree);
     expect_tree(home, "[\"plugins\",\"plugins/spisor-" LOADER_ID ".js\",\"sample.json\"]", "inprocess tree");
     char *source = text_in(home, "plugins/spisor-" LOADER_ID ".js");
-    char *hint = joined(base.cache, "hosts/javascript-host.json");
+    char *hint = joined(base.cache, "hosts/typescript-host.json");
     cJSON *quoted = cJSON_CreateString(hint);
     char *hint_json = cJSON_PrintUnformatted(quoted);
     char line[2048];
@@ -336,6 +345,55 @@ static void writes_one_declared_text_file_gone_with_the_directory_it_created(voi
     cJSON_Delete(quoted);
     spisor_memory_release(hint);
     spisor_memory_release(source);
+    spisor_memory_release(home);
+    finish_install_base(&base);
+}
+
+/** The in-process entry's {{hint}} stands for the hint of the front door's language host, whichever language it is. */
+static void names_the_hint_of_the_front_doors_language_host(void) {
+    install_base base;
+    start_install_base(&base, "entries", "front-door-hint");
+    char *home = home_of(&base, "inprocess");
+    register_loader(&base, "inprocess", home);
+    write_in(home, "sample.json", "{}\n");
+    catalog_answer answer = write_entry_in(&base, "inprocess", home, "fixture-one");
+    if (answer.status != SPISOR_OK) {
+        fprintf(stderr, "the entry was refused: %s%c", text_at(answer.tree, "message"), 10);
+        check_failures++;
+    }
+    cJSON_Delete(answer.tree);
+    char *source = text_in(home, "plugins/spisor-" LOADER_ID ".js");
+    char *hint = joined(base.cache, "hosts/fixture-one-host.json");
+    cJSON *quoted = cJSON_CreateString(hint);
+    char *hint_json = cJSON_PrintUnformatted(quoted);
+    char line[2048];
+    snprintf(line, sizeof line, "const HINT = %s;\n", hint_json);
+    CHECK(source != NULL && strstr(source, line) != NULL);
+    expect_clean_remove(&base, "front door hint remove");
+    cJSON_free(hint_json);
+    cJSON_Delete(quoted);
+    spisor_memory_release(hint);
+    spisor_memory_release(source);
+    spisor_memory_release(home);
+    finish_install_base(&base);
+}
+
+/** An entry that runs in process stands for the front door's host, so a loader holding none writes nothing. */
+static void refuses_an_in_process_entry_for_a_loader_naming_no_language_writing_nothing(void) {
+    install_base base;
+    start_install_base(&base, "entries", "doorless");
+    char *home = home_of(&base, "inprocess");
+    register_loader(&base, "inprocess", home);
+    write_in(home, "sample.json", "{}\n");
+    catalog_answer answer = write_entry_in(&base, "inprocess", home, NULL);
+    CHECK(answer.status == SPISOR_REFUSED);
+    const char *message = text_at(answer.tree, "message");
+    CHECK(message != NULL && strstr(message, "names no front door language") != NULL);
+    check_text(text_at(answer.tree, "fix"),
+               "require the plugin that holds the loader's front door in its standard, then install it again",
+               "the doorless fix");
+    cJSON_Delete(answer.tree);
+    expect_tree(home, "[\"sample.json\"]", "nothing written");
     spisor_memory_release(home);
     finish_install_base(&base);
 }
@@ -417,6 +475,8 @@ static void takes_back_what_it_wrote_when_a_later_change_is_refused(void) {
 }
 
 int main(void) {
+    names_the_hint_of_the_front_doors_language_host();
+    refuses_an_in_process_entry_for_a_loader_naming_no_language_writing_nothing();
     user_path_guard guard;
     guard_user_path(&guard);
     adds_only_its_two_members_to_a_hand_written_settings_json_and_gives_the_whole_file_back();

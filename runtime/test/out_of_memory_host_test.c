@@ -22,11 +22,11 @@
     "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"ANTHROPIC_BASE_URL\", "        \
     "\"placeholder\": {\"variable\": \"ANTHROPIC_AUTH_TOKEN\", \"value\": \"sk-ant-loader-proxy\"}}}}"
 #define LISTENING_MANIFEST                                                                                        \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                         \
     "\"config\": {\"name\": \"a\", \"defaults\": {\"proxy\": {\"port\": 34567}}}, "                             \
     "\"access\": [{\"kind\": \"port\", \"target\": \"setting:proxy.port\", \"mode\": \"listen\"}]}"
 #define ANY_PORT_MANIFEST                                                                                         \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                         \
     "\"access\": [{\"kind\": \"port\", \"target\": \"any\", \"mode\": \"listen\"}]}"
 
 typedef struct start_case {
@@ -363,10 +363,10 @@ static void every_progress_failure_in_mode(const progress_case *each) {
 }
 
 int main(void) {
-    static const char *const serve[2] = {LAYER_RUNTIME, LOADER};
-    static const char *const undeclared[6] = {LAYER_RUNTIME, LOADER, "action", "a", "wave", "{}"};
+    static const char *const serve[2] = {LAYER_LANGUAGE, LOADER};
+    static const char *const undeclared[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "wave", "{}"};
     char result_path[2048];
-    const char *const with_result[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{\"name\": \"you\"}",
+    const char *const with_result[7] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{\"name\": \"you\"}",
                                         result_path};
     const start_case cases[] = {{"a serve start and its stop", serve, 2, WEIVEL_STATUS_OK},
                                 {"an action start and its stop", with_result, 7, WEIVEL_STATUS_OK},

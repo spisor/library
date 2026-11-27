@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "answer_storage.h"
+#include "catalog_patterns.h"
 #include "catalog_time.h"
 #include "changes_definition.h"
 #include "definition_support.h"
@@ -344,9 +345,9 @@ static spisor_status provenance(void *context, const runtime_hosts_provenance_ar
                                   refusal);
 }
 
-static const char *layer_runtime_of(const runtime_hosts_start_argument *argument) {
-    return spisor_has_shape(argument->size, SPISOR_SHAPE_THROUGH(runtime_hosts_start_argument, layer_runtime))
-               ? argument->layer_runtime
+static const char *layer_language_of(const runtime_hosts_start_argument *argument) {
+    return spisor_has_shape(argument->size, SPISOR_SHAPE_THROUGH(runtime_hosts_start_argument, layer_language))
+               ? argument->layer_language
                : NULL;
 }
 
@@ -369,8 +370,8 @@ static spisor_status check_start(const runtime_hosts_start_argument *argument, s
     if (status == SPISOR_OK && argument->session > 1) {
         status = runtime_refuse_member(refusal, "session", HEADER);
     }
-    if (status == SPISOR_OK && !runtime_is_layer_runtime(layer_runtime_of(argument))) {
-        status = runtime_refuse_member(refusal, "layer_runtime", HEADER);
+    if (status == SPISOR_OK && !runtime_catalog_is_language(layer_language_of(argument))) {
+        status = runtime_refuse_member(refusal, "layer_language", HEADER);
     }
     return status;
 }
@@ -476,7 +477,7 @@ static spisor_status serve_start(const runtime_hosts_start_argument *argument, r
                                            cJSON_GetObjectItemCaseSensitive(call, "libraries"),
                                            argument->session != 0,
                                            0,
-                                           layer_runtime_of(argument),
+                                           layer_language_of(argument),
                                            action_plugin_of(argument)};
     cJSON *answered = call == NULL ? NULL : runtime_hosts_start(&request, &operation_refusal);
     spisor_status status;
@@ -556,7 +557,7 @@ static spisor_status fill_variables(void **storage, const cJSON *environment, ru
 }
 
 static spisor_status fill_layer(void **storage, const cJSON *json, runtime_hosts_layer *layer) {
-    if (!runtime_storage_copy(storage, text_of(json, "runtime"), &layer->runtime) ||
+    if (!runtime_storage_copy(storage, text_of(json, "language"), &layer->language) ||
         !runtime_storage_copy(storage, text_of(json, "hostId"), &layer->host_id) ||
         !runtime_storage_copy(storage, text_of(json, "executable"), &layer->executable) ||
         !runtime_storage_texts(storage, cJSON_GetObjectItemCaseSensitive(json, "arguments"), &layer->arguments,

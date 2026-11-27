@@ -8,7 +8,6 @@
 #include "cache_refusal.h"
 #include "catalog.h"
 #include "config.h"
-#include "install_entries.h"
 #include "install_run.h"
 #include "json_service.h"
 #include "node_json_file.h"
@@ -20,16 +19,30 @@ static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
 }
 
-int runtime_is_layer_runtime(const char *runtime) {
-    return runtime != NULL &&
-           (strcmp(runtime, RUNTIME_LAYER_JAVASCRIPT) == 0 || strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0);
+char *runtime_language_host_id(const char *language) {
+    const char *parts[2] = {language, "-host"};
+    return runtime_cache_text(parts, 2);
 }
 
-const char *runtime_layer_item_of(const char *runtime) {
-    if (runtime != NULL && strcmp(runtime, RUNTIME_LAYER_JAVASCRIPT) == 0) {
-        return RUNTIME_JAVASCRIPT_HOST_ID;
-    }
-    return runtime != NULL && strcmp(runtime, RUNTIME_LAYER_NATIVE) == 0 ? RUNTIME_NATIVE_HOST_ID : NULL;
+const cJSON *runtime_language_host_item(const cJSON *catalog, const char *language, int *out_of_memory) {
+    char *id = runtime_language_host_id(language);
+    const cJSON *item = id == NULL ? NULL : runtime_updates_item(catalog, id);
+    const char *kind = text_of(item, "kind");
+    *out_of_memory = id == NULL;
+    spisor_memory_release(id);
+    return kind != NULL && strcmp(kind, "language-host") == 0 ? item : NULL;
+}
+
+cJSON *runtime_unhosted_language_refusal(const char *language) {
+    char *id = runtime_language_host_id(language);
+    const char *parts[5] = {"plugins written in ", language, " have no host: no catalog source lists ", id,
+                            ", the language-host item that runs them"};
+    const char *fix_parts[4] = {"add a catalog source listing ", id, ", or disable the plugins written in ", language};
+    char *fix = id == NULL ? NULL : runtime_cache_text(fix_parts, 4);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 5, fix);
+    spisor_memory_release(fix);
+    spisor_memory_release(id);
+    return refusal;
 }
 
 cJSON *runtime_layer_hint(const char *cache, const char *layer_id, cJSON **refusal) {
@@ -46,10 +59,10 @@ cJSON *runtime_layer_hint(const char *cache, const char *layer_id, cJSON **refus
     return hint;
 }
 
-const char *runtime_plugin_runtime(const cJSON *catalog, const char *id) {
-    const cJSON *runtime = cJSON_GetObjectItemCaseSensitive(runtime_updates_item(catalog, id), "runtime");
-    return cJSON_IsString(runtime) && runtime->valuestring[0] != '\0' ? runtime->valuestring
-                                                                      : RUNTIME_LAYER_JAVASCRIPT;
+const char *runtime_plugin_language(const cJSON *catalog, const char *id) {
+    const cJSON *item = runtime_updates_item(catalog, id);
+    const char *kind = text_of(item, "kind");
+    return kind != NULL && strcmp(kind, "plugin") == 0 ? text_of(item, "language") : NULL;
 }
 
 cJSON *runtime_loader_standard(const char *cache, const char *host_id, const char *version, int *out_of_memory) {
@@ -61,30 +74,20 @@ cJSON *runtime_loader_standard(const char *cache, const char *host_id, const cha
     return standard;
 }
 
-int runtime_names_plugin_on(const cJSON *catalog, const cJSON *plugins, const char *runtime) {
+int runtime_names_plugin_in(const cJSON *catalog, const cJSON *plugins, const char *language) {
     const cJSON *plugin;
     cJSON_ArrayForEach(plugin, plugins) {
-        if (strcmp(runtime_plugin_runtime(catalog, plugin->string), runtime) == 0) {
+        const char *written = runtime_plugin_language(catalog, plugin->string);
+        if (written != NULL && strcmp(written, language) == 0) {
             return 1;
         }
     }
     return 0;
 }
 
-const char *runtime_front_door(const cJSON *catalog, const cJSON *standard, const cJSON *plugins) {
-    const cJSON *required = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(standard, "plugins"), 0);
-    if (cJSON_IsString(required)) {
-        return runtime_plugin_runtime(catalog, required->valuestring);
-    }
-    return !runtime_names_plugin_on(catalog, plugins, RUNTIME_LAYER_JAVASCRIPT) &&
-                   runtime_names_plugin_on(catalog, plugins, RUNTIME_LAYER_NATIVE)
-               ? RUNTIME_LAYER_NATIVE
-               : RUNTIME_LAYER_JAVASCRIPT;
-}
-
-char *runtime_run_identity(const char *host_id, const char *runtime, const char *front_door) {
-    const char *parts[3] = {host_id, ".", runtime};
-    return runtime_cache_text(parts, strcmp(front_door, runtime) == 0 ? 1 : 3);
+char *runtime_run_identity(const char *host_id, const char *language, const char *front_door) {
+    const char *parts[3] = {host_id, ".", language};
+    return runtime_cache_text(parts, front_door == NULL || strcmp(front_door, language) == 0 ? 1 : 3);
 }
 
 /** spisor-host's settings values, NULL when it is not registered usably, and NULL with *out_of_memory set when memory runs out. */
@@ -130,19 +133,42 @@ static cJSON *settings_of(const cJSON *registration, const char *portable, cJSON
     return runtime_read_ecosystem_settings(home, NULL, portable, &failed);
 }
 
-/**
- * A refusal of a loader whose first required plugin runs on a runtime no layer runs, naming both; NULL when memory runs
- * out.
- */
-static cJSON *doorless_refusal(const cJSON *standard, const char *runtime) {
-    const char *plugin = cJSON_GetStringValue(cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(standard, "plugins"), 0));
-    const char *parts[5] = {plugin, ", the first plugin the loader requires, runs on ", runtime,
-                            ", which no layer runs, so no layer can hold the loader's front door"};
-    const char *fix_parts[3] = {"install a version of ", plugin, " written for javascript or native"};
+/** A refusal of a loader whose first required plugin the catalog lists in no language; NULL when memory runs out. */
+static cJSON *doorless_refusal(const char *plugin) {
+    const char *parts[2] = {plugin, ", the first plugin the loader requires, is listed in no catalog source as a "
+                                    "plugin, so no language can hold the loader's front door"};
+    const char *fix_parts[3] = {"add a catalog source listing ", plugin, ", then install the loader again"};
     char *fix = runtime_cache_text(fix_parts, 3);
-    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 4, fix);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 2, fix);
     spisor_memory_release(fix);
     return refusal;
+}
+
+/** A refusal of a loader requiring no plugin whose plugins are written in first and second; NULL out of memory. */
+static cJSON *two_doors_refusal(const char *first, const char *second) {
+    const char *parts[5] = {"the loader requires no plugin, and the plugins its settings enable are written in ",
+                            first, " and ", second, ", so no one language holds its front door"};
+    return runtime_cache_refusal(parts, 5, "require the plugin that holds the front door in the loader's standard, or "
+                                           "enable plugins of one language only");
+}
+
+int runtime_read_front_door(runtime_loader_layers *layers, cJSON **refusal) {
+    const cJSON *required = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(layers->standard, "plugins"), 0);
+    const cJSON *plugin;
+    if (cJSON_IsString(required)) {
+        layers->front_door = runtime_plugin_language(layers->catalog, required->valuestring);
+        *refusal = layers->front_door == NULL ? doorless_refusal(required->valuestring) : NULL;
+        return layers->front_door != NULL;
+    }
+    cJSON_ArrayForEach(plugin, layers->plugins) {
+        const char *language = runtime_plugin_language(layers->catalog, plugin->string);
+        if (language != NULL && layers->front_door != NULL && strcmp(language, layers->front_door) != 0) {
+            *refusal = two_doors_refusal(layers->front_door, language);
+            return 0;
+        }
+        layers->front_door = language == NULL ? layers->front_door : language;
+    }
+    return 1;
 }
 
 int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime_loader_layers *layers,
@@ -176,21 +202,17 @@ int runtime_read_loader_layers(const cJSON *places, const char *host_id, runtime
         runtime_free_loader_layers(layers);
         return 0;
     }
-    layers->front_door = runtime_front_door(layers->catalog, layers->standard, layers->plugins);
-    if (!runtime_is_layer_runtime(layers->front_door)) {
-        *refusal = doorless_refusal(layers->standard, layers->front_door);
-        runtime_free_loader_layers(layers);
-        return 0;
-    }
     return 1;
 }
 
-char *runtime_read_run_identity(const cJSON *places, const char *host_id, const char *runtime) {
+char *runtime_read_run_identity(const cJSON *places, const char *host_id, const char *language) {
     runtime_loader_layers layers;
     cJSON *refusal = NULL;
     char *identity = NULL;
     if (runtime_read_loader_layers(places, host_id, &layers, &refusal)) {
-        identity = runtime_run_identity(host_id, runtime, layers.front_door);
+        identity = runtime_read_front_door(&layers, &refusal)
+                       ? runtime_run_identity(host_id, language, layers.front_door)
+                       : NULL;
         runtime_free_loader_layers(&layers);
     }
     cJSON_Delete(refusal);

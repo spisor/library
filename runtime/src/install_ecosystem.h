@@ -39,10 +39,14 @@ typedef struct runtime_install_ecosystem_request {
  * settings unless the user turned it off; each source not yet listed is recorded; spisor-host is
  * registered and its boot hint written. The loader of every installed or detected application is
  * installed and registered with its commands, which run spisor-boot, and its application entry, and
- * every background host a loader names is installed and registered. forebay-library and the
- * javascript-host bundle, which carries the Node pin, install only when something runs on them,
- * forebay-library named in the javascript-host's boot hint beside the runtime, and the Node that bundle pins is
- * acquired (javascript) only when a plugin or background host this install would start runs on JavaScript.
+ * every background host a loader names is installed and registered. The language-host item
+ * `<language>-host` of every language an installed plugin or a loader's required plugin is written in installs
+ * beside forebay-library, hinted with the runtime and forebay-library, and a plugin whose language the catalog lists
+ * no such item for is reported unavailable and not installed. The interface spisor-host's `interface` setting names
+ * installs, hinted with the runtime, none for `none`, else the catalog's one item of kind interface, two or more with
+ * none chosen reported unavailable under `interface` naming each, and none listed leaving the install headless. The
+ * Node the language hosts pin is acquired (javascript) only when a language host or background host this install
+ * would start runs on JavaScript.
  *
  * An item that cannot be installed is reported under unavailable and the rest still install. A choice
  * naming an unknown application, or a method that is not offered, is refused before anything is

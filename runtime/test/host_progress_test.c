@@ -21,9 +21,9 @@
 #define CHECK_INTERVAL 3600000LL
 #define FAILURES_BEFORE_EXIT 6
 
-static const char *const serve_arguments[2] = {LAYER_RUNTIME, LOADER};
-static const char *const in_process_arguments[3] = {LAYER_RUNTIME, LOADER, "in-process"};
-static const char *const action_arguments[6] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}"};
+static const char *const serve_arguments[2] = {LAYER_LANGUAGE, LOADER};
+static const char *const in_process_arguments[3] = {LAYER_LANGUAGE, LOADER, "in-process"};
+static const char *const action_arguments[6] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{}"};
 
 typedef struct tick_answer {
     weivel_status status;
@@ -188,7 +188,7 @@ static void a_serve_run_started_publishes_that_it_is_ready(void) {
     "{\"plugins\": [\"a\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"ANTHROPIC_BASE_URL\", "        \
     "\"placeholder\": {\"variable\": \"ANTHROPIC_AUTH_TOKEN\", \"value\": \"sk-ant-loader-proxy\"}}}}"
 #define LISTENING_MANIFEST                                                                                        \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                         \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                         \
     "\"config\": {\"name\": \"a\", \"defaults\": {\"proxy\": {\"port\": 34567}}}, "                             \
     "\"access\": [{\"kind\": \"network\", \"target\": \"example.com\", \"mode\": \"connect\"}, "                \
     "{\"kind\": \"port\", \"target\": \"setting:proxy.port\", \"mode\": \"listen\"}]}"
@@ -202,18 +202,26 @@ static void write_loader_standard(const char *standard) {
  * A SERVE run of a loader with `standard`, `a` installed with `manifest` and its portable settings `settings`, told
  * `a` activated.
  */
-static started_run serving_with_standard(const char *label, const char *manifest, const char *settings,
-                                         const char *standard) {
+static started_run serving_with_listed(const char *label, const char *manifest, const char *settings,
+                                       const char *standard, const char *listed) {
     weivel_standard_host_outcome outcome;
     started_run run;
     start_held_host_world(label);
     install_plugin("a", manifest);
+    if (listed != NULL) {
+        list_plugin_in(listed, LAYER_LANGUAGE);
+    }
     write_loader_standard(standard);
     write_in(portable, "plugins/a/config.json", settings);
     run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
     return run;
+}
+
+static started_run serving_with_standard(const char *label, const char *manifest, const char *settings,
+                                         const char *standard) {
+    return serving_with_listed(label, manifest, settings, standard, NULL);
 }
 
 /** A SERVE run of a loader whose standard requires `a` as its front door, as serving_with_standard runs it. */
@@ -248,7 +256,7 @@ static void expect_front_door_environment(const char *manifest, const char *labe
 static void a_front_door_serve_run_publishes_its_applications_variables(void) {
     expect_front_door_environment(LISTENING_MANIFEST, "a front door listening on its setting");
     expect_front_door_environment(
-        "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+        "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "
         "\"access\": [{\"kind\": \"port\", \"target\": 43123, \"mode\": \"listen\"}]}",
         "a front door listening on a declared number");
 }
@@ -281,7 +289,7 @@ static void a_front_door_with_no_port_to_hand_publishes_a_refusal(void) {
                               "a front door declaring no port");
     expect_front_door_refused(
         serving_front_door("front-door-on-any-port",
-                           "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+                           "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "
                            "\"access\": [{\"kind\": \"port\", \"target\": \"any\", \"mode\": \"listen\"}]}"),
         "a, the front door of " LOADER ", declares no fixed port it listens on",
         "install a version of a that declares the port it listens on as port access with mode listen",
@@ -317,12 +325,16 @@ static void a_proxy_the_standard_cannot_describe_publishes_a_refusal_naming_the_
     }
 }
 
-/** A front door the run does not hold, or a standard requiring no plugin, leaves no address to hand. */
+/**
+ * A front door the run does not hold, listed in its language but not installed, or a standard requiring no plugin,
+ * leaves no address to hand.
+ */
 static void a_proxy_with_no_front_door_to_read_publishes_a_refusal(void) {
     expect_front_door_refused(
-        serving_with_standard("front-door-not-installed", LISTENING_MANIFEST, PORT_SETTING,
-                              "{\"plugins\": [\"z\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
-                              "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}"),
+        serving_with_listed("front-door-not-installed", LISTENING_MANIFEST, PORT_SETTING,
+                            "{\"plugins\": [\"z\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
+                            "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}",
+                            "z"),
         "z, the front door of " LOADER ", is not installed, so its application cannot be handed the address",
         "run spisor-host install --catalog <path or url> again", "a front door that is not installed");
     expect_front_door_refused(
@@ -337,7 +349,7 @@ static void a_proxy_with_no_front_door_to_read_publishes_a_refusal(void) {
 static void a_front_door_port_setting_that_is_not_set_publishes_a_refusal(void) {
     expect_front_door_refused(
         serving_front_door_set("front-door-port-not-set",
-                               "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "
+                               "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "
                                "\"access\": [{\"kind\": \"port\", \"target\": \"setting:proxy.port\", "
                                "\"mode\": \"listen\"}]}",
                                "{}"),
@@ -386,7 +398,7 @@ static void a_front_door_port_set_in_the_home_wins_over_the_portable_one(void) {
 }
 
 /**
- * The javascript layer of a loader whose front door is a native plugin runs as `<loader>.javascript`, and hands the
+ * The typescript layer of a loader whose front door is a fixture plugin runs as `<loader>.typescript`, and hands the
  * application nothing: only the front door's layer publishes the proxy's variables.
  */
 static void a_layer_not_holding_the_front_door_publishes_an_empty_environment(void) {
@@ -395,15 +407,14 @@ static void a_layer_not_holding_the_front_door_publishes_an_empty_environment(vo
     cJSON *record;
     start_held_host_world("other-layer-environment");
     install_plugin("a", LISTENING_MANIFEST);
-    list_plugin("n", "1.0.0", "1.0.0");
-    cJSON_AddStringToObject(cJSON_GetObjectItemCaseSensitive(catalog_items, "n"), "runtime", "native");
-    write_catalog();
+    list_language_host_item("fixture-one", "native");
+    list_plugin_in("n", "fixture-one");
     write_loader_standard("{\"plugins\": [\"n\"], \"application\": {\"proxy\": {\"baseUrlVariable\": \"WHERE\", "
                           "\"placeholder\": {\"variable\": \"TOKEN\", \"value\": \"placeholder\"}}}}");
     run = start_one(serve_arguments, 2);
     outcome = outcome_of(&run, WEIVEL_STANDARD_HOST_ACTIVATED, NULL);
     CHECK(tell_started(&outcome, 1, NULL) == WEIVEL_STATUS_OK);
-    record = ready_record_of(LOADER ".javascript");
+    record = ready_record_of(LOADER ".typescript");
     expect_json(cJSON_GetObjectItemCaseSensitive(record, "environment"), "{}", "the other layer's environment");
     cJSON_Delete(record);
     release_run(&run);
@@ -411,7 +422,7 @@ static void a_layer_not_holding_the_front_door_publishes_an_empty_environment(vo
     finish_base();
 }
 
-#define SECOND_MANIFEST "{\"id\": \"b\", \"version\": \"1.0.0\", \"entry\": \"index.js\"}"
+#define SECOND_MANIFEST "{\"id\": \"b\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\"}"
 /** A loader whose settings enable plugins `a` and `b`, both installed. */
 static void start_two_plugin_world(const char *label) {
     cJSON *settings;
@@ -427,11 +438,11 @@ static void start_two_plugin_world(const char *label) {
 }
 
 #define CONSUMING_MANIFEST                                                                                       \
-    "{\"id\": \"a\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                          \
+    "{\"id\": \"a\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                          \
     "\"capabilities\": {\"provides\": [], \"consumes\": [\"greeting\"]}, "                                      \
     "\"actions\": {\"greet\": {\"call\": {\"service\": \"a.greeter\", \"method\": \"greet\"}}}}"
 #define PROVIDING_MANIFEST(id)                                                                                   \
-    "{\"id\": \"" id "\", \"version\": \"1.0.0\", \"entry\": \"index.js\", "                                    \
+    "{\"id\": \"" id "\", \"version\": \"1.0.0\", \"language\": \"typescript\", \"entry\": \"index.js\", "                                    \
     "\"capabilities\": {\"provides\": [\"greeting\"], \"consumes\": []}}"
 
 /**
@@ -585,7 +596,7 @@ static void an_action_answers_its_exit_code_as_it_ended(void) {
 
 /** An ACTION run of `a`'s greet given `<state>/results/7-1.json` for its result, told its one plugin activated. */
 static started_run acting_with_result(const char *label) {
-    const char *arguments[7] = {LAYER_RUNTIME, LOADER, "action", "a", "greet", "{}", NULL};
+    const char *arguments[7] = {LAYER_LANGUAGE, LOADER, "action", "a", "greet", "{}", NULL};
     weivel_standard_host_outcome outcome;
     char *path;
     started_run run;

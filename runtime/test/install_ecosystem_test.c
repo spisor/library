@@ -27,8 +27,8 @@
 /** The catalog of the ecosystem tests: the foundation and two native plugins, plus a plugin built for another platform. */
 static void list_ecosystem(install_base *base) {
     list_foundation(base);
-    list_plugin(base, "announcer", "1.0.0", "native");
-    list_plugin(base, "viewer", "1.0.0", "native");
+    list_plugin(base, "announcer", "1.0.0", "fixture-one");
+    list_plugin(base, "viewer", "1.0.0", "fixture-one");
     list_foreign_plugin(base, "rival", "1.0.0");
     write_catalog(base);
 }
@@ -48,7 +48,7 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     start_install_base(&base, "ecosystem", "first");
     list_ecosystem(&base);
     cJSON *report = install_defaults(&base, "");
-    expect_installed_ids(report, "[\"announcer\",\"runtime\",\"spisor-host\",\"viewer\"]", "installed");
+    expect_installed_ids(report, "[\"announcer\",\"fixture-one-host\",\"forebay-library\",\"runtime\",\"spisor-host\",\"viewer\"]", "installed");
     expect_member(report, "cached", "[]", "cached");
     expect_member(report, "unavailable", "[]", "unavailable");
     expect_member(report, "enabled", "[\"announcer\",\"viewer\"]", "enabled");
@@ -68,7 +68,7 @@ static void installs_the_host_the_runtime_and_the_defaults_and_records_them(void
     expect_member(settings, "catalog", expected, "catalog sources");
     cJSON *references = json_in(base.state, "bundles/spisor-host.json");
     expect_member(references, "run",
-                  "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\"}", "run");
+                  "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"viewer\":\"1.0.0\",\"forebay-library\":\"0.1.2\",\"fixture-one-host\":\"1.0.0\"}", "run");
     cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
     cJSON *versions = hinted_versions(hint);
     expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\"},\"host\":\"1.0.0\"}", "boot hint");
@@ -107,8 +107,8 @@ static void records_the_binary_of_a_declared_c_library_in_the_boot_hint(void) {
     start_install_base(&base, "ecosystem", "declared");
     list_host(&base, "spisor-host", "1.0.0", "native", NULL);
     list_declared_runtime(&base);
-    list_plugin(&base, "announcer", "1.0.0", "native");
-    list_plugin(&base, "viewer", "1.0.0", "native");
+    list_plugin(&base, "announcer", "1.0.0", "fixture-one");
+    list_plugin(&base, "viewer", "1.0.0", "fixture-one");
     write_catalog(&base);
     cJSON_Delete(install_defaults(&base, ""));
     cJSON *hint = json_in(base.cache, "hosts/spisor-host.json");
@@ -130,7 +130,7 @@ static void reports_everything_cached_on_a_second_run(void) {
     cJSON *report = install_defaults(&base, "");
     expect_member(report, "installed", "[]", "nothing fetched");
     expect_member(report, "enabled", "[]", "nothing enabled");
-    expect_member(report, "cached", "[\"spisor-host@1.0.0\",\"runtime@0.1.0\",\"announcer@1.0.0\",\"viewer@1.0.0\"]",
+    expect_member(report, "cached", "[\"spisor-host@1.0.0\",\"runtime@0.1.0\",\"announcer@1.0.0\",\"viewer@1.0.0\",\"forebay-library@0.1.2\",\"fixture-one-host@1.0.0\"]",
                   "all cached");
     cJSON_Delete(report);
     finish_install_base(&base);
@@ -156,7 +156,7 @@ static void reports_an_item_with_no_build_for_this_platform_and_installs_the_res
     start_install_base(&base, "ecosystem", "foreign");
     list_ecosystem(&base);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"announcer\", \"viewer\", \"rival\"]}", NULL), "foreign");
-    expect_installed_ids(report, "[\"announcer\",\"runtime\",\"spisor-host\",\"viewer\"]", "rest installed");
+    expect_installed_ids(report, "[\"announcer\",\"fixture-one-host\",\"forebay-library\",\"runtime\",\"spisor-host\",\"viewer\"]", "rest installed");
     const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
     CHECK(cJSON_GetArraySize(unavailable) == 1);
     char expected[128];
@@ -240,7 +240,7 @@ static void records_as_run_only_what_this_install_installed(void) {
     set_portable(&base, "plugins.viewer.enabled", cJSON_CreateFalse());
     cJSON_Delete(install_defaults(&base, ""));
     cJSON *references = json_in(base.state, "bundles/spisor-host.json");
-    expect_member(references, "run", "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\"}",
+    expect_member(references, "run", "{\"spisor-host\":\"1.0.0\",\"runtime\":\"0.1.0\",\"announcer\":\"1.0.0\",\"forebay-library\":\"0.1.2\",\"fixture-one-host\":\"1.0.0\"}",
                   "a disabled plugin leaves run");
     cJSON_Delete(references);
     finish_install_base(&base);
@@ -334,8 +334,8 @@ static void list_ecosystem_carrying_the_boot_stub(install_base *base) {
     char stub[128];
     snprintf(stub, sizeof stub, "%s/spisor-boot" EXECUTABLE_SUFFIX, runtime_platform_key());
     cJSON_AddItemToObject(files, stub, served_reference(base, "spisor-host", "1.0.0", stub, "stub"));
-    list_plugin(base, "announcer", "1.0.0", "native");
-    list_plugin(base, "viewer", "1.0.0", "native");
+    list_plugin(base, "announcer", "1.0.0", "fixture-one");
+    list_plugin(base, "viewer", "1.0.0", "fixture-one");
     write_catalog(base);
 }
 
@@ -437,15 +437,15 @@ static void acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item
     install_base base;
     start_install_base(&base, "ecosystem", "no-javascript");
     list_ecosystem(&base);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", "file:///nowhere/node.zip",
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", "file:///nowhere/node.zip",
                                           "0000000000000000000000000000000000000000000000000000000000000000");
-    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
     write_catalog(&base);
     cJSON *report = install_defaults(&base, "");
     CHECK(cJSON_GetObjectItemCaseSensitive(report, "javascript") == NULL);
     expect_member(report, "unavailable", "[]", "nothing unavailable");
-    CHECK(!exists_in(base.cache, "runtimes") && !exists_in(base.cache, "bundles/javascript-host"));
+    CHECK(!exists_in(base.cache, "runtimes") && !exists_in(base.cache, "bundles/typescript-host"));
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -473,7 +473,7 @@ static void write_incompressible(const char *path, size_t size) {
     spisor_memory_release(bytes);
 }
 
-/** Packs a one-file runtime archive of size bytes with the OS's tar, for javascript-host's host.json to pin. */
+/** Packs a one-file runtime archive of size bytes with the OS's tar, for typescript-host's host.json to pin. */
 static void serve_runtime_build(install_base *base, size_t size, served_build *served) {
     char stem[64];
     char member[96];
@@ -528,25 +528,124 @@ static void acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin
     install_base base;
     start_install_base(&base, "ecosystem", "javascript");
     list_foundation(&base);
-    list_plugin(&base, "scripted", "1.0.0", NULL);
+    list_plugin(&base, "scripted", "1.0.0", "typescript");
     list_library(&base, "forebay-library", "0.1.2");
     served_build served;
     serve_runtime_build(&base, 64, &served);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
-    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
     write_catalog(&base);
     cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"scripted\"]}", NULL), "javascript");
-    expect_installed_ids(report, "[\"forebay-library\",\"javascript-host\",\"runtime\",\"scripted\",\"spisor-host\"]", "with its host");
+    expect_installed_ids(report, "[\"forebay-library\",\"runtime\",\"scripted\",\"spisor-host\",\"typescript-host\"]", "with its host");
     const cJSON *javascript = cJSON_GetObjectItemCaseSensitive(report, "javascript");
     CHECK(javascript != NULL && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(javascript, "fetched")) &&
           spisor_probe_file(text_at(javascript, "executable")) == SPISOR_FILE_PRESENT);
-    check_text(text_at(javascript, "version"), "1.2.3", "the version javascript-host's host.json pins");
-    cJSON *hint = json_in(base.cache, "hosts/javascript-host.json");
+    check_text(text_at(javascript, "version"), "1.2.3", "the version typescript-host's host.json pins");
+    cJSON *hint = json_in(base.cache, "hosts/typescript-host.json");
     cJSON *versions = hinted_versions(hint);
-    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "javascript-host hint");
+    expect_json(versions, "{\"libraries\":{\"runtime\":\"0.1.0\",\"forebay-library\":\"0.1.2\"},\"host\":\"1.0.0\"}", "typescript-host hint");
     cJSON_Delete(versions);
     cJSON_Delete(hint);
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+/** A plugin whose language has no host item in any catalog source cannot run, so install reports it and leaves it. */
+static void reports_a_plugin_whose_language_no_catalog_source_hosts_and_installs_the_rest(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "unhosted");
+    list_ecosystem(&base);
+    list_plugin(&base, "spoken", "1.0.0", "lua");
+    write_catalog(&base);
+    cJSON *report = expect_report(install_with(&base, "{\"defaults\": [\"announcer\", \"spoken\"]}", NULL), "unhosted");
+    expect_installed_ids(report, "[\"announcer\",\"fixture-one-host\",\"forebay-library\",\"runtime\",\"spisor-host\"]",
+                         "the hosted plugin installed");
+    const cJSON *unavailable = cJSON_GetObjectItemCaseSensitive(report, "unavailable");
+    const cJSON *row = cJSON_GetArrayItem(unavailable, 0);
+    CHECK(cJSON_GetArraySize(unavailable) == 1);
+    check_text(text_at(row, "id"), "spoken", "the unhosted plugin reported");
+    check_text(text_at(row, "message"),
+               "plugins written in lua have no host: no catalog source lists lua-host, the language-host item that "
+               "runs them",
+               "the language named");
+    check_text(text_at(row, "fix"), "add a catalog source listing lua-host, or disable the plugins written in lua",
+               "the fix naming the language");
+    CHECK(!exists_in(base.cache, "bundles/spoken") && !exists_in(base.cache, "bundles/lua-host"));
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+/** Lists the interface item id, native, its bundle's host.json naming its entry. */
+static void list_interface(install_base *base, const char *id) {
+    list_file(base, catalog_item(base, id, "interface", "native", "0.1.0"), id, "0.1.0", "host.json",
+              "{\"entry\": \"interface\", \"runtime\": \"native\"}", 0);
+}
+
+static void installs_and_hints_the_catalogs_one_interface(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "interface");
+    list_ecosystem(&base);
+    list_interface(&base, "spisor-interface");
+    write_catalog(&base);
+    cJSON *report = install_defaults(&base, "");
+    expect_installed_ids(report,
+                         "[\"announcer\",\"fixture-one-host\",\"forebay-library\",\"runtime\",\"spisor-host\","
+                         "\"spisor-interface\",\"viewer\"]",
+                         "the interface installed with the ecosystem");
+    cJSON *hint = json_in(base.cache, "hosts/spisor-interface.json");
+    check_text(text_at(hint, "host"), "0.1.0", "the interface hinted at its version");
+    CHECK(value_at(hint, "libraries/runtime") != NULL);
+    cJSON_Delete(hint);
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void installs_no_interface_when_the_setting_says_none(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "headless");
+    list_ecosystem(&base);
+    list_interface(&base, "spisor-interface");
+    write_catalog(&base);
+    set_portable(&base, "interface", cJSON_CreateString("none"));
+    cJSON *report = install_defaults(&base, "");
+    CHECK(!exists_in(base.cache, "bundles/spisor-interface") && !exists_in(base.cache, "hosts/spisor-interface.json"));
+    expect_member(report, "unavailable", "[]", "a headless install reports nothing");
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void reports_two_interfaces_none_chooses_naming_both_and_installs_neither(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "two-interfaces");
+    list_ecosystem(&base);
+    list_interface(&base, "spisor-interface");
+    list_interface(&base, "other-interface");
+    write_catalog(&base);
+    cJSON *report = install_defaults(&base, "");
+    const cJSON *row = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(report, "unavailable"), 0);
+    check_text(text_at(row, "id"), "interface", "the interface setting reported");
+    const char *message = text_at(row, "message");
+    CHECK(message != NULL && strstr(message, "spisor-interface") != NULL && strstr(message, "other-interface") != NULL);
+    const char *fix = text_at(row, "fix");
+    CHECK(fix != NULL && strstr(fix, "interface setting") != NULL && strstr(fix, "none") != NULL);
+    CHECK(!exists_in(base.cache, "bundles/spisor-interface") && !exists_in(base.cache, "bundles/other-interface"));
+    cJSON_Delete(report);
+    finish_install_base(&base);
+}
+
+static void installs_the_interface_the_setting_chooses(void) {
+    install_base base;
+    start_install_base(&base, "ecosystem", "chosen-interface");
+    list_ecosystem(&base);
+    list_interface(&base, "spisor-interface");
+    list_interface(&base, "other-interface");
+    write_catalog(&base);
+    set_portable(&base, "interface", cJSON_CreateString("other-interface"));
+    cJSON *report = install_defaults(&base, "");
+    CHECK(exists_in(base.cache, "bundles/other-interface/0.1.0/host.json"));
+    CHECK(!exists_in(base.cache, "bundles/spisor-interface"));
+    expect_member(report, "unavailable", "[]", "nothing unavailable");
     cJSON_Delete(report);
     finish_install_base(&base);
 }
@@ -636,8 +735,8 @@ static void list_many_plugins(install_base *base) {
         char second[32];
         snprintf(first, sizeof first, "first-%d", index);
         snprintf(second, sizeof second, "second-%d", index);
-        list_plugin(base, first, "1.0.0", "native");
-        list_plugin(base, second, "1.0.0", "native");
+        list_plugin(base, first, "1.0.0", "fixture-one");
+        list_plugin(base, second, "1.0.0", "fixture-one");
     }
 }
 
@@ -712,13 +811,13 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     install_base base;
     start_install_base(&base, "ecosystem", "concurrent");
     list_ecosystem(&base);
-    list_plugin(&base, "scripted", "1.0.0", NULL);
+    list_plugin(&base, "scripted", "1.0.0", "typescript");
     list_many_plugins(&base);
     list_library(&base, "forebay-library", "0.1.2");
     served_build served;
     serve_runtime_build(&base, 24 * 1024 * 1024, &served);
-    char *manifest = javascript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
-    list_host(&base, "javascript-host", "1.0.0", "javascript", manifest);
+    char *manifest = typescript_host_json("1.2.3", "22.18.0", served.url, served.sha256);
+    list_language_host(&base, "typescript", "javascript", "1.0.0", manifest);
     spisor_memory_release(manifest);
     cJSON *application = application_json("claude", "claude", "{}");
     list_loader(&base, "claude-loader", "1.0.0", application, "[]", 0, "[\"keeper\"]");
@@ -745,7 +844,7 @@ static void two_concurrent_installs_end_with_one_consistent_registry_and_cache(c
     expect_json(cJSON_GetObjectItemCaseSensitive(hosts.tree, "unreadable"), "[]", "no unreadable registration");
     cJSON_Delete(hosts.tree);
     const char *versions[8] = {"bundles/spisor-host/1.0.0", "bundles/announcer/1.0.0", "bundles/viewer/1.0.0",
-                               "bundles/scripted/1.0.0", "bundles/javascript-host/1.0.0", "bundles/claude-loader/1.0.0",
+                               "bundles/scripted/1.0.0", "bundles/typescript-host/1.0.0", "bundles/claude-loader/1.0.0",
                                "bundles/keeper/1.0.0", NULL};
     for (size_t index = 0; versions[index] != NULL; index++) {
         expect_intact(&base, versions[index]);
@@ -808,6 +907,11 @@ int main(int argc, char **argv) {
     refuses_having_written_nothing_when_no_source_yields_a_catalog();
     answers_malformed_for_a_source_that_is_neither_local_nor_https();
     acquires_no_javascript_runtime_for_a_catalog_with_no_javascript_item();
+    reports_a_plugin_whose_language_no_catalog_source_hosts_and_installs_the_rest();
+    installs_and_hints_the_catalogs_one_interface();
+    installs_no_interface_when_the_setting_says_none();
+    reports_two_interfaces_none_chooses_naming_both_and_installs_neither();
+    installs_the_interface_the_setting_chooses();
     acquires_the_javascript_runtime_and_its_host_for_a_javascript_plugin();
     answers_malformed_for_an_argument_with_no_usable_places();
     two_concurrent_installs_end_with_one_consistent_registry_and_cache(self_path(argv[0]));

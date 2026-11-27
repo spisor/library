@@ -405,7 +405,7 @@ static void write_release(void) {
     sha256_of_text(ENTRY, entry_digest);
     char index[1024];
     snprintf(index, sizeof index,
-             "{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"
+             "{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"commit\":\"abc123\",\"files\":{"
              "\"plugin.json\":{\"url\":\"plugin.json\",\"sha256\":\"%s\",\"size\":%d},"
              "\"dist/index.js\":{\"url\":\"index.js\",\"sha256\":\"%s\",\"size\":%d}}}}}",
              manifest_digest, (int)strlen(MANIFEST), entry_digest, (int)strlen(ENTRY));

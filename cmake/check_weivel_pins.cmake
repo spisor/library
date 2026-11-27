@@ -1,8 +1,8 @@
 # -DREPO=<repository root>
 #
 # Fails naming each of weivel's `core` and `standard` whose pinned commit in the repository's repo.json differs from
-# the one siblings/typescript/repo.json pins, so both layers load one weivel. It reads JSON with string(JSON), so no
-# language but CMake runs it.
+# the one siblings/typescript/repo.json or siblings/rust/repo.json pins, so every language host loads one weivel. It
+# reads JSON with string(JSON), so no language but CMake runs it.
 
 cmake_minimum_required(VERSION 3.19)
 
@@ -12,8 +12,8 @@ endif()
 
 function(pinned_commit file import_name result)
     if(NOT EXISTS "${file}")
-        message(FATAL_ERROR "${file} is missing: check out weivel/typescript at siblings/typescript at the commit "
-            "repo.json pins")
+        message(FATAL_ERROR "${file} is missing: check out each weivel language at siblings/<language> at the "
+            "commit repo.json pins")
     endif()
     file(READ "${file}" text)
     string(JSON count LENGTH "${text}" dependencies)
@@ -30,14 +30,16 @@ function(pinned_commit file import_name result)
 endfunction()
 
 set(differences "")
-foreach(import_name core standard)
-    pinned_commit("${REPO}/repo.json" ${import_name} own)
-    pinned_commit("${REPO}/siblings/typescript/repo.json" ${import_name} typescript)
-    if(NOT own STREQUAL typescript)
-        string(APPEND differences "\n  ${import_name}: ${own} here, ${typescript} in siblings/typescript")
-    endif()
+foreach(language typescript rust)
+    foreach(import_name core standard)
+        pinned_commit("${REPO}/repo.json" ${import_name} own)
+        pinned_commit("${REPO}/siblings/${language}/repo.json" ${import_name} theirs)
+        if(NOT own STREQUAL theirs)
+            string(APPEND differences "\n  ${import_name}: ${own} here, ${theirs} in siblings/${language}")
+        endif()
+    endforeach()
 endforeach()
 
 if(differences)
-    message(FATAL_ERROR "the library and weivel/typescript pin different weivel commits:${differences}")
+    message(FATAL_ERROR "the library and a weivel language it pins pin different weivel commits:${differences}")
 endif()

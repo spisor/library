@@ -9,14 +9,14 @@
 #include "check.h"
 #include "spisor/json_kind.h"
 
-#define ITEM_A_2 "{\"a\":{\"kind\":\"plugin\",\"latest\":\"2.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}},\"2.0.0\":{\"files\":{}}}}}"
+#define ITEM_A_2 "{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"2.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}},\"2.0.0\":{\"files\":{}}}}}"
 #define ITEM_A_1_OF_2 \
-    "{\"a\":{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}},\"2.0.0\":{\"files\":{}}}}}"
-#define ITEM_A_1 "{\"a\":{\"kind\":\"plugin\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}}}}}"
+    "{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}},\"2.0.0\":{\"files\":{}}}}}"
+#define ITEM_A_1 "{\"a\":{\"kind\":\"plugin\",\"language\":\"typescript\",\"latest\":\"1.0.0\",\"versions\":{\"1.0.0\":{\"files\":{}}}}}"
 
 static catalog_answer resolved(const char *items, const char *enabled, const char *installed, const char *kind) {
     char catalog[2048];
-    snprintf(catalog, sizeof catalog, "{\"format\":1,\"items\":%s}", items);
+    snprintf(catalog, sizeof catalog, "{\"format\":2,\"items\":%s}", items);
     cJSON *argument = cJSON_CreateObject();
     cJSON_AddItemToObject(argument, "catalog", parsed(catalog));
     cJSON_AddItemToObject(argument, "enabled", parsed(enabled));

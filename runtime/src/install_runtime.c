@@ -19,7 +19,6 @@
 #include "runtime/fetch.h"
 #include "followed_entry.h"
 #include "file_times.h"
-#include "install_entries.h"
 #include "install_support.h"
 #include "json_service.h"
 #include "node_json_file.h"
@@ -56,9 +55,9 @@
 #define DOWNLOAD_SECONDS 1800
 #define TAR_MILLISECONDS 600000u
 #define VERSION_MILLISECONDS 10000u
-#define PIN_FIX                                                                                                     \
-    "install the ecosystem with a JavaScript plugin from a catalog whose javascript-host host.json carries node " \
-    "{pinned, minimum, builds: {<platform>: {url, sha256}}}"
+#define PIN_FIX                                                                                             \
+    "install the ecosystem with a plugin whose language host starts on JavaScript and whose host.json carries " \
+    "node {pinned, minimum, builds: {<platform>: {url, sha256}}}"
 #define AGAIN_FIX "run install again; if it repeats, report the pinned archive"
 #define CACHE_FIX "check that SPISOR_CACHE names a writable folder, then run install again"
 #define STALE_STAGING_MILLISECONDS (24.0 * 3600000.0)
@@ -72,8 +71,8 @@ typedef struct runtime_build {
 } runtime_build;
 
 /**
- * The Node the installed javascript-host pins: its host.json, which every member points into, the pinned version, the
- * minimum a PATH node must be, and the builds by platform.
+ * The Node the installed items started on JavaScript pin: the host.json of one, which every member points into, the
+ * pinned version, the minimum a PATH node must be, and the builds by platform.
  */
 typedef struct node_pin {
     cJSON *manifest;
@@ -533,8 +532,8 @@ static cJSON *answer_of(const char *version, const char *executable, int fetched
 
 /** The fix for a platform the pin has no build for: another platform, or a PATH node of its minimum; NULL when out of memory. */
 static char *unpinned_fix(const node_pin *pin) {
-    const char *parts[3] = {"install on a platform javascript-host pins a Node build for, or put Node ", pin->minimum,
-                            " or newer on the PATH"};
+    const char *parts[3] = {"install on a platform the installed hosts pin a Node build for, or put Node ",
+                            pin->minimum, " or newer on the PATH"};
     return runtime_cache_text(parts, 3);
 }
 
@@ -660,34 +659,122 @@ static int record_runtime(const char *cache, const cJSON *answer, int *out_of_me
     return recorded == SPISOR_OK;
 }
 
-/** The host.json of the javascript-host version cache hints, NULL with *refusal set, or with it NULL out of memory. */
-static cJSON *javascript_host_manifest(const char *cache, cJSON **refusal) {
-    int out_of_memory = 0;
-    cJSON *hint = runtime_read_boot_hint(cache, RUNTIME_JAVASCRIPT_HOST_ID, &out_of_memory);
+/**
+ * The host.json of host_id's hinted version, NULL when none is hinted or it cannot be read; NULL with *refusal set when
+ * the hinted version names no bundle folder inside the cache, or with *out_of_memory set.
+ */
+static cJSON *hinted_manifest(const char *cache, const char *host_id, int *out_of_memory, cJSON **refusal) {
+    cJSON *hint = runtime_read_boot_hint(cache, host_id, out_of_memory);
     const char *version = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(hint, "host"));
-    char *directory = version == NULL ? NULL
-                                      : runtime_bundle_version_directory(cache, RUNTIME_JAVASCRIPT_HOST_ID, version,
-                                                                         refusal);
+    char *directory = version == NULL ? NULL : runtime_bundle_version_directory(cache, host_id, version, refusal);
     const char *segments[2] = {directory, "host.json"};
     char *path = directory == NULL ? NULL : joined(segments, 2);
-    cJSON *manifest = path == NULL ? NULL : runtime_read_node_json(path, &out_of_memory);
-    if (!out_of_memory && version == NULL) {
-        *refusal = runtime_refusal("no javascript-host version is installed, and its host.json carries the Node pin",
-                                   PIN_FIX);
-    } else if (!out_of_memory && path != NULL && manifest == NULL) {
-        *refusal = refused("the javascript-host host.json that carries the Node pin cannot be read: ", path, PIN_FIX);
-    }
+    cJSON *manifest = path == NULL ? NULL : runtime_read_node_json(path, out_of_memory);
+    *out_of_memory = *out_of_memory || (version != NULL && directory == NULL && *refusal == NULL) ||
+                     (directory != NULL && path == NULL);
     spisor_memory_release(path);
     spisor_memory_release(directory);
     cJSON_Delete(hint);
     return manifest;
 }
 
+/** Whether manifest, a host.json, is one of an item started on JavaScript that carries a Node pin. */
+static int pins_node(const cJSON *manifest) {
+    const char *runtime = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(manifest, "runtime"));
+    return runtime != NULL && strcmp(runtime, "javascript") == 0 &&
+           cJSON_GetObjectItemCaseSensitive(manifest, "node") != NULL;
+}
+
+static const char *pinned_of(const cJSON *manifest) {
+    return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(manifest, "node"),
+                                                                 "pinned"));
+}
+
+/** A refusal of two items pinning different Nodes, naming both and their pins; NULL when memory runs out. */
+static cJSON *disagreeing_refusal(const char *first, const cJSON *first_manifest, const char *second,
+                                  const cJSON *second_manifest) {
+    const char *first_pin = pinned_of(first_manifest);
+    const char *second_pin = pinned_of(second_manifest);
+    const char *parts[8] = {first, " pins Node ", first_pin == NULL ? "(none)" : first_pin, " and ", second,
+                            " pins Node ", second_pin == NULL ? "(none)" : second_pin,
+                            ", and every host started on JavaScript runs on one Node"};
+    const char *fix_parts[5] = {"install versions of ", first, " and ", second, " that pin the same Node"};
+    char *fix = runtime_cache_text(fix_parts, 5);
+    cJSON *refusal = fix == NULL ? NULL : runtime_cache_refusal(parts, 8, fix);
+    spisor_memory_release(fix);
+    return refusal;
+}
+
+/** Whether two pins name the same Node: the same pinned version, minimum and builds. */
+static int same_pin(const cJSON *first, const cJSON *second) {
+    return cJSON_Compare(cJSON_GetObjectItemCaseSensitive(first, "node"),
+                         cJSON_GetObjectItemCaseSensitive(second, "node"), 1);
+}
+
+/** The id a hint file of the hosts folder is named for, NULL for an entry that is no hint file; freed. */
+static char *hinted_id(const runtime_directory_entry *entry, int *out_of_memory) {
+    size_t length = strlen(entry->name);
+    size_t suffix = strlen(".json");
+    if (!entry->is_file || length <= suffix || strcmp(entry->name + length - suffix, ".json") != 0) {
+        return NULL;
+    }
+    char *id = runtime_catalog_copy_bytes(entry->name, length - suffix);
+    *out_of_memory = id == NULL;
+    return id;
+}
+
+/**
+ * The host.json carrying the Node pin, that of every hinted item started on JavaScript that carries one, and in *id
+ * that item's id; NULL with *refusal set when none does, two pin different Nodes or the hosts folder cannot be read,
+ * or with it NULL when memory runs out.
+ */
+static cJSON *pinning_manifest(const char *cache, char **id, cJSON **refusal) {
+    const char *segments[2] = {cache, "hosts"};
+    char *folder = joined(segments, 2);
+    runtime_directory_listing listing = {NULL, 0};
+    spisor_status listed = folder == NULL ? SPISOR_OUT_OF_MEMORY : runtime_list_directory(folder, &listing);
+    int out_of_memory = listed == SPISOR_OUT_OF_MEMORY;
+    cJSON *chosen = NULL;
+    *id = NULL;
+    if (listed == SPISOR_REFUSED) {
+        *refusal = refused("the hosts folder that names every installed item cannot be read: ", folder, PIN_FIX);
+    }
+    for (size_t index = 0; listed == SPISOR_OK && !out_of_memory && *refusal == NULL && index < listing.count; index++) {
+        char *each = hinted_id(&listing.entries[index], &out_of_memory);
+        cJSON *manifest = each == NULL ? NULL : hinted_manifest(cache, each, &out_of_memory, refusal);
+        if (pins_node(manifest) && chosen != NULL && !same_pin(chosen, manifest)) {
+            *refusal = disagreeing_refusal(*id, chosen, each, manifest);
+            out_of_memory = *refusal == NULL;
+        } else if (pins_node(manifest) && chosen == NULL) {
+            chosen = manifest;
+            *id = each;
+            manifest = NULL;
+            each = NULL;
+        }
+        cJSON_Delete(manifest);
+        spisor_memory_release(each);
+    }
+    if (listed == SPISOR_OK && !out_of_memory && *refusal == NULL && chosen == NULL) {
+        *refusal = runtime_refusal("no installed item started on JavaScript carries a Node pin in its host.json",
+                                   PIN_FIX);
+    }
+    if (out_of_memory || *refusal != NULL) {
+        cJSON_Delete(chosen);
+        chosen = NULL;
+        spisor_memory_release(*id);
+        *id = NULL;
+    }
+    runtime_free_directory_listing(&listing);
+    spisor_memory_release(folder);
+    return chosen;
+}
+
 /** Reads the Node pin into *pin: NULL, else the refusal, or NULL with *out_of_memory set when memory ran out. */
 static cJSON *read_pin(const char *cache, node_pin *pin, int *out_of_memory) {
     cJSON *refusal = NULL;
+    char *id = NULL;
     memset(pin, 0, sizeof *pin);
-    pin->manifest = javascript_host_manifest(cache, &refusal);
+    pin->manifest = pinning_manifest(cache, &id, &refusal);
     const cJSON *node = cJSON_GetObjectItemCaseSensitive(pin->manifest, "node");
     pin->pinned = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(node, "pinned"));
     pin->minimum = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(node, "minimum"));
@@ -696,10 +783,11 @@ static cJSON *read_pin(const char *cache, node_pin *pin, int *out_of_memory) {
     if (pin->manifest != NULL &&
         (!runtime_catalog_is_plain_version(pin->pinned) || !runtime_catalog_is_plain_version(pin->minimum) ||
          !cJSON_IsObject(pin->builds))) {
-        refusal = runtime_refusal("the installed javascript-host pins no Node as {pinned, minimum, builds}, "
-                                  "pinned and minimum each a version such as 22.18.0", PIN_FIX);
+        refusal = refused("the Node pin is not {pinned, minimum, builds}, pinned and minimum each a version such as "
+                          "22.18.0, in the host.json of ", id, PIN_FIX);
         *out_of_memory = refusal == NULL;
     }
+    spisor_memory_release(id);
     return refusal;
 }
 

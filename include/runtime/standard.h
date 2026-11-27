@@ -45,14 +45,15 @@ RUNTIME_DEFINITION_API const void *runtime_standard_scope_definition_of(void);
  * The static weivel_standard_host (`weivel/host.h`), living until the library is unloaded, which runs a loader's
  * plugins: a process makes one run at a time, from a `start` answering OK until its `stop`.
  *
- * `start` reads its arguments, after the layer's runtime, `javascript` or `native`, as `<loader id>` for a SERVE run,
+ * `start` reads its arguments, after the layer's language, as a catalog names a plugin's, as `<loader id>` for a
+ * SERVE run,
  * `<loader id> in-process` for a SERVE run that serves the process it runs in alone, or `<loader id> action <plugin>
  * <action> <input> [<result>]` for an ACTION run, the input a JSON object and the result, when given, the absolute
  * path of a file directly inside the state place's `results` folder, no segment of it `.` or `..`, and reads this
  * process's environment. An in-process run, as a host started inside another application's
  * process makes, never reads or writes the loader's holders and ready records, so any number of them serve at once,
  * each in its own process: its `started` publishes nothing, its `tick` stamps its run record and runs no prune, and
- * only a stop request ends it. The layer is the javascript-host at
+ * only a stop request ends it. The layer is the language-host item `<language>-host` at
  * the version its boot hint names, beside every library that hint names, and hosts' start plans the run, a SERVE
  * run as the loader's session start; an in-process one reuses the run a live run record names, as a start that is
  * not the session start does, so it never switches to a scheduled version under a running host. The plan loads every

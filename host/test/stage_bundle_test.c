@@ -113,8 +113,8 @@ static cJSON *good_builds(void) {
     return builds_of(runtime_platform_key(), "https://nodejs.org/dist/v26.0.1/node.zip", SHA256);
 }
 
-/** Runs stage-bundle javascript-host into <base>/bundle at 9.8.7 over checkout, with the pin builds and two libraries. */
-static int stage_javascript_host_with(const char *checkout, cJSON *builds, program *run) {
+/** Runs stage-bundle typescript-host into <base>/bundle at 9.8.7 over checkout, with the pin builds and two libraries. */
+static int stage_typescript_host_with(const char *checkout, cJSON *builds, program *run) {
     char *directory = in_base("bundle");
     char *pin = in_base("node.json");
     char *core = in_base("built/core.bin");
@@ -124,7 +124,7 @@ static int stage_javascript_host_with(const char *checkout, cJSON *builds, progr
     spisor_memory_release(text);
     write_file(core, "the core");
     write_file(standard, "the standard");
-    const char *arguments[] = {"javascript-host", directory, "9.8.7", checkout, pin, core, standard, NULL};
+    const char *arguments[] = {"typescript-host", directory, "9.8.7", checkout, pin, core, standard, NULL};
     int code = stage(arguments, run);
     spisor_memory_release(standard);
     spisor_memory_release(core);
@@ -133,8 +133,8 @@ static int stage_javascript_host_with(const char *checkout, cJSON *builds, progr
     return code;
 }
 
-static int stage_javascript_host(const char *checkout, program *run) {
-    return stage_javascript_host_with(checkout, good_builds(), run);
+static int stage_typescript_host(const char *checkout, program *run) {
+    return stage_typescript_host_with(checkout, good_builds(), run);
 }
 
 static void expect_file(const char *directory, const char *rest, const char *content) {
@@ -166,7 +166,8 @@ static void expect_bundle_files(const char *directory) {
 
 static void expect_host_manifest(const char *directory) {
     cJSON *manifest = json_in(directory, "host.json");
-    cJSON *expected = parsed("{\"id\": \"javascript-host\", \"version\": \"9.8.7\", \"runtime\": \"javascript\", "
+    cJSON *expected = parsed("{\"kind\": \"language-host\", \"id\": \"typescript-host\", \"version\": \"9.8.7\", "
+                             "\"language\": \"typescript\", \"runtime\": \"javascript\", "
                              "\"entry\": \"weivel-host.mjs\", \"inProcessEntry\": \"weivel-host-in-process.mjs\", "
                              "\"node\": {\"pinned\": \"26.0.1\", \"minimum\": \"22.18.0\"}}");
     cJSON_AddItemToObject(cJSON_GetObjectItemCaseSensitive(expected, "node"), "builds", good_builds());
@@ -201,12 +202,13 @@ static cJSON *built_catalog(const char *directory) {
     return catalog;
 }
 
-static void expect_catalog_of_one_javascript_host(const char *directory) {
+static void expect_catalog_of_one_typescript_host(const char *directory) {
     cJSON *catalog = built_catalog(directory);
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(catalog, "items");
-    const cJSON *host = cJSON_GetObjectItemCaseSensitive(items, "javascript-host");
+    const cJSON *host = cJSON_GetObjectItemCaseSensitive(items, "typescript-host");
     CHECK(cJSON_GetArraySize(items) == 1 && cJSON_GetObjectItemCaseSensitive(items, "koffi") == NULL);
-    check_text(text_at(host, "kind"), "host", "kind");
+    check_text(text_at(host, "kind"), "language-host", "kind");
+    check_text(text_at(host, "language"), "typescript", "language");
     check_text(text_at(host, "runtime"), "javascript", "runtime");
     char triplet[64];
     char rest[512];
@@ -223,12 +225,12 @@ static void stages_the_program_bundle_beside_its_libraries_koffi_and_the_node_pi
     start_case("staged");
     char *checkout = fake_checkout(">=22.18.0");
     program run;
-    CHECK(stage_javascript_host(checkout, &run) == 0);
+    CHECK(stage_typescript_host(checkout, &run) == 0);
     check_text(run.err, "", "nothing refused");
     char *directory = in_base("bundle");
     expect_bundle_files(directory);
     expect_host_manifest(directory);
-    expect_catalog_of_one_javascript_host(directory);
+    expect_catalog_of_one_typescript_host(directory);
     spisor_memory_release(directory);
     program_free(&run);
     spisor_memory_release(checkout);
@@ -239,7 +241,7 @@ static void refuses_a_pinned_node_older_than_the_one_the_program_needs(void) {
     start_case("too-old");
     char *checkout = fake_checkout(">=26.1.0");
     program run;
-    CHECK(stage_javascript_host(checkout, &run) == 1);
+    CHECK(stage_typescript_host(checkout, &run) == 1);
     expect_contains(run.err, "26.0.1", "names the pin");
     expect_contains(run.err, "26.1.0", "names the minimum");
     program_free(&run);
@@ -251,7 +253,7 @@ static void refuses_an_engine_that_names_no_lower_bound(void) {
     start_case("engine");
     char *checkout = fake_checkout("^22.18.0");
     program run;
-    CHECK(stage_javascript_host(checkout, &run) == 1);
+    CHECK(stage_typescript_host(checkout, &run) == 1);
     expect_contains(run.err, "^22.18.0", "names the engine");
     program_free(&run);
     spisor_memory_release(checkout);
@@ -263,7 +265,7 @@ static void expect_builds_refused(const char *label, cJSON *builds, const char *
     start_case(label);
     char *checkout = fake_checkout(">=22.18.0");
     program run;
-    CHECK(stage_javascript_host_with(checkout, builds, &run) == 1);
+    CHECK(stage_typescript_host_with(checkout, builds, &run) == 1);
     expect_contains(run.err, part, label);
     CHECK(!exists_in(base_folder, "bundle"));
     program_free(&run);
@@ -292,12 +294,12 @@ static void refuses_a_pin_with_no_build_for_this_platform(void) {
                           runtime_platform_key());
 }
 
-static void answers_2_for_a_javascript_host_word_missing_an_argument(void) {
+static void answers_2_for_a_typescript_host_word_missing_an_argument(void) {
     start_case("usage");
-    const char *arguments[] = {"javascript-host", "bundle", "1.0.0", NULL};
+    const char *arguments[] = {"typescript-host", "bundle", "1.0.0", NULL};
     program run;
     CHECK(stage(arguments, &run) == 2);
-    expect_contains(run.err, "stage-bundle javascript-host", "the usage");
+    expect_contains(run.err, "stage-bundle typescript-host", "the usage");
     program_free(&run);
     finish_case();
 }
@@ -312,7 +314,7 @@ static int node_is_on_the_path(void) {
 }
 
 int main(void) {
-    answers_2_for_a_javascript_host_word_missing_an_argument();
+    answers_2_for_a_typescript_host_word_missing_an_argument();
     refuses_a_pinned_node_older_than_the_one_the_program_needs();
     refuses_an_engine_that_names_no_lower_bound();
     refuses_a_build_that_is_not_an_https_archive_with_a_sha256();

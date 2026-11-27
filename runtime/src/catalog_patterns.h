@@ -17,4 +17,7 @@ int runtime_catalog_is_name(const char *text);
 
 int runtime_catalog_is_candidate(const char *text);
 
+/** Whether text names a language as a plugin or a language-host item may: NULL names none. */
+int runtime_catalog_is_language(const char *text);
+
 #endif

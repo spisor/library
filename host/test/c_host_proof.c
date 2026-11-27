@@ -130,7 +130,7 @@ static void expect_installed_without_javascript(const host_world *world, const c
         fprintf(stderr, "%s did not put the requested command in place\n", name);
         check_failures++;
     }
-    if (exists_in(world->base.cache, "runtimes") || exists_in(world->base.cache, "bundles/javascript-host")) {
+    if (exists_in(world->base.cache, "runtimes") || exists_in(world->base.cache, "bundles/typescript-host")) {
         fprintf(stderr, "%s installed a JavaScript runtime or host\n", name);
         check_failures++;
     }
