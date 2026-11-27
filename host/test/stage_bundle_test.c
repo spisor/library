@@ -650,12 +650,12 @@ static void a_refused_language_host_leaves_the_bundle_staged_before_untouched(vo
     program run;
     CHECK(stage_native_host("fixture-one", "native", &run) == 0);
     program_free(&run);
-    language_host_call climbing = {NULL, NULL, NULL, NULL, "../x"};
+    language_host_call climbing = {NULL, NULL, NULL, NULL, "../x", NULL, NULL};
     expect_call_refused_keeping(&climbing, "../x", "a file climbing out");
     char *missing_core = in_base("built/no-core.bin");
-    language_host_call no_library = {NULL, NULL, NULL, missing_core, NULL};
+    language_host_call no_library = {NULL, NULL, NULL, missing_core, NULL, NULL, NULL};
     expect_call_refused_keeping(&no_library, "no-core.bin", "a missing library");
-    language_host_call missing_entry = {NULL, "absent-host", NULL, NULL, NULL};
+    language_host_call missing_entry = {NULL, "absent-host", NULL, NULL, NULL, NULL, NULL};
     expect_call_refused_keeping(&missing_entry, "absent-host", "a missing entry");
     spisor_memory_release(missing_core);
     finish_case();
@@ -699,9 +699,9 @@ static void refuses_an_entry_or_file_that_is_no_relative_path_inside_the_working
     char *absolute = in_base("inputs/weivel-host");
     const char *paths[7] = {"../x", absolute, "C:x", "a/.", "sub./a", "//server/share/x", "\\\\server\\share\\x"};
     for (size_t index = 0; index < 7; index++) {
-        language_host_call as_entry = {NULL, paths[index], NULL, NULL, NULL};
+        language_host_call as_entry = {NULL, paths[index], NULL, NULL, NULL, NULL, NULL};
         expect_call_refused_writing_nothing(&as_entry, "is not a relative path", paths[index]);
-        language_host_call as_file = {NULL, NULL, NULL, NULL, paths[index]};
+        language_host_call as_file = {NULL, NULL, NULL, NULL, paths[index], NULL, NULL};
         expect_call_refused_writing_nothing(&as_file, "is not a relative path", paths[index]);
     }
     spisor_memory_release(absolute);
@@ -719,11 +719,11 @@ static void refuses_a_link_at_the_top_or_inside_a_directory_writing_nothing(void
     char *inner_link = in_base("inputs/data/linked");
     if (create_link_or_skip(file_link, outside_file) && create_folder_link_or_skip(folder_link, outside_folder) &&
         create_folder_link_or_skip(inner_link, outside_folder)) {
-        language_host_call linked_entry = {NULL, "linked-host", NULL, NULL, NULL};
+        language_host_call linked_entry = {NULL, "linked-host", NULL, NULL, NULL, NULL, NULL};
         expect_call_refused_writing_nothing(&linked_entry, "is a link, which a bundle cannot carry", "a linked entry");
-        language_host_call linked_file = {NULL, NULL, NULL, NULL, "linked-data"};
+        language_host_call linked_file = {NULL, NULL, NULL, NULL, "linked-data", NULL, NULL};
         expect_call_refused_writing_nothing(&linked_file, "is a link, which a bundle cannot carry", "a linked folder");
-        language_host_call inner = {NULL, NULL, NULL, NULL, NULL};
+        language_host_call inner = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
         expect_call_refused_writing_nothing(&inner, "is a link, which a bundle cannot carry", "a link inside data");
     }
     spisor_memory_release(inner_link);
@@ -760,7 +760,7 @@ static void replaces_a_staging_folder_left_by_a_failed_run_and_refuses_a_linked_
 static void refuses_a_version_no_catalog_can_list_in_either_mode(void) {
     start_case("version");
     write_native_inputs("{}");
-    language_host_call call = {"three", NULL, NULL, NULL, NULL};
+    language_host_call call = {"three", NULL, NULL, NULL, NULL, NULL, NULL};
     expect_call_refused_writing_nothing(&call, "three is no version", "a language host's version");
     write_in(base_folder, "built/drawer.exe", "the interface program");
     char *directory = in_base("interface");
@@ -824,7 +824,7 @@ static void says_a_missing_host_data_file_could_not_be_read(void) {
     start_case("no-data");
     write_native_inputs("{}");
     char *missing = in_base("absent-data.json");
-    language_host_call call = {NULL, NULL, missing, NULL, NULL};
+    language_host_call call = {NULL, NULL, missing, NULL, NULL, NULL, NULL};
     expect_call_refused_writing_nothing(&call, "could not be read", "a missing host-data file");
     spisor_memory_release(missing);
     finish_case();
