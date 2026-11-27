@@ -326,7 +326,6 @@ static int is_named_for_language(const char *id, const char *language, int *out_
     return named;
 }
 
-/** Whether the item's members fit its kind, its id and language not taken by the home's earlier layers and items. */
 /** Whether id is the `<language>-host` of one of the home's layers; *out_of_memory set when memory runs out asking. */
 static int is_layer_host_id(const runtime_testing_prepared_home *home, const char *id, int *out_of_memory) {
     int taken = 0;
@@ -346,6 +345,7 @@ static int is_interface_shaped(const runtime_testing_prepared_home *home, const 
            !is_layer_host_id(home, item->id, out_of_memory);
 }
 
+/** Whether the item's members fit its kind, its id and language not taken by the home's earlier layers and items. */
 static int is_item_shaped(const runtime_testing_prepared_home *home, size_t index, int *out_of_memory) {
     const runtime_testing_prepared_item *item = &home->items[index];
     int language_host = item->kind != NULL && strcmp(item->kind, "language-host") == 0;
