@@ -1,6 +1,7 @@
 #include "processes_child_start.h"
 #include "allocation.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,6 +17,7 @@
 #define PLACES_MESSAGE "the cache and state the call names are not the places its environment resolves to"
 #define PLACES_FIX "pass the cache and state that places' resolve answers for the same environment"
 #define UNREADABLE_RESULT_MESSAGE "the result the action's run wrote could not be read as JSON"
+#define EXIT_SENTENCE_SIZE 96
 
 static const char *text_of(const cJSON *object, const char *member) {
     return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(object, member));
@@ -52,8 +54,23 @@ static int is_blank(char character) {
     return character == ' ' || character == '\t' || character == '\r' || character == '\n';
 }
 
+/**
+ * "the action's run exited with code <exit_code>", the code unsigned, and on Windows beside it in hex when it is an
+ * NTSTATUS, at or above 0x80000000, as a crash's is.
+ */
+static void name_exit_code(char *sentence, size_t size, int64_t exit_code) {
+    int written = snprintf(sentence, size, "the action's run exited with code %" PRIu64, (uint64_t)exit_code);
+#if defined(_WIN32)
+    if (written > 0 && (size_t)written < size && exit_code >= 0x80000000LL) {
+        snprintf(sentence + written, size - (size_t)written, " (0x%08" PRIX64 ")", (uint64_t)exit_code);
+    }
+#else
+    (void)written;
+#endif
+}
+
 /** errors without the blanks around it, else a sentence naming exit_code when nothing is left, freed; NULL out of memory. */
-static char *failure_of(const char *errors, int exit_code) {
+static char *failure_of(const char *errors, int64_t exit_code) {
     const char *start = errors == NULL ? "" : errors;
     size_t length;
     while (is_blank(*start)) {
@@ -63,12 +80,12 @@ static char *failure_of(const char *errors, int exit_code) {
     while (length > 0 && is_blank(start[length - 1])) {
         length--;
     }
-    char *failure = spisor_memory_allocate(length > 0 ? length + 1 : 64);
+    char *failure = spisor_memory_allocate(length > 0 ? length + 1 : EXIT_SENTENCE_SIZE);
     if (failure != NULL && length > 0) {
         memcpy(failure, start, length);
         failure[length] = '\0';
     } else if (failure != NULL) {
-        snprintf(failure, 64, "the action's run exited with code %d", exit_code);
+        name_exit_code(failure, EXIT_SENTENCE_SIZE, exit_code);
     }
     return failure;
 }
@@ -84,11 +101,11 @@ static cJSON *result_value(const char *text, cJSON **refusal) {
 }
 
 /** {exitCode, result?, failure?}; NULL with *refusal set as result_value sets it, or with it NULL out of memory. */
-static cJSON *answer_of(int exit_code, const char *text, const char *errors, cJSON **refusal) {
+static cJSON *answer_of(int64_t exit_code, const char *text, const char *errors, cJSON **refusal) {
     cJSON *value = text == NULL ? NULL : result_value(text, refusal);
     char *failure = exit_code == 0 ? NULL : failure_of(errors, exit_code);
     cJSON *answer = text != NULL && value == NULL ? NULL : cJSON_CreateObject();
-    int built = answer != NULL && cJSON_AddNumberToObject(answer, "exitCode", exit_code) != NULL &&
+    int built = answer != NULL && cJSON_AddNumberToObject(answer, "exitCode", (double)exit_code) != NULL &&
                 (exit_code == 0 || (failure != NULL && cJSON_AddStringToObject(answer, "failure", failure) != NULL));
     if (built && value != NULL) {
         built = cJSON_AddItemToObject(answer, "result", value);
@@ -108,7 +125,7 @@ static cJSON *answer_of(int exit_code, const char *text, const char *errors, cJS
  * attempted, since a child that ran may have written it before memory ran out.
  */
 static cJSON *run_layer(const cJSON *layer, const char *result, cJSON **refusal) {
-    int exit_code = 1;
+    int64_t exit_code = 1;
     int out_of_memory = 0;
     char *errors = NULL;
     char *problem = NULL;
@@ -116,7 +133,7 @@ static cJSON *run_layer(const cJSON *layer, const char *result, cJSON **refusal)
                                            cJSON_GetObjectItemCaseSensitive(layer, "arguments"),
                                            cJSON_GetObjectItemCaseSensitive(layer, "environment"), &exit_code,
                                            &errors, &problem);
-    char *text = runtime_take_result(result, ran ? exit_code : 1, &out_of_memory);
+    char *text = runtime_take_result(result, ran && exit_code == 0 ? 0 : 1, &out_of_memory);
     cJSON *answer = NULL;
     if (!ran && problem != NULL) {
         *refusal = runtime_refusal(problem, RUNTIME_REINSTALL_FIX);

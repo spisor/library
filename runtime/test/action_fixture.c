@@ -21,11 +21,28 @@
  * <plugin> <action> <input> <result>`, making the result's folder as runtime's run does. It writes {consoleWindow,
  * mark, arguments} to the file SPISOR_FIXTURE_REPORT names, `mark` the value of SPISOR_FIXTURE_MARK, then runs the
  * action: `greet` writes "hello" to the result path and exits 0, as plugin-stub's greet answers; `fail` writes a line
- * to standard error and exits 3; `fail-silently` exits 4; `garbage` writes a result that is no JSON; any other writes
- * nothing and exits 0.
+ * to standard error and exits 3; `fail-silently` exits 4; `garbage` writes a result that is no JSON; `noisy` writes
+ * NOISY_LENGTH bytes of standard error, a warning first, then a euro sign whose last two bytes start the final
+ * RUNTIME_RUN_OUTPUT_LIMIT, then filler, an invalid byte, a NUL and its error last, and exits 5; `crash` exits as an
+ * access violation does on Windows, 0xC0000005; any other writes nothing and exits 0.
  */
 
 #define ACTION_ARGUMENTS 9
+#define OUTPUT_LIMIT 4096
+#define WARNING_LENGTH 1000
+#define NOISY_ERROR "invalid \xFF here, nul \0 here, the action's own error"
+
+/** The standard error `noisy` writes, through one fwrite so a NUL in it reaches the pipe. */
+static void write_noise(void) {
+    static char noise[WARNING_LENGTH + 1 + OUTPUT_LIMIT];
+    size_t error_length = sizeof NOISY_ERROR - 1;
+    memset(noise, 'w', WARNING_LENGTH);
+    memcpy(noise + WARNING_LENGTH, "\xE2\x82\xAC", 3);
+    memset(noise + WARNING_LENGTH + 3, 'y', OUTPUT_LIMIT - 2 - error_length);
+    memcpy(noise + sizeof noise - error_length, NOISY_ERROR, error_length);
+    fwrite(noise, 1, sizeof noise, stderr);
+    fflush(stderr);
+}
 
 static int has_console_window(void) {
 #if defined(_WIN32)
@@ -106,5 +123,14 @@ int main(int count, char **arguments) {
         fputs("  the fixture's action failed\n", stderr);
         return 3;
     }
+    if (strcmp(action, "noisy") == 0) {
+        write_noise();
+        return 5;
+    }
+#if defined(_WIN32)
+    if (strcmp(action, "crash") == 0) {
+        ExitProcess(0xC0000005u);
+    }
+#endif
     return strcmp(action, "fail-silently") == 0 ? 4 : 0;
 }

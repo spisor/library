@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "cache_refusal.h"
+#include "utf8_text.h"
 
 #define POLL_MILLISECONDS 10
 #define RUN_OUTPUT_GRACE_MILLISECONDS 250
@@ -39,18 +40,47 @@
 extern char **environ;
 #endif
 
-/** What a run collected of its standard output. */
+/**
+ * What a run collected of the stream it takes: its first bytes, or with `keep_last` its last, `cut` once bytes before
+ * them were dropped.
+ */
 typedef struct run_output {
     char bytes[RUNTIME_RUN_OUTPUT_LIMIT + 1];
     size_t length;
+    int keep_last;
+    int cut;
 } run_output;
+
+#define NOT_TEXT_ENVIRONMENT "its environment holds a variable whose value is no text"
 
 static char *problem_of(const char *executable, const char *reason) {
     const char *parts[4] = {"could not run ", executable, ": ", reason};
     return runtime_cache_text(parts, 4);
 }
 
+static void keep_last(run_output *collected, const char *bytes, size_t length) {
+    if (length > RUNTIME_RUN_OUTPUT_LIMIT) {
+        bytes += length - RUNTIME_RUN_OUTPUT_LIMIT;
+        length = RUNTIME_RUN_OUTPUT_LIMIT;
+        collected->cut = 1;
+    }
+    size_t overflow = collected->length + length > RUNTIME_RUN_OUTPUT_LIMIT
+                          ? collected->length + length - RUNTIME_RUN_OUTPUT_LIMIT
+                          : 0;
+    if (overflow > 0) {
+        memmove(collected->bytes, collected->bytes + overflow, collected->length - overflow);
+        collected->length -= overflow;
+        collected->cut = 1;
+    }
+    memcpy(collected->bytes + collected->length, bytes, length);
+    collected->length += length;
+}
+
 static void keep(run_output *collected, const char *bytes, size_t length) {
+    if (collected->keep_last) {
+        keep_last(collected, bytes, length);
+        return;
+    }
     size_t room = RUNTIME_RUN_OUTPUT_LIMIT - collected->length;
     size_t kept = length < room ? length : room;
     memcpy(collected->bytes + collected->length, bytes, kept);
@@ -61,12 +91,26 @@ static int answer_output(const run_output *collected, char **output) {
     if (output == NULL) {
         return 1;
     }
+    if (collected->keep_last) {
+        *output = runtime_utf8_text(collected->bytes, collected->length, collected->cut);
+        return *output != NULL;
+    }
     *output = spisor_memory_allocate(collected->length + 1);
     if (*output == NULL) {
         return 0;
     }
     memcpy(*output, collected->bytes, collected->length);
     (*output)[collected->length] = 0;
+    return 1;
+}
+
+static int is_text_environment(const cJSON *environment) {
+    const cJSON *variable;
+    cJSON_ArrayForEach(variable, environment) {
+        if (!cJSON_IsString(variable)) {
+            return 0;
+        }
+    }
     return 1;
 }
 
@@ -208,7 +252,7 @@ static int drain(HANDLE pipe, run_output *collected) {
  * blocks, and for at most RUN_OUTPUT_GRACE_MILLISECONDS after it exits, so a grandchild that inherited
  * the write end, as a node shim's node does, never holds the run open.
  */
-static int await_exit(windows_run *run, HANDLE process, unsigned timeout_milliseconds, int *exit_code,
+static int await_exit(windows_run *run, HANDLE process, unsigned timeout_milliseconds, int64_t *exit_code,
                       run_output *collected) {
     ULONGLONG deadline = timeout_milliseconds == UNBOUNDED_MILLISECONDS ? ULLONG_MAX
                                                                         : GetTickCount64() + timeout_milliseconds;
@@ -230,18 +274,18 @@ static int await_exit(windows_run *run, HANDLE process, unsigned timeout_millise
     }
     DWORD code = 0;
     int read = GetExitCodeProcess(process, &code) != 0;
-    *exit_code = (int)code;
+    *exit_code = (int64_t)code;
     return read;
 }
 
 /** Runs executable with the handles of run, which prepared says were made, answering as runtime_run_to_exit does. */
-static int run_prepared(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
-                        char **output, char **problem, windows_run *run, int prepared) {
+static int run_prepared(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
+                        int64_t *exit_code, char **output, char **problem, windows_run *run, int prepared) {
     *problem = NULL;
     wchar_t *application = spisor_wide_path(executable);
     wchar_t *line = runtime_windows_command_line(executable, arguments);
     PROCESS_INFORMATION information = {NULL, NULL, 0, 0};
-    run_output collected = {{0}, 0};
+    run_output collected = {{0}, 0, run->errors_captured, 0};
     int started = application != NULL && line != NULL && prepared && create(application, line, run, &information);
     DWORD error = started ? ERROR_SUCCESS : GetLastError();
     int out_of_memory = application == NULL || line == NULL || run->out_of_memory;
@@ -268,20 +312,31 @@ static int run_prepared(const char *executable, const cJSON *arguments, unsigned
 int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
                         char **output, char **problem) {
     windows_run run;
+    int64_t code = *exit_code;
     int prepared = prepare(&run, output != NULL);
-    return run_prepared(executable, arguments, timeout_milliseconds, exit_code, output, problem, &run, prepared);
+    int ran = run_prepared(executable, arguments, timeout_milliseconds, &code, output, problem, &run, prepared);
+    *exit_code = (int)code;
+    return ran;
 }
 
 int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
                               const char *input, const char *output, int *exit_code, char **problem) {
     windows_run run;
+    int64_t code = *exit_code;
     int prepared = prepare_between_files(&run, input, output);
-    return run_prepared(executable, arguments, timeout_milliseconds, exit_code, NULL, problem, &run, prepared);
+    int ran = run_prepared(executable, arguments, timeout_milliseconds, &code, NULL, problem, &run, prepared);
+    *exit_code = (int)code;
+    return ran;
 }
 
 int runtime_run_reporting_errors(const char *executable, const cJSON *arguments, const cJSON *environment,
-                                 int *exit_code, char **errors, char **problem) {
+                                 int64_t *exit_code, char **errors, char **problem) {
     windows_run run;
+    *problem = NULL;
+    if (!is_text_environment(environment)) {
+        *problem = problem_of(executable, NOT_TEXT_ENVIRONMENT);
+        return 0;
+    }
     int prepared = prepare_reporting_errors(&run, environment);
     return run_prepared(executable, arguments, UNBOUNDED_MILLISECONDS, exit_code, errors, problem, &run, prepared);
 }
@@ -384,7 +439,7 @@ static int exit_code_of(int status) {
  * @implNote The output is drained for at most RUN_OUTPUT_GRACE_MILLISECONDS after the child exits, so a
  * grandchild that inherited the write end, as a node shim's node does, never holds the run open.
  */
-static int await_exit(pid_t child, int descriptor, double deadline, int *exit_code, run_output *collected) {
+static int await_exit(pid_t child, int descriptor, double deadline, int64_t *exit_code, run_output *collected) {
     int open = descriptor >= 0;
     double exited_at = 0;
     for (;;) {
@@ -443,7 +498,7 @@ static int open_output_pipe(int ends[2]) {
 #endif
 }
 
-static int run_with(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
+static int run_with(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int64_t *exit_code,
                     char **output, char **problem, const run_files *files) {
     *problem = NULL;
     double deadline = timeout_milliseconds == UNBOUNDED_MILLISECONDS ? HUGE_VAL
@@ -461,7 +516,7 @@ static int run_with(const char *executable, const cJSON *arguments, unsigned tim
     pid_t child = 0;
     int error = spawn_silenced(executable, list, output == NULL ? NULL : ends, files, &child);
     spisor_memory_release(list);
-    run_output collected = {{0}, 0};
+    run_output collected = {{0}, 0, files->taken_descriptor == 2, 0};
     if (ends[1] >= 0) {
         close(ends[1]);
     }
@@ -480,13 +535,19 @@ static int run_with(const char *executable, const cJSON *arguments, unsigned tim
 int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds, int *exit_code,
                         char **output, char **problem) {
     run_files silenced = {NULL, NULL, 1, NULL};
-    return run_with(executable, arguments, timeout_milliseconds, exit_code, output, problem, &silenced);
+    int64_t code = *exit_code;
+    int ran = run_with(executable, arguments, timeout_milliseconds, &code, output, problem, &silenced);
+    *exit_code = (int)code;
+    return ran;
 }
 
 int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
                               const char *input, const char *output, int *exit_code, char **problem) {
     run_files files = {input, output, 1, NULL};
-    return run_with(executable, arguments, timeout_milliseconds, exit_code, NULL, problem, &files);
+    int64_t code = *exit_code;
+    int ran = run_with(executable, arguments, timeout_milliseconds, &code, NULL, problem, &files);
+    *exit_code = (int)code;
+    return ran;
 }
 
 static void free_variables(char **variables) {
@@ -518,11 +579,15 @@ static char **variables_of(const cJSON *environment) {
 }
 
 int runtime_run_reporting_errors(const char *executable, const cJSON *arguments, const cJSON *environment,
-                                 int *exit_code, char **errors, char **problem) {
+                                 int64_t *exit_code, char **errors, char **problem) {
+    *problem = NULL;
+    if (!is_text_environment(environment)) {
+        *problem = problem_of(executable, NOT_TEXT_ENVIRONMENT);
+        return 0;
+    }
     char **variables = variables_of(environment);
     run_files files = {NULL, NULL, 2, variables};
     int ran = 0;
-    *problem = NULL;
     if (variables != NULL) {
         ran = run_with(executable, arguments, UNBOUNDED_MILLISECONDS, exit_code, errors, problem, &files);
     }

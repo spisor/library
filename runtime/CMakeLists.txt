@@ -266,7 +266,7 @@ set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_applica
     src/install_definition.c src/install_ecosystem.c src/install_entries.c src/interface_choice.c src/install_hosts.c src/install_loaders.c src/install_items.c src/install_methods.c src/install_plugins.c
     src/install_references.c
     src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
-    src/process_run.c src/boot_definition.c src/updates_definition.c src/updates_run.c)
+    src/process_run.c src/utf8_text.c src/boot_definition.c src/updates_definition.c src/updates_run.c)
 add_library(runtime_install OBJECT ${runtime_install_sources})
 target_link_libraries(runtime_install PUBLIC runtime_objects)
 target_include_directories(runtime_install PRIVATE ${PROJECT_SOURCE_DIR}/src)

@@ -1,9 +1,11 @@
 #ifndef RUNTIME_PROCESS_RUN_H
 #define RUNTIME_PROCESS_RUN_H
 
+#include <stdint.h>
+
 #include "cJSON.h"
 
-/** At most this much of a run's standard output is kept; the rest is read and dropped. */
+/** At most this much of a run's standard output or error is kept; the rest is read and dropped. */
 #define RUNTIME_RUN_OUTPUT_LIMIT 4096
 
 /**
@@ -35,13 +37,16 @@ int runtime_run_between_files(const char *executable, const cJSON *arguments, un
 /**
  * Runs the absolute executable with arguments, an array of strings, under environment, an object of strings that
  * replaces the caller's, its standard input and output on the null device, and waits for it to exit however long it
- * runs: 1 with *exit_code set and its standard error, up to RUNTIME_RUN_OUTPUT_LIMIT bytes, answered in *errors
- * (freed); 0 with *problem set (freed) when it could not be started, and with *problem NULL when memory ran out.
+ * runs: 1 with *exit_code set, never negative, a Windows code kept unsigned, and in *errors (freed) the last
+ * RUNTIME_RUN_OUTPUT_LIMIT bytes of its standard error as runtime_utf8_text makes them text; 0 with *problem set
+ * (freed) when environment holds a value that is no string, which starts nothing, or the run could not be started, and
+ * with *problem NULL when memory ran out.
  *
  * @implNote On Windows it starts with CREATE_NO_WINDOW, as every run here does, so a caller with no console, such as an
- * interface started as a window, opens no console window for it.
+ * interface started as a window, opens no console window for it. The end of the standard error is kept rather than its
+ * start since a run reports what failed last, after whatever warnings came first.
  */
 int runtime_run_reporting_errors(const char *executable, const cJSON *arguments, const cJSON *environment,
-                                 int *exit_code, char **errors, char **problem);
+                                 int64_t *exit_code, char **errors, char **problem);
 
 #endif

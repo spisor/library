@@ -1,5 +1,7 @@
 #include "child_start_fixture.h"
 
+#include "process_run.h"
+
 /**
  * @file
  * processes.run_action as the interface calls it: the child each declared action runs in, started by C and never by
@@ -66,6 +68,55 @@ static void a_failing_action_answers_its_exit_code_and_what_it_wrote_to_standard
     CHECK(ran.status == SPISOR_OK && ran.answer.exit_code == 4);
     check_text(ran.answer.failure, "the action's run exited with code 4", "a silent failure");
     release_run(&ran);
+    finish_base();
+}
+
+/**
+ * A run that writes more standard error than is kept answers its end, where its error is, as text: the warning before it
+ * dropped, the euro sign the cut split skipped rather than half kept, and an invalid byte and a NUL each U+FFFD.
+ */
+static void a_long_standard_error_answers_its_end_as_valid_text(void) {
+    start_child_world("noisy");
+    runtime_processes_run_action_argument argument = action_argument("noisy");
+    run_answer ran = run(&argument);
+    const char *failure = ran.answer.failure;
+    const char *error = "invalid \xEF\xBF\xBD here, nul \xEF\xBF\xBD here, the action's own error";
+    size_t length = failure == NULL ? 0 : strlen(failure);
+    CHECK(ran.status == SPISOR_OK && ran.answer.exit_code == 5 && failure != NULL);
+    CHECK(failure != NULL && failure[0] == 'y' && strstr(failure, "ww") == NULL);
+    CHECK(length >= strlen(error) && strcmp(failure + length - strlen(error), error) == 0);
+    CHECK(length == 4096 - 2 - (strlen(error) - 4) + strlen(error));
+    release_run(&ran);
+    finish_base();
+}
+
+#if defined(_WIN32)
+/** A crash's NTSTATUS stays the unsigned code Windows reports, and its sentence names it in hex as well. */
+static void a_crashed_run_answers_its_exit_code_unsigned(void) {
+    start_child_world("crash");
+    runtime_processes_run_action_argument argument = action_argument("crash");
+    run_answer ran = run(&argument);
+    CHECK(ran.status == SPISOR_OK && ran.answer.exit_code == 3221225477LL);
+    check_text(ran.answer.failure, "the action's run exited with code 3221225477 (0xC0000005)", "a crash's failure");
+    release_run(&ran);
+    finish_base();
+}
+#endif
+
+/** A run handed a variable whose value is no text starts nothing, on every OS, rather than dropping it. */
+static void an_environment_value_that_is_no_text_is_refused(void) {
+    start_child_world("not-text");
+    cJSON *environment = cJSON_CreateObject();
+    cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REPORT", report_path);
+    cJSON_AddNumberToObject(environment, "NUMBERED", 1);
+    int64_t exit_code = 0;
+    char *errors = NULL;
+    char *problem = NULL;
+    CHECK(!runtime_run_reporting_errors(RUNTIME_ACTION_FIXTURE_PATH, NULL, environment, &exit_code, &errors, &problem));
+    CHECK(problem != NULL && strstr(problem, "no text") != NULL && errors == NULL);
+    CHECK(!exists_in(scratch, "report.json"));
+    spisor_memory_release(problem);
+    cJSON_Delete(environment);
     finish_base();
 }
 
@@ -162,6 +213,11 @@ int main(void) {
     greet_answers_hello_and_leaves_no_result_file();
     a_failing_action_answers_its_exit_code_and_what_it_wrote_to_standard_error();
     an_action_that_writes_no_result_answers_none();
+    a_long_standard_error_answers_its_end_as_valid_text();
+#if defined(_WIN32)
+    a_crashed_run_answers_its_exit_code_unsigned();
+#endif
+    an_environment_value_that_is_no_text_is_refused();
     a_result_that_is_no_json_is_refused_and_removed();
     a_start_layer_start_refuses_is_refused_with_its_reason_and_nothing_written();
     places_the_environment_does_not_resolve_to_are_refused();

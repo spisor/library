@@ -196,9 +196,11 @@ typedef struct runtime_processes_run_action_argument {
 } runtime_processes_run_action_argument;
 
 /**
- * How the action's run ended: its `exit_code`; the `result` its action answered, NULL when the run wrote none; and
- * `failure`, NULL exactly when the exit code is 0, else what the run wrote to its standard error, or a sentence naming
- * the exit code when it wrote nothing. First shape ends at `storage`.
+ * How the action's run ended: its `exit_code`, never negative, a Windows code as the unsigned number Windows reports;
+ * the `result` its action answered, NULL when the run wrote none; and `failure`, NULL exactly when the exit code is 0,
+ * else the end of what the run wrote to its standard error, at most its last 4096 bytes, starting where a character
+ * does, each byte that is no UTF-8 and each NUL as U+FFFD, trimmed, or a sentence naming the exit code when it wrote
+ * nothing, on Windows also in hex for a code at or above 0x80000000. First shape ends at `storage`.
  */
 typedef struct runtime_processes_run_action_answer {
     uint32_t size;
