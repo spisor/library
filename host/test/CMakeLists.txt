@@ -39,11 +39,54 @@ spisor_strict_warnings(javascript_trap)
 
 host_executable(layer_fixture layer-fixture layer_fixture.c $<TARGET_OBJECTS:host_objects> ${host_test_runtime_objects})
 
+# The C fixture plugin and the two fixture languages' host programs share one folder with weivel/c's shared layer, so
+# stage-bundle stages each program beside the layer the plugin links too.
+set(language_host_inputs ${CMAKE_CURRENT_BINARY_DIR}/language-host-inputs)
+add_library(c_fixture_plugin SHARED c_fixture_plugin.c)
+target_link_libraries(c_fixture_plugin PRIVATE weivel_c_shared)
+set_target_properties(c_fixture_plugin PROPERTIES C_VISIBILITY_PRESET hidden RUNTIME_OUTPUT_DIRECTORY ${language_host_inputs}
+    LIBRARY_OUTPUT_DIRECTORY ${language_host_inputs} ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/language-host-archives)
+spisor_strict_warnings(c_fixture_plugin)
+foreach(language one two)
+    add_executable(fixture_${language}_host language_host_program.c)
+    target_compile_definitions(fixture_${language}_host PRIVATE HOST_LANGUAGE="fixture-${language}")
+    target_link_libraries(fixture_${language}_host PRIVATE weivel_c_shared weivel_standard_shared)
+    set_target_properties(fixture_${language}_host PROPERTIES OUTPUT_NAME fixture-${language}-host
+        RUNTIME_OUTPUT_DIRECTORY ${language_host_inputs})
+    spisor_strict_warnings(fixture_${language}_host)
+    add_custom_command(TARGET fixture_${language}_host POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:weivel_c_shared> $<TARGET_FILE_DIR:fixture_${language}_host>
+        VERBATIM)
+endforeach()
+
+set(language_host_bundles $<TARGET_FILE_DIR:spisor_host_test>/language-hosts)
+set(fixture_host_data ${CMAKE_CURRENT_BINARY_DIR}/fixture-host-data.json)
+file(WRITE ${fixture_host_data} "{}\n")
+set(typescript_host_inputs ${CMAKE_CURRENT_BINARY_DIR}/typescript-host-inputs)
+file(WRITE ${typescript_host_inputs}/host.js "export {};\n")
+set(typescript_host_data ${CMAKE_CURRENT_BINARY_DIR}/typescript-host-data.json)
+file(WRITE ${typescript_host_data} "{\"node\": {\"pinned\": \"26.13.1\", \"minimum\": \"22.18.0\", \"builds\": {}}}\n")
+set(staged_weivel $<TARGET_FILE:weivel_core_shared> $<TARGET_FILE:weivel_standard_shared>)
+add_custom_target(language_host_test_bundles ALL
+    COMMAND ${CMAKE_COMMAND} -E chdir $<TARGET_FILE_DIR:fixture_one_host> $<TARGET_FILE:stage_bundle> language-host
+        ${language_host_bundles}/fixture-one-host 1.0.0 fixture-one native $<TARGET_FILE_NAME:fixture_one_host>
+        ${fixture_host_data} ${staged_weivel} $<TARGET_FILE_NAME:weivel_c_shared>
+    COMMAND ${CMAKE_COMMAND} -E chdir $<TARGET_FILE_DIR:fixture_two_host> $<TARGET_FILE:stage_bundle> language-host
+        ${language_host_bundles}/fixture-two-host 1.0.0 fixture-two native $<TARGET_FILE_NAME:fixture_two_host>
+        ${fixture_host_data} ${staged_weivel} $<TARGET_FILE_NAME:weivel_c_shared>
+    COMMAND ${CMAKE_COMMAND} -E chdir ${typescript_host_inputs} $<TARGET_FILE:stage_bundle> language-host
+        ${language_host_bundles}/typescript-host 1.0.0 typescript javascript host.js ${typescript_host_data} ${staged_weivel}
+    VERBATIM)
+add_dependencies(language_host_test_bundles stage_bundle fixture_one_host fixture_two_host weivel_core_shared
+    weivel_standard_shared weivel_c_shared spisor_host_test)
+
 set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}"
     SPISOR_HOST_PATH="$<TARGET_FILE:spisor_host_test>" SPISOR_BOOT_PATH="$<TARGET_FILE:spisor_boot>"
     FAKE_APPLICATION_PATH="$<TARGET_FILE:fake_application>" LAYER_FIXTURE_PATH="$<TARGET_FILE:layer_fixture>"
     C_HOST_PATH="$<TARGET_FILE:c_host>" JAVASCRIPT_TRAP_PATH="$<TARGET_FILE:javascript_trap>"
-    STAGED_BUNDLES_PATH="${host_test_bundles}" SPISOR_HOST_VERSION="${SPISOR_HOST_VERSION}" BUILD_TYPE="$<CONFIG>")
+    STAGED_BUNDLES_PATH="${host_test_bundles}" SPISOR_HOST_VERSION="${SPISOR_HOST_VERSION}" BUILD_TYPE="$<CONFIG>"
+    STAGED_LANGUAGE_HOSTS_PATH="${language_host_bundles}" C_FIXTURE_PLUGIN_PATH="$<TARGET_FILE:c_fixture_plugin>"
+    RUNTIME_BINARY_NAME="$<TARGET_FILE_NAME:runtime>")
 if(WIN32)
     list(APPEND host_test_fixture_definitions RUNTIME_LAUNCHER_PATH="$<TARGET_FILE:runtime_launcher>")
 endif()
@@ -62,6 +105,8 @@ host_test(launch_test)
 # A sanitized macOS runner runs past the 300 s SPISOR_TEST_TIMEOUT_SECONDS gives every other test.
 set_tests_properties(host_launch_test PROPERTIES TIMEOUT 900)
 host_test(action_test)
+host_test(language_layers_test)
+add_dependencies(language_layers_test language_host_test_bundles c_fixture_plugin)
 host_test(ui_command_test)
 host_test(hook_test)
 host_test(install_command_test)

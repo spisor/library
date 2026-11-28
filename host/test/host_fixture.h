@@ -311,11 +311,13 @@ typedef struct host_world {
     char *streams;
     char *starts;
     char *portable_secrets;
+    char *activations;
     int runs;
     const char *layer_delay;
     const char *fixture_ready;
     const char *ready_timeout;
     const char *refusing_language;
+    const char *front_door_language;
     int tags_layer;
     const char *application_child;
     const char *application_exit_code;
@@ -329,11 +331,13 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->streams = joined(world->base.root, "streams");
     world->starts = joined(world->base.root, "starts.txt");
     world->portable_secrets = joined(world->base.root, "secrets.json");
+    world->activations = joined(world->base.root, "activations.txt");
     world->runs = 0;
     world->layer_delay = NULL;
     world->fixture_ready = NULL;
     world->ready_timeout = NULL;
     world->refusing_language = NULL;
+    world->front_door_language = NULL;
     world->tags_layer = 0;
     world->application_child = NULL;
     world->application_exit_code = NULL;
@@ -348,6 +352,7 @@ static inline void finish_world(host_world *world) {
     spisor_memory_release(world->streams);
     spisor_memory_release(world->starts);
     spisor_memory_release(world->portable_secrets);
+    spisor_memory_release(world->activations);
     for (int attempt = 0; attempt < 50 && runtime_remove_tree(world->base.root) != SPISOR_OK; attempt++) {
         pause_milliseconds(200);
     }
@@ -379,6 +384,7 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     cJSON_AddStringToObject(environment, "FAKE_APPLICATION_SIGNALS", world->signals);
     cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_INTERVAL", INTERVAL_TEXT);
     cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_STARTS", world->starts);
+    cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_ACTIVATIONS", world->activations);
     if (world->layer_delay != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_START_DELAY", world->layer_delay);
     }
@@ -390,6 +396,9 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     }
     if (world->refusing_language != NULL) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_REFUSING", world->refusing_language);
+    }
+    if (world->front_door_language != NULL) {
+        cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_FRONT_DOOR", world->front_door_language);
     }
     if (world->tags_layer) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_TAG_LAYER", "1");
