@@ -7,7 +7,7 @@
 #include "cache_refusal.h"
 #include "catalog.h"
 #include "catalog_source.h"
-#include "catalog_text.h"
+#include "interface_choice.h"
 #include "catalog_time.h"
 #include "file_times.h"
 #include "hosts_layers.h"
@@ -23,8 +23,6 @@
 #include "platform_key.h"
 #include "plugin_choices.h"
 
-#define INTERFACE_SETTING "interface"
-#define HEADLESS "none"
 #define CATALOG_FIX "check the catalog path or url, then install again"
 #define ECOSYSTEM_FIX                                                                                           \
     "send {\"sources\": [{\"kind\": \"local\", \"path\"} | {\"kind\": \"https\", \"url\"}], \"places\": "         \
@@ -415,42 +413,16 @@ static int install_language_hosts(ecosystem *install, const cJSON *background) {
     return installed && (!starts_javascript(install, background) || runtime_install_acquire_javascript(&install->run));
 }
 
-/** The ids of every item the catalog lists of kind interface, in its order; NULL when memory runs out. */
-static cJSON *interface_items(const ecosystem *install) {
-    cJSON *ids = cJSON_CreateArray();
-    const cJSON *item;
-    cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(install->run.catalog, "items")) {
-        if (ids != NULL && is_text(runtime_install_text(item, "kind"), "interface") &&
-            !runtime_install_add_text(ids, item->string)) {
-            cJSON_Delete(ids);
-            ids = NULL;
-        }
-    }
-    return ids;
-}
-
-/** The texts of ids joined by commas; NULL when memory runs out. */
-static char *joined_ids(const cJSON *ids) {
-    runtime_catalog_text text;
-    runtime_catalog_text_start(&text);
-    runtime_catalog_text_add(&text, "");
-    for (const cJSON *id = ids->child; id != NULL; id = id->next) {
-        runtime_catalog_text_add(&text, id == ids->child ? "" : ", ");
-        runtime_catalog_text_add(&text, id->valuestring);
-    }
-    return runtime_catalog_text_finish(&text);
-}
-
 /** Reports that two interface items or more are listed and none is chosen, naming each; 0 when memory runs out. */
 static int report_unchosen(ecosystem *install, const cJSON *ids) {
-    char *listed = joined_ids(ids);
+    char *listed = runtime_joined_interface_ids(ids);
     const char *parts[3] = {"the catalog lists more than one interface, ", listed,
                             ", and spisor-host's interface setting chooses none"};
     const char *fix_parts[3] = {"set spisor-host's interface setting to one of ", listed, ", or to none"};
     char *message = listed == NULL ? NULL : runtime_cache_text(parts, 3);
     char *fix = listed == NULL ? NULL : runtime_cache_text(fix_parts, 3);
     int reported = message != NULL && fix != NULL &&
-                   runtime_install_report_unavailable(install->run.report, INTERFACE_SETTING, message, fix);
+                   runtime_install_report_unavailable(install->run.report, RUNTIME_INTERFACE_SETTING, message, fix);
     spisor_memory_release(fix);
     spisor_memory_release(message);
     spisor_memory_release(listed);
@@ -469,17 +441,14 @@ static int install_chosen_interface(ecosystem *install, const char *id) {
  * item; an install with none is headless. 0 only when memory runs out.
  */
 static int install_interface(ecosystem *install) {
-    const char *chosen = runtime_install_text(install->values, INTERFACE_SETTING);
-    cJSON *ids = chosen != NULL ? NULL : interface_items(install);
-    int done = chosen != NULL || ids != NULL;
-    if (chosen != NULL && strcmp(chosen, HEADLESS) != 0) {
-        done = install_chosen_interface(install, chosen);
-    } else if (ids != NULL && cJSON_GetArraySize(ids) == 1) {
-        done = install_chosen_interface(install, ids->child->valuestring);
-    } else if (ids != NULL && cJSON_GetArraySize(ids) > 1) {
-        done = report_unchosen(install, ids);
+    runtime_interface_choice choice = runtime_choose_interface(install->values, install->run.catalog);
+    int done = choice.kind == RUNTIME_INTERFACE_HEADLESS;
+    if (choice.kind == RUNTIME_INTERFACE_CHOSEN) {
+        done = install_chosen_interface(install, choice.id);
+    } else if (choice.kind == RUNTIME_INTERFACE_UNCHOSEN) {
+        done = report_unchosen(install, choice.listed);
     }
-    cJSON_Delete(ids);
+    runtime_free_interface_choice(&choice);
     return done;
 }
 

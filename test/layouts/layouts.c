@@ -1597,6 +1597,22 @@ static void print_processes_layouts(void) {
     FIELD(runtime_processes_remove_argument, host_id);
     FIELD(runtime_processes_remove_argument, record);
     SIZE(runtime_processes_remove_argument);
+    FIELD(runtime_processes_run_action_argument, size);
+    FIELD(runtime_processes_run_action_argument, cache);
+    FIELD(runtime_processes_run_action_argument, state);
+    FIELD(runtime_processes_run_action_argument, environment);
+    FIELD(runtime_processes_run_action_argument, environment_count);
+    FIELD(runtime_processes_run_action_argument, loader_id);
+    FIELD(runtime_processes_run_action_argument, plugin);
+    FIELD(runtime_processes_run_action_argument, action);
+    FIELD(runtime_processes_run_action_argument, input);
+    SIZE(runtime_processes_run_action_argument);
+    FIELD(runtime_processes_run_action_answer, size);
+    FIELD(runtime_processes_run_action_answer, exit_code);
+    FIELD(runtime_processes_run_action_answer, result);
+    FIELD(runtime_processes_run_action_answer, failure);
+    FIELD(runtime_processes_run_action_answer, storage);
+    SIZE(runtime_processes_run_action_answer);
     FIELD(runtime_processes_definition, size);
     FIELD(runtime_processes_definition, context);
     FIELD(runtime_processes_definition, hold);
@@ -1614,6 +1630,8 @@ static void print_processes_layouts(void) {
     FIELD(runtime_processes_definition, release_record_answer);
     FIELD(runtime_processes_definition, release_live_answer);
     FIELD(runtime_processes_definition, release_refusal);
+    FIELD(runtime_processes_definition, run_action);
+    FIELD(runtime_processes_definition, release_run_action_answer);
     SIZE(runtime_processes_definition);
 }
 

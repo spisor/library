@@ -26,6 +26,7 @@ set(c_host_runtime_objects $<TARGET_OBJECTS:runtime_change_reversal_test_hooks> 
     $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_hosts_definition>
+    $<TARGET_OBJECTS:runtime_processes_definition>
     $<TARGET_OBJECTS:runtime_path_entry_test_hooks> $<TARGET_OBJECTS:runtime_install_test_hooks>)
 host_executable(c_host c-host c_host.c ${PROJECT_SOURCE_DIR}/host/src/host_definition.c ${c_host_runtime_objects})
 if(WIN32)
@@ -60,6 +61,7 @@ host_test(launch_test)
 # A sanitized macOS runner runs past the 300 s SPISOR_TEST_TIMEOUT_SECONDS gives every other test.
 set_tests_properties(host_launch_test PROPERTIES TIMEOUT 900)
 host_test(action_test)
+host_test(ui_command_test)
 host_test(hook_test)
 host_test(install_command_test)
 host_test(boot_stub_test)

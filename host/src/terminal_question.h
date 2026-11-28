@@ -10,6 +10,9 @@ typedef struct host_terminal {
 /** The controlling terminal of this OS: /dev/tty, or CONIN$ and CONOUT$ on Windows. */
 host_terminal host_controlling_terminal(void);
 
+/** Whether this process's standard input and output are both a terminal, which a terminal interface draws on. */
+int host_terminal_attached(void);
+
 /**
  * Asks question on terminal and answers the first line typed, trimmed, freed; NULL when there is
  * no terminal to open or it ends before a line.

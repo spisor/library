@@ -10,6 +10,7 @@ int host_command_launch(int count, char **arguments);
 int host_command_hook(int count, char **arguments);
 int host_command_background(int count, char **arguments);
 int host_command_action(int count, char **arguments);
+int host_command_ui(int count, char **arguments);
 int host_command_catalog_build(int count, char **arguments);
 int host_command_marketplace_build(int count, char **arguments);
 

@@ -21,7 +21,7 @@ typedef struct named_command {
 static const named_command COMMANDS[] = {
     {"install", host_command_install}, {"status", host_command_status},  {"update", host_command_update},
     {"remove", host_command_remove},   {"launch", host_command_launch},  {"hook", host_command_hook},
-    {"background", host_command_background}, {"action", host_command_action},
+    {"background", host_command_background}, {"action", host_command_action}, {"ui", host_command_ui},
 };
 
 static int unknown_command(int count, char **arguments) {

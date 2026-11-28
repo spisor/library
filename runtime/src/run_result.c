@@ -1,8 +1,22 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "run_result.h"
 #include "allocation.h"
 
+#include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#define current_process_id() _getpid()
+#else
+#include <unistd.h>
+#define current_process_id() getpid()
+#endif
+
+#include "atomic.h"
 #include "cJSON.h"
 #include "cache_place.h"
 #include "cache_refusal.h"
@@ -169,4 +183,33 @@ spisor_status runtime_write_result(const char *state, const char *path, const sp
     }
     cJSON_free(text);
     return status;
+}
+
+char *runtime_fresh_result_path(const char *state, int *removable) {
+    static volatile long taken;
+    char name[64];
+    snprintf(name, sizeof name, "%.0f-%ld.json", (double)current_process_id(), runtime_atomic_increment(&taken));
+    const char *segments[3] = {state, RUNTIME_RESULTS_FOLDER, name};
+    char *path = spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
+    runtime_entry_outcome cleared = path == NULL ? RUNTIME_ENTRY_OUT_OF_MEMORY : runtime_remove_file_entry(path);
+    *removable = cleared == RUNTIME_ENTRY_DONE || cleared == RUNTIME_ENTRY_OUT_OF_MEMORY;
+    if (cleared != RUNTIME_ENTRY_DONE) {
+        spisor_memory_release(path);
+        return NULL;
+    }
+    return path;
+}
+
+char *runtime_take_result(const char *path, int exit_code, int *out_of_memory) {
+    size_t length = 0;
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    char *text = exit_code == 0 ? (char *)spisor_read_file_reporting(path, &length, &outcome) : NULL;
+    runtime_entry_outcome removed = runtime_remove_file_entry(path);
+    *out_of_memory = removed == RUNTIME_ENTRY_OUT_OF_MEMORY || outcome == SPISOR_READ_OUT_OF_MEMORY;
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        spisor_memory_release(text);
+        text = NULL;
+        runtime_remove_file_entry(path);
+    }
+    return text;
 }

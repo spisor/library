@@ -1,6 +1,7 @@
 #include "host_fixture.h"
 
-#include "action_result.h"
+#include "host_context.h"
+#include "run_result.h"
 #include "spisor/allocation.h"
 
 /** What layer_fixture writes as an action's result when it is given a path for one. */
@@ -169,23 +170,23 @@ static void clears_what_an_earlier_process_left_at_its_result_name(void) {
     snprintf(rest, sizeof rest, "results/%.0f-1.json", host_process_id());
     write_in(world.base.state, rest, "\"stale\"");
     int removable = 0;
-    char *path = host_result_path(&context, &removable);
+    char *path = runtime_fresh_result_path(context.state, &removable);
     CHECK(path != NULL && removable);
     CHECK(path == NULL || spisor_probe_file(path) == SPISOR_FILE_MISSING);
     if (path != NULL) {
         write_file(path, "\"fresh\"");
     }
     int out_of_memory = 0;
-    char *text = path == NULL ? NULL : host_take_result(path, 0, &out_of_memory);
+    char *text = path == NULL ? NULL : runtime_take_result(path, 0, &out_of_memory);
     check_text(text, "\"fresh\"", "the fresh result taken");
     CHECK(!out_of_memory && results_left(&world) == 0);
     spisor_memory_release(text);
     spisor_memory_release(path);
-    path = host_result_path(&context, &removable);
+    path = runtime_fresh_result_path(context.state, &removable);
     if (path != NULL) {
         write_file(path, "\"of a failed run\"");
     }
-    text = path == NULL ? NULL : host_take_result(path, 1, &out_of_memory);
+    text = path == NULL ? NULL : runtime_take_result(path, 1, &out_of_memory);
     CHECK(text == NULL && results_left(&world) == 0);
     spisor_memory_release(text);
     spisor_memory_release(path);

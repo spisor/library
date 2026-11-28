@@ -218,8 +218,7 @@ set_target_properties(runtime_updates PROPERTIES POSITION_INDEPENDENT_CODE ON C_
 spisor_strict_warnings(runtime_updates)
 
 set(runtime_processes_sources src/holders.c src/holders_lock.c src/process_start.c src/processes.c
-    src/processes_definition.c src/processes_hold.c
-    src/processes_ready.c src/processes_runs.c)
+    src/processes_hold.c src/processes_ready.c src/processes_runs.c)
 if(WIN32)
     list(APPEND runtime_processes_sources src/command_line_windows.c src/windows_process.c)
 endif()
@@ -239,11 +238,20 @@ target_include_directories(runtime_hosts PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_hosts PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts)
 
-add_library(runtime_hosts_definition OBJECT src/hosts_definition.c src/hosts_layer_start.c src/runnable.c)
+add_library(runtime_hosts_definition OBJECT src/hosts_definition.c src/hosts_layer_start.c src/interface_start.c
+    src/runnable.c)
 target_link_libraries(runtime_hosts_definition PUBLIC runtime_objects)
 target_include_directories(runtime_hosts_definition PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(runtime_hosts_definition PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 spisor_strict_warnings(runtime_hosts_definition)
+
+# Apart from runtime_processes, as the hosts definition is apart from runtime_hosts: its child start stands on the
+# layer start and the process runs, which a test of the holders alone does not link.
+add_library(runtime_processes_definition OBJECT src/processes_definition.c src/processes_child_start.c)
+target_link_libraries(runtime_processes_definition PUBLIC runtime_objects)
+target_include_directories(runtime_processes_definition PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(runtime_processes_definition PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+spisor_strict_warnings(runtime_processes_definition)
 
 set(runtime_ui_sources src/ui_action.c src/ui_binding.c src/ui_components.c src/ui_definition.c src/ui_items.c
     src/ui_navigation.c src/ui_refusal.c src/ui_render.c src/ui_screen.c src/ui_screen_definition.c src/ui_session.c
@@ -255,7 +263,7 @@ set_target_properties(runtime_ui PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIB
 spisor_strict_warnings(runtime_ui)
 
 set(runtime_install_sources src/boot_place.c src/boot_stub.c src/install_application.c src/install_applications.c
-    src/install_definition.c src/install_ecosystem.c src/install_entries.c src/install_hosts.c src/install_loaders.c src/install_items.c src/install_methods.c src/install_plugins.c
+    src/install_definition.c src/install_ecosystem.c src/install_entries.c src/interface_choice.c src/install_hosts.c src/install_loaders.c src/install_items.c src/install_methods.c src/install_plugins.c
     src/install_references.c
     src/install_register_loader.c src/install_report.c src/install_runtime.c src/install_settings.c src/install_support.c
     src/process_run.c src/boot_definition.c src/updates_definition.c src/updates_run.c)
@@ -295,7 +303,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(runtime_shipped_object_libraries runtime_objects runtime_change_reversal runtime_commands runtime_path_entry runtime_secret_store
     runtime_fetch runtime_identity_resolve runtime_identity_also_at runtime_install_by_id runtime_marketplace_build
     runtime_marketplace_reading runtime_catalog runtime_catalog_refresh runtime_cache runtime_updates runtime_processes
-    runtime_hosts runtime_hosts_definition runtime_ui runtime_install runtime_standard runtime_standard_host)
+    runtime_hosts runtime_hosts_definition runtime_processes_definition runtime_ui runtime_install runtime_standard
+    runtime_standard_host)
 set(runtime_shipped_objects "")
 foreach(library IN LISTS runtime_shipped_object_libraries)
     target_compile_definitions(${library} PRIVATE RUNTIME_BUILDING)

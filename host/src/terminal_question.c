@@ -46,6 +46,11 @@ host_terminal host_controlling_terminal(void) {
     return terminal;
 }
 
+int host_terminal_attached(void) {
+    DWORD mode = 0;
+    return GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode) && GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mode);
+}
+
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -73,6 +78,10 @@ static void close_terminal_file(terminal_file file) {
 host_terminal host_controlling_terminal(void) {
     host_terminal terminal = {"/dev/tty", "/dev/tty"};
     return terminal;
+}
+
+int host_terminal_attached(void) {
+    return isatty(0) && isatty(1);
 }
 
 #endif

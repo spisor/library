@@ -140,7 +140,7 @@ off the include path.
 | `cache` | `include/runtime/cache.h` | `install`, `installed`, `check`, `damaged`, `locate`, `platform`, `sweep`, `deploy` |
 | `updates` | `include/runtime/updates.h` | `apply`, `check`, `rollback`, `recorded`, `run` |
 | `boot` | `include/runtime/boot.h` | `read`, `write`, `resolve`, `place` |
-| `processes` | `include/runtime/processes.h` | `hold`, `release`, `prune`, `ready`, `await_ready`, `record_run`, `live_runs`, `remove_runs` |
+| `processes` | `include/runtime/processes.h` | `hold`, `release`, `prune`, `ready`, `await_ready`, `record_run`, `live_runs`, `remove_runs`, `run_action` |
 | `hosts` | `include/runtime/hosts.h` | `register_host`, `list`, `remove`, `provenance`, `start`, `layer_start` |
 | `loader` | `include/runtime/loader.h` | `check`, `home`, `installed` |
 | `detect` | `include/runtime/detect.h` | `on_path` |
@@ -149,7 +149,7 @@ off the include path.
 | `weivel.host` | `include/runtime/standard.h` | `start`, `started`, `tick`, `finished`, `stop` |
 | `weivel.scope` | `include/runtime/standard.h` | `open`, and the scope's `config`: `all`, `get`, `set`, `get_tree`, `settings_file`; `secrets`: `remove`, `get`, `set`; `paths`: `cache`, `config`, `plugin`; `log`: `write` |
 
-25 services, 112 operations.
+25 services, 113 operations.
 
 A `places` argument is what `places.resolve` answers.
 
@@ -201,6 +201,17 @@ door's layer and waits for it to be ready before it starts the others, whose ses
 door recorded, then starts the application with the front door's environment; `spisor-host action` runs the one layer
 an action answers. NO_COLOR counts, in every start, only when it is set and not empty (no-color.org), and `ui.session`
 answers that decision as `no_color`, so the interface draws without colour exactly when C does.
+
+`processes.run_action` is how an interface runs a declared action, so the program starts no process itself: it asks
+`hosts.layer_start` for the ACTION start with a result path of its own under `<state>/results/`, starts the child with
+its standard input and output on the null device, its standard error taken as the answer's `failure`, the caller's
+environment and, on Windows, `CREATE_NO_WINDOW`, waits for it, then reads the result file and deletes it, whatever
+happened once the child ran. `spisor-host ui [<loader>] [--window]` starts the interface the install chose, the item
+spisor-host's `interface` setting names, else the catalog's only interface item, never one named in C: its bundle's
+entry, run with `ui <runtime binary> [<loader>] [--window]`. It runs in the terminal, in spisor-host's place, unless
+`--window` is given or no terminal is attached; a window is started detached, so the command that opened it returns at
+once and, on Windows, the console-subsystem interface has no console. A headless install refuses, the fix naming the
+`interface` setting and the catalog's interface items.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries on
 with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to

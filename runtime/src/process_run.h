@@ -32,4 +32,16 @@ int runtime_run_to_exit(const char *executable, const cJSON *arguments, unsigned
 int runtime_run_between_files(const char *executable, const cJSON *arguments, unsigned timeout_milliseconds,
                               const char *input, const char *output, int *exit_code, char **problem);
 
+/**
+ * Runs the absolute executable with arguments, an array of strings, under environment, an object of strings that
+ * replaces the caller's, its standard input and output on the null device, and waits for it to exit however long it
+ * runs: 1 with *exit_code set and its standard error, up to RUNTIME_RUN_OUTPUT_LIMIT bytes, answered in *errors
+ * (freed); 0 with *problem set (freed) when it could not be started, and with *problem NULL when memory ran out.
+ *
+ * @implNote On Windows it starts with CREATE_NO_WINDOW, as every run here does, so a caller with no console, such as an
+ * interface started as a window, opens no console window for it.
+ */
+int runtime_run_reporting_errors(const char *executable, const cJSON *arguments, const cJSON *environment,
+                                 int *exit_code, char **errors, char **problem);
+
 #endif
