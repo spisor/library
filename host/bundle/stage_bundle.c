@@ -13,6 +13,7 @@
 #include "catalog_text.h"
 #include "directory_tree.h"
 #include "hosts_layers.h"
+#include "loader.h"
 #include "node_json_file.h"
 #include "paths.h"
 #include "platform_key.h"
@@ -43,6 +44,7 @@
     "       stage-bundle language-host <directory> <version> <language> <runtime> <entry> <host-data json> "           \
     "<weivel_core> <weivel_standard> [<file or directory>...]\n"                                                      \
     "       stage-bundle interface <directory> <version> <interface id> <binary> <weivel_core> <weivel_standard>\n"   \
+    "       stage-bundle loader <directory> <standard.json>\n"                                                       \
     "       stage-bundle platform\n"
 #define LANGUAGE_HOST_ARGUMENTS 10
 #define INTERFACE_ARGUMENTS 8
@@ -53,6 +55,9 @@
 
 /** The members stage-bundle writes into a language host's host.json itself, which its host-data may not replace. */
 static const char *const OWN_MEMBERS[] = {"kind", "id", "version", "language", "runtime", "entry"};
+
+/** The members stage-bundle writes into a loader's host.json itself, which its standard may not name. */
+static const char *const LOADER_MEMBERS[] = {"kind", "id", "version", "runtime"};
 
 static const char *const RUNTIMES[] = {RUNTIME_LAYER_JAVASCRIPT, RUNTIME_LAYER_JVM, RUNTIME_LAYER_NATIVE};
 
@@ -331,7 +336,7 @@ static int is_refused_member(const cJSON *member, const char *path) {
  * @implNote Read with cJSON's own parser, which keeps every member as written, since the JSON.parse reading of the file
  * keeps only the last of two and could not tell.
  */
-static int names_a_member_twice(const uint8_t *bytes, size_t length, const char *path) {
+static int names_a_member_twice(const uint8_t *bytes, size_t length, const char *path, const char *what) {
     cJSON *written = cJSON_ParseWithLength((const char *)bytes, length);
     int twice = 0;
     for (const cJSON *member = written == NULL ? NULL : written->child; !twice && member != NULL;
@@ -340,11 +345,35 @@ static int names_a_member_twice(const uint8_t *bytes, size_t length, const char 
             twice = member->string != NULL && earlier->string != NULL && strcmp(earlier->string, member->string) == 0;
         }
         if (twice) {
-            fprintf(stderr, "stage-bundle: the host-data file %s names %s twice\n", path, member->string);
+            fprintf(stderr, "stage-bundle: the %s %s names %s twice\n", what, path, member->string);
         }
     }
     cJSON_Delete(written);
     return twice;
+}
+
+/** The JSON object the file `what` at path holds, naming each member once; NULL, printing why, otherwise. */
+static cJSON *read_object(const char *path, const char *what) {
+    size_t length = 0;
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
+    int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
+    cJSON *data = bytes == NULL ? NULL : runtime_parse_node_json(bytes, length, &out_of_memory);
+    int twice = cJSON_IsObject(data) && names_a_member_twice(bytes, length, path, what);
+    spisor_memory_release(bytes);
+    if (twice) {
+        cJSON_Delete(data);
+        return NULL;
+    }
+    if (bytes == NULL || !cJSON_IsObject(data)) {
+        fprintf(stderr, "stage-bundle: the %s %s %s\n", what, path,
+                out_of_memory ? "ran out of memory being read"
+                : bytes == NULL ? "could not be read"
+                                : "is no JSON object");
+        cJSON_Delete(data);
+        return NULL;
+    }
+    return data;
 }
 
 /**
@@ -352,26 +381,8 @@ static int names_a_member_twice(const uint8_t *bytes, size_t length, const char 
  * writes itself; NULL, printing why, otherwise.
  */
 static cJSON *read_host_data(const char *path) {
-    size_t length = 0;
-    spisor_read_outcome outcome = SPISOR_READ_FAILED;
-    uint8_t *bytes = spisor_read_file_reporting(path, &length, &outcome);
-    int out_of_memory = outcome == SPISOR_READ_OUT_OF_MEMORY;
-    cJSON *data = bytes == NULL ? NULL : runtime_parse_node_json(bytes, length, &out_of_memory);
-    int twice = cJSON_IsObject(data) && names_a_member_twice(bytes, length, path);
-    spisor_memory_release(bytes);
-    if (twice) {
-        cJSON_Delete(data);
-        return NULL;
-    }
-    if (bytes == NULL || !cJSON_IsObject(data)) {
-        fprintf(stderr, "stage-bundle: the host-data file %s %s\n", path,
-                out_of_memory ? "ran out of memory being read"
-                : bytes == NULL ? "could not be read"
-                                : "is no JSON object");
-        cJSON_Delete(data);
-        return NULL;
-    }
-    for (const cJSON *member = data->child; member != NULL; member = member->next) {
+    cJSON *data = read_object(path, "host-data file");
+    for (const cJSON *member = data == NULL ? NULL : data->child; member != NULL; member = member->next) {
         if (is_refused_member(member, path)) {
             cJSON_Delete(data);
             return NULL;
@@ -652,6 +663,93 @@ static int stage_interface(int count, char **arguments) {
     return staged ? 0 : 1;
 }
 
+/** The file name in the folder holding path, which is the working directory when path names no folder. */
+static char *beside(const char *path, const char *name) {
+    size_t folder = (size_t)(base_name_of(path) - path);
+    const char *parts[2] = {path, name};
+    char *text = runtime_cache_text(parts, 2);
+    if (text != NULL) {
+        memmove(text + folder, text + strlen(path), strlen(name) + 1);
+    }
+    return text;
+}
+
+/** The package.json beside the standard, its name an item id and its version one a catalog lists; NULL, printing why. */
+static cJSON *read_loader_package(const char *standard_path) {
+    char *path = beside(standard_path, "package.json");
+    cJSON *package = path == NULL ? NULL : read_object(path, "package file");
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(package, "name");
+    const cJSON *version = cJSON_GetObjectItemCaseSensitive(package, "version");
+    int usable = package != NULL;
+    if (usable && !(cJSON_IsString(name) && runtime_catalog_is_item_id(name->valuestring))) {
+        fprintf(stderr, "stage-bundle: the package file %s names %s, which is no item id a catalog can list: name the "
+                        "loader without a scope\n", path, cJSON_IsString(name) ? name->valuestring : "no name");
+        usable = 0;
+    }
+    if (usable && !cJSON_IsString(version)) {
+        fprintf(stderr, "stage-bundle: the package file %s names no version\n", path);
+        usable = 0;
+    }
+    usable = usable && is_version(version->valuestring);
+    spisor_memory_release(path);
+    if (!usable) {
+        cJSON_Delete(package);
+        return NULL;
+    }
+    return package;
+}
+
+/** Whether standard is a loader standard naming none of the members stage-bundle writes, printing the first issue. */
+static int is_loader_standard(const cJSON *standard, const char *path) {
+    for (const cJSON *member = standard->child; member != NULL; member = member->next) {
+        if (is_one_of(member->string, LOADER_MEMBERS, sizeof LOADER_MEMBERS / sizeof LOADER_MEMBERS[0])) {
+            fprintf(stderr, "stage-bundle: the standard %s names %s, which stage-bundle writes itself\n", path,
+                    member->string);
+            return 0;
+        }
+    }
+    cJSON *issues = runtime_loader_standard_issues(standard);
+    const cJSON *first = cJSON_GetArrayItem(issues, 0);
+    if (issues == NULL) {
+        fputs("stage-bundle: memory ran out\n", stderr);
+    } else if (first != NULL) {
+        fprintf(stderr, "stage-bundle: the standard %s is no loader standard at %s: %s; %s\n", path,
+                cJSON_GetObjectItemCaseSensitive(first, "path")->valuestring,
+                cJSON_GetObjectItemCaseSensitive(first, "detail")->valuestring,
+                cJSON_GetObjectItemCaseSensitive(first, "fix")->valuestring);
+    }
+    int valid = issues != NULL && first == NULL;
+    cJSON_Delete(issues);
+    return valid;
+}
+
+/**
+ * A loader's bundle, its host.json alone: {kind: host, id, version, runtime: native} followed by the members of the
+ * standard.json it is staged from, in their order, the id and version read from the package.json beside that file.
+ */
+static int stage_loader(int count, char **arguments) {
+    if (count != 4) {
+        fputs(USAGE, stderr);
+        return 2;
+    }
+    cJSON *standard = read_object(arguments[3], "standard");
+    cJSON *package = standard != NULL && is_loader_standard(standard, arguments[3]) ? read_loader_package(arguments[3])
+                                                                                     : NULL;
+    const char *id = package == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(package, "name")->valuestring;
+    const char *version = package == NULL ? NULL : cJSON_GetObjectItemCaseSensitive(package, "version")->valuestring;
+    staged_item item = {NULL, NULL, NULL, NULL, NULL, 0};
+    int staged = package != NULL && begin_item(&item, arguments[2], "host", id, version, 0) &&
+                 cJSON_AddStringToObject(item.manifest, "runtime", RUNTIME_LAYER_NATIVE) != NULL;
+    if (staged) {
+        merge_host_data(&item, standard);
+    }
+    staged = staged && finish_item(&item);
+    end_item(&item);
+    cJSON_Delete(package);
+    cJSON_Delete(standard);
+    return staged ? 0 : 1;
+}
+
 /** Prints the platform key a bundle staged here is for, so a build script never computes a second one. */
 static int print_platform(int count) {
     if (count != 2) {
@@ -674,6 +772,9 @@ static int run(int count, char **arguments) {
     }
     if (count >= 2 && strcmp(arguments[1], "interface") == 0) {
         return stage_interface(count, arguments);
+    }
+    if (count >= 2 && strcmp(arguments[1], "loader") == 0) {
+        return stage_loader(count, arguments);
     }
     if (count >= 2 && strcmp(arguments[1], "platform") == 0) {
         return print_platform(count);

@@ -52,11 +52,17 @@ static cJSON *passed_arguments(int count, char **arguments) {
     return passed;
 }
 
-/** Runs the version of host argument 0 its boot hint names, with the rest of the arguments passed through. */
+/**
+ * Runs the version of host argument 0 its boot hint names, with the rest of the arguments passed through. A leading
+ * `--refused-exit <code>` after the host id is read for the stub's own refusals as well and passed on unchanged.
+ */
 static int boot(int count, char **arguments) {
     if (count < 1 || arguments[0][0] == 0) {
         const char *parts[1] = {"no host id was given"};
         return host_refuse(host_refusal_of(parts, 1, NO_HOST_FIX));
+    }
+    if (host_take_refused_exit(count - 1, arguments + 1) < 0) {
+        return host_misuse("--refused-exit takes a code from 1 to 255");
     }
     char *cache = own_cache();
     cJSON *refusal = NULL;

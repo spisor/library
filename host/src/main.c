@@ -47,6 +47,12 @@ static int unknown_command(int count, char **arguments) {
 }
 
 int host_run_command_line(int count, char **arguments) {
+    int taken = host_take_refused_exit(count, arguments);
+    if (taken < 0) {
+        return host_misuse("--refused-exit takes a code from 1 to 255");
+    }
+    count -= taken;
+    arguments += taken;
     if (count >= 2 && strcmp(arguments[0], "catalog") == 0 && strcmp(arguments[1], "build") == 0) {
         return host_command_catalog_build(count - 2, arguments + 2);
     }

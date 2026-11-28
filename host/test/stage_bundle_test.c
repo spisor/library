@@ -543,7 +543,11 @@ static void answers_2_for_a_mode_missing_an_argument(void) {
     const char *language_host[] = {"language-host", "bundle", "1.0.0", "fixture-one", NULL};
     const char *interface_item[] = {"interface", "bundle", "1.0.0", NULL};
     const char *retired[] = {"typescript-host", "bundle", "1.0.0", "checkout", "node.json", "core", "standard", NULL};
+    const char *loader[] = {"loader", "bundle", NULL};
     program run;
+    CHECK(stage(loader, &run) == 2);
+    expect_contains(run.err, "stage-bundle loader", "the usage");
+    program_free(&run);
     CHECK(stage(language_host, &run) == 2);
     expect_contains(run.err, "stage-bundle language-host", "the usage");
     program_free(&run);
@@ -1043,6 +1047,125 @@ static void refuses_a_previous_or_staging_folder_that_is_no_bundle_leaving_it(vo
     finish_case();
 }
 
+#define LOADER_PACKAGE "{\"name\": \"fixture-loader\", \"version\": \"2.3.4\", \"private\": true}"
+#define LOADER_STANDARD                                                                                               \
+    "{\"application\": {\"id\": \"acme\", \"label\": \"Acme\", \"binary\": \"acme\","                                   \
+    " \"home\": {\"envOverride\": \"ACME_HOME\", \"candidates\": [\"~/.acme\"]}, \"packages\": {\"npm\": \"acme\"},"   \
+    " \"proxy\": {\"baseUrlVariable\": \"ACME_URL\", \"placeholder\": {\"variable\": \"ACME_TOKEN\", \"value\": "     \
+    "\"none\"}, \"ownLogin\": {\"variables\": [\"ACME_KEY\"]}},"                                                      \
+    " \"entry\": {\"runsInProcess\": false, \"directories\": [\"{{entryRoot}}\"],"                                     \
+    " \"files\": [{\"path\": \"{{entryRoot}}/a.json\", \"json\": {\"command\": \"{{boot}}\"}}], \"settings\": []}},"    \
+    " \"pathCommands\": {\"requested\": [\"acme\"], \"minimum\": 1}, \"background\": [], \"plugins\": [\"proxy\"]}"
+
+/** Writes the loader repository <base>/loader: its package.json and its standard.json holding standard. */
+static void write_loader_repository(const char *package, const char *standard) {
+    write_in(base_folder, "loader/package.json", package);
+    write_in(base_folder, "loader/standard.json", standard);
+}
+
+/** Stages <base>/loader's standard.json into <base>/bundle; its exit code. */
+static int stage_loader(program *run) {
+    char *directory = in_base("bundle");
+    char *standard = in_base("loader/standard.json");
+    const char *arguments[] = {"loader", directory, standard, NULL};
+    int code = stage(arguments, run);
+    spisor_memory_release(standard);
+    spisor_memory_release(directory);
+    return code;
+}
+
+/** Whether the folder holds exactly one entry, host.json. */
+static int holds_only_the_manifest(const char *folder) {
+    runtime_directory_listing listing = {NULL, 0};
+    int only = runtime_list_directory(folder, &listing) == SPISOR_OK && listing.count == 1 &&
+               strcmp(listing.entries[0].name, "host.json") == 0;
+    runtime_free_directory_listing(&listing);
+    return only;
+}
+
+static void stages_a_loader_from_its_standard_json_under_its_package_name_and_version(void) {
+    start_case("loader");
+    write_loader_repository(LOADER_PACKAGE, LOADER_STANDARD);
+    program run;
+    CHECK(stage_loader(&run) == 0);
+    check_text(run.err, "", "nothing refused");
+    program_free(&run);
+    char *directory = in_base("bundle");
+    CHECK(holds_only_the_manifest(directory));
+    cJSON *expected = parsed(LOADER_STANDARD);
+    cJSON_AddStringToObject(expected, "kind", "host");
+    cJSON_AddStringToObject(expected, "id", "fixture-loader");
+    cJSON_AddStringToObject(expected, "version", "2.3.4");
+    cJSON_AddStringToObject(expected, "runtime", "native");
+    char *expected_text = cJSON_PrintUnformatted(expected);
+    expect_manifest(directory, expected_text);
+    const char *directories[2] = {directory, NULL};
+    cJSON *catalog = built_catalog(directories);
+    const cJSON *item = value_at(catalog, "items/fixture-loader");
+    check_text(text_at(item, "kind"), "host", "the loader is a host");
+    CHECK(cJSON_Compare(cJSON_GetObjectItemCaseSensitive(item, "application"),
+                        cJSON_GetObjectItemCaseSensitive(expected, "application"), 1));
+    cJSON_Delete(catalog);
+    cJSON_free(expected_text);
+    cJSON_Delete(expected);
+    spisor_memory_release(directory);
+    finish_case();
+}
+
+static void catalog_build_refuses_a_loader_bundle_holding_more_naming_how_to_stage_it(void) {
+    start_case("loader-more");
+    write_loader_repository(LOADER_PACKAGE, LOADER_STANDARD);
+    program run;
+    CHECK(stage_loader(&run) == 0);
+    program_free(&run);
+    write_in(base_folder, "bundle/icon.svg", "<svg/>");
+    char *directory = in_base("bundle");
+    char *out = in_base("catalog");
+    const char *arguments[] = {"catalog", "build", "--host", directory, "--out", out, NULL};
+    CHECK(run_in(SPISOR_HOST_PATH, arguments, base_folder, &run) == 1);
+    expect_contains(run.err, "icon.svg", "names what else it holds");
+    expect_contains(run.err, "stage-bundle loader <directory> <standard.json>", "names how to stage it");
+    program_free(&run);
+    spisor_memory_release(out);
+    spisor_memory_release(directory);
+    finish_case();
+}
+
+static void expect_loader_refused(const char *label, const char *package, const char *standard, const char *part) {
+    start_case(label);
+    write_loader_repository(package, standard);
+    program run;
+    CHECK(stage_loader(&run) == 1);
+    expect_contains(run.err, part, label);
+    CHECK(!exists_in(base_folder, "bundle"));
+    program_free(&run);
+    finish_case();
+}
+
+static void refuses_a_loader_whose_proxy_lacks_its_base_url_variable(void) {
+    cJSON *standard = parsed(LOADER_STANDARD);
+    cJSON *application = cJSON_GetObjectItemCaseSensitive(standard, "application");
+    cJSON_DeleteItemFromObjectCaseSensitive(cJSON_GetObjectItemCaseSensitive(application, "proxy"), "baseUrlVariable");
+    char *text = cJSON_PrintUnformatted(standard);
+    expect_loader_refused("loader-proxy", LOADER_PACKAGE, text, "/application/proxy/baseUrlVariable");
+    cJSON_free(text);
+    cJSON_Delete(standard);
+}
+
+static void refuses_a_loader_standard_naming_what_stage_bundle_writes_or_a_package_naming_no_loader(void) {
+    cJSON *standard = parsed(LOADER_STANDARD);
+    cJSON_AddStringToObject(standard, "version", "9.9.9");
+    char *text = cJSON_PrintUnformatted(standard);
+    expect_loader_refused("loader-own", LOADER_PACKAGE, text, "names version, which stage-bundle writes itself");
+    cJSON_free(text);
+    cJSON_Delete(standard);
+    expect_loader_refused("loader-scoped", "{\"name\": \"@acme/loader\", \"version\": \"2.3.4\"}", LOADER_STANDARD,
+                          "names @acme/loader, which is no item id");
+    expect_loader_refused("loader-version", "{\"name\": \"fixture-loader\", \"version\": \"2.3\"}", LOADER_STANDARD,
+                          "2.3 is no version");
+    expect_loader_refused("loader-json", LOADER_PACKAGE, "[1]", "is no JSON object");
+}
+
 /** With the word node, the one case that runs the bundler on the PATH's node; else every case that needs none. */
 int main(int count, char **arguments) {
     if (count == 2 && strcmp(arguments[1], "node") == 0) {
@@ -1077,6 +1200,10 @@ int main(int count, char **arguments) {
     refuses_an_interface_binary_named_as_a_library_or_no_catalog_name();
     a_refused_interface_leaves_the_bundle_staged_before_untouched();
     lists_each_staged_kind_per_platform_and_spisor_host_as_a_host();
+    stages_a_loader_from_its_standard_json_under_its_package_name_and_version();
+    refuses_a_loader_whose_proxy_lacks_its_base_url_variable();
+    catalog_build_refuses_a_loader_bundle_holding_more_naming_how_to_stage_it();
+    refuses_a_loader_standard_naming_what_stage_bundle_writes_or_a_package_naming_no_loader();
     the_target_refuses_a_pinned_node_older_than_the_one_the_program_needs();
     the_target_refuses_an_engine_that_names_no_lower_bound();
     the_target_refuses_a_build_that_is_not_an_https_archive_with_a_sha256();

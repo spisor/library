@@ -34,10 +34,19 @@ void host_print_refusal(const cJSON *refusal);
 /** host_print_refusal with every name in the message and the fix escaped as host_printable does. */
 void host_print_refusal_printably(const cJSON *refusal);
 
-/** host_print_refusal_printably, then HOST_EXIT_REFUSED; refusal is freed. */
+/**
+ * Reads a leading `--refused-exit <code>` from the arguments, a code from 1 to 255 that every refusal from then on
+ * exits with in place of HOST_EXIT_REFUSED. Answers how many arguments it read, 0 or 2, or -1 for a code out of range.
+ *
+ * @implNote A caller that runs this program and reads one exit code as its own signal, as an application's hook does,
+ * names that code here, so nothing in the program knows the caller.
+ */
+int host_take_refused_exit(int count, char **arguments);
+
+/** host_print_refusal_printably, then the refused exit code; refusal is freed. */
 int host_refuse_printably(cJSON *refusal);
 
-/** host_print_refusal, then HOST_EXIT_REFUSED; refusal is freed. */
+/** host_print_refusal, then the refused exit code; refusal is freed. */
 int host_refuse(cJSON *refusal);
 
 /** Prints message and the usage on standard error and answers HOST_EXIT_MISUSED. */
