@@ -43,7 +43,8 @@ int runtime_are_item_versions(const runtime_item_version *versions, size_t count
 
 /**
  * Whether `count` variables are an environment a definition takes: each with a name and a value, the name not empty,
- * holding no = and given once. It allocates nothing, so a definition checks it before anything else.
+ * holding no = and given once, except a name that begins with =, which is no variable and is left out. It allocates
+ * nothing, so a definition checks it before anything else.
  */
 int runtime_is_environment(const runtime_variable *environment, size_t count);
 

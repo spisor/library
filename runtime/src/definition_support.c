@@ -127,12 +127,26 @@ static int is_variable_name(const char *name) {
     return runtime_is_text(name) && strchr(name, '=') == NULL;
 }
 
+/**
+ * Whether `name` begins with =, as Windows names a drive's current directory and the last exit code: no variable, and
+ * left out as runtime's own read of the process environment leaves it out.
+ */
+static int is_hidden_name(const char *name) {
+    return name != NULL && name[0] == '=';
+}
+
 int runtime_is_environment(const runtime_variable *environment, size_t count) {
     if (count > 0 && environment == NULL) {
         return 0;
     }
     for (size_t index = 0; index < count; index++) {
-        if (!is_variable_name(environment[index].name) || environment[index].value == NULL) {
+        if (environment[index].value == NULL) {
+            return 0;
+        }
+        if (is_hidden_name(environment[index].name)) {
+            continue;
+        }
+        if (!is_variable_name(environment[index].name)) {
             return 0;
         }
         for (size_t earlier = 0; earlier < index; earlier++) {
@@ -163,7 +177,8 @@ spisor_status runtime_environment_json(const runtime_variable *environment, size
     }
     *json = cJSON_CreateObject();
     for (size_t index = 0; *json != NULL && index < count; index++) {
-        if (cJSON_AddStringToObject(*json, environment[index].name, environment[index].value) == NULL) {
+        if (!is_hidden_name(environment[index].name) &&
+            cJSON_AddStringToObject(*json, environment[index].name, environment[index].value) == NULL) {
             cJSON_Delete(*json);
             *json = NULL;
         }
