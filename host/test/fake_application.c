@@ -21,6 +21,10 @@
 
 /** The variable naming the folder the fake application reports to and is released through. */
 #define SIGNALS_VARIABLE "FAKE_APPLICATION_SIGNALS"
+/** The variable whose value, when set, is the exit code, read as an unsigned number, in place of the second argument. */
+#define EXIT_CODE_VARIABLE "FAKE_APPLICATION_EXIT_CODE"
+/** The variable naming the tag of a child the fake application starts first, as a console program does by default. */
+#define CHILD_VARIABLE "FAKE_APPLICATION_CHILD"
 #define LONGEST_LIFE_MILLISECONDS 60000
 
 #if defined(_WIN32)
@@ -77,6 +81,28 @@ static int exists(const char *path) {
     return GetFileAttributesW(wide) != INVALID_FILE_ATTRIBUTES;
 }
 
+/**
+ * Starts this program again tagged tag, with no creation flags, so it gets whatever console Windows gives a console
+ * child by default: this process's own, or a new one with a window when this process has none.
+ */
+static void start_child(const char *tag) {
+    wchar_t self[4096];
+    wchar_t wide_tag[256];
+    wchar_t line[4600];
+    DWORD length = GetModuleFileNameW(NULL, self, 4096);
+    MultiByteToWideChar(CP_UTF8, 0, tag, -1, wide_tag, 256);
+    swprintf(line, sizeof line / sizeof *line, L"\"%ls\" %ls 0", self, wide_tag);
+    STARTUPINFOW startup;
+    memset(&startup, 0, sizeof startup);
+    startup.cb = sizeof startup;
+    PROCESS_INFORMATION information;
+    if (length > 0 && length < 4096 &&
+        CreateProcessW(self, line, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &information)) {
+        CloseHandle(information.hThread);
+        CloseHandle(information.hProcess);
+    }
+}
+
 #else
 
 static long parent_id(void) {
@@ -111,6 +137,10 @@ static int exists(const char *path) {
         fclose(file);
     }
     return file != NULL;
+}
+
+static void start_child(const char *tag) {
+    (void)tag;
 }
 
 #endif
@@ -165,18 +195,33 @@ static void record_start(const char *signals, const char *tag, int count, char *
     cJSON_Delete(started);
 }
 
+/** The exit code EXIT_CODE_VARIABLE names, else the argument's, 0 for none. */
+static int exit_code_of(int count, char **arguments) {
+    char *overridden = environment_value(EXIT_CODE_VARIABLE);
+    int code = overridden != NULL ? (int)strtoul(overridden, NULL, 10) : count > 2 ? atoi(arguments[2]) : 0;
+    spisor_memory_release(overridden);
+    return code;
+}
+
 /**
  * fake-application <tag> <exit code> [arguments...]: records its pid, parent and arguments as <tag>.started
- * in the signals folder, waits for <tag>.release and exits with the code; with no tag it exits at once.
+ * in the signals folder, waits for <tag>.release and exits with the code; with no tag it exits at once. On Windows,
+ * with CHILD_VARIABLE set, it first starts itself tagged that variable's value.
  */
 static int run(int count, char **arguments) {
     const char *tag = count > 1 ? arguments[1] : "";
-    int code = count > 2 ? atoi(arguments[2]) : 0;
+    int code = exit_code_of(count, arguments);
     char *signals = environment_value(SIGNALS_VARIABLE);
+    char *child = environment_value(CHILD_VARIABLE);
     if (tag[0] == 0 || signals == NULL) {
+        spisor_memory_release(child);
         spisor_memory_release(signals);
         return code;
     }
+    if (child != NULL && strcmp(child, tag) != 0) {
+        start_child(child);
+    }
+    spisor_memory_release(child);
     record_start(signals, tag, count, arguments);
     char *release = signal_file(signals, tag, ".release");
     for (int waited = 0; release != NULL && !exists(release) && waited < LONGEST_LIFE_MILLISECONDS; waited += 50) {

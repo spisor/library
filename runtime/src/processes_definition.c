@@ -9,6 +9,8 @@
 #include "host_references.h"
 #include "paths.h"
 #include "processes.h"
+#include "process_environment.h"
+#include "processes_child_start.h"
 #include "processes_ready.h"
 #include "run_records.h"
 #include "spisor/path.h"
@@ -28,6 +30,8 @@
 #define LIVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_live_argument, now)
 #define LIVE_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_live_answer, storage)
 #define REMOVE_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_remove_argument, record)
+#define RUN_ACTION_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_run_action_argument, input)
+#define RUN_ACTION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_processes_run_action_answer, storage)
 
 /** The state and host a call is for, the host NULL for a call that takes none. */
 typedef struct process_target {
@@ -152,7 +156,7 @@ static spisor_status serve_hold(const runtime_processes_hold_argument *argument,
         argument->host_id,
         (double)argument->holder,
         {argument->executable, cJSON_GetObjectItemCaseSensitive(start, "arguments"),
-         cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory}};
+         cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory, RUNTIME_DETACHED_NO_CONSOLE}};
     cJSON *answered;
     spisor_status status;
     if (start == NULL || runtime_start_storage(&answer->storage) != SPISOR_OK) {
@@ -491,6 +495,73 @@ static spisor_status remove_runs(void *context, const runtime_processes_remove_a
                : runtime_refuse_json(refusal, operation_refusal);
 }
 
+static spisor_status check_run_action(const runtime_processes_run_action_argument *argument,
+                                      spisor_refusal *refusal) {
+    spisor_status status = SPISOR_OK;
+    if (!runtime_is_place(argument->cache) || !runtime_is_place(argument->state)) {
+        status = runtime_refuse_place(refusal, !runtime_is_place(argument->cache) ? "cache" : "state");
+    }
+    if (status == SPISOR_OK) {
+        status = runtime_check_host_id(refusal, argument->loader_id, HEADER);
+    }
+    if (status == SPISOR_OK && (!runtime_is_text(argument->plugin) || !runtime_is_text(argument->action) ||
+                                !runtime_is_text(argument->input))) {
+        status = runtime_refuse_member(refusal, "plugin, action and input", HEADER);
+    }
+    if (status == SPISOR_OK && !runtime_is_environment(argument->environment, argument->environment_count)) {
+        status = runtime_refuse_environment(refusal);
+    }
+    return status;
+}
+
+static spisor_status fill_run_action(const cJSON *answered, void *filled) {
+    runtime_processes_run_action_answer *answer = filled;
+    spisor_status status = runtime_start_storage(&answer->storage);
+    answer->exit_code = number_of(answered, "exitCode");
+    if (status == SPISOR_OK && !runtime_storage_copy(&answer->storage, text_of(answered, "failure"), &answer->failure)) {
+        status = SPISOR_OUT_OF_MEMORY;
+    }
+    return status != SPISOR_OK ? status
+                               : runtime_storage_value(&answer->storage,
+                                                       cJSON_GetObjectItemCaseSensitive(answered, "result"),
+                                                       &answer->result);
+}
+
+static spisor_status run_action(void *context, const runtime_processes_run_action_argument *argument,
+                                runtime_processes_run_action_answer *answer, spisor_refusal *refusal) {
+    cJSON *operation_refusal = NULL;
+    cJSON *environment = NULL;
+    cJSON *answered;
+    spisor_status status;
+    (void)context;
+    if (argument == NULL || !spisor_has_shape(argument->size, RUN_ACTION_SHAPE) ||
+        !SPISOR_IS_EMPTY_ANSWER(answer, RUN_ACTION_ANSWER_SHAPE) || answer->result != NULL ||
+        answer->failure != NULL) {
+        return spisor_refuse_shape(refusal, "processes' run_action");
+    }
+    status = check_run_action(argument, refusal);
+    if (status == SPISOR_OK && argument->environment == NULL) {
+        environment = runtime_process_environment();
+        status = environment == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    } else if (status == SPISOR_OK) {
+        status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
+    }
+    if (status != SPISOR_OK) {
+        return status;
+    }
+    runtime_child_action_request request = {argument->cache,     argument->state,  environment,    argument->loader_id,
+                                            argument->plugin,    argument->action, argument->input};
+    answered = runtime_processes_run_action(&request, &operation_refusal);
+    cJSON_Delete(environment);
+    return runtime_serve_answered(answered, operation_refusal, fill_run_action, answer, RUN_ACTION_ANSWER_SHAPE,
+                                  refusal);
+}
+
+static void release_run_action_answer(void *context, runtime_processes_run_action_answer *answer) {
+    (void)context;
+    runtime_release_stored_answer(answer, RUN_ACTION_ANSWER_SHAPE);
+}
+
 static void release_hold_answer(void *context, runtime_processes_hold_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, HOLD_ANSWER_SHAPE);
@@ -539,6 +610,8 @@ static const runtime_processes_definition definition = {
     release_record_answer,
     release_live_answer,
     spisor_release_refusal,
+    run_action,
+    release_run_action_answer,
 };
 
 RUNTIME_DEFINITION_API const void *runtime_processes_definition_of(void) {

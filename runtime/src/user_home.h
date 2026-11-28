@@ -35,4 +35,11 @@ int runtime_equal_ignoring_ascii_case(const char *left, const char *right);
  */
 const char *runtime_environment_variable(const cJSON *environment, const char *name, int windows);
 
+/**
+ * Whether environment asks for no colour: NO_COLOR set to a value that is not empty, as no-color.org defines it, the
+ * name matched as this OS matches variable names. Every colour decision C makes, and every one it answers the interface,
+ * is this one.
+ */
+int runtime_environment_asks_no_color(const cJSON *environment);
+
 #endif

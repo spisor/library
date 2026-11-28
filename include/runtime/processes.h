@@ -5,9 +5,10 @@
  * @file
  * runtime's `processes` service: the background hosts kept alive while a holder process lives, recorded under
  * state/processes/, the readiness a session host publishes there, and the run records under state/bundles/runs/ that
- * name what every live start runs. A size-prefixed struct is read only up to its `size`. Text the caller hands in is
- * NUL-terminated UTF-8 borrowed for the call; what an answer or a refusal points at is the provider's until the
- * release for its kind. A state is an absolute directory, a host id a plain file name, and a process id above zero.
+ * name what every live start runs, and the child that runs one declared action. A size-prefixed struct is read only up
+ * to its `size`. Text the caller hands in is NUL-terminated UTF-8 borrowed for the call; what an answer or a refusal
+ * points at is the provider's until the release for its kind. A state is an absolute directory, a host id a plain file
+ * name, and a process id above zero.
  */
 
 #include <stddef.h>
@@ -178,6 +179,38 @@ typedef struct runtime_processes_remove_argument {
 } runtime_processes_remove_argument;
 
 /**
+ * One declared action to run as a child process: `loader_id`'s `plugin` running `action` with `input`, a JSON object's
+ * text, in the user's `environment`, NULL with a count of 0 for this process's own, which resolves to the places
+ * `cache` and `state` and which the child gets as its own. First shape ends at `input`.
+ */
+typedef struct runtime_processes_run_action_argument {
+    uint32_t size;
+    const char *cache;
+    const char *state;
+    const runtime_variable *environment;
+    size_t environment_count;
+    const char *loader_id;
+    const char *plugin;
+    const char *action;
+    const char *input;
+} runtime_processes_run_action_argument;
+
+/**
+ * How the action's run ended: its `exit_code`, never negative, a Windows code as the unsigned number Windows reports;
+ * the `result` its action answered, NULL when the run wrote none; and `failure`, NULL exactly when the exit code is 0,
+ * else the end of what the run wrote to its standard error, at most its last 4096 bytes, starting where a character
+ * does, each byte that is no UTF-8 and each NUL as U+FFFD, trimmed, or a sentence naming the exit code when it wrote
+ * nothing, on Windows also in hex for a code at or above 0x80000000. First shape ends at `storage`.
+ */
+typedef struct runtime_processes_run_action_answer {
+    uint32_t size;
+    int64_t exit_code;
+    const spisor_value *result;
+    const char *failure;
+    void *storage;
+} runtime_processes_run_action_answer;
+
+/**
  * The processes service. Every operation answers MALFORMED for an argument short of its first shape, a state that is
  * not absolute, a host id that is not a plain file name, a required text that is NULL or empty, a process id that is
  * not above zero, a time that is negative or not finite, an array whose count has no elements or holds a NULL or empty
@@ -268,6 +301,23 @@ typedef struct runtime_processes_definition {
     void (*release_record_answer)(void *context, runtime_processes_record_answer *answer);
     void (*release_live_answer)(void *context, runtime_processes_live_answer *answer);
     void (*release_refusal)(void *context, spisor_refusal *refusal);
+    /**
+     * Runs one declared action as a child process and waits for it, so an interface starts no process of its own: the
+     * ACTION start hosts' layer_start answers, given a result path in the state's results folder named by this
+     * process's id, a counter and 64 random bits, at which nothing stands; the child's standard input and output on the null device, its standard error taken for `failure`, its
+     * environment the argument's, and on Windows CREATE_NO_WINDOW, so a caller with no console opens no console window.
+     * Once the child exits the result file is read when it exited 0, and deleted whatever happened. Safe to call from
+     * several threads at once, each call naming a result file of its own.
+     *
+     * @return OK, also for a run that exited with a code other than 0, which `failure` describes; MALFORMED, also for a
+     * loader that is no host id; REFUSED when the environment does not resolve to `cache` and `state`, no result name
+     * free of what the results folder holds can be drawn, the start is refused as layer_start refuses it, the child
+     * cannot be started, or the result it wrote is not JSON; OUT_OF_MEMORY, the result file removed whenever the child ran, unless memory
+     * stayed too short even to remove it, when the cache sweep removes it a day later.
+     */
+    spisor_status (*run_action)(void *context, const runtime_processes_run_action_argument *argument,
+                                runtime_processes_run_action_answer *answer, spisor_refusal *refusal);
+    void (*release_run_action_answer)(void *context, runtime_processes_run_action_answer *answer);
 } runtime_processes_definition;
 
 /** The static runtime_processes_definition, living until the library is unloaded. */

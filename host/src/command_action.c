@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "action_result.h"
 #include "cache_refusal.h"
 #include "allocation.h"
 #include "host_child.h"
@@ -11,10 +10,9 @@
 #include "host_output.h"
 #include "host_start.h"
 #include "json_service.h"
+#include "run_result.h"
 #include "runtime/hosts.h"
 
-#define STALE_RESULT_MESSAGE "a file an earlier spisor-host left in the state place's results folder could not be removed"
-#define STALE_RESULT_FIX "remove the files in the results folder of the state place, then run the action again"
 #define ACTION_USAGE "action needs the host id, the plugin and the action, and takes --input name=value as often as it needs"
 
 static char *problem_of(const char *first, const char *second) {
@@ -69,10 +67,10 @@ static int runs_in_session_host(const host_context *context, const char *host_id
     return loader;
 }
 
-/** Prints the result the action's run wrote to result, as host_take_result answers it; 0 when memory ran out. */
+/** Prints the result the action's run wrote to result, as runtime_take_result answers it; 0 when memory ran out. */
 static int answer_result(const char *result, int exit_code) {
     int out_of_memory = 0;
-    char *text = host_take_result(result, exit_code, &out_of_memory);
+    char *text = runtime_take_result(result, exit_code, &out_of_memory);
     if (text != NULL) {
         host_write(0, text);
         host_write(0, "\n");
@@ -94,19 +92,20 @@ static cJSON *action_layer(const host_context *context, const char *loader_id, c
 /**
  * Runs the start the registration of host_id records, or the layer of a loader's plugin when it records none,
  * with the arguments action, plugin, action and input, as this process's child sharing its terminal, and
- * answers its exit code. A loader's layer is also given a result path of this process's own, cleared before the
- * child starts, whose result is printed once the child exited 0 and the file removed before answering.
+ * answers its exit code. A loader's layer is also given a result path of this process's own, at which nothing stands,
+ * whose result is printed once the child exited 0 and the file removed before answering.
  *
  * @implNote A background host's recorded start is the archived host's, which takes no result path.
  */
 static int run_action(const host_context *context, const char *host_id, const char *const *action_arguments) {
     cJSON *refusal = NULL;
     int in_session_host = runs_in_session_host(context, host_id);
-    int removable = 1;
-    char *result = in_session_host ? host_result_path(context, &removable) : NULL;
+    int out_of_memory = 0;
+    char *result = in_session_host ? runtime_fresh_result_path(context->state, &out_of_memory) : NULL;
     cJSON *start = NULL;
     if (in_session_host && result == NULL) {
-        return host_refuse(removable ? NULL : runtime_refusal(STALE_RESULT_MESSAGE, STALE_RESULT_FIX));
+        return host_refuse(out_of_memory ? NULL
+                                         : runtime_refusal(RUNTIME_UNNAMED_RESULT_MESSAGE, RUNTIME_UNNAMED_RESULT_FIX));
     }
     start = in_session_host ? action_layer(context, host_id, action_arguments, result, &refusal)
                             : host_start_of(context, host_id, action_arguments, 4, &refusal);

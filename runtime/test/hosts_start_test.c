@@ -290,19 +290,26 @@ static void the_settings_come_from_the_registrations_home(void) {
     finish_base();
 }
 
-static void no_color_is_set_by_an_empty_no_color(void) {
+/** no-color.org's rule: NO_COLOR counts only when it is set to a value that is not empty. */
+static void no_color_counts_only_when_set_and_not_empty(void) {
     start_world("start-no-color");
     register_test_host("1.0.0");
     enable_plugin_a();
-    cJSON *environment = environment_json();
-    cJSON_AddStringToObject(environment, "NO_COLOR", "");
-    catalog_answer colorless = start_host_in(environment, 1);
+    cJSON *empty = environment_json();
+    cJSON_AddStringToObject(empty, "NO_COLOR", "");
+    catalog_answer emptied = start_host_in(empty, 1);
+    expect_success(emptied, "an empty no color");
+    CHECK(is_false_at(emptied.tree, "noColor"));
+    cJSON *set = environment_json();
+    cJSON_AddStringToObject(set, "NO_COLOR", "1");
+    catalog_answer colorless = start_host_in(set, 1);
     expect_success(colorless, "no color");
     CHECK(is_true_at(colorless.tree, "noColor"));
     catalog_answer colored = start_host(1);
     CHECK(is_false_at(colored.tree, "noColor"));
     cJSON_Delete(colored.tree);
     cJSON_Delete(colorless.tree);
+    cJSON_Delete(emptied.tree);
     finish_base();
 }
 
@@ -850,7 +857,7 @@ int main(void) {
     an_unregistered_host_is_refused_with_the_reinstall_fix();
     a_registration_without_a_version_is_refused();
     the_settings_come_from_the_registrations_home();
-    no_color_is_set_by_an_empty_no_color();
+    no_color_counts_only_when_set_and_not_empty();
     the_timers_are_the_runtimes_own();
     no_color_ignores_case_on_windows();
     a_no_color_that_is_no_text_is_refused_as_no_usable_environment();

@@ -20,6 +20,7 @@
 #include "spisor/file.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
+#include "user_home.h"
 #include "vector_reader.h"
 
 /**
@@ -138,7 +139,7 @@ static int read_case_facts(staged_case *staged) {
     staged->plugin = text_member(manifest, "id");
     staged->start = clock == NULL ? DEFAULT_START : text_member(clock, "start");
     staged->times = cJSON_GetObjectItemCaseSensitive(clock, "times");
-    staged->no_color = cJSON_GetObjectItemCaseSensitive(environment, "NO_COLOR") != NULL;
+    staged->no_color = runtime_environment_asks_no_color(environment) ? 1u : 0u;
     staged->portable = portable == NULL ? NULL : parity_join(staged->root, portable);
     return staged->plugin != NULL && staged->start != NULL && (portable == NULL || staged->portable != NULL) &&
            optional_value(staged->definition, "names", &staged->names) &&

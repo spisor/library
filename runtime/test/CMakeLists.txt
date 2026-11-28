@@ -180,14 +180,6 @@ endforeach()
 set(runtime_processes_test_objects $<TARGET_OBJECTS:runtime_processes> $<TARGET_OBJECTS:runtime_cache>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh> $<TARGET_OBJECTS:runtime_fetch>
     $<TARGET_OBJECTS:runtime_secret_store>)
-add_executable(background_fixture background_fixture.c ${runtime_processes_test_objects}
-    $<TARGET_OBJECTS:runtime_path_entry>)
-target_link_libraries(background_fixture PRIVATE runtime_objects spisor_allocator ${runtime_secret_store_libraries}
-    ${runtime_path_entry_libraries})
-runtime_link_naula(background_fixture)
-target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
-spisor_strict_warnings(background_fixture)
-
 set(runtime_hosts_test_objects $<TARGET_OBJECTS:runtime_hosts> ${runtime_processes_test_objects}
     $<TARGET_OBJECTS:runtime_change_reversal> $<TARGET_OBJECTS:runtime_commands>)
 foreach(name loader_test entry_template_test detect_test lists_test)
@@ -195,24 +187,44 @@ foreach(name loader_test entry_template_test detect_test lists_test)
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endforeach()
 
-runtime_test(processes_test ${runtime_processes_test_objects})
-target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
-add_dependencies(processes_test background_fixture)
-if(NOT WIN32)
-    target_link_libraries(processes_test PRIVATE Threads::Threads)
-endif()
-
-runtime_test(processes_ready_test ${runtime_processes_test_objects})
-runtime_test(scope_threads_test $<TARGET_OBJECTS:runtime_standard> ${runtime_processes_test_objects})
-target_link_libraries(scope_threads_test PRIVATE weivel_standard)
-
 add_executable(node_probe node_probe.c)
 spisor_strict_warnings(node_probe)
 
 set(runtime_install_by_id_objects $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_identity_resolve>
     $<TARGET_OBJECTS:runtime_identity_also_at>)
 set(runtime_install_test_objects $<TARGET_OBJECTS:runtime_install_test_hooks> $<TARGET_OBJECTS:runtime_updates>
-    $<TARGET_OBJECTS:runtime_hosts_definition> ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
+    $<TARGET_OBJECTS:runtime_hosts_definition> $<TARGET_OBJECTS:runtime_processes_definition>
+    ${runtime_install_by_id_objects} ${runtime_hosts_test_objects})
+
+add_executable(background_fixture background_fixture.c ${runtime_install_test_objects}
+    $<TARGET_OBJECTS:runtime_path_entry_test_hooks>)
+target_link_libraries(background_fixture PRIVATE runtime_objects spisor_allocator ${runtime_secret_store_libraries}
+    ${runtime_path_entry_libraries})
+runtime_link_naula(background_fixture)
+target_include_directories(background_fixture PRIVATE ${PROJECT_SOURCE_DIR}/runtime/src)
+spisor_strict_warnings(background_fixture)
+
+runtime_test(processes_test ${runtime_install_test_objects})
+target_compile_definitions(processes_test PRIVATE RUNTIME_BACKGROUND_FIXTURE_PATH="$<TARGET_FILE:background_fixture>")
+add_dependencies(processes_test background_fixture)
+if(NOT WIN32)
+    target_link_libraries(processes_test PRIVATE Threads::Threads)
+endif()
+
+runtime_test(processes_ready_test ${runtime_install_test_objects})
+runtime_test(scope_threads_test $<TARGET_OBJECTS:runtime_standard> ${runtime_install_test_objects})
+target_link_libraries(scope_threads_test PRIVATE weivel_standard)
+
+add_executable(action_fixture action_fixture.c)
+spisor_strict_warnings(action_fixture)
+runtime_test(child_start_test ${runtime_install_test_objects})
+target_compile_definitions(child_start_test PRIVATE RUNTIME_ACTION_FIXTURE_PATH="$<TARGET_FILE:action_fixture>")
+add_dependencies(child_start_test action_fixture)
+runtime_test_with_allocator(out_of_memory_child_start_test spisor_allocator_counting ${runtime_install_test_objects})
+target_compile_definitions(out_of_memory_child_start_test PRIVATE
+    RUNTIME_ACTION_FIXTURE_PATH="$<TARGET_FILE:action_fixture>")
+add_dependencies(out_of_memory_child_start_test action_fixture)
+set_tests_properties(out_of_memory_child_start_test PROPERTIES TIMEOUT 1800)
 # A test serving byId over the loopback fake needs plain http, which only the fetch test hooks allow.
 set(runtime_install_plain_http_test_objects ${runtime_install_test_objects})
 list(TRANSFORM runtime_install_plain_http_test_objects REPLACE "runtime_fetch>$" "runtime_fetch_test_hooks>")
@@ -414,8 +426,10 @@ add_test(NAME weivel_host_refuses_another_definition_test COMMAND weivel_host_lo
 spisor_add_described_checks(LIBRARY runtime DECLARATION ${PROJECT_SOURCE_DIR}/runtime/library.json)
 spisor_add_described_checks(LIBRARY runtime_testing DECLARATION ${PROJECT_SOURCE_DIR}/runtime/testing/library.json)
 
-add_executable(parity_test parity_test.c parity_files.c parity_json.c)
-target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
+# user_home.c is compiled in so a case's NO_COLOR is decided by the one rule C's own starts follow, never a copy of it.
+add_executable(parity_test parity_test.c parity_files.c parity_json.c ${PROJECT_SOURCE_DIR}/runtime/src/user_home.c)
+target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/runtime/src)
 target_compile_definitions(parity_test PRIVATE RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>"
     PARITY_PATH="${PROJECT_SOURCE_DIR}/parity" PARITY_WORK_PATH="${CMAKE_CURRENT_BINARY_DIR}/parity-work")
 target_link_libraries(parity_test PRIVATE spisor_vector_reader spisor_library spisor_allocator ${CMAKE_DL_LIBS})

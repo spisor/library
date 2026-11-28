@@ -1,8 +1,22 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "run_result.h"
 #include "allocation.h"
 
+#include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#define current_process_id() _getpid()
+#else
+#include <unistd.h>
+#define current_process_id() getpid()
+#endif
+
+#include "atomic.h"
 #include "cJSON.h"
 #include "cache_place.h"
 #include "cache_refusal.h"
@@ -15,6 +29,7 @@
 #include "spisor/path.h"
 
 #define NONE_JSON "null"
+#define NAME_ATTEMPTS 8
 
 static int is_separator(char character) {
     return character == '/' || (RUNTIME_HOST_IS_WINDOWS && character == '\\');
@@ -169,4 +184,54 @@ spisor_status runtime_write_result(const char *state, const char *path, const sp
     }
     cJSON_free(text);
     return status;
+}
+
+/** The path of result name number with the random part drawn, NULL when memory runs out. */
+static char *result_path_named(const char *state, long number, uint64_t drawn) {
+    char name[96];
+    snprintf(name, sizeof name, "%.0f-%ld-%016llx.json", (double)current_process_id(), number,
+             (unsigned long long)drawn);
+    const char *segments[3] = {state, RUNTIME_RESULTS_FOLDER, name};
+    return spisor_path_join(RUNTIME_HOST_IS_WINDOWS, segments, 3);
+}
+
+char *runtime_fresh_result_path_drawn(const char *state, runtime_random_draw draw, int *out_of_memory) {
+    static volatile long taken;
+    long number = runtime_atomic_increment(&taken);
+    *out_of_memory = 0;
+    for (int attempt = 0; attempt < NAME_ATTEMPTS; attempt++) {
+        uint64_t drawn = 0;
+        if (!draw(&drawn)) {
+            return NULL;
+        }
+        char *path = result_path_named(state, number, drawn);
+        runtime_entry_kind kind = path == NULL ? RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY : runtime_probe_entry(path);
+        if (kind == RUNTIME_ENTRY_MISSING) {
+            return path;
+        }
+        spisor_memory_release(path);
+        if (kind == RUNTIME_ENTRY_PROBE_OUT_OF_MEMORY) {
+            *out_of_memory = 1;
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
+char *runtime_fresh_result_path(const char *state, int *out_of_memory) {
+    return runtime_fresh_result_path_drawn(state, runtime_random_64, out_of_memory);
+}
+
+char *runtime_take_result(const char *path, int exit_code, int *out_of_memory) {
+    size_t length = 0;
+    spisor_read_outcome outcome = SPISOR_READ_FAILED;
+    char *text = exit_code == 0 ? (char *)spisor_read_file_reporting(path, &length, &outcome) : NULL;
+    runtime_entry_outcome removed = runtime_remove_file_entry(path);
+    *out_of_memory = removed == RUNTIME_ENTRY_OUT_OF_MEMORY || outcome == SPISOR_READ_OUT_OF_MEMORY;
+    if (removed == RUNTIME_ENTRY_OUT_OF_MEMORY) {
+        spisor_memory_release(text);
+        text = NULL;
+        runtime_remove_file_entry(path);
+    }
+    return text;
 }

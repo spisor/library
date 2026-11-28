@@ -126,8 +126,8 @@ typedef struct runtime_hosts_timers {
  * the ecosystem `settings` of that home; the `plan` updates' apply answers, which carries no next or rollback for a
  * reused recorded run; `reused_recorded_run` 1 when a start that is not the session start reused the run a live run
  * record names; the `timers` of the session start, NULL for any other start; and `no_color` 1 when the environment
- * carries NO_COLOR at all. `places` and `plan` live in this answer's storage, their own `storage` NULL. First shape
- * ends at `storage`.
+ * sets NO_COLOR to a value that is not empty, as no-color.org defines it. `places` and `plan` live in this answer's
+ * storage, their own `storage` NULL. First shape ends at `storage`.
  */
 typedef struct runtime_hosts_start_answer {
     uint32_t size;

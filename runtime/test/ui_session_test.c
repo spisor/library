@@ -83,6 +83,27 @@ static void open_session(session_home *home, const char *loader) {
     home->status = ui()->session(NULL, &argument, &home->answer, &home->refusal);
 }
 
+/** open_session with the home's own environment and NO_COLOR set to no_color, the answer's size `answer_size`. */
+static void open_session_with_no_color(session_home *home, const char *no_color, uint32_t answer_size) {
+    runtime_ui_session_argument argument = SPISOR_INIT(runtime_ui_session_argument);
+    runtime_variable environment[64];
+    size_t count = home->home.answer.variable_count;
+    CHECK(count < 64);
+    for (size_t index = 0; index < count && index < 63; index++) {
+        environment[index] = home->home.answer.variables[index];
+    }
+    environment[count] = (runtime_variable){"NO_COLOR", no_color};
+    ui()->release_session_answer(NULL, &home->answer);
+    ui()->release_refusal(NULL, &home->refusal);
+    home->answer.size = answer_size;
+    argument.places = &home->places;
+    argument.loader = LOADER;
+    argument.environment = environment;
+    argument.environment_count = count + 1;
+    home->status = ui()->session(NULL, &argument, &home->answer, &home->refusal);
+    home->answer.size = (uint32_t)sizeof home->answer;
+}
+
 static void finish_session_home(session_home *home) {
     ui()->release_session_answer(NULL, &home->answer);
     ui()->release_refusal(NULL, &home->refusal);
@@ -432,6 +453,39 @@ static void a_loader_whose_first_required_plugin_no_catalog_lists_answers_its_pl
     finish_session_home(&home);
 }
 
+/**
+ * The interface draws without colour exactly when C does, so the session answers C's decision: NO_COLOR counts only
+ * when it is set and not empty (no-color.org), and an answer whose size stops at its first shape is never written past.
+ */
+static void no_color_follows_a_no_color_that_is_set_and_not_empty(void) {
+    static const char *const manifests[1] = {ALPHA};
+    session_home home;
+    lay_out_session_home(&home, "no-color", LOADER, manifests, 1, NULL);
+    open_session_with_no_color(&home, "", (uint32_t)sizeof home.answer);
+    CHECK(home.status == SPISOR_OK && home.answer.no_color == 0);
+    open_session_with_no_color(&home, "1", (uint32_t)sizeof home.answer);
+    CHECK(home.status == SPISOR_OK && home.answer.no_color == 1);
+    open_session_with_no_color(&home, "1", (uint32_t)offsetof(runtime_ui_session_answer, no_color));
+    CHECK(home.status == SPISOR_OK && home.answer.no_color == 0);
+    finish_session_home(&home);
+}
+
+/** An environment with a variable named twice is malformed, as every service refuses one. */
+static void an_environment_naming_a_variable_twice_is_malformed(void) {
+    static const char *const manifests[1] = {ALPHA};
+    session_home home;
+    runtime_ui_session_argument argument = SPISOR_INIT(runtime_ui_session_argument);
+    runtime_variable environment[2] = {{"NO_COLOR", "1"}, {"NO_COLOR", "2"}};
+    lay_out_session_home(&home, "environment-twice", LOADER, manifests, 1, NULL);
+    argument.places = &home.places;
+    argument.loader = LOADER;
+    argument.environment = environment;
+    argument.environment_count = 2;
+    CHECK(ui()->session(NULL, &argument, &home.answer, &home.refusal) == SPISOR_MALFORMED);
+    CHECK(home.answer.storage == NULL && home.answer.no_color == 0);
+    finish_session_home(&home);
+}
+
 static void answers_malformed_for_places_that_are_not_absolute_and_a_loader_that_is_no_host_id(void) {
     static const char *const manifests[1] = {ALPHA};
     session_home home;
@@ -460,5 +514,7 @@ int main(void) {
     a_loader_requiring_no_plugin_over_two_languages_answers_its_plugins();
     a_loader_whose_first_required_plugin_no_catalog_lists_answers_its_plugins();
     answers_malformed_for_places_that_are_not_absolute_and_a_loader_that_is_no_host_id();
+    no_color_follows_a_no_color_that_is_set_and_not_empty();
+    an_environment_naming_a_variable_twice_is_malformed();
     return check_summary("ui_session_test");
 }

@@ -564,11 +564,6 @@ static cJSON *timers(const start_context *context) {
     return timers;
 }
 
-/** Whether environment names NO_COLOR at all, empty included, as the OS matches variable names. */
-static int carries_no_color(const cJSON *environment) {
-    return runtime_environment_variable(environment, "NO_COLOR", RUNTIME_HOST_IS_WINDOWS) != NULL;
-}
-
 /** The registration's identity at the version plan runs the host at, else the one it is registered at. */
 static cJSON *running_identity(const start_context *context, const cJSON *plan) {
     const char *planned_version = string_of(cJSON_GetObjectItemCaseSensitive(plan, "run"), context->argument.host_id);
@@ -596,7 +591,7 @@ static cJSON *answer_of(const start_context *context, cJSON *plan, int reused) {
                 runtime_add_owned(answer, "settings", cJSON_Duplicate(context->settings, 1)) &&
                 cJSON_AddBoolToObject(answer, "reusedRecordedRun", reused) != NULL &&
                 (!context->argument.session || runtime_add_owned(answer, "timers", timers(context))) &&
-                cJSON_AddBoolToObject(answer, "noColor", carries_no_color(context->argument.environment)) != NULL &&
+                cJSON_AddBoolToObject(answer, "noColor", runtime_environment_asks_no_color(context->argument.environment)) != NULL &&
                 cJSON_AddStringToObject(answer, "runId", context->run_id) != NULL &&
                 cJSON_AddItemToObjectCS(answer, "plan", plan);
     if (!built) {

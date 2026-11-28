@@ -20,6 +20,7 @@
     "  spisor-host remove <host-id>\n"                                                                                \
     "  spisor-host launch <loader-id> [arguments for the application]...\n"                                           \
     "  spisor-host background <host-id>\n"                                                                            \
+    "  spisor-host ui [<loader-id>] [--window]\n"                                                                     \
     "  spisor-host hook <loader-id> <event>\n"                                                                        \
     "  spisor-host catalog build [--plugin <directory>]... [--host <directory>[@<platform>]]... "                     \
     "[--library <id>=<directory>@<platform>]... --out <directory>\n"                                                  \

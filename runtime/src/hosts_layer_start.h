@@ -32,6 +32,12 @@ typedef struct runtime_entry_start_request {
 cJSON *runtime_entry_start(const runtime_entry_start_request *request, cJSON **refusal);
 
 /**
+ * The runtime binary the hint of item id names, NULL with *refusal set, with the reinstall fix, when it names none;
+ * borrowed from hint.
+ */
+const char *runtime_hinted_binary(const cJSON *hint, const char *id, cJSON **refusal);
+
+/**
  * What hosts.layer_start starts: `loader_id`'s layers in `environment`, an object of variable names to values, in
  * `mode`, a runtime_hosts_layer_mode, and for an ACTION the `plugin`, `action` and `input` text it runs.
  */

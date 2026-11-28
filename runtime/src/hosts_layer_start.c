@@ -179,8 +179,7 @@ static cJSON *layer_arguments(const layer_context *context, const char *language
     return arguments;
 }
 
-/** The runtime binary the layer's hint names, refused with the reinstall fix when it names none. */
-static const char *runtime_binary(const cJSON *hint, const char *layer_id, cJSON **refusal) {
+const char *runtime_hinted_binary(const cJSON *hint, const char *layer_id, cJSON **refusal) {
     const cJSON *runtime = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(hint, "libraries"),
                                                             RUNTIME_LIBRARY_ID);
     const char *binary = text_of(runtime, "binary");
@@ -205,7 +204,7 @@ static cJSON *layer_of(const layer_context *context, const char *language, cJSON
     const char *runtime = host_runtime(context, language, refusal);
     char *layer_id = runtime == NULL ? NULL : runtime_language_host_id(language);
     cJSON *hint = layer_id == NULL ? NULL : runtime_layer_hint(context->cache, layer_id, refusal);
-    const char *binary = hint == NULL ? NULL : runtime_binary(hint, layer_id, refusal);
+    const char *binary = hint == NULL ? NULL : runtime_hinted_binary(hint, layer_id, refusal);
     cJSON *arguments = binary == NULL ? NULL : layer_arguments(context, language, binary);
     runtime_entry_start_request entry = {context->cache, context->request->environment, layer_id,
                                          text_of(hint, "host"), runtime, NULL, arguments};

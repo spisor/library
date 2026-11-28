@@ -3,9 +3,9 @@ if(NOT WIN32)
     find_package(Threads REQUIRED)
 endif()
 
-set(host_sources src/action_result.c src/application_choices.c src/catalog_inputs.c src/catalog_writer.c
+set(host_sources src/application_choices.c src/catalog_inputs.c src/catalog_writer.c
     src/command_action.c src/command_background.c src/command_catalog_build.c src/command_hook.c src/command_install.c src/command_launch.c src/command_marketplace.c
-    src/command_remove.c src/command_status.c src/command_update.c src/host_context.c
+    src/command_remove.c src/command_status.c src/command_ui.c src/command_update.c src/host_context.c
     src/host_definition.c src/host_holds.c src/host_options.c
     src/host_output.c src/host_service.c src/host_start.c src/install_by_name.c src/install_warning_report.c src/marketplace_copies.c src/loader_start.c src/own_executable.c src/own_run.c src/required_plugins.c src/session_ready.c src/terminal_question.c src/windows_command.c)
 if(WIN32)
@@ -33,6 +33,16 @@ add_library(host_ready_timeout OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout PRIVATE src)
 spisor_strict_warnings(host_ready_timeout)
 
+add_library(host_terminal_attached OBJECT src/terminal_attached.c)
+target_include_directories(host_terminal_attached PRIVATE src)
+spisor_strict_warnings(host_terminal_attached)
+
+add_library(host_terminal_attached_test_hook OBJECT src/terminal_attached.c)
+target_include_directories(host_terminal_attached_test_hook PRIVATE src)
+target_compile_definitions(host_terminal_attached_test_hook PRIVATE HOST_TERMINAL_TEST_HOOK)
+spisor_strict_warnings(host_terminal_attached_test_hook)
+set_target_properties(host_terminal_attached_test_hook PROPERTIES SPISOR_TEST_ONLY TRUE)
+
 add_library(host_ready_timeout_test_hook OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout_test_hook PRIVATE src)
 target_compile_definitions(host_ready_timeout_test_hook PRIVATE HOST_READY_TIMEOUT_TEST_HOOK)
@@ -44,9 +54,11 @@ set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARG
     $<TARGET_OBJECTS:runtime_install_by_id> $<TARGET_OBJECTS:runtime_marketplace_build> $<TARGET_OBJECTS:runtime_marketplace_reading>
     $<TARGET_OBJECTS:runtime_catalog> $<TARGET_OBJECTS:runtime_catalog_refresh>
     $<TARGET_OBJECTS:runtime_cache> $<TARGET_OBJECTS:runtime_updates> $<TARGET_OBJECTS:runtime_processes>
-    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_hosts_definition>)
+    $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_hosts_definition>
+    $<TARGET_OBJECTS:runtime_processes_definition>)
 set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry>
-    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>)
+    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>
+    $<TARGET_OBJECTS:host_terminal_attached>)
 
 function(host_executable target output_name)
     cmake_parse_arguments(PARSE_ARGV 2 HOST "TEST_HOOKS" "" "")

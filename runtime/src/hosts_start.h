@@ -52,10 +52,10 @@ typedef struct runtime_hosts_start_request {
  * is the identity the run publishes its ready record and holds its holders under, as runtime_run_identity answers it
  * for the front door runtime_read_loader_layers reads.
  * timers are answered to the session start alone, its update check 0 unless runId is hostId, so one layer of a session
- * runs updates.check. noColor is whether
- * environment carries NO_COLOR at all. A refused session start publishes its refusal to the ready record of
- * runId, or of hostId before runId is known, as processes.ready does, once its places have resolved. An answer
- * that cannot be built removes the run record its plan wrote.
+ * runs updates.check. noColor is whether environment asks for no colour, as runtime_environment_asks_no_color answers
+ * it. A refused session start publishes its refusal to the ready record of runId, or of hostId before runId is known,
+ * as processes.ready does, once its places have resolved. An answer that cannot be built removes the run record its
+ * plan wrote.
  */
 cJSON *runtime_hosts_start(const runtime_hosts_start_request *request, cJSON **refusal);
 

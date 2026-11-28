@@ -11,6 +11,15 @@ typedef struct host_terminal {
 host_terminal host_controlling_terminal(void);
 
 /**
+ * Whether this process's standard input and output are both a terminal, which a terminal interface draws on.
+ *
+ * @implNote Defined in terminal_attached.c, whose test build also answers 1 when SPISOR_TEST_TERMINAL_ATTACHED is 1, so
+ * a test can take the terminal path on Windows, where it cannot hand a child a console it reads as attached; nothing a
+ * user passes reaches the release build's.
+ */
+int host_terminal_attached(void);
+
+/**
  * Asks question on terminal and answers the first line typed, trimmed, freed; NULL when there is
  * no terminal to open or it ends before a line.
  *
