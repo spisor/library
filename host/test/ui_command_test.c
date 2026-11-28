@@ -299,14 +299,17 @@ static void a_headless_install_refuses_naming_the_setting_and_the_catalogs_inter
     static const char *const interfaces[] = {INTERFACE_ID, NULL};
     host_world world;
     program run;
+    int code;
     install_ui_world(&world, "headless-none", interfaces, "none");
-    expect_refused_with(&run, run_ui(&world, &run, NULL), "interface setting is none", INTERFACE_ID,
+    code = run_ui(&world, &run, NULL);
+    expect_refused_with(&run, code, "interface setting is none", INTERFACE_ID,
                         "an install the setting made headless");
     CHECK(application_start(&world, "ui") == NULL);
     program_free(&run);
     finish_world(&world);
     install_ui_world(&world, "headless-unlisted", NULL, NULL);
-    expect_refused_with(&run, run_ui(&world, &run, NULL), "lists no interface item", "add a catalog source",
+    code = run_ui(&world, &run, NULL);
+    expect_refused_with(&run, code, "lists no interface item", "add a catalog source",
                         "an install whose catalog lists no interface");
     program_free(&run);
     finish_world(&world);
@@ -316,8 +319,10 @@ static void two_interfaces_and_none_chosen_are_refused_naming_both(void) {
     static const char *const interfaces[] = {INTERFACE_ID, OTHER_INTERFACE_ID, NULL};
     host_world world;
     program run;
+    int code;
     install_ui_world(&world, "unchosen", interfaces, NULL);
-    expect_refused_with(&run, run_ui(&world, &run, NULL), OTHER_INTERFACE_ID, INTERFACE_ID,
+    code = run_ui(&world, &run, NULL);
+    expect_refused_with(&run, code, OTHER_INTERFACE_ID, INTERFACE_ID,
                         "two interfaces and none chosen");
     program_free(&run);
     finish_world(&world);

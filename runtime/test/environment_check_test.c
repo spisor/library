@@ -179,6 +179,35 @@ static void it_refuses_before_allocating(const char *operation, environment_call
     spisor_release_refusal(NULL, &refusal);
 }
 
+/**
+ * A process environment on Windows carries entries named from =, such as a drive's current directory, which are no
+ * variables; places' resolve leaves them out and answers as it does without them.
+ */
+static void it_leaves_out_a_name_that_begins_with_equals(void) {
+    static const runtime_variable plain[3] = {
+        {"HOME", ABSOLUTE_PLACE}, {"USERPROFILE", ABSOLUTE_PLACE}, {"LOCALAPPDATA", ABSOLUTE_PLACE}};
+    static const runtime_variable with_drives[6] = {{"=C:", ABSOLUTE_PLACE},          {"HOME", ABSOLUTE_PLACE},
+                                                    {"=ExitCode", "00000000"},        {"USERPROFILE", ABSOLUTE_PLACE},
+                                                    {"LOCALAPPDATA", ABSOLUTE_PLACE}, {"=C:", ABSOLUTE_PLACE}};
+    const runtime_places_definition *places = runtime_places_definition_of();
+    runtime_places_resolve_argument argument = SPISOR_INIT(runtime_places_resolve_argument);
+    runtime_places_answer expected = SPISOR_INIT(runtime_places_answer);
+    runtime_places_answer answer = SPISOR_INIT(runtime_places_answer);
+    spisor_refusal refusal = SPISOR_INIT(spisor_refusal);
+    spisor_memory_fail_at(0);
+    argument.environment = plain;
+    argument.environment_count = 3;
+    CHECK(places->resolve(places->context, &argument, &expected, NULL) == SPISOR_OK);
+    argument.environment = with_drives;
+    argument.environment_count = 6;
+    CHECK(places->resolve(places->context, &argument, &answer, &refusal) == SPISOR_OK);
+    CHECK(answer.state != NULL && expected.state != NULL && strcmp(answer.state, expected.state) == 0);
+    CHECK(answer.cache != NULL && expected.cache != NULL && strcmp(answer.cache, expected.cache) == 0);
+    places->release_answer(places->context, &answer);
+    places->release_answer(places->context, &expected);
+    spisor_release_refusal(NULL, &refusal);
+}
+
 int main(void) {
     static const runtime_variable holding_equals[1] = {{"A=B", "1"}};
     static const runtime_variable empty_name[1] = {{"", "1"}};
@@ -211,5 +240,6 @@ int main(void) {
             it_refuses_before_allocating(calls[call].operation, calls[call].call, &environments[environment], allowed);
         }
     }
+    it_leaves_out_a_name_that_begins_with_equals();
     return check_summary("environment_check_test");
 }
