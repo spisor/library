@@ -120,6 +120,50 @@ static void an_environment_value_that_is_no_text_is_refused(void) {
     finish_base();
 }
 
+static char *copy_of(const char *text) {
+    char *copy = spisor_memory_allocate(strlen(text) + 1);
+    if (copy != NULL) {
+        strcpy(copy, text);
+    }
+    return copy;
+}
+
+static void set_variable(const char *name, const char *value) {
+#if defined(_WIN32)
+    CHECK(_putenv_s(name, value == NULL ? "" : value) == 0);
+#else
+    CHECK(value == NULL ? unsetenv(name) == 0 : setenv(name, value, 1) == 0);
+#endif
+}
+
+/** A NULL environment with a count of 0 is this process's own, as it is wherever runtime takes the user's. */
+static void no_environment_runs_the_action_in_this_processs_own(void) {
+    start_child_world("own-environment");
+    size_t count = 0;
+    const runtime_variable *variables = environment_of(&count);
+    char *saved[8] = {NULL};
+    for (size_t index = 0; index < count && index < 8; index++) {
+        const char *before = getenv(variables[index].name);
+        saved[index] = before == NULL ? NULL : copy_of(before);
+        set_variable(variables[index].name, variables[index].value);
+    }
+    set_variable("SPISOR_FIXTURE_MARK", "this process's own environment");
+    runtime_processes_run_action_argument argument = action_argument("greet");
+    argument.environment = NULL;
+    argument.environment_count = 0;
+    run_answer ran = run(&argument);
+    CHECK(ran.status == SPISOR_OK && ran.answer.exit_code == 0);
+    cJSON *reported = report();
+    check_text(text_at(reported, "mark"), "this process's own environment", "the child's environment");
+    cJSON_Delete(reported);
+    release_run(&ran);
+    for (size_t index = 0; index < count && index < 8; index++) {
+        set_variable(variables[index].name, saved[index]);
+        spisor_memory_release(saved[index]);
+    }
+    finish_base();
+}
+
 static void an_action_that_writes_no_result_answers_none(void) {
     start_child_world("nothing");
     runtime_processes_run_action_argument argument = action_argument("nothing");
@@ -218,6 +262,7 @@ int main(void) {
     a_crashed_run_answers_its_exit_code_unsigned();
 #endif
     an_environment_value_that_is_no_text_is_refused();
+    no_environment_runs_the_action_in_this_processs_own();
     a_result_that_is_no_json_is_refused_and_removed();
     a_start_layer_start_refuses_is_refused_with_its_reason_and_nothing_written();
     places_the_environment_does_not_resolve_to_are_refused();

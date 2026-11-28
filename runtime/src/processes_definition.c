@@ -9,6 +9,7 @@
 #include "host_references.h"
 #include "paths.h"
 #include "processes.h"
+#include "process_environment.h"
 #include "processes_child_start.h"
 #include "processes_ready.h"
 #include "run_records.h"
@@ -539,7 +540,10 @@ static spisor_status run_action(void *context, const runtime_processes_run_actio
         return spisor_refuse_shape(refusal, "processes' run_action");
     }
     status = check_run_action(argument, refusal);
-    if (status == SPISOR_OK) {
+    if (status == SPISOR_OK && argument->environment == NULL) {
+        environment = runtime_process_environment();
+        status = environment == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    } else if (status == SPISOR_OK) {
         status = runtime_environment_json(argument->environment, argument->environment_count, &environment);
     }
     if (status != SPISOR_OK) {

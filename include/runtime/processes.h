@@ -180,8 +180,8 @@ typedef struct runtime_processes_remove_argument {
 
 /**
  * One declared action to run as a child process: `loader_id`'s `plugin` running `action` with `input`, a JSON object's
- * text, in the user's `environment`, which resolves to the places `cache` and `state` and which the child gets as its
- * own. First shape ends at `input`.
+ * text, in the user's `environment`, NULL with a count of 0 for this process's own, which resolves to the places
+ * `cache` and `state` and which the child gets as its own. First shape ends at `input`.
  */
 typedef struct runtime_processes_run_action_argument {
     uint32_t size;
