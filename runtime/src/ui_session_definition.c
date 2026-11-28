@@ -8,11 +8,15 @@
 #include "config_conversion.h"
 #include "definition_support.h"
 #include "install_run.h"
+#include "process_environment.h"
 #include "ui_definition.h"
 #include "ui_session.h"
+#include "user_home.h"
 
 #define SESSION_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_session_argument, loader)
+#define SESSION_ENVIRONMENT_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_session_argument, environment_count)
 #define SESSION_ANSWER_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_session_answer, storage)
+#define SESSION_NO_COLOR_SHAPE SPISOR_SHAPE_THROUGH(runtime_ui_session_answer, no_color)
 #define PLACES_SHAPE SPISOR_SHAPE_THROUGH(runtime_places_answer, storage)
 
 /** What every plugin's config shares: the host's home and portable place and where its secrets live. */
@@ -179,6 +183,52 @@ static cJSON *places_json(const runtime_places_answer *places) {
     return json;
 }
 
+/** The environment the argument gives, when its size reaches one and it is not NULL; NULL with a count of 0 for none. */
+static const runtime_variable *given_environment(const runtime_ui_session_argument *argument, size_t *count) {
+    int reaches = spisor_has_shape(argument->size, SESSION_ENVIRONMENT_SHAPE);
+    *count = reaches ? argument->environment_count : 0;
+    return reaches ? argument->environment : NULL;
+}
+
+/** The answer's no_color, when its size reaches it, read from the environment given, else this process's own. */
+static spisor_status answer_no_color(const runtime_ui_session_argument *argument, runtime_ui_session_answer *answer) {
+    size_t count = 0;
+    const runtime_variable *given = given_environment(argument, &count);
+    cJSON *environment = NULL;
+    spisor_status status = SPISOR_OK;
+    if (!spisor_has_shape(answer->size, SESSION_NO_COLOR_SHAPE)) {
+        return SPISOR_OK;
+    }
+    if (given == NULL) {
+        environment = runtime_process_environment();
+        status = environment == NULL ? SPISOR_OUT_OF_MEMORY : SPISOR_OK;
+    } else {
+        status = runtime_environment_json(given, count, &environment);
+    }
+    if (status == SPISOR_OK) {
+        answer->no_color = runtime_environment_asks_no_color(environment) ? 1u : 0u;
+    }
+    cJSON_Delete(environment);
+    return status;
+}
+
+static int has_empty_no_color(const runtime_ui_session_answer *answer) {
+    return !spisor_has_shape(answer->size, SESSION_NO_COLOR_SHAPE) || answer->no_color == 0;
+}
+
+static spisor_status check_session(const runtime_ui_session_argument *argument, spisor_refusal *refusal) {
+    size_t count = 0;
+    const runtime_variable *environment = given_environment(argument, &count);
+    spisor_status status = check_places(argument->places, refusal);
+    if (status == SPISOR_OK && argument->loader != NULL) {
+        status = runtime_check_host_id(refusal, argument->loader, RUNTIME_UI_HEADER);
+    }
+    if (status == SPISOR_OK && !runtime_is_environment(environment, count)) {
+        status = runtime_refuse_environment(refusal);
+    }
+    return status;
+}
+
 spisor_status runtime_ui_session_operation(void *context, const runtime_ui_session_argument *argument,
                                            runtime_ui_session_answer *answer, spisor_refusal *refusal) {
     cJSON *operation_refusal = NULL;
@@ -187,13 +237,11 @@ spisor_status runtime_ui_session_operation(void *context, const runtime_ui_sessi
     spisor_status status;
     (void)context;
     if (argument == NULL || !spisor_has_shape(argument->size, SESSION_SHAPE) ||
-        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SESSION_ANSWER_SHAPE, answer->plugin_count | answer->source_count)) {
+        !SPISOR_IS_EMPTY_COUNTED_ANSWER(answer, SESSION_ANSWER_SHAPE, answer->plugin_count | answer->source_count) ||
+        !has_empty_no_color(answer)) {
         return spisor_refuse_shape(refusal, "ui's session");
     }
-    status = check_places(argument->places, refusal);
-    if (status == SPISOR_OK && argument->loader != NULL) {
-        status = runtime_check_host_id(refusal, argument->loader, RUNTIME_UI_HEADER);
-    }
+    status = check_session(argument, refusal);
     if (status != SPISOR_OK) {
         return status;
     }
@@ -203,10 +251,20 @@ spisor_status runtime_ui_session_operation(void *context, const runtime_ui_sessi
                                                                                     : argument->loader,
                                                    &operation_refusal);
     cJSON_Delete(places);
-    return runtime_serve_answered(answered, operation_refusal, fill_session, answer, SESSION_ANSWER_SHAPE, refusal);
+    status = runtime_serve_answered(answered, operation_refusal, fill_session, answer, SESSION_ANSWER_SHAPE, refusal);
+    if (status == SPISOR_OK) {
+        status = answer_no_color(argument, answer);
+    }
+    if (status != SPISOR_OK) {
+        runtime_ui_release_session_answer(NULL, answer);
+    }
+    return status;
 }
 
 void runtime_ui_release_session_answer(void *context, runtime_ui_session_answer *answer) {
     (void)context;
     runtime_release_stored_answer(answer, SESSION_ANSWER_SHAPE);
+    if (answer != NULL && spisor_has_shape(answer->size, SESSION_NO_COLOR_SHAPE)) {
+        answer->no_color = 0;
+    }
 }

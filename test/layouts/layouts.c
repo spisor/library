@@ -1751,6 +1751,8 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_session_argument, size);
     FIELD(runtime_ui_session_argument, places);
     FIELD(runtime_ui_session_argument, loader);
+    FIELD(runtime_ui_session_argument, environment);
+    FIELD(runtime_ui_session_argument, environment_count);
     SIZE(runtime_ui_session_argument);
     FIELD(runtime_ui_session_plugin, id);
     FIELD(runtime_ui_session_plugin, version);
@@ -1770,6 +1772,7 @@ static void print_ui_layouts(void) {
     FIELD(runtime_ui_session_answer, sources);
     FIELD(runtime_ui_session_answer, source_count);
     FIELD(runtime_ui_session_answer, storage);
+    FIELD(runtime_ui_session_answer, no_color);
     SIZE(runtime_ui_session_answer);
     FIELD(runtime_ui_definition, size);
     FIELD(runtime_ui_definition, context);

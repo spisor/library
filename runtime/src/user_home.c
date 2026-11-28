@@ -27,6 +27,11 @@ const char *runtime_environment_variable(const cJSON *environment, const char *n
     return NULL;
 }
 
+int runtime_environment_asks_no_color(const cJSON *environment) {
+    const char *value = runtime_environment_variable(environment, "NO_COLOR", RUNTIME_HOST_IS_WINDOWS);
+    return value != NULL && value[0] != '\0';
+}
+
 const char *runtime_environment_text(const cJSON *environment, const char *name) {
     const cJSON *value = cJSON_IsObject(environment) ? cJSON_GetObjectItemCaseSensitive(environment, name) : NULL;
     return cJSON_IsString(value) ? value->valuestring : NULL;

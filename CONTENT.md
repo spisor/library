@@ -199,7 +199,8 @@ runtime are two layers, each started from its own item. A layer reads each plugi
 spisor-host's settings name, since install records the catalog source there alone. `spisor-host launch` holds the front
 door's layer and waits for it to be ready before it starts the others, whose session starts reuse the run the front
 door recorded, then starts the application with the front door's environment; `spisor-host action` runs the one layer
-an action answers.
+an action answers. NO_COLOR counts, in every start, only when it is set and not empty (no-color.org), and `ui.session`
+answers that decision as `no_color`, so the interface draws without colour exactly when C does.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries on
 with the rest, as the archived host quarantined one; an ACTION run whose own plugin was not activated is told to

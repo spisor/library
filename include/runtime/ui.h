@@ -17,6 +17,7 @@
 #include "runtime/catalog.h"
 #include "runtime/config.h"
 #include "runtime/definition.h"
+#include "runtime/environment.h"
 #include "runtime/places.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
@@ -401,12 +402,15 @@ typedef struct runtime_ui_action_answer {
 
 /**
  * Whose session to answer: the `places`, as places' resolve answers them, and the `loader` whose layer of plugins it
- * holds, a host id, or NULL for spisor-host's own. First shape ends at `loader`.
+ * holds, a host id, or NULL for spisor-host's own; and when its size reaches it the user's `environment`, whose
+ * NO_COLOR the answer's `no_color` reads, NULL with a count of 0 for this process's own. First shape ends at `loader`.
  */
 typedef struct runtime_ui_session_argument {
     uint32_t size;
     const runtime_places_answer *places;
     const char *loader;
+    const runtime_variable *environment;
+    size_t environment_count;
 } runtime_ui_session_argument;
 
 /**
@@ -430,7 +434,9 @@ typedef struct runtime_ui_session_plugin {
  * the catalog's latest; the `problems`, a list of {id, version?, detail, fix} records in id order, each an enabled
  * plugin the home cannot draw, its detail naming its manifest where it has one, and, the one problem naming no plugin,
  * one with the id `catalog` and no version when no catalog source yields a catalog; and the catalog `sources` the
- * groups were read from, those spisor-host's settings name. First shape ends at `storage`.
+ * groups were read from, those spisor-host's settings name; and when its size reaches it `no_color`, 1 when the
+ * environment sets NO_COLOR to a value that is not empty, as no-color.org defines it and every colour C draws follows,
+ * so the interface draws without colour exactly when C does. First shape ends at `storage`.
  */
 typedef struct runtime_ui_session_answer {
     uint32_t size;
@@ -446,6 +452,7 @@ typedef struct runtime_ui_session_answer {
     const runtime_catalog_source *sources;
     size_t source_count;
     void *storage;
+    uint32_t no_color;
 } runtime_ui_session_answer;
 
 /**
@@ -538,8 +545,8 @@ typedef struct runtime_ui_definition {
      *
      * @return OK, also when a plugin cannot be drawn: one enabled with no version installed, one whose installed
      * version cannot run, as cache's locate finds it, or whose manifest its scope refuses is then left out of
-     * `plugins` and listed under `problems`; MALFORMED, also for places that are not absolute or a loader that is no
-     * host id; REFUSED only for what refuses the host itself, as its start refuses: a host that is not registered or
+     * `plugins` and listed under `problems`; MALFORMED, also for places that are not absolute, a loader that is no
+     * host id, or an environment as runtime/environment.h refuses one; REFUSED only for what refuses the host itself, as its start refuses: a host that is not registered or
      * whose settings or catalog sources cannot be read; OUT_OF_MEMORY.
      * @implNote The interface reads no manifest and no settings file, so everything it draws a home from is answered
      * here rather than recomputed on the interface's side.

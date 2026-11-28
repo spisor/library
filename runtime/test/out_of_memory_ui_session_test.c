@@ -107,7 +107,12 @@ static void put_session(const runtime_ui_session_answer *answer) {
         put_number(answer->sources[index].kind);
         put_text(answer->sources[index].location);
     }
+    put_number(answer->no_color);
 }
+
+/** The environment a session is given, NULL for this process's own. */
+static const runtime_variable *session_environment;
+static size_t session_environment_count;
 
 static spisor_status run_session(const char *loader, char *refusal_detail, size_t detail_size) {
     runtime_ui_session_argument argument = SPISOR_INIT(runtime_ui_session_argument);
@@ -117,6 +122,8 @@ static spisor_status run_session(const char *loader, char *refusal_detail, size_
     start_empty(&answer, sizeof answer);
     argument.places = &places;
     argument.loader = loader;
+    argument.environment = session_environment;
+    argument.environment_count = session_environment_count;
     status = ui->session(NULL, &argument, &answer, &refusal);
     put_session(&answer);
     status = empty_unless_answered(status, &answer, sizeof answer);
@@ -273,6 +280,7 @@ static void expect_every_problem(void) {
 }
 
 int main(void) {
+    static const runtime_variable no_color[1] = {{"NO_COLOR", "1"}};
     spisor_value_tree manifests[2];
     runtime_testing_install installs[2];
     laid_out home;
@@ -282,6 +290,11 @@ int main(void) {
     home = lay_out_two_plugins(manifests, installs);
     if (check_failures == 0) {
         every_failure_of("ui's session", HOST, SPISOR_OK);
+        session_environment = no_color;
+        session_environment_count = 1;
+        every_failure_of("ui's session given NO_COLOR", HOST, SPISOR_OK);
+        session_environment = NULL;
+        session_environment_count = 0;
         break_manifest(&home);
         every_failure_of("ui's session with a problem", HOST, SPISOR_OK);
         break_every_path(&home);
