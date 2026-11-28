@@ -315,6 +315,26 @@ static void a_headless_install_refuses_naming_the_setting_and_the_catalogs_inter
     finish_world(&world);
 }
 
+static void a_refusal_exits_with_the_code_refused_exit_names_and_a_code_out_of_range_is_a_misuse(void) {
+    static const char *const interfaces[] = {INTERFACE_ID, NULL};
+    host_world world;
+    program run;
+    install_ui_world(&world, "refused-exit", interfaces, "none");
+    const char *mapped[] = {"--refused-exit", "2", "ui", LOADER_ID, "--window", NULL};
+    CHECK(world_run(&world, &run, mapped, NULL) == 2);
+    expect_contains(run.err, "interface setting is none", "the refusal is still printed");
+    program_free(&run);
+    const char *zero[] = {"--refused-exit", "0", "ui", NULL};
+    CHECK(world_run(&world, &run, zero, NULL) == HOST_EXIT_MISUSED);
+    expect_contains(run.err, "--refused-exit takes a code from 1 to 255", "names the range");
+    program_free(&run);
+    const char *missing[] = {"--refused-exit", NULL};
+    CHECK(world_run(&world, &run, missing, NULL) == HOST_EXIT_MISUSED);
+    program_free(&run);
+    CHECK(application_start(&world, "ui") == NULL);
+    finish_world(&world);
+}
+
 static void two_interfaces_and_none_chosen_are_refused_naming_both(void) {
     static const char *const interfaces[] = {INTERFACE_ID, OTHER_INTERFACE_ID, NULL};
     host_world world;
@@ -353,6 +373,7 @@ int main(void) {
     in_a_terminal_the_interface_runs_in_place_and_answers_its_exit_code();
     a_headless_install_refuses_naming_the_setting_and_the_catalogs_interfaces();
     two_interfaces_and_none_chosen_are_refused_naming_both();
+    a_refusal_exits_with_the_code_refused_exit_names_and_a_code_out_of_range_is_a_misuse();
     an_argument_it_does_not_take_is_a_misuse();
     return check_summary("ui_command_test");
 }

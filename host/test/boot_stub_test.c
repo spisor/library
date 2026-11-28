@@ -1,4 +1,5 @@
 #include "host_fixture.h"
+#include "host_output.h"
 #include "spisor/allocation.h"
 
 #include "holders.h"
@@ -117,6 +118,26 @@ static void starts_a_same_size_corruption_which_status_then_refuses(void) {
     expect_contains(run.err, "fix: ", "with a fix");
     spisor_memory_release(bytes);
     spisor_memory_release(carried);
+    program_free(&run);
+    finish_world(&world);
+}
+
+static void exits_with_the_code_refused_exit_names_for_its_own_refusal_and_for_what_it_boots(void) {
+    host_world world;
+    install_boot_world(&world, "refused-exit");
+    program run;
+    const char *booted[] = {"spisor-host", "--refused-exit", "3", "ui", LOADER_ID, "--window", NULL};
+    CHECK(run_boot(&world, &run, booted) == 3);
+    expect_contains(run.err, "interface", "the booted host's refusal is printed");
+    program_free(&run);
+    write_in(world.base.cache, "hosts/spisor-host.json", "{ not json");
+    const char *own[] = {"spisor-host", "--refused-exit", "3", "status", NULL};
+    CHECK(run_boot(&world, &run, own) == 3);
+    expect_contains(run.err, "no host version is recorded for spisor-host", "the stub's own refusal");
+    program_free(&run);
+    const char *out_of_range[] = {"spisor-host", "--refused-exit", "256", "status", NULL};
+    CHECK(run_boot(&world, &run, out_of_range) == HOST_EXIT_MISUSED);
+    expect_contains(run.err, "--refused-exit takes a code from 1 to 255", "names the range");
     program_free(&run);
     finish_world(&world);
 }
@@ -372,6 +393,7 @@ int main(void) {
     refuses_a_bundle_whose_file_no_longer_has_its_recorded_size();
     starts_a_same_size_corruption_which_status_then_refuses();
     refuses_a_start_that_names_no_host();
+    exits_with_the_code_refused_exit_names_for_its_own_refusal_and_for_what_it_boots();
     keeps_the_spisor_host_version_a_launch_runs_through_a_sweep_until_it_ends();
 #if defined(_WIN32)
     records_the_spisor_host_version_a_background_command_runs_while_its_layer_runs();

@@ -12,7 +12,7 @@
 #endif
 
 #define USAGE                                                                                                         \
-    "usage:\n"                                                                                                        \
+    "usage: spisor-host [--refused-exit <code>] <command>\n"                                                                                                        \
     "  spisor-host install --catalog <path or url> [--plugin <id>]... [--application <id>=<method|skip>]...\n"       \
     "  spisor-host install --name <[marketplace/]name> --application <id> [--accept <id>] [--accept-primary <id>]\n"                                             \
     "  spisor-host status\n"                                                                                          \
@@ -114,16 +114,31 @@ void host_print_refusal_printably(const cJSON *refusal) {
     spisor_memory_release(safe_message);
 }
 
+static int refused_exit = HOST_EXIT_REFUSED;
+
+int host_take_refused_exit(int count, char **arguments) {
+    if (count < 1 || strcmp(arguments[0], "--refused-exit") != 0) {
+        return 0;
+    }
+    char *end = NULL;
+    long code = count < 2 ? 0 : strtol(arguments[1], &end, 10);
+    if (count < 2 || end == arguments[1] || *end != 0 || code < 1 || code > 255) {
+        return -1;
+    }
+    refused_exit = (int)code;
+    return 2;
+}
+
 int host_refuse_printably(cJSON *refusal) {
     host_print_refusal_printably(refusal);
     cJSON_Delete(refusal);
-    return HOST_EXIT_REFUSED;
+    return refused_exit;
 }
 
 int host_refuse(cJSON *refusal) {
     host_print_refusal(refusal);
     cJSON_Delete(refusal);
-    return HOST_EXIT_REFUSED;
+    return refused_exit;
 }
 
 int host_misuse(const char *message) {
