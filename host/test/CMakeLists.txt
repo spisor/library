@@ -54,10 +54,11 @@ foreach(language one two)
     set_target_properties(fixture_${language}_host PROPERTIES OUTPUT_NAME fixture-${language}-host
         RUNTIME_OUTPUT_DIRECTORY ${language_host_inputs})
     spisor_strict_warnings(fixture_${language}_host)
-    add_custom_command(TARGET fixture_${language}_host POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:weivel_c_shared> $<TARGET_FILE_DIR:fixture_${language}_host>
-        VERBATIM)
 endforeach()
+add_custom_target(language_host_weivel_c
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:weivel_c_shared> $<TARGET_FILE_DIR:fixture_one_host>
+    VERBATIM)
+add_dependencies(language_host_weivel_c weivel_c_shared fixture_one_host fixture_two_host)
 
 set(language_host_bundles $<TARGET_FILE_DIR:spisor_host_test>/language-hosts)
 set(fixture_host_data ${CMAKE_CURRENT_BINARY_DIR}/fixture-host-data.json)
@@ -77,7 +78,7 @@ add_custom_target(language_host_test_bundles ALL
     COMMAND ${CMAKE_COMMAND} -E chdir ${typescript_host_inputs} $<TARGET_FILE:stage_bundle> language-host
         ${language_host_bundles}/typescript-host 1.0.0 typescript javascript host.js ${typescript_host_data} ${staged_weivel}
     VERBATIM)
-add_dependencies(language_host_test_bundles stage_bundle fixture_one_host fixture_two_host weivel_core_shared
+add_dependencies(language_host_test_bundles stage_bundle language_host_weivel_c weivel_core_shared
     weivel_standard_shared weivel_c_shared spisor_host_test)
 
 set(host_test_fixture_definitions RUNTIME_SCRATCH_PATH="${CMAKE_CURRENT_BINARY_DIR}"
