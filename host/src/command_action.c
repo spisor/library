@@ -92,19 +92,20 @@ static cJSON *action_layer(const host_context *context, const char *loader_id, c
 /**
  * Runs the start the registration of host_id records, or the layer of a loader's plugin when it records none,
  * with the arguments action, plugin, action and input, as this process's child sharing its terminal, and
- * answers its exit code. A loader's layer is also given a result path of this process's own, cleared before the
- * child starts, whose result is printed once the child exited 0 and the file removed before answering.
+ * answers its exit code. A loader's layer is also given a result path of this process's own, at which nothing stands,
+ * whose result is printed once the child exited 0 and the file removed before answering.
  *
  * @implNote A background host's recorded start is the archived host's, which takes no result path.
  */
 static int run_action(const host_context *context, const char *host_id, const char *const *action_arguments) {
     cJSON *refusal = NULL;
     int in_session_host = runs_in_session_host(context, host_id);
-    int removable = 1;
-    char *result = in_session_host ? runtime_fresh_result_path(context->state, &removable) : NULL;
+    int out_of_memory = 0;
+    char *result = in_session_host ? runtime_fresh_result_path(context->state, &out_of_memory) : NULL;
     cJSON *start = NULL;
     if (in_session_host && result == NULL) {
-        return host_refuse(removable ? NULL : runtime_refusal(RUNTIME_STALE_RESULT_MESSAGE, RUNTIME_STALE_RESULT_FIX));
+        return host_refuse(out_of_memory ? NULL
+                                         : runtime_refusal(RUNTIME_UNNAMED_RESULT_MESSAGE, RUNTIME_UNNAMED_RESULT_FIX));
     }
     start = in_session_host ? action_layer(context, host_id, action_arguments, result, &refusal)
                             : host_start_of(context, host_id, action_arguments, 4, &refusal);

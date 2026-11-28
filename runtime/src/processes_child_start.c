@@ -147,7 +147,7 @@ static cJSON *run_layer(const cJSON *layer, const char *result, cJSON **refusal)
 }
 
 cJSON *runtime_processes_run_action(const runtime_child_action_request *request, cJSON **refusal) {
-    int removable = 1;
+    int out_of_memory = 0;
     char *result = NULL;
     cJSON *layer = NULL;
     cJSON *answer = NULL;
@@ -155,9 +155,9 @@ cJSON *runtime_processes_run_action(const runtime_child_action_request *request,
     if (!places_agree(request, refusal)) {
         return NULL;
     }
-    result = runtime_fresh_result_path(request->state, &removable);
-    if (result == NULL && !removable) {
-        *refusal = runtime_refusal(RUNTIME_STALE_RESULT_MESSAGE, RUNTIME_STALE_RESULT_FIX);
+    result = runtime_fresh_result_path(request->state, &out_of_memory);
+    if (result == NULL && !out_of_memory) {
+        *refusal = runtime_refusal(RUNTIME_UNNAMED_RESULT_MESSAGE, RUNTIME_UNNAMED_RESULT_FIX);
     }
     layer = result == NULL ? NULL : action_layer(request, result, refusal);
     answer = layer == NULL ? NULL : run_layer(layer, result, refusal);

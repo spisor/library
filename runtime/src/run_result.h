@@ -1,6 +1,7 @@
 #ifndef RUNTIME_RUN_RESULT_H
 #define RUNTIME_RUN_RESULT_H
 
+#include "random_value.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
 
@@ -28,20 +29,28 @@ int runtime_is_result_path(const char *state, const char *path, int *out_of_memo
 spisor_status runtime_write_result(const char *state, const char *path, const spisor_value *result,
                                    spisor_refusal *refusal);
 
-/** What stands at a result path a caller of a run left behind: a file an earlier process left there. */
-#define RUNTIME_STALE_RESULT_MESSAGE \
-    "a file an earlier spisor-host left in the state place's results folder could not be removed"
-#define RUNTIME_STALE_RESULT_FIX "remove the files in the results folder of the state place, then run the action again"
+/** Why no result path could be named: the random source gave nothing, or every name drawn was taken. */
+#define RUNTIME_UNNAMED_RESULT_MESSAGE \
+    "no name for the action's result could be drawn that nothing in the state place's results folder holds"
+#define RUNTIME_UNNAMED_RESULT_FIX \
+    "check that the system's random source can be read, remove the files in the results folder of the state place, " \
+    "then run the action again"
 
 /**
- * A path for this process's next result, `<state>/results/<pid>-<n>.json`, n counted from any thread, with nothing
- * left standing at it, freed; NULL when memory runs out or what stands there cannot be removed, *removable then 0 for
- * the latter.
+ * A path for this process's next result, `<state>/results/<pid>-<n>-<r>.json`, n counted from any thread and r 64 bits
+ * draw drew, in hex, at which nothing stands, freed; a name something stands at is never answered, and is drawn again
+ * a few times. NULL when memory runs out, *out_of_memory then 1, or when draw gives nothing or every name drawn is
+ * taken.
  *
- * @implNote The name is this process's own, so whatever stands at it is an earlier process's of the same id, which
- * the OS reuses; a run would refuse to write over it and its caller would read it as this run's result.
+ * @implNote The random part keeps two processes with the same pid apart, as processes in two containers sharing one
+ * state place are, where pid and counter alone collide; what stands at a name is never removed, since it may be another
+ * process's live result, and the run writes the file only as a new one, so a name taken after the check is refused
+ * rather than written over.
  */
-char *runtime_fresh_result_path(const char *state, int *removable);
+char *runtime_fresh_result_path_drawn(const char *state, runtime_random_draw draw, int *out_of_memory);
+
+/** runtime_fresh_result_path_drawn with the OS's random source. */
+char *runtime_fresh_result_path(const char *state, int *out_of_memory);
 
 /**
  * The result the action's run wrote to path when its child exited 0, freed, NULL for none; the file is removed either

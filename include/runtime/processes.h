@@ -303,16 +303,16 @@ typedef struct runtime_processes_definition {
     void (*release_refusal)(void *context, spisor_refusal *refusal);
     /**
      * Runs one declared action as a child process and waits for it, so an interface starts no process of its own: the
-     * ACTION start hosts' layer_start answers, given a result path of this process's own in the state's results
-     * folder; the child's standard input and output on the null device, its standard error taken for `failure`, its
+     * ACTION start hosts' layer_start answers, given a result path in the state's results folder named by this
+     * process's id, a counter and 64 random bits, at which nothing stands; the child's standard input and output on the null device, its standard error taken for `failure`, its
      * environment the argument's, and on Windows CREATE_NO_WINDOW, so a caller with no console opens no console window.
      * Once the child exits the result file is read when it exited 0, and deleted whatever happened. Safe to call from
      * several threads at once, each call naming a result file of its own.
      *
      * @return OK, also for a run that exited with a code other than 0, which `failure` describes; MALFORMED, also for a
-     * loader that is no host id; REFUSED when the environment does not resolve to `cache` and `state`, a file left at
-     * the result path cannot be removed, the start is refused as layer_start refuses it, the child cannot be started,
-     * or the result it wrote is not JSON; OUT_OF_MEMORY, the result file removed whenever the child ran, unless memory
+     * loader that is no host id; REFUSED when the environment does not resolve to `cache` and `state`, no result name
+     * free of what the results folder holds can be drawn, the start is refused as layer_start refuses it, the child
+     * cannot be started, or the result it wrote is not JSON; OUT_OF_MEMORY, the result file removed whenever the child ran, unless memory
      * stayed too short even to remove it, when the cache sweep removes it a day later.
      */
     spisor_status (*run_action)(void *context, const runtime_processes_run_action_argument *argument,

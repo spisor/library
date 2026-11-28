@@ -203,14 +203,19 @@ an action answers. NO_COLOR counts, in every start, only when it is set and not 
 answers that decision as `no_color`, so the interface draws without colour exactly when C does.
 
 `processes.run_action` is how an interface runs a declared action, so the program starts no process itself: it asks
-`hosts.layer_start` for the ACTION start with a result path of its own under `<state>/results/`, starts the child with
-its standard input and output on the null device, its standard error taken as the answer's `failure`, the caller's
-environment and, on Windows, `CREATE_NO_WINDOW`, waits for it, then reads the result file and deletes it, whatever
-happened once the child ran. `spisor-host ui [<loader>] [--window]` starts the interface the install chose, the item
+`hosts.layer_start` for the ACTION start with a result path under `<state>/results/` named by its pid, a counter and 64
+bits from the OS's random source, so two processes sharing a pid and a state place never share a name, and never one
+something already stands at; it starts the child with its standard input and output on the null device, the
+environment given and, on Windows, `CREATE_NO_WINDOW`, waits for it, then reads the result file and deletes it,
+whatever happened once the child ran. A failed run's `failure` is the last 4096 bytes of its standard error, where its
+error is, starting at a character, each invalid byte and NUL as U+FFFD; its `exitCode` is never negative, a Windows code
+being the unsigned one Windows reports. An environment given as NULL with a count of 0 is this process's own, in
+`run_action` as in `ui.session`. `spisor-host ui [<loader>] [--window]` starts the interface the install chose, the item
 spisor-host's `interface` setting names, else the catalog's only interface item, never one named in C: its bundle's
 entry, run with `ui <runtime binary> [<loader>] [--window]`. It runs in the terminal, in spisor-host's place, unless
 `--window` is given or no terminal is attached; a window is started detached, so the command that opened it returns at
-once and, on Windows, the console-subsystem interface has no console. A headless install refuses, the fix naming the
+once and, on Windows, the console-subsystem interface has a hidden console of its own, which every console program it
+starts shares, so none of them opens a console window. A headless install refuses, the fix naming the
 `interface` setting and the catalog's interface items.
 
 `started` takes every plugin's outcome, and a plugin that was refused or failed is left out while the run carries on

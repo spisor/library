@@ -154,42 +154,77 @@ static void prints_nothing_and_leaves_no_file_when_the_write_is_refused(void) {
     finish_world(&world);
 }
 
+/** A draw that answers the values of `repeated_draws` in turn, the last one again once they run out. */
+static uint64_t repeated_draws[2];
+static int repeated_draw_count;
+
+static int repeated_draw(uint64_t *value) {
+    *value = repeated_draws[repeated_draw_count < 2 ? repeated_draw_count : 1];
+    repeated_draw_count++;
+    return 1;
+}
+
+static int failing_draw(uint64_t *value) {
+    (void)value;
+    return 0;
+}
+
+/** The counter part of a result path, `<pid>-<n>-<r>.json`, read back from its name. */
+static long counter_of(const char *path) {
+    const char *name = strrchr(path, '-');
+    const char *start = name;
+    while (start > path && start[-1] != '-') {
+        start--;
+    }
+    return strtol(start, NULL, 10);
+}
+
 /**
- * The OS reuses a process id, so an earlier spisor-host killed before it removed its result left a file at the name
- * this process takes; it is gone before the run starts, and only the fresh result is taken.
- *
- * @implNote It runs first, in this test's own process, since the name counts from this process's first result.
+ * Two processes with the same pid, as two containers sharing one state place have, draw different names, and a name
+ * something stands at, another process's live result maybe, is never answered and never touched: the next draw names
+ * a free one.
  */
-static void clears_what_an_earlier_process_left_at_its_result_name(void) {
+static void a_result_name_is_drawn_free_and_what_stands_at_one_is_kept(void) {
     host_world world;
-    start_world_at(&world, "action", "result-stale");
-    host_context context;
-    memset(&context, 0, sizeof context);
-    context.state = world.base.state;
-    char rest[96];
-    snprintf(rest, sizeof rest, "results/%.0f-1.json", host_process_id());
-    write_in(world.base.state, rest, "\"stale\"");
-    int removable = 0;
-    char *path = runtime_fresh_result_path(context.state, &removable);
-    CHECK(path != NULL && removable);
-    CHECK(path == NULL || spisor_probe_file(path) == SPISOR_FILE_MISSING);
-    if (path != NULL) {
-        write_file(path, "\"fresh\"");
-    }
+    start_world_at(&world, "action", "result-names");
     int out_of_memory = 0;
-    char *text = path == NULL ? NULL : runtime_take_result(path, 0, &out_of_memory);
-    check_text(text, "\"fresh\"", "the fresh result taken");
-    CHECK(!out_of_memory && results_left(&world) == 0);
-    spisor_memory_release(text);
-    spisor_memory_release(path);
-    path = runtime_fresh_result_path(context.state, &removable);
-    if (path != NULL) {
-        write_file(path, "\"of a failed run\"");
+    char *first = runtime_fresh_result_path(world.base.state, &out_of_memory);
+    char *second = runtime_fresh_result_path(world.base.state, &out_of_memory);
+    CHECK(first != NULL && second != NULL && strcmp(first, second) != 0 && !out_of_memory);
+    CHECK(first != NULL && strstr(first, "results") != NULL && strlen(strrchr(first, '-')) == 16 + strlen("-.json"));
+    long next = first == NULL ? 0 : counter_of(second) + 1;
+    char taken[160];
+    snprintf(taken, sizeof taken, "results/%.0f-%ld-%016llx.json", host_process_id(), next, 0x1234ULL);
+    write_in(world.base.state, taken, "\"another process's\"");
+    repeated_draws[0] = 0x1234ULL;
+    repeated_draws[1] = 0x5678ULL;
+    repeated_draw_count = 0;
+    char *drawn = runtime_fresh_result_path_drawn(world.base.state, repeated_draw, &out_of_memory);
+    char expected[160];
+    snprintf(expected, sizeof expected, "%.0f-%ld-%016llx.json", host_process_id(), next, 0x5678ULL);
+    CHECK(drawn != NULL && strstr(drawn, expected) != NULL && repeated_draw_count == 2);
+    char *kept = text_in(world.base.state, taken);
+    check_text(kept, "\"another process's\"", "the file at the taken name");
+    if (drawn != NULL && second != NULL) {
+        write_file(drawn, "\"fresh\"");
+        write_file(second, "\"of a failed run\"");
     }
-    text = path == NULL ? NULL : runtime_take_result(path, 1, &out_of_memory);
-    CHECK(text == NULL && results_left(&world) == 0);
-    spisor_memory_release(text);
-    spisor_memory_release(path);
+    char *fresh = drawn == NULL ? NULL : runtime_take_result(drawn, 0, &out_of_memory);
+    char *failed = second == NULL ? NULL : runtime_take_result(second, 1, &out_of_memory);
+    check_text(fresh, "\"fresh\"", "the result taken");
+    CHECK(failed == NULL && !out_of_memory && results_left(&world) == 1);
+    spisor_memory_release(fresh);
+    snprintf(taken, sizeof taken, "results/%.0f-%ld-%016llx.json", host_process_id(), next + 1, 0x1234ULL);
+    write_in(world.base.state, taken, "\"another process's\"");
+    repeated_draws[1] = 0x1234ULL;
+    repeated_draw_count = 0;
+    char *none = runtime_fresh_result_path_drawn(world.base.state, repeated_draw, &out_of_memory);
+    CHECK(none == NULL && !out_of_memory && repeated_draw_count == 8);
+    CHECK(runtime_fresh_result_path_drawn(world.base.state, failing_draw, &out_of_memory) == NULL && !out_of_memory);
+    spisor_memory_release(kept);
+    spisor_memory_release(drawn);
+    spisor_memory_release(second);
+    spisor_memory_release(first);
     finish_world(&world);
 }
 
@@ -224,7 +259,7 @@ static void refuses_a_host_registered_without_a_home(void) {
 int main(void) {
     user_path_guard guard;
     guard_user_path(&guard);
-    clears_what_an_earlier_process_left_at_its_result_name();
+    a_result_name_is_drawn_free_and_what_stands_at_one_is_kept();
     runs_the_recorded_start_with_the_action_arguments_and_the_input_object();
     sends_an_empty_input_object_when_no_input_is_given();
     keeps_an_equals_sign_inside_an_input_value();
