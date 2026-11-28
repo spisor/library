@@ -89,6 +89,7 @@ int main(void) {
     for (int mode = FAIL_ONE_ALLOCATION; mode < ALLOCATION_FAILURE_MODES; mode++) {
         every_failure_of("greet", (allocation_failure_mode)mode);
         every_failure_of("fail", (allocation_failure_mode)mode);
+        every_failure_of("noisy", (allocation_failure_mode)mode);
     }
     finish_base();
     return check_summary("out_of_memory_child_start_test");
