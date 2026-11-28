@@ -1112,6 +1112,25 @@ static void stages_a_loader_from_its_standard_json_under_its_package_name_and_ve
     finish_case();
 }
 
+static void catalog_build_refuses_a_loader_bundle_holding_more_naming_how_to_stage_it(void) {
+    start_case("loader-more");
+    write_loader_repository(LOADER_PACKAGE, LOADER_STANDARD);
+    program run;
+    CHECK(stage_loader(&run) == 0);
+    program_free(&run);
+    write_in(base_folder, "bundle/icon.svg", "<svg/>");
+    char *directory = in_base("bundle");
+    char *out = in_base("catalog");
+    const char *arguments[] = {"catalog", "build", "--host", directory, "--out", out, NULL};
+    CHECK(run_in(SPISOR_HOST_PATH, arguments, base_folder, &run) == 1);
+    expect_contains(run.err, "icon.svg", "names what else it holds");
+    expect_contains(run.err, "stage-bundle loader <directory> <standard.json>", "names how to stage it");
+    program_free(&run);
+    spisor_memory_release(out);
+    spisor_memory_release(directory);
+    finish_case();
+}
+
 static void expect_loader_refused(const char *label, const char *package, const char *standard, const char *part) {
     start_case(label);
     write_loader_repository(package, standard);
@@ -1183,6 +1202,7 @@ int main(int count, char **arguments) {
     lists_each_staged_kind_per_platform_and_spisor_host_as_a_host();
     stages_a_loader_from_its_standard_json_under_its_package_name_and_version();
     refuses_a_loader_whose_proxy_lacks_its_base_url_variable();
+    catalog_build_refuses_a_loader_bundle_holding_more_naming_how_to_stage_it();
     refuses_a_loader_standard_naming_what_stage_bundle_writes_or_a_package_naming_no_loader();
     the_target_refuses_a_pinned_node_older_than_the_one_the_program_needs();
     the_target_refuses_an_engine_that_names_no_lower_bound();
