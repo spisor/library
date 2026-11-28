@@ -426,8 +426,10 @@ add_test(NAME weivel_host_refuses_another_definition_test COMMAND weivel_host_lo
 spisor_add_described_checks(LIBRARY runtime DECLARATION ${PROJECT_SOURCE_DIR}/runtime/library.json)
 spisor_add_described_checks(LIBRARY runtime_testing DECLARATION ${PROJECT_SOURCE_DIR}/runtime/testing/library.json)
 
-add_executable(parity_test parity_test.c parity_files.c parity_json.c)
-target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src)
+# user_home.c is compiled in so a case's NO_COLOR is decided by the one rule C's own starts follow, never a copy of it.
+add_executable(parity_test parity_test.c parity_files.c parity_json.c ${PROJECT_SOURCE_DIR}/runtime/src/user_home.c)
+target_include_directories(parity_test PRIVATE ${PROJECT_SOURCE_DIR}/test ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/runtime/src)
 target_compile_definitions(parity_test PRIVATE RUNTIME_LIBRARY_PATH="$<TARGET_FILE:runtime>"
     PARITY_PATH="${PROJECT_SOURCE_DIR}/parity" PARITY_WORK_PATH="${CMAKE_CURRENT_BINARY_DIR}/parity-work")
 target_link_libraries(parity_test PRIVATE spisor_vector_reader spisor_library spisor_allocator ${CMAKE_DL_LIBS})

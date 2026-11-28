@@ -20,6 +20,7 @@
 #include "spisor/file.h"
 #include "spisor/status.h"
 #include "spisor/value.h"
+#include "user_home.h"
 #include "vector_reader.h"
 
 /**
@@ -130,15 +131,6 @@ static int copy_home_fixtures(const staged_case *staged) {
     return 1;
 }
 
-/**
- * Whether the case's environment asks for no colour as a host's start decides it: NO_COLOR set to a value that is not
- * empty (no-color.org).
- */
-static uint32_t asks_no_color(const cJSON *environment) {
-    const char *value = text_member(environment, "NO_COLOR");
-    return value != NULL && value[0] != '\0';
-}
-
 static int read_case_facts(staged_case *staged) {
     const cJSON *manifest = cJSON_GetObjectItemCaseSensitive(staged->definition, "manifest");
     const cJSON *clock = cJSON_GetObjectItemCaseSensitive(staged->definition, "clock");
@@ -147,7 +139,7 @@ static int read_case_facts(staged_case *staged) {
     staged->plugin = text_member(manifest, "id");
     staged->start = clock == NULL ? DEFAULT_START : text_member(clock, "start");
     staged->times = cJSON_GetObjectItemCaseSensitive(clock, "times");
-    staged->no_color = asks_no_color(environment);
+    staged->no_color = runtime_environment_asks_no_color(environment) ? 1u : 0u;
     staged->portable = portable == NULL ? NULL : parity_join(staged->root, portable);
     return staged->plugin != NULL && staged->start != NULL && (portable == NULL || staged->portable != NULL) &&
            optional_value(staged->definition, "names", &staged->names) &&
