@@ -3,12 +3,26 @@
 
 #include "cJSON.h"
 
-/** How to start a background host: an absolute executable, its arguments, its environment and where it runs. */
+/**
+ * What console a detached start has on Windows: NONE, for a background host, or HIDDEN, a console of its own that never
+ * shows a window, which every console child it starts in turn shares, as an interface's children must. POSIX has no
+ * consoles and reads neither.
+ */
+typedef enum runtime_detached_console {
+    RUNTIME_DETACHED_NO_CONSOLE = 0,
+    RUNTIME_DETACHED_HIDDEN_CONSOLE = 1
+} runtime_detached_console;
+
+/**
+ * How to start a detached process: an absolute executable, its arguments, its environment, where it runs and its
+ * console.
+ */
 typedef struct runtime_detached_start {
     const char *executable;
     const cJSON *arguments;
     const cJSON *environment;
     const char *directory;
+    runtime_detached_console console;
 } runtime_detached_start;
 
 /**
@@ -34,8 +48,9 @@ typedef struct runtime_detached_host {
  *
  * @implNote The hold lets a caller record the host before it runs and end it unrun when that record fails, through
  * what it holds rather than by a pid another process may have taken. On Windows the process is created suspended in
- * a new process group with no console (CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS) that breaks away from the caller's
- * job (CREATE_BREAKAWAY_FROM_JOB); a job that forbids breakaway refuses that, so it starts again inside the job, where
+ * a new process group (CREATE_NEW_PROCESS_GROUP) with no console (DETACHED_PROCESS) or a hidden one (CREATE_NO_WINDOW),
+ * as its console asks, breaking away from the caller's job (CREATE_BREAKAWAY_FROM_JOB): a console child of a process
+ * with no console gets a console window of its own, one of a hidden console shares it; a job that forbids breakaway refuses that, so it starts again inside the job, where
  * closing the job takes it down. On POSIX a double fork with setsid, so it is no child of the caller, and the host
  * waits on a pipe before it execs: init reaps it, and nothing the caller's session or process group receives reaches
  * it.

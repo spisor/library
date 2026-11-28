@@ -33,6 +33,16 @@ add_library(host_ready_timeout OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout PRIVATE src)
 spisor_strict_warnings(host_ready_timeout)
 
+add_library(host_terminal_attached OBJECT src/terminal_attached.c)
+target_include_directories(host_terminal_attached PRIVATE src)
+spisor_strict_warnings(host_terminal_attached)
+
+add_library(host_terminal_attached_test_hook OBJECT src/terminal_attached.c)
+target_include_directories(host_terminal_attached_test_hook PRIVATE src)
+target_compile_definitions(host_terminal_attached_test_hook PRIVATE HOST_TERMINAL_TEST_HOOK)
+spisor_strict_warnings(host_terminal_attached_test_hook)
+set_target_properties(host_terminal_attached_test_hook PROPERTIES SPISOR_TEST_ONLY TRUE)
+
 add_library(host_ready_timeout_test_hook OBJECT src/ready_timeout.c)
 target_include_directories(host_ready_timeout_test_hook PRIVATE src)
 target_compile_definitions(host_ready_timeout_test_hook PRIVATE HOST_READY_TIMEOUT_TEST_HOOK)
@@ -47,7 +57,8 @@ set(host_runtime_shared_objects $<TARGET_OBJECTS:runtime_change_reversal> $<TARG
     $<TARGET_OBJECTS:runtime_hosts> $<TARGET_OBJECTS:runtime_hosts_definition>
     $<TARGET_OBJECTS:runtime_processes_definition>)
 set(host_runtime_objects ${host_runtime_shared_objects} $<TARGET_OBJECTS:runtime_path_entry>
-    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>)
+    $<TARGET_OBJECTS:runtime_install> $<TARGET_OBJECTS:host_ready_timeout> $<TARGET_OBJECTS:host_marketplace_lookup>
+    $<TARGET_OBJECTS:host_terminal_attached>)
 
 function(host_executable target output_name)
     cmake_parse_arguments(PARSE_ARGV 2 HOST "TEST_HOOKS" "" "")

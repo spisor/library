@@ -46,12 +46,13 @@ static cJSON *window_refusal(const char *problem) {
  * Starts the window detached and answers at once: a window outlives the command that opened it, as an application's
  * user command that runs `spisor-host ui --window` must not wait on it.
  *
- * @implNote Detached means no console at all on Windows (DETACHED_PROCESS), so the console-subsystem interface shows
- * no console window, and every child it needs is C's processes.run_action, which starts it with CREATE_NO_WINDOW.
+ * @implNote On Windows the window gets a hidden console of its own rather than none, so the console-subsystem interface
+ * shows no console window and neither does any console program it starts, which shares that console.
  */
 static int start_window(const host_context *context, const cJSON *start) {
     runtime_detached_start detached = {host_text(start, "executable"), cJSON_GetObjectItemCaseSensitive(start, "arguments"),
-                                       cJSON_GetObjectItemCaseSensitive(start, "environment"), context->state};
+                                       cJSON_GetObjectItemCaseSensitive(start, "environment"), context->state,
+                                       RUNTIME_DETACHED_HIDDEN_CONSOLE};
     runtime_detached_host host;
     char *problem = NULL;
     int started = runtime_start_detached(&detached, &host, &problem) && runtime_release_detached(&host, &problem);

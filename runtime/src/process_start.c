@@ -132,8 +132,9 @@ int runtime_start_detached(const runtime_detached_start *start, runtime_detached
         *problem = unopened ? problem_of(start->executable, "the null device could not be opened") : NULL;
         return 0;
     }
-    DWORD flags = CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT |
-                  EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED;
+    DWORD console = start->console == RUNTIME_DETACHED_HIDDEN_CONSOLE ? CREATE_NO_WINDOW : DETACHED_PROCESS;
+    DWORD flags = CREATE_NEW_PROCESS_GROUP | console | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT |
+                  CREATE_SUSPENDED;
     PROCESS_INFORMATION information;
     host->outside_job = create_process(&prepared, flags | CREATE_BREAKAWAY_FROM_JOB, &information);
     DWORD error = host->outside_job ? ERROR_SUCCESS : GetLastError();

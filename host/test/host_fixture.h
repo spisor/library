@@ -317,6 +317,9 @@ typedef struct host_world {
     const char *ready_timeout;
     const char *refusing_language;
     int tags_layer;
+    const char *application_child;
+    const char *application_exit_code;
+    int terminal_attached;
 } host_world;
 
 static inline void start_world_at(host_world *world, const char *suite, const char *label) {
@@ -332,6 +335,9 @@ static inline void start_world_at(host_world *world, const char *suite, const ch
     world->ready_timeout = NULL;
     world->refusing_language = NULL;
     world->tags_layer = 0;
+    world->application_child = NULL;
+    world->application_exit_code = NULL;
+    world->terminal_attached = 0;
     CHECK(spisor_make_directories(world->bin) == SPISOR_OK && spisor_make_directories(world->signals) == SPISOR_OK &&
           spisor_make_directories(world->streams) == SPISOR_OK);
 }
@@ -387,6 +393,15 @@ static inline cJSON *world_environment_with_path(const host_world *world, const 
     }
     if (world->tags_layer) {
         cJSON_AddStringToObject(environment, "SPISOR_FIXTURE_TAG_LAYER", "1");
+    }
+    if (world->application_child != NULL) {
+        cJSON_AddStringToObject(environment, "FAKE_APPLICATION_CHILD", world->application_child);
+    }
+    if (world->application_exit_code != NULL) {
+        cJSON_AddStringToObject(environment, "FAKE_APPLICATION_EXIT_CODE", world->application_exit_code);
+    }
+    if (world->terminal_attached) {
+        cJSON_AddStringToObject(environment, "SPISOR_TEST_TERMINAL_ATTACHED", "1");
     }
     copy_system_variable(environment, "SystemRoot");
     copy_system_variable(environment, "ComSpec");

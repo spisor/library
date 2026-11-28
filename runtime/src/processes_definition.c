@@ -155,7 +155,7 @@ static spisor_status serve_hold(const runtime_processes_hold_argument *argument,
         argument->host_id,
         (double)argument->holder,
         {argument->executable, cJSON_GetObjectItemCaseSensitive(start, "arguments"),
-         cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory}};
+         cJSON_GetObjectItemCaseSensitive(start, "environment"), argument->directory, RUNTIME_DETACHED_NO_CONSOLE}};
     cJSON *answered;
     spisor_status status;
     if (start == NULL || runtime_start_storage(&answer->storage) != SPISOR_OK) {
